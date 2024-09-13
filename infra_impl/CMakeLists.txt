@@ -2,6 +2,7 @@ set(SOURCE_FILES
         include/infra_impl/infra.h
         include/infra_impl/infra_fwd.h
         infra_res.cpp
+        infra_compiler.cpp
         infra.cpp
 )
 

@@ -35,17 +35,6 @@ class ThreadRunnable;
 // Use plain strings for resource paths (for now).
 typedef std::string MIResourcePath;
 
-class MITemporaryBlob {
-public:
-    virtual bool IsValid () = 0;
-    virtual void * Data () = 0;
-    virtual size_t Size () = 0;
-    virtual void Release () = 0;
-
-    inline MITemporaryBlob () {}
-    inline virtual ~MITemporaryBlob () {}
-};
-
 struct MIInfraLimits {
     // The maximum memory usage allowed for the renderer. 0 for unlimited.
     size_t max_memory_usage {};
@@ -133,6 +122,16 @@ public:
     // Add a time to a profile section.
     virtual void AddProfileTime (const std::string & name, float time) = 0;
 
+    // Compile a HLSL shader to SPIR-V.
+    // Blocks until the compilation is finished. (This should usually be done parallelly)
+    // @return a temporary blob containing the SPIR-V binary.
+    virtual std::vector<uint32_t> CompileHLSLToSPIRV (
+            std::span<const char> hlsl_code,
+            std::vector<std::string> options
+    ) = 0;
+
+    // Get the last error message from the HLSL compiler.
+    virtual std::string HLSLCompilerGetLastError () = 0;
 
     // Logging interface
     virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;

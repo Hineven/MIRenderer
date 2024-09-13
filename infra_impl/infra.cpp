@@ -31,6 +31,9 @@ void MyInfra::Init() {
 void MyInfra::Shutdown() {
     // Stop and block wait file io thread
     StopAndBlockWaitFIOThreads();
+
+    // Free compiler contexts
+    DestroyHLSLCompilerContexts();
 }
 
 // Misc

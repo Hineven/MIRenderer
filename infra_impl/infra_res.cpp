@@ -6,6 +6,8 @@
 
 #include <infra_impl/infra.h>
 #include <iostream>
+#include "infra_impl/infra_fwd.h"
+
 
 MI_NAMESPACE_BEGIN
 

@@ -3,10 +3,10 @@ A set of CG libraries.
 
 ### TODO
 * Infra
-  * Res 【WIP】
-  * Mem
-  * Threading
-  * Compiler
+  * Res :ok
+  * Mem :ok
+  * Threading :ok
+  * Compiler  :ok
 * MI
   * rhi
   * mesh

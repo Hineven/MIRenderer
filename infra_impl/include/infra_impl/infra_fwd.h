@@ -13,6 +13,8 @@
 
 #include <core/infra.h>
 #include <shared_mutex>
+#include <span>
+#include <map>
 
 MI_NAMESPACE_BEGIN
 
@@ -76,6 +78,8 @@ protected:
 
 };
 
+struct HLSLCompilerContext;
+
 // A simple implementation for the infrastructure interface.
 // Windows, Vulkan 1.3, NVIDIA
 class MyInfra : public MIInfraInterface {
@@ -109,6 +113,13 @@ public:
 
     void AddProfileTime(const std::string &name, float time) override;
 
+    std::vector<uint32_t> CompileHLSLToSPIRV (
+            std::span<const char> hlsl_code,
+            std::vector<std::string> options
+    ) ;
+
+    std::string HLSLCompilerGetLastError () override;
+
     void LogMessage(MIInfraLogType level, const std::string &message) override;
 
     void OnFrameBegin() override;
@@ -122,6 +133,9 @@ protected:
 
     void KickOffFIOThreads();
     void StopAndBlockWaitFIOThreads();
+
+    HLSLCompilerContext *  GetHLSLCompilerContextForThread(std::thread::id thread_id);
+    void DestroyHLSLCompilerContexts ();
 
     std::filesystem::path TranslateResPathToFilePath (const MIResourcePath & res_path);
 
@@ -149,6 +163,10 @@ protected:
 
     // Timing
     std::chrono::time_point<std::chrono::steady_clock> start_time_;
+
+    // Compiler
+    std::map<std::thread::id, HLSLCompilerContext *> hlsl_compiler_contexts_;
+    std::string hlsl_last_compiler_error_;
 };
 
 MI_NAMESPACE_END
