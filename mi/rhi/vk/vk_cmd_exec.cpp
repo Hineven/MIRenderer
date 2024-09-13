@@ -1,0 +1,360 @@
+/*
+ * Created: 2024/6/27
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+#include "vk_rhi.h"
+#include "vk_cmd_exec.h"
+#include "vk_resource.h"
+#include "vk_buffer.h"
+#include "vk_texture.h"
+#include "vk_pipeline.h"
+#include "vk_conversion.h"
+#include "vk_bindless.h"
+
+MI_NAMESPACE_BEGIN
+
+VulkanCommandExecutor::VulkanCommandExecutor () {
+    for(int i = 0; i < (int)RHICommandQueueType::kMax; i++) {
+        state_[i].Init(this);
+    }
+}
+
+VulkanCommandExecutor::~VulkanCommandExecutor () {
+    for(int i = 0; i < (int)RHICommandQueueType::kMax; i++) {
+        state_[i].Destroy(this);
+    }
+}
+
+VulkanCommandExecutor::CommandQueueState::CommandQueueState () {
+
+}
+
+
+void VulkanCommandExecutor::RHICopyBuffer(RHICommandQueueBase *queue, RHICommandCopyBuffer *copy_buffer) {
+    auto & cmd = state_[(uint32_t)queue->GetCommandQueueType()].cmd;
+    auto & region = vk::BufferCopy()
+        .setSrcOffset(copy_buffer->src_.offset)
+        .setDstOffset(copy_buffer->dst_.offset)
+        .setSize(std::min(copy_buffer->src_.size, copy_buffer->dst_.size));
+    auto * src_buffer = static_cast<VulkanBuffer*>(copy_buffer->src_.buffer);
+    auto * dst_buffer = static_cast<VulkanBuffer*>(copy_buffer->dst_.buffer);
+    cmd.copyBuffer(src_buffer->GetBuffer(),dst_buffer->GetBuffer(),region);
+}
+
+void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHICommandCopyTexture *copy_texture) {
+    auto & cmd = state_[(uint32_t)queue->GetCommandQueueType()].cmd;
+    auto src_texture = static_cast<VulkanTexture*>(copy_texture->src_);
+    auto dst_texture = static_cast<VulkanTexture*>(copy_texture->dst_);
+    auto region = vk::ImageCopy2()
+        .setSrcSubresource(vk::ImageSubresourceLayers()
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setMipLevel(copy_texture->src_mip_)
+            .setBaseArrayLayer(copy_texture->src_base_layer_)
+            .setLayerCount(copy_texture->src_layer_count_))
+        .setDstSubresource(vk::ImageSubresourceLayers()
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setMipLevel(copy_texture->dst_mip_)
+            .setBaseArrayLayer(copy_texture->dst_base_layer_)
+            .setLayerCount(copy_texture->dst_layer_count_))
+        .setSrcOffset({copy_texture->src_x_, copy_texture->src_y_, copy_texture->src_z_})
+        .setDstOffset({copy_texture->dst_x_, copy_texture->dst_y_, copy_texture->dst_z_})
+        .setExtent({copy_texture->width_, copy_texture->height_, copy_texture->depth_});
+    auto & copy_info = vk::CopyImageInfo2()
+            .setSrcImage(src_texture->GetImage())
+            .setDstImage(dst_texture->GetImage())
+            .setSrcImageLayout(vk::ImageLayout::eTransferSrcOptimal)
+            .setDstImageLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setRegions(region);
+    src_texture->Use(cmd, vk::ImageLayout::eTransferSrcOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead);
+    dst_texture->Use(cmd, vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite);
+    cmd.copyImage2(copy_info);
+}
+
+void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
+                                             RHICommandDrawPrimitive *draw_primitive) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+
+    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
+    FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics);
+
+    for(auto & vb : state.bound_vertex_buffers) {
+        if(!vb.IsValid()) continue;
+        auto * buffer = static_cast<VulkanBuffer*>(vb.buffer); // NOLINT its safe
+        buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eVertexAttributeRead);
+    }
+    state.cmd.draw(draw_primitive->vertex_count_, draw_primitive->instance_count_, draw_primitive->first_vertex_, draw_primitive->first_instance_);
+}
+
+void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
+                                                    RHICommandDrawIndexedPrimitive *draw_indexed_primitive) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+
+    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
+    FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics);
+
+    for(auto & vb : state.bound_vertex_buffers) {
+        if(!vb.IsValid()) continue;
+        auto * buffer = static_cast<VulkanBuffer*>(vb.buffer); // NOLINT its safe
+        buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eVertexAttributeRead);
+    }
+    auto index_buffer = static_cast<VulkanBuffer*>(draw_indexed_primitive->index_buffer_.buffer); // NOLINT its safe
+    index_buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eIndexRead);
+    state.cmd.bindIndexBuffer(index_buffer->GetBuffer(), draw_indexed_primitive->index_buffer_.offset, GetVulkanIndexType(draw_indexed_primitive->index_type_));
+    state.cmd.drawIndexed(draw_indexed_primitive->index_count_,
+                          draw_indexed_primitive->instance_count_,
+                          draw_indexed_primitive->first_index_,
+                          draw_indexed_primitive->base_vertex_index_,
+                          draw_indexed_primitive->first_instance_index_);
+}
+
+void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDispatch *dispatch) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+    auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
+    FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kCompute);
+    state.cmd.dispatch(dispatch->group_count_x_, dispatch->group_count_y_, dispatch->group_count_z_);
+}
+
+void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
+                                                    RHICommandBindGraphicsPipeline *bind_graphics_pipeline) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+    auto pipeline = static_cast<VulkanGraphicsPipeline*>(bind_graphics_pipeline->pipeline_); // NOLINT its safe
+    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
+    if(point.bound_pipeline != pipeline) {
+        point.bound_private_set = nullptr;
+        auto set_layout = pipeline->GetPrivateDescriptorSetLayout();
+        if(set_layout) {
+            auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
+                    vk::DescriptorSetAllocateInfo()
+                            .setDescriptorPool(state.descriptor_pool)
+                            .setDescriptorSetCount(1)
+                            .setSetLayouts(set_layout)
+            );
+            mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
+            point.bound_private_set = descriptor_set[0];
+        }
+        state.cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->GetPipeline());
+        point.bound_pipeline = pipeline;
+    }
+}
+
+void VulkanCommandExecutor::RHIBindComputePipeline(
+        RHICommandQueueBase *cmd, RHICommandBindComputePipeline *bind_compute_pipeline) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+    auto pipeline = static_cast<VulkanComputePipeline*>(bind_compute_pipeline->pipeline_); // NOLINT its safe
+    auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
+    if(point.bound_pipeline != pipeline) {
+        point.bound_private_set = nullptr;
+        auto set_layout = pipeline->GetPrivateDescriptorSetLayout();
+        if(set_layout) {
+            auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
+                    vk::DescriptorSetAllocateInfo()
+                            .setDescriptorPool(state.descriptor_pool)
+                            .setDescriptorSetCount(1)
+                            .setSetLayouts(set_layout)
+            );
+            mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
+            point.bound_private_set = descriptor_set[0];
+        }
+        state.cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->GetPipeline());
+        state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
+    }
+}
+
+void VulkanCommandExecutor::RHIBindPipelineParameters(
+        RHICommandQueueBase *cmd, RHICommandBindPipelineParameters *bind_pipeline_parameters) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+    auto table = bind_pipeline_parameters->table_;
+    auto & point = state.points[(uint32_t)bind_pipeline_parameters->point_];
+    point.parameter_table.Merge(table);
+}
+
+void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
+                                               RHICommandBindVertexBuffer *bind_vertex_buffer) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+    auto & vb = bind_vertex_buffer->buffer_;
+    auto * buffer = static_cast<VulkanBuffer*>(vb.buffer); // NOLINT its safe
+    state.cmd.bindVertexBuffers(bind_vertex_buffer->binding_, buffer->GetBuffer(), vb.offset);
+    mi_assert(std::size(state.bound_vertex_buffers) > bind_vertex_buffer->binding_, "Invalid binding");
+    state.bound_vertex_buffers[bind_vertex_buffer->binding_] = vb;
+}
+
+void VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
+    // Simply append all bindings
+    uniforms.insert(uniforms.end(), desc->uniforms.begin(), desc->uniforms.end());
+    storages.insert(storages.end(), desc->storages.begin(), desc->storages.end());
+    uavs.insert(uavs.end(), desc->uavs.begin(), desc->uavs.end());
+    srvs.insert(srvs.end(), desc->srvs.begin(), desc->srvs.end());
+    samplers.insert(samplers.end(), desc->samplers.begin(), desc->samplers.end());
+    acceleration_structures.insert(acceleration_structures.end(), desc->acceleration_structures.begin(), desc->acceleration_structures.end());
+    bindless_resources.insert(bindless_resources.end(), desc->bindless_resources.begin(), desc->bindless_resources.end());
+    // Overwrite push constants if any
+    if(!desc->constants.empty()) {
+        push_constants = desc->constants;
+    }
+}
+
+VulkanCommandExecutor::DescriptorWrites
+VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::GenerateDescriptorWritesAndPlaceBarriers(
+    RHICommandQueueBase * cmd, vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data, vk::CommandBuffer cmdb, vk::PipelineStageFlags use_stages
+) {
+    // Sort and merge all recorded bindings
+    auto SortUnique = [&](auto & arr) {
+        std::stable_sort(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
+            return a.binding < b.binding;
+        });
+        std::reverse(arr.begin(), arr.end());
+        auto tail = std::unique(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
+            return a.binding == b.binding;
+        });
+        arr.erase(tail, arr.end());
+    };
+    SortUnique(uniforms);
+    SortUnique(storages);
+    SortUnique(uavs);
+    SortUnique(srvs);
+    SortUnique(samplers);
+    SortUnique(acceleration_structures);
+
+    uint32_t write_count = uniforms.size() + storages.size() + uavs.size() + srvs.size() + samplers.size() + acceleration_structures.size();
+    vk::WriteDescriptorSet * writes = cmd->Allocate<vk::WriteDescriptorSet[]>(write_count);
+    int write_index = 0;
+    for(auto ubo : uniforms) {
+        auto& buffer_info = *cmd->Allocate<vk::DescriptorBufferInfo>();
+        buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer(); // NOLINT its safe
+        buffer_info.offset = ubo.buffer.offset;
+        buffer_info.range = ubo.buffer.size;
+        auto * buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer); // NOLINT its safe
+        buffer->Use(cmdb, use_stages, vk::AccessFlagBits::eUniformRead);
+        auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set)
+                .setDstBinding(ubo.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                .setPBufferInfo(&buffer_info);
+        writes[write_index++] = write;
+    }
+    for(auto storage : storages) {
+        auto& buffer_info = *cmd->Allocate<vk::DescriptorBufferInfo>();
+        auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer); // NOLINT its safe
+        buffer_info.buffer = buffer->GetBuffer(); // NOLINT its safe
+        buffer_info.offset = storage.buffer.offset;
+        buffer_info.range = storage.buffer.size;
+        buffer->Use(cmdb, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+        auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set)
+                .setDstBinding(storage.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+                .setPBufferInfo(&buffer_info);
+        writes[write_index++] = write;
+    }
+    for(auto uav : uavs) {
+        auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
+        auto image = static_cast<VulkanTexture*>(uav.texture);
+        image_info.imageView = image->GetImageView(); // NOLINT its safe
+        image_info.imageLayout = vk::ImageLayout::eGeneral;
+        image->Use(cmdb, vk::ImageLayout::eGeneral, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+        auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set)
+                .setDstBinding(uav.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eStorageImage)
+                .setPImageInfo(&image_info);
+        writes[write_index++] = write;
+    }
+    for(auto srv : srvs) {
+        auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
+        auto image = static_cast<VulkanTexture*>(srv.texture);
+        image_info.imageView = image->GetImageView(); // NOLINT its safe
+        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        image->Use(cmdb, vk::ImageLayout::eShaderReadOnlyOptimal, use_stages, vk::AccessFlagBits::eShaderRead);
+        auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set)
+                .setDstBinding(srv.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eSampledImage)
+                .setPImageInfo(&image_info);
+        writes[write_index++] = write;
+    }
+    for(auto sampler : samplers) {
+        auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
+        image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
+        auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set)
+                .setDstBinding(sampler.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eSampler)
+                .setPImageInfo(&image_info);
+        writes[write_index++] = write;
+    }
+    for(auto acc : acceleration_structures) {
+        auto& write_khr = *cmd->Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
+        auto  p_ac = cmd->Allocate<vk::AccelerationStructureKHR>();
+        auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set)
+                .setDstBinding(acc.binding)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+                .setPNext(&write_khr);
+        write_khr.accelerationStructureCount = 1;
+        auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
+        rhi_acc->Use(cmdb, use_stages, vk::AccessFlagBits::eAccelerationStructureReadKHR);
+        *(vk::AccelerationStructureKHR*)p_ac = (rhi_acc->GetAccelerationStructure()); // NOLINT its safe
+        write_khr.pAccelerationStructures = p_ac;
+        writes[write_index++] = write;
+    }
+    // Clear all bindings
+    uniforms.clear();
+    storages.clear();
+    uavs.clear();
+    srvs.clear();
+    samplers.clear();
+    acceleration_structures.clear();
+
+    // Generate btb table data for bindless resources
+    SortUnique(bindless_resources);
+
+    for(auto & bindless : bindless_resources) {
+        int bindless_binding = bindless.binding;
+        int bindless_slot    = bindless.bindless_slot;
+        btb_data[bindless_binding] = bindless_slot;
+        RHIGPUAccessFlagBits bindless_access = rhi_bound_pipeline->GetBindlessResourceAccess(bindless_binding);
+        VulkanBindlessManager::GetInstance().UseBindlessResource(
+                bindless_slot, cmdb, use_stages, bindless_access
+        );
+    }
+
+    // Clear bindless resources
+    bindless_resources.clear();
+
+    return std::span<vk::WriteDescriptorSet>(writes, write_count);
+}
+
+void VulkanCommandExecutor::FlushBindPointDescriptorWrites(RHICommandQueueBase * cmd, RHIBindPointType point_t) {
+    auto & state = state_[(uint32_t)cmd->GetCommandQueueType()];
+    auto & point = state.points[(uint32_t)point_t];
+    // Assign btb on the fly
+    uint32_t btb_size = RoundUp(
+            point.bound_pipeline->GetBindlessTableSize(),
+            GetVulkanRHI()->QueryRHIBindlessSupportInfo().descriptor_buffer_offset_alignment
+    );
+    std::span<uint32_t> btb_data = {
+            (uint32_t*)((std::byte*)point.bindless_table_buffer->Map() + point.bindless_table_top),
+            btb_size / sizeof(uint32_t)
+    };
+    point.bindless_table_top += btb_size;
+    auto descriptor_writes = point.parameter_table.GenerateDescriptorWritesAndPlaceBarriers(
+            cmd, GetVulkanRHI()->GetDevice(), point.bound_private_set, btb_data
+    );
+    if(!descriptor_writes.empty()) {
+        GetVulkanRHI()->GetDevice().updateDescriptorSets(descriptor_writes, {});
+    }
+}
+
+MI_NAMESPACE_END

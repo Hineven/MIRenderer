@@ -1,0 +1,163 @@
+/*
+ * Created: 2024/7/3
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef MIRENDERER_CORE_INFTRA_H
+#define MIRENDERER_CORE_INFTRA_H
+
+#include <future>
+#include <filesystem>
+#include "core/common.h"
+#include "types.h"
+#include "blobres.h"
+
+MI_NAMESPACE_BEGIN
+
+enum class MIInfraResourceHintType {
+    // The resource is plain binary, no prior knowledge.
+    kBlob,
+    // The resource is a texture, and the renderer will use it as a texture.
+    kTexture,
+    // The resource is a buffer for geometry computation (vertex/index buffers, etc)
+    kGeometryBuffer
+};
+
+enum class MIInfraLogType {
+    kInfo,
+    kWarning,
+    kError
+};
+
+class ThreadRunnable;
+
+// Use plain strings for resource paths (for now).
+typedef std::string MIResourcePath;
+
+class MITemporaryBlob {
+public:
+    virtual bool IsValid () = 0;
+    virtual void * Data () = 0;
+    virtual size_t Size () = 0;
+    virtual void Release () = 0;
+
+    inline MITemporaryBlob () {}
+    inline virtual ~MITemporaryBlob () {}
+};
+
+struct MIInfraLimits {
+    // The maximum memory usage allowed for the renderer. 0 for unlimited.
+    size_t max_memory_usage {};
+    // The maximum VRAM usage allowed for the renderer. 0 for unlimited.
+    size_t max_vram_usage {};
+    // The maximum number of threads allowed for the renderer. -1: number of logical cores.
+    int max_high_performance_thread_count {-1};
+    // The maximum number of low-performance threads allowed for the renderer. Default to 0.
+    int max_low_performance_thread_count {};
+
+    // Optional: the index of the GPU to use. -1 for any.
+    int gpu_index {-1};
+};
+
+// Interface for external infrastructure.
+// The entire renderer is built on top of this interface, and the renderer will not access the system directly.
+// This must be implemented by the users, and provide its instance to launch the renderer.
+// Some of the implementations should be asynchronous to avoid blocking the renderer.
+class MIInfraInterface {
+public:
+    // Return the ranges of computation resources that the renderer is allowed to use
+    // The renderer will not request resources exceeding these limits (if it's just working as intended).
+    virtual MIInfraLimits GetResourceLimits () = 0;
+
+    // Called from the renderer when initializing the infrastructure.
+    // This function is executed prior to any other functions within the render thread.
+    virtual void Init() = 0;
+    // Called from the renderer while shutting down the infrastructure.
+    // This function is executed after all other functions within the render thread.
+    virtual void Shutdown() = 0;
+
+    // Resource operations. (File ops)
+    // MI will access the file system directly, but will use this interface to load/save files.
+    // These operations should usually be done in dedicated threads for maximum performance
+
+    // The renderer request a persistent blob resource to load from the infrastructure.
+    // Thread safety: required
+    virtual TRef<BlobResourceInterface> RIO_Open (const MIResourcePath & res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access = BlobResourceAccessFlagBits::kRead) = 0;
+
+    // The renderer request the infrastructure to check if a resource exists.
+    // @return true if the resource exists.
+    // Thread safety: required
+    virtual bool RIO_Exists (const MIResourcePath & res_path) = 0;
+
+    // The renderer request the infrastructure to delete a resource.
+    // @return true if the resource is successfully deleted.
+    // Thread safety: required
+    virtual bool RIO_Delete (const MIResourcePath & res_path) = 0;
+
+    // The renderer request the infrastructure to launch and keep a thread.
+    // @return true if the thread is successfully launched.
+    // Thread safety: required
+    virtual std::optional<std::unique_ptr<std::thread>> LaunchThread (ThreadPerformanceType perf_type, std::function<void()> thread_func) = 0;
+
+    // The renderer request a random seed from the infrastructure.
+    // This function will only be called a few times, so performance is not a concern.
+    // @return a random seed.
+    // Thread safety: required
+    virtual uint32_t GenerateSeed () = 0;
+
+    // Basic host memory operations.
+    // Allocate a block of memory.
+    // The implementation need not be very-much optimized. The renderer will not use this function on critical
+    // program paths. Maybe a few hundred allocations per frame, usually the C runtime malloc/free is enough.
+    // @return a pointer to the allocated memory.
+    // Thread safety: required
+    virtual void * Allocate (size_t size, size_t alignment = 1) = 0;
+
+    // Free a block of memory.
+    // The implementation need not be very-much optimized. The renderer will not use this function on critical
+    // program paths. Maybe a few hundred allocations per frame, usually the C runtime malloc/free is enough.
+    // Thread safety: required
+    virtual void Free (void * ptr) = 0;
+
+    // Get the current time since the infrastructure was initialized in seconds.
+    // Precise time gives better counting accuracy, but not required.
+    virtual float GetTimeSinceStart () = 0;
+
+    // Profiling interface
+    // Start a profiling section.
+    virtual void ProfileStart (const std::string & name) = 0;
+    // End a profiling section.
+    virtual void ProfileEnd (const std::string & name) = 0;
+
+    // Add a time to a profile section.
+    virtual void AddProfileTime (const std::string & name, float time) = 0;
+
+
+    // Logging interface
+    virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;
+
+    // Hooks
+    // Called from the render thread when a new frame begins.
+    inline virtual void               OnFrameBegin() {};
+    // Called from the render thread when the render commands have been recorded and before RHI submission.
+    inline virtual void               OnFrameRHISubmit () {};
+
+};
+
+// Get the globally unique provided infrastructure instance for the renderer.
+static MIInfraInterface & GetInfra () ;
+// Transferring the ownership of the infra to the renderer after external construction.
+static void TransferInfra (std::unique_ptr<MIInfraInterface> & infra) ;
+
+#define MI_LOG(level, fmt, params...) GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##params)))
+
+#ifndef NDEBUG
+#define mi_assert(cond, fmt, params...) do{if (!(cond)) { MI_LOG(MIInfraLogType::kError, fmt, ##params);}}while(false)
+#else
+#define mi_assert(cond, msg)
+#endif
+
+MI_NAMESPACE_END
+
+#endif //MIRENDERER_CORE_INFTRA_H
