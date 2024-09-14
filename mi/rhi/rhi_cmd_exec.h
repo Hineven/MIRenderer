@@ -14,11 +14,11 @@ MI_NAMESPACE_BEGIN
 
 void SetIsRHIThread (bool is_rhi_thread) ;
 
-// RHICommandExecutor is the interface for executing RHI commands.
+// RHICommandExecutor is the interface for actually translating RHI commands.
 // Implement this interface in the RHI backend.
-class RHICommandExecutor {
+class RHICommandExecutorInterface {
 public:
-    virtual ~RHICommandExecutor() = default;
+    virtual ~RHICommandExecutorInterface() = default;
     virtual void RHICopyBuffer (RHICommandQueueBase * buffer, RHICommandCopyBuffer * cmd) = 0;
     virtual void RHICopyTexture (RHICommandQueueBase * buffer, RHICommandCopyTexture * cmd) = 0;
     virtual void RHIDrawPrimitive (RHICommandQueueBase * buffer, RHICommandDrawPrimitive * cmd) = 0;
@@ -28,7 +28,6 @@ public:
     virtual void RHIBindComputePipeline (RHICommandQueueBase * buffer, RHICommandBindComputePipeline * cmd) = 0;
     virtual void RHIBindPipelineParameters (RHICommandQueueBase * buffer, RHICommandBindPipelineParameters * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
-    virtual void RHIBindIndexBuffer (RHICommandQueueBase * buffer, RHICommandBindIndexBuffer * cmd) = 0;
 };
 
 MI_NAMESPACE_END

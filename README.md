@@ -8,7 +8,7 @@ A set of CG libraries.
   * Threading :ok
   * Compiler  :ok
 * MI
-  * rhi
+  * rhi :wip
   * mesh
   * material
   * scene

@@ -7,9 +7,10 @@
 #include <spirv_cross/spirv_hlsl.hpp>
 #include <span>
 
+#include "core/crc.h"
+#include "core/infra.h"
 #include "rhi/rhi_shader.h"
 #include "rhi_device_shared.h"
-#include "core/crc.h"
 
 MI_NAMESPACE_BEGIN
 

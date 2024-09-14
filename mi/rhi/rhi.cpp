@@ -6,6 +6,8 @@
 
 #include "rhi/rhi.h"
 #include "rhi_cmd_exec.h"
+
+// Import different kinds of RHI implementations
 #include "vk/vk_rhi_export.h"
 
 MI_NAMESPACE_BEGIN
@@ -35,7 +37,6 @@ void RHIInitialize (RHIType type) {
     switch (type) {
         case RHIType::kVulkan:
             GDynamicRHI = reinterpret_cast<RHI *>(CreateVulkanRHIInstance());
-            SetRHICommandExecutor(reinterpret_cast<RHICommandExecutor *>(CreateVulkanRHICommandExecutor(reinterpret_cast<VulkanRHI *>(GDynamicRHI))));
             break;
         // ...
         default:

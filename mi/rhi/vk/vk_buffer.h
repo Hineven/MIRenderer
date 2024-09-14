@@ -22,32 +22,24 @@ public:
     void * Map() override;
     void Unmap() override;
 
-    FORCEINLINE void Use (vk::CommandBuffer cmd, vk::PipelineStageFlags use_stage, vk::AccessFlags use_access) {
-        if(!(use_access & vk::AccessFlagBits::eMemoryWrite)) {
-            // R-R, no barrier needed
-            if(!(using_accesses_ & vk::AccessFlagBits::eMemoryWrite)) {
-                using_accesses_ |= use_access;
-                using_stages_ |= use_stage;
-                return ;
-            }
-        }
+    // Emit a memory barrier for the buffer.
+    FORCEINLINE void MemBarrier (
+            vk::CommandBuffer cmd,
+            vk::PipelineStageFlags src_stages, vk::PipelineStageFlags dst_stages,
+            vk::AccessFlags src_access, vk::AccessFlags dst_access) {
         vk::BufferMemoryBarrier barrier;
-        barrier.srcAccessMask = using_accesses_;
-        barrier.dstAccessMask = use_access;
+        barrier.srcAccessMask = src_access;
+        barrier.dstAccessMask = dst_access;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.buffer = vk_buffer_;
         barrier.offset = 0;
         barrier.size = VK_WHOLE_SIZE;
-        cmd.pipelineBarrier(using_stages_, use_stage, {}, nullptr, barrier, nullptr);
-        using_accesses_ = use_access;
-        using_stages_ = use_stage;
+        cmd.pipelineBarrier(src_stages, dst_stages, {}, nullptr, barrier, nullptr);
     }
 
 protected:
     vk::Buffer vk_buffer_;
-    vk::PipelineStageFlags using_stages_;
-    vk::AccessFlags using_accesses_;
     vma::Allocation allocation_;
 
     void * mapped_ptr_;

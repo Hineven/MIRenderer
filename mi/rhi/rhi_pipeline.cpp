@@ -5,6 +5,7 @@
  */
 #include "rhi/rhi_pipeline.h"
 #include "core/crc.h"
+#include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
 

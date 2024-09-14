@@ -86,14 +86,18 @@ public:
         return SubmitTranslatedCommands(wait_for_device_execution);
     }
 
-    // Allocate a segment of memory on the command buffer allocator for temporary use.
-    // Memory will be automatically freed when the command buffer is reset.
+    // Allocate a piece of frame local host buffer memory. Very fast linear allocation. Use this
+    // function to allocate frame temporaries. The memory will be automatically freed when the command buffer is reset.
+    // (That is, when the frame ends.)
     template<CMemTrivial T>
     T * Allocate (auto...args) {
         auto ptr = buffer_allocator_.Allocate(sizeof(T));
         return new(ptr) T(args...);
     }
 
+    // Allocate a piece of frame local host buffer memory. Very fast linear allocation. Use this
+    // function to allocate frame temporaries. The memory will be automatically freed when the command buffer is reset.
+    // (That is, when the frame ends.)
     template<CAOUB T>
     std::remove_all_extents_t<T> * Allocate (size_t count) {
         using TElem = std::remove_all_extents_t<T>;
@@ -119,9 +123,9 @@ protected:
     }
 
     // Used for temporary memory allocation
-    TOneTimeLinearAllocator<> buffer_allocator_ {};
+    TOneTimeLinearAllocator<512 * 1024> buffer_allocator_ {};
     // Used for command allocation
-    TOneTimeLinearAllocator<> command_allocator_ {};
+    TOneTimeLinearAllocator<32  * 1024> command_allocator_ {};
 
 
     RHICommandBase * first_command_ {};

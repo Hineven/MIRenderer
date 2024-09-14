@@ -44,8 +44,7 @@ class RHICommandBase;
 class RHICommandQueueBase;
 class RHICommandQueueGraphics;
 
-// This class is used internally, so it's definition is not exposed to the user
-class RHICommandExecutor;
+class RHICommandExecutorInterface;
 
 
 // Forward declaration

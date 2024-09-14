@@ -20,6 +20,13 @@ public:
     FORCEINLINE vk::Image GetImage() const { return vk_image_; }
 
     FORCEINLINE vk::ImageLayout GetImageLayout () const {return vk_image_layout_;}
+
+    // Perform a layout transition if the current layout is *suboptimal* for 'use_layout'. If there's a
+    // memory barrier necessary, it will be inserted at the same time.
+    // Will not perform a layout transition if the current layout is suboptimal (i.e. general layout)
+    // NOTE: This function should not be used for placing memory barriers automatically.
+    // Note: Unlike buffers, texture have no individual `MemBarrier` function. If you don't want to transit
+    // layout but want to place a memory barrier, you should call this function with the same layout.
     FORCEINLINE void UseOptimalLayout (
             vk::CommandBuffer cmd, vk::ImageLayout use_layout,
             vk::PipelineStageFlags use_stage = vk::PipelineStageFlagBits::eAllCommands,
@@ -51,7 +58,11 @@ public:
         vk_image_layout_ = use_layout;
     }
 
+    // Perform a layout transition if the current layout is *incompatible* for 'use_layout'. If there's a
+    // memory barrier necessary, it will be inserted at the same time.
     // Will not perform a layout transition if the current layout is suboptimal (i.e. general layout)
+    // Note: Unlike buffers, texture have no individual `MemBarrier` function. If you don't want to transit
+    // layout but want to place a memory barrier, you should call this function with the same layout.
     FORCEINLINE void Use (
             vk::CommandBuffer cmd, vk::ImageLayout use_layout,
             vk::PipelineStageFlags use_stage = vk::PipelineStageFlagBits::eAllCommands,
@@ -59,7 +70,6 @@ public:
         if(vk_image_layout_ == vk::ImageLayout::eGeneral) use_layout = vk::ImageLayout::eGeneral;
         UseOptimalLayout(cmd, use_layout, use_stage, use_access);
     }
-
 
     FORCEINLINE vk::ImageView GetImageView () {
         return vk_default_image_view_;

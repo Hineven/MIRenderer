@@ -4,7 +4,6 @@ set(SOURCE_FILES
     rhi_pipeline.cpp
     rhi_bindless.cpp
     rhi.cpp
-    rhi_cmd_exec.cpp
         vk/vk_pipeline.cpp
         vk/vk_device.cpp
         vk/vk_cmd_exec.cpp
@@ -23,6 +22,7 @@ list(
     APPEND
     EXTERNAL_LIBRARIES
     Vulkan::Vulkan
+    VulkanMemoryAllocator
 )
 
 target_link_libraries(rhi PUBLIC core util ${EXTERNAL_LIBRARIES})

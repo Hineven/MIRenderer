@@ -14,11 +14,12 @@
 
 MI_NAMESPACE_BEGIN
 
-template<size_t BlockSize = 4096 - sizeof(void*), size_t Alignment = 16>
+template<size_t BlockSize = 4096, size_t Alignment = 16>
 class TOneTimeLinearAllocator {
 public:
     TOneTimeLinearAllocator() {
-        head_ = GetInfra().Allocate(sizeof(Block));
+        Block * new_block = (Block*)GetInfra().Allocate(sizeof(Block));
+        head_ = new_block;
         current_ = head_;
     }
     ~TOneTimeLinearAllocator() {
@@ -30,7 +31,7 @@ public:
         mi_assert(size > 0, "Allocation must not be empty");
         size = RoundUp(size, Alignment);
         if(current_offset_ + size > BlockSize) {
-            auto new_block = GetInfra().Allocate(sizeof(Block), Alignment);
+            auto new_block = reinterpret_cast<Block*>(GetInfra().Allocate(sizeof(Block), Alignment));
             current_->next = new_block;
             current_ = new_block;
             current_offset_ = 0;

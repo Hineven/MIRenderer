@@ -195,8 +195,9 @@ void VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge
 }
 
 VulkanCommandExecutor::DescriptorWrites
-VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::GenerateDescriptorWritesAndPlaceBarriers(
-    RHICommandQueueBase * cmd, vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data, vk::CommandBuffer cmdb, vk::PipelineStageFlags use_stages
+VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::GenerateDescriptorWritesAndTransitResourceLayouts(
+    RHICommandQueueBase * cmd, vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
+    vk::CommandBuffer cmdb, vk::PipelineStageFlags use_stages
 ) {
     // Sort and merge all recorded bindings
     auto SortUnique = [&](auto & arr) {
@@ -216,6 +217,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::GenerateDe
     SortUnique(samplers);
     SortUnique(acceleration_structures);
 
+    // Count all writes that needed to allocate a WriteDescriptorSet array
     uint32_t write_count = uniforms.size() + storages.size() + uavs.size() + srvs.size() + samplers.size() + acceleration_structures.size();
     vk::WriteDescriptorSet * writes = cmd->Allocate<vk::WriteDescriptorSet[]>(write_count);
     int write_index = 0;

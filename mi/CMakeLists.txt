@@ -42,6 +42,8 @@ if(NOT Vulkan_dxc_DEBUG_LIBRARY)
     endif()
 endif()
 
+find_package(VulkanMemoryAllocator REQUIRED COMPONENTS VulkanMemoryAllocator)
+
 find_package(glm REQUIRED)
 
 # core library

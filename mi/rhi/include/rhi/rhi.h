@@ -8,6 +8,7 @@
 #define MIRENDERERDEV_RHI_H
 
 #include <string>
+#include <memory>
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
@@ -38,7 +39,12 @@ public:
     // Create a texture, thread safe
     virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;
 
-    virtual RHITextureRef ImportTexture ()
+    // Import a texture from a native handle, thread safe
+    // The native handle is a pointer to the texture object in the backend API
+    virtual RHITextureRef ImportTexture (
+            void * native_handle,
+            RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
+    ) = 0;
 
     // Create a sampler, thread safe
     virtual RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) ;
@@ -56,7 +62,10 @@ public:
 
     virtual RHIBindlessSupportInfo QueryRHIBindlessSupportInfo () = 0;
 
-    virtual RHICommandExecutor * GetCommandExecutor () = 0;
+    // Return the command executor for current RHI
+    // It's just a wrapper of command translation programs from the unified RHI command representation
+    // to the actual RHI backend
+    virtual RHICommandExecutorInterface * GetCommandExecutor () = 0;
 
     FORCEINLINE RHIBindlessManager & GetBindlessManager () const {
         return *bindless_manager_;
