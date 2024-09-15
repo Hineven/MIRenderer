@@ -9,11 +9,13 @@
 
 #include <string>
 #include <memory>
+#include <future>
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"
 #include "core/pixel_format.h"
+#include "util/lockfree.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -26,8 +28,14 @@ protected:
     friend void RHIInitialize (RHIType type) ;
     friend void RHIDestroy () ;
 public:
-    // Get the active RHI instance
-    static RHI & GetInstance() ;
+
+    // Initialize the RHI layer
+    static void InitializeSingleton (RHIType type) ;
+    // Destroy the RHI layer
+    static void DestroySingleton () ;
+
+    // Get the active RHI singleton
+    static RHI & Get() ;
 
     virtual RHIType GetType() const = 0 ;
 
@@ -71,18 +79,50 @@ public:
         return *bindless_manager_;
     }
 
+    // Wait for the underlying render hardware and RHI layer to finish all the commands
+    // If host_only is true, only the operations pending on the host side will be waited.
+    // Otherwise, all the operations including device (render hardware) queues will be waited.
+    virtual void WaitForIdle (bool host_only = false) = 0;
+
+    // Move to next frame. Performing logic like RHI resource recycling, queue flushing,
+    // queue allocator swapping, etc.
+    // @return A future that will be set when all host operations are done and the next frame
+    // is ready to be rendered.
+    // Note: The future will not be waiting for device operations of the previous frame to
+    // complete.
+    virtual std::future<void> AdvanceFrame () ;
+
+    // The frame index of the entire RHI system
+    // it is never decreased, and is increased by 1 every time AdvanceFrame is called.
+    inline size_t GetFrameIndex () const {
+        return frame_index_;
+    }
+
 protected:
+
+    struct RHIResourceToRecycle {
+        RHIResource *resource;
+        size_t frame_index;
+    };
+
+    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne>
+    resources_pending_for_deletion_ {};
+    // The resource that is not ready to be deleted in the previous frame.
+    RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
+
+    // Free a resource allocated by the RHI.
+    virtual void FreeResource_RHIThread (RHIResource * resource) = 0;
+
+
+    void RecycleRHIResourcesPendingForDeletion_RHIThread() ;
+
     std::unique_ptr<RHIBindlessManager> bindless_manager_ {};
+    size_t frame_index_ {0};
+    uint32_t __tiny_buffer_for_hacking_ [128];
 };
 
 // Check if the current thread is the RHI thread
 bool IsRHIThread () ;
-
-// Initialize the RHI layer
-void RHIInitialize (RHIType type) ;
-
-// Destroy the RHI layer
-void RHIDestroy () ;
 
 MI_NAMESPACE_END
 

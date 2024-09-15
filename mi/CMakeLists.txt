@@ -42,7 +42,8 @@ if(NOT Vulkan_dxc_DEBUG_LIBRARY)
     endif()
 endif()
 
-find_package(VulkanMemoryAllocator REQUIRED COMPONENTS VulkanMemoryAllocator)
+# VMA-HPP from vcpkg
+find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED)
 
 find_package(glm REQUIRED)
 
@@ -52,5 +53,7 @@ add_subdirectory(core)
 add_subdirectory(util)
 # render hardware abstraction
 add_subdirectory(rhi)
+# render graph
+add_subdirectory(rdg)
 # top layer renderer logic
 add_subdirectory(ml)

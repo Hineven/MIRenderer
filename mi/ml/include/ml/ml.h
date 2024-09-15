@@ -4,15 +4,15 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_MI_H
-#define MIRENDERER_MI_H
+#ifndef MIRENDERER_ML_H
+#define MIRENDERER_ML_H
 #include "core/common.h"
 #include "core/infra.h"
 #include "ml/ml_fwd.h"
 
 MI_NAMESPACE_BEGIN
 
-struct MIMainLoopStartConfig {
+struct MainLoopStartConfig {
 
 };
 
@@ -26,14 +26,25 @@ public:
     void SynchronizeFrame () ;
 
 protected:
+
+    MainLoop (std::unique_ptr<MIInfraInterface> infra) : infra_(std::move(infra)) {}
+
+
     void Run () ;
 
-    std::unique_ptr<std::thread> rendering_thread_;
+    // Tick all tickable geometries
+    void RunGeometryTick ();
+
+
+    std::unique_ptr<MIInfraInterface> infra_;
+
+    std::unique_ptr<std::thread> rhi_thread_;
+    std::unique_ptr<std::thread> render_thread_;
 
 };
 
-std::unique_ptr<MIFoundation> CreateRenderer (std::unique_ptr<MIInfraInterface> infra);
+std::unique_ptr<MainLoop> CreateFoundationsAndMainLoop (std::unique_ptr<MIInfraInterface> infra);
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERER_MI_H
+#endif //MIRENDERER_ML_H

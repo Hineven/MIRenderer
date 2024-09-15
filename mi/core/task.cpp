@@ -8,7 +8,7 @@ MI_NAMESPACE_BEGIN
 
 void WorkerThreadRunnable::Run() {
     while (true) {
-        Task *task = GetTaskGraph().WaitAndGetNextTask(this);
+        Task *task = TaskGraph::Get().WaitAndGetNextTask(this);
         if(task != nullptr) {
             task->Run();
             // Finished, release the reference counter incremented by TaskGraph.
@@ -29,13 +29,13 @@ void Task::Fire() {
     assert(num_unfinished_precedents_ == 0);
     state_ = TaskStateType::kReady;
     if(num_unfinished_precedents_ == 0) {
-        GetTaskGraph().OnTaskReadyToRun(this);
+        TaskGraph::Get().OnTaskReadyToRun(this);
     }
 }
 
 void Task::OnPrecedentFinished () {
     if (--num_unfinished_precedents_ == 0) {
-        GetTaskGraph().OnTaskReadyToRun(this);
+        TaskGraph::Get().OnTaskReadyToRun(this);
     }
 }
 

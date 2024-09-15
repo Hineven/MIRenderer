@@ -14,7 +14,7 @@
 MI_NAMESPACE_BEGIN
 
 // Implement the blob resource interface to produce a functioning infra.
-class BlobResourceInterface : public RefCounted {
+class BlobResourceInterface : public RefCounted<> {
 public:
     // All the functions require thread-safe implementations
     // @return may return nullptr if the blob resource is not zero-copy readable.

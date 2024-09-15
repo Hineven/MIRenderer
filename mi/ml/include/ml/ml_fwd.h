@@ -4,14 +4,14 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_MI_FWD_H
-#define MIRENDERER_MI_FWD_H
+#ifndef MIRENDERER_ML_FWD_H
+#define MIRENDERER_ML_FWD_H
 
 #include "core/common.h"
 #include "core/refcounted.h"
 MI_NAMESPACE_BEGIN
 
-class MIFoundation;
+class MainLoop;
 class MaterialRoot;
 class Material;
 class Geometry;
@@ -27,4 +27,4 @@ typedef TRef<Light> LightRef;
 typedef TRef<Renderable> RenderableRef;
 
 MI_NAMESPACE_END
-#endif //MIRENDERER_MI_FWD_H
+#endif //MIRENDERER_ML_FWD_H

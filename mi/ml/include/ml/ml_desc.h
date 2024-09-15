@@ -10,7 +10,7 @@
 #include "rhi/rhi_types.h"
 #include "core/common.h"
 #include "core/refcounted.h"
-#include "mi/mi_fwd.h"
+#include "ml/ml_fwd.h"
 MI_NAMESPACE_BEGIN
 
 struct GeometryDesc {

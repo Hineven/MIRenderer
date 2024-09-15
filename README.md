@@ -8,7 +8,11 @@ A set of CG libraries.
   * Threading :ok
   * Compiler  :ok
 * MI
-  * rhi :wip
+  * rhi
+    * vma is missing : ok
+    * move sync out of rhi : ok
+    * complete rhi worker threads : ok
+    * test rhi functionality
   * mesh
   * material
   * scene

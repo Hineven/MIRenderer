@@ -20,4 +20,7 @@
 
 #include <cstdint>
 
+// TODO
+#define CHECK_THREAD(thread)
+
 #endif //MIRENDERER_CORE_COMMON_H

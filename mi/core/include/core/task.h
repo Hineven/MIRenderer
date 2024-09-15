@@ -51,7 +51,7 @@ private:
 class Task;
 typedef TRef<Task> TaskRef;
 
-class Task : public RefCounted {
+class Task : public RefCounted<> {
 public:
     [[nodiscard]] inline std::future<void> GetFuture () {
         return task_.get_future();
@@ -120,6 +120,9 @@ public:
         OnTaskReadyToRun(task);
         return TaskInitializer(*this, task);
     }
+
+    static TaskGraph & Get ();
+    static void InitializeSingleton (int num_low_performance_threads, int num_high_performance_threads) ;
 
 protected:
     inline TaskGraph (int num_low_performance_threads, int num_high_performance_threads) {
@@ -202,8 +205,6 @@ protected:
     // Semaphore for tasks, incremented when a task is added to the queue.
     std::counting_semaphore<0> task_semaphore_ {0};
 };
-
-TaskGraph & GetTaskGraph ();
 
 struct TaskGraphThreadMeta {
     uint32_t flags : 16;

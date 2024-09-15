@@ -3,6 +3,7 @@ set(SOURCE_FILES
     rhi_shader.cpp
     rhi_pipeline.cpp
     rhi_bindless.cpp
+    rhi_resource.cpp
     rhi.cpp
         vk/vk_pipeline.cpp
         vk/vk_device.cpp
@@ -22,7 +23,7 @@ list(
     APPEND
     EXTERNAL_LIBRARIES
     Vulkan::Vulkan
-    VulkanMemoryAllocator
+    unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
 )
 
 target_link_libraries(rhi PUBLIC core util ${EXTERNAL_LIBRARIES})

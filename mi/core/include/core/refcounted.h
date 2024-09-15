@@ -17,6 +17,7 @@ MI_NAMESPACE_BEGIN
 /**
  * Base class implementing thread-safe reference counting.
  */
+template<bool bThreadSafe = true>
 class RefCounted
 {
 public:
@@ -48,7 +49,7 @@ public:
     }
 
 private:
-    mutable std::atomic<int> ref_count_ {0};
+    mutable std::conditional_t<bThreadSafe, std::atomic<int>, int> ref_count_ {0};
 };
 
 template<typename T>

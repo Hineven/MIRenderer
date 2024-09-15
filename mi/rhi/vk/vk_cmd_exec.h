@@ -15,7 +15,7 @@ class VulkanBuffer;
 class VulkanGraphicsPipeline;
 class VulkanComputePipeline;
 
-class VulkanCommandExecutor : public RHICommandExecutor {
+class VulkanCommandExecutor : public RHICommandExecutorInterface {
 public:
     VulkanCommandExecutor() ;
     virtual ~VulkanCommandExecutor() override ;

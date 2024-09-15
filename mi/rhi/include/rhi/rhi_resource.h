@@ -16,7 +16,6 @@ MI_NAMESPACE_BEGIN
 
 class RHIResource {
 public:
-    RHIResource() = default;
     virtual ~RHIResource() = default;
 
     FORCEINLINE uint32_t IncRef() {
@@ -34,9 +33,13 @@ public:
     FORCEINLINE uint32_t GetRefCount() const {
         return ref_count_;
     }
-private:
 
-    // Queue up in a global list for deletion
+protected:
+    // Can only be allocated by RHI and memory is allocated via infrastructure.
+    RHIResource() = default;
+    // Queue up in a global list for deletion.
+    // Queued resources will be deleted after (but not immediately after)
+    // their frame ends execution on the device.
     void QueueForDeletion () ;
 
     // Only the render thread is allowed to operate on RHI resource references
@@ -46,6 +49,12 @@ private:
     bool pending_for_deletion_ {false};
 };
 
+// Called within RHI thread. Resources that are at least 1 frame older than
+// the current frame in the pending queue will be recycled. By this we ensure
+// that they are really no longer used by host or device.
+void RecycleRHIResourcesPendingForDeletion_RHIThread();
+
+// Only the render thread is allowed to operate on RHI resource references
 using RHIResourceRef = TRef<RHIResource>;
 
 class RHISampler : public RHIResource {

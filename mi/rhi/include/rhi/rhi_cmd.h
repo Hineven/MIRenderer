@@ -23,6 +23,8 @@ public:
     virtual ~RHICommandBase() = default;
     // Only called once per object
     virtual void ExecuteAndDestruct (RHICommandQueueBase & cmd) {};
+    // Give direct access to the rhi translation thread.
+    friend class RHIWorkerThread;
 protected:
     RHICommandBase * next_command_ {};
     friend class RHICommandQueueBase;
@@ -47,6 +49,13 @@ private:
 // 2. Submission: Translated commands are submitted by the RHI thread to device for execution.
 // 3. Finished: The command finished execution and is destroyed.
 class RHICommandQueueBase : public NonCopyable {
+protected:
+    inline auto & GetBufferAllocator () {
+        return buffer_allocator_[allocator_index_];
+    }
+    inline auto & GetCommandAllocator () {
+        return command_allocator_[allocator_index_];
+    }
 public:
     RHICommandQueueBase() {
         // Idle command
@@ -67,14 +76,18 @@ public:
     void Reset () ;
 
     // Flush existing commands, and send to RHI thread for translation
+    // @return a future that will be ready when the translation is completed.
     inline std::future<void> EnqueueTranslation () {
         auto tmp = first_command_;
         first_command_ = last_command_ = AllocateCommand<RHICommandBase>();
-        EnqueueRHICommandTranslationTask(this, tmp);
+        return EnqueueRHICommandTranslationTask(this, tmp);
     }
 
     // Flush existing commands, and send to RHI thread for baking and submission
-    // If wait_for_device_execution is true, the task will wait for the device to finish executing the commands
+    // @param wait_for_device_execution if true, the returned future will wait
+    // for the device to finish executing the commands. Otherwise, it will only
+    // wait for the host submission completion.
+    // @return a future that will be ready when the submission/execution is completed.
     inline std::future<void> SubmitTranslatedCommands (bool wait_for_device_execution = false) {
         return EnqueueRHICommandBufferSubmitTask(this, wait_for_device_execution);
     }
@@ -91,7 +104,7 @@ public:
     // (That is, when the frame ends.)
     template<CMemTrivial T>
     T * Allocate (auto...args) {
-        auto ptr = buffer_allocator_.Allocate(sizeof(T));
+        auto ptr = GetBufferAllocator().Allocate(sizeof(T));
         return new(ptr) T(args...);
     }
 
@@ -101,11 +114,19 @@ public:
     template<CAOUB T>
     std::remove_all_extents_t<T> * Allocate (size_t count) {
         using TElem = std::remove_all_extents_t<T>;
-        auto ptr = buffer_allocator_.Allocate(sizeof(TElem) * count);
+        auto ptr = GetBufferAllocator().Allocate(sizeof(TElem) * count);
         return new(ptr) TElem[count];
     }
 
     FORCEINLINE RHICommandQueueType GetCommandQueueType () const {return queue_type_;}
+
+    // Clear and swap allocators. Move on to the next frame.
+    // Called by RHI thread
+    inline void SwapAllocators_RHIThread () {
+        allocator_index_ = 1 - allocator_index_;
+        buffer_allocator_[allocator_index_].Reset();
+        command_allocator_[allocator_index_].Reset();
+    }
 
 protected:
 
@@ -113,7 +134,7 @@ protected:
     // Manually managed command destruction, used internally.
     template<typename T>
     T * AllocateCommand (auto...args) {
-        auto ptr = command_allocator_.Allocate(sizeof(T));
+        auto ptr = GetCommandAllocator().Allocate(sizeof(T));
         return new(ptr) T(args...);
     }
 
@@ -122,10 +143,11 @@ protected:
         last_command_ = cmd;
     }
 
+    int allocator_index_ {0};
     // Used for temporary memory allocation
-    TOneTimeLinearAllocator<512 * 1024> buffer_allocator_ {};
+    TOneTimeLinearAllocator<512 * 1024> buffer_allocator_[2];
     // Used for command allocation
-    TOneTimeLinearAllocator<32  * 1024> command_allocator_ {};
+    TOneTimeLinearAllocator<32  * 1024> command_allocator_[2];
 
 
     RHICommandBase * first_command_ {};
@@ -287,10 +309,10 @@ protected:
     FORCEINLINE RHICommandQueueGraphics(): RHICommandQueueBase() {
         queue_type_ = RHICommandQueueType::kGraphics;
     }
-    static void InitInstance () ;
+    static void InitializeSingleton () ;
 public:
 
-    static RHICommandQueueGraphics & GetInstance ();
+    static RHICommandQueueGraphics & Get ();
 
     FORCEINLINE void CopyBuffer (RHIBufferSpan src, RHIBufferSpan dst) {
         AddCommand(AllocateCommand<RHICommandCopyBuffer>(src, dst));
