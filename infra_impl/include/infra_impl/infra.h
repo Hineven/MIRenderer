@@ -84,6 +84,8 @@ struct HLSLCompilerContext;
 // Windows, Vulkan 1.3, NVIDIA
 class MyInfra : public MIInfraInterface {
 public:
+    MyInfra() = default;
+
     MIInfraLimits GetResourceLimits () override;
 
     void Init () override;
@@ -115,10 +117,9 @@ public:
 
     std::vector<uint32_t> CompileHLSLToSPIRV (
             std::span<const char> hlsl_code,
-            std::vector<std::string> options
+            std::vector<std::string> options,
+            std::string & error
     ) ;
-
-    std::string HLSLCompilerGetLastError () override;
 
     void LogMessage(MIInfraLogType level, const std::string &message) override;
 
@@ -150,7 +151,7 @@ protected:
     // upon modification.
     std::atomic<bool> fio_stop_ {false};
     // The semaphore is incremented when a new task is added to the queue
-    std::counting_semaphore<> fio_task_semaphore_;
+    std::counting_semaphore<> fio_task_semaphore_ {0};
     // The mutex is used to protect the queue
     std::mutex fio_queue_mutex_;
     // The thread that processes the file io tasks
@@ -166,7 +167,6 @@ protected:
 
     // Compiler
     std::map<std::thread::id, HLSLCompilerContext *> hlsl_compiler_contexts_;
-    std::string hlsl_last_compiler_error_;
 };
 
 MI_NAMESPACE_END

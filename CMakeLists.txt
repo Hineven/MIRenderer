@@ -13,6 +13,14 @@ else ()
     message(FATAL_ERROR "Unsupported compiler, only MSVC is supported (for now).")
 endif()
 
+# Platform macros
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    add_definitions(-DMI_COMPILER_MSVC)
+endif()
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    add_definitions(-DMI_COMPILER_GCC)
+endif()
+
 # Simple implementation for the infrastracture abstraction within MI
 # Doing environment specific stuff.
 add_subdirectory(infra_impl)
@@ -20,12 +28,12 @@ add_subdirectory(infra_impl)
 # Core implementations
 add_subdirectory(mi)
 
-find_package(Vulkan REQUIRED)
-find_package(spirv_cross_core REQUIRED)
+find_package(Vulkan REQUIRED COMPONENTS dxc GLOBAL)
+find_package(spirv_cross_core REQUIRED GLOBAL)
 # spirv_cross_glsl is required for spirv_cross_hlsl
-find_package(spirv_cross_glsl REQUIRED)
-find_package(spirv_cross_hlsl REQUIRED)
-find_package(spirv_cross_cpp REQUIRED)
+find_package(spirv_cross_glsl REQUIRED GLOBAL)
+find_package(spirv_cross_hlsl REQUIRED GLOBAL)
+find_package(spirv_cross_cpp REQUIRED GLOBAL)
 
 if(NOT ${Vulkan_dxc_FOUND})
     # Fallback to standalone DXC
@@ -33,6 +41,7 @@ if(NOT ${Vulkan_dxc_FOUND})
     find_package(directx-dxc CONFIG REQUIRED)
     set(dxc_library_target Microsoft::DirectXShaderCompiler)
 else()
+    message(STATUS "Using integrated dxc within Vulkan SDK")
     set(dxc_library_target Vulkan::dxc_lib)
 endif()
 
@@ -43,3 +52,6 @@ add_executable(
     samples/hello/main.cpp
 )
 target_link_libraries(hello core mi ${dxc_library_target} Vulkan::Vulkan spirv-cross-cpp spirv-cross-core spirv-cross-hlsl)
+
+# tests
+add_subdirectory(tests)

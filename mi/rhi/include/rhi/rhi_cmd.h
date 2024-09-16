@@ -22,7 +22,7 @@ class RHICommandBase {
 public:
     virtual ~RHICommandBase() = default;
     // Only called once per object
-    virtual void ExecuteAndDestruct (RHICommandQueueBase & cmd) {};
+    virtual void ExecuteAndDestruct ([[maybe_unused]] RHICommandQueueBase & cmd) {};
     // Give direct access to the rhi translation thread.
     friend class RHIWorkerThread;
 protected:

@@ -4,8 +4,8 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERERDEV_RHI_COMMON_H
-#define MIRENDERERDEV_RHI_COMMON_H
+#ifndef MI_RHI_COMMON_H
+#define MI_RHI_COMMON_H
 
 #include "core/common.h"
 
@@ -19,4 +19,4 @@ constexpr uint64_t CRHIPreferredGPUHeapBlockSize = 256 * 1024 * 1024; // 256MB
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERERDEV_RHI_COMMON_H
+#endif //MI_RHI_COMMON_H

@@ -5,13 +5,16 @@
  */
 #include <iostream>
 #include "infra_impl/infra.h"
+#include "core/infra.h"
+
 MI_NAMESPACE_BEGIN
 
 void MyInfra::Init() {
     start_time_ = std::chrono::high_resolution_clock::now();
 
     // Create / Get directories
-    resource_directory_ = std::filesystem::current_path() / "resources";
+    resource_directory_ =
+            std::filesystem::current_path() / "resources";
     if (!std::filesystem::exists(resource_directory_)) {
         LogMessage(MIInfraLogType::kInfo, "Creating resource directory: " + resource_directory_.string());
         std::filesystem::create_directory(resource_directory_);
@@ -40,7 +43,8 @@ void MyInfra::Shutdown() {
 
 
 std::optional<std::unique_ptr<std::thread>>
-MyInfra::LaunchThread(ThreadPerformanceType perf_type, std::function<void()> thread_func) {
+MyInfra::LaunchThread([[maybe_unused]] ThreadPerformanceType perf_type, std::function<void()> thread_func) {
+
     return std::make_unique<std::thread>(thread_func);
 }
 
@@ -62,15 +66,15 @@ float MyInfra::GetTimeSinceStart() {
     return std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - start_time_).count();
 }
 
-void MyInfra::ProfileStart(const std::string &name) {
+void MyInfra::ProfileStart([[maybe_unused]] const std::string &name) {
     // Do nothing
 }
 
-void MyInfra::ProfileEnd(const std::string &name) {
+void MyInfra::ProfileEnd([[maybe_unused]] const std::string &name) {
     // Do nothing
 }
 
-void MyInfra::AddProfileTime(const std::string &name, float time) {
+void MyInfra::AddProfileTime([[maybe_unused]] const std::string &name, [[maybe_unused]] float time) {
     // Do nothing
 }
 
@@ -101,6 +105,20 @@ void MyInfra::OnFrameRHISubmit() {
     // Do nothing
 }
 
+static std::unique_ptr<MIInfraInterface> G_Inftra;
 
+MIInfraInterface & GetInfra() {
+    return *G_Inftra;
+}
+
+void TransferInfra(std::unique_ptr<MIInfraInterface> &&infra) {
+    G_Inftra = std::move(infra);
+}
+
+void DestroyInfra() {
+    G_Inftra.reset();
+}
 
 MI_NAMESPACE_END
+
+

@@ -4,9 +4,11 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_RHI_SHADER_H
-#define MIRENDERER_RHI_SHADER_H
+#ifndef MI_RHI_SHADER_H
+#define MI_RHI_SHADER_H
 
+#include <vector>
+#include <memory>
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_resource.h"
 #include "rhi_desc.h"
@@ -82,4 +84,4 @@ protected:
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERER_RHI_SHADER_H
+#endif //MI_RHI_SHADER_H

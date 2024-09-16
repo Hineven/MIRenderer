@@ -6,7 +6,6 @@
 
 #include <infra_impl/infra.h>
 #include <iostream>
-#include "infra_impl/infra_fwd.h"
 
 
 MI_NAMESPACE_BEGIN
@@ -17,7 +16,7 @@ MyBlobResource::~MyBlobResource() noexcept {
     file_.close();
 }
 
-MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & file_path, MIInfraResourceHintType hint) {
+MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & file_path, [[maybe_unused]] MIInfraResourceHintType hint) {
     infra_ = infra;
     file_.open(file_path, std::ios::in | std::ios::out | std::ios::binary);
     if(!file_.good()) {
@@ -29,11 +28,11 @@ MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & fi
     }
 }
 
-const void *MyBlobResource::ReadBlobZeroCopy(size_t pos, size_t size) {
+const void *MyBlobResource::ReadBlobZeroCopy([[maybe_unused]] size_t pos, [[maybe_unused]] size_t size) {
     return nullptr;
 }
 
-std::future<const void *> MyBlobResource::Async_ReadBlobZeroCopy(size_t pos, size_t size) {
+std::future<const void *> MyBlobResource::Async_ReadBlobZeroCopy([[maybe_unused]] size_t pos, [[maybe_unused]] size_t size) {
     return {};
 }
 
@@ -173,9 +172,14 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
     auto file_path = TranslateResPathToFilePath(res_path);
     if(access & BlobResourceAccessFlagBits::kWrite) {
         if(!std::filesystem::exists(file_path)) {
+            // Create directory if not exists
+            std::filesystem::create_directories(file_path.parent_path());
+            // Try to create file if not exists
             std::ofstream file(file_path);
             if(!file.good()) {
-                LogMessage(MIInfraLogType::kError, "Failed to create file: " + file_path.string());
+                MI_LOG(MIInfraLogType::kError,
+                       "Failed to create file: {}, err: {}",
+                       file_path.string().c_str(), errno);
                 return nullptr;
             }
         }
@@ -192,4 +196,10 @@ bool MyInfra::RIO_Delete(const MIResourcePath &res_path) {
     return std::filesystem::remove(TranslateResPathToFilePath(res_path));
 }
 
+MIInfraLimits MyInfra::GetResourceLimits() {
+    MIInfraLimits limits;
+    limits.max_high_performance_thread_count = std::thread::hardware_concurrency();
+    limits.max_low_performance_thread_count = 0;
+    return limits;
+}
 MI_NAMESPACE_END

@@ -4,10 +4,11 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_RHI_DESC_H
-#define MIRENDERER_RHI_DESC_H
+#ifndef MI_RHI_DESC_H
+#define MI_RHI_DESC_H
 
 #include <span>
+#include <string>
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_types.h"
@@ -294,4 +295,4 @@ using CommandConstantDesc = PipelineReflection::CommandConstantDesc;
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERER_RHI_DESC_H
+#endif //MI_RHI_DESC_H

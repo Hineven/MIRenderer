@@ -11,7 +11,7 @@
 MI_NAMESPACE_BEGIN
 
 RHIBindlessResourceSlotKeeper::~RHIBindlessResourceSlotKeeper() {
-    RHI::GetInstance().GetBindlessManager().FreeResourceSlot(this);
+    RHI::Get().GetBindlessManager().FreeResourceSlot(this);
 }
 
 RHIBindlessSlotRef RHIBindlessManager::AllocateResourceSlot(const mi::RHIBindlessResourceDesc &desc) {
@@ -32,7 +32,7 @@ void RHIBindlessManager::UpdateResourceSlot(RHIBindlessResourceSlotKeeper *slot,
 }
 
 RHIBindlessManager::RHIBindlessManager() {
-    auto support = RHI::GetInstance().QueryRHIBindlessSupportInfo();
+    auto support = RHI::Get().QueryRHIBindlessSupportInfo();
     auto SetupBindlessChannel = [&](RHIBindlessResourceType channel_type) {
         auto & channel = bindless_channels_[(uint32_t)channel_type];
         int limit = 0;

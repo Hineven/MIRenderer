@@ -44,7 +44,7 @@ void MyInfra::DestroyHLSLCompilerContexts() {
 }
 
 std::vector<uint32_t>
-MyInfra::CompileHLSLToSPIRV(std::span<const char> hlsl_code, std::vector<std::string> options) {
+MyInfra::CompileHLSLToSPIRV(std::span<const char> hlsl_code, std::vector<std::string> options, std::string & error) {
     // Initialize DXC (if not already)
     auto ctx = GetHLSLCompilerContextForThread(std::this_thread::get_id());
     IDxcLibrary *dxc_lib = ctx->dxc_lib;
@@ -53,20 +53,20 @@ MyInfra::CompileHLSLToSPIRV(std::span<const char> hlsl_code, std::vector<std::st
 
     // Create blob from hlsl code
     IDxcBlobEncoding *hlsl_blob;
-    dxc_lib->CreateBlobWithEncodingFromPinned(hlsl_code.data(), hlsl_code.size(), CP_UTF8, &hlsl_blob);
+    dxc_lib->CreateBlobWithEncodingFromPinned(hlsl_code.data(), (uint32_t)hlsl_code.size(), CP_UTF8, &hlsl_blob);
 
     // Compile
     IDxcOperationResult *compile_result;
-    dxc_compiler->Compile(hlsl_blob, L"shader.hlsl", L"main", L"ps_6_0", reinterpret_cast<LPCWSTR *>(options.data()), options.size(), nullptr, 0, nullptr, &compile_result);
+    dxc_compiler->Compile(hlsl_blob, L"shader.hlsl", L"main", L"ps_6_0", reinterpret_cast<LPCWSTR *>(options.data()), (uint32_t)options.size(), nullptr, 0, nullptr, &compile_result);
 
     // Check compile result
     HRESULT hr;
     compile_result->GetStatus(&hr);
     if (FAILED(hr)) {
         IDxcBlobEncoding *error_blob;
-        compile_result->GetErrorBuffer(&er9.13 comror_blob);
+        compile_result->GetErrorBuffer(&error_blob);
         std::string error_message(static_cast<const char *>(error_blob->GetBufferPointer()), error_blob->GetBufferSize());
-        hlsl_last_compiler_error_ = error_message;
+        error = error_message;
         return {};
     }
 

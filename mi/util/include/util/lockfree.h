@@ -20,26 +20,80 @@ enum class LockFreeQueueUserType {
     kOne
 };
 
-// Multi producer, locked single consumer
 template <typename T, LockFreeQueueUserType Producer, LockFreeQueueUserType Consumer, size_t RingBudget = 1024>
-class TLockFreeQueue {
+class TLockFreeQueue;
+
+// Single producer, single consumer
+template <typename T, size_t RingBudget>
+class TLockFreeQueue<T, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne, RingBudget> {
 public:
-    TLockFreeQueue() = default;
+    inline TLockFreeQueue() = default;
 
-    bool Push (const T& t) {
-        assert(false);
-        return false;
+    FORCEINLINE bool Push (const T& t) {
+        size_t head = head_.load(std::memory_order_relaxed);
+        size_t next_head = (head + 1) % RingBudget;
+        if (next_head == tail_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        ring_[head] = t;
+        // Flush the ring_[head] = t write visible for all threads
+        // before updating head_ using release semantics
+        head_.store(next_head, std::memory_order_release);
+        return true;
     }
 
-    bool Empty () const {
-        assert(false);
-        return false;
+    FORCEINLINE bool Empty () const {
+        return head_.load(std::memory_order_acquire) == tail_.load(std::memory_order_acquire);
     }
 
-    bool Pop (T& t) {
-        assert(false);
-        return false;
+    FORCEINLINE bool Pop (T& t) {
+        size_t tail = tail_.load(std::memory_order_relaxed);
+        if (tail == head_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        t = ring_[tail];
+        tail_.store((tail + 1) % RingBudget, std::memory_order_release);
+        return true;
     }
+
+private:
+    T ring_[RingBudget];
+    std::atomic<size_t> head_ {0};
+    std::atomic<size_t> tail_ {0};
+};
+
+// Multiple producers, single consumer
+template <typename T, size_t RingBudget>
+class TLockFreeQueue<T, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne, RingBudget> {
+public:
+    inline TLockFreeQueue() = default;
+
+    FORCEINLINE bool Push (const T& t) {
+        size_t head = head_++;
+        if (head + 1 == tail_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        ring_[head % RingBudget] = t;
+        return true;
+    }
+
+    FORCEINLINE bool Empty () const {
+        return head_.load(std::memory_order_acquire) == tail_.load(std::memory_order_acquire);
+    }
+
+    FORCEINLINE bool Pop (T& t) {
+        size_t tail = tail_.load(std::memory_order_relaxed);
+        if (tail == head_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        t = ring_[tail];
+        tail_.store(tail + 1, std::memory_order_release);
+        return true;
+    }
+private:
+    T ring_[RingBudget];
+    std::atomic<size_t> head_ {0};
+    std::atomic<size_t> tail_ {0};
 };
 
 MI_NAMESPACE_END

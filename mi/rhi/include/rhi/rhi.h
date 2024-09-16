@@ -98,6 +98,7 @@ public:
         return frame_index_;
     }
 
+    friend class RHIResource;
 protected:
 
     struct RHIResourceToRecycle {
@@ -105,11 +106,16 @@ protected:
         size_t frame_index;
     };
 
-    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne>
+    // Only the render thread is allowed to operate on RHI resource references
+    // so there are only one producer and one consumer (RHI thread) for this queue.
+    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne>
     resources_pending_for_deletion_ {};
     // The resource that is not ready to be deleted in the previous frame.
     RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
 
+    inline bool AddResourcePendingForDeletion (RHIResource * resource) {
+        return resources_pending_for_deletion_.Push({resource, frame_index_});
+    }
     // Free a resource allocated by the RHI.
     virtual void FreeResource_RHIThread (RHIResource * resource) = 0;
 

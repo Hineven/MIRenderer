@@ -11,6 +11,7 @@
 #include <cassert>
 #include "core/common.h"
 #include "core/meta.h"
+#include "platform.h"
 
 MI_NAMESPACE_BEGIN
 

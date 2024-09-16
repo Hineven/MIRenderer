@@ -4,10 +4,11 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_RHI_BUFFER_H
-#define MIRENDERER_RHI_BUFFER_H
+#ifndef MI_RHI_BUFFER_H
+#define MI_RHI_BUFFER_H
 
 #include "rhi/rhi_fwd.h"
+#include "rhi/rhi_desc.h"
 #include "rhi/rhi_resource.h"
 
 MI_NAMESPACE_BEGIN
@@ -42,4 +43,4 @@ protected:
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERER_RHI_BUFFER_H
+#endif //MI_RHI_BUFFER_H

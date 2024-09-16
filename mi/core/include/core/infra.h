@@ -9,6 +9,7 @@
 
 #include <future>
 #include <filesystem>
+#include <span>
 #include "core/common.h"
 #include "types.h"
 #include "blobres.h"
@@ -59,10 +60,10 @@ public:
     // The renderer will not request resources exceeding these limits (if it's just working as intended).
     virtual MIInfraLimits GetResourceLimits () = 0;
 
-    // Called from the renderer when initializing the infrastructure.
+    // Called from the render thread when initializing the infrastructure.
     // This function is executed prior to any other functions within the render thread.
     virtual void Init() = 0;
-    // Called from the renderer while shutting down the infrastructure.
+    // Called from the render thread while shutting down the infrastructure.
     // This function is executed after all other functions within the render thread.
     virtual void Shutdown() = 0;
 
@@ -127,11 +128,10 @@ public:
     // @return a temporary blob containing the SPIR-V binary.
     virtual std::vector<uint32_t> CompileHLSLToSPIRV (
             std::span<const char> hlsl_code,
-            std::vector<std::string> options
+            std::vector<std::string> options,
+            std::string & error
     ) = 0;
 
-    // Get the last error message from the HLSL compiler.
-    virtual std::string HLSLCompilerGetLastError () = 0;
 
     // Logging interface
     virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;
@@ -142,17 +142,24 @@ public:
     // Called from the render thread when the render commands have been recorded and before RHI submission.
     inline virtual void               OnFrameRHISubmit () {};
 
+    virtual ~MIInfraInterface() = default;
+
 };
 
 // Get the globally unique provided infrastructure instance for the renderer.
-static MIInfraInterface & GetInfra () ;
+MIInfraInterface & GetInfra () ;
 // Transferring the ownership of the infra to the renderer after external construction.
-static void TransferInfra (std::unique_ptr<MIInfraInterface> & infra) ;
+// Init() is called on the infrastructure by the render thread when it starts.
+void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
+// Destroy the infrastructure instance.
+// This function is called from the render thread when the renderer is shutting down.
+// GetInfra().Shutdown() is called prior to this function.
+void DestroyInfra () ;
 
-#define MI_LOG(level, fmt, params...) GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##params)))
+#define MI_LOG(level, fmt, ...) GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
 
 #ifndef NDEBUG
-#define mi_assert(cond, fmt, params...) do{if (!(cond)) { MI_LOG(MIInfraLogType::kError, fmt, ##params);}}while(false)
+#define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(MIInfraLogType::kError, fmt, ##__VA_ARGS__);}}while(false)
 #else
 #define mi_assert(cond, msg)
 #endif

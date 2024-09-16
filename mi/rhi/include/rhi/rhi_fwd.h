@@ -30,7 +30,7 @@ class RHIShader;
 
 using RHIShaderRef = TRef<RHIShader>;
 
-class RHIBindPipelineParametersDesc;
+struct RHIBindPipelineParametersDesc;
 
 class RHIGraphicsPipeline;
 class RHIRayTracingPipeline;
