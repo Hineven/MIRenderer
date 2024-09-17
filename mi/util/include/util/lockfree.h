@@ -29,13 +29,13 @@ class TLockFreeQueue<T, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne
 public:
     inline TLockFreeQueue() = default;
 
-    FORCEINLINE bool Push (const T& t) {
+    FORCEINLINE bool Push (T&& t) {
         size_t head = head_.load(std::memory_order_relaxed);
         size_t next_head = (head + 1) % RingBudget;
         if (next_head == tail_.load(std::memory_order_acquire)) {
             return false;
         }
-        ring_[head] = t;
+        ring_[head] = std::forward<T>(t);
         // Flush the ring_[head] = t write visible for all threads
         // before updating head_ using release semantics
         head_.store(next_head, std::memory_order_release);
@@ -51,7 +51,7 @@ public:
         if (tail == head_.load(std::memory_order_acquire)) {
             return false;
         }
-        t = ring_[tail];
+        t = std::move(ring_[tail]);
         tail_.store((tail + 1) % RingBudget, std::memory_order_release);
         return true;
     }
@@ -67,13 +67,16 @@ template <typename T, size_t RingBudget>
 class TLockFreeQueue<T, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne, RingBudget> {
 public:
     inline TLockFreeQueue() = default;
-
-    FORCEINLINE bool Push (const T& t) {
-        size_t head = head_++;
-        if (head + 1 == tail_.load(std::memory_order_acquire)) {
+    
+    FORCEINLINE bool Push (T&& t) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        size_t head = head_ ++;
+        size_t next_head = head % RingBudget;
+        if (next_head == tail_.load(std::memory_order_acquire)) {
+            head_ --;
             return false;
         }
-        ring_[head % RingBudget] = t;
+        ring_[next_head] = std::forward<T>(t);
         return true;
     }
 
@@ -82,18 +85,24 @@ public:
     }
 
     FORCEINLINE bool Pop (T& t) {
+        std::lock_guard<std::mutex> lock(mutex_);
         size_t tail = tail_.load(std::memory_order_relaxed);
         if (tail == head_.load(std::memory_order_acquire)) {
             return false;
         }
-        t = ring_[tail];
-        tail_.store(tail + 1, std::memory_order_release);
+        t = std::move(ring_[tail]);
+        tail_.store((tail + 1) % RingBudget, std::memory_order_release);
         return true;
     }
 private:
+
+    // I don't know how to implement this, so just use mutex
+    std::mutex mutex_;
+
     T ring_[RingBudget];
     std::atomic<size_t> head_ {0};
     std::atomic<size_t> tail_ {0};
+
 };
 
 MI_NAMESPACE_END

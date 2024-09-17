@@ -17,12 +17,15 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
-#include "rhi/rhi_pipeline.h"
+#include "rhi/rhi.h"
 
 // Minimum Vulkan API version required by the RHI implementation to work
 #define MI_MIN_VULKAN_API_VERSION VK_MAKE_API_VERSION(0, 1, 3, 201)
 
 MI_NAMESPACE_BEGIN
+
+class VulkanBindlessManager;
+class VulkanCommandExecutor;
 
 class VulkanRHI : public RHI {
 public:
@@ -51,7 +54,19 @@ public:
 
     RHIComputePipelineRef CreateComputePipeline(RHIShader *shader) override;
 
+    RHICommandExecutorInterface * GetCommandExecutor() override;
+
     void ResetPipelineCache() override;
+
+    void WaitForIdle (bool host_only = false) override;
+
+    RHITextureRef ImportTexture (
+        const void * import_desc,
+        RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
+        RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
+    ) override ;
+
+
 
     FORCEINLINE vk::Device GetDevice () const {
         return device_;
@@ -72,10 +87,22 @@ public:
     RHIBindlessSupportInfo QueryRHIBindlessSupportInfo() override;
 
 
+    uint32_t GetGraphicsQueueFamilyIndex();
+
+    uint32_t GetQueueFamilyIndex(RHICommandQueueType type);
+
+    FORCEINLINE VulkanBindlessManager * GetVulkanBindlessManager() {
+        return (VulkanBindlessManager*)bindless_manager_.get();
+    }
+
 protected:
+
+    void FreeResource_RHIThread(RHIResource * resource) override;
 
     void InvalidateDiskPipelineCache () ;
     void LoadPipelineCache ();
+
+    std::unique_ptr<VulkanCommandExecutor> command_executor_ {};
 
     vk::Instance instance_ {};
     vk::PhysicalDevice physical_device_ {};

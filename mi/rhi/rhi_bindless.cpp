@@ -37,10 +37,10 @@ RHIBindlessManager::RHIBindlessManager() {
         auto & channel = bindless_channels_[(uint32_t)channel_type];
         int limit = 0;
         if(channel_type == RHIBindlessResourceType::kSampler)
-            limit = support.max_sampler_slots;
+            limit = support.max_num_sampler_slots;
         else if(channel_type == RHIBindlessResourceType::kImmutableSampler)
-            limit = support.max_immutable_sampler_slots;
-        else limit = support.max_resource_slots;
+            limit = support.max_num_immutable_sampler_slots;
+        else limit = support.max_num_resource_slots;
         limit = std::min(limit, (int)CRHIMaxBindlessSlotsPerResourceType);
         channel.desc = std::make_unique<RHIBindlessResourceDesc[]>(limit);
         channel.unused = std::make_unique<int[]>(limit);

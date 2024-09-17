@@ -26,10 +26,9 @@ struct RHIBufferSpan {
 };
 
 struct RHIBindlessSupportInfo {
-    uint32_t max_resource_slots;
-    uint32_t max_sampler_slots;
-    uint32_t max_immutable_sampler_slots;
-
+    uint32_t max_num_resource_slots;
+    uint32_t max_num_sampler_slots;
+    uint32_t max_num_immutable_sampler_slots;
     uint32_t descriptor_buffer_offset_alignment;
 };
 
@@ -132,9 +131,12 @@ struct RHIPipelineParameterResourceDesc {
     uint32_t binding;
 };
 struct RHIPipelineBindlessResourceDesc {
-    // Slot allocated to the bindless resource
+    // Slot allocated to the bindless resource, according to the real binding number
+    // of the resource in the bindless descriptor set.
     uint32_t bindless_slot;
-    // Binding number to bind on the pipeline
+    // Binding number to bind on the pipeline. bindless_slot is stored on the binding
+    // number entry of the btb table for shaders to query.
+    // btb[binding] = bindless_slot
     uint32_t binding;
 };
 

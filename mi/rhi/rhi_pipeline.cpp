@@ -10,7 +10,7 @@
 MI_NAMESPACE_BEGIN
 
 template<typename T1, typename T2, typename = void> struct CheckSize {
-    CheckSize (T1 val, T2 op)  {}
+    CheckSize ([[maybe_unused]] T1 val, [[maybe_unused]] T2 op)  {}
     bool operator()() {return true;}
 };
 template<typename T1, typename T2> struct CheckSize<T1, T2, decltype(std::declval<T1>()->val)> {

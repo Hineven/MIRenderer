@@ -10,8 +10,14 @@ MI_NAMESPACE_BEGIN
 
 VulkanTexture::VulkanTexture(RHITextureType type, RHITextureDimensions dimensions,
                              PixelFormatType format, RHITextureUsageFlags usage, int mip_levels,
-                             int array_layers) : RHITexture(type, dimensions, format, usage, mip_levels,
-                                                            array_layers) {
+                             int array_layers, bool imported):
+                         RHITexture(type, dimensions, format, usage, mip_levels, array_layers) {
+    vk_aspect_ = GetVulkanImageAspectFlags(usage);
+
+    if(imported) {
+        return;
+    }
+
     auto device = GetVulkanRHI()->GetDevice();
     auto vma = GetVulkanRHI()->GetVmaAllocator();
 
@@ -48,30 +54,46 @@ VulkanTexture::VulkanTexture(RHITextureType type, RHITextureDimensions dimension
             ? vma::AllocationCreateFlagBits::eDedicatedMemory : vma::AllocationCreateFlags{},
             vma::MemoryUsage::eAutoPreferDevice
         });
+    CreateDefaultImageView();
+}
+
+void VulkanTexture::CreateDefaultImageView () {
+    auto device = GetVulkanRHI()->GetDevice();
     // Create a default image view
     vk_default_image_view_ = device.createImageView(vk::ImageViewCreateInfo{
             vk::ImageViewCreateFlags{},
             vk_image_,
-            GetVulkanImageViewType(type),
-            GetVulkanPixelFormat(format),
-            vk::ComponentMapping{}, // identity swizzle
+            GetVulkanImageViewType(GetType()),
+            GetVulkanPixelFormat(GetFormat()),
+            vk::ComponentMapping{}, // identity swizzle by default
             vk::ImageSubresourceRange{
-                    GetVulkanImageAspectFlags(usage),
+                    GetVulkanImageAspectFlags(GetUsage()),
                     0,
-                    static_cast<uint32_t>(mip_levels),
+                    static_cast<uint32_t>(GetMipLevels()),
                     0,
-                    static_cast<uint32_t>(array_layers)
+                    static_cast<uint32_t>(GetArrayLayers())
             }
     });
-    vk_aspect_ = GetVulkanImageAspectFlags(usage);
 }
 
 VulkanTexture::~VulkanTexture () {
-    auto device = GetVulkanRHI()->GetDevice();
-    auto vma = GetVulkanRHI()->GetVmaAllocator();
-    device.destroyImageView(vk_default_image_view_);
-    vma.freeMemory(allocation_);
-    allocation_ = {};
+    if(!(GetFlags() & RHIResourceFlagBits::kImported)) {
+        auto device = GetVulkanRHI()->GetDevice();
+        auto vma = GetVulkanRHI()->GetVmaAllocator();
+        device.destroyImageView(vk_default_image_view_);
+        vma.freeMemory(allocation_);
+        allocation_ = nullptr;
+    }
+    // Need to do nothing about imported resources
+}
+
+void VulkanTexture::ImportFromHandle(vk::Image image_handle, vk::ImageLayout imported_layout) {
+    mi_assert(GetFlags() & RHIResourceFlagBits::kImported, "Resource must be imported to use this function!");
+    vk_image_ = image_handle;
+    vk_image_layout_ = imported_layout;
+    vk_aspect_ = GetVulkanImageAspectFlags(GetUsage());
+    allocation_ = nullptr;
+    CreateDefaultImageView();
 }
 
 MI_NAMESPACE_END

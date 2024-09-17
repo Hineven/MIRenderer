@@ -32,7 +32,7 @@ VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage, RHIGPU
             vma::MemoryUsage::eAuto
     };
     allocation_ = GetVulkanRHI()->GetVmaAllocator().allocateMemoryForBuffer(vk_buffer_, alloc_info);
-    if(allocation_ == nullptr) {
+    if(!allocation_) {
         mi_assert(false, "Failed to allocate memory for buffer!");
     }
 }

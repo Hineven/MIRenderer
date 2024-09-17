@@ -4,8 +4,8 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_RHI_WORKER_H
-#define MIRENDERER_RHI_WORKER_H
+#ifndef MI_RHI_THREAD_H
+#define MI_RHI_THREAD_H
 
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
@@ -16,18 +16,29 @@ MI_NAMESPACE_BEGIN
 class RHIWorkerThread : public ThreadRunnable {
 public:
     void Run () ;
-    inline void SignalStop () {
+    FORCEINLINE void SignalStop () {
         stop_signal_ = true;
+    }
+    FORCEINLINE size_t GetFrameIndex () const {
+        return frame_index_;
+    }
+    FORCEINLINE void AdvanceFrame () {
+        frame_index_++;
     }
     ~RHIWorkerThread() ;
 protected:
+    std::atomic<size_t> frame_index_ {0};
     volatile bool stop_signal_ {false};
 };
 
 // Call to transit current thread to RHI worker thread
 void StartAndRunRHIWorkerThread ();
-// Signals all RHI worker threads to stop
+// Signals all (currently only one) RHI worker threads to stop
 void SignalStopRHIWorkerThreads ();
+
+// If there is an active RHI thread
+bool IsRHIThreadActive () ;
+
 
 // Enqueue a command chain to the RHI threads for translation
 // @return a future that will be ready when the translation is completed.
@@ -38,14 +49,17 @@ std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * comman
 // wait for the host submission completion.
 // @return a future that will be ready when the submission/execution is completed.
 std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, bool wait_for_device_execution = false) ;
-MI_NAMESPACE_END
 
 // Enqueue a task to the RHI thread for execution.
-std::future<void> EnqueueRHIThreadTask (std::function<void()> task) ;
+std::future<void> EnqueueRHIThreadTask (std::function<void()> * task) ;
+// Enqueue a task to the RHI thread for execution.
+// The task will be allocated on the queue's frame allocator pending for execution.
+std::future<void> EnqueueRHIThreadTask (RHICommandQueueBase * queue, std::function<void()> && task) ;
 
 // Increment the frame counter kept by the RHI thread.
 // The counter is used to filter RHI resources to recycle. Resources that are at least
 // 1 frame older than the current frame will be recycled.
 void AdvanceFrame_RHIThread () ;
 
-#endif //MIRENDERER_RHI_WORKER_H
+MI_NAMESPACE_END
+#endif //MI_RHI_THREAD_H

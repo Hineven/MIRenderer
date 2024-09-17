@@ -34,6 +34,10 @@ public:
         return ref_count_;
     }
 
+    FORCEINLINE RHIResourceFlags GetFlags() const {
+        return flags_;
+    }
+
 protected:
     // Can only be allocated by RHI and memory is allocated via infrastructure.
     RHIResource() = default;
@@ -46,7 +50,8 @@ protected:
     // so no need for atomic operations
     uint32_t ref_count_ {0};
 
-    bool pending_for_deletion_ {false};
+    // Flags
+    RHIResourceFlags flags_ {};
 };
 
 // Called within RHI thread. Resources that are at least 1 frame older than

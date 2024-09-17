@@ -14,22 +14,24 @@ MI_NAMESPACE_BEGIN
 
 class VulkanBindlessManager : public RHIBindlessManager {
 public:
+    VulkanBindlessManager() ;
 
     vk::DescriptorSetLayout GetBindlessDescriptorSetLayout();
 
     vk::DescriptorSet       GetBindlessDescriptorSet();
 
-    // Place barriers for bindless resources
-    void UseBindlessResource (uint32_t bindless_slot, vk::CommandBuffer cmd, vk::PipelineStageFlags use_stages, RHIGPUAccessFlags use_access);
-
-
-protected:
-    friend class VulkanRHI;
-
-    VulkanBindlessManager() ;
     ~VulkanBindlessManager() ;
 
-    void UpdateResourceSlotRHI(RHIBindlessResourceType type, uint32_t slot) override;
+    // Mark and potentially transit layouts for the used resource.
+    void UseResource (vk::CommandBuffer cmd, int slot_index, vk::PipelineStageFlags use_stages) ;
+
+    friend class VulkanRHI;
+protected:
+
+    void Initialize_RHIThread () ;
+    void Destroy_RHIThread () ;
+
+    void UpdateResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot) override;
 
     vk::DescriptorSetLayout bindless_descriptor_set_layout_;
 };

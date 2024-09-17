@@ -4,11 +4,11 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_VK_CONVERSION_H
-#define MIRENDERER_VK_CONVERSION_H
+#ifndef MI_VK_CONVERSION_H
+#define MI_VK_CONVERSION_H
 
 #include "core/pixel_format.h"
-
+#include "core/infra.h"
 #include "vk_rhi.h"
 MI_NAMESPACE_BEGIN
 
@@ -439,4 +439,4 @@ FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIPipelineResourceType 
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERER_VK_CONVERSION_H
+#endif //MI_VK_CONVERSION_H

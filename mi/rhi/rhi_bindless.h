@@ -108,9 +108,9 @@ typedef TRef<RHIBindlessResourceSlotKeeper> RHIBindlessSlotRef;
 class RHIBindlessManager {
 protected:
     RHIBindlessManager() ;
-    virtual ~RHIBindlessManager() = default;
 public:
-    
+
+    virtual ~RHIBindlessManager() = default;
     RHIBindlessSlotRef AllocateResourceSlot (const RHIBindlessResourceDesc & desc) ;
     void UpdateResourceSlot (RHIBindlessResourceSlotKeeper * slot, const RHIBindlessResourceDesc & desc) ;
 
@@ -130,7 +130,7 @@ protected:
         // Keep descriptions for each slot
         std::unique_ptr<RHIBindlessResourceDesc[]> desc;
         // References to keep resources alive
-        std::unique_ptr<TRef<RHIResource>> resource_refs;
+//        TRef<RHIResource> resource_refs;
         // Indices unused
         std::unique_ptr<int[]> unused;
         int unused_count;

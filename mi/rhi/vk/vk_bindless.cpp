@@ -7,12 +7,4 @@
 
 MI_NAMESPACE_BEGIN
 
-VulkanBindlessManager::VulkanBindlessManager () : RHIBindlessManager() {
-
-}
-
-void VulkanBindlessManager::UpdateResourceSlotRHI(RHIBindlessResourceType type, uint32_t slot) {
-
-}
-
 MI_NAMESPACE_END

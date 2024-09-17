@@ -316,6 +316,16 @@ enum class RHIFlushFrameBlockingType {
     kWaitForExecution
 };
 
+enum class RHIResourceFlagBits {
+    // This resource is imported from an external handle not manager by RHI.
+    // Imported resource won't be actually released on the device by RHI if
+    // their reference counter drops to 0. And sometimes they have harder
+    // usage restrictions.
+    kImported
+};
+
+MAKE_FLAGS(RHIResource)
+
 #undef MAKE_FLAGS
 
 MI_NAMESPACE_END

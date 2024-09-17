@@ -28,6 +28,12 @@ add_subdirectory(infra_impl)
 # Core implementations
 add_subdirectory(mi)
 
+
+# VMA-HPP from vcpkg
+find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
+find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)
+find_package(glm REQUIRED GLOBAL)
+
 find_package(Vulkan REQUIRED COMPONENTS dxc GLOBAL)
 find_package(spirv_cross_core REQUIRED GLOBAL)
 # spirv_cross_glsl is required for spirv_cross_hlsl

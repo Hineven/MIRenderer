@@ -30,6 +30,7 @@ std::future<void> RHI::AdvanceFrame() {
 //    };
 
     // We can do this because there're only 1 RHI thread.
+    queue.FrameEnd(false);
     queue.EnqueueTranslateAndSubmit();
     auto lambda = []() {
         // Swap allocators after the command buffer is submitted
@@ -69,21 +70,12 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread() {
 }
 
 static RHI * GDynamicRHI = nullptr;
-static thread_local bool GIsRhiThread = false;
 
 RHI & RHI::Get () {
     if(!GDynamicRHI) {
         mi_assert(false, "RHI instance not created");
     }
     return *GDynamicRHI;
-}
-
-bool IsRHIThread () {
-    return GIsRhiThread;
-}
-
-void SetIsRHIThread (bool is_rhi_thread) {
-    GIsRhiThread = is_rhi_thread;
 }
 
 void RHI::InitializeSingleton (RHIType type) {

@@ -48,9 +48,9 @@ public:
     virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;
 
     // Import a texture from a native handle, thread safe
-    // The native handle is a pointer to the texture object in the backend API
+    // The import_desc is a pointer to the corresponding structs in `rhi_import.h`
     virtual RHITextureRef ImportTexture (
-            void * native_handle,
+            const void * import_desc,
             RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
     ) = 0;
 
@@ -65,8 +65,6 @@ public:
     virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader) = 0;
 
     virtual void ResetPipelineCache () = 0;
-
-    virtual void SetBindlessEnable (bool enable) = 0;
 
     virtual RHIBindlessSupportInfo QueryRHIBindlessSupportInfo () = 0;
 

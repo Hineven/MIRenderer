@@ -144,6 +144,19 @@ public:
 
     virtual ~MIInfraInterface() = default;
 
+    // Shortcuts for memory management
+    template<typename T, typename...Args>
+    inline T * New (Args...args) {
+        return new(Allocate(sizeof(T))) T(args...);
+    }
+
+    // Shortcuts for memory management
+    template<typename T>
+    inline void Delete (T * ptr) {
+        ptr->~T();
+        Free(ptr);
+    }
+
 };
 
 // Get the globally unique provided infrastructure instance for the renderer.

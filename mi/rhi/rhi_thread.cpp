@@ -4,7 +4,7 @@
  * See LICENSE for licensing.
  */
 #include <semaphore>
-#include "rhi/rhi_worker.h"
+#include "rhi/rhi_thread.h"
 #include "rhi/rhi_cmd.h"
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi.h"
@@ -12,6 +12,7 @@
 MI_NAMESPACE_BEGIN
 
 enum class RHIThreadTaskType {
+    kLambda,
     kTranslate,
     kSubmit
 };
@@ -27,13 +28,16 @@ struct RHIThreadTask {
 static TLockFreeQueue<RHIThreadTask, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne> task_queue_;
 static std::counting_semaphore<> task_queue_sem_ {0};
 
+// The thread
+static RHIWorkerThread * G_RHIWorkerThread = nullptr;
+
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) {
     RHIThreadTask task;
     task.type = RHIThreadTaskType::kTranslate;
     task.queue = command_buffer;
     task.param = command_chain_head;
     auto future = task.promise.get_future();
-    task_queue_.Push(task);
+    task_queue_.Push(std::move(task));
     task_queue_sem_.release();
     return future;
 }
@@ -44,12 +48,65 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * comma
     task.queue = command_buffer;
     task.param = (void *)wait_for_device_execution;
     auto future = task.promise.get_future();
-    task_queue_.Push(task);
+    task_queue_.Push(std::move(task));
     task_queue_sem_.release();
     return future;
 }
 
+void StartAndRunRHIWorkerThread() {
+    RHIWorkerThread * rhi_thread = GetInfra().New<RHIWorkerThread>();
+    G_RHIWorkerThread = rhi_thread;
+    rhi_thread->Run();
+}
+
+void SignalStopRHIWorkerThreads() {
+    if(G_RHIWorkerThread) {
+        G_RHIWorkerThread->SignalStop();
+    }
+}
+
+bool IsRHIThreadActive() {
+    return G_RHIWorkerThread && G_RHIWorkerThread->IsRunning();
+}
+
+std::future<void> EnqueueRHIThreadTask(std::function<void()> * task) {
+    cannot do this!!!!
+    std::function is not trivially copyable and trivially destructible
+
+    RHIThreadTask rhi_task;
+
+    rhi_task.type = RHIThreadTaskType::kLambda;
+    rhi_task.queue = nullptr;
+    rhi_task.param = (void *)task;
+    auto future = rhi_task.promise.get_future();
+    task_queue_.Push(std::move(rhi_task));
+    return future;
+}
+
+std::future<void> EnqueueRHIThreadTask(RHICommandQueueBase * queue, std::function<void()> && task) {
+    RHIThreadTask rhi_task;
+    rhi_task.type = RHIThreadTaskType::kLambda;
+    rhi_task.queue = nullptr;
+    rhi_task.param = queue->Allocate<std::function<void()>>(task);
+    auto future = rhi_task.promise.get_future();
+    task_queue_.Push(std::move(rhi_task));
+    return future;
+}
+
+void AdvanceFrame_RHIThread() {
+    mi_assert(IsRHIThread(), "AdvanceFrame_RHIThread must be called in RHI thread.");
+    G_RHIWorkerThread->AdvanceFrame();
+}
+
 void RHIWorkerThread::Run() {
+
+    if(GetCurrentThreadType() != ThreadType::kUnknown) {
+        MI_LOG(MIInfraLogType::kError, "RHI thread is not created by an unknown thread.");
+        return ;
+    }
+    SetThreadType(ThreadType::kRHIThread);
+
+
     static std::atomic<bool> rhi_thread_started {false};
     // Check if the thread has been started
     if(!rhi_thread_started.exchange(true)) {
@@ -70,11 +127,17 @@ void RHIWorkerThread::Run() {
                 }
                 // Notify the task is finished
                 task.promise.set_value();
-            } else {
+            } else if(task.type == RHIThreadTaskType::kSubmit) {
                 // Submit
                 RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(task.queue, (bool)task.param);
                 // Notify the task is finished
                 task.promise.set_value();
+            } else if(task.type == RHIThreadTaskType::kLambda) {
+                std::function<void()> lambda = *(std::function<void()>*)task.param;
+                lambda();
+                task.promise.set_value();
+            } else {
+                MI_LOG(MIInfraLogType::kError, "Unknown task type");
             }
         }
     }

@@ -9,12 +9,16 @@
 
 #include "rhi/rhi_texture.h"
 #include "vk_rhi.h"
+#include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
 
 class VulkanTexture : public RHITexture {
 public:
-    VulkanTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) ;
+    VulkanTexture(
+            RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
+            RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1, bool imported = false
+    ) ;
     ~VulkanTexture() override;
 
     FORCEINLINE vk::Image GetImage() const { return vk_image_; }
@@ -41,6 +45,7 @@ public:
                 return;
             }
         }
+        mi_assert(!(GetFlags() & RHIResourceFlagBits::kImported), "Imported resources can not be transitioned.");
         vk::ImageMemoryBarrier barrier {};
         barrier.image = vk_image_;
         barrier.oldLayout = vk_image_layout_;
@@ -74,7 +79,14 @@ public:
     FORCEINLINE vk::ImageView GetImageView () {
         return vk_default_image_view_;
     }
+    
+    void ImportFromHandle (vk::Image image_handle, vk::ImageLayout imported_layout) ;
+
+    friend class VulkanRHI;
 protected:
+
+    void CreateDefaultImageView () ;
+
     vk::Image vk_image_ {};
     vk::ImageLayout vk_image_layout_ {};
     vk::ImageView vk_default_image_view_;

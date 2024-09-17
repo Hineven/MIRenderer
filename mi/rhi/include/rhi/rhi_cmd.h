@@ -13,7 +13,7 @@
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
-#include "rhi_worker.h"
+#include "rhi_thread.h"
 #include "rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
@@ -303,6 +303,13 @@ public:
     uint32_t binding_;
 };
 
+class RHICommandFrameEnd : public TRHICommand<RHICommandFrameEnd> {
+public:
+    RHICommandFrameEnd(bool return_resources_to_system): return_resources_to_system_(return_resources_to_system) {};
+    void Execute(RHICommandQueueBase & cmd) override ;
+    bool return_resources_to_system_;
+};
+
 // The first command queue takes care of graphics commands.
 class RHICommandQueueGraphics : public RHICommandQueueBase {
 protected:
@@ -336,6 +343,10 @@ public:
     // Allocate RHIBindPipelineParameterDesc with the command buffer allocator.
     FORCEINLINE void BindPipelineParameters (RHIBindPointType point, RHIBindPipelineParametersDesc * table) {
         AddCommand(AllocateCommand<RHICommandBindPipelineParameters>(point, table));
+    }
+
+    FORCEINLINE void FrameEnd (bool return_resources_to_system) {
+        AddCommand(AllocateCommand<RHICommandFrameEnd>(return_resources_to_system));
     }
 };
 

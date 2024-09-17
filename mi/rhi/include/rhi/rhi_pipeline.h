@@ -43,16 +43,18 @@ public:
 
     void Reset () ;
 
-    // Return the size of btb in bytes
-    uint32_t GetBindlessTableSize () const {return bindless_table_size_;}
+    // Return the size of a adequate btb buffer for this pipeline, in bytes.
+    inline uint32_t GetBindlessTableSize () const {return bindless_table_size_;}
 
 protected:
     // Append reflected shader resources to the pipeline resources and check compatibility
     bool CheckAndRemapShaderResources (RHIShader * shader);
     // Check if all resource names are unique among different types
     bool CheckNoOverlappingNamesAmongDifferentTypes () ;
+    // There should be a special uniform buffer definition within the shaders supporting
+    // bindless resources. The buffer is the bindless table buffer.
     // Try to locate the bindless table uniform buffer from reflected pipeline resources
-    // and set the bindless flags
+    // , remove it from uniforms_ and set relating attributes.
     void TryLocateAndStripBindlessTableUniformBuffer () ;
 
     virtual void ResetRHI () = 0;

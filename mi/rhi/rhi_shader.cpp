@@ -22,7 +22,7 @@ RHIShader::RHIShader(RHIShaderFrequencyFlagBits frequency, std::string_view entr
     frequency_ = frequency;
     entry_name_ = entry_name;
     ir_type_ = ir_type;
-    ir_size_ = ir.size();
+    ir_size_ = (uint32_t)ir.size();
     ir_ = std::make_unique<std::byte[]>(ir_size_);
     std::copy(ir.begin(), ir.end(), ir_.get());
 }
@@ -73,7 +73,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
     for (auto & resource : shader_resources.push_constant_buffers) {
         CommandConstantDesc desc;
         desc.name = resource.name;
-        desc.size = compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
+        desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
         command_constant_.push_back(desc);
     }
     // Look for bindless table uniform buffer

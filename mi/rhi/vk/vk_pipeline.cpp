@@ -22,14 +22,15 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         // If the pipeline contains bindless resources, take set 0 as bindless set.
         if (HasBindlessResources()) {
             // Use set 0 for bindless resources.
-            auto bindless_descriptor_layout = VulkanBindlessManager::GetInstance().GetBindlessDescriptorSetLayout();
+            VulkanBindlessManager & bindless_manager = static_cast<mi::VulkanBindlessManager &>(RHI::Get().GetBindlessManager());
+            auto bindless_descriptor_layout = bindless_manager.GetBindlessDescriptorSetLayout();
             descriptor_set_layouts.push_back(bindless_descriptor_layout);
             // No remapping required for bindless resources
         }
         std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
         // Take the next descriptor set for bindfull resources
         {
-            int set_index = descriptor_set_layouts.size();
+            int set_index = (int)descriptor_set_layouts.size();
             int current_binding_index = 0;
 
             auto AddBindings = [&](const auto &desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
@@ -46,7 +47,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                 for (int i = 0; i < (int) desc.size(); ++i) {
                     remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
                 }
-                current_binding_index += desc.size();
+                current_binding_index += (int)desc.size();
             };
             AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
             AddBindings(storage_buffers_, vk::DescriptorType::eStorageBuffer, RHIPipelineResourceType::kStorageBuffer);
@@ -62,7 +63,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
             if (!bindfull_bindings.empty()) {
                 auto descriptor_set_layout = device.createDescriptorSetLayout(
                         vk::DescriptorSetLayoutCreateInfo()
-                                .setBindingCount(bindfull_bindings.size())
+                                .setBindingCount((int)bindfull_bindings.size())
                                 .setPBindings(bindfull_bindings.data())
                 );
                 descriptor_set_layouts.push_back(descriptor_set_layout);
@@ -81,7 +82,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         // Create pipeline layout
         vk_pipeline_layout_ = device.createPipelineLayout(
                 vk::PipelineLayoutCreateInfo()
-                        .setSetLayoutCount(descriptor_set_layouts.size())
+                        .setSetLayoutCount((uint32_t)descriptor_set_layouts.size())
                         .setPSetLayouts(descriptor_set_layouts.data())
                         .setPushConstantRangeCount(1)
                         .setPPushConstantRanges(&push_constant_range)
@@ -228,7 +229,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
             vk::DynamicState::eLineWidth
     };
     {
-        dynamic_state_vk.setDynamicStateCount(dynamic_states.size());
+        dynamic_state_vk.setDynamicStateCount((int)dynamic_states.size());
         dynamic_state_vk.setPDynamicStates(dynamic_states.data());
         pipeline_info_vk.setPDynamicState(&dynamic_state_vk);
     }
@@ -254,7 +255,8 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                 .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
         attachments_vk.push_back(desc);
     }
-    if(pipeline_info.depth_stencil_attachment.format != PixelFormatType::kUnknown) {
+    bool has_depth_stencil = pipeline_info.depth_stencil_attachment.format != PixelFormatType::kUnknown;
+    if(has_depth_stencil) {
         auto desc = vk::AttachmentDescription()
                 .setFormat(GetVulkanPixelFormat(pipeline_info.depth_stencil_attachment.format))
                 .setSamples(vk::SampleCountFlagBits::e1)
@@ -274,12 +276,12 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         subpass_color_attachments_vk[i].setLayout(vk::ImageLayout::eColorAttachmentOptimal);
     }
     auto subpass_depth_stencil_vk = vk::AttachmentReference()
-            .setAttachment(attachments_vk.size() - 1)
+            .setAttachment((uint32_t)attachments_vk.size() - 1)
             .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
     auto subpass_vk = vk::SubpassDescription()
-            .setColorAttachments(subpass_color_attachments_vk)
-            .setPDepthStencilAttachment(&subpass_depth_stencil_vk);
+            .setColorAttachments(subpass_color_attachments_vk);
+    if(has_depth_stencil) subpass_vk.setPDepthStencilAttachment(&subpass_depth_stencil_vk);
     vk::RenderPassCreateInfo renderpass_desc_vk = {
             {},
             attachments_vk,
@@ -302,6 +304,8 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         vk_render_pass_ = nullptr;
         return false;
     }
+    vk_pipeline_ = result.value;
+    return true;
 }
 
 void VulkanGraphicsPipeline::ResetRHI() {
@@ -341,26 +345,26 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     // If the pipeline contains bindless resources, take set 0 as bindless set.
     if(HasBindlessResources()) {
         // Use set 0 for bindless resources.
-        auto bindless_descriptor_layout = VulkanBindlessManager::GetInstance().GetBindlessDescriptorSetLayout();
+        auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
         descriptor_set_layouts.push_back(bindless_descriptor_layout);
         // No remapping required for bindless resources
     }
     std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
     // Take the next descriptor set for bindfull resources
     {
-        int set_index = descriptor_set_layouts.size();
+        int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
 
         auto AddBindings = [&] (const auto & desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
             if(!desc.empty()) bindfull_bindings.emplace_back()
                         .setBinding(current_binding_index)
                         .setDescriptorType(type)
-                        .setDescriptorCount(desc.size())
+                        .setDescriptorCount((int)desc.size())
                         .setStageFlags(vk::ShaderStageFlagBits::eCompute);
             for(int i = 0; i < (int)desc.size(); ++i) {
                 remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
             }
-            current_binding_index += desc.size();
+            current_binding_index += (int)desc.size();
         };
         AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
         AddBindings(storage_buffers_, vk::DescriptorType::eStorageBuffer, RHIPipelineResourceType::kStorageBuffer);
@@ -376,7 +380,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
         if(!bindfull_bindings.empty()) {
             auto descriptor_set_layout = device.createDescriptorSetLayout(
                     vk::DescriptorSetLayoutCreateInfo()
-                            .setBindingCount(bindfull_bindings.size())
+                            .setBindingCount((int)bindfull_bindings.size())
                             .setPBindings(bindfull_bindings.data())
             );
             descriptor_set_layouts.push_back(descriptor_set_layout);
@@ -394,7 +398,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     // Create pipeline layout
     vk_pipeline_layout_ = device.createPipelineLayout(
             vk::PipelineLayoutCreateInfo()
-                    .setSetLayoutCount(descriptor_set_layouts.size())
+                    .setSetLayoutCount((int)descriptor_set_layouts.size())
                     .setPSetLayouts(descriptor_set_layouts.data())
                     .setPushConstantRangeCount(1)
                     .setPPushConstantRanges(&push_constant_range)

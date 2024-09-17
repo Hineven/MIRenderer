@@ -5,13 +5,18 @@
  */
 #include "ml/ml.h"
 #include "core/task.h"
-#include "rhi/rhi_worker.h"
+#include "rhi/rhi_thread.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_cmd.h"
 
 MI_NAMESPACE_BEGIN
 
 void MainLoop::Start () {
+    if(GetCurrentThreadType() != ThreadType::kUnknown) {
+        mi_assert(false, "Render thread started within a known thread.");
+    }
+    SetThreadType(ThreadType::kRenderThread);
+
     auto limits = infra_->GetResourceLimits();
     // Initialize task graph
     if(limits.max_high_performance_thread_count < 2) {

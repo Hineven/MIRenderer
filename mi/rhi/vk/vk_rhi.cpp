@@ -6,6 +6,7 @@
 
 #include <string>
 #include "rhi/rhi.h"
+#include "rhi/rhi_import.h"
 #include "core/infra.h"
 
 #include "vk_rhi.h"
@@ -15,6 +16,8 @@
 #include "vk_shader.h"
 #include "vk_pipeline.h"
 #include "vk_bindless.h"
+#include "vk_cmd_exec.h"
+#include "rhi/rhi_thread.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -118,7 +121,7 @@ VulkanRHI::VulkanRHI() {
     {
 
         auto queue_family_properties = physical_device_.getQueueFamilyProperties();
-        uint32_t graphics_queue_family_index = -1;
+        int graphics_queue_family_index = -1;
         for(int i = 0; i < queue_family_properties.size(); i++) {
             if (queue_family_properties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
                 graphics_queue_family_index = i;
@@ -256,9 +259,13 @@ VulkanRHI::VulkanRHI() {
             MI_MIN_VULKAN_API_VERSION
     });
 
-    // Factory calls
+    // Create bindless manager and command executor
     {
-        bindless_manager_ = new VulkanBindlessManager();
+        mi_assert(IsRHIThreadActive(), "RHI thread must be active when creating VulkanRHI.");
+        // Initialization are automatically dispatched to the RHI thread
+        // via the constructor functions
+        bindless_manager_.reset(GetInfra().New<VulkanBindlessManager>());
+        command_executor_.reset(GetInfra().New<VulkanCommandExecutor>());
     }
 }
 
@@ -280,25 +287,25 @@ VulkanRHI::~VulkanRHI() {
 }
 
 RHIBufferRef VulkanRHI::CreateBuffer(size_t size, RHIBufferUsageFlagBits type, RHIGPUAccessFlagBits access_type) {
-    auto buffer = new VulkanBuffer(size, type,access_type);
+    auto buffer = GetInfra().New<VulkanBuffer>(size, type,access_type);
     return {buffer};
 }
 
 RHITextureRef VulkanRHI::CreateTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
                                        RHITextureUsageFlags usage, int mip_levels, int array_layers) {
-    auto texture = new VulkanTexture(type, dimensions, format, usage, mip_levels, array_layers);
+    auto texture = GetInfra().New<VulkanTexture>(type, dimensions, format, usage, mip_levels, array_layers);
     return {texture};
 }
 
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
-    auto sampler = new VulkanSampler(filter, address_mode);
+    auto sampler = GetInfra().New<VulkanSampler>(filter, address_mode);
     return {sampler};
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                      RHIShaderIRType ir_type, std::span<const std::byte> ir) {
     mi_assert(ir_type == RHIShaderIRType::kSPIRV, "Vulkan only supports SPIR-V shader IR.");
-    auto shader = new VulkanShader(frequency, entry_name, ir_type, ir);
+    auto shader = GetInfra().New<VulkanShader>(frequency, entry_name, ir_type, ir);
     shader->Compile();
     if(shader->IsValid()) return {shader};
     delete shader;
@@ -306,7 +313,7 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
 }
 
 RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc) {
-    auto pipeline = new VulkanGraphicsPipeline("");
+    auto pipeline = GetInfra().New<VulkanGraphicsPipeline>("");
     pipeline->Compile(desc);
     if(pipeline->IsValid()) return pipeline;
     delete pipeline;
@@ -314,7 +321,7 @@ RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipeli
 }
 
 RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader) {
-    auto pipeline = new VulkanComputePipeline("");
+    auto pipeline = GetInfra().New<VulkanComputePipeline>("");
     pipeline->Compile(shader);
     if(pipeline->IsValid()) return pipeline;
     delete pipeline;
@@ -330,18 +337,56 @@ void VulkanRHI::ResetPipelineCache() {
 RHIBindlessSupportInfo VulkanRHI::QueryRHIBindlessSupportInfo() {
     auto descriptor_props = physical_device_properties_.descriptor_buffer;
     RHIBindlessSupportInfo info {};
-    info.max_resource_slots = descriptor_props.maxResourceDescriptorBufferBindings;
-    info.max_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
-    info.max_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
-    info.descriptor_buffer_offset_alignment   = descriptor_props.descriptorBufferOffsetAlignment;
+    info.max_num_resource_slots = descriptor_props.maxResourceDescriptorBufferBindings;
+    info.max_num_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
+    info.max_num_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
+    info.descriptor_buffer_offset_alignment   = (uint32_t)descriptor_props.descriptorBufferOffsetAlignment;
+    return info;
 }
 
-static VulkanRHI * CreateVulkanRHI() {
-    return new VulkanRHI();
+uint32_t VulkanRHI::GetGraphicsQueueFamilyIndex() {
+    return graphics_queue_family_index_;
 }
 
+uint32_t VulkanRHI::GetQueueFamilyIndex([[maybe_unused]] RHICommandQueueType type) {
+    assert(type == RHICommandQueueType::kGraphics);
+    return graphics_queue_family_index_;
+}
+
+RHICommandExecutorInterface * VulkanRHI::GetCommandExecutor() {
+    return command_executor_.get();
+}
+
+void VulkanRHI::WaitForIdle(bool host_only) {
+    assert(IsRenderThread());
+    // Simply wait the RHI thread to finish its work
+    auto fut = EnqueueRHIThreadTask([](){});
+    fut.wait();
+
+    if(!host_only) {
+        queue_.waitIdle();
+    }
+}
+
+RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType type, RHITextureDimensions dimensions,
+                                       PixelFormatType format, RHITextureUsageFlags usage, int mip_levels,
+                                       int array_layers) {
+    auto desc = (const VulkanTextureImportDesc *)raw_desc;
+    auto texture = GetInfra().New<VulkanTexture>(type, dimensions, format, usage, mip_levels, array_layers, true);
+    vk::Image image_handle = {(VkImage)desc->vk_image};
+    vk::ImageLayout layout = (vk::ImageLayout)(desc->vk_image_layout);
+    texture->ImportFromHandle(image_handle, layout);
+    return nullptr;
+}
+
+void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
+    resource->~RHIResource();
+    GetInfra().Free(resource);
+}
+
+// Shortcut to get VulkanRHI instance
 VulkanRHI * GetVulkanRHI () {
-    return static_cast<VulkanRHI*>(&(RHI::GetInstance())); // NOLINT this is safe
+    return static_cast<VulkanRHI*>(&(RHI::Get())); // NOLINT this is safe
 }
 
 

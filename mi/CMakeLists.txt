@@ -1,9 +1,3 @@
-
-# VMA-HPP from vcpkg
-find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED)
-
-find_package(glm REQUIRED)
-
 # core library
 add_subdirectory(core)
 # utilities

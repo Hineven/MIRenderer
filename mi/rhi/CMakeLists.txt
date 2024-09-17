@@ -1,9 +1,10 @@
 set(SOURCE_FILES
-    rhi_worker.cpp
+        rhi_thread.cpp
     rhi_shader.cpp
     rhi_pipeline.cpp
     rhi_bindless.cpp
     rhi_resource.cpp
+    rhi_cmd.cpp
     rhi.cpp
         vk/vk_pipeline.cpp
         vk/vk_device.cpp
@@ -23,6 +24,7 @@ list(
     APPEND
     EXTERNAL_LIBRARIES
     Vulkan::Vulkan
+    GPUOpen::VulkanMemoryAllocator
     unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
 )
 

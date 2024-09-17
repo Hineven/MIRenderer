@@ -17,7 +17,10 @@ MI_NAMESPACE_BEGIN
 
 class RHITexture : public RHIResource {
 public:
-    RHITexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1);
+    FORCEINLINE RHITexture(
+            RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
+            RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
+    ): type_(type), dimensions_(dimensions), format_(format), usage_(usage), mip_levels_(mip_levels), array_layers_(array_layers) {}
     ~RHITexture() override = default;
 
     FORCEINLINE int GetMipLevels() const { return mip_levels_; }
