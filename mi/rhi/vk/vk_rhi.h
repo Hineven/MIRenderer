@@ -19,6 +19,7 @@
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include "rhi/rhi.h"
 
+
 // Minimum Vulkan API version required by the RHI implementation to work
 #define MI_MIN_VULKAN_API_VERSION VK_MAKE_API_VERSION(0, 1, 3, 201)
 

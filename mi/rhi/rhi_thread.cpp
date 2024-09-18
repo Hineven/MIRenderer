@@ -18,10 +18,13 @@ enum class RHIThreadTaskType {
 };
 
 struct RHIThreadTask {
+    union {
+        void * ptr;
+        std::byte binary[sizeof(std::function<void()>)];
+    } param;
     RHIThreadTaskType type;
     RHICommandQueueBase * queue;
     std::promise<void> promise;
-    void * param;
 };
 
 // Task queue and relating semaphore
@@ -35,7 +38,7 @@ std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * comman
     RHIThreadTask task;
     task.type = RHIThreadTaskType::kTranslate;
     task.queue = command_buffer;
-    task.param = command_chain_head;
+    task.param.ptr = command_chain_head;
     auto future = task.promise.get_future();
     task_queue_.Push(std::move(task));
     task_queue_sem_.release();
@@ -46,7 +49,7 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * comma
     RHIThreadTask task;
     task.type = RHIThreadTaskType::kSubmit;
     task.queue = command_buffer;
-    task.param = (void *)wait_for_device_execution;
+    task.param.ptr = (void *)wait_for_device_execution;
     auto future = task.promise.get_future();
     task_queue_.Push(std::move(task));
     task_queue_sem_.release();
@@ -69,25 +72,11 @@ bool IsRHIThreadActive() {
     return G_RHIWorkerThread && G_RHIWorkerThread->IsRunning();
 }
 
-std::future<void> EnqueueRHIThreadTask(std::function<void()> * task) {
-    cannot do this!!!!
-    std::function is not trivially copyable and trivially destructible
-
-    RHIThreadTask rhi_task;
-
-    rhi_task.type = RHIThreadTaskType::kLambda;
-    rhi_task.queue = nullptr;
-    rhi_task.param = (void *)task;
-    auto future = rhi_task.promise.get_future();
-    task_queue_.Push(std::move(rhi_task));
-    return future;
-}
-
-std::future<void> EnqueueRHIThreadTask(RHICommandQueueBase * queue, std::function<void()> && task) {
+std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
     RHIThreadTask rhi_task;
     rhi_task.type = RHIThreadTaskType::kLambda;
     rhi_task.queue = nullptr;
-    rhi_task.param = queue->Allocate<std::function<void()>>(task);
+    new(rhi_task.param.binary) std::function<void()>(std::move(task));
     auto future = rhi_task.promise.get_future();
     task_queue_.Push(std::move(rhi_task));
     return future;
@@ -104,7 +93,7 @@ void RHIWorkerThread::Run() {
         MI_LOG(MIInfraLogType::kError, "RHI thread is not created by an unknown thread.");
         return ;
     }
-    SetThreadType(ThreadType::kRHIThread);
+    SetCurrentThreadType(ThreadType::kRHIThread);
 
 
     static std::atomic<bool> rhi_thread_started {false};
@@ -113,6 +102,7 @@ void RHIWorkerThread::Run() {
         MI_LOG(MIInfraLogType::kInfo, "There are more than one started RHI threads. Exiting.");
         return ;
     }
+    is_running_ = true;
     while(!stop_signal_) {
         RHIThreadTask task;
         // Wait for at least one task
@@ -120,7 +110,7 @@ void RHIWorkerThread::Run() {
         // Pop the task from the queue
         if(task_queue_.Pop(task)) {
             if(task.type == RHIThreadTaskType::kTranslate) {
-                RHICommandBase *command = static_cast<RHICommandBase *>(task.param);
+                RHICommandBase *command = static_cast<RHICommandBase *>(task.param.ptr);
                 while (command) {
                     command->ExecuteAndDestruct(*task.queue);
                     command = command->next_command_;
@@ -129,18 +119,20 @@ void RHIWorkerThread::Run() {
                 task.promise.set_value();
             } else if(task.type == RHIThreadTaskType::kSubmit) {
                 // Submit
-                RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(task.queue, (bool)task.param);
+                RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(task.queue, (bool)task.param.ptr);
                 // Notify the task is finished
                 task.promise.set_value();
             } else if(task.type == RHIThreadTaskType::kLambda) {
-                std::function<void()> lambda = *(std::function<void()>*)task.param;
-                lambda();
+                auto lambda_ptr = (std::function<void()>*)task.param.binary;
+                lambda_ptr->operator()();
+                lambda_ptr->~function<void()>();
                 task.promise.set_value();
             } else {
                 MI_LOG(MIInfraLogType::kError, "Unknown task type");
             }
         }
     }
+    is_running_ = false;
     // Reset the flag
     rhi_thread_started.store(false);
 }

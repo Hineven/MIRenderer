@@ -367,11 +367,16 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
     SortUnique(bindless_resources);
     auto vk_rhi = GetVulkanRHI();
     auto vk_bindless_mgr = vk_rhi->GetVulkanBindlessManager();
+
+    bindless atlas support?
+
+    mi_assert(!aliased_image, "Only one bindless texture can be used");
+
     for(auto & bindless : bindless_resources) {
         int bindless_binding = bindless.binding;
         int bindless_slot    = bindless.bindless_slot;
         btb_data[bindless_binding] = bindless_slot;
-        vk_bindless_mgr->UseResource(cmdb, bindless_slot, use_stages);
+        vk_bindless_mgr->UseResource(cmdb, bindless.type, bindless_slot, use_stages);
     }
 
     // Clear bindless resources

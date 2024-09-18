@@ -9,7 +9,7 @@
 
 #include <format>
 #include "core/base.h"
-#include "util/alloc.h"
+#include "core/util/alloc.h"
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
@@ -316,11 +316,8 @@ protected:
     FORCEINLINE RHICommandQueueGraphics(): RHICommandQueueBase() {
         queue_type_ = RHICommandQueueType::kGraphics;
     }
-    static void InitializeSingleton () ;
 public:
-
-    static RHICommandQueueGraphics & Get ();
-
+    friend class RHI;
     FORCEINLINE void CopyBuffer (RHIBufferSpan src, RHIBufferSpan dst) {
         AddCommand(AllocateCommand<RHICommandCopyBuffer>(src, dst));
     }

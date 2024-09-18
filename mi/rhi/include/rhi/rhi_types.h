@@ -146,13 +146,15 @@ enum class RHIPipelineResourceType {
 
 // Resource types compatible with bindless design
 enum class RHIBindlessResourceType {
-    kUniformBuffer = 0,
+    // Immutable samplers are place at the beginning of the bindless table
+    // This make their indices usually constants in shaders
+    kImmutableSampler = 0,
+    kUniformBuffer,
     kStorageBuffer,
-    kUAV,
     kSRV,
-    kSampler,
-    kImmutableSampler,
+    kUAV,
     kAccelerationStructure,
+    kSampler,
     kMax
 };
 

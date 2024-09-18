@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 project(MI)
 
@@ -21,14 +21,6 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     add_definitions(-DMI_COMPILER_GCC)
 endif()
 
-# Simple implementation for the infrastracture abstraction within MI
-# Doing environment specific stuff.
-add_subdirectory(infra_impl)
-
-# Core implementations
-add_subdirectory(mi)
-
-
 # VMA-HPP from vcpkg
 find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
 find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)
@@ -41,6 +33,7 @@ find_package(spirv_cross_glsl REQUIRED GLOBAL)
 find_package(spirv_cross_hlsl REQUIRED GLOBAL)
 find_package(spirv_cross_cpp REQUIRED GLOBAL)
 
+
 if(NOT ${Vulkan_dxc_FOUND})
     # Fallback to standalone DXC
     message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")
@@ -50,6 +43,13 @@ else()
     message(STATUS "Using integrated dxc within Vulkan SDK")
     set(dxc_library_target Vulkan::dxc_lib)
 endif()
+
+# Simple implementation for the infrastracture abstraction within MI
+# Doing environment specific stuff.
+add_subdirectory(infra_impl)
+
+# Core implementations
+add_subdirectory(mi)
 
 # Samples
 

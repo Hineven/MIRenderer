@@ -71,7 +71,7 @@ uint32_t GetThreadIndex () {
 }
 
 
-Task *TaskGraph::WaitAndGetNextTask(mi::WorkerThreadRunnable *worker) {
+Task *TaskGraph::WaitAndGetNextTask([[maybe_unused]] WorkerThreadRunnable *worker) {
     // Block until there is a task to run.
     task_semaphore_.release();
     // TODO actually schedule threads

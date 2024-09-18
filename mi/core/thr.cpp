@@ -9,11 +9,11 @@ MI_NAMESPACE_BEGIN
 
 thread_local ThreadType G_ThreadType = ThreadType::kUnknown;
 
-void SetThreadType(ThreadType type) {
+void SetCurrentThreadType(ThreadType type) {
     G_ThreadType = type;
 }
 
-ThreadType GetThreadType() {
+ThreadType GetCurrentThreadType() {
     return G_ThreadType;
 }
 

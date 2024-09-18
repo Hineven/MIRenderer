@@ -25,10 +25,14 @@ public:
     FORCEINLINE void AdvanceFrame () {
         frame_index_++;
     }
+    FORCEINLINE bool IsRunning () const {
+        return is_running_;
+    }
     ~RHIWorkerThread() ;
 protected:
     std::atomic<size_t> frame_index_ {0};
     volatile bool stop_signal_ {false};
+    volatile bool is_running_ {false};
 };
 
 // Call to transit current thread to RHI worker thread
@@ -51,10 +55,7 @@ std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * comman
 std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, bool wait_for_device_execution = false) ;
 
 // Enqueue a task to the RHI thread for execution.
-std::future<void> EnqueueRHIThreadTask (std::function<void()> * task) ;
-// Enqueue a task to the RHI thread for execution.
-// The task will be allocated on the queue's frame allocator pending for execution.
-std::future<void> EnqueueRHIThreadTask (RHICommandQueueBase * queue, std::function<void()> && task) ;
+std::future<void> EnqueueRHIThreadTask (std::function<void()> && task) ;
 
 // Increment the frame counter kept by the RHI thread.
 // The counter is used to filter RHI resources to recycle. Resources that are at least

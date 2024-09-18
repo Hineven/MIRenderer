@@ -4,8 +4,8 @@
  * See LICENSE for licensing.
  */
 
-#ifndef MIRENDERER_UTIL_LOCKFREE_H
-#define MIRENDERER_UTIL_LOCKFREE_H
+#ifndef MI_UTIL_LOCKFREE_H
+#define MI_UTIL_LOCKFREE_H
 
 #include <concepts>
 #include <type_traits>
@@ -29,13 +29,15 @@ class TLockFreeQueue<T, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne
 public:
     inline TLockFreeQueue() = default;
 
-    FORCEINLINE bool Push (T&& t) {
+    template<typename U = T>
+    FORCEINLINE bool Push (U&& t) {
+        static_assert(std::is_same_v<std::remove_cvref_t<U>, T>, "Push type must be the same as the queue type");
         size_t head = head_.load(std::memory_order_relaxed);
         size_t next_head = (head + 1) % RingBudget;
         if (next_head == tail_.load(std::memory_order_acquire)) {
             return false;
         }
-        ring_[head] = std::forward<T>(t);
+        ring_[head] = std::forward<U>(t);
         // Flush the ring_[head] = t write visible for all threads
         // before updating head_ using release semantics
         head_.store(next_head, std::memory_order_release);
@@ -67,8 +69,10 @@ template <typename T, size_t RingBudget>
 class TLockFreeQueue<T, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne, RingBudget> {
 public:
     inline TLockFreeQueue() = default;
-    
-    FORCEINLINE bool Push (T&& t) {
+
+    template<typename U = T>
+    FORCEINLINE bool Push (U&& t) {
+        static_assert(std::is_same_v<std::remove_cvref_t<U>, T>, "Push type must be the same as the queue type");
         std::lock_guard<std::mutex> lock(mutex_);
         size_t head = head_ ++;
         size_t next_head = head % RingBudget;
@@ -76,7 +80,7 @@ public:
             head_ --;
             return false;
         }
-        ring_[next_head] = std::forward<T>(t);
+        ring_[next_head] = std::forward<U>(t);
         return true;
     }
 
@@ -107,4 +111,4 @@ private:
 
 MI_NAMESPACE_END
 
-#endif //MIRENDERER_UTIL_LOCKFREE_H
+#endif //MI_UTIL_LOCKFREE_H

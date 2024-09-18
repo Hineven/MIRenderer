@@ -33,6 +33,8 @@ public:
         return {this, offset, size};
     }
 
+    void ConvertToBindless (bool read_only) ;
+
 protected:
     size_t buffer_size_;
     RHIBufferUsageFlags usage_;

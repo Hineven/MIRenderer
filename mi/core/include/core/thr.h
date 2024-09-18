@@ -46,7 +46,7 @@ FORCEINLINE bool IsTaskGraphWorkerThread () {
     return GetCurrentThreadType() == ThreadType::kTaskGraphWorkerThread;
 }
 
-void SetThreadType(ThreadType type);
+void SetCurrentThreadType(ThreadType type);
 
 MI_NAMESPACE_END
 #endif //MIRENDERER_RUNNABLE_H

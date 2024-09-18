@@ -6,7 +6,8 @@
 #include "core/infra.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_resource.h"
-#include "util/lockfree.h"
+#include "core/util/lockfree.h"
+#include "rhi_bindless.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -15,6 +16,16 @@ void RHIResource::QueueForDeletion() {
     // This function lives in the render thread, so we use the frame index of the render thread.
     // It is always bigger than the frame index of the RHI thread.
     mi_assert(RHI::Get().AddResourcePendingForDeletion(this), "Resource deletion queue overflow.");
+}
+
+int RHIResource::GetBindlessSlotReadonly() const {
+    if(!bindless_slot_readonly_) return -1;
+    return bindless_slot_readonly_->GetSlot();
+}
+
+int RHIResource::GetBindlessSlotReadwrite() const {
+    if(!bindless_slot_readwrite_) return -1;
+    return bindless_slot_readwrite_->GetSlot();
 }
 
 MI_NAMESPACE_END

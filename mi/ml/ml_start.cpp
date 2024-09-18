@@ -15,7 +15,7 @@ void MainLoop::Start () {
     if(GetCurrentThreadType() != ThreadType::kUnknown) {
         mi_assert(false, "Render thread started within a known thread.");
     }
-    SetThreadType(ThreadType::kRenderThread);
+    SetCurrentThreadType(ThreadType::kRenderThread);
 
     auto limits = infra_->GetResourceLimits();
     // Initialize task graph

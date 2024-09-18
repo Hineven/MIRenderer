@@ -1,7 +1,5 @@
 # core library
 add_subdirectory(core)
-# utilities
-add_subdirectory(util)
 # render hardware abstraction
 add_subdirectory(rhi)
 # render graph

@@ -389,6 +389,10 @@ VulkanRHI * GetVulkanRHI () {
     return static_cast<VulkanRHI*>(&(RHI::Get())); // NOLINT this is safe
 }
 
+// Implement factory function declared in vk_rhi_export.h
+VulkanRHI * CreateVulkanRHI () {
+    return new VulkanRHI();
+}
 
 
 MI_NAMESPACE_END

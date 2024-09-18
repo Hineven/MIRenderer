@@ -11,11 +11,8 @@
 
 MI_NAMESPACE_BEGIN
 
-// Maximum number of bindless resource slot reserved for each type of RHIBindlessResourceType
-constexpr uint32_t CRHIMaxBindlessSlotsPerResourceType = 4096;
+// nothing
 
-// Preferred size of GPU heap blocks. Larger values may increase VRAM consumption.
-constexpr uint64_t CRHIPreferredGPUHeapBlockSize = 256 * 1024 * 1024; // 256MB
 
 MI_NAMESPACE_END
 

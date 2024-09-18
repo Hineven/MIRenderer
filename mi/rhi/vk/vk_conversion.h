@@ -437,6 +437,26 @@ FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIPipelineResourceType 
     }
 }
 
+FORCEINLINE RHIBindlessResourceType FromVulkanDescriptorType (vk::DescriptorType type) {
+    switch (type) {
+        case vk::DescriptorType::eUniformBuffer:
+            return RHIBindlessResourceType::kUniformBuffer;
+        case vk::DescriptorType::eStorageBuffer:
+            return RHIBindlessResourceType::kStorageBuffer;
+        case vk::DescriptorType::eStorageImage:
+            return RHIBindlessResourceType::kUAV;
+        case vk::DescriptorType::eSampledImage:
+            return RHIBindlessResourceType::kSRV;
+        case vk::DescriptorType::eSampler:
+            return RHIBindlessResourceType::kSampler;
+        case vk::DescriptorType::eAccelerationStructureKHR:
+            return RHIBindlessResourceType::kAccelerationStructure;
+        default:
+            mi_assert(false, "Invalid pipeline resource type");
+            return RHIBindlessResourceType::kMax;
+    }
+}
+
 MI_NAMESPACE_END
 
 #endif //MI_VK_CONVERSION_H

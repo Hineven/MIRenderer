@@ -12,7 +12,7 @@ add_test(NAME example COMMAND example_test)
 
 # Infra
 add_executable(infra_test infra/infra_test.cpp)
-target_link_libraries(infra_test infra core ${GTEST_LIBRARIES} ${dxc_library_target})
+target_link_libraries(infra_test infra core ${GTEST_LIBRARIES})
 add_test(NAME infra COMMAND infra_test)
 
 # RHI

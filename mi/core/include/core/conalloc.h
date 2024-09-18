@@ -27,13 +27,13 @@ public:
     InfraDefaultAllocator() noexcept = default;
 
     template<typename U>
-    InfraDefaultAllocator(const InfraDefaultAllocator<U> & ) noexcept {}
+    InfraDefaultAllocator(const InfraDefaultAllocator<U> & ) noexcept {} // NOLINT
 
-    pointer allocate(size_type n, const void* hint = 0) {
+    pointer allocate(size_type n, [[maybe_unused]] const void* hint = 0) {
         return static_cast<pointer>(GetInfra().Allocate(n * sizeof(T)));
     }
 
-    void deallocate(pointer p, size_type n) {
+    void deallocate(pointer p, [[maybe_unused]] size_type n) {
         GetInfra().Free(p);
     }
 

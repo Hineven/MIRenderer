@@ -7,6 +7,7 @@
 #ifndef MIRENDERER_BLOBRES_H
 #define MIRENDERER_BLOBRES_H
 
+#include <future>
 #include "core/common.h"
 #include "core/refcounted.h"
 #include "core/base.h"

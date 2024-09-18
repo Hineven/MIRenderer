@@ -32,6 +32,10 @@ public:
     FORCEINLINE int GetWidth() const { return dimensions_.width; }
     FORCEINLINE int GetHeight() const { return dimensions_.height; }
     FORCEINLINE int GetDepth() const { return dimensions_.depth; }
+
+    // Convert this texture to a bindless texture
+    void ConvertToBindless () ;
+
 protected:
     RHITextureType type_;
     RHITextureDimensions dimensions_;

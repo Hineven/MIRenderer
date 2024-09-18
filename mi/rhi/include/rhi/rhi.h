@@ -15,20 +15,15 @@
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"
 #include "core/pixel_format.h"
-#include "util/lockfree.h"
+#include "core/util/lockfree.h"
 
 MI_NAMESPACE_BEGIN
 
 // Interface for the render hardware
 class RHI {
 protected:
-    RHI() = default;
-    virtual ~RHI() = default;
-    // friends within rhi_singleton.cpp
-    friend void RHIInitialize (RHIType type) ;
-    friend void RHIDestroy () ;
+    virtual ~RHI();
 public:
-
     // Initialize the RHI layer
     static void InitializeSingleton (RHIType type) ;
     // Destroy the RHI layer
@@ -55,7 +50,7 @@ public:
     ) = 0;
 
     // Create a sampler, thread safe
-    virtual RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) ;
+    virtual RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) = 0;
 
     // Create a shader, thread safe
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -92,12 +87,18 @@ public:
 
     // The frame index of the entire RHI system
     // it is never decreased, and is increased by 1 every time AdvanceFrame is called.
-    inline size_t GetFrameIndex () const {
+    FORCEINLINE size_t GetFrameIndex () const {
         return frame_index_;
+    }
+
+    FORCEINLINE RHICommandQueueGraphics * GetGraphicsCommandQueue () {
+        return graphics_command_queue_.get();
     }
 
     friend class RHIResource;
 protected:
+
+    RHI() ;
 
     struct RHIResourceToRecycle {
         RHIResource *resource;
@@ -120,6 +121,10 @@ protected:
 
     void RecycleRHIResourcesPendingForDeletion_RHIThread() ;
 
+    std::unique_ptr<RHICommandQueueGraphics> graphics_command_queue_ {};
+
+    // The implementation should create their own bindless manager
+    // and assign it to this pointer.
     std::unique_ptr<RHIBindlessManager> bindless_manager_ {};
     size_t frame_index_ {0};
     uint32_t __tiny_buffer_for_hacking_ [128];

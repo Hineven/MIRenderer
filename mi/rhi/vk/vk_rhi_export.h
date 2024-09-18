@@ -14,7 +14,7 @@ class VulkanRHI;
 class VulkanRHICommandExecutor;
 
 // Instantiate a VulkanRHI instance and return
-VulkanRHI * CreateVulkanRHIInstance ();
+VulkanRHI * CreateVulkanRHI ();
 
 MI_NAMESPACE_END
 

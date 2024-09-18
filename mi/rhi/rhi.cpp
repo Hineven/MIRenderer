@@ -7,6 +7,7 @@
 #include "rhi/rhi.h"
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi_cmd.h"
+#include "rhi_bindless.h"
 
 // Import different kinds of RHI implementations
 #include "vk/vk_rhi_export.h"
@@ -15,7 +16,7 @@ MI_NAMESPACE_BEGIN
 
 
 std::future<void> RHI::AdvanceFrame() {
-    auto & queue = RHICommandQueueGraphics::Get();
+    auto & queue = *GetGraphicsCommandQueue();
     // Detour the limitation that std function wrapper can not wrap non-copyable objects.
     // (Lambda capturing unmovable objects is not copyable)
 //    int __index = (int)__tiny_buffer_for_hacking_[0];
@@ -29,13 +30,15 @@ std::future<void> RHI::AdvanceFrame() {
 //        fut_ptr->~future<void>();
 //    };
 
-    // We can do this because there're only 1 RHI thread.
+    // We can do this because there are only 1 RHI thread.
     queue.FrameEnd(false);
     queue.EnqueueTranslateAndSubmit();
     auto lambda = []() {
         // Swap allocators after the command buffer is submitted
         // The swapped out memory will last for about 1 frame more and silently be recycled
-        RHICommandQueueGraphics::Get().SwapAllocators_RHIThread();
+        RHI::Get().GetGraphicsCommandQueue()->SwapAllocators_RHIThread();
+        // Swap the bindless descriptor set after the command buffer is submitted
+        RHI::Get().GetBindlessManager().SwapSets_RHIThread();
         // Recycle resources that are pending for deletion
         RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread();
         // Increment the frame index kept by RHI thread.
@@ -84,7 +87,7 @@ void RHI::InitializeSingleton (RHIType type) {
     }
     switch (type) {
         case RHIType::kVulkan:
-            GDynamicRHI = reinterpret_cast<RHI *>(CreateVulkanRHIInstance());
+            GDynamicRHI = reinterpret_cast<RHI *>(CreateVulkanRHI());
             break;
         // ...
         default:
@@ -98,6 +101,14 @@ void RHI::DestroySingleton () {
         delete GDynamicRHI;
         GDynamicRHI = nullptr;
     }
+}
+
+RHI::RHI() {
+    graphics_command_queue_.reset(new RHICommandQueueGraphics());
+}
+
+RHI::~RHI() {
+    // Make unique_ptr on incomplete type work
 }
 
 MI_NAMESPACE_END

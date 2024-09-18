@@ -14,6 +14,8 @@
 
 MI_NAMESPACE_BEGIN
 
+class RHIBindlessSlotKeeper;
+
 class RHIResource {
 public:
     virtual ~RHIResource() = default;
@@ -38,6 +40,18 @@ public:
         return flags_;
     }
 
+    FORCEINLINE bool IsBindless () const {
+        return bindless_;
+    }
+
+    // For textures, return SRV slot index
+    // For buffers, return uniform slot index
+    FORCEINLINE int GetBindlessSlotReadonly() const ;
+
+    // For textures, return UAV slot index
+    // For buffers, return storage buffer slot index
+    FORCEINLINE int GetBindlessSlotReadwrite() const ;
+
 protected:
     // Can only be allocated by RHI and memory is allocated via infrastructure.
     RHIResource() = default;
@@ -49,6 +63,13 @@ protected:
     // Only the render thread is allowed to operate on RHI resource references
     // so no need for atomic operations
     uint32_t ref_count_ {0};
+
+    // If the resource is registered in the bindless manager and should be accessed
+    // via bindless handles only.
+    bool bindless_ {};
+
+    TRef<RHIBindlessSlotKeeper> bindless_slot_readonly_ {};
+    TRef<RHIBindlessSlotKeeper> bindless_slot_readwrite_ {};
 
     // Flags
     RHIResourceFlags flags_ {};
