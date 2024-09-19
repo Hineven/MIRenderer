@@ -141,6 +141,8 @@ struct RHIPipelineBindlessResourceDesc {
     // number entry of the btb table for shaders to query.
     // btb[binding] = bindless_slot
     uint32_t binding;
+    // Number of consecutive slots that the shader uses. Potentially an atlas.
+    uint32_t count;
 };
 
 struct RHIBindPipelineParametersDesc {

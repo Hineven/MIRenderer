@@ -10,14 +10,17 @@
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_resource.h"
+#include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
 
 class RHIBuffer : public RHIResource {
-public:
+protected:
+    // You can only create buffers via factory functions in the RHI instance
     inline RHIBuffer (size_t buffer_size, RHIBufferUsageFlags usage, RHIGPUAccessFlagBits access) : buffer_size_(buffer_size), usage_(usage), access_(access) {}
     virtual ~RHIBuffer() = default;
 
+public:
     FORCEINLINE size_t GetBufferSize () const {return buffer_size_;}
     FORCEINLINE RHIBufferUsageFlags GetBufferUsage () const {return usage_;}
     FORCEINLINE RHIGPUAccessFlagBits GetGPUAccess () const {return access_;}
@@ -33,12 +36,19 @@ public:
         return {this, offset, size};
     }
 
+    // View it as a storage buffer or uniform buffer.
     void ConvertToBindless (bool read_only) ;
+
+    FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadonly() { return bindless_slot_readonly_; }
+    FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadwrite() { return bindless_slot_readwrite_; }
 
 protected:
     size_t buffer_size_;
     RHIBufferUsageFlags usage_;
     RHIGPUAccessFlagBits access_;
+
+    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readonly_ {};
+    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};
 
     bool is_mapped_ {false};
 };

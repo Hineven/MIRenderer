@@ -34,9 +34,11 @@ public:
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
+    void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandManualTextureBarrier * barrier) override ;
+    void RHIBufferBarrier(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHICommandFrameEnd * frame_end) override ;
 
-    void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, bool block_until_device_completion) override ;
+    void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync, bool release_resources) override ;
 protected:
 
 

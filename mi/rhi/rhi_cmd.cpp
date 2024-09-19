@@ -43,8 +43,19 @@ void RHICommandBindVertexBuffer::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindVertexBuffer(&cmd, this);
 }
 
+void RHICommandManualTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHITextureBarrier(&cmd, this);
+}
+
+void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBufferBarrier(&cmd, this);
+}
+
 void RHICommandFrameEnd::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIFrameEnd(&cmd, this);
 }
 
 MI_NAMESPACE_END
+
+
+

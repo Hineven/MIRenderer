@@ -68,6 +68,9 @@ public:
     // to the actual RHI backend
     virtual RHICommandExecutorInterface * GetCommandExecutor () = 0;
 
+    // Create a sync point that can be waited on to synchronize device and host.
+    virtual RHISyncPointRef CreateSyncPoint () = 0;
+
     FORCEINLINE RHIBindlessManager & GetBindlessManager () const {
         return *bindless_manager_;
     }

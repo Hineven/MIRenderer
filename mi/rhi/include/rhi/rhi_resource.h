@@ -14,11 +14,11 @@
 
 MI_NAMESPACE_BEGIN
 
-class RHIBindlessSlotKeeper;
+class RHIBindlessSlotKeeperBase;
 
 class RHIResource {
 public:
-    virtual ~RHIResource() = default;
+    virtual ~RHIResource() ;
 
     FORCEINLINE uint32_t IncRef() {
         return ++ref_count_;
@@ -44,17 +44,9 @@ public:
         return bindless_;
     }
 
-    // For textures, return SRV slot index
-    // For buffers, return uniform slot index
-    FORCEINLINE int GetBindlessSlotReadonly() const ;
-
-    // For textures, return UAV slot index
-    // For buffers, return storage buffer slot index
-    FORCEINLINE int GetBindlessSlotReadwrite() const ;
-
 protected:
     // Can only be allocated by RHI and memory is allocated via infrastructure.
-    RHIResource() = default;
+    RHIResource() ;
     // Queue up in a global list for deletion.
     // Queued resources will be deleted after (but not immediately after)
     // their frame ends execution on the device.
@@ -67,9 +59,6 @@ protected:
     // If the resource is registered in the bindless manager and should be accessed
     // via bindless handles only.
     bool bindless_ {};
-
-    TRef<RHIBindlessSlotKeeper> bindless_slot_readonly_ {};
-    TRef<RHIBindlessSlotKeeper> bindless_slot_readwrite_ {};
 
     // Flags
     RHIResourceFlags flags_ {};
@@ -91,6 +80,17 @@ public:
 protected:
     RHISamplerFilterType filter_;
     RHISamplerAddressModeType addressing_;
+};
+
+class RHISyncPoint : public RHIResource {
+protected:
+    inline RHISyncPoint () = default;
+    inline virtual ~RHISyncPoint () = default;
+public:
+    // Wait for the corresponding device task to finish
+    virtual void Wait () = 0;
+    // Reset the sync point so it can be reused
+    virtual void Reset () = 0;
 };
 
 MI_NAMESPACE_END

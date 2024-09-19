@@ -12,11 +12,14 @@
 
 MI_NAMESPACE_BEGIN
 
+class RHISyncPoint;
+
 class RHIResource;
 class RHIBuffer;
 class RHITexture;
 class RHISampler;
 class RHIFrameBuffer;
+class RHISyncPoint;
 
 // These references can only be used within the render thread
 using RHIResourceRef = TRef<RHIResource>;
@@ -24,6 +27,7 @@ using RHIBufferRef = TRef<RHIBuffer>;
 using RHITextureRef = TRef<RHITexture>;
 using RHISamplerRef = TRef<RHISampler>;
 using RHIFrameBufferRef = TRef<RHIFrameBuffer>;
+using RHISyncPointRef = TRef<RHISyncPoint>;
 
 
 class RHIShader;

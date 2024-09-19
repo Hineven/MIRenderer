@@ -25,6 +25,13 @@ concept CMemTrivial = std::is_trivially_copyable_v<T> && std::is_trivially_destr
 template<typename T>
 concept CAOUB = std::is_array_v<T> && std::extent_v<T> == 0;
 
+template <template <typename...> class, typename>
+struct TIsTemplateInstance : std::false_type {};
+
+template <template <typename...> class Template, typename... Args>
+struct TIsTemplateInstance<Template, Template<Args...>> : std::true_type {};
+
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_META_H

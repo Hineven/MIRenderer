@@ -59,6 +59,14 @@ concept CReferenceCounted =
     std::is_same_v<decltype(std::declval<T>().IncRef()), uint32_t> &&
     std::is_same_v<decltype(std::declval<T>().DecRef()), uint32_t>);
 
+template<CReferenceCounted T>
+class TRef;
+
+template<typename ReferencedType, typename T>
+concept CUpcastAvailableRefType =
+TIsTemplateInstance<TRef, T>::value && std::is_base_of_v<ReferencedType, typename T::ReferencedType>;
+
+
 /**
  * A smart pointer to an object which implements IncRef/DecRef.
  *
@@ -96,11 +104,44 @@ public:
     template<CReferenceCounted CopyReferencedType>
     explicit TRef(const TRef<CopyReferencedType>& Copy)
     {
-        ptr_ = static_cast<ReferencedType*>(Copy.GetReference());
+        ptr_ = static_cast<ReferencedType*>(Copy.Raw());
         if (ptr_)
         {
             ptr_->IncRef();
         }
+    }
+
+    // Silent upcast pointers
+    template<CUpcastAvailableRefType<ReferencedType> AnotherRefType>
+    TRef(const TRef<AnotherRefType>& Copy)
+    {
+        ptr_ = static_cast<ReferencedType*>(Copy.Raw());
+        if (ptr_)
+        {
+            ptr_->IncRef();
+        }
+    }
+    template<CUpcastAvailableRefType<ReferencedType> AnotherRefType>
+    TRef(TRef<AnotherRefType>&& Move)
+    {
+        ptr_ = static_cast<ReferencedType*>(Move.Raw());
+        Move.ptr_ = nullptr;
+    }
+    // Silent upcast assignment operators
+    template<CUpcastAvailableRefType<ReferencedType> AnotherRefType>
+    TRef& operator=(const TRef<AnotherRefType>& Copy)
+    {
+        ptr_ = static_cast<ReferencedType*>(Copy.Raw());
+        if (ptr_)
+        {
+            ptr_->IncRef();
+        }
+    }
+    template<CUpcastAvailableRefType<ReferencedType> AnotherRefType>
+    TRef& operator=(TRef<AnotherRefType>&& Move)
+    {
+        ptr_ = static_cast<ReferencedType*>(Move.Raw());
+        Move.ptr_ = nullptr;
     }
 
     FORCEINLINE TRef(TRef&& Move)  // NOLINT implicit move construction
@@ -112,7 +153,7 @@ public:
     template<CReferenceCounted MoveReferencedType>
     explicit TRef(TRef<MoveReferencedType>&& Move)
     {
-        ptr_ = static_cast<ReferencedType*>(Move.GetReference());
+        ptr_ = static_cast<ReferencedType*>(Move.Raw());
         Move.ptr_ = nullptr;
     }
 
@@ -151,7 +192,7 @@ public:
     template<CReferenceCounted CopyReferencedType>
     FORCEINLINE TRef& operator=(const TRef<CopyReferencedType>& InPtr)
     {
-        return *this = InPtr.GetReference(); // NOLINT
+        return *this = InPtr.Raw(); // NOLINT
     }
 
     TRef& operator = (TRef&& InPtr) // NOLINT self-assignment is rare under such circumstances without hacks
@@ -169,26 +210,26 @@ public:
         return *this;
     }
 
-    template<CReferenceCounted MoveReferencedType>
-    TRef& operator=(TRef<MoveReferencedType>&& InPtr)
-    {
-        // InPtr is a different type (or we would have called the other operator), so we need not test &InPtr != this
-        ReferencedType* OldReference = ptr_;
-        ptr_ = InPtr.ptr_;
-        InPtr.ptr_ = nullptr;
-        if (OldReference)
-        {
-            OldReference->DecRef();
-        }
-        return *this;
-    }
+//    template<CReferenceCounted MoveReferencedType>
+//    TRef& operator=(TRef<MoveReferencedType>&& InPtr)
+//    {
+//        // InPtr is a different type (or we would have called the other operator), so we need not test &InPtr != this
+//        ReferencedType* OldReference = ptr_;
+//        ptr_ = InPtr.ptr_;
+//        InPtr.ptr_ = nullptr;
+//        if (OldReference)
+//        {
+//            OldReference->DecRef();
+//        }
+//        return *this;
+//    }
 
     FORCEINLINE ReferencedType* operator->() const
     {
         return ptr_;
     }
 
-    FORCEINLINE operator ReferenceType () const // NOLINT implicit conversion
+    FORCEINLINE operator ReferencedType () const // NOLINT implicit conversion
     {
         return ptr_;
     }

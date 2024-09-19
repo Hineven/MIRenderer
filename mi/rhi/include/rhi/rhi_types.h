@@ -65,6 +65,25 @@ enum class RHIShaderFrequencyFlagBits : uint32_t {
 };
 MAKE_FLAGS(RHIShaderFrequency)
 
+enum class RHIPipelineStageFlagBits : uint32_t {
+    kAll = 0xffffffffu,
+    // Geom, vert, tess, depth, frag, fbo write...
+    kOrdinaryGraphics = 1u<<0,
+    // Compute
+    kCompute = 1u<<1,
+    // Ray tracing
+    kRayTracing = 1u<<2,
+    // Task, mesh
+    kTaskMesh = 1u<<3,
+    // transfer, copies
+    kTransfer = 1u<<4,
+    // indirect dispatch...
+    kIndirect = 1u<<5,
+    // update/build accel
+    kAccelBuild = 1u<<6
+};
+MAKE_FLAGS(RHIPipelineStage);
+
 enum class RHIBufferUsageFlagBits : uint32_t {
     // Used in draw calls
     kVertex = 1u<<0,
@@ -146,16 +165,14 @@ enum class RHIPipelineResourceType {
 
 // Resource types compatible with bindless design
 enum class RHIBindlessResourceType {
-    // Immutable samplers are place at the beginning of the bindless table
-    // This make their indices usually constants in shaders
-    kImmutableSampler = 0,
     kUniformBuffer,
     kStorageBuffer,
     kSRV,
     kUAV,
     kAccelerationStructure,
     kSampler,
-    kMax
+    // Max, also the real binding number for immutable samplers.
+    kMaxAndImmSampler
 };
 
 FORCEINLINE RHIPipelineResourceType ToPipelineResourceType (RHIBindlessResourceType usage) {
@@ -170,8 +187,6 @@ FORCEINLINE RHIPipelineResourceType ToPipelineResourceType (RHIBindlessResourceT
             return RHIPipelineResourceType::kSRV;
         case RHIBindlessResourceType::kSampler:
             return RHIPipelineResourceType::kSampler;
-        case RHIBindlessResourceType::kImmutableSampler:
-            return RHIPipelineResourceType::kImmutableSampler;
         case RHIBindlessResourceType::kAccelerationStructure:
             return RHIPipelineResourceType::kAccelerationStructure;
         default:
@@ -192,11 +207,11 @@ FORCEINLINE RHIBindlessResourceType ToBindlessResourceType (RHIPipelineResourceT
         case RHIPipelineResourceType::kSampler:
             return RHIBindlessResourceType::kSampler;
         case RHIPipelineResourceType::kImmutableSampler:
-            return RHIBindlessResourceType::kImmutableSampler;
+            return RHIBindlessResourceType::kSampler;
         case RHIPipelineResourceType::kAccelerationStructure:
             return RHIBindlessResourceType::kAccelerationStructure;
         default:
-            return RHIBindlessResourceType::kMax;
+            return RHIBindlessResourceType::kMaxAndImmSampler;
     }
 }
 
@@ -324,6 +339,15 @@ enum class RHIResourceFlagBits {
     // their reference counter drops to 0. And sometimes they have harder
     // usage restrictions.
     kImported
+};
+
+enum class RHITextureLayoutType {
+    kUndefined,
+    kShaderReadOnlyOptimal,
+    kTransferSrcOptimal,
+    kTransferDstOptimal,
+    kGeneral,
+    kMax
 };
 
 MAKE_FLAGS(RHIResource)

@@ -250,7 +250,7 @@ VulkanRHI::VulkanRHI() {
             | vma::AllocatorCreateFlagBits::eKhrMaintenance4, // Vulkan 1.3
             physical_device_,
             device_,
-            CRHIPreferredGPUHeapBlockSize,
+            C::kRHIPreferredGPUHeapBlockSize,
             nullptr, // No allocation callback
             nullptr, // No device memory callback
             nullptr, // No heap size limit
@@ -382,6 +382,12 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
 void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
     resource->~RHIResource();
     GetInfra().Free(resource);
+}
+
+RHISyncPointRef VulkanRHI::CreateSyncPoint() {
+    auto ptr = GetInfra().Allocate(sizeof(VulkanSyncPoint));
+    new (ptr) VulkanSyncPoint();
+    return {(RHISyncPoint*)ptr};
 }
 
 // Shortcut to get VulkanRHI instance

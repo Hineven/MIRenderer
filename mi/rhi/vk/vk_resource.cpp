@@ -39,4 +39,25 @@ VulkanSampler::~VulkanSampler() {
     device.destroySampler(vk_sampler_);
 }
 
+VulkanSyncPoint::VulkanSyncPoint() {
+    auto device = GetVulkanRHI()->GetDevice();
+    vk_fence_ = device.createFence({});
+}
+
+void VulkanSyncPoint::Wait() {
+    auto dev = GetVulkanRHI()->GetDevice();
+    auto ret = dev.waitForFences({vk_fence_}, VK_TRUE, UINT64_MAX);
+    mi_assert(ret == vk::Result::eSuccess, "Failed to wait for fence.");
+}
+
+VulkanSyncPoint::~VulkanSyncPoint() {
+    auto dev = GetVulkanRHI()->GetDevice();
+    dev.destroy(vk_fence_);
+}
+
+void VulkanSyncPoint::Reset() {
+    auto dev = GetVulkanRHI()->GetDevice();
+    dev.resetFences({vk_fence_});
+}
+
 MI_NAMESPACE_END

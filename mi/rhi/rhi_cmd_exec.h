@@ -28,14 +28,13 @@ public:
     virtual void RHIBindComputePipeline (RHICommandQueueBase * buffer, RHICommandBindComputePipeline * cmd) = 0;
     virtual void RHIBindPipelineParameters (RHICommandQueueBase * buffer, RHICommandBindPipelineParameters * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
+    virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandManualTextureBarrier * cmd) = 0;
+    virtual void RHIBufferBarrier (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
     // The command marks the last command of the frame.
     virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHICommandFrameEnd * cmd) = 0;
 
-    // Different from previous functions translating RHI commands, this function has no corresponding command
-    // It is used to submit the translated command buffer.
-    // @param block_until_gpu_idle: if true, the function will block until the GPU completes executing the submitted commands.
-    // otherwise, the function will return immediately after the command buffer is submitted.
-    virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, bool block_until_device_completion) = 0;
+    // Submit all translated command stored within the command buffer and clear them.
+    virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point, bool recycle_resources) = 0;
 
 };
 

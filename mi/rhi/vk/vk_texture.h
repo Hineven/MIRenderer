@@ -25,18 +25,39 @@ public:
 
     FORCEINLINE vk::ImageLayout GetImageLayout () const {return vk_image_layout_;}
 
+    // Manually create a barrier. Usually used for bindless texture atlas, whose access is not
+    // maintained by us.
+    FORCEINLINE void Barrier (
+        vk::CommandBuffer cmd, vk::ImageLayout dst_layout,
+        vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage,
+        vk::AccessFlags src_access, vk::AccessFlags dst_access
+    ) {
+        vk::ImageMemoryBarrier barrier {};
+        barrier.image = vk_image_;
+        barrier.oldLayout = vk_image_layout_;
+        barrier.newLayout = dst_layout;
+        barrier.srcAccessMask = src_access;
+        barrier.dstAccessMask = dst_access;
+        barrier.subresourceRange.aspectMask = vk_aspect_;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = mip_levels_;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = array_layers_;
+        cmd.pipelineBarrier(src_stage, dst_stage, {}, nullptr, nullptr, barrier);
+        using_stages = dst_stage;
+        using_accesses = dst_access;
+        vk_image_layout_ = dst_layout;
+    }
+
     // Perform a layout transition if the current layout is *suboptimal* for 'use_layout'. If there's a
     // memory barrier necessary, it will be inserted at the same time.
     // Will not perform a layout transition if the current layout is suboptimal (i.e. general layout)
-    // NOTE: This function should not be used for placing memory barriers automatically.
-    // Note: Unlike buffers, texture have no individual `MemBarrier` function. If you don't want to transit
-    // layout but want to place a memory barrier, you should call this function with the same layout.
     FORCEINLINE void UseOptimalLayout (
             vk::CommandBuffer cmd, vk::ImageLayout use_layout,
             vk::PipelineStageFlags use_stage = vk::PipelineStageFlagBits::eAllCommands,
             vk::AccessFlags use_access = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite) {
         // Check for the possibility to omit the barrier
-        // R-R, the only case that doesn't need a barrier
+        // R-R with no layout transition, the only case that doesn't need a barrier
         if(!(use_access & vk::AccessFlagBits::eMemoryWrite) && !(using_accesses & vk::AccessFlagBits::eMemoryWrite)) {
             if(vk_image_layout_ == use_layout) {
                 // No layout transition needed
@@ -66,8 +87,6 @@ public:
     // Perform a layout transition if the current layout is *incompatible* for 'use_layout'. If there's a
     // memory barrier necessary, it will be inserted at the same time.
     // Will not perform a layout transition if the current layout is suboptimal (i.e. general layout)
-    // Note: Unlike buffers, texture have no individual `MemBarrier` function. If you don't want to transit
-    // layout but want to place a memory barrier, you should call this function with the same layout.
     FORCEINLINE void Use (
             vk::CommandBuffer cmd, vk::ImageLayout use_layout,
             vk::PipelineStageFlags use_stage = vk::PipelineStageFlagBits::eAllCommands,

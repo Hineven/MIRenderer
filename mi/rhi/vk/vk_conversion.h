@@ -453,7 +453,99 @@ FORCEINLINE RHIBindlessResourceType FromVulkanDescriptorType (vk::DescriptorType
             return RHIBindlessResourceType::kAccelerationStructure;
         default:
             mi_assert(false, "Invalid pipeline resource type");
-            return RHIBindlessResourceType::kMax;
+            return RHIBindlessResourceType::kMaxAndImmSampler;
+    }
+}
+
+FORCEINLINE vk::ImageLayout GetVulkanImageLayout (RHITextureLayoutType type) {
+    switch (type) {
+        case RHITextureLayoutType::kUndefined:
+            return vk::ImageLayout::eUndefined;
+        case RHITextureLayoutType::kShaderReadOnlyOptimal:
+            return vk::ImageLayout::eShaderReadOnlyOptimal;
+        case RHITextureLayoutType::kTransferSrcOptimal:
+            return vk::ImageLayout::eTransferSrcOptimal;
+        case RHITextureLayoutType::kTransferDstOptimal:
+            return vk::ImageLayout::eTransferDstOptimal;
+        case RHITextureLayoutType::kGeneral:
+            return vk::ImageLayout::eGeneral;
+        default:
+            mi_assert(false, "Invalid texture layout type");
+            return vk::ImageLayout::eUndefined;
+    }
+}
+
+FORCEINLINE vk::AccessFlags GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
+    vk::AccessFlags vk_flags = {};
+    if(flags & RHIGPUAccessFlagBits::kRead) {
+        vk_flags |= vk::AccessFlagBits::eMemoryRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kWrite) {
+        vk_flags |= vk::AccessFlagBits::eMemoryWrite;
+    }
+    return vk_flags;
+}
+
+FORCEINLINE vk::PipelineStageFlags GetVulkanPipelineStageFlags (RHIPipelineStageFlags stages) {
+    vk::PipelineStageFlags vk_stages = {};
+    if(stages == RHIPipelineStageFlagBits::kAll) {
+        return vk::PipelineStageFlagBits::eAllCommands;
+    }
+    if(stages & RHIPipelineStageFlagBits::kOrdinaryGraphics) {
+        vk_stages |=
+                vk::PipelineStageFlagBits::eGeometryShader |
+                vk::PipelineStageFlagBits::eVertexInput |
+                vk::PipelineStageFlagBits::eVertexShader |
+                vk::PipelineStageFlagBits::eTessellationControlShader |
+                vk::PipelineStageFlagBits::eTessellationEvaluationShader |
+                vk::PipelineStageFlagBits::eFragmentShader |
+                vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                vk::PipelineStageFlagBits::eLateFragmentTests |
+                vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    }
+    if(stages & RHIPipelineStageFlagBits::kCompute) {
+        vk_stages |= vk::PipelineStageFlagBits::eComputeShader;
+    }
+    if(stages & RHIPipelineStageFlagBits::kTransfer) {
+        vk_stages |=
+                vk::PipelineStageFlagBits::eTransfer;
+    }
+    if(stages & RHIPipelineStageFlagBits::kIndirect) {
+        vk_stages |= vk::PipelineStageFlagBits::eDrawIndirect;
+    }
+    if(stages & RHIPipelineStageFlagBits::kRayTracing) {
+        vk_stages |=
+                vk::PipelineStageFlagBits::eRayTracingShaderKHR;
+    }
+    if(stages & RHIPipelineStageFlagBits::kAccelBuild) {
+        vk_stages |=
+                vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR;
+    }
+    if(stages & RHIPipelineStageFlagBits::kTaskMesh) {
+        vk_stages |=
+                vk::PipelineStageFlagBits::eTaskShaderEXT
+                | vk::PipelineStageFlagBits::eMeshShaderEXT;
+    }
+    return vk_stages;
+}
+
+FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIBindlessResourceType type) {
+    switch (type) {
+        case RHIBindlessResourceType::kUniformBuffer:
+            return vk::DescriptorType::eUniformBuffer;
+        case RHIBindlessResourceType::kStorageBuffer:
+            return vk::DescriptorType::eStorageBuffer;
+        case RHIBindlessResourceType::kUAV:
+            return vk::DescriptorType::eStorageImage;
+        case RHIBindlessResourceType::kSRV:
+            return vk::DescriptorType::eSampledImage;
+        case RHIBindlessResourceType::kSampler:
+            return vk::DescriptorType::eSampler;
+        case RHIBindlessResourceType::kAccelerationStructure:
+            return vk::DescriptorType::eAccelerationStructureKHR;
+        default:
+            mi_assert(false, "Invalid pipeline resource type");
+            return vk::DescriptorType::eUniformBuffer;
     }
 }
 

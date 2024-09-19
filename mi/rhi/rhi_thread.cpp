@@ -21,6 +21,10 @@ struct RHIThreadTask {
     union {
         void * ptr;
         std::byte binary[sizeof(std::function<void()>)];
+        struct {
+            RHISyncPoint * sync_point;
+            bool recycle;
+        } submit;
     } param;
     RHIThreadTaskType type;
     RHICommandQueueBase * queue;
@@ -45,11 +49,12 @@ std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * comman
     return future;
 }
 
-std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, bool wait_for_device_execution) {
+std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync, bool recyle_resources) {
     RHIThreadTask task;
     task.type = RHIThreadTaskType::kSubmit;
     task.queue = command_buffer;
-    task.param.ptr = (void *)wait_for_device_execution;
+    task.param.submit.sync_point = sync;
+    task.param.submit.recycle = recyle_resources;
     auto future = task.promise.get_future();
     task_queue_.Push(std::move(task));
     task_queue_sem_.release();
@@ -119,7 +124,11 @@ void RHIWorkerThread::Run() {
                 task.promise.set_value();
             } else if(task.type == RHIThreadTaskType::kSubmit) {
                 // Submit
-                RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(task.queue, (bool)task.param.ptr);
+                RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(
+                        task.queue,
+                        task.param.submit.sync_point,
+                        task.param.submit.recycle
+                );
                 // Notify the task is finished
                 task.promise.set_value();
             } else if(task.type == RHIThreadTaskType::kLambda) {

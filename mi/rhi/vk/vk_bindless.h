@@ -24,16 +24,15 @@ public:
 
     ~VulkanBindlessManager() ;
 
-    // Mark and potentially transit layouts for the used resource.
-    void UseResource (vk::CommandBuffer cmd, RHIBindlessResourceType type, int slot_index, vk::PipelineStageFlags use_stages) ;
-
     friend class VulkanRHI;
 protected:
 
     void Initialize_RHIThread () ;
     void Destroy_RHIThread () ;
 
-    void UpdateResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot) override;
+    void FreeResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots) override;
+    void CommitResourceSlotUpdateRHI (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots) override;
+
 
     vk::DescriptorSetLayout bindless_descriptor_set_layout_;
     int set_index_ = 0;
@@ -45,15 +44,18 @@ protected:
         kReadWrite = 1u<<1,
     };
 
-    // offset + slot = real binding index in the descriptor set.
-    uint32_t channel_binding_offsets_ [static_cast<int>(RHIBindlessResourceType::kMax) + 1];
-
     struct {
         vk::Sampler linear_wrap;        // 0
         vk::Sampler linear_clamp_edge;  // 1
         vk::Sampler nearest_wrap;       // 2
         vk::Sampler nearest_clamp_edge; // 3
     } immutable_samplers_;
+
+    std::byte update_descriptor_set_buffer[
+            C::kMaxNumBindlessResourceSlotsPerChannel
+            * std::max(sizeof(vk::DescriptorImageInfo), sizeof(vk::DescriptorBufferInfo))
+    ];
+
 };
 
 MI_NAMESPACE_END

@@ -81,8 +81,8 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
             .setSrcImageLayout(vk::ImageLayout::eTransferSrcOptimal)
             .setDstImageLayout(vk::ImageLayout::eTransferDstOptimal)
             .setRegions(region);
-    src_texture->Use(cmd, vk::ImageLayout::eTransferSrcOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead);
-    dst_texture->Use(cmd, vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite);
+//    src_texture->Use(cmd, vk::ImageLayout::eTransferSrcOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead);
+//    dst_texture->Use(cmd, vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite);
     cmd.copyImage2(copy_info);
 }
 
@@ -236,10 +236,11 @@ void VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge
     }
 }
 
+// TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescriptorWrites(
     RHICommandQueueBase * cmd, [[maybe_unused]] vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
-    vk::CommandBuffer cmdb, vk::PipelineStageFlags use_stages
+    [[maybe_unused]] vk::CommandBuffer cmdb, [[maybe_unused]] vk::PipelineStageFlags use_stages
 ) {
     assert(IsRHIThread());
     // Sort and merge all recorded bindings
@@ -302,7 +303,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
         auto image = static_cast<VulkanTexture*>(uav.texture);
         image_info.imageView = image->GetImageView(); // NOLINT its safe
         image_info.imageLayout = vk::ImageLayout::eGeneral;
-        image->Use(cmdb, vk::ImageLayout::eGeneral, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+//        image->Use(cmdb, vk::ImageLayout::eGeneral, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(uav.binding)
@@ -317,7 +318,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
         auto image = static_cast<VulkanTexture*>(srv.texture);
         image_info.imageView = image->GetImageView(); // NOLINT its safe
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image->Use(cmdb, vk::ImageLayout::eShaderReadOnlyOptimal, use_stages, vk::AccessFlagBits::eShaderRead);
+//        image->Use(cmdb, vk::ImageLayout::eShaderReadOnlyOptimal, use_stages, vk::AccessFlagBits::eShaderRead);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(srv.binding)
@@ -350,7 +351,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
                 .setPNext(&write_khr);
         write_khr.accelerationStructureCount = 1;
         auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
-        rhi_acc->Use(cmdb, use_stages, vk::AccessFlagBits::eAccelerationStructureReadKHR);
+//        rhi_acc->Use(cmdb, use_stages, vk::AccessFlagBits::eAccelerationStructureReadKHR);
         *(vk::AccelerationStructureKHR*)p_ac = (rhi_acc->GetAccelerationStructure()); // NOLINT its safe
         write_khr.pAccelerationStructures = p_ac;
         writes[write_index++] = write;
@@ -365,18 +366,14 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
 
     // Generate btb table data for bindless resources
     SortUnique(bindless_resources);
-    auto vk_rhi = GetVulkanRHI();
-    auto vk_bindless_mgr = vk_rhi->GetVulkanBindlessManager();
+//    auto vk_rhi = GetVulkanRHI();
+//    auto vk_bindless_mgr = vk_rhi->GetVulkanBindlessManager();
 
-    bindless atlas support?
-
-    mi_assert(!aliased_image, "Only one bindless texture can be used");
-
+    // The user should manage bindless texture layouts manually.
     for(auto & bindless : bindless_resources) {
         int bindless_binding = bindless.binding;
         int bindless_slot    = bindless.bindless_slot;
         btb_data[bindless_binding] = bindless_slot;
-        vk_bindless_mgr->UseResource(cmdb, bindless.type, bindless_slot, use_stages);
     }
 
     // Clear bindless resources
@@ -407,6 +404,50 @@ void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
     if(!descriptor_writes.empty()) {
         GetVulkanRHI()->GetDevice().updateDescriptorSets(descriptor_writes, {});
     }
+}
+
+void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
+                                              RHICommandManualTextureBarrier *barrier) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto texture = static_cast<VulkanTexture*>(barrier->texture_);
+    texture->Barrier(state.cmd,
+                     GetVulkanImageLayout(barrier->layout_),
+                     GetVulkanPipelineStageFlags(barrier->src_stages_),
+                     GetVulkanPipelineStageFlags(barrier->dst_stages_),
+                     GetVulkanAccessFlags(barrier->src_access_),
+                     GetVulkanAccessFlags(barrier->dst_access_)
+    );
+}
+
+void
+VulkanCommandExecutor::RHIBufferBarrier(RHICommandQueueBase *cmd, RHICommandBufferBarrier *barrier) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto buffer = static_cast<VulkanBuffer*>(barrier->buffer_.buffer);
+    buffer->MemBarrier(state.cmd,
+                       GetVulkanPipelineStageFlags(barrier->src_stages_),
+                       GetVulkanPipelineStageFlags(barrier->dst_stages_),
+                       GetVulkanAccessFlags(barrier->src_access_),
+                       GetVulkanAccessFlags(barrier->dst_access_),
+                       barrier->buffer_.offset,
+                       barrier->buffer_.size
+    );
+}
+
+void
+VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync, bool recycle_resources) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    auto & cmd = state.cmd;
+    cmd.end();
+    auto vk_rhi = GetVulkanRHI();
+    auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
+    auto submit_info = vk::SubmitInfo()
+            .setCommandBufferCount(1)
+            .setPCommandBuffers(&cmd);
+    queue.submit(submit_info, ((VulkanSyncPoint*)sync)->GetFence());
+    cmd.reset(recycle_resources ? vk::CommandBufferResetFlagBits::eReleaseResources : vk::CommandBufferResetFlagBits{});
 }
 
 void VulkanCommandExecutor::CommandQueueState::Init(mi::RHICommandQueueType type) {

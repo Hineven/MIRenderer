@@ -84,19 +84,25 @@ public:
     }
 
     // Flush existing commands, and send to RHI thread for baking and submission
-    // @param wait_for_device_execution if true, the returned future will wait
-    // for the device to finish executing the commands. Otherwise, it will only
-    // wait for the host submission completion.
-    // @return a future that will be ready when the submission/execution is completed.
-    inline std::future<void> SubmitTranslatedCommands (bool wait_for_device_execution = false) {
-        return EnqueueRHICommandBufferSubmitTask(this, wait_for_device_execution);
+    // @param in_sync_point a sync point that can be waited on for the device to complete executing the submitted commands.
+    // @param recycle_resources whether to recycle translated commands immediately after submission rather than in
+    // frame intervals. May cause overhead.
+    // @return a future that will be ready when the submission is completed.
+    inline std::future<void> SubmitTranslatedCommands (
+            RHISyncPoint * in_sync_point = nullptr,
+            bool recycle_resources = false) {
+        return EnqueueRHICommandBufferSubmitTask(this, in_sync_point, recycle_resources);
     }
 
     // Flush existing commands, and send to RHI thread for baking and submission
-    // If wait_for_device_execution is true, the task will wait for the device to finish executing the commands
-    inline std::future<void> EnqueueTranslateAndSubmit (bool wait_for_device_execution = false) {
+    // @param in_sync_point a sync point that can be waited on for the device to complete executing the submitted commands.
+    // @param recycle_resources whether to recycle translated commands immediately after submission rather than in
+    // frame intervals. May cause overhead.
+    // @return a future that will be ready when the submission is completed.
+    inline std::future<void> EnqueueTranslateAndSubmit (RHISyncPoint * in_sync_point = nullptr,
+                                                        bool recycle_resources = false) {
         EnqueueTranslation();
-        return SubmitTranslatedCommands(wait_for_device_execution);
+        return SubmitTranslatedCommands(in_sync_point, recycle_resources);
     }
 
     // Allocate a piece of frame local host buffer memory. Very fast linear allocation. Use this
@@ -303,6 +309,39 @@ public:
     uint32_t binding_;
 };
 
+class RHICommandManualTextureBarrier : public TRHICommand<RHICommandManualTextureBarrier> {
+public:
+    RHICommandManualTextureBarrier(
+            RHITexture * texture, RHITextureLayoutType layout,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ): texture_(texture), layout_(layout), src_stages_(src_stages), dst_stages_(dst_stages),
+    src_access_(src_access), dst_access_(dst_access) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    RHITexture * texture_;
+    RHITextureLayoutType layout_;
+    RHIPipelineStageFlags src_stages_;
+    RHIPipelineStageFlags dst_stages_;
+    RHIGPUAccessFlags src_access_;
+    RHIGPUAccessFlags dst_access_;
+};
+
+class RHICommandBufferBarrier : public TRHICommand<RHICommandBufferBarrier> {
+public:
+    RHICommandBufferBarrier(
+            RHIBufferSpan buffer,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ): buffer_(buffer), src_stages_(src_stages), dst_stages_(dst_stages),
+       src_access_(src_access), dst_access_(dst_access) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    RHIBufferSpan buffer_;
+    RHIPipelineStageFlags src_stages_;
+    RHIPipelineStageFlags dst_stages_;
+    RHIGPUAccessFlags src_access_;
+    RHIGPUAccessFlags dst_access_;
+};
+
 class RHICommandFrameEnd : public TRHICommand<RHICommandFrameEnd> {
 public:
     RHICommandFrameEnd(bool return_resources_to_system): return_resources_to_system_(return_resources_to_system) {};
@@ -340,6 +379,26 @@ public:
     // Allocate RHIBindPipelineParameterDesc with the command buffer allocator.
     FORCEINLINE void BindPipelineParameters (RHIBindPointType point, RHIBindPipelineParametersDesc * table) {
         AddCommand(AllocateCommand<RHICommandBindPipelineParameters>(point, table));
+    }
+
+    FORCEINLINE void BindVertexBuffer (uint32_t binding, RHIBufferSpan buffer) {
+        AddCommand(AllocateCommand<RHICommandBindVertexBuffer>(binding, buffer));
+    }
+
+    FORCEINLINE void ManualTextureBarrier (
+            RHITexture * texture, RHITextureLayoutType layout,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ) {
+        AddCommand(AllocateCommand<RHICommandManualTextureBarrier>(texture, layout, src_stages, dst_stages, src_access, dst_access));
+    }
+
+    FORCEINLINE void BufferBarrier (
+            RHIBufferSpan buffer,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ) {
+        AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer, src_stages, dst_stages, src_access, dst_access));
     }
 
     FORCEINLINE void FrameEnd (bool return_resources_to_system) {

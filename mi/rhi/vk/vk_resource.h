@@ -32,9 +32,24 @@ public:
 
     FORCEINLINE vk::AccelerationStructureKHR GetAccelerationStructure() const { return as_; }
 
-    void Use (vk::CommandBuffer cmd, vk::PipelineStageFlags use_stages, vk::AccessFlags use_access) ;
+//    void Use (vk::CommandBuffer cmd, vk::PipelineStageFlags use_stages, vk::AccessFlags use_access) ;
 protected:
     vk::AccelerationStructureKHR as_;
+};
+
+class VulkanSyncPoint : public RHISyncPoint {
+protected:
+    VulkanSyncPoint () ;
+    ~VulkanSyncPoint () override;
+public:
+    void Wait () override;
+    void Reset () override;
+    FORCEINLINE vk::Fence GetFence () const {
+        return vk_fence_;
+    }
+    friend class VulkanRHI;
+protected:
+    vk::Fence vk_fence_ {};
 };
 
 MI_NAMESPACE_END

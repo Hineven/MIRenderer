@@ -17,95 +17,60 @@
 #include "rhi/rhi_desc.h"
 #include "core/base.h"
 #include "core/infra.h"
+#include "rhi/rhi.h"
+#include "rhi/rhi_resource.h"
+#include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
 
-class RHIBindlessSlotKeeper : public NonCopyable, public NonMovable {
-public:
-    ~RHIBindlessSlotKeeper();
-
-    FORCEINLINE RHIBindlessResourceType GetType () const { return type_; }
-    FORCEINLINE uint32_t GetSlot () const { return slot_; }
-
-    FORCEINLINE uint32_t IncRef() {
-        return ++ref_count_;
-    }
-
-    FORCEINLINE uint32_t DecRef() {
-        ref_count_--;
-        if (ref_count_ == 0) {
-            // Self destruct
-            GetInfra().Delete(this);
-        }
-        return ref_count_;
-    }
-
-    FORCEINLINE uint32_t GetRefCount() const {
-        return ref_count_;
-    }
-protected:
-    friend class RHIBindlessManager;
-
-    RHIBindlessResourceType type_;
-    uint32_t slot_;
-
-    int ref_count_;
-};
-
 struct RHIBindlessResourceDesc {
     RHIBindlessResourceType type;
-    union {
-        RHIBufferSpan buffer;
-        RHITexture  * texture;
-        RHISampler  * sampler;
-        RHIAccelerationStructure * accel;
-    } detail;
+    // Allocate a number of consecutive slots for the resource. Default is 1.
+    // Used for creating bindless atlas.
+    int num_slots {1};
 };
 
-inline RHIBindlessResourceDesc RHIBufferBindlessSlotDesc (RHIBufferSpan span) {
+inline RHIBindlessResourceDesc RHIBufferBindlessSlotDesc (int num_slots = 1) {
     RHIBindlessResourceDesc desc;
     desc.type = RHIBindlessResourceType::kStorageBuffer;
-    desc.detail.buffer = span;
+    desc.num_slots = num_slots;
     return desc;
 }
 
-inline RHIBindlessResourceDesc RHIUniformBindlessSlotDesc (RHIBufferSpan span) {
+inline RHIBindlessResourceDesc RHIUniformBindlessSlotDesc (int num_slots = 1) {
     RHIBindlessResourceDesc desc;
     desc.type = RHIBindlessResourceType::kUniformBuffer;
-    desc.detail.buffer = span;
+    desc.num_slots = num_slots;
     return desc;
 }
 
-template<PixelFormatType Type>
-inline RHIBindlessResourceDesc RHIUAVBindlessSlotDesc (RHITexture * texture) {
+inline RHIBindlessResourceDesc RHIUAVBindlessSlotDesc (int num_slots = 1) {
     RHIBindlessResourceDesc desc;
     desc.type = RHIBindlessResourceType::kUAV;
-    desc.detail.texture = texture;
+    desc.num_slots = num_slots;
     return desc;
 }
 
-inline RHIBindlessResourceDesc RHISRVBindlessSlotDesc (RHITexture * texture) {
+inline RHIBindlessResourceDesc RHISRVBindlessSlotDesc (int num_slots = 1) {
     RHIBindlessResourceDesc desc;
     desc.type = RHIBindlessResourceType::kSRV;
-    desc.detail.texture = texture;
+    desc.num_slots = num_slots;
     return desc;
 }
 
-inline RHIBindlessResourceDesc RHISamplerBindlessSlotDesc (RHISampler * sampler) {
+inline RHIBindlessResourceDesc RHISamplerBindlessSlotDesc (int num_slots = 1) {
     RHIBindlessResourceDesc desc;
     desc.type = RHIBindlessResourceType::kSampler;
-    desc.detail.sampler = sampler;
+    desc.num_slots = num_slots;
     return desc;
 }
 
-inline RHIBindlessResourceDesc RHIAccelerationStructureBindlessSlotDesc (RHIAccelerationStructure * accel) {
+inline RHIBindlessResourceDesc RHIAccelerationStructureBindlessSlotDesc (int num_slots = 1) {
     RHIBindlessResourceDesc desc;
     desc.type = RHIBindlessResourceType::kAccelerationStructure;
-    desc.detail.accel = accel;
+    desc.num_slots = num_slots;
     return desc;
 }
-
-typedef TRef<RHIBindlessSlotKeeper> RHIBindlessSlotRef;
 
 // A manager allocating indices for each kind of resource every frame
 class RHIBindlessManager {
@@ -114,40 +79,59 @@ protected:
 public:
 
     virtual ~RHIBindlessManager() = default;
-    RHIBindlessSlotRef AllocateResourceSlot (const RHIBindlessResourceDesc & desc) ;
-    void UpdateResourceSlot (RHIBindlessSlotKeeper * slot, const RHIBindlessResourceDesc & desc) ;
+
+    template<typename T>
+    RHIBindlessSlotRef<T> AllocateResourceSlot(const RHIBindlessResourceDesc &desc) {
+        auto slot = (RHIBindlessSlotKeeperBase*)GetInfra().Allocate(sizeof(RHIBindlessSlotKeeperBase));
+        new(slot) RHIBindlessSlotKeeper<T>();
+        AllocateResourceSlot(desc, slot);
+        auto ptr = (RHIBindlessSlotKeeper<T>*)slot;
+        return RHIBindlessSlotRef<T>(ptr);
+    }
+
+    // Resource slot changes should better be batched at frame begin / end.
+    // Otherwise, it's not efficient and may cause synchronization bugs.
+    // Notify the bindless manager that certain resource slots are updated. The table should be updated.
+    void CommitResourceSlotUpdate (RHIBindlessSlotKeeperBase * slot) ;
+
+    // Resource slot changes should better be batched at frame begin / end.
+    // Otherwise, it's not efficient and may cause synchronization bugs.
+    // Notify the bindless manager that certain resource slots are updated. The table should be updated.
+    void CommitResourceSlotUpdate  (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots = 1) ;
 
     // Called on RHI frame swapping. It's just the time for bindless descriptor set swapping.
     virtual void SwapSets_RHIThread () = 0;
 protected:
+    friend class RHIBindlessSlotKeeperBase;
+    template<typename T>
     friend class RHIBindlessSlotKeeper;
 
-    // Thread safe
-    void AllocateResourceSlot (const RHIBindlessResourceDesc & desc, RHIBindlessSlotKeeper * out_slot) ;
-    // Thread safe
-    void FreeResourceSlot (RHIBindlessSlotKeeper * slot) ;
+    void AllocateResourceSlot (const RHIBindlessResourceDesc & desc, RHIBindlessSlotKeeperBase * out_slot) ;
+    void FreeResourceSlot (RHIBindlessSlotKeeperBase * slot) ;
 
     // Implemented by the RHI backend
-    virtual void UpdateResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot) = 0;
-    virtual void FreeResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot) = 0;
+    virtual void CommitResourceSlotUpdateRHI (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots = 1) = 0;
+    virtual void FreeResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots) = 0;
 
     struct BindlessResourceChannel {
         // Number of slots
         int size;
         // Keep descriptions for each slot
-        RHIBindlessResourceDesc desc[C::kMaxNumBindlessResourceSlotsPerChannel];
+        int num_slots[C::kMaxNumBindlessResourceSlotsPerChannel];
         // References to keep resources alive
         TRef<RHIResource> resource_refs[C::kMaxNumBindlessResourceSlotsPerChannel];
         // Indices unused
         int unused[C::kMaxNumBindlessResourceSlotsPerChannel];
         int unused_count;
-    } bindless_channels_[(size_t)RHIBindlessResourceType::kMax];
+    } bindless_channels_[(size_t)RHIBindlessResourceType::kMaxAndImmSampler];
+    // Provide extra info about bindless buffer channels to support RHIBufferSpan
+    struct BindlessBufferChannel {
+        size_t            offsets[C::kMaxNumBindlessResourceSlotsPerChannel];
+        // -1 means the whole buffer
+        size_t            sizes[C::kMaxNumBindlessResourceSlotsPerChannel];
+    } bindless_buffer_channel[2]; // 0 for storage buffer, 1 for uniform buffer
 
-
-    // Critical section for modifying bindless_channels_
-    std::mutex mutex_;
 };
-
 MI_NAMESPACE_END
 
 #endif //MIRENDERERDEV_RHI_BINDLESS_H

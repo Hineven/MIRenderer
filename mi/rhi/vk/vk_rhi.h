@@ -55,6 +55,8 @@ public:
 
     RHIComputePipelineRef CreateComputePipeline(RHIShader *shader) override;
 
+    RHISyncPointRef CreateSyncPoint() override;
+
     RHICommandExecutorInterface * GetCommandExecutor() override;
 
     void ResetPipelineCache() override;
@@ -83,6 +85,15 @@ public:
 
     FORCEINLINE vk::PipelineCache GetPipelineCache () const {
         return pipeline_cache_;
+    }
+
+    FORCEINLINE vk::Queue GetQueue (RHICommandQueueType type) {
+        switch (type) {
+            case RHICommandQueueType::kGraphics:
+                return queue_;
+            default:
+                return {};
+        }
     }
 
     RHIBindlessSupportInfo QueryRHIBindlessSupportInfo() override;
