@@ -121,11 +121,11 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
     }
     // Allocate descriptor sets
     {
+        vk::DescriptorSetLayout layouts[] = {bindless_descriptor_set_layout_, bindless_descriptor_set_layout_};
         auto sets = device.allocateDescriptorSets(
                 vk::DescriptorSetAllocateInfo{
                         bindless_descriptor_pool_,
-                        static_cast<uint32_t>(std::size(bindless_descriptor_sets_)),
-                        &bindless_descriptor_set_layout_
+                        layouts
                 }
         );
         mi_assert(sets.size() == std::size(bindless_descriptor_sets_), "Failed to allocate descriptor sets");

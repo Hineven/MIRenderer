@@ -108,7 +108,7 @@ public:
     // The implementation need not be very-much optimized. The renderer will not use this function on critical
     // program paths. Maybe a few hundred allocations per frame, usually the C runtime malloc/free is enough.
     // Thread safety: required
-    virtual void Free (void * ptr) = 0;
+    virtual void Free (void * ptr, size_t alignment = 1) = 0;
 
     // Get the current time since the infrastructure was initialized in seconds.
     // Precise time gives better counting accuracy, but not required.
@@ -127,6 +127,9 @@ public:
     // Blocks until the compilation is finished. (This should usually be done parallelly)
     // @return a temporary blob containing the SPIR-V binary.
     virtual std::vector<uint32_t> CompileHLSLToSPIRV (
+            const wchar_t * shader_path,
+            std::string entry_point,
+            std::string target_profile,
             std::span<const char> hlsl_code,
             std::vector<std::string> options,
             std::string & error
@@ -176,6 +179,15 @@ void DestroyInfra () ;
 #else
 #define mi_assert(cond, msg)
 #endif
+
+template<typename T>
+class DeleteOnInfra {
+public:
+    inline void operator()(T * ptr) const {
+        ptr->~T();
+        GetInfra().Free(ptr);
+    }
+};
 
 MI_NAMESPACE_END
 

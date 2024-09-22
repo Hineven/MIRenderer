@@ -32,8 +32,16 @@ FORCEINLINE vk::Format GetVulkanPixelFormat (PixelFormatType format) {
             return vk::Format::eR32Sfloat;
         case PixelFormatType::kD32_FLOAT:
             return vk::Format::eD32Sfloat;
+        case PixelFormatType::kR32G32B32A32_UINT:
+            return vk::Format::eR32G32B32A32Uint;
+        case PixelFormatType::kR32G32_UINT:
+            return vk::Format::eR32G32Uint;
+        case PixelFormatType::kR32_UINT:
+            return vk::Format::eR32Uint;
         case PixelFormatType::kUnknown:
+            return vk::Format::eUndefined;
         default:
+            mi_assert(false, "Unrecognized pixel format by the Vulkan backend. Missing transition code?");
             return vk::Format::eUndefined;
     }
 }

@@ -26,22 +26,95 @@ VulkanCommandExecutor::~VulkanCommandExecutor() {
 
 void VulkanCommandExecutor::Initialize_RHIThread() {
     assert(IsRHIThread());
-    for(int i = 0; i < (int)mi::RHICommandQueueType::kMax; i++) {
+    for(int i = 0; i < (int)RHICommandQueueType::kMax; i++) {
         auto & chain = state_chains_[i];
         for(auto & state : chain.states) {
-            state.Init((mi::RHICommandQueueType)i);
+            state.Init((RHICommandQueueType)i);
         }
     }
 }
 
 void VulkanCommandExecutor::Destroy_RHIThread() {
     assert(IsRHIThread());
-    for(int i = 0; i < (int)mi::RHICommandQueueType::kMax; i++) {
+    for(int i = 0; i < (int)RHICommandQueueType::kMax; i++) {
         auto & chain = state_chains_[i];
         for(auto & state : chain.states) {
             state.Destroy();
         }
     }
+}
+
+template<typename T> concept VKLayoutType = std::is_same_v<T, vk::ImageLayout>;
+template<VKLayoutType...Layouts>
+static void CheckImageLayout(VulkanTexture * texture, [[maybe_unused]] Layouts...layout) {
+#ifndef NDEBUG
+    auto current_layout = texture->GetImageLayout();
+    bool valid = ((current_layout == layout) || ...);
+    auto expected = (vk::to_string(vk::ImageLayout(layout)) + ...);
+    auto current = vk::to_string(current_layout);
+    mi_assert(valid, "Invalid image layout. Expected: {}, Current: {}.", expected, current);
+#endif
+}
+
+void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommandClearTexture *clear_texture) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto texture = static_cast<VulkanTexture*>(clear_texture->texture_);
+    auto & region = vk::ImageSubresourceRange()
+            .setAspectMask(texture->GetImageAspect())
+            .setBaseMipLevel(clear_texture->mip_level_)
+            .setLevelCount(1)
+            .setBaseArrayLayer(clear_texture->base_layer_)
+            .setLayerCount(clear_texture->layer_count_);
+    auto & color = clear_texture->clear_value_;
+    CheckImageLayout(texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
+    state.cmd.clearColorImage(texture->GetImage(), texture->GetImageLayout(), vk::ClearColorValue(color), region);
+}
+
+void VulkanCommandExecutor::RHICopyBufferToTexture(RHICommandQueueBase *cmd,
+                                                   RHICommandCopyBufferToTexture *copy_buffer_to_texture) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & cmdb = state.cmd;
+    auto src_buffer = static_cast<VulkanBuffer*>(copy_buffer_to_texture->buffer_.buffer);
+    auto dst_texture = static_cast<VulkanTexture*>(copy_buffer_to_texture->texture_);
+    auto & region = vk::BufferImageCopy()
+            .setBufferOffset(copy_buffer_to_texture->buffer_.offset)
+            .setBufferRowLength(copy_buffer_to_texture->src_tex_width_)
+            .setBufferImageHeight(copy_buffer_to_texture->src_tex_height_)
+            .setImageSubresource(vk::ImageSubresourceLayers()
+                    .setAspectMask(dst_texture->GetImageAspect())
+                    .setMipLevel(copy_buffer_to_texture->mip_level_)
+                    .setBaseArrayLayer(copy_buffer_to_texture->base_layer_)
+                    .setLayerCount(copy_buffer_to_texture->layer_count_)
+            )
+            .setImageOffset({copy_buffer_to_texture->dst_tex_x_, copy_buffer_to_texture->dst_tex_y_, copy_buffer_to_texture->dst_tex_z_})
+            .setImageExtent({copy_buffer_to_texture->dst_tex_width_, copy_buffer_to_texture->dst_tex_height_, copy_buffer_to_texture->dst_tex_depth_});
+    CheckImageLayout(dst_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
+    cmdb.copyBufferToImage(src_buffer->GetBuffer(), dst_texture->GetImage(), dst_texture->GetImageLayout(), region);
+}
+
+void VulkanCommandExecutor::RHICopyTextureToBuffer(RHICommandQueueBase *cmd,
+                                                   RHICommandCopyTextureToBuffer *copy_texture_to_buffer) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & cmdb = state.cmd;
+    auto src_texture = static_cast<VulkanTexture*>(copy_texture_to_buffer->texture_);
+    auto dst_buffer = static_cast<VulkanBuffer*>(copy_texture_to_buffer->buffer_.buffer);
+    auto & region = vk::BufferImageCopy()
+            .setBufferOffset(copy_texture_to_buffer->buffer_.offset)
+            .setBufferRowLength(copy_texture_to_buffer->dst_tex_width_)
+            .setBufferImageHeight(copy_texture_to_buffer->dst_tex_height_)
+            .setImageSubresource(vk::ImageSubresourceLayers()
+                    .setAspectMask(src_texture->GetImageAspect())
+                    .setMipLevel(copy_texture_to_buffer->mip_level_)
+                    .setBaseArrayLayer(copy_texture_to_buffer->base_layer_)
+                    .setLayerCount(copy_texture_to_buffer->layer_count_)
+            )
+            .setImageOffset({copy_texture_to_buffer->src_tex_x_, copy_texture_to_buffer->src_tex_y_, copy_texture_to_buffer->src_tex_z_})
+            .setImageExtent({copy_texture_to_buffer->src_tex_width_, copy_texture_to_buffer->src_tex_height_, copy_texture_to_buffer->src_tex_depth_});
+    CheckImageLayout(src_texture, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral);
+    cmdb.copyImageToBuffer(src_texture->GetImage(), src_texture->GetImageLayout(), dst_buffer->GetBuffer(), region);
 }
 
 void VulkanCommandExecutor::RHICopyBuffer(RHICommandQueueBase *queue, RHICommandCopyBuffer *copy_buffer) {
@@ -78,11 +151,11 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
     auto & copy_info = vk::CopyImageInfo2()
             .setSrcImage(src_texture->GetImage())
             .setDstImage(dst_texture->GetImage())
-            .setSrcImageLayout(vk::ImageLayout::eTransferSrcOptimal)
-            .setDstImageLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setSrcImageLayout(src_texture->GetImageLayout())
+            .setDstImageLayout(dst_texture->GetImageLayout())
             .setRegions(region);
-//    src_texture->Use(cmd, vk::ImageLayout::eTransferSrcOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferRead);
-//    dst_texture->Use(cmd, vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite);
+    CheckImageLayout(src_texture, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral);
+    CheckImageLayout(dst_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
     cmd.copyImage2(copy_info);
 }
 
@@ -185,6 +258,16 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
         state.cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->GetPipeline());
         state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
     }
+}
+
+void VulkanCommandExecutor::RHIBindRenderTarget(RHICommandQueueBase *cmd,
+                                                RHICommandBindRenderTarget *bind_render_target) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
+    auto & rt = bind_render_target->target_;
+    asfasdfasdfdsdf
+
 }
 
 void VulkanCommandExecutor::RHIBindPipelineParameters(
@@ -407,7 +490,7 @@ void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
 }
 
 void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
-                                              RHICommandManualTextureBarrier *barrier) {
+                                              RHICommandTextureBarrier *barrier) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto texture = static_cast<VulkanTexture*>(barrier->texture_);
@@ -450,7 +533,7 @@ VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISy
     cmd.reset(recycle_resources ? vk::CommandBufferResetFlagBits::eReleaseResources : vk::CommandBufferResetFlagBits{});
 }
 
-void VulkanCommandExecutor::CommandQueueState::Init(mi::RHICommandQueueType type) {
+void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
     assert(IsRHIThread());
     {
         auto rhi = GetVulkanRHI();

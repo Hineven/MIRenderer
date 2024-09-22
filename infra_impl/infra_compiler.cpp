@@ -44,7 +44,13 @@ void MyInfra::DestroyHLSLCompilerContexts() {
 }
 
 std::vector<uint32_t>
-MyInfra::CompileHLSLToSPIRV(std::span<const char> hlsl_code, std::vector<std::string> options, std::string & error) {
+MyInfra::CompileHLSLToSPIRV(
+        const wchar_t * shader_path,
+        std::string entry_point,
+        std::string target_profile,
+        std::span<const char> hlsl_code,
+        std::vector<std::string> options,
+        std::string & error) {
     // Initialize DXC (if not already)
     auto ctx = GetHLSLCompilerContextForThread(std::this_thread::get_id());
     IDxcLibrary *dxc_lib = ctx->dxc_lib;
@@ -57,7 +63,33 @@ MyInfra::CompileHLSLToSPIRV(std::span<const char> hlsl_code, std::vector<std::st
 
     // Compile
     IDxcOperationResult *compile_result;
-    dxc_compiler->Compile(hlsl_blob, L"shader.hlsl", L"main", L"ps_6_0", reinterpret_cast<LPCWSTR *>(options.data()), (uint32_t)options.size(), nullptr, 0, nullptr, &compile_result);
+
+    std::wstring entry_point_w(entry_point.begin(), entry_point.end());
+    std::wstring target_profile_w(target_profile.begin(), target_profile.end());
+
+    auto w_options = std::vector<std::wstring>(options.size());
+    for (size_t i = 0; i < options.size(); i++) {
+        w_options[i] = std::wstring(options[i].begin(), options[i].end());
+    }
+    auto add_option = [&](std::wstring option) {
+        for(auto & opt : w_options) {
+            if(opt == option) {
+                return;
+            }
+        }
+        w_options.push_back(option);
+    };
+    // Instruct dxc to compile adequate SPIRV
+    add_option(L"-spirv");
+    add_option(L"-fspv-reflect");
+
+    auto w_options_cstr = std::vector<const wchar_t *>(w_options.size());
+    for (size_t i = 0; i < w_options.size(); i++) {
+        w_options_cstr[i] = w_options[i].c_str();
+    }
+    dxc_compiler->Compile(hlsl_blob, shader_path, entry_point_w.c_str(), target_profile_w.c_str(),
+                          w_options_cstr.data(), (uint32_t)w_options_cstr.size(),
+                          nullptr, 0, nullptr, &compile_result);
 
     // Check compile result
     HRESULT hr;
@@ -65,8 +97,8 @@ MyInfra::CompileHLSLToSPIRV(std::span<const char> hlsl_code, std::vector<std::st
     if (FAILED(hr)) {
         IDxcBlobEncoding *error_blob;
         compile_result->GetErrorBuffer(&error_blob);
-        std::string error_message(static_cast<const char *>(error_blob->GetBufferPointer()), error_blob->GetBufferSize());
-        error = error_message;
+        error.resize(error_blob->GetBufferSize());
+        memcpy(error.data(), error_blob->GetBufferPointer(), error_blob->GetBufferSize());
         return {};
     }
 

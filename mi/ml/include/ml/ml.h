@@ -38,7 +38,6 @@ protected:
 
     std::unique_ptr<MIInfraInterface> infra_;
 
-    std::unique_ptr<std::thread> rhi_thread_;
     std::unique_ptr<std::thread> render_thread_;
 
 };

@@ -5,10 +5,13 @@ project(MI)
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 20)
 
+# Our findvulkan fix
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     # Warning as error
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX /W4")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
 else ()
     message(FATAL_ERROR "Unsupported compiler, only MSVC is supported (for now).")
 endif()
@@ -33,11 +36,14 @@ find_package(spirv_cross_glsl REQUIRED GLOBAL)
 find_package(spirv_cross_hlsl REQUIRED GLOBAL)
 find_package(spirv_cross_cpp REQUIRED GLOBAL)
 
-
-if(NOT ${Vulkan_dxc_FOUND})
+if(NOT Vulkan_dxc_lib_FOUND OR NOT Vulkan_dxc_DEBUG_LIBRARY)
     # Fallback to standalone DXC
     message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")
-    find_package(directx-dxc CONFIG REQUIRED)
+    if(NOT ${Vulkan_dxc_DEBUG_LIBRARY})
+        message(STATUS "Reason: dxc debug library not found")
+    endif()
+    # Standalone DXC
+    find_package(directx-dxc CONFIG REQUIRED GLOBAL)
     set(dxc_library_target Microsoft::DirectXShaderCompiler)
 else()
     message(STATUS "Using integrated dxc within Vulkan SDK")

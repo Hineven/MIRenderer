@@ -7,8 +7,8 @@
 #ifndef MIRENDERERDEV_VK_TEXTURE_H
 #define MIRENDERERDEV_VK_TEXTURE_H
 
-#include "rhi/rhi_texture.h"
 #include "vk_rhi.h"
+#include "rhi/rhi_texture.h"
 #include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
@@ -97,6 +97,10 @@ public:
 
     FORCEINLINE vk::ImageView GetImageView () {
         return vk_default_image_view_;
+    }
+
+    FORCEINLINE vk::ImageAspectFlags GetImageAspect () {
+        return vk_aspect_;
     }
     
     void ImportFromHandle (vk::Image image_handle, vk::ImageLayout imported_layout) ;

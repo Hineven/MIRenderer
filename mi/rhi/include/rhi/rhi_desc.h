@@ -111,9 +111,9 @@ struct RHIGraphicsPipelineDesc {
 };
 
 struct RHITextureDimensions {
-    uint32_t width;
-    uint32_t height;
-    uint32_t depth;
+    uint32_t width {0};
+    uint32_t height {0};
+    uint32_t depth {1};
 };
 
 struct RHIPipelineParameterBufferDesc {
@@ -161,6 +161,13 @@ struct RHIBindPipelineParametersDesc {
 
 struct ShaderVertexInputDesc {
     RHIVertexAttributeFormatType format;
+    uint32_t name_crc;
+    uint32_t location;
+    std::string name;
+};
+
+struct ShaderFragmentOutputDesc {
+    RHIFragmentOutputFormatType format;
     uint32_t name_crc;
     uint32_t location;
     std::string name;

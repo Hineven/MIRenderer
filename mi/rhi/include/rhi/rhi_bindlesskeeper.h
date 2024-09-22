@@ -6,8 +6,9 @@
 
 #ifndef MI_RHI_BINDLESSKEEPER_H
 #define MI_RHI_BINDLESSKEEPER_H
-#include "rhi/rhi.h"
 #include "core/infra.h"
+#include "rhi/rhi_fwd.h"
+#include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
 
 class RHIBindlessSlotKeeperBase : public NonCopyable, public NonMovable {

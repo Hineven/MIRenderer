@@ -281,6 +281,12 @@ public:
         InPtr.ptr_ = OldReference;
     }
 
+
+    FORCEINLINE operator bool() const // NOLINT implicit conversion
+    {
+        return IsValid();
+    }
+
 private:
 
     ReferencedType* ptr_;

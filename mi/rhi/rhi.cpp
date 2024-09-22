@@ -14,9 +14,8 @@
 
 MI_NAMESPACE_BEGIN
 
-
 std::future<void> RHI::AdvanceFrame() {
-    auto & queue = *GetGraphicsCommandQueue();
+    auto & queue = GetGraphicsCommandQueue();
     // Detour the limitation that std function wrapper can not wrap non-copyable objects.
     // (Lambda capturing unmovable objects is not copyable)
 //    int __index = (int)__tiny_buffer_for_hacking_[0];
@@ -36,7 +35,7 @@ std::future<void> RHI::AdvanceFrame() {
     auto lambda = []() {
         // Swap allocators after the command buffer is submitted
         // The swapped out memory will last for about 1 frame more and silently be recycled
-        RHI::Get().GetGraphicsCommandQueue()->SwapAllocators_RHIThread();
+        RHI::Get().GetGraphicsCommandQueue().SwapAllocators_RHIThread();
         // Swap the bindless descriptor set after the command buffer is submitted
         RHI::Get().GetBindlessManager().SwapSets_RHIThread();
         // Recycle resources that are pending for deletion
@@ -48,11 +47,11 @@ std::future<void> RHI::AdvanceFrame() {
     return EnqueueRHIThreadTask(std::move(lambda));
 }
 
-void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread() {
+void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
     bool removal = false;
     // Try to delete the resource that is not ready to be deleted in the previous frame first.
     if(remaining_resource_record_pending_for_deletion_.resource) {
-        if(remaining_resource_record_pending_for_deletion_.frame_index < RHI::Get().GetFrameIndex()) {
+        if(force || remaining_resource_record_pending_for_deletion_.frame_index < RHI::Get().GetFrameIndex()) {
             FreeResource_RHIThread(remaining_resource_record_pending_for_deletion_.resource);
             remaining_resource_record_pending_for_deletion_ = {};
             removal = true;
@@ -62,7 +61,7 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread() {
     if(removal) {
         RHIResourceToRecycle resource {};
         while(resources_pending_for_deletion_.Pop(resource)) {
-            if(resource.frame_index < RHI::Get().GetFrameIndex() - 1) {
+            if(force || resource.frame_index < RHI::Get().GetFrameIndex() - 1) {
                 FreeResource_RHIThread(remaining_resource_record_pending_for_deletion_.resource);
             } else {
                 // The resource is not ready to be deleted, delay it to the next frame;
@@ -93,21 +92,39 @@ void RHI::InitializeSingleton (RHIType type) {
         default:
             mi_assert(false, "Unknown RHI type");
     }
+    // Wait for the RHI thread to start
+    // TODO this sucks
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    GDynamicRHI->PostInitialize();
 }
 
 void RHI::DestroySingleton () {
     if(GDynamicRHI) {
         GDynamicRHI->WaitForIdle();
-        delete GDynamicRHI;
+        GDynamicRHI->~RHI();
+        GetInfra().Free(GDynamicRHI);
         GDynamicRHI = nullptr;
     }
 }
 
+bool RHI::HasSingleton() {
+    return GDynamicRHI != nullptr;
+}
+
 RHI::RHI() {
-    graphics_command_queue_.reset(new RHICommandQueueGraphics());
+    auto res = GetInfra().LaunchThread(ThreadPerformanceType::kHigh, [this](){
+        StartAndRunRHIWorkerThread();
+    });
+    mi_assert(res, "Failed to start RHI thread");
+    rhi_thread_ = std::move(res.value());
 }
 
 RHI::~RHI() {
+    // Destroy all resources no matter whether they are pending or not
+    RecycleRHIResourcesPendingForDeletion_RHIThread(true);
+    // Stop RHI thread
+    SignalStopRHIWorkerThreads();
+    rhi_thread_->join();
     // Make unique_ptr on incomplete type work
 }
 

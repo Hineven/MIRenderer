@@ -22,6 +22,9 @@ enum class PixelFormatType {
     kR32G32_FLOAT,
     kR32_FLOAT,
     kD32_FLOAT,
+    kR32G32B32A32_UINT,
+    kR32G32_UINT,
+    kR32_UINT,
     kMax
 };
 

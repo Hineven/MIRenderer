@@ -103,9 +103,9 @@ public:
 
     uint32_t GenerateSeed() override;
 
-    void *Allocate(size_t size, size_t alignment) override;
+    void *Allocate(size_t size, size_t alignment = 1) override;
 
-    void Free(void *ptr) override;
+    void Free(void *ptr, size_t alignment = 1) override;
 
     float GetTimeSinceStart() override;
 
@@ -116,10 +116,14 @@ public:
     void AddProfileTime(const std::string &name, float time) override;
 
     std::vector<uint32_t> CompileHLSLToSPIRV (
+            const wchar_t *  shader_path,
+            std::string entry_point,
+            // dxc style profile
+            std::string target_profile,
             std::span<const char> hlsl_code,
             std::vector<std::string> options,
             std::string & error
-    ) ;
+    ) override;
 
     void LogMessage(MIInfraLogType level, const std::string &message) override;
 

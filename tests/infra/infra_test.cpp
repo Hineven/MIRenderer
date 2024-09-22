@@ -17,7 +17,7 @@ TEST(InfraTest, InfraCompileShader) {
     TransferInfra(std::make_unique<MyInfra>());
     GetInfra().Init();
     std::string error;
-    std::vector<uint32_t> spirv = GetInfra().CompileHLSLToSPIRV("void main() { }", {}, error);
+    std::vector<uint32_t> spirv = GetInfra().CompileHLSLToSPIRV(L"", "main", "cs_6_3", "void main() { }", {}, error);
     EXPECT_TRUE(spirv.size() > 0);
     GetInfra().Shutdown();
     DestroyInfra();

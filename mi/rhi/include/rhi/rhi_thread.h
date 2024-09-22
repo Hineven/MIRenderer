@@ -57,6 +57,9 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * comma
 // Enqueue a task to the RHI thread for execution.
 std::future<void> EnqueueRHIThreadTask (std::function<void()> && task) ;
 
+// Invoke the RHI thread to do 1 loop.
+void EnqueueRHIThreadIdleTask ();
+
 // Increment the frame counter kept by the RHI thread.
 // The counter is used to filter RHI resources to recycle. Resources that are at least
 // 1 frame older than the current frame will be recycled.

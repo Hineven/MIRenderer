@@ -29,6 +29,8 @@ class VulkanBindlessManager;
 class VulkanCommandExecutor;
 
 class VulkanRHI : public RHI {
+protected:
+    void PostInitialize() override;
 public:
     VulkanRHI() ;
     ~VulkanRHI() override ;
@@ -98,13 +100,12 @@ public:
 
     RHIBindlessSupportInfo QueryRHIBindlessSupportInfo() override;
 
-
     uint32_t GetGraphicsQueueFamilyIndex();
 
     uint32_t GetQueueFamilyIndex(RHICommandQueueType type);
 
     FORCEINLINE VulkanBindlessManager * GetVulkanBindlessManager() {
-        return (VulkanBindlessManager*)bindless_manager_.get();
+        return (VulkanBindlessManager*)bindless_manager_;
     }
 
 protected:
@@ -114,7 +115,7 @@ protected:
     void InvalidateDiskPipelineCache () ;
     void LoadPipelineCache ();
 
-    std::unique_ptr<VulkanCommandExecutor> command_executor_ {};
+    VulkanCommandExecutor * command_executor_ {};
 
     vk::Instance instance_ {};
     vk::PhysicalDevice physical_device_ {};

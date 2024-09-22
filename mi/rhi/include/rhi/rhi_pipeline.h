@@ -12,6 +12,7 @@
 #include "rhi/rhi_resource.h"
 #include "rhi_shader.h"
 #include "rhi_desc.h"
+#include "core/conalloc.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -31,17 +32,17 @@ public:
     }
 
     // Get the resource slot by the name of the resource reflected from shaders
-    RHIPipelineResourceSlot ReflectResourceSlot (const std::string & name) const;
+    RHIPipelineResourceSlot ReflectResourceSlot (const IString & name) const;
 
     FORCEINLINE bool HasBindlessResources() const {return has_bindless_resources_;}
 
-    FORCEINLINE const std::string & GetName () const {return name_;}
+    FORCEINLINE const IString & GetName () const {return name_;}
     FORCEINLINE void SetName () {name_ = name_; OnNameChanged();}
 
     RHIPipeline(std::string_view name) : name_(name) {}
     inline virtual ~RHIPipeline() {Reset();}
 
-    void Reset () ;
+    virtual void Reset () ;
 
     // Return the size of a adequate btb buffer for this pipeline, in bytes.
     inline uint32_t GetBindlessTableSize () const {return bindless_table_size_;}
@@ -60,44 +61,44 @@ protected:
     virtual void ResetRHI () = 0;
     virtual void OnNameChanged () = 0;
 
-    std::string name_;
+    IString name_;
     bool is_valid_ {false};
 
     // Aggregated by the pipeline
     USE_PIPELINE_REFLECTION_STRUCTS
 
-    std::vector<UniformBufferDesc> uniform_buffers_;
-    std::vector<StorageBufferDesc> storage_buffers_;
-    std::vector<UAVDesc> uavs_;
-    std::vector<SRVDesc> srvs_;
-    std::vector<SamplerDesc> samplers_;
-    std::vector<ImmutableSamplerDesc> immutable_samplers_;
-    std::vector<AccelerationStructureDesc> acceleration_structures_;
-    std::vector<CommandConstantDesc> command_constant_;
+    IVector<UniformBufferDesc> uniform_buffers_;
+    IVector<StorageBufferDesc> storage_buffers_;
+    IVector<UAVDesc> uavs_;
+    IVector<SRVDesc> srvs_;
+    IVector<SamplerDesc> samplers_;
+    IVector<ImmutableSamplerDesc> immutable_samplers_;
+    IVector<AccelerationStructureDesc> acceleration_structures_;
+    IVector<CommandConstantDesc> command_constant_;
 
     bool has_bindless_resources_ {false};
     uint32_t bindless_table_size_ {};
 
 public:
-    FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const {
+    FORCEINLINE const IVector<UniformBufferDesc> & GetUniformBufferDesc() const {
         return uniform_buffers_;
     }
-    FORCEINLINE const std::vector<StorageBufferDesc> & GetStorageBufferDesc() const {
+    FORCEINLINE const IVector<StorageBufferDesc> & GetStorageBufferDesc() const {
         return storage_buffers_;
     }
-    FORCEINLINE const std::vector<UAVDesc> & GetUAVDesc() const {
+    FORCEINLINE const IVector<UAVDesc> & GetUAVDesc() const {
         return uavs_;
     }
-    FORCEINLINE const std::vector<SRVDesc> & GetSRVDesc() const {
+    FORCEINLINE const IVector<SRVDesc> & GetSRVDesc() const {
         return srvs_;
     }
-    FORCEINLINE const std::vector<SamplerDesc> & GetSamplerDesc() const {
+    FORCEINLINE const IVector<SamplerDesc> & GetSamplerDesc() const {
         return samplers_;
     }
-    FORCEINLINE const std::vector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const {
+    FORCEINLINE const IVector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const {
         return immutable_samplers_;
     }
-    FORCEINLINE const std::vector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const {
+    FORCEINLINE const IVector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const {
         return acceleration_structures_;
     }
     FORCEINLINE const CommandConstantDesc & GetCommandConstantDesc() const {
@@ -108,11 +109,16 @@ public:
 class RHIGraphicsPipeline : public RHIPipeline {
 public:
     using RHIPipeline::RHIPipeline;
+
+    virtual void Reset () override;
     void Compile (const RHIGraphicsPipelineDesc &) ;
 
     virtual ~RHIGraphicsPipeline() = default;
 protected:
     virtual bool CompileRHI (const RHIGraphicsPipelineDesc &) = 0;
+
+    IVector<ShaderVertexInputDesc> vertex_inputs_;
+    IVector<ShaderFragmentOutputDesc> fragment_outputs_;
 };
 
 class RHIComputePipeline : public RHIPipeline {

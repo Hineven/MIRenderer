@@ -6,7 +6,38 @@
 #include "rhi/rhi_cmd.h"
 #include "rhi/rhi.h"
 #include "rhi_cmd_exec.h"
+#include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
+
+void RHICommandClearTexture::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIClearTexture(&cmd, this);
+}
+
+void RHICommandCopyBufferToTexture::Execute(RHICommandQueueBase &cmd) {
+    if(dst_tex_width_ == 0) {
+        dst_tex_width_ = texture_->GetWidth();
+    }
+    if(dst_tex_height_ == 0) {
+        dst_tex_height_ = texture_->GetHeight();
+    }
+    if(dst_tex_depth_ == 0) {
+        dst_tex_depth_ = texture_->GetDepth();
+    }
+    RHI::Get().GetCommandExecutor()->RHICopyBufferToTexture(&cmd, this);
+}
+
+void RHICommandCopyTextureToBuffer::Execute(RHICommandQueueBase &cmd) {
+    if(src_tex_width_ == 0) {
+        src_tex_width_ = texture_->GetWidth();
+    }
+    if(src_tex_height_ == 0) {
+        src_tex_height_ = texture_->GetHeight();
+    }
+    if(src_tex_depth_ == 0) {
+        src_tex_depth_ = texture_->GetDepth();
+    }
+    RHI::Get().GetCommandExecutor()->RHICopyTextureToBuffer(&cmd, this);
+}
 
 void RHICommandCopyBuffer::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHICopyBuffer(&cmd, this);
@@ -35,6 +66,10 @@ void RHICommandBindComputePipeline::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindComputePipeline(&cmd, this);
 }
 
+void RHICommandBindRenderTarget::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBindRenderTarget(&cmd, this);
+}
+
 void RHICommandBindPipelineParameters::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindPipelineParameters(&cmd, this);
 }
@@ -43,7 +78,7 @@ void RHICommandBindVertexBuffer::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindVertexBuffer(&cmd, this);
 }
 
-void RHICommandManualTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
+void RHICommandTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHITextureBarrier(&cmd, this);
 }
 
@@ -56,6 +91,7 @@ void RHICommandFrameEnd::Execute(RHICommandQueueBase &cmd) {
 }
 
 MI_NAMESPACE_END
+
 
 
 

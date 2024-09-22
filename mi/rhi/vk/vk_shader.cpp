@@ -11,7 +11,7 @@ bool VulkanShader::CompileRHI() {
     auto device = GetVulkanRHI()->GetDevice();
     vk_shader_module_ = device.createShaderModule(
             vk::ShaderModuleCreateInfo()
-            .setPCode(reinterpret_cast<const uint32_t *>(ir_.get())).setCodeSize(ir_size_)
+            .setPCode(reinterpret_cast<const uint32_t *>(ir_)).setCodeSize(ir_size_)
     );
     return (bool)vk_shader_module_;
 }

@@ -27,7 +27,10 @@ VulkanRHI::VulkanRHI() {
         auto vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 
-        vk::ApplicationInfo app_info("MIRenderer", MI_APPLICATION_VERSION, MI_ENGINE_NAME, MI_ENGINE_VERSION,
+        vk::ApplicationInfo app_info("MIRenderer",
+                                     VK_MAKE_VERSION(MI_APPLICATION_VERSION_MAJOR, MI_APPLICATION_VERSION_MINOR, 0),
+                                     MI_ENGINE_NAME,
+                                     VK_MAKE_VERSION(MI_ENGINE_VERSION_MAJOR, MI_ENGINE_VERSION_MINOR, 0),
                                      VK_API_VERSION_1_3);
         vk::InstanceCreateInfo instance_info({}, &app_info);
 
@@ -72,42 +75,72 @@ VulkanRHI::VulkanRHI() {
                 available_extension_names +=
                         std::string("    ") + std::string(e.extensionName.operator char *()) + "\n";
             }
-            std::string layer_names = "Available layer names: \n";
+            std::string available_layer_names = "Available layer names: \n";
             for (auto e: layer_props) {
-                layer_names += std::string("    ") + std::string(e.layerName.operator char *()) + "\n";
+                available_layer_names += std::string("    ") + std::string(e.layerName.operator char *()) + "\n";
             }
-            MI_LOG(MIInfraLogType::kInfo, "{}; {}", available_extension_names, layer_names);
 
             for (auto extension_name: enabled_extension_names) {
                 bool flag = false;
                 for (auto e: extension_props)
                     if (strcmp(e.extensionName, extension_name) == 0) flag = true;
-                MI_LOG(MIInfraLogType::kInfo, "Enable extension: {}", extension_name);
                 if (!flag)
                     mi_assert(false,
-                            "Required instance extension '{}' is not present, consider update your graphics driver.",
-                            extension_name);
+                              "Required instance extension '{}' is not present, consider update your graphics driver.\n"
+                              "{}",
+                              extension_name, available_layer_names);
             }
-        }
+            for (auto layer_name: enabled_layer_names) {
+                bool flag = false;
+                for (auto e: layer_props)
+                    if (strcmp(e.layerName, layer_name) == 0) flag = true;
+                if (!flag) {
+                    std::string additional_info;
+                    if (strcmp(layer_name, "VK_LAYER_KHRONOS_validation") == 0) {
+                        additional_info = "This layer is provided by the Vulkan SDK, make sure you have installed it."
+                                          "If you installed the validation layer with vcpkg,"
+                                          " consider add the binary path to the VK_ADD_LAYER_PATH environment variable.\n";
+                    }
+                    mi_assert(false,
+                              "Required instance layer '{}' is not present. {}\n"
+                              "{}",
+                              layer_name, additional_info, available_layer_names);
+                }
 
-        for(auto layer_name : enabled_layer_names) {
-            bool flag = false;
-            for(auto e : layer_props)
-                if(strcmp(e.layerName, layer_name) == 0) flag = true;
-            MI_LOG(MIInfraLogType::kInfo, "Enable layer: {}", layer_name);
-            if(!flag) mi_assert(false,
-                                "Required instance layer '{}' is not present, consider update your graphics driver.",
-                                layer_name);
-
+            }
         }
 
         instance_ = vk::createInstance(instance_info);
     }
+
+    // Initialize function dispatcher (func pointers)
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance_);
+
     // Select physical device
     {
-        physical_device_ = instance_.enumeratePhysicalDevices().front();
-        std::string device_name = physical_device_.getProperties().deviceName;
-        MI_LOG(MIInfraLogType::kInfo, "Selected physical device: {}", device_name);
+        physical_device_ = nullptr;
+        auto devices = instance_.enumeratePhysicalDevices();
+        std::string device_names = "";
+        for(auto dev : devices) {
+            auto props = dev.getProperties();
+            auto device_name = props.deviceName;
+            device_names += std::string(device_name.operator char *()) + ", ";
+        }
+        MI_LOG(MIInfraLogType::kInfo, "Graphics devices: {}", device_names);
+        for(auto dev : devices) {
+            auto props = dev.getProperties();
+            // Select the first discrete GPU
+            if(props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+                physical_device_ = dev;
+                break;
+            }
+        }
+        if(!physical_device_) {
+            mi_assert(false, "No discrete GPU found. "
+                             "If you actually have a discrete GPU, make sure it is properly installed and have upgraded"
+                             "its driver to the latest version.");
+        }
+        MI_LOG(MIInfraLogType::kInfo, "Selected physical device: {}", physical_device_.getProperties().deviceName.operator char *());
     }
 
     // Query device properties
@@ -156,9 +189,28 @@ VulkanRHI::VulkanRHI() {
                 // Mesh shader support
                 VK_EXT_MESH_SHADER_EXTENSION_NAME,
                 // Debugging
-                VK_EXT_DEBUG_MARKER_EXTENSION_NAME
+                // VK_EXT_DEBUG_MARKER_EXTENSION_NAME // Promoted to VK_EXT_debug_utils extension
                 // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME // This extension has been promoted to Vulkan Core in 1.2
         };
+        // Check if the required extensions are supported
+        auto supported_extensions = physical_device_.enumerateDeviceExtensionProperties();
+        std::string failure_log = "";
+        for(auto supported : supported_extensions) {
+            failure_log += std::string((const char*)supported.extensionName) + "\n";
+        }
+        for(auto extension_name : enabled_extension_names) {
+            bool flag = false;
+            for(auto e : supported_extensions)
+                if(strcmp(e.extensionName, extension_name) == 0) flag = true;
+            failure_log += std::string("Enable extension: ") + extension_name + "\n";
+            if(!flag) {
+                mi_assert(false,
+                                "Required device extension '{}' is not present, consider update your graphics driver."
+                                "Current device supports: \n{}",
+                                extension_name, failure_log);
+            }
+        }
+
         vk::PhysicalDeviceFeatures enabled_features {};
         enabled_features.independentBlend = VK_TRUE; // Blend mode being identical for each color attachment
         enabled_features.robustBufferAccess = VK_TRUE; // Robust buffer access (fill missing vertex data)
@@ -240,7 +292,6 @@ VulkanRHI::VulkanRHI() {
     // Device resources
     {
         queue_ = device_.getQueue(graphics_queue_family_index_, 0);
-
         LoadPipelineCache();
     }
     vma_ = vma::createAllocator(vma::AllocatorCreateInfo{
@@ -258,15 +309,6 @@ VulkanRHI::VulkanRHI() {
             instance_,
             MI_MIN_VULKAN_API_VERSION
     });
-
-    // Create bindless manager and command executor
-    {
-        mi_assert(IsRHIThreadActive(), "RHI thread must be active when creating VulkanRHI.");
-        // Initialization are automatically dispatched to the RHI thread
-        // via the constructor functions
-        bindless_manager_.reset(GetInfra().New<VulkanBindlessManager>());
-        command_executor_.reset(GetInfra().New<VulkanCommandExecutor>());
-    }
 }
 
 void VulkanRHI::InvalidateDiskPipelineCache() {
@@ -280,10 +322,15 @@ void VulkanRHI::LoadPipelineCache() {
 
 VulkanRHI::~VulkanRHI() {
     queue_.waitIdle();
+
+    // Release the resources held by upper layers first
+    GetInfra().Delete(this->bindless_manager_);
+    GetInfra().Delete(this->command_executor_);
+
+    vma_.destroy();
     device_.destroy(pipeline_cache_);
     device_.destroy();
     instance_.destroy();
-    vma_.destroy();
 }
 
 RHIBufferRef VulkanRHI::CreateBuffer(size_t size, RHIBufferUsageFlagBits type, RHIGPUAccessFlagBits access_type) {
@@ -308,7 +355,8 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
     auto shader = GetInfra().New<VulkanShader>(frequency, entry_name, ir_type, ir);
     shader->Compile();
     if(shader->IsValid()) return {shader};
-    delete shader;
+    shader->~VulkanShader();
+    GetInfra().Delete(shader);
     return nullptr;
 }
 
@@ -316,7 +364,8 @@ RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipeli
     auto pipeline = GetInfra().New<VulkanGraphicsPipeline>("");
     pipeline->Compile(desc);
     if(pipeline->IsValid()) return pipeline;
-    delete pipeline;
+    pipeline->~VulkanGraphicsPipeline();
+    GetInfra().Delete(pipeline);
     return nullptr;
 }
 
@@ -324,7 +373,8 @@ RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader) {
     auto pipeline = GetInfra().New<VulkanComputePipeline>("");
     pipeline->Compile(shader);
     if(pipeline->IsValid()) return pipeline;
-    delete pipeline;
+    pipeline->~VulkanComputePipeline();
+    GetInfra().Delete(pipeline);
     return nullptr;
 }
 
@@ -354,7 +404,7 @@ uint32_t VulkanRHI::GetQueueFamilyIndex([[maybe_unused]] RHICommandQueueType typ
 }
 
 RHICommandExecutorInterface * VulkanRHI::GetCommandExecutor() {
-    return command_executor_.get();
+    return command_executor_;
 }
 
 void VulkanRHI::WaitForIdle(bool host_only) {
@@ -390,6 +440,17 @@ RHISyncPointRef VulkanRHI::CreateSyncPoint() {
     return {(RHISyncPoint*)ptr};
 }
 
+void VulkanRHI::PostInitialize() {
+    // Create bindless manager and command executor
+    {
+        mi_assert(IsRHIThreadActive(), "RHI thread must be active when creating VulkanRHI.");
+        // Initialization are automatically dispatched to the RHI thread
+        // via the constructor functions
+        bindless_manager_ = GetInfra().New<VulkanBindlessManager>();
+        command_executor_ = GetInfra().New<VulkanCommandExecutor>();
+    }
+}
+
 // Shortcut to get VulkanRHI instance
 VulkanRHI * GetVulkanRHI () {
     return static_cast<VulkanRHI*>(&(RHI::Get())); // NOLINT this is safe
@@ -397,7 +458,8 @@ VulkanRHI * GetVulkanRHI () {
 
 // Implement factory function declared in vk_rhi_export.h
 VulkanRHI * CreateVulkanRHI () {
-    return new VulkanRHI();
+    auto RHI = GetInfra().Allocate(sizeof(VulkanRHI));
+    return new(RHI) VulkanRHI();
 }
 
 

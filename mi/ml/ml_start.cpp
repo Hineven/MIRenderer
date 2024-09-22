@@ -35,15 +35,6 @@ void MainLoop::Start () {
     // We only have vulkan supported now.
     RHI::InitializeSingleton(RHIType::kVulkan);
 
-    // Dispatch threads
-    {
-        // RHI thread
-        auto result = infra_->LaunchThread(ThreadPerformanceType::kLow, [this] {
-            StartAndRunRHIWorkerThread();
-        });
-        mi_assert(result, "Failed to launch RHI thread.");
-        rhi_thread_ = std::move(result.value());
-    }
     {
         // Render thread
         auto result = infra_->LaunchThread(ThreadPerformanceType::kHigh, [this] {

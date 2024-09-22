@@ -1,5 +1,5 @@
 set(SOURCE_FILES
-        rhi_thread.cpp
+    rhi_thread.cpp
     rhi_shader.cpp
     rhi_pipeline.cpp
     rhi_bindless.cpp

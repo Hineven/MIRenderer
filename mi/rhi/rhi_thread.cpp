@@ -61,6 +61,10 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * comma
     return future;
 }
 
+void EnqueueRHIThreadIdleTask () {
+    task_queue_sem_.release();
+}
+
 void StartAndRunRHIWorkerThread() {
     RHIWorkerThread * rhi_thread = GetInfra().New<RHIWorkerThread>();
     G_RHIWorkerThread = rhi_thread;
@@ -70,6 +74,7 @@ void StartAndRunRHIWorkerThread() {
 void SignalStopRHIWorkerThreads() {
     if(G_RHIWorkerThread) {
         G_RHIWorkerThread->SignalStop();
+        EnqueueRHIThreadIdleTask();
     }
 }
 
@@ -103,11 +108,14 @@ void RHIWorkerThread::Run() {
 
     static std::atomic<bool> rhi_thread_started {false};
     // Check if the thread has been started
-    if(!rhi_thread_started.exchange(true)) {
+    bool expected = false;
+    rhi_thread_started.compare_exchange_strong(expected, true);
+    if(expected) {
         MI_LOG(MIInfraLogType::kInfo, "There are more than one started RHI threads. Exiting.");
         return ;
     }
     is_running_ = true;
+    MI_LOG(MIInfraLogType::kInfo, "RHI thread started.");
     while(!stop_signal_) {
         RHIThreadTask task;
         // Wait for at least one task
@@ -141,6 +149,7 @@ void RHIWorkerThread::Run() {
             }
         }
     }
+    MI_LOG(MIInfraLogType::kInfo, "RHI thread stopping.");
     is_running_ = false;
     // Reset the flag
     rhi_thread_started.store(false);

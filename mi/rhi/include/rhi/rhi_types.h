@@ -235,6 +235,28 @@ enum class RHIVertexAttributeFormatType {
     kMax
 };
 
+FORCEINLINE uint32_t GetVertexAttributeFormatSize (RHIVertexAttributeFormatType type) {
+    switch(type) {
+        case RHIVertexAttributeFormatType::k1xFp32:
+            return 4;
+        case RHIVertexAttributeFormatType::k2xFp32:
+            return 8;
+        case RHIVertexAttributeFormatType::k3xFp32:
+            return 12;
+        case RHIVertexAttributeFormatType::k4xFp32:
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+enum class RHIFragmentOutputFormatType {
+    k4xFp32,
+    // Signed / unsigned all considered as 32bit integer
+    k4xUIint32,
+    kMax
+};
+
 enum class RHIIndexType {
     kUint16,
     kUint32,

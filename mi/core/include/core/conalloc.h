@@ -48,6 +48,15 @@ public:
     }
 };
 
+template<typename T>
+using IDA = std::allocator<T>;
+
+template<typename T>
+using IVector = std::vector<T, InfraDefaultAllocator<T>>;
+
+using IString = std::basic_string<char, std::char_traits<char>, InfraDefaultAllocator<char>>;
+using IWString = std::basic_string<wchar_t, std::char_traits<wchar_t>, InfraDefaultAllocator<wchar_t>>;
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CONALLOC_H

@@ -16,6 +16,7 @@
 #include "rhi/rhi_types.h"
 #include "core/pixel_format.h"
 #include "core/util/lockfree.h"
+#include "rhi_cmd.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -23,11 +24,14 @@ MI_NAMESPACE_BEGIN
 class RHI {
 protected:
     virtual ~RHI();
+    // Called when GDynamicRHI is set but InitializeSingleton has not yet returned.
+    virtual void PostInitialize () = 0;
 public:
     // Initialize the RHI layer
     static void InitializeSingleton (RHIType type) ;
     // Destroy the RHI layer
     static void DestroySingleton () ;
+    static bool HasSingleton () ;
 
     // Get the active RHI singleton
     static RHI & Get() ;
@@ -94,8 +98,8 @@ public:
         return frame_index_;
     }
 
-    FORCEINLINE RHICommandQueueGraphics * GetGraphicsCommandQueue () {
-        return graphics_command_queue_.get();
+    FORCEINLINE RHICommandQueueGraphics & GetGraphicsCommandQueue () {
+        return graphics_command_queue_;
     }
 
     friend class RHIResource;
@@ -111,7 +115,7 @@ protected:
     // Only the render thread is allowed to operate on RHI resource references
     // so there are only one producer and one consumer (RHI thread) for this queue.
     TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne>
-    resources_pending_for_deletion_ {};
+        resources_pending_for_deletion_ {};
     // The resource that is not ready to be deleted in the previous frame.
     RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
 
@@ -121,16 +125,19 @@ protected:
     // Free a resource allocated by the RHI.
     virtual void FreeResource_RHIThread (RHIResource * resource) = 0;
 
+    // @param force if true, all pending resources will be recycled even if they are
+    // potentially not ready to be recycled.
+    void RecycleRHIResourcesPendingForDeletion_RHIThread(bool force = false) ;
 
-    void RecycleRHIResourcesPendingForDeletion_RHIThread() ;
-
-    std::unique_ptr<RHICommandQueueGraphics> graphics_command_queue_ {};
+    RHICommandQueueGraphics graphics_command_queue_ {};
 
     // The implementation should create their own bindless manager
-    // and assign it to this pointer.
-    std::unique_ptr<RHIBindlessManager> bindless_manager_ {};
+    // and assign it to this pointer. It should also be manually deleted.
+    RHIBindlessManager * bindless_manager_ {};
     size_t frame_index_ {0};
     uint32_t __tiny_buffer_for_hacking_ [128];
+
+    std::unique_ptr<std::thread> rhi_thread_ {};
 };
 
 // Check if the current thread is the RHI thread

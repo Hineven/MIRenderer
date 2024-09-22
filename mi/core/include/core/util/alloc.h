@@ -18,7 +18,8 @@ template<size_t BlockSize = 4096, size_t Alignment = 16>
 class TOneTimeLinearAllocator {
 public:
     TOneTimeLinearAllocator() {
-        Block * new_block = (Block*)GetInfra().Allocate(sizeof(Block));
+        auto new_block = (Block*)GetInfra().Allocate(sizeof(Block));
+        new_block->next = nullptr;
         head_ = new_block;
         current_ = head_;
     }
@@ -32,6 +33,7 @@ public:
         size = RoundUp(size, Alignment);
         if(current_offset_ + size > BlockSize) {
             auto new_block = reinterpret_cast<Block*>(GetInfra().Allocate(sizeof(Block), Alignment));
+            new_block->next = nullptr;
             current_->next = new_block;
             current_ = new_block;
             current_offset_ = 0;
@@ -50,7 +52,7 @@ public:
         Block* block = head_;
         while (block) {
             Block* next = block->next;
-            GetInfra().Free(block);
+            GetInfra().Free(block, Alignment);
             block = next;
         }
         head_ = nullptr;

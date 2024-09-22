@@ -57,9 +57,9 @@ void *MyInfra::Allocate(size_t size, size_t alignment) {
     return ::operator new(size, std::align_val_t(alignment));
 }
 
-void MyInfra::Free(void *ptr) {
+void MyInfra::Free(void *ptr, size_t alignment) {
     // Use the native C++ runtime implementation.
-    ::operator delete(ptr);
+    ::operator delete(ptr, std::align_val_t(alignment));
 }
 
 float MyInfra::GetTimeSinceStart() {

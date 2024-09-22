@@ -25,16 +25,20 @@ public:
     VulkanCommandExecutor() ;
     virtual ~VulkanCommandExecutor() override ;
 
+    void RHIClearTexture(RHICommandQueueBase * cmd, RHICommandClearTexture * clear_texture) override ;
     void RHICopyBuffer(RHICommandQueueBase * cmd, RHICommandCopyBuffer * copy_buffer) override ;
+    void RHICopyBufferToTexture(RHICommandQueueBase * cmd, RHICommandCopyBufferToTexture * copy_buffer_to_texture) override ;
+    void RHICopyTextureToBuffer(RHICommandQueueBase * cmd, RHICommandCopyTextureToBuffer * copy_texture_to_buffer) override ;
     void RHICopyTexture(RHICommandQueueBase * cmd, RHICommandCopyTexture * copy_texture) override ;
     void RHIDrawPrimitive(RHICommandQueueBase * cmd, RHICommandDrawPrimitive * draw_primitive) override ;
     void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
+    void RHIBindRenderTarget(RHICommandQueueBase * cmd, RHICommandBindRenderTarget * bind_render_target) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
-    void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandManualTextureBarrier * barrier) override ;
+    void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandTextureBarrier * barrier) override ;
     void RHIBufferBarrier(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHICommandFrameEnd * frame_end) override ;
 

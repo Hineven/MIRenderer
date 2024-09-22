@@ -8,6 +8,7 @@
 #define MIRENDERERDEV_RHI_CMD_H
 
 #include <format>
+#include <array>
 #include "core/base.h"
 #include "core/util/alloc.h"
 #include "rhi/rhi_common.h"
@@ -48,7 +49,7 @@ private:
 // 1. Translation: RHI thread running asynchronously translate the commands into driver commands ready for submission
 // 2. Submission: Translated commands are submitted by the RHI thread to device for execution.
 // 3. Finished: The command finished execution and is destroyed.
-class RHICommandQueueBase : public NonCopyable {
+class RHICommandQueueBase : public NonCopyable, public NonMovable {
 protected:
     inline auto & GetBufferAllocator () {
         return buffer_allocator_[allocator_index_];
@@ -178,8 +179,78 @@ protected:
 };
 
 // Command definitions
-// TODO i should better isolate their definitions from rhi users
-// but im lazy...
+class RHICommandClearTexture : public TRHICommand<RHICommandClearTexture> {
+public:
+    RHICommandClearTexture(RHITexture * texture, const std::array<float, 4> & clear_value,
+                           uint32_t mip_level, uint32_t base_layer, uint32_t layer_count)
+        : texture_(texture), clear_value_(clear_value), mip_level_(mip_level),
+          base_layer_(base_layer), layer_count_(layer_count) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHITexture * texture_;
+    std::array<float, 4> clear_value_;
+    uint32_t mip_level_;
+    uint32_t base_layer_;
+    uint32_t layer_count_;
+};
+class RHICommandCopyBufferToTexture : public TRHICommand<RHICommandCopyBufferToTexture> {
+public:
+    RHICommandCopyBufferToTexture(RHIBufferSpan buffer, RHITexture * texture,
+                                  uint32_t mip_level, uint32_t base_layer, uint32_t layer_count,
+                                  uint32_t src_tex_width, uint32_t src_tex_height,
+                                  int dst_tex_x, int dst_tex_y, int dst_tex_z,
+                                  uint32_t dst_tex_width, uint32_t dst_tex_height, uint32_t dst_tex_depth)
+        : buffer_(buffer), texture_(texture), mip_level_(mip_level),
+          base_layer_(base_layer), layer_count_(layer_count),
+          src_tex_width_(src_tex_width), src_tex_height_(src_tex_height),
+          dst_tex_x_(dst_tex_x), dst_tex_y_(dst_tex_y), dst_tex_z_(dst_tex_z),
+          dst_tex_width_(dst_tex_width), dst_tex_height_(dst_tex_height), dst_tex_depth_(dst_tex_depth){}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIBufferSpan buffer_;
+    RHITexture * texture_;
+    uint32_t mip_level_;
+    uint32_t base_layer_;
+    uint32_t layer_count_;
+    uint32_t src_tex_width_; // texels
+    uint32_t src_tex_height_; // texels
+    int      dst_tex_x_;
+    int      dst_tex_y_;
+    int      dst_tex_z_;
+    uint32_t dst_tex_width_;
+    uint32_t dst_tex_height_;
+    uint32_t dst_tex_depth_;
+};
+
+class RHICommandCopyTextureToBuffer : public TRHICommand<RHICommandCopyTextureToBuffer> {
+public:
+    RHICommandCopyTextureToBuffer(RHITexture * texture, RHIBufferSpan buffer,
+                                  uint32_t mip_level, uint32_t base_layer, uint32_t layer_count,
+                                  uint32_t dst_tex_width, uint32_t dst_tex_height,
+                                  int src_tex_x, int src_tex_y, int src_tex_z,
+                                  uint32_t src_tex_width, uint32_t src_tex_height, uint32_t src_tex_depth)
+        : texture_(texture), buffer_(buffer), mip_level_(mip_level),
+          base_layer_(base_layer), layer_count_(layer_count),
+          dst_tex_width_(dst_tex_width), dst_tex_height_(dst_tex_height),
+          src_tex_x_(src_tex_x), src_tex_y_(src_tex_y), src_tex_z_(src_tex_z),
+          src_tex_width_(src_tex_width), src_tex_height_(src_tex_height), src_tex_depth_(src_tex_depth) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHITexture * texture_;
+    RHIBufferSpan buffer_;
+    uint32_t mip_level_;
+    uint32_t base_layer_;
+    uint32_t layer_count_;
+    uint32_t dst_tex_width_; // texels
+    uint32_t dst_tex_height_; // texels
+    int      src_tex_x_;
+    int      src_tex_y_;
+    int      src_tex_z_;
+    uint32_t src_tex_width_;
+    uint32_t src_tex_height_;
+    uint32_t src_tex_depth_;
+};
+
 class RHICommandCopyBuffer : public TRHICommand<RHICommandCopyBuffer> {
 public:
     RHICommandCopyBuffer(RHIBufferSpan src, RHIBufferSpan dst)
@@ -290,6 +361,16 @@ public:
     RHIComputePipeline * pipeline_;
 };
 
+class RHICommandBindRenderTarget : public TRHICommand<RHICommandBindRenderTarget> {
+public:
+    RHICommandBindRenderTarget(RHITexture * target, uint32_t index)
+        : target_(target), index_(index) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHITexture * target_;
+    int index_;
+};
+
 class RHICommandBindPipelineParameters : public TRHICommand<RHICommandBindPipelineParameters> {
 public:
     RHICommandBindPipelineParameters(RHIBindPointType point, RHIBindPipelineParametersDesc * table)
@@ -309,9 +390,9 @@ public:
     uint32_t binding_;
 };
 
-class RHICommandManualTextureBarrier : public TRHICommand<RHICommandManualTextureBarrier> {
+class RHICommandTextureBarrier : public TRHICommand<RHICommandTextureBarrier> {
 public:
-    RHICommandManualTextureBarrier(
+    RHICommandTextureBarrier(
             RHITexture * texture, RHITextureLayoutType layout,
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
@@ -357,6 +438,38 @@ protected:
     }
 public:
     friend class RHI;
+    FORCEINLINE void ClearTexture (RHITexture * texture, std::array<float, 4> clear_value = {0, 0, 0, 1},
+                                   uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1) {
+        AddCommand(AllocateCommand<RHICommandClearTexture>(texture, clear_value, mip_level, base_layer, layer_count));
+    }
+    // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
+    // in the buffer
+    // Unspecified dst_tex_width, dst_tex_height, dst_tex_depth is the same as the texture's dimensions
+    FORCEINLINE void CopyBufferToTexture (RHIBufferSpan buffer, RHITexture * texture,
+                                    uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1,
+                                    uint32_t src_tex_width = 0, uint32_t src_tex_height = 0,
+                                    int dst_tex_x = 0, int dst_tex_y = 0, int dst_tex_z = 0,
+                                    uint32_t dst_tex_width = 0, uint32_t dst_tex_height = 0, uint32_t dst_tex_depth = 0) {
+        AddCommand(AllocateCommand<RHICommandCopyBufferToTexture>(
+                buffer, texture, mip_level, base_layer, layer_count,
+                src_tex_width, src_tex_height,
+                dst_tex_x, dst_tex_y, dst_tex_z,
+                dst_tex_width, dst_tex_height, dst_tex_depth));
+    }
+    // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
+    // in the buffer
+    // Unspecified src_tex_width, src_tex_height, src_tex_depth is the same as the texture's dimensions
+    FORCEINLINE void CopyTextureToBuffer (RHITexture * texture, RHIBufferSpan buffer,
+                                    uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1,
+                                    uint32_t dst_tex_width = 0, uint32_t dst_tex_height = 0,
+                                    int src_tex_x = 0, int src_tex_y = 0, int src_tex_z = 0,
+                                    uint32_t src_tex_width = 0, uint32_t src_tex_height = 0, uint32_t src_tex_depth = 0) {
+        AddCommand(AllocateCommand<RHICommandCopyTextureToBuffer>(
+                texture, buffer, mip_level, base_layer, layer_count,
+                dst_tex_width, dst_tex_height,
+                src_tex_x, src_tex_y, src_tex_z,
+                src_tex_width, src_tex_height, src_tex_depth));
+    }
     FORCEINLINE void CopyBuffer (RHIBufferSpan src, RHIBufferSpan dst) {
         AddCommand(AllocateCommand<RHICommandCopyBuffer>(src, dst));
     }
@@ -385,12 +498,12 @@ public:
         AddCommand(AllocateCommand<RHICommandBindVertexBuffer>(binding, buffer));
     }
 
-    FORCEINLINE void ManualTextureBarrier (
+    FORCEINLINE void TextureBarrier (
             RHITexture * texture, RHITextureLayoutType layout,
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
     ) {
-        AddCommand(AllocateCommand<RHICommandManualTextureBarrier>(texture, layout, src_stages, dst_stages, src_access, dst_access));
+        AddCommand(AllocateCommand<RHICommandTextureBarrier>(texture, layout, src_stages, dst_stages, src_access, dst_access));
     }
 
     FORCEINLINE void BufferBarrier (
@@ -403,6 +516,14 @@ public:
 
     FORCEINLINE void FrameEnd (bool return_resources_to_system) {
         AddCommand(AllocateCommand<RHICommandFrameEnd>(return_resources_to_system));
+    }
+
+    FORCEINLINE void BindPipeline(RHIGraphicsPipeline *pPipeline) {
+        AddCommand(AllocateCommand<RHICommandBindGraphicsPipeline>(pPipeline));
+    }
+
+    FORCEINLINE void BindRenderTarget(RHITexture *pTexture, int index) {
+        AddCommand(AllocateCommand<RHICommandBindRenderTarget>(pTexture, index));
     }
 };
 

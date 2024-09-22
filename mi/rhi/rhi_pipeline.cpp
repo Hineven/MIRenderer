@@ -26,7 +26,7 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
     // Omit empty shaders.
     if(!shader) return true;
     // Gather & align shader slots to pipeline slots
-    auto GatherShaderSlots = [&]<RHIPipelineResourceType Type, typename T1, typename T2>(const std::vector<T1> & resource_descs, std::vector<T2> & pipeline_resource_descs) {
+    auto GatherShaderSlots = [&]<RHIPipelineResourceType Type, typename T1, typename T2>(const IVector<T1> & resource_descs, IVector<T2> & pipeline_resource_descs) {
         for(int i = 0; i < resource_descs.size(); ++i) {
             int pipeline_slot;
             for(pipeline_slot = 0; pipeline_slot < pipeline_resource_descs.size(); ++pipeline_slot) {
@@ -68,7 +68,7 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
         return false;
 
     // Check command constants
-    if (shader->GetCommandConstantDesc().size > 0) {
+    if (shader->HasCommandConstant()) {
         if(command_constant_.empty()) {
             command_constant_.push_back(shader->GetCommandConstantDesc().ToPipelineDesc());
         } else {
@@ -83,7 +83,7 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
 }
 
 bool RHIPipeline::CheckNoOverlappingNamesAmongDifferentTypes() {
-    std::vector<uint32_t> name_crc;
+    IVector<uint32_t> name_crc;
     auto Inject = [&] (const auto & arr) {
         for(const auto & desc : arr) {
             name_crc.push_back(desc.name_crc);
@@ -135,6 +135,7 @@ void RHIPipeline::Reset() {
     command_constant_.clear();
     has_bindless_resources_ = false;
     bindless_table_size_ = 0;
+    is_valid_ = false;
     ResetRHI();
 }
 
@@ -147,8 +148,48 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     if(!CheckAndRemapShaderResources(desc.stages.task_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
     TryLocateAndStripBindlessTableUniformBuffer();
+
+    vertex_inputs_    = desc.stages.vertex_shader->GetVertexInputDesc();
+    fragment_outputs_ = desc.stages.fragment_shader->GetFragmentOutputDesc();
+    if(desc.color_attachments.size() != fragment_outputs_.size()) {
+        MI_LOG(MIInfraLogType::kWarning, "Color attachment count mismatch");
+        return ;
+    }
+    for(int i = 0; i < desc.color_attachments.size(); ++i) {
+        if(fragment_outputs_[i].format == RHIFragmentOutputFormatType::k4xFp32) {
+            if(desc.color_attachments[i].format != PixelFormatType::kR16G16B16A16_FLOAT
+            && desc.color_attachments[i].format != PixelFormatType::kR32G32B32A32_FLOAT
+            && desc.color_attachments[i].format != PixelFormatType::kR16G16_FLOAT
+            && desc.color_attachments[i].format != PixelFormatType::kR32G32B32_FLOAT
+            && desc.color_attachments[i].format != PixelFormatType::kR32G32_FLOAT
+            && desc.color_attachments[i].format != PixelFormatType::kR32_FLOAT
+            && desc.color_attachments[i].format != PixelFormatType::kR8G8B8A8_UNORM
+            && desc.color_attachments[i].format != PixelFormatType::kR8G8B8A8_SRGB) {
+                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} format mismatch", i);
+                return ;
+            }
+        } else if(fragment_outputs_[i].format == RHIFragmentOutputFormatType::k4xUIint32) {
+            if(desc.color_attachments[i].format != PixelFormatType::kR32G32B32A32_UINT
+            && desc.color_attachments[i].format != PixelFormatType::kR32G32_UINT
+            && desc.color_attachments[i].format != PixelFormatType::kR32_UINT) {
+                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} format mismatch", i);
+                return ;
+            }
+        }
+    }
+    if(desc.depth_stencil_attachment.format != PixelFormatType::kD32_FLOAT) {
+        MI_LOG(MIInfraLogType::kWarning, "Depth stencil attachment format mismatch");
+        return ;
+    }
+
     if(!CompileRHI(desc)) return;
     is_valid_ = true;
+}
+
+void RHIGraphicsPipeline::Reset() {
+    vertex_inputs_.clear();
+    fragment_outputs_.clear();
+    RHIPipeline::Reset();
 }
 
 void RHIComputePipeline::Compile(mi::RHIShader *compute_shader) {
