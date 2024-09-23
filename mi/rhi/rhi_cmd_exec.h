@@ -28,12 +28,14 @@ public:
     virtual void RHIDrawIndexedPrimitive (RHICommandQueueBase * buffer, RHICommandDrawIndexedPrimitive * cmd) = 0;
     virtual void RHIDispatch (RHICommandQueueBase * buffer, RHICommandDispatch * cmd) = 0;
     virtual void RHIBindGraphicsPipeline (RHICommandQueueBase * buffer, RHICommandBindGraphicsPipeline * cmd) = 0;
+    virtual void RHIBindFramebuffer (RHICommandQueueBase * buffer, RHICommandBindFramebuffer * cmd) = 0;
     virtual void RHIBindComputePipeline (RHICommandQueueBase * buffer, RHICommandBindComputePipeline * cmd) = 0;
-    virtual void RHIBindRenderTarget (RHICommandQueueBase * buffer, RHICommandBindRenderTarget * cmd) = 0;
     virtual void RHIBindPipelineParameters (RHICommandQueueBase * buffer, RHICommandBindPipelineParameters * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
     virtual void RHIBufferBarrier (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
+    virtual void RHISetClearValues (RHICommandQueueBase * buffer, RHICommandSetClearValues * cmd) = 0;
+    virtual void RHISetRenderArea (RHICommandQueueBase * buffer, RHICommandSetRenderArea * cmd) = 0;
     // The command marks the last command of the frame.
     virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHICommandFrameEnd * cmd) = 0;
 

@@ -48,6 +48,8 @@ public:
     RHITextureRef CreateTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
                                 RHITextureUsageFlags usage, int mip_levels, int array_layers) override;
 
+    RHIFramebufferRef CreateFramebuffer(const RHIFramebufferDesc &desc) override;
+
     RHISamplerRef CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) override;
 
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,

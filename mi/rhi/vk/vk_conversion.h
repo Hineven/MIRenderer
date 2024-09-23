@@ -78,7 +78,7 @@ FORCEINLINE vk::ImageViewType GetVulkanImageViewType (RHITextureType type) {
 
 FORCEINLINE vk::ImageUsageFlags GetVulkanImageUsage (RHITextureUsageFlags usage) {
     vk::ImageUsageFlags vk_usage = {};
-    if(usage & RHITextureUsageFlagBits::kDepth) {
+    if(usage & RHITextureUsageFlagBits::kDepthStencil) {
         vk_usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
     }
     if(usage & RHITextureUsageFlagBits::kRenderTarget) {
@@ -101,7 +101,7 @@ FORCEINLINE vk::ImageUsageFlags GetVulkanImageUsage (RHITextureUsageFlags usage)
 
 FORCEINLINE vk::ImageAspectFlags GetVulkanImageAspectFlags (RHITextureUsageFlags usage) {
     vk::ImageAspectFlags vk_aspect = {};
-    if(usage & RHITextureUsageFlagBits::kDepth) {
+    if(usage & RHITextureUsageFlagBits::kDepthStencil) {
         vk_aspect |= vk::ImageAspectFlagBits::eDepth;
     } else {
         vk_aspect |= vk::ImageAspectFlagBits::eColor;

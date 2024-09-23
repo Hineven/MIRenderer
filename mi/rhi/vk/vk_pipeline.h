@@ -41,6 +41,7 @@ public:
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
     FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
+    FORCEINLINE vk::RenderPass GetRenderPass() const { return vk_render_pass_; }
 
 protected:
 

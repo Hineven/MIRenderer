@@ -20,12 +20,12 @@ enum class RHIThreadTaskType {
 struct RHIThreadTask {
     union {
         void * ptr;
-        std::byte binary[sizeof(std::function<void()>)];
         struct {
             RHISyncPoint * sync_point;
             bool recycle;
         } submit;
     } param;
+    std::function<void()> lambda;
     RHIThreadTaskType type;
     RHICommandQueueBase * queue;
     std::promise<void> promise;
@@ -86,9 +86,10 @@ std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
     RHIThreadTask rhi_task;
     rhi_task.type = RHIThreadTaskType::kLambda;
     rhi_task.queue = nullptr;
-    new(rhi_task.param.binary) std::function<void()>(std::move(task));
+    rhi_task.lambda = std::move(task);
     auto future = rhi_task.promise.get_future();
     task_queue_.Push(std::move(rhi_task));
+    task_queue_sem_.release();
     return future;
 }
 
@@ -140,9 +141,7 @@ void RHIWorkerThread::Run() {
                 // Notify the task is finished
                 task.promise.set_value();
             } else if(task.type == RHIThreadTaskType::kLambda) {
-                auto lambda_ptr = (std::function<void()>*)task.param.binary;
-                lambda_ptr->operator()();
-                lambda_ptr->~function<void()>();
+                task.lambda();
                 task.promise.set_value();
             } else {
                 MI_LOG(MIInfraLogType::kError, "Unknown task type");

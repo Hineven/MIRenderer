@@ -46,6 +46,12 @@ public:
     // Create a texture, thread safe
     virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;
 
+    // Create a framebuffer
+    virtual RHIFramebufferRef CreateFramebuffer (const RHIFramebufferDesc & desc) = 0;
+
+    RHIFramebufferRef CreateFramebuffer (RHITexture * texture) ;
+    RHIFramebufferRef CreateFramebuffer (RHITexture * texture, RHITexture * depth_stencil_texture) ;
+
     // Import a texture from a native handle, thread safe
     // The import_desc is a pointer to the corresponding structs in `rhi_import.h`
     virtual RHITextureRef ImportTexture (

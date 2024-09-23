@@ -55,6 +55,7 @@ std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * comman
 std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync, bool recyle_resources = false) ;
 
 // Enqueue a task to the RHI thread for execution.
+// @return a future that will be ready when the task is completed on RHI thread.
 std::future<void> EnqueueRHIThreadTask (std::function<void()> && task) ;
 
 // Invoke the RHI thread to do 1 loop.

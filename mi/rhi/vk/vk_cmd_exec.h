@@ -11,6 +11,7 @@
 #include "../rhi_cmd_exec.h"
 #include "rhi/rhi_pipeline.h"
 #include "vk_constants.h"
+#include "vk_texture.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -34,12 +35,14 @@ public:
     void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
+    void RHIBindFramebuffer(RHICommandQueueBase * cmd, RHICommandBindFramebuffer * bind_framebuffer) override ;
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
-    void RHIBindRenderTarget(RHICommandQueueBase * cmd, RHICommandBindRenderTarget * bind_render_target) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
     void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandTextureBarrier * barrier) override ;
     void RHIBufferBarrier(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;
+    void RHISetClearValues(RHICommandQueueBase * cmd, RHICommandSetClearValues * set_clear_values) override ;
+    void RHISetRenderArea(RHICommandQueueBase * cmd, RHICommandSetRenderArea * set_render_area) override ;
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHICommandFrameEnd * frame_end) override ;
 
     void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync, bool release_resources) override ;
@@ -59,6 +62,11 @@ protected:
         vk::CommandBuffer cmd {};
         // Can bind up to 8 vertex buffers
         RHIBufferSpan bound_vertex_buffers[8] {};
+
+        VulkanFramebuffer * bound_framebuffer {};
+        vk::Rect2D render_area {};
+        vk::ClearValue clear_values[C::kRHIMaxNumFramebufferAttachments] {};
+
         struct BindPoints {
             // Bindless table buffer
             std::unique_ptr<VulkanBuffer> bindless_table_buffer {};
@@ -97,8 +105,6 @@ protected:
                 // Merge incoming table
                 void Merge (const RHIBindPipelineParametersDesc * desc);
             } parameter_table;
-
-
         } points[(uint32_t)RHIBindPointType::kMax];
 
         vk::DescriptorPool descriptor_pool {};

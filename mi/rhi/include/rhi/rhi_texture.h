@@ -13,6 +13,7 @@
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_bindlesskeeper.h"
+#include "core/constants.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -32,9 +33,9 @@ public:
     FORCEINLINE RHITextureDimensions GetDimensions() const { return dimensions_; }
     FORCEINLINE PixelFormatType GetFormat() const { return format_; }
     FORCEINLINE RHITextureUsageFlags GetUsage() const { return usage_; }
-    FORCEINLINE int GetWidth() const { return dimensions_.width; }
-    FORCEINLINE int GetHeight() const { return dimensions_.height; }
-    FORCEINLINE int GetDepth() const { return dimensions_.depth; }
+    FORCEINLINE uint32_t GetWidth() const { return dimensions_.width; }
+    FORCEINLINE uint32_t GetHeight() const { return dimensions_.height; }
+    FORCEINLINE uint32_t GetDepth() const { return dimensions_.depth; }
     FORCEINLINE RHITextureLayoutType const GetLayout() const { return layout_; }
 
     // Convert this texture to a bindless texture
@@ -64,6 +65,63 @@ protected:
     int array_layers_;
 
     bool is_bindless_optimal_accessed_ {false};
+};
+
+class RHIFramebuffer : public RHIResource {
+protected:
+    inline RHIFramebuffer(const RHIFramebufferDesc & desc) {
+        width_ = desc.width;
+        height_ = desc.height;
+        num_attachments_ = desc.num_attachments;
+        for (uint32_t i = 0; i < num_attachments_; i++) {
+            formats_[i] = desc.formats[i];
+        }
+    }
+    virtual ~RHIFramebuffer() override;
+public:
+    FORCEINLINE uint32_t GetWidth()  const { return width_; }
+    FORCEINLINE uint32_t GetHeight() const { return height_; }
+    FORCEINLINE uint32_t GetNumAttachments() const { return num_attachments_; }
+    FORCEINLINE PixelFormatType GetAttachmentFormat(uint32_t index) const { return formats_[index]; }
+    FORCEINLINE bool IsValid() const { return is_valid_; }
+    bool Compile(const RHIFramebufferDesc & desc) {
+        if (is_valid_) {
+            return true;
+        }
+        is_valid_ = CompileRHI(desc);
+        return is_valid_;
+    }
+
+    FORCEINLINE RHITexture * GetAttachment(uint32_t index) const {
+        return attachments_[index].Raw();
+    }
+    FORCEINLINE void SetAttachment(uint32_t index, RHITextureRef texture) {
+        if(texture) {
+            mi_assert(texture->GetFormat() == formats_[index], "Attachment format mismatch");
+            mi_assert(texture->GetWidth() == width_ && texture->GetHeight() == height_, "Attachment size mismatch");
+            if(IsDepthStencilPixelFormat(formats_[index])) {
+                mi_assert(texture->GetUsage() & RHITextureUsageFlagBits::kDepthStencil, "The texture must have depth stencil usage.");
+            } else {
+                mi_assert(texture->GetUsage() & RHITextureUsageFlagBits::kRenderTarget, "The texture must have render target usage.");
+            }
+        }
+        attachments_[index] = texture;
+    }
+    FORCEINLINE void ClearAttachments() {
+        for(auto & attachment : attachments_) {
+            attachment.SafeRelease();
+        }
+    }
+protected:
+
+    virtual bool CompileRHI(const RHIFramebufferDesc & desc) = 0;
+
+    bool is_valid_ {false};
+    uint32_t width_, height_;
+    uint32_t num_attachments_ {};
+    PixelFormatType formats_[C::kRHIMaxNumFramebufferAttachments];
+
+    RHITextureRef attachments_[C::kRHIMaxNumFramebufferAttachments];
 };
 
 MI_NAMESPACE_END

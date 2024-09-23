@@ -13,6 +13,7 @@
 #include "rhi/rhi_fwd.h"
 #include "rhi_types.h"
 #include "core/pixel_format.h"
+#include "core/constants.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -108,6 +109,13 @@ struct RHIGraphicsPipelineDesc {
     } depth_stencil;
     std::span<RHIColorAttachmentDesc> color_attachments;
     RHIDepthStencilAttachmentDesc depth_stencil_attachment;
+};
+
+struct RHIFramebufferDesc {
+    uint32_t width;
+    uint32_t height;
+    uint32_t num_attachments;
+    PixelFormatType formats[C::kRHIMaxNumFramebufferAttachments];
 };
 
 struct RHITextureDimensions {

@@ -169,15 +169,47 @@ void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
                                              RHICommandDrawPrimitive *draw_primitive) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
 
-//    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
+    // Check the compatibility of the bound pipeline and the bound framebuffer
+    mi_assert(state.bound_framebuffer, "No framebuffer bound");
+    mi_assert(graphics.bound_pipeline, "No graphics pipeline bound");
+    auto graphics_pipeline = (RHIGraphicsPipeline*)graphics.bound_pipeline;
+    auto depth_enabled = graphics_pipeline->IsDepthTestEnabled();
+    mi_assert(graphics_pipeline->GetFragmentOutputDesc().size() + depth_enabled
+              == state.bound_framebuffer->GetNumAttachments(),
+              "Mismatched number of framebuffer attachments and fragment outputs");
+    if(depth_enabled) {
+        mi_assert(
+                IsDepthStencilPixelFormat(state.bound_framebuffer->GetAttachment(
+                        state.bound_framebuffer->GetNumAttachments() - 1
+                )->GetFormat()),
+                  "Depth test enabled but invalid depth attachment pixel format");
+    }
+
     FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
-
-//    for(auto & vb : state.bound_vertex_buffers) {
-//        if(!vb.IsValid()) continue;
-//        auto * buffer = static_cast<VulkanBuffer*>(vb.buffer); // NOLINT its safe
-//        buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eVertexAttributeRead);
-//    }
+    vk::ImageView attachments[C::kRHIMaxNumFramebufferAttachments];
+    for(int i = 0; i < (int)state.bound_framebuffer->GetNumAttachments(); i++) {
+        attachments[i] = ((VulkanTexture*)(state.bound_framebuffer->GetAttachment(i)))->GetImageView();
+    }
+    auto attachments_info = vk::RenderPassAttachmentBeginInfo {
+        state.bound_framebuffer->GetNumAttachments(), attachments
+    };
+    vk::Rect2D render_area = state.render_area;
+    if(render_area.extent.width == 0 && render_area.extent.height == 0
+    && render_area.offset.x == 0 && render_area.offset.y == 0) {
+        // Default to the size of the bound framebuffer if not set
+        render_area.extent.width = state.bound_framebuffer->GetWidth();
+        render_area.extent.height = state.bound_framebuffer->GetHeight();
+    }
+    state.cmd.beginRenderPass(vk::RenderPassBeginInfo{
+            ((VulkanGraphicsPipeline*)graphics.bound_pipeline)->GetRenderPass(),
+            state.bound_framebuffer->GetFramebuffer(),
+            render_area,
+            state.bound_framebuffer->GetNumAttachments(),
+            state.clear_values,
+            &attachments_info
+    }, vk::SubpassContents::eInline);
     state.cmd.draw(draw_primitive->vertex_count_, draw_primitive->instance_count_, draw_primitive->first_vertex_, draw_primitive->first_instance_);
 }
 
@@ -236,6 +268,14 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
     }
 }
 
+
+void VulkanCommandExecutor::RHIBindFramebuffer(RHICommandQueueBase *cmd, RHICommandBindFramebuffer *bind_framebuffer) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto framebuffer = static_cast<VulkanFramebuffer*>(bind_framebuffer->framebuffer_); // NOLINT its safe
+    state.bound_framebuffer = framebuffer;
+}
+
 void VulkanCommandExecutor::RHIBindComputePipeline(
         RHICommandQueueBase *cmd, RHICommandBindComputePipeline *bind_compute_pipeline) {
     assert(IsRHIThread());
@@ -260,16 +300,6 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     }
 }
 
-void VulkanCommandExecutor::RHIBindRenderTarget(RHICommandQueueBase *cmd,
-                                                RHICommandBindRenderTarget *bind_render_target) {
-    assert(IsRHIThread());
-    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
-    auto & rt = bind_render_target->target_;
-    asfasdfasdfdsdf
-
-}
-
 void VulkanCommandExecutor::RHIBindPipelineParameters(
         RHICommandQueueBase *cmd, RHICommandBindPipelineParameters *bind_pipeline_parameters) {
     assert(IsRHIThread());
@@ -288,6 +318,24 @@ void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
     state.cmd.bindVertexBuffers(bind_vertex_buffer->binding_, buffer->GetBuffer(), vb.offset);
     mi_assert(std::size(state.bound_vertex_buffers) > bind_vertex_buffer->binding_, "Invalid binding");
     state.bound_vertex_buffers[bind_vertex_buffer->binding_] = vb;
+}
+
+void VulkanCommandExecutor::RHISetClearValues(RHICommandQueueBase *cmd, RHICommandSetClearValues *set_clear_values) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    for(int i = 0; i < C::kRHIMaxNumFramebufferAttachments; i++) {
+        state.clear_values[i] = vk::ClearValue(set_clear_values->clear_values_[i]);
+    }
+}
+
+void VulkanCommandExecutor::RHISetRenderArea(RHICommandQueueBase *cmd,
+                                             RHICommandSetRenderArea *set_render_area) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    state.render_area = vk::Rect2D(
+            vk::Offset2D(set_render_area->x_, set_render_area->y_),
+            vk::Extent2D(set_render_area->width_, set_render_area->height_)
+    );
 }
 
 void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHICommandFrameEnd *frame_end) {
@@ -626,6 +674,11 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
                   return_resources_to_system
                   ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
     rhi->GetDevice().resetDescriptorPool(descriptor_pool);
+
+    for(auto & s : bound_vertex_buffers) s = {};
+    bound_framebuffer = nullptr;
+    render_area = vk::Rect2D{};
+    for(auto & s : clear_values) s = vk::ClearValue{{0.f, 0.f, 0.f, 1.f}};
 }
 
 MI_NAMESPACE_END

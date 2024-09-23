@@ -64,6 +64,43 @@ TEST(RHITest, RHIShaderCompile) {
     DestroyInfra();
 }
 
+TEST(RHITest, RHIThreadTasks) {
+    using namespace mi;
+    TransferInfra(std::make_unique<MyInfra>());
+    GetInfra().Init();
+    // Hack: we need to pretend that we're a render thread to pass the assertions
+    SetCurrentThreadType(ThreadType::kRenderThread);
+    RHI::InitializeSingleton(RHIType::kVulkan);
+    volatile static bool flag;
+    {
+        volatile static int value;
+        EnqueueRHIThreadTask([]() {
+            MI_LOG(MIInfraLogType::kInfo, "Task 1");
+            value = 123;
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds (100));
+        EXPECT_TRUE(value == 123);
+        auto fut = EnqueueRHIThreadTask([]() {
+            MI_LOG(MIInfraLogType::kInfo, "Task 2");
+        });
+        EnqueueRHIThreadTask([]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds (200));
+            flag = true;
+            MI_LOG(MIInfraLogType::kInfo, "Task 3");
+        });
+        fut.wait();
+        EXPECT_FALSE(flag);
+        EnqueueRHIThreadTask([]() {
+            MI_LOG(MIInfraLogType::kInfo, "Task 4");
+        });
+    }
+    RHI::DestroySingleton();
+    EXPECT_TRUE(flag);
+    GetInfra().Shutdown();
+    DestroyInfra();
+
+}
+
 static auto v_shader_code = "// Vertex Shader\n"
                      "struct VSInput {\n"
                      "    float3 position : POSITION;\n"
@@ -225,10 +262,7 @@ TEST(RHITest, RHIPipelineAssemble) {
         EXPECT_TRUE(texture1);
         auto & queue = RHI::Get().GetGraphicsCommandQueue();
         queue.ClearTexture(texture0.Raw(), {0.f, 0.f, 0.f, 0.f});
-
         queue.BindPipeline(pipeline.Raw());
-        queue.BindRenderTarget(texture0.Raw(), 0);
-        queue.BindRenderTarget(texture1.Raw(), 1);
     }
     RHI::DestroySingleton();
     GetInfra().Shutdown();

@@ -5,11 +5,13 @@
  */
 #include "vk_pipeline.h"
 #include "vk_shader.h"
+#include "rhi/rhi_texture.h"
 
 #include "rhi_device_shared.h"
 #include "vk_bindless.h"
 #include "core/rounding.h"
 #include "vk_conversion.h"
+#include "vk_texture.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -18,7 +20,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     // Gather pipeline layout
     {
-        std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
+        IVector<vk::DescriptorSetLayout> descriptor_set_layouts;
         // If the pipeline contains bindless resources, take set 0 as bindless set.
         if (HasBindlessResources()) {
             // Use set 0 for bindless resources.
@@ -27,7 +29,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
             descriptor_set_layouts.push_back(bindless_descriptor_layout);
             // No remapping required for bindless resources
         }
-        std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
+        IVector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
         // Take the next descriptor set for bindfull resources
         {
             int set_index = (int)descriptor_set_layouts.size();
@@ -92,7 +94,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     // Specify creation configuration
     vk::GraphicsPipelineCreateInfo pipeline_info_vk {};
 
-    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    IVector<vk::PipelineShaderStageCreateInfo> shader_stages;
     // Shader stages
     {
         auto PushShaderStage = [&] (RHIShader * shader) {
@@ -113,8 +115,8 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     // Vertex input
     vk::PipelineVertexInputStateCreateInfo vertex_input_vk {};
-    std::vector<vk::VertexInputBindingDescription> vertex_buffers;
-    std::vector<vk::VertexInputAttributeDescription> vertex_attributes;
+    IVector<vk::VertexInputBindingDescription> vertex_buffers;
+    IVector<vk::VertexInputAttributeDescription> vertex_attributes;
     {
         for(auto & buffer_binding : pipeline_info.vertex_input.vertex_buffers) {
             vertex_buffers.push_back(vk::VertexInputBindingDescription()

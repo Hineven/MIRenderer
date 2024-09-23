@@ -344,6 +344,17 @@ RHITextureRef VulkanRHI::CreateTexture(RHITextureType type, RHITextureDimensions
     return {texture};
 }
 
+RHIFramebufferRef VulkanRHI::CreateFramebuffer(const RHIFramebufferDesc &desc) {
+    auto framebuffer = GetInfra().New<VulkanFramebuffer>(desc);
+    framebuffer->CompileRHI(desc);
+    if(!framebuffer->IsValid()) {
+        framebuffer->~VulkanFramebuffer();
+        GetInfra().Delete(framebuffer);
+        return nullptr;
+    }
+    return {framebuffer};
+}
+
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
     auto sampler = GetInfra().New<VulkanSampler>(filter, address_mode);
     return {sampler};
@@ -430,6 +441,7 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
 }
 
 void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
+    ??????
     resource->~RHIResource();
     GetInfra().Free(resource);
 }

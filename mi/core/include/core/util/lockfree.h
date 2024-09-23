@@ -75,12 +75,12 @@ public:
         static_assert(std::is_same_v<std::remove_cvref_t<U>, T>, "Push type must be the same as the queue type");
         std::lock_guard<std::mutex> lock(mutex_);
         size_t head = head_ ++;
-        size_t next_head = head % RingBudget;
+        size_t next_head = (head + 1) % RingBudget;
         if (next_head == tail_.load(std::memory_order_acquire)) {
             head_ --;
             return false;
         }
-        ring_[next_head] = std::forward<U>(t);
+        ring_[head] = std::forward<U>(t);
         return true;
     }
 

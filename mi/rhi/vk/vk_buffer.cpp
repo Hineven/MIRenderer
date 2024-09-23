@@ -14,11 +14,6 @@ VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage, RHIGPU
     buffer_info.size = buffer_size;
     buffer_info.usage = GetVulkanBufferUsage(usage);
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
-    auto result = GetVulkanRHI()->GetDevice().createBuffer(&buffer_info, nullptr, &vk_buffer_);
-    if(result != vk::Result::eSuccess) {
-        // TODO move this out of the constructor
-        mi_assert(false, "Failed to create buffer!");
-    }
 
     vma::AllocationCreateFlags alloc_flags {};
     if(usage & RHIBufferUsageFlagBits::kStaging) {
@@ -31,10 +26,10 @@ VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage, RHIGPU
             alloc_flags,
             vma::MemoryUsage::eAuto
     };
-    allocation_ = GetVulkanRHI()->GetVmaAllocator().allocateMemoryForBuffer(vk_buffer_, alloc_info);
-    if(!allocation_) {
-        mi_assert(false, "Failed to allocate memory for buffer!");
-    }
+    auto result = GetVulkanRHI()->GetVmaAllocator().createBuffer(buffer_info, alloc_info);
+    vk_buffer_ = result.first;
+    allocation_ = result.second;
+    mi_assert(vk_buffer_ && allocation_, "Failed to allocate buffer!");
 }
 
 void *VulkanBuffer::Map() {
@@ -59,8 +54,7 @@ void VulkanBuffer::Unmap() {
 }
 
 VulkanBuffer::~VulkanBuffer() {
-    GetVulkanRHI()->GetVmaAllocator().freeMemory(allocation_);
-    GetVulkanRHI()->GetDevice().destroyBuffer(vk_buffer_);
+    GetVulkanRHI()->GetVmaAllocator().destroyBuffer(vk_buffer_, allocation_);
 }
 
 MI_NAMESPACE_END

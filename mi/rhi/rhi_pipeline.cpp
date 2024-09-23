@@ -148,7 +148,7 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     if(!CheckAndRemapShaderResources(desc.stages.task_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
     TryLocateAndStripBindlessTableUniformBuffer();
-
+    depth_test_enable_ = desc.depth_stencil.depth_test_enable;
     vertex_inputs_    = desc.stages.vertex_shader->GetVertexInputDesc();
     fragment_outputs_ = desc.stages.fragment_shader->GetFragmentOutputDesc();
     if(desc.color_attachments.size() != fragment_outputs_.size()) {
@@ -187,6 +187,7 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
 }
 
 void RHIGraphicsPipeline::Reset() {
+    depth_test_enable_ = false;
     vertex_inputs_.clear();
     fragment_outputs_.clear();
     RHIPipeline::Reset();

@@ -58,16 +58,17 @@ void RHICommandDrawIndexedPrimitive::Execute(RHICommandQueueBase &cmd) {
 void RHICommandDispatch::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDispatch(&cmd, this);
 }
+
 void RHICommandBindGraphicsPipeline::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindGraphicsPipeline(&cmd, this);
 }
 
-void RHICommandBindComputePipeline::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIBindComputePipeline(&cmd, this);
+void RHICommandBindFramebuffer::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBindFramebuffer(&cmd, this);
 }
 
-void RHICommandBindRenderTarget::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIBindRenderTarget(&cmd, this);
+void RHICommandBindComputePipeline::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBindComputePipeline(&cmd, this);
 }
 
 void RHICommandBindPipelineParameters::Execute(RHICommandQueueBase &cmd) {
@@ -86,11 +87,20 @@ void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBufferBarrier(&cmd, this);
 }
 
+void RHICommandSetClearValues::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHISetClearValues(&cmd, this);
+}
+
+void RHICommandSetRenderArea::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHISetRenderArea(&cmd, this);
+}
+
 void RHICommandFrameEnd::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIFrameEnd(&cmd, this);
 }
 
 MI_NAMESPACE_END
+
 
 
 

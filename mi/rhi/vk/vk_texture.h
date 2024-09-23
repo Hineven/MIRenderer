@@ -122,6 +122,20 @@ protected:
     vk::AccessFlags using_accesses {};
 };
 
+class VulkanFramebuffer : public RHIFramebuffer {
+public:
+    FORCEINLINE VulkanFramebuffer(const RHIFramebufferDesc & desc): RHIFramebuffer(desc) {}
+    ~VulkanFramebuffer () override ;
+
+    FORCEINLINE vk::Framebuffer GetFramebuffer () const {return vk_framebuffer_;}
+protected:
+    friend class VulkanRHI;
+
+    bool CompileRHI (const RHIFramebufferDesc & desc) override ;
+
+    vk::Framebuffer vk_framebuffer_ {};
+};
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERERDEV_VK_TEXTURE_H

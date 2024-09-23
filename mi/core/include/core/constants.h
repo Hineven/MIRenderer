@@ -21,6 +21,8 @@ namespace C {
 
     // Preferred size of GPU heap blocks. Larger values may increase VRAM consumption.
     constexpr uint64_t kRHIPreferredGPUHeapBlockSize = 256 * 1024 * 1024; // 256MB
+    // Maximum number of framebuffer attachments
+    constexpr uint32_t kRHIMaxNumFramebufferAttachments = 4;
 }
 
 MI_NAMESPACE_END

@@ -113,9 +113,21 @@ public:
     virtual void Reset () override;
     void Compile (const RHIGraphicsPipelineDesc &) ;
 
+    FORCEINLINE const IVector<ShaderVertexInputDesc> & GetVertexInputDesc() const {
+        return vertex_inputs_;
+    }
+    FORCEINLINE const IVector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const {
+        return fragment_outputs_;
+    }
+    FORCEINLINE bool IsDepthTestEnabled() const {
+        return depth_test_enable_;
+    }
+
     virtual ~RHIGraphicsPipeline() = default;
 protected:
     virtual bool CompileRHI (const RHIGraphicsPipelineDesc &) = 0;
+
+    bool depth_test_enable_ {false};
 
     IVector<ShaderVertexInputDesc> vertex_inputs_;
     IVector<ShaderFragmentOutputDesc> fragment_outputs_;

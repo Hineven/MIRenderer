@@ -30,4 +30,8 @@ void RHITexture::ConvertToBindless(bool optimal_accessed) {
     bindless_ = true;
 }
 
+RHIFramebuffer::~RHIFramebuffer () {
+
+}
+
 MI_NAMESPACE_END

@@ -8,6 +8,7 @@
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi_cmd.h"
 #include "rhi_bindless.h"
+#include "rhi/rhi_texture.h"
 
 // Import different kinds of RHI implementations
 #include "vk/vk_rhi_export.h"
@@ -48,9 +49,10 @@ std::future<void> RHI::AdvanceFrame() {
 }
 
 void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
-    bool removal = false;
+    bool removal = true;
     // Try to delete the resource that is not ready to be deleted in the previous frame first.
     if(remaining_resource_record_pending_for_deletion_.resource) {
+        removal = false;
         if(force || remaining_resource_record_pending_for_deletion_.frame_index < RHI::Get().GetFrameIndex()) {
             FreeResource_RHIThread(remaining_resource_record_pending_for_deletion_.resource);
             remaining_resource_record_pending_for_deletion_ = {};
@@ -62,13 +64,35 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
         RHIResourceToRecycle resource {};
         while(resources_pending_for_deletion_.Pop(resource)) {
             if(force || resource.frame_index < RHI::Get().GetFrameIndex() - 1) {
-                FreeResource_RHIThread(remaining_resource_record_pending_for_deletion_.resource);
+                FreeResource_RHIThread(resource.resource);
             } else {
                 // The resource is not ready to be deleted, delay it to the next frame;
                 remaining_resource_record_pending_for_deletion_ = resource;
+                break;
             }
         }
     }
+}
+
+RHIFramebufferRef RHI::CreateFramebuffer(RHITexture *texture) {
+    auto desc = RHIFramebufferDesc {
+        texture->GetWidth(),
+        texture->GetHeight(),
+        1,
+        texture->GetFormat()
+    };
+    return CreateFramebuffer(desc);
+}
+
+RHIFramebufferRef RHI::CreateFramebuffer(RHITexture *texture, RHITexture *depth) {
+    auto desc = RHIFramebufferDesc {
+        texture->GetWidth(),
+        texture->GetHeight(),
+        2,
+        texture->GetFormat(),
+        depth->GetFormat()
+    };
+    return CreateFramebuffer(desc);
 }
 
 static RHI * GDynamicRHI = nullptr;
@@ -101,6 +125,10 @@ void RHI::InitializeSingleton (RHIType type) {
 void RHI::DestroySingleton () {
     if(GDynamicRHI) {
         GDynamicRHI->WaitForIdle();
+        // Recycle all pending resources before the real destruction of RHI.
+        EnqueueRHIThreadTask([](){
+            RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread(true);
+        }).wait();
         GDynamicRHI->~RHI();
         GetInfra().Free(GDynamicRHI);
         GDynamicRHI = nullptr;
@@ -120,8 +148,6 @@ RHI::RHI() {
 }
 
 RHI::~RHI() {
-    // Destroy all resources no matter whether they are pending or not
-    RecycleRHIResourcesPendingForDeletion_RHIThread(true);
     // Stop RHI thread
     SignalStopRHIWorkerThreads();
     rhi_thread_->join();

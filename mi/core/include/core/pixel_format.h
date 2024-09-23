@@ -28,6 +28,10 @@ enum class PixelFormatType {
     kMax
 };
 
+FORCEINLINE bool IsDepthStencilPixelFormat (PixelFormatType format) {
+    return format == PixelFormatType::kD32_FLOAT;
+}
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_PIXEL_FORMAT_H

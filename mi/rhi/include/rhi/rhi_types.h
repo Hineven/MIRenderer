@@ -143,7 +143,7 @@ enum class RHITextureType {
 
 enum class RHITextureUsageFlagBits : uint32_t {
     kRenderTarget = 1 << 0,
-    kDepth = 1 << 1,
+    kDepthStencil = 1 << 1,
     kShaderResource = 1 << 2,
     kUnorderedAccess = 1 << 3,
     kTransferSrc = 1 << 4,

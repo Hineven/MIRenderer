@@ -352,6 +352,15 @@ public:
     RHIGraphicsPipeline * pipeline_;
 };
 
+class RHICommandBindFramebuffer : public TRHICommand<RHICommandBindFramebuffer> {
+public:
+    RHICommandBindFramebuffer(RHIFramebuffer * framebuffer)
+        : framebuffer_(framebuffer) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIFramebuffer * framebuffer_;
+};
+
 class RHICommandBindComputePipeline : public TRHICommand<RHICommandBindComputePipeline> {
 public:
     RHICommandBindComputePipeline(RHIComputePipeline * pipeline)
@@ -359,16 +368,6 @@ public:
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHIComputePipeline * pipeline_;
-};
-
-class RHICommandBindRenderTarget : public TRHICommand<RHICommandBindRenderTarget> {
-public:
-    RHICommandBindRenderTarget(RHITexture * target, uint32_t index)
-        : target_(target), index_(index) {}
-    void Execute(RHICommandQueueBase & cmd) override ;
-
-    RHITexture * target_;
-    int index_;
 };
 
 class RHICommandBindPipelineParameters : public TRHICommand<RHICommandBindPipelineParameters> {
@@ -421,6 +420,23 @@ public:
     RHIPipelineStageFlags dst_stages_;
     RHIGPUAccessFlags src_access_;
     RHIGPUAccessFlags dst_access_;
+};
+
+class RHICommandSetClearValues : public TRHICommand<RHICommandSetClearValues> {
+public:
+    RHICommandSetClearValues(std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments]) {
+        std::copy(clear_values, clear_values + C::kRHIMaxNumFramebufferAttachments, clear_values_);
+    }
+    void Execute(RHICommandQueueBase & cmd) override ;
+    std::array<float, 4> clear_values_[C::kRHIMaxNumFramebufferAttachments];
+};
+
+class RHICommandSetRenderArea : public TRHICommand<RHICommandSetRenderArea> {
+public:
+    RHICommandSetRenderArea(int x, int y, uint32_t width, uint32_t height) : x_(x), y_(y), width_(width), height_(height) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    int x_, y_;
+    uint32_t width_, height_;
 };
 
 class RHICommandFrameEnd : public TRHICommand<RHICommandFrameEnd> {
@@ -518,12 +534,28 @@ public:
         AddCommand(AllocateCommand<RHICommandFrameEnd>(return_resources_to_system));
     }
 
-    FORCEINLINE void BindPipeline(RHIGraphicsPipeline *pPipeline) {
-        AddCommand(AllocateCommand<RHICommandBindGraphicsPipeline>(pPipeline));
+    FORCEINLINE void BindPipeline(RHIGraphicsPipeline * pipeline) {
+        AddCommand(AllocateCommand<RHICommandBindGraphicsPipeline>(pipeline));
     }
-
-    FORCEINLINE void BindRenderTarget(RHITexture *pTexture, int index) {
-        AddCommand(AllocateCommand<RHICommandBindRenderTarget>(pTexture, index));
+    FORCEINLINE void BindPipeline(RHIComputePipeline * pipeline) {
+        AddCommand(AllocateCommand<RHICommandBindComputePipeline>(pipeline));
+    }
+    FORCEINLINE void BindFramebuffer(RHIFramebuffer * framebuffer) {
+        AddCommand(AllocateCommand<RHICommandBindFramebuffer>(framebuffer));
+    }
+    FORCEINLINE void SetClearValues(std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments]) {
+        AddCommand(AllocateCommand<RHICommandSetClearValues>(clear_values));
+    }
+    template<typename...T>
+    FORCEINLINE void SetClearValues(T...args) {
+        std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments] = {args...};
+        for(int i = sizeof...(args); i < C::kRHIMaxNumFramebufferAttachments; ++i) {
+            clear_values[i] = {0, 0, 0, 1};
+        }
+        AddCommand(AllocateCommand<RHICommandSetClearValues>(clear_values));
+    }
+    FORCEINLINE void SetRenderArea(int x, int y, uint32_t width, uint32_t height) {
+        AddCommand(AllocateCommand<RHICommandSetRenderArea>(x, y, width, height));
     }
 };
 

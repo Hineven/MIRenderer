@@ -42,18 +42,24 @@ VulkanTexture::VulkanTexture(RHITextureType type, RHITextureDimensions dimension
             nullptr,
             vk::ImageLayout::eUndefined
     };
-
-    vk_image_layout_ = vk::ImageLayout::eUndefined;
-
     // Allocate memory for the image
     bool use_dedicated_allocation =
-            (usage & RHITextureUsageFlagBits::kDepth)
-        || (usage & RHITextureUsageFlagBits::kRenderTarget);
-    allocation_ = vma.allocateMemoryForImage(vk_image_, vma::AllocationCreateInfo{
+            (usage & RHITextureUsageFlagBits::kDepthStencil)
+            || (usage & RHITextureUsageFlagBits::kRenderTarget);
+
+    auto result = vma.createImage(image_create_info, vma::AllocationCreateInfo{
             use_dedicated_allocation
             ? vma::AllocationCreateFlagBits::eDedicatedMemory : vma::AllocationCreateFlags{},
             vma::MemoryUsage::eAutoPreferDevice
-        });
+    });
+
+    vk_image_layout_ = vk::ImageLayout::eUndefined;
+
+    vk_image_ = result.first;
+    allocation_ = result.second;
+
+    mi_assert(vk_image_ && allocation_, "Failed to allocate texture!");
+
     CreateDefaultImageView();
 }
 
@@ -77,11 +83,13 @@ void VulkanTexture::CreateDefaultImageView () {
 }
 
 VulkanTexture::~VulkanTexture () {
+    printf("Destroy!\n");
+    fflush(stdout);
     if(!(GetFlags() & RHIResourceFlagBits::kImported)) {
         auto device = GetVulkanRHI()->GetDevice();
         auto vma = GetVulkanRHI()->GetVmaAllocator();
         device.destroyImageView(vk_default_image_view_);
-        vma.freeMemory(allocation_);
+        vma.destroyImage(vk_image_, allocation_);
         allocation_ = nullptr;
     }
     // Need to do nothing about imported resources
@@ -94,6 +102,49 @@ void VulkanTexture::ImportFromHandle(vk::Image image_handle, vk::ImageLayout imp
     vk_aspect_ = GetVulkanImageAspectFlags(GetUsage());
     allocation_ = nullptr;
     CreateDefaultImageView();
+}
+
+bool VulkanFramebuffer::CompileRHI(const RHIFramebufferDesc &desc) {
+    auto device = GetVulkanRHI()->GetDevice();
+
+    vk::FramebufferAttachmentsCreateInfo attachments_desc{};
+    IVector<vk::FramebufferAttachmentImageInfo> attachment_image_infos(desc.num_attachments);
+    vk::Format vk_formats[C::kRHIMaxNumFramebufferAttachments];
+
+    for (uint32_t i = 0; i < desc.num_attachments; ++i) {
+        vk_formats[i] = GetVulkanPixelFormat(desc.formats[i]);
+        attachment_image_infos[i] = vk::FramebufferAttachmentImageInfo{
+                vk::ImageCreateFlags{},
+                IsDepthStencilPixelFormat(desc.formats[i])
+            ? vk::ImageUsageFlagBits::eColorAttachment
+            : vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                desc.width,
+                desc.height,
+                1, vk_formats[i]
+        };
+    }
+
+    attachments_desc.setAttachmentImageInfos(attachment_image_infos);
+    auto framebuffer_desc = vk::FramebufferCreateInfo{
+        vk::FramebufferCreateFlagBits::eImageless,
+        nullptr,
+        desc.num_attachments,
+        nullptr,
+        desc.width,
+        desc.height,
+        1
+    };
+    framebuffer_desc.pNext = &attachments_desc;
+    vk_framebuffer_ = device.createFramebuffer(framebuffer_desc);
+    is_valid_ = (vk_framebuffer_ != nullptr);
+    return is_valid_;
+}
+
+VulkanFramebuffer::~VulkanFramebuffer() {
+    auto device = GetVulkanRHI()->GetDevice();
+    if(vk_framebuffer_) {
+        device.destroyFramebuffer(vk_framebuffer_);
+    }
 }
 
 MI_NAMESPACE_END
