@@ -8,8 +8,8 @@
 
 MI_NAMESPACE_BEGIN
 
-VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage, RHIGPUAccessFlagBits access)
-        : RHIBuffer(buffer_size, usage, access) {
+VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage)
+        : RHIBuffer(buffer_size, usage) {
     vk::BufferCreateInfo buffer_info;
     buffer_info.size = buffer_size;
     buffer_info.usage = GetVulkanBufferUsage(usage);
@@ -54,6 +54,9 @@ void VulkanBuffer::Unmap() {
 }
 
 VulkanBuffer::~VulkanBuffer() {
+    if(is_mapped_) {
+        Unmap();
+    }
     GetVulkanRHI()->GetVmaAllocator().destroyBuffer(vk_buffer_, allocation_);
 }
 

@@ -5,6 +5,8 @@
  */
 
 #include <spirv_cross/spirv_hlsl.hpp>
+#include <spirv-tools/libspirv.hpp>
+#include <spirv-tools/optimizer.hpp>
 #include <span>
 
 #include "core/crc.h"
@@ -164,6 +166,23 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             fragment_outputs_.push_back(desc);
         }
     }
+
+
+    // Strip the extensions declared to support shader reflection produced by dxc if present
+    // This is a workaround for the issue that the reflection extensions is not supported
+    // by NVIDIA drivers. Anyway they are just annotations and won't affect real shader behavior.
+    spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
+    optimizer.RegisterPass(spvtools::CreateStripReflectInfoPass());
+    // Okay, optimizer does not support anything other than std::vector<uint32_t>
+    std::vector<uint32_t> optimized_ir;
+    if(!optimizer.Run((uint32_t*)ir_, ir_size_ / 4, &optimized_ir)) {
+        MI_LOG(MIInfraLogType::kWarning, "Failed to strip reflection info from SPIRV IR.");
+        return false;
+    }
+    GetInfra().Free(ir_);
+    ir_size_ = (uint32_t)optimized_ir.size() * 4;
+    ir_ = static_cast<std::byte *>(GetInfra().Allocate(ir_size_));
+    std::copy(optimized_ir.begin(), optimized_ir.end(), (uint32_t*)ir_);
 
     return true;
 }

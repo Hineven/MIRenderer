@@ -17,13 +17,12 @@ MI_NAMESPACE_BEGIN
 class RHIBuffer : public RHIResource {
 protected:
     // You can only create buffers via factory functions in the RHI instance
-    inline RHIBuffer (size_t buffer_size, RHIBufferUsageFlags usage, RHIGPUAccessFlagBits access) : buffer_size_(buffer_size), usage_(usage), access_(access) {}
+    inline RHIBuffer (size_t buffer_size, RHIBufferUsageFlags usage) : buffer_size_(buffer_size), usage_(usage) {}
     virtual ~RHIBuffer() = default;
 
 public:
     FORCEINLINE size_t GetBufferSize () const {return buffer_size_;}
     FORCEINLINE RHIBufferUsageFlags GetBufferUsage () const {return usage_;}
-    FORCEINLINE RHIGPUAccessFlagBits GetGPUAccess () const {return access_;}
 
     // Only buffers that are created with the RHIBufferType::kStaging type can be mapped
     virtual void * Map () = 0;
@@ -32,8 +31,8 @@ public:
 
     FORCEINLINE bool IsMapped () const {return is_mapped_;}
 
-    FORCEINLINE RHIBufferSpan GetSpan (size_t offset, size_t size) {
-        return {this, offset, size};
+    FORCEINLINE RHIBufferSpan GetSpan (size_t offset = 0, size_t size = 0) {
+        return {this, offset, size == 0 ? buffer_size_ : size};
     }
 
     // View it as a storage buffer or uniform buffer.
@@ -45,7 +44,6 @@ public:
 protected:
     size_t buffer_size_;
     RHIBufferUsageFlags usage_;
-    RHIGPUAccessFlagBits access_;
 
     RHIBindlessSlotRef<RHIBuffer> bindless_slot_readonly_ {};
     RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};

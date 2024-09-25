@@ -8,6 +8,7 @@
 #define MI_VK_CONSTANTS_H
 
 #include "vk_rhi.h"
+#include "core/constants.h"
 MI_NAMESPACE_BEGIN
 
 namespace C {
@@ -18,6 +19,9 @@ namespace C {
     constexpr uint32_t kMaxNumStorageTextureDescriptorsPerFrame = 8192;
     constexpr uint32_t kMaxNumSamplerDescriptorsPerFrame = 32;
     constexpr uint32_t kMaxNumAccelerationStructureDescriptorsPerFrame = 32;
+
+    // 8k bindless slots per frame
+    constexpr uint32_t kRHIMaxBindlessTableSize = 4 * 8 * 1024;
 }
 
 MI_NAMESPACE_END

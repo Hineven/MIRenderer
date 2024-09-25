@@ -16,6 +16,7 @@
 #endif
 
 #include <vulkan/vulkan.hpp>
+#include "vma_overrides.h"
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include "rhi/rhi.h"
 
@@ -43,21 +44,19 @@ public:
         return "Vulkan";
     }
 
-    RHIBufferRef CreateBuffer(size_t size, RHIBufferUsageFlagBits type, RHIGPUAccessFlagBits access_type) override;
+    RHIBufferRef CreateBuffer(size_t size, RHIBufferUsageFlagBits type) override;
 
     RHITextureRef CreateTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
                                 RHITextureUsageFlags usage, int mip_levels, int array_layers) override;
-
-    RHIFramebufferRef CreateFramebuffer(const RHIFramebufferDesc &desc) override;
 
     RHISamplerRef CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) override;
 
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;
 
-    RHIGraphicsPipelineRef CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc) override;
+    RHIGraphicsPipelineRef CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name) override;
 
-    RHIComputePipelineRef CreateComputePipeline(RHIShader *shader) override;
+    RHIComputePipelineRef CreateComputePipeline(RHIShader *shader, const char * name) override;
 
     RHISyncPointRef CreateSyncPoint() override;
 

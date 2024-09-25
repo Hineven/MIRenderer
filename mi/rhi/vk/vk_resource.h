@@ -7,6 +7,7 @@
 #ifndef MIRENDERER_VK_RESOURCE_H
 #define MIRENDERER_VK_RESOURCE_H
 
+#include <semaphore>
 #include "vk_rhi.h"
 #include "rhi/rhi_resource.h"
 
@@ -44,12 +45,15 @@ protected:
 public:
     void Wait () override;
     void Reset () override;
+    void NotifySubmission () override;
     FORCEINLINE vk::Fence GetFence () const {
         return vk_fence_;
     }
     friend class VulkanRHI;
 protected:
+    std::binary_semaphore submission_sem_ {0};
     vk::Fence vk_fence_ {};
+    bool can_be_waited_ {true};
 };
 
 MI_NAMESPACE_END

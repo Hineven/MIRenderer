@@ -45,9 +45,14 @@ VulkanSyncPoint::VulkanSyncPoint() {
 }
 
 void VulkanSyncPoint::Wait() {
+    assert(IsRenderThread());
+    assert(can_be_waited_);
+    // Wait for command buffer submission first.
+    submission_sem_.acquire();
     auto dev = GetVulkanRHI()->GetDevice();
     auto ret = dev.waitForFences({vk_fence_}, VK_TRUE, UINT64_MAX);
     mi_assert(ret == vk::Result::eSuccess, "Failed to wait for fence.");
+    can_be_waited_ = false;
 }
 
 VulkanSyncPoint::~VulkanSyncPoint() {
@@ -56,8 +61,16 @@ VulkanSyncPoint::~VulkanSyncPoint() {
 }
 
 void VulkanSyncPoint::Reset() {
+    assert(IsRenderThread());
     auto dev = GetVulkanRHI()->GetDevice();
     dev.resetFences({vk_fence_});
+    can_be_waited_ = true;
+}
+
+void VulkanSyncPoint::NotifySubmission() {
+    assert(IsRHIThread());
+    assert(can_be_waited_);
+    submission_sem_.release();
 }
 
 MI_NAMESPACE_END

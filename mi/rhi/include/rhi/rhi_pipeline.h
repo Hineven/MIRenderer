@@ -44,7 +44,7 @@ public:
 
     virtual void Reset () ;
 
-    // Return the size of a adequate btb buffer for this pipeline, in bytes.
+    // Return the size of an adequate btb buffer for this pipeline, in number of slots.
     inline uint32_t GetBindlessTableSize () const {return bindless_table_size_;}
 
 protected:
@@ -58,7 +58,9 @@ protected:
     // , remove it from uniforms_ and set relating attributes.
     void TryLocateAndStripBindlessTableUniformBuffer () ;
 
-    virtual void ResetRHI () = 0;
+    // We're calling this function inside the base class destructor, so
+    // it can not be pure virtual.
+    virtual void ResetRHI () {};
     virtual void OnNameChanged () = 0;
 
     IString name_;
@@ -77,6 +79,7 @@ protected:
     IVector<CommandConstantDesc> command_constant_;
 
     bool has_bindless_resources_ {false};
+    // Number of slots in the btb table
     uint32_t bindless_table_size_ {};
 
 public:

@@ -9,6 +9,7 @@
 
 #include <span>
 #include <string>
+#include <array>
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_types.h"
@@ -74,8 +75,8 @@ struct RHIColorAttachmentBlendDesc {
 struct RHIColorAttachmentDesc {
     RHIColorAttachmentBlendDesc blending;
     PixelFormatType format {PixelFormatType::kUnknown};
-    RHILoadOpType load_op {RHILoadOpType::kClear};
-    RHIStoreOpType store_op {RHIStoreOpType::kStore};
+//    RHILoadOpType load_op {RHILoadOpType::kClear};
+//    RHIStoreOpType store_op {RHIStoreOpType::kStore};
 };
 
 struct RHIDepthStencilAttachmentDesc {
@@ -109,13 +110,6 @@ struct RHIGraphicsPipelineDesc {
     } depth_stencil;
     std::span<RHIColorAttachmentDesc> color_attachments;
     RHIDepthStencilAttachmentDesc depth_stencil_attachment;
-};
-
-struct RHIFramebufferDesc {
-    uint32_t width;
-    uint32_t height;
-    uint32_t num_attachments;
-    PixelFormatType formats[C::kRHIMaxNumFramebufferAttachments];
 };
 
 struct RHITextureDimensions {
@@ -295,6 +289,74 @@ namespace ShaderReflection {
         }
     };
 }
+
+struct RHIDrawDesc {
+    // Render rect offset
+    int rect_x {}, rect_y {};
+    // Render rect size
+    uint32_t rect_width {}, rect_height {};
+    // Framebuffer attachment count
+    uint32_t num_framebuffer_attachments_ {};
+    // Framebuffer attachment clear values
+    std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments] {};
+    // Framebuffer attachments
+    RHITexture * attachments[C::kRHIMaxNumFramebufferAttachments] {};
+    // Framebuffer attachment load ops
+    RHILoadOpType load_ops[C::kRHIMaxNumFramebufferAttachments] {};
+    // Framebuffer attachment store ops
+    RHIStoreOpType store_ops[C::kRHIMaxNumFramebufferAttachments] {};
+
+    FORCEINLINE void SetClearValues(std::array<float, 4> in_clear_values[C::kRHIMaxNumFramebufferAttachments]) {
+        for(int i = 0; i < C::kRHIMaxNumFramebufferAttachments; ++i) {
+            clear_values[i] = in_clear_values[i];
+        }
+    }
+    template<typename...T>
+    FORCEINLINE void SetClearValues(T...args) {
+        std::array<float, 4> in_clear_values[sizeof...(args)] = {args...};
+        std::copy(in_clear_values, in_clear_values + sizeof...(args), clear_values);
+        for(int i = sizeof...(args); i < C::kRHIMaxNumFramebufferAttachments; ++i) {
+            clear_values[i] = {0, 0, 0, 1};
+        }
+    }
+    FORCEINLINE void SetClearValue (uint32_t index, std::array<float, 4> in_clear_value) {
+        clear_values[index] = in_clear_value;
+    }
+    FORCEINLINE void SetRenderArea(int x, int y, uint32_t width, uint32_t height) {
+        rect_x = x;
+        rect_y = y;
+        rect_width = width;
+        rect_height = height;
+    }
+    FORCEINLINE void Reset () {
+        num_framebuffer_attachments_ = 0;
+        rect_x = rect_y = 0;
+        rect_width = rect_height = 0;
+        for(auto & v : clear_values) {
+            v=  {0, 0, 0, 1};
+        }
+        for(auto & ld : load_ops) {
+            ld = RHILoadOpType::kClear;
+        }
+        for(auto & st : store_ops) {
+            st = RHIStoreOpType::kStore;
+        }
+        for(auto & att : attachments) {
+            att = nullptr;
+        }
+    }
+    FORCEINLINE void SetNumAttachments (uint32_t num) {
+        num_framebuffer_attachments_ = num;
+    }
+    FORCEINLINE void SetAttachment(uint32_t index, RHITexture * texture,
+                                   RHILoadOpType load_op = RHILoadOpType::kClear,
+                                   RHIStoreOpType store_op = RHIStoreOpType::kStore) {
+        attachments[index] = texture;
+        load_ops[index] = load_op;
+        store_ops[index] = store_op;
+        num_framebuffer_attachments_ = std::max(num_framebuffer_attachments_, index + 1);
+    }
+};
 
 #define USE_SHADER_REFLECTION_STRUCTS using UniformBufferDesc = ShaderReflection::UniformBufferDesc; \
 using StorageBufferDesc = ShaderReflection::StorageBufferDesc;                                       \

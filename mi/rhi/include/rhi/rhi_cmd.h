@@ -290,6 +290,27 @@ public:
     uint32_t dst_base_layer_, dst_layer_count_;
 };
 
+class RHICommandBeginRendering : public TRHICommand<RHICommandBeginRendering> {
+public:
+    RHICommandBeginRendering() {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+};
+
+class RHICommandEndRendering : public TRHICommand<RHICommandEndRendering> {
+public:
+    RHICommandEndRendering() {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+};
+
+class RHICommandUpdateDrawState : public TRHICommand<RHICommandUpdateDrawState> {
+public:
+    RHICommandUpdateDrawState(const RHIDrawDesc & draw_state)
+        : draw_state_(draw_state) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIDrawDesc draw_state_;
+};
+
 class RHICommandDrawPrimitive : public TRHICommand<RHICommandDrawPrimitive> {
 public:
     RHICommandDrawPrimitive(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
@@ -350,15 +371,6 @@ public:
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHIGraphicsPipeline * pipeline_;
-};
-
-class RHICommandBindFramebuffer : public TRHICommand<RHICommandBindFramebuffer> {
-public:
-    RHICommandBindFramebuffer(RHIFramebuffer * framebuffer)
-        : framebuffer_(framebuffer) {}
-    void Execute(RHICommandQueueBase & cmd) override ;
-
-    RHIFramebuffer * framebuffer_;
 };
 
 class RHICommandBindComputePipeline : public TRHICommand<RHICommandBindComputePipeline> {
@@ -422,23 +434,6 @@ public:
     RHIGPUAccessFlags dst_access_;
 };
 
-class RHICommandSetClearValues : public TRHICommand<RHICommandSetClearValues> {
-public:
-    RHICommandSetClearValues(std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments]) {
-        std::copy(clear_values, clear_values + C::kRHIMaxNumFramebufferAttachments, clear_values_);
-    }
-    void Execute(RHICommandQueueBase & cmd) override ;
-    std::array<float, 4> clear_values_[C::kRHIMaxNumFramebufferAttachments];
-};
-
-class RHICommandSetRenderArea : public TRHICommand<RHICommandSetRenderArea> {
-public:
-    RHICommandSetRenderArea(int x, int y, uint32_t width, uint32_t height) : x_(x), y_(y), width_(width), height_(height) {}
-    void Execute(RHICommandQueueBase & cmd) override ;
-    int x_, y_;
-    uint32_t width_, height_;
-};
-
 class RHICommandFrameEnd : public TRHICommand<RHICommandFrameEnd> {
 public:
     RHICommandFrameEnd(bool return_resources_to_system): return_resources_to_system_(return_resources_to_system) {};
@@ -490,7 +485,18 @@ public:
         AddCommand(AllocateCommand<RHICommandCopyBuffer>(src, dst));
     }
 
-    FORCEINLINE void DrawPrimitive (uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) {
+    FORCEINLINE void UpdateDrawState (const RHIDrawDesc & draw_state) {
+        AddCommand(AllocateCommand<RHICommandUpdateDrawState>(draw_state));
+    }
+
+    FORCEINLINE void BeginRendering () {
+        AddCommand(AllocateCommand<RHICommandBeginRendering>());
+    }
+    FORCEINLINE void EndRendering () {
+        AddCommand(AllocateCommand<RHICommandEndRendering>());
+    }
+
+    FORCEINLINE void DrawPrimitive (uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex = 0, uint32_t first_instance = 0) {
         AddCommand(AllocateCommand<RHICommandDrawPrimitive>(vertex_count, instance_count, first_vertex, first_instance));
     }
     FORCEINLINE void DrawIndexedPrimitive (RHIBufferSpan index_buffer, uint32_t index_count,
@@ -504,7 +510,6 @@ public:
     FORCEINLINE void DispatchIndirect (RHIBufferSpan dispatch_command_buffer, uint32_t offset) {
         AddCommand(AllocateCommand<RHICommandDispatchIndirect>(dispatch_command_buffer, offset));
     }
-
     // Allocate RHIBindPipelineParameterDesc with the command buffer allocator.
     FORCEINLINE void BindPipelineParameters (RHIBindPointType point, RHIBindPipelineParametersDesc * table) {
         AddCommand(AllocateCommand<RHICommandBindPipelineParameters>(point, table));
@@ -540,23 +545,7 @@ public:
     FORCEINLINE void BindPipeline(RHIComputePipeline * pipeline) {
         AddCommand(AllocateCommand<RHICommandBindComputePipeline>(pipeline));
     }
-    FORCEINLINE void BindFramebuffer(RHIFramebuffer * framebuffer) {
-        AddCommand(AllocateCommand<RHICommandBindFramebuffer>(framebuffer));
-    }
-    FORCEINLINE void SetClearValues(std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments]) {
-        AddCommand(AllocateCommand<RHICommandSetClearValues>(clear_values));
-    }
-    template<typename...T>
-    FORCEINLINE void SetClearValues(T...args) {
-        std::array<float, 4> clear_values[C::kRHIMaxNumFramebufferAttachments] = {args...};
-        for(int i = sizeof...(args); i < C::kRHIMaxNumFramebufferAttachments; ++i) {
-            clear_values[i] = {0, 0, 0, 1};
-        }
-        AddCommand(AllocateCommand<RHICommandSetClearValues>(clear_values));
-    }
-    FORCEINLINE void SetRenderArea(int x, int y, uint32_t width, uint32_t height) {
-        AddCommand(AllocateCommand<RHICommandSetRenderArea>(x, y, width, height));
-    }
+
 };
 
 // No other kinds of command queues are needed for now.

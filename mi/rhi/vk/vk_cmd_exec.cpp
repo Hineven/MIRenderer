@@ -159,6 +159,64 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
     cmd.copyImage2(copy_info);
 }
 
+void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, RHICommandBeginRendering *begin_rendering) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
+
+    // Check the compatibility of the bound pipeline and the bound framebuffer
+    mi_assert(graphics.bound_pipeline, "No graphics pipeline bound");
+    auto graphics_pipeline = (RHIGraphicsPipeline*)graphics.bound_pipeline;
+    auto depth_enabled = graphics_pipeline->IsDepthTestEnabled();
+    mi_assert(graphics_pipeline->GetFragmentOutputDesc().size() + depth_enabled
+              == state.draw_state_.num_framebuffer_attachments_,
+              "Mismatched number of framebuffer attachments and fragment outputs");
+    if(depth_enabled) {
+        mi_assert(
+                state.draw_state_.num_framebuffer_attachments_ > 0 &&
+                IsDepthStencilPixelFormat(state.draw_state_.attachments[
+                                                  state.draw_state_.num_framebuffer_attachments_ - 1
+                                          ]->GetFormat()),
+                "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
+    }
+    vk::Rect2D render_area = {
+            {state.draw_state_.rect_x, state.draw_state_.rect_y},
+            {state.draw_state_.rect_width, state.draw_state_.rect_height}
+    };
+    if(render_area.extent.width == 0 && render_area.extent.height == 0
+       && render_area.offset.x == 0 && render_area.offset.y == 0) {
+        // Default to the size of the bound framebuffer if not set
+        if(state.draw_state_.attachments[0]) {
+            render_area.extent.width = state.draw_state_.attachments[0]->GetWidth();
+            render_area.extent.height = state.draw_state_.attachments[0]->GetHeight();
+        } else {
+            MI_LOG(MIInfraLogType::kWarning, "Render area not set and no framebuffer bound");
+        }
+    }
+    vk::RenderingAttachmentInfo attachments_info[C::kRHIMaxNumFramebufferAttachments];
+    for(int i = 0; i < (int)state.draw_state_.num_framebuffer_attachments_; i++) {
+        auto tex = (VulkanTexture*)state.draw_state_.attachments[i];
+        attachments_info[i] = vk::RenderingAttachmentInfo{
+                tex->GetImageView(),
+                tex->GetImageLayout(),
+                {}, {}, {},
+                GetVulkanLoadOp(state.draw_state_.load_ops[i]),
+                GetVulkanStoreOp(state.draw_state_.store_ops[i])
+        };
+    }
+    auto rendering_info = vk::RenderingInfo {
+            {}, render_area, 1, {}, state.draw_state_.num_framebuffer_attachments_ - depth_enabled, attachments_info,
+            depth_enabled ? (&attachments_info[state.draw_state_.num_framebuffer_attachments_ - 1]) : nullptr
+    };
+    state.cmd.beginRendering(rendering_info);
+}
+
+void VulkanCommandExecutor::RHIEndRendering(RHICommandQueueBase *cmd, RHICommandEndRendering *end_rendering) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    state.cmd.endRendering();
+}
+
 const static vk::PipelineStageFlags kBasicDrawStages = vk::PipelineStageFlagBits::eGeometryShader
     | vk::PipelineStageFlagBits::eVertexInput | vk::PipelineStageFlagBits::eVertexShader
     | vk::PipelineStageFlagBits::eTessellationControlShader | vk::PipelineStageFlagBits::eTessellationEvaluationShader
@@ -172,44 +230,22 @@ void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
     auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
 
     // Check the compatibility of the bound pipeline and the bound framebuffer
-    mi_assert(state.bound_framebuffer, "No framebuffer bound");
     mi_assert(graphics.bound_pipeline, "No graphics pipeline bound");
     auto graphics_pipeline = (RHIGraphicsPipeline*)graphics.bound_pipeline;
     auto depth_enabled = graphics_pipeline->IsDepthTestEnabled();
     mi_assert(graphics_pipeline->GetFragmentOutputDesc().size() + depth_enabled
-              == state.bound_framebuffer->GetNumAttachments(),
+              == state.draw_state_.num_framebuffer_attachments_,
               "Mismatched number of framebuffer attachments and fragment outputs");
     if(depth_enabled) {
         mi_assert(
-                IsDepthStencilPixelFormat(state.bound_framebuffer->GetAttachment(
-                        state.bound_framebuffer->GetNumAttachments() - 1
-                )->GetFormat()),
-                  "Depth test enabled but invalid depth attachment pixel format");
+                state.draw_state_.num_framebuffer_attachments_ > 0 &&
+                IsDepthStencilPixelFormat(state.draw_state_.attachments[
+                        state.draw_state_.num_framebuffer_attachments_ - 1
+                ]->GetFormat()),
+                  "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
     }
 
     FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
-    vk::ImageView attachments[C::kRHIMaxNumFramebufferAttachments];
-    for(int i = 0; i < (int)state.bound_framebuffer->GetNumAttachments(); i++) {
-        attachments[i] = ((VulkanTexture*)(state.bound_framebuffer->GetAttachment(i)))->GetImageView();
-    }
-    auto attachments_info = vk::RenderPassAttachmentBeginInfo {
-        state.bound_framebuffer->GetNumAttachments(), attachments
-    };
-    vk::Rect2D render_area = state.render_area;
-    if(render_area.extent.width == 0 && render_area.extent.height == 0
-    && render_area.offset.x == 0 && render_area.offset.y == 0) {
-        // Default to the size of the bound framebuffer if not set
-        render_area.extent.width = state.bound_framebuffer->GetWidth();
-        render_area.extent.height = state.bound_framebuffer->GetHeight();
-    }
-    state.cmd.beginRenderPass(vk::RenderPassBeginInfo{
-            ((VulkanGraphicsPipeline*)graphics.bound_pipeline)->GetRenderPass(),
-            state.bound_framebuffer->GetFramebuffer(),
-            render_area,
-            state.bound_framebuffer->GetNumAttachments(),
-            state.clear_values,
-            &attachments_info
-    }, vk::SubpassContents::eInline);
     state.cmd.draw(draw_primitive->vertex_count_, draw_primitive->instance_count_, draw_primitive->first_vertex_, draw_primitive->first_instance_);
 }
 
@@ -268,12 +304,11 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
     }
 }
 
-
-void VulkanCommandExecutor::RHIBindFramebuffer(RHICommandQueueBase *cmd, RHICommandBindFramebuffer *bind_framebuffer) {
+void
+VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandUpdateDrawState *update_draw_state) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto framebuffer = static_cast<VulkanFramebuffer*>(bind_framebuffer->framebuffer_); // NOLINT its safe
-    state.bound_framebuffer = framebuffer;
+    state.draw_state_ = update_draw_state->draw_state_;
 }
 
 void VulkanCommandExecutor::RHIBindComputePipeline(
@@ -303,7 +338,7 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
 void VulkanCommandExecutor::RHIBindPipelineParameters(
         RHICommandQueueBase *cmd, RHICommandBindPipelineParameters *bind_pipeline_parameters) {
     assert(IsRHIThread());
-    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
     auto table = bind_pipeline_parameters->table_;
     auto & point = state.points[(uint32_t)bind_pipeline_parameters->point_];
     point.parameter_table.Merge(table);
@@ -320,30 +355,12 @@ void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
     state.bound_vertex_buffers[bind_vertex_buffer->binding_] = vb;
 }
 
-void VulkanCommandExecutor::RHISetClearValues(RHICommandQueueBase *cmd, RHICommandSetClearValues *set_clear_values) {
-    assert(IsRHIThread());
-    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    for(int i = 0; i < C::kRHIMaxNumFramebufferAttachments; i++) {
-        state.clear_values[i] = vk::ClearValue(set_clear_values->clear_values_[i]);
-    }
-}
-
-void VulkanCommandExecutor::RHISetRenderArea(RHICommandQueueBase *cmd,
-                                             RHICommandSetRenderArea *set_render_area) {
-    assert(IsRHIThread());
-    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    state.render_area = vk::Rect2D(
-            vk::Offset2D(set_render_area->x_, set_render_area->y_),
-            vk::Extent2D(set_render_area->width_, set_render_area->height_)
-    );
-}
-
 void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHICommandFrameEnd *frame_end) {
     assert(IsRHIThread());
     auto & chain = state_chains_[(uint32_t)cmd->GetCommandQueueType()];
     {
         // Release resources allocated for the frame before current frame
-        int prev_state_index = (chain.state_index - 1) % (int) std::size(chain.states);
+        int prev_state_index = (chain.state_index - 1 + (int) std::size(chain.states)) % (int) std::size(chain.states);
         auto &prev_state = chain.states[prev_state_index];
         prev_state.Clear(frame_end->return_resources_to_system_);
         // Switch to the next state
@@ -521,11 +538,11 @@ void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
     // Assign btb on the fly
     uint32_t btb_size = RoundUp(
             point.bound_pipeline->GetBindlessTableSize(),
-            GetVulkanRHI()->QueryRHIBindlessSupportInfo().descriptor_buffer_offset_alignment
+            RoundUp(GetVulkanRHI()->QueryRHIBindlessSupportInfo().descriptor_buffer_offset_alignment, sizeof(uint32_t))
     );
     std::span<uint32_t> btb_data = {
-            (uint32_t*)((std::byte*)point.bindless_table_buffer->Map() + point.bindless_table_top),
-            btb_size / sizeof(uint32_t)
+            point.bindless_table_buffer_mapped + point.bindless_table_top,
+            btb_size
     };
     point.bindless_table_top += btb_size;
     auto descriptor_writes = point.parameter_table.FlushDescriptorWrites(
@@ -555,6 +572,7 @@ void
 VulkanCommandExecutor::RHIBufferBarrier(RHICommandQueueBase *cmd, RHICommandBufferBarrier *barrier) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
     auto buffer = static_cast<VulkanBuffer*>(barrier->buffer_.buffer);
     buffer->MemBarrier(state.cmd,
                        GetVulkanPipelineStageFlags(barrier->src_stages_),
@@ -569,25 +587,37 @@ VulkanCommandExecutor::RHIBufferBarrier(RHICommandQueueBase *cmd, RHICommandBuff
 void
 VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync, bool recycle_resources) {
     assert(IsRHIThread());
-    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
     auto & cmd = state.cmd;
-    cmd.end();
+    state.CloseCmd();
     auto vk_rhi = GetVulkanRHI();
     auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
     auto submit_info = vk::SubmitInfo()
             .setCommandBufferCount(1)
             .setPCommandBuffers(&cmd);
-    queue.submit(submit_info, ((VulkanSyncPoint*)sync)->GetFence());
-    cmd.reset(recycle_resources ? vk::CommandBufferResetFlagBits::eReleaseResources : vk::CommandBufferResetFlagBits{});
+    queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
+    if(sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
+    // Allocate a new command buffer
+    // TODO accelerate this?
+    cmd = vk_rhi->GetDevice().allocateCommandBuffers(
+            vk::CommandBufferAllocateInfo{
+                    state.cmd_pool,
+                    vk::CommandBufferLevel::ePrimary,
+                    1
+            }
+    )[0];
+    // Setup default dynamic states.
+    state.SetupDefaultDynamicStates();
 }
 
 void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
     assert(IsRHIThread());
     {
+        CloseCmd();
         auto rhi = GetVulkanRHI();
         cmd_pool = rhi->GetDevice().createCommandPool(
                 vk::CommandPoolCreateInfo{
-                        vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                        {},
                         rhi->GetQueueFamilyIndex(type)
                 }
         );
@@ -598,10 +628,25 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
                         1
                 }
         )[0];
+        SetupDefaultDynamicStates();
         for(auto & span = bound_vertex_buffers; auto & buf : span)
             buf = RHIBufferSpan{};
         for(auto & point : points) {
-            point.bindless_table_buffer = nullptr;
+            auto alloc = rhi->GetVmaAllocator().createBuffer(
+                    vk::BufferCreateInfo{
+                            {},
+                            C::kRHIMaxBindlessTableSize,
+                            vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT,
+                            vk::SharingMode::eExclusive
+                    }, VmaAllocationCreateInfo{
+                            VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                            VMA_MEMORY_USAGE_CPU_TO_GPU
+                    }
+            );
+            point.bindless_table_buffer = alloc.first;
+            point.bindless_table_buffer_allocation = alloc.second;
+            auto res = rhi->GetVmaAllocator().mapMemory(point.bindless_table_buffer_allocation, (void**)&point.bindless_table_buffer_mapped);
+            mi_assert(res == vk::Result::eSuccess, "Failed to map bindless table buffer memory");
             point.bindless_table_top = 0;
             point.bound_private_set = nullptr;
             point.bound_pipeline = nullptr;
@@ -649,10 +694,14 @@ void VulkanCommandExecutor::CommandQueueState::Destroy() {
     auto rhi = GetVulkanRHI();
     for(auto & point : points) {
         if(point.bindless_table_buffer) {
-            point.bindless_table_buffer->Unmap();
-            point.bindless_table_buffer = {};
+            rhi->GetVmaAllocator().unmapMemory(point.bindless_table_buffer_allocation);
+            rhi->GetVmaAllocator().destroyBuffer(point.bindless_table_buffer, point.bindless_table_buffer_allocation);
+            point.bindless_table_buffer = nullptr;
+            point.bindless_table_buffer_allocation = nullptr;
+            point.bindless_table_buffer_mapped = nullptr;
         }
     }
+    CloseCmd();
     rhi->GetDevice().destroyDescriptorPool(descriptor_pool);
     rhi->GetDevice().freeCommandBuffers(cmd_pool, cmd);
     rhi->GetDevice().destroyCommandPool(cmd_pool);
@@ -669,6 +718,7 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
         point.bound_pipeline = nullptr;
         point.parameter_table = {};
     }
+    CloseCmd();
     // Do not recycle resources back to the system. We may be able to reuse them in the later frames.
     rhi->GetDevice().resetCommandPool(cmd_pool,
                   return_resources_to_system
@@ -676,9 +726,29 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
     rhi->GetDevice().resetDescriptorPool(descriptor_pool);
 
     for(auto & s : bound_vertex_buffers) s = {};
-    bound_framebuffer = nullptr;
-    render_area = vk::Rect2D{};
-    for(auto & s : clear_values) s = vk::ClearValue{{0.f, 0.f, 0.f, 1.f}};
+    draw_state_.Reset();
+}
+
+void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
+    if(!cmd_recording_started) {
+        cmd_recording_started = true;
+        cmd.begin(vk::CommandBufferBeginInfo{});
+    }
+}
+
+void VulkanCommandExecutor::CommandQueueState::CloseCmd () {
+    if(cmd_recording_started) {
+        cmd_recording_started = false;
+        cmd.end();
+    }
+}
+
+void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() {
+    BeginCmd();
+    // TODO provide a way to dynamically set these values
+    cmd.setCullMode(vk::CullModeFlagBits::eNone);
+    cmd.setDepthBiasEnable(false);
+    cmd.setPolygonModeEXT(vk::PolygonMode::eFill);
 }
 
 MI_NAMESPACE_END

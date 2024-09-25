@@ -41,16 +41,10 @@ public:
     virtual const char * GetName() const = 0;
 
     // Create a buffer, thread safe
-    virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlagBits type, RHIGPUAccessFlagBits access_type) = 0;
+    virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlagBits type) = 0;
 
     // Create a texture, thread safe
     virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;
-
-    // Create a framebuffer
-    virtual RHIFramebufferRef CreateFramebuffer (const RHIFramebufferDesc & desc) = 0;
-
-    RHIFramebufferRef CreateFramebuffer (RHITexture * texture) ;
-    RHIFramebufferRef CreateFramebuffer (RHITexture * texture, RHITexture * depth_stencil_texture) ;
 
     // Import a texture from a native handle, thread safe
     // The import_desc is a pointer to the corresponding structs in `rhi_import.h`
@@ -66,8 +60,8 @@ public:
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                        RHIShaderIRType ir_type, std::span<const std::byte> ir) = 0;
 
-    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc) = 0;
-    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader) = 0;
+    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name = "unnamed") = 0;
+    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name = "unnamed") = 0;
 
     virtual void ResetPipelineCache () = 0;
 

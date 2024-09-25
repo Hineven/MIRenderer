@@ -80,7 +80,9 @@ enum class RHIPipelineStageFlagBits : uint32_t {
     // indirect dispatch...
     kIndirect = 1u<<5,
     // update/build accel
-    kAccelBuild = 1u<<6
+    kAccelBuild = 1u<<6,
+    // No stages to wait / barrier
+    kNone = 0
 };
 MAKE_FLAGS(RHIPipelineStage);
 
@@ -104,6 +106,7 @@ enum class RHIBufferUsageFlagBits : uint32_t {
 MAKE_FLAGS(RHIBufferUsage)
 
 enum class RHIGPUAccessFlagBits : uint32_t {
+    kNone = 0,
     kRead = 1<<0,
     kWrite = 1<<1,
     kRW = kRead | kWrite,
@@ -148,6 +151,7 @@ enum class RHITextureUsageFlagBits : uint32_t {
     kUnorderedAccess = 1 << 3,
     kTransferSrc = 1 << 4,
     kTransferDst = 1 << 5,
+    kTransfer = kTransferSrc | kTransferDst,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHITextureUsage)
@@ -256,6 +260,17 @@ enum class RHIFragmentOutputFormatType {
     k4xUIint32,
     kMax
 };
+
+FORCEINLINE const char * GetRHIFragmentOutputFormatName (RHIFragmentOutputFormatType type) {
+    switch(type) {
+        case RHIFragmentOutputFormatType::k4xFp32:
+            return "4xfp32";
+        case RHIFragmentOutputFormatType::k4xUIint32:
+            return "4xinteger32";
+        default:
+            return "unknown";
+    }
+}
 
 enum class RHIIndexType {
     kUint16,
@@ -366,6 +381,8 @@ enum class RHIResourceFlagBits {
 enum class RHITextureLayoutType {
     kUndefined,
     kShaderReadOnlyOptimal,
+    kColorAttachment,
+    kDepthStencilAttachment,
     kTransferSrcOptimal,
     kTransferDstOptimal,
     kGeneral,

@@ -29,7 +29,7 @@ public:
 
     void * Allocate (size_t size) {
         mi_assert(size <= BlockSize, "Allocation size exceeds block size");
-        mi_assert(size > 0, "Allocation must not be empty");
+        if(size == 0) return nullptr; // Silently ignore zero size allocation
         size = RoundUp(size, Alignment);
         if(current_offset_ + size > BlockSize) {
             auto new_block = reinterpret_cast<Block*>(GetInfra().Allocate(sizeof(Block), Alignment));

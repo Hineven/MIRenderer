@@ -115,7 +115,8 @@ void RHIPipeline::TryLocateAndStripBindlessTableUniformBuffer() {
     for(int i = 0; i < uniform_buffers_.size(); ++i) {
         if(uniform_buffers_[i].name_crc == bindless_table_name_crc) {
             has_bindless_resources_ = true;
-            bindless_table_size_ = uniform_buffers_[i].size;
+            mi_assert(uniform_buffers_[i].size % 4 == 0, "Bindless table size must be multiple of 4");
+            bindless_table_size_ = uniform_buffers_[i].size / 4;
             // Strip the bindless table uniform buffer from the pipeline resources
             uniform_buffers_.erase(uniform_buffers_.begin() + i);
             return;
@@ -172,7 +173,11 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
             if(desc.color_attachments[i].format != PixelFormatType::kR32G32B32A32_UINT
             && desc.color_attachments[i].format != PixelFormatType::kR32G32_UINT
             && desc.color_attachments[i].format != PixelFormatType::kR32_UINT) {
-                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} format mismatch", i);
+                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} format mismatch,"
+                                                 "provided {}, reflected {}",
+                                                 i,
+                                                 GetPixelFormatName(desc.color_attachments[i].format),
+                                                 GetRHIFragmentOutputFormatName(fragment_outputs_[i].format));
                 return ;
             }
         }
@@ -182,7 +187,10 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
         return ;
     }
 
-    if(!CompileRHI(desc)) return;
+    if(!CompileRHI(desc)) {
+        MI_LOG(MIInfraLogType::kWarning, "Pipeline {} assemble failed.", GetName());
+        return;
+    }
     is_valid_ = true;
 }
 

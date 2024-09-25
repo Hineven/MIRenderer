@@ -10,6 +10,7 @@
 #include <future>
 #include <filesystem>
 #include <span>
+#include <format>
 #include "core/common.h"
 #include "types.h"
 #include "blobres.h"
@@ -172,10 +173,10 @@ void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
 // GetInfra().Shutdown() is called prior to this function.
 void DestroyInfra () ;
 
-#define MI_LOG(level, fmt, ...) GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
+#define MI_LOG(level, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
 
 #ifndef NDEBUG
-#define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(MIInfraLogType::kError, fmt, ##__VA_ARGS__);}}while(false)
+#define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::exception("assertion failure.");}}while(false)
 #else
 #define mi_assert(cond, msg)
 #endif

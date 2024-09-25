@@ -57,7 +57,10 @@ public:
 protected:
 
     virtual bool CompileRHI () = 0;
-    virtual void ResetRHI () = 0;
+
+    // We're calling this function from the base class destructor,
+    // so it can't be pure virtual function.
+    virtual void ResetRHI () {}
 
     bool ReflectShaderResources ();
     bool ReflectShaderResourcesSPIRV ();

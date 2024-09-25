@@ -419,7 +419,7 @@ FORCEINLINE vk::BufferUsageFlags GetVulkanBufferUsage (RHIBufferUsageFlags usage
         // vk_usage |= vk::BufferUsageFlagBits::;
     }
     if(usage & RHIBufferUsageFlagBits::kStaging) {
-        vk_usage |= vk::BufferUsageFlagBits::eTransferDst;
+        vk_usage |= vk::BufferUsageFlagBits::eTransferSrc;
     }
     vk_usage |= vk::BufferUsageFlagBits::eTransferDst;
     return vk_usage;
@@ -471,6 +471,10 @@ FORCEINLINE vk::ImageLayout GetVulkanImageLayout (RHITextureLayoutType type) {
             return vk::ImageLayout::eUndefined;
         case RHITextureLayoutType::kShaderReadOnlyOptimal:
             return vk::ImageLayout::eShaderReadOnlyOptimal;
+        case RHITextureLayoutType::kColorAttachment:
+            return vk::ImageLayout::eColorAttachmentOptimal;
+        case RHITextureLayoutType::kDepthStencilAttachment:
+            return vk::ImageLayout::eDepthStencilAttachmentOptimal;
         case RHITextureLayoutType::kTransferSrcOptimal:
             return vk::ImageLayout::eTransferSrcOptimal;
         case RHITextureLayoutType::kTransferDstOptimal:
@@ -491,6 +495,9 @@ FORCEINLINE vk::AccessFlags GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kWrite) {
         vk_flags |= vk::AccessFlagBits::eMemoryWrite;
     }
+    if(flags == RHIGPUAccessFlagBits::kNone) {
+        return vk::AccessFlagBits::eNone;
+    }
     return vk_flags;
 }
 
@@ -504,8 +511,8 @@ FORCEINLINE vk::PipelineStageFlags GetVulkanPipelineStageFlags (RHIPipelineStage
                 vk::PipelineStageFlagBits::eGeometryShader |
                 vk::PipelineStageFlagBits::eVertexInput |
                 vk::PipelineStageFlagBits::eVertexShader |
-                vk::PipelineStageFlagBits::eTessellationControlShader |
-                vk::PipelineStageFlagBits::eTessellationEvaluationShader |
+//                vk::PipelineStageFlagBits::eTessellationControlShader |
+//                vk::PipelineStageFlagBits::eTessellationEvaluationShader |
                 vk::PipelineStageFlagBits::eFragmentShader |
                 vk::PipelineStageFlagBits::eEarlyFragmentTests |
                 vk::PipelineStageFlagBits::eLateFragmentTests |
@@ -533,6 +540,9 @@ FORCEINLINE vk::PipelineStageFlags GetVulkanPipelineStageFlags (RHIPipelineStage
         vk_stages |=
                 vk::PipelineStageFlagBits::eTaskShaderEXT
                 | vk::PipelineStageFlagBits::eMeshShaderEXT;
+    }
+    if(stages == RHIPipelineStageFlagBits::kNone) {
+        return vk::PipelineStageFlagBits::eNone;
     }
     return vk_stages;
 }

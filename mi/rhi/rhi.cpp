@@ -74,27 +74,6 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
     }
 }
 
-RHIFramebufferRef RHI::CreateFramebuffer(RHITexture *texture) {
-    auto desc = RHIFramebufferDesc {
-        texture->GetWidth(),
-        texture->GetHeight(),
-        1,
-        texture->GetFormat()
-    };
-    return CreateFramebuffer(desc);
-}
-
-RHIFramebufferRef RHI::CreateFramebuffer(RHITexture *texture, RHITexture *depth) {
-    auto desc = RHIFramebufferDesc {
-        texture->GetWidth(),
-        texture->GetHeight(),
-        2,
-        texture->GetFormat(),
-        depth->GetFormat()
-    };
-    return CreateFramebuffer(desc);
-}
-
 static RHI * GDynamicRHI = nullptr;
 
 RHI & RHI::Get () {

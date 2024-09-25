@@ -7,6 +7,10 @@
 #include "vk_shader.h"
 MI_NAMESPACE_BEGIN
 
+VulkanShader::~VulkanShader () {
+    ResetRHI();
+}
+
 bool VulkanShader::CompileRHI() {
     auto device = GetVulkanRHI()->GetDevice();
     vk_shader_module_ = device.createShaderModule(

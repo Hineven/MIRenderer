@@ -4,4 +4,6 @@
  * See LICENSE for licensing.
  */
 #define VMA_IMPLEMENTATION
+
+#include "vma_overrides.h"
 #include <vk_mem_alloc.h>

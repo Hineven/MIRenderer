@@ -36,6 +36,11 @@ find_package(spirv_cross_glsl REQUIRED GLOBAL)
 find_package(spirv_cross_hlsl REQUIRED GLOBAL)
 find_package(spirv_cross_cpp REQUIRED GLOBAL)
 
+find_package(SPIRV-Tools CONFIG REQUIRED)
+find_package(SPIRV-Tools-opt CONFIG REQUIRED)
+# this is buggy
+#find_package(SPIRV-Tools-reduce CONFIG REQUIRED)
+
 if(NOT Vulkan_dxc_lib_FOUND OR NOT Vulkan_dxc_DEBUG_LIBRARY)
     # Fallback to standalone DXC
     message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")

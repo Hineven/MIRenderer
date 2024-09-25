@@ -37,6 +37,11 @@ list(
     spirv-cross-glsl
     spirv-cross-hlsl
     spirv-cross-cpp
+    # SPV processing
+    SPIRV-Tools-static
+    SPIRV-Tools-opt
+
+    #    SPIRV-Tools-reduce
 )
 
 target_link_libraries(rhi PUBLIC core ${EXTERNAL_LIBRARIES})

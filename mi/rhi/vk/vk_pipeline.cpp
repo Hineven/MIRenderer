@@ -86,8 +86,9 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                 vk::PipelineLayoutCreateInfo()
                         .setSetLayoutCount((uint32_t)descriptor_set_layouts.size())
                         .setPSetLayouts(descriptor_set_layouts.data())
-                        .setPushConstantRangeCount(1)
-                        .setPPushConstantRanges(&push_constant_range)
+                        .setPushConstantRangeCount(push_constant_range.size > 0 ? 1 : 0)
+                        .setPPushConstantRanges(push_constant_range.size > 0
+                            ? (&push_constant_range) : nullptr)
         );
     }
 
@@ -173,7 +174,12 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         pipeline_info_vk.setPTessellationState(&tessellation_vk);
     }
 
-    // The viewport and rasterization states are fully dynamic.
+    // The viewport and rasterization states are partially dynamic
+    vk::PipelineRasterizationStateCreateInfo rast_vk {};
+    {
+        rast_vk.rasterizerDiscardEnable = false;
+        pipeline_info_vk.setPRasterizationState(&rast_vk);
+    }
 
     vk::PipelineMultisampleStateCreateInfo multisample_vk {};
     {
@@ -194,14 +200,14 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         pipeline_info_vk.setPDepthStencilState(&depth_stencil_vk);
     }
 
+    IVector<vk::PipelineColorBlendAttachmentState> blend_attachments;
     vk::PipelineColorBlendStateCreateInfo color_blend_vk {};
     {
         color_blend_vk.setLogicOpEnable(false);
         color_blend_vk.setLogicOp(vk::LogicOp::eCopy);
-        IVector<vk::PipelineColorBlendAttachmentState> attachments;
         for(auto & attachment : pipeline_info.color_attachments) {
             auto & blending = attachment.blending;
-            attachments.push_back(vk::PipelineColorBlendAttachmentState()
+            blend_attachments.push_back(vk::PipelineColorBlendAttachmentState()
                                          .setBlendEnable(blending.blend_enable)
                                          .setSrcColorBlendFactor(GetVulkanBlendFactor(blending.src_color_blend_factor))
                                          .setDstColorBlendFactor(GetVulkanBlendFactor(blending.dst_color_blend_factor))
@@ -214,7 +220,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                                                             vk::ColorComponentFlagBits::eG |
                                                             vk::ColorComponentFlagBits::eB));
         }
-        color_blend_vk.setAttachments(attachments);
+        color_blend_vk.setAttachments(blend_attachments);
         pipeline_info_vk.setPColorBlendState(&color_blend_vk);
     }
 
@@ -223,7 +229,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
             vk::DynamicState::eViewportWithCount,
             vk::DynamicState::eScissorWithCount,
             vk::DynamicState::eDepthClampEnableEXT,
-            vk::DynamicState::eRasterizerDiscardEnable,
+//            vk::DynamicState::eRasterizerDiscardEnable,
             vk::DynamicState::ePolygonModeEXT,
             vk::DynamicState::eCullMode,
             vk::DynamicState::eFrontFace,
@@ -239,64 +245,65 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     pipeline_info_vk.setLayout(vk_pipeline_layout_);
 
-    IVector<vk::AttachmentDescription> attachments_vk;
-    for(auto & attachment : pipeline_info.color_attachments) {
-        vk::ImageLayout initial_layout = vk::ImageLayout::eColorAttachmentOptimal;
-        // We can not use eUndefined as initial layout as the user may assume that the texture
-        // data is preserved before and after the render pass if it's untouched.
-//        if(attachment.load_op != RHILoadOpType::kLoad) {
-//            initial_layout = vk::ImageLayout::eUndefined;
-//        }
-        auto desc = vk::AttachmentDescription()
-                .setFormat(GetVulkanPixelFormat(attachment.format))
-                .setSamples(vk::SampleCountFlagBits::e1)
-                .setLoadOp(GetVulkanLoadOp(attachment.load_op))
-                .setStoreOp(GetVulkanStoreOp(attachment.store_op))
-                .setStencilLoadOp(GetVulkanLoadOp(attachment.load_op))
-                .setStencilStoreOp(GetVulkanStoreOp(attachment.store_op))
-                .setInitialLayout(initial_layout)
-                .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
-        attachments_vk.push_back(desc);
-    }
+//    IVector<vk::AttachmentDescription> attachments_vk;
+//    for(auto & attachment : pipeline_info.color_attachments) {
+//        vk::ImageLayout initial_layout = vk::ImageLayout::eColorAttachmentOptimal;
+//        // We can not use eUndefined as initial layout as the user may assume that the texture
+//        // data is preserved before and after the render pass if it's untouched.
+////        if(attachment.load_op != RHILoadOpType::kLoad) {
+////            initial_layout = vk::ImageLayout::eUndefined;
+////        }
+//        auto desc = vk::AttachmentDescription()
+//                .setFormat(GetVulkanPixelFormat(attachment.format))
+//                .setSamples(vk::SampleCountFlagBits::e1)
+//                .setInitialLayout(initial_layout)
+//                .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
+//        attachments_vk.push_back(desc);
+//    }
+//    auto subpass_color_attachments_vk = IVector<vk::AttachmentReference>(attachments_vk.size());
+//    for(int i = 0; i < attachments_vk.size(); ++i) {
+//        subpass_color_attachments_vk[i].setAttachment(i);
+//        subpass_color_attachments_vk[i].setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+//    }
     bool has_depth_stencil = pipeline_info.depth_stencil_attachment.format != PixelFormatType::kUnknown;
-    if(has_depth_stencil) {
-        auto desc = vk::AttachmentDescription()
-                .setFormat(GetVulkanPixelFormat(pipeline_info.depth_stencil_attachment.format))
-                .setSamples(vk::SampleCountFlagBits::e1)
-                .setLoadOp(GetVulkanLoadOp(pipeline_info.depth_stencil_attachment.load_op))
-                .setStoreOp(GetVulkanStoreOp(pipeline_info.depth_stencil_attachment.store_op))
-                .setStencilLoadOp(GetVulkanLoadOp(pipeline_info.depth_stencil_attachment.load_op))
-                .setStencilStoreOp(GetVulkanStoreOp(pipeline_info.depth_stencil_attachment.store_op))
-                .setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
-                .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-        // Append depth stencil attachment as the last attachment
-        attachments_vk.push_back(desc);
+//    if(has_depth_stencil) {
+//        auto desc = vk::AttachmentDescription()
+//                .setFormat(GetVulkanPixelFormat(pipeline_info.depth_stencil_attachment.format))
+//                .setSamples(vk::SampleCountFlagBits::e1)
+//                .setLoadOp(GetVulkanLoadOp(pipeline_info.depth_stencil_attachment.load_op))
+//                .setStoreOp(GetVulkanStoreOp(pipeline_info.depth_stencil_attachment.store_op))
+//                .setStencilLoadOp(GetVulkanLoadOp(pipeline_info.depth_stencil_attachment.load_op))
+//                .setStencilStoreOp(GetVulkanStoreOp(pipeline_info.depth_stencil_attachment.store_op))
+//                .setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
+//                .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+//        // Append depth stencil attachment as the last attachment
+//        attachments_vk.push_back(desc);
+//    }
+//    auto subpass_depth_stencil_vk = vk::AttachmentReference()
+//            .setAttachment((uint32_t)attachments_vk.size() - 1)
+//            .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+//
+//    auto subpass_vk = vk::SubpassDescription()
+//            .setColorAttachments(subpass_color_attachments_vk);
+//    if(has_depth_stencil) subpass_vk.setPDepthStencilAttachment(&subpass_depth_stencil_vk);
+    // Dynamic rendering support
+    auto color_attachment_formats = IVector<vk::Format>(pipeline_info.color_attachments.size());
+    {
+        for(int i = 0; i < pipeline_info.color_attachments.size(); ++i) {
+            color_attachment_formats[i] = GetVulkanPixelFormat(
+                    pipeline_info.color_attachments[i].format
+            );
+        }
+        auto rdn_info = vk::PipelineRenderingCreateInfo {
+                {}, color_attachment_formats,
+                has_depth_stencil ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+                {}
+        };
+        pipeline_info_vk.setPNext(&rdn_info);
     }
-
-    auto subpass_color_attachments_vk = IVector<vk::AttachmentReference>(attachments_vk.size());
-    for(int i = 0; i < attachments_vk.size(); ++i) {
-        subpass_color_attachments_vk[i].setAttachment(i);
-        subpass_color_attachments_vk[i].setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-    }
-    auto subpass_depth_stencil_vk = vk::AttachmentReference()
-            .setAttachment((uint32_t)attachments_vk.size() - 1)
-            .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
-    auto subpass_vk = vk::SubpassDescription()
-            .setColorAttachments(subpass_color_attachments_vk);
-    if(has_depth_stencil) subpass_vk.setPDepthStencilAttachment(&subpass_depth_stencil_vk);
-    vk::RenderPassCreateInfo renderpass_desc_vk = {
-            {},
-            attachments_vk,
-            subpass_vk,
-            // For only 1 subpass, the implicit dependencies already cover our needs.
-            {}
-    };
-    vk_render_pass_ = device.createRenderPass(renderpass_desc_vk);
-
-    pipeline_info_vk.setRenderPass(vk_render_pass_);
-    // We do not use multiple subpasses as we are targeting at desktop level IBR devices.
-    pipeline_info_vk.setSubpass(0);
+//
+//    // We do not use multiple subpasses as we are targeting at desktop level IBR devices.
+//    pipeline_info_vk.setSubpass(0);
 
     auto result = device.createGraphicsPipeline(GetVulkanRHI()->GetPipelineCache(), pipeline_info_vk);
     if(result.result != vk::Result::eSuccess) {
@@ -313,9 +320,11 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
 void VulkanGraphicsPipeline::ResetRHI() {
     auto device = GetVulkanRHI()->GetDevice();
+    device.destroy(vk_pipeline_);
     device.destroy(vk_pipeline_layout_);
     device.destroy(vk_render_pass_);
     device.destroy(vk_private_descriptor_set_layout_);
+    vk_pipeline_ = nullptr;
     vk_pipeline_layout_ = nullptr;
     vk_render_pass_ = nullptr;
     vk_private_descriptor_set_layout_ = nullptr;
@@ -331,6 +340,10 @@ void VulkanGraphicsPipeline::OnNameChanged() {
         name_.c_str()
     });
 #endif
+}
+
+VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
+    ResetRHI();
 }
 
 // Called from parent's constructor
@@ -406,6 +419,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
                     .setPushConstantRangeCount(1)
                     .setPPushConstantRanges(&push_constant_range)
     );
+
     // Create pipeline
     auto result = device.createComputePipeline(
             GetVulkanRHI()->GetPipelineCache(),
@@ -443,6 +457,10 @@ void VulkanComputePipeline::OnNameChanged() {
         name_.c_str()
     });
 #endif
+}
+
+VulkanComputePipeline::~VulkanComputePipeline() {
+    ResetRHI();
 }
 
 MI_NAMESPACE_END

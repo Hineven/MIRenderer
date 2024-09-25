@@ -32,6 +32,37 @@ FORCEINLINE bool IsDepthStencilPixelFormat (PixelFormatType format) {
     return format == PixelFormatType::kD32_FLOAT;
 }
 
+FORCEINLINE const char * GetPixelFormatName (PixelFormatType type) {
+    switch (type) {
+        case PixelFormatType::kR8G8B8A8_UNORM:
+            return "R8G8B8A8_UNORM";
+        case PixelFormatType::kR8G8B8A8_SRGB:
+            return "R8G8B8A8_SRGB";
+        case PixelFormatType::kR16G16B16A16_FLOAT:
+            return "R16G16B16A16_FLOAT";
+        case PixelFormatType::kR16G16_FLOAT:
+            return "R16G16_FLOAT";
+        case PixelFormatType::kR32G32B32A32_FLOAT:
+            return "R32G32B32A32_FLOAT";
+        case PixelFormatType::kR32G32B32_FLOAT:
+            return "R32G32B32_FLOAT";
+        case PixelFormatType::kR32G32_FLOAT:
+            return "R32G32_FLOAT";
+        case PixelFormatType::kR32_FLOAT:
+            return "R32_FLOAT";
+        case PixelFormatType::kD32_FLOAT:
+            return "D32_FLOAT";
+        case PixelFormatType::kR32G32B32A32_UINT:
+            return "R32G32B32A32_UINT";
+        case PixelFormatType::kR32G32_UINT:
+            return "R32G32_UINT";
+        case PixelFormatType::kR32_UINT:
+            return "R32_UINT";
+        default:
+            return "Unknown";
+    }
+}
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_PIXEL_FORMAT_H

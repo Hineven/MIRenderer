@@ -91,6 +91,10 @@ public:
     virtual void Wait () = 0;
     // Reset the sync point so it can be reused
     virtual void Reset () = 0;
+protected:
+    // Notified from RHI thread upon submission completion, used for reordering waits and queue.submit().
+    // (But the GPU may still be running on submitted instructions and the sync point is not yet reached)
+    virtual void NotifySubmission () = 0;
 };
 
 MI_NAMESPACE_END

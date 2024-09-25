@@ -31,18 +31,18 @@ public:
     void RHICopyBufferToTexture(RHICommandQueueBase * cmd, RHICommandCopyBufferToTexture * copy_buffer_to_texture) override ;
     void RHICopyTextureToBuffer(RHICommandQueueBase * cmd, RHICommandCopyTextureToBuffer * copy_texture_to_buffer) override ;
     void RHICopyTexture(RHICommandQueueBase * cmd, RHICommandCopyTexture * copy_texture) override ;
+    void RHIBeginRendering (RHICommandQueueBase * cmd, RHICommandBeginRendering * begin_rendering) override ;
+    void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) override ;
     void RHIDrawPrimitive(RHICommandQueueBase * cmd, RHICommandDrawPrimitive * draw_primitive) override ;
     void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
-    void RHIBindFramebuffer(RHICommandQueueBase * cmd, RHICommandBindFramebuffer * bind_framebuffer) override ;
+    void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandUpdateDrawState * update_draw_state) override ;
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
     void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandTextureBarrier * barrier) override ;
     void RHIBufferBarrier(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;
-    void RHISetClearValues(RHICommandQueueBase * cmd, RHICommandSetClearValues * set_clear_values) override ;
-    void RHISetRenderArea(RHICommandQueueBase * cmd, RHICommandSetRenderArea * set_render_area) override ;
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHICommandFrameEnd * frame_end) override ;
 
     void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync, bool release_resources) override ;
@@ -60,18 +60,21 @@ protected:
         // Each command queue has its own command pool and 1 single command buffer recording
         vk::CommandPool cmd_pool {};
         vk::CommandBuffer cmd {};
+        bool cmd_recording_started {};
         // Can bind up to 8 vertex buffers
         RHIBufferSpan bound_vertex_buffers[8] {};
 
-        VulkanFramebuffer * bound_framebuffer {};
-        vk::Rect2D render_area {};
-        vk::ClearValue clear_values[C::kRHIMaxNumFramebufferAttachments] {};
+        // Kept draw state.
+        RHIDrawDesc draw_state_ {};
 
         struct BindPoints {
             // Bindless table buffer
-            std::unique_ptr<VulkanBuffer> bindless_table_buffer {};
-            // Bindless table allocation offset
+            vk::Buffer bindless_table_buffer {};
+            vma::Allocation bindless_table_buffer_allocation {};
+            // Bindless table allocation offset (number of slots allocated)
             uint32_t bindless_table_top;
+            // Mapped pointer for btb
+            std::uint32_t * bindless_table_buffer_mapped {};
 
             // Bound private descriptor set (allocated from the descriptor pool)
             vk::DescriptorSet bound_private_set {};
@@ -115,11 +118,19 @@ protected:
         // Clear the command buffer and descriptor sets.
         // @param return_resources_to_system: If true, the resources allocated by the command buffer and descriptor sets
         void Clear (bool return_resources_to_system) ;
+
+        void BeginCmd ();
+        void CloseCmd ();
+
+        void SetupDefaultDynamicStates ();
     };
     struct {
         CommandQueueState states[2];
         int state_index {};
-        inline CommandQueueState & Current() {
+        inline CommandQueueState & Current(bool begin_cmd = true) {
+            if (begin_cmd) {
+                states[state_index].BeginCmd();
+            }
             return states[state_index];
         }
     } state_chains_[(uint32_t)RHICommandQueueType::kMax];

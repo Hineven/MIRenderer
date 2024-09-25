@@ -7,8 +7,37 @@
 #include <cstdio>
 #include <fstream>
 
-#include "core/infra.h"
+class Base {
+public:
+    virtual void Print() {
+        printf("Base\n");
+    }
+    virtual void PurePrint () = 0;
+    void Reset () {
+        printf("Reset\n");
+        Print();
+    }
+    void PureReset () {
+        printf("PureReset\n");
+        PurePrint();
+    }
+};
+
+class Derived : public Base {
+public:
+    void Print() override {
+        printf("Derived\n");
+    }
+    void PurePrint () override {
+        printf("PureDerived\n");
+    }
+};
+
 
 int main () {
-    return 0;
+    Derived var;
+    var.Print();
+    var.PurePrint();
+    var.Reset();
+    var.PureReset();
 }

@@ -47,6 +47,18 @@ void RHICommandCopyTexture::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHICopyTexture(&cmd, this);
 }
 
+void RHICommandBeginRendering::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBeginRendering(&cmd, this);
+}
+
+void RHICommandEndRendering::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIEndRendering(&cmd, this);
+}
+
+void RHICommandUpdateDrawState::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIUpdateDrawState(&cmd, this);
+}
+
 void RHICommandDrawPrimitive::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDrawPrimitive(&cmd, this);
 }
@@ -61,10 +73,6 @@ void RHICommandDispatch::Execute(RHICommandQueueBase &cmd) {
 
 void RHICommandBindGraphicsPipeline::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindGraphicsPipeline(&cmd, this);
-}
-
-void RHICommandBindFramebuffer::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIBindFramebuffer(&cmd, this);
 }
 
 void RHICommandBindComputePipeline::Execute(RHICommandQueueBase &cmd) {
@@ -85,14 +93,6 @@ void RHICommandTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
 
 void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBufferBarrier(&cmd, this);
-}
-
-void RHICommandSetClearValues::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHISetClearValues(&cmd, this);
-}
-
-void RHICommandSetRenderArea::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHISetRenderArea(&cmd, this);
 }
 
 void RHICommandFrameEnd::Execute(RHICommandQueueBase &cmd) {
