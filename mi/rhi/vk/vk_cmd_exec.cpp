@@ -201,7 +201,8 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, RHIComma
                 tex->GetImageLayout(),
                 {}, {}, {},
                 GetVulkanLoadOp(state.draw_state_.load_ops[i]),
-                GetVulkanStoreOp(state.draw_state_.store_ops[i])
+                GetVulkanStoreOp(state.draw_state_.store_ops[i]),
+                {state.draw_state_.clear_values[i]}
         };
     }
     auto rendering_info = vk::RenderingInfo {
@@ -300,6 +301,10 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
             point.bound_private_set = descriptor_set[0];
         }
         state.cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->GetPipeline());
+        if(point.bound_private_set) {
+            state.cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline->GetPipelineLayout(), 0,
+                                         {point.bound_private_set}, {});
+        }
         point.bound_pipeline = pipeline;
     }
 }
@@ -331,6 +336,10 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
             point.bound_private_set = descriptor_set[0];
         }
         state.cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->GetPipeline());
+        if(point.bound_private_set) {
+            state.cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline->GetPipelineLayout(), 0,
+                                         {point.bound_private_set}, {});
+        }
         state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
     }
 }
@@ -550,6 +559,13 @@ void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
             state.cmd, use_stages
     );
     if(!descriptor_writes.empty()) {
+        if(!point.bound_private_set) {
+            if(!point.bound_pipeline) {
+                MI_LOG(MIInfraLogType::kWarning, "Flushed resources to null pipeline.");
+            } else {
+                MI_LOG(MIInfraLogType::kWarning, "Resources bound to fully bindless pipeline.");
+            }
+        }
         GetVulkanRHI()->GetDevice().updateDescriptorSets(descriptor_writes, {});
     }
 }

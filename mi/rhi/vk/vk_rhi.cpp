@@ -190,7 +190,8 @@ VulkanRHI::VulkanRHI() {
                 // uint8 indexing
                 VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME,
                 // Indexing device memory using addresses
-                VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+                // Use the KHR version for compatibility with Nsight
+                VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
                 // Draw lines
                 VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
                 // Mesh shader support

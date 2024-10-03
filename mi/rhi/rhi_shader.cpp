@@ -172,7 +172,8 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
     // This is a workaround for the issue that the reflection extensions is not supported
     // by NVIDIA drivers. Anyway they are just annotations and won't affect real shader behavior.
     spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
-    optimizer.RegisterPass(spvtools::CreateStripReflectInfoPass());
+    auto pass_token = spvtools::CreateStripNonSemanticInfoPass();
+    optimizer.RegisterPass(std::move(pass_token));
     // Okay, optimizer does not support anything other than std::vector<uint32_t>
     std::vector<uint32_t> optimized_ir;
     if(!optimizer.Run((uint32_t*)ir_, ir_size_ / 4, &optimized_ir)) {

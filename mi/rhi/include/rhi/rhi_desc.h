@@ -149,16 +149,16 @@ struct RHIPipelineBindlessResourceDesc {
 
 struct RHIBindPipelineParametersDesc {
     // Points to a segment of temporary memory allocated through the command buffer.
-    std::span<RHIPipelineParameterBufferDesc> uniforms;
-    std::span<RHIPipelineParameterBufferDesc> storages;
-    std::span<RHIPipelineParameterTextureDesc> uavs;
-    std::span<RHIPipelineParameterTextureDesc> srvs;
-    std::span<RHIPipelineParameterResourceDesc> samplers;
-    std::span<RHIPipelineParameterResourceDesc> acceleration_structures;
+    std::span<RHIPipelineParameterBufferDesc> uniforms {};
+    std::span<RHIPipelineParameterBufferDesc> storages {};
+    std::span<RHIPipelineParameterTextureDesc> uavs {};
+    std::span<RHIPipelineParameterTextureDesc> srvs {};
+    std::span<RHIPipelineParameterResourceDesc> samplers {};
+    std::span<RHIPipelineParameterResourceDesc> acceleration_structures {};
     // Points to a segment of temporary memory allocated through the command buffer.
-    std::span<RHIPipelineBindlessResourceDesc> bindless_resources;
+    std::span<RHIPipelineBindlessResourceDesc> bindless_resources {};
     // Constants, null for do-not-set. Allocate this memory through the command buffer.
-    std::span<std::byte> constants;
+    std::span<std::byte> constants {};
 };
 
 struct ShaderVertexInputDesc {

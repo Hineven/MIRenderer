@@ -171,7 +171,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     vk::PipelineTessellationStateCreateInfo tessellation_vk {};
     {
         // Tess is not supported by RHI for now
-        pipeline_info_vk.setPTessellationState(&tessellation_vk);
+//        pipeline_info_vk.setPTessellationState(&tessellation_vk);
     }
 
     // The viewport and rasterization states are partially dynamic

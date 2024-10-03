@@ -110,6 +110,7 @@ TEST(RHITest, RHIThreadTasks) {
 }
 
 static auto v_shader_code = "// Vertex Shader\n"
+                     "RWStructuredBuffer<uint> someBuffer;"
                      "struct VSInput {\n"
                      "    float3 position : POSITION;\n"
                      "    float2 color : COLOR;\n"
@@ -120,9 +121,13 @@ static auto v_shader_code = "// Vertex Shader\n"
                      "    float3 color : COLOR;\n"
                      "};\n"
                      "\n"
-                     "VSOutput Main(VSInput input) {\n"
+                     "VSOutput Main(VSInput input, in uint vid : SV_VertexID) {\n"
                      "    VSOutput output;\n"
-                     "    output.position = float4(input.position, 1.0);\n"
+                     "    output.position = float4(input.position, 1.0);"
+                     "    if(vid == 0) output.position = float4(0.f, -0.5f, 0.1f, 1.f);\n"
+                     "    if(vid == 1) output.position = float4(0.5f, 0.5f, 0.1f, 1.f);\n"
+                     "    if(vid == 2) output.position = float4(-0.5f, 0.5f, 0.1f, 1.f);\n"
+                     "    someBuffer[vid] = 1;\n"
                      "    output.color = float3(input.color, 1);\n"
                      "    return output;\n"
                      "}";
@@ -198,7 +203,7 @@ TEST(RHITest, RHIPipelineAssemble) {
             auto attachment_descs = std::vector<RHIColorAttachmentDesc>{
                     RHIColorAttachmentDesc{
                             .blending = RHIColorAttachmentBlendDesc{
-                                    true,
+                                    false,
                                     RHIBlendFactorType::kSrcAlpha,
                                     RHIBlendFactorType::kOneMinusSrcAlpha,
                                     RHIBlendFactorType::kOne,
@@ -235,7 +240,7 @@ TEST(RHITest, RHIPipelineAssemble) {
                     },
                     .topology = RHIPrimitiveTopologyType::kTriangleList,
                     .depth_stencil = {
-                            true,
+                            false,
                             true,
                             RHIDepthCompareOpType::kLess
                     },
@@ -267,6 +272,12 @@ TEST(RHITest, RHIPipelineAssemble) {
             );
             EXPECT_TRUE(texture0);
             EXPECT_TRUE(texture1);
+
+            auto buf = RHI::Get().CreateBuffer(
+                    128 * 4,
+                    RHIBufferUsageFlagBits::kStorage
+            );
+
             auto &queue = RHI::Get().GetGraphicsCommandQueue();
             queue.TextureBarrier(
                     texture0.Raw(),
@@ -294,6 +305,17 @@ TEST(RHITest, RHIPipelineAssemble) {
             );
             queue.ClearTexture(texture0.Raw(), {0.f, 0.f, 0.f, 0.f});
             queue.ClearTexture(texture1.Raw(), {0.f, 0.f, 0.f, 0.f});
+            if(false) {
+                queue.TextureBarrier(
+                        texture0.Raw(),
+                        RHITextureLayoutType::kGeneral,
+                        RHIPipelineStageFlagBits::kAll,
+                        RHIPipelineStageFlagBits::kAll,
+                        RHIGPUAccessFlagBits::kRW,
+                        RHIGPUAccessFlagBits::kRW
+                );
+                queue.ClearTexture(texture0.Raw(), {1.f, 0.f, 0.f, 1.f});
+            }
             queue.TextureBarrier(
                     texture0.Raw(),
                     RHITextureLayoutType::kColorAttachment,
@@ -314,8 +336,9 @@ TEST(RHITest, RHIPipelineAssemble) {
             RHIDrawDesc ds {};
             ds.SetAttachment(0, texture0.Raw());
             ds.SetAttachment(1, texture1.Raw());
-            ds.SetAttachment(2, depth.Raw());
-            ds.SetClearValue(2, {1.f});
+//            ds.SetAttachment(2, depth.Raw());
+//            ds.SetClearValue(2, {0.f});
+            ds.SetClearValue(0, {0.f, 1.f, 0.f, 1.f});
 
             queue.UpdateDrawState(ds);
 
@@ -328,9 +351,9 @@ TEST(RHITest, RHIPipelineAssemble) {
                     RHIBufferUsageFlagBits::kStaging
             );
             float vbuf_host[] = {
-                    0.f, -0.5f, 0.f, 0.f, 0.f,
-                    0.5f, 0.5f, 0.f, 0.f, 1.f,
-                    -0.5f, 0.5f, 0.f, 1.f, 0.f
+                    0.f, -0.5f, 0.1f, 0.f, 0.f,
+                    0.5f, 0.5f, 0.1f, 0.f, 1.f,
+                    -0.5f, 0.5f, 0.1f, 1.f, 0.f
             };
             memcpy(staging_buf->Map(), vbuf_host, 3 * sizeof(float) * 5);
             queue.CopyBuffer(staging_buf->GetSpan(), vtx_buf->GetSpan());
@@ -340,20 +363,15 @@ TEST(RHITest, RHIPipelineAssemble) {
                                 RHIGPUAccessFlagBits::kWrite,
                                 RHIGPUAccessFlagBits::kRead);
             queue.BindVertexBuffer(0, vtx_buf->GetSpan());
+            auto params = queue.Allocate<RHIBindPipelineParametersDesc>();
+            auto storages = queue.Allocate<RHIPipelineParameterBufferDesc[]>(1);
+            storages[0].buffer  = {buf.Raw(), 0, 3 * 4};
+            storages[0].binding = 0; // must be on 0
+            params->storages = {storages, 1};
+            queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
             queue.BeginRendering();
             queue.DrawPrimitive(3, 1);
             queue.EndRendering();
-            if(true) {
-                queue.TextureBarrier(
-                        texture0.Raw(),
-                        RHITextureLayoutType::kGeneral,
-                        RHIPipelineStageFlagBits::kAll,
-                        RHIPipelineStageFlagBits::kAll,
-                        RHIGPUAccessFlagBits::kRW,
-                        RHIGPUAccessFlagBits::kRW
-                );
-                queue.ClearTexture(texture0.Raw(), {1.f, 0.f, 0.f, 1.f});
-            }
 
             queue.TextureBarrier(
                     texture0.Raw(),
