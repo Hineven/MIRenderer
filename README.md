@@ -1,6 +1,18 @@
 # MI
 A set of CG libraries.
-
+### Vcpkg Dependencies
+* `glm`
+* `spirv-cross`
+* `spirv-reflect`
+* `spirv-headers`
+* `spirv-tools`
+* `vulkan-memory-allocator`
+* `vulkan-memory-allocator-hpp`
+* `vulkan`
+* `directx-dxc`
+* `stb`
+* `gtest`
+* `cpptrace`
 ### TODO
 * Infra
   * Res : ok
