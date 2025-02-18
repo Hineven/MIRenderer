@@ -11,7 +11,6 @@
 
 #include "core/crc.h"
 #include "core/infra.h"
-#include "core/conalloc.h"
 #include "rhi/rhi_shader.h"
 #include "rhi_device_shared.h"
 
@@ -26,13 +25,13 @@ RHIShader::RHIShader(RHIShaderFrequencyFlagBits frequency, std::string_view entr
     entry_name_ = entry_name;
     ir_type_ = ir_type;
     ir_size_ = (uint32_t)ir.size();
-    ir_ = static_cast<std::byte *>(GetInfra().Allocate(ir_size_));
+    ir_ = new std::byte[ir_size_];
     std::copy(ir.begin(), ir.end(), ir_);
 }
 
 RHIShader::~RHIShader() {
     Reset();
-    GetInfra().Free(ir_);
+    delete [] ir_;
 }
 
 bool RHIShader::ReflectShaderResources() {

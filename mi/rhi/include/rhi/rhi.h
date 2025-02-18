@@ -10,6 +10,8 @@
 #include <string>
 #include <memory>
 #include <future>
+#include <queue>
+
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
@@ -20,7 +22,7 @@
 
 MI_NAMESPACE_BEGIN
 
-// Interface for the render hardware
+// RHI (Render Hardware Interface) Layer and propietaries (RHI Resources)
 class RHI {
 protected:
     virtual ~RHI();
@@ -28,7 +30,7 @@ protected:
     virtual void PostInitialize () = 0;
 public:
     // Initialize the RHI layer
-    static void InitializeSingleton (RHIType type) ;
+    static void InitializeSingleton () ;
     // Destroy the RHI layer
     static void DestroySingleton () ;
     static bool HasSingleton () ;
@@ -44,13 +46,23 @@ public:
     virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlagBits type) = 0;
 
     // Create a texture, thread safe
-    virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;
+    virtual RHITextureRef CreateTexture (
+        RHITextureType type,
+        RHITextureDimensions dimensions,
+        PixelFormatType format
+        RHITextureUsageFlags usage,
+        int mip_levels = 1, int array_layers = 1
+    ) = 0;
 
     // Import a texture from a native handle, thread safe
     // The import_desc is a pointer to the corresponding structs in `rhi_import.h`
     virtual RHITextureRef ImportTexture (
-            const void * import_desc,
-            RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
+        const void * import_desc,
+        RHITextureType type,
+        RHITextureDimensions dimensions,
+        PixelFormatType format,
+        RHITextureUsageFlags usage,
+        int mip_levels = 1, int array_layers = 1
     ) = 0;
 
     // Create a sampler, thread safe
@@ -60,8 +72,8 @@ public:
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                        RHIShaderIRType ir_type, std::span<const std::byte> ir) = 0;
 
-    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name = "unnamed") = 0;
-    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name = "unnamed") = 0;
+    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc) = 0;
+    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader) = 0;
 
     virtual void ResetPipelineCache () = 0;
 
@@ -75,22 +87,15 @@ public:
     // Create a sync point that can be waited on to synchronize device and host.
     virtual RHISyncPointRef CreateSyncPoint () = 0;
 
-    FORCEINLINE RHIBindlessManager & GetBindlessManager () const {
-        return *bindless_manager_;
-    }
-
     // Wait for the underlying render hardware and RHI layer to finish all the commands
     // If host_only is true, only the operations pending on the host side will be waited.
     // Otherwise, all the operations including device (render hardware) queues will be waited.
     virtual void WaitForIdle (bool host_only = false) = 0;
 
     // Move to next frame. Performing logic like RHI resource recycling, queue flushing,
-    // queue allocator swapping, etc.
-    // @return A future that will be set when all host operations are done and the next frame
-    // is ready to be rendered.
-    // Note: The future will not be waiting for device operations of the previous frame to
-    // complete.
-    virtual std::future<void> AdvanceFrame () ;
+    // queue allocator swapping, etc. This should be called upon frame end.
+    // @param in_sync_point a sync point that can be waited on for the device to complete executing submitted frame commands.
+    virtual AdvanceFrame (RHISyncPoint * in_sync_point = nullptr) = 0;
 
     // The frame index of the entire RHI system
     // it is never decreased, and is increased by 1 every time AdvanceFrame is called.
@@ -112,30 +117,20 @@ protected:
         size_t frame_index;
     };
 
-    // Only the render thread is allowed to operate on RHI resource references
-    // so there are only one producer and one consumer (RHI thread) for this queue.
-    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne>
-        resources_pending_for_deletion_ {};
-    // The resource that is not ready to be deleted in the previous frame.
-    RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
+    // Resources pending for deletion (ref counters are 0)
+    std::queue<RHIResourceToRecycle> resources_pending_for_deletion_ {};
 
-    inline bool AddResourcePendingForDeletion (RHIResource * resource) {
-        return resources_pending_for_deletion_.Push({resource, frame_index_});
+    FORCEINLINE void AddResourcePendingForDeletion (RHIResource * resource) {
+        resources_pending_for_deletion_.push({resource, frame_index_});
     }
-    // Free a resource allocated by the RHI.
-    virtual void FreeResource_RHIThread (RHIResource * resource) = 0;
 
-    // @param force if true, all pending resources will be recycled even if they are
-    // potentially not ready to be recycled.
-    void RecycleRHIResourcesPendingForDeletion_RHIThread(bool force = false) ;
+    // @param force if true, all pending resources will be destroyed even if they are
+    // potentially not ready to be destroyed.
+    void FlushRHIResourcesPendingForDeletion(bool force = false) ;
 
     RHICommandQueueGraphics graphics_command_queue_ {};
 
-    // The implementation should create their own bindless manager
-    // and assign it to this pointer. It should also be manually deleted.
-    RHIBindlessManager * bindless_manager_ {};
     size_t frame_index_ {0};
-    uint32_t __tiny_buffer_for_hacking_ [128];
 
     std::unique_ptr<std::thread> rhi_thread_ {};
 };

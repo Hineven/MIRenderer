@@ -1,7 +1,6 @@
 set(HEADER_FILES
     include/core/base.h
     include/core/common.h
-    include/core/conalloc.h
     include/core/infra.h
     include/core/meta.h
     include/core/pixel_format.h

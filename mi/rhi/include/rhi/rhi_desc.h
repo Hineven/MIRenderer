@@ -155,8 +155,6 @@ struct RHIBindPipelineParametersDesc {
     std::span<RHIPipelineParameterTextureDesc> srvs {};
     std::span<RHIPipelineParameterResourceDesc> samplers {};
     std::span<RHIPipelineParameterResourceDesc> acceleration_structures {};
-    // Points to a segment of temporary memory allocated through the command buffer.
-    std::span<RHIPipelineBindlessResourceDesc> bindless_resources {};
     // Constants, null for do-not-set. Allocate this memory through the command buffer.
     std::span<std::byte> constants {};
 };

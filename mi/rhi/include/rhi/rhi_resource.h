@@ -40,8 +40,12 @@ public:
         return flags_;
     }
 
-    FORCEINLINE bool IsBindless () const {
-        return bindless_;
+    FORCEINLINE std::string GetName () const {
+        return name_;
+    }
+
+    FORCEINLINE void SetName (std::string name) const {
+        name_ = name;
     }
 
 protected:
@@ -56,12 +60,11 @@ protected:
     // so no need for atomic operations
     uint32_t ref_count_ {0};
 
-    // If the resource is registered in the bindless manager and should be accessed
-    // via bindless handles only.
-    bool bindless_ {};
-
     // Flags
     RHIResourceFlags flags_ {};
+
+    // Name
+    std::string name_ {};
 };
 
 // Called within RHI thread. Resources that are at least 1 frame older than

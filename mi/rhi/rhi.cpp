@@ -10,12 +10,18 @@
 #include "rhi_bindless.h"
 #include "rhi/rhi_texture.h"
 
+#ifdef MI_RHI_VK
 // Import different kinds of RHI implementations
 #include "vk/vk_rhi_export.h"
+#endif
+
+#ifdef MI_RHI_DX12
+// TODO
+#endif
 
 MI_NAMESPACE_BEGIN
 
-std::future<void> RHI::AdvanceFrame() {
+void RHI::AdvanceFrame(RHISyncPoint * sync_point) {
     auto & queue = GetGraphicsCommandQueue();
     // Detour the limitation that std function wrapper can not wrap non-copyable objects.
     // (Lambda capturing unmovable objects is not copyable)
@@ -32,20 +38,15 @@ std::future<void> RHI::AdvanceFrame() {
 
     // We can do this because there are only 1 RHI thread.
     queue.FrameEnd(false);
-    queue.EnqueueTranslateAndSubmit();
-    auto lambda = []() {
-        // Swap allocators after the command buffer is submitted
-        // The swapped out memory will last for about 1 frame more and silently be recycled
-        RHI::Get().GetGraphicsCommandQueue().SwapAllocators_RHIThread();
-        // Swap the bindless descriptor set after the command buffer is submitted
-        RHI::Get().GetBindlessManager().SwapSets_RHIThread();
-        // Recycle resources that are pending for deletion
-        RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread();
-        // Increment the frame index kept by RHI thread.
-        AdvanceFrame_RHIThread();
-    };
+    queue.Submit(sync_point);
+    // Swap allocators after the command buffer is submitted
+    // The swapped out memory will last for about 1 frame more and silently be recycled
+    RHI::Get().GetGraphicsCommandQueue().SwapAllocators();
+    // Recycle resources that are pending for deletion
+    RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread();
+    // Increment the frame index kept by RHI thread.
+    AdvanceFrame();
     frame_index_ ++;
-    return EnqueueRHIThreadTask(std::move(lambda));
 }
 
 void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {

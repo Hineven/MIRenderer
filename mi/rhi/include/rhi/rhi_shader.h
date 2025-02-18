@@ -9,7 +9,6 @@
 
 #include <vector>
 #include <memory>
-#include "core/conalloc.h"
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_resource.h"
 #include "rhi_desc.h"
@@ -26,31 +25,30 @@ public:
     void Reset () ;
 
     FORCEINLINE bool IsValid () const { return is_valid_; }
-    FORCEINLINE const IString & GetEntryName () const { return entry_name_; }
+    FORCEINLINE const std::string & GetEntryName () const { return entry_name_; }
 
     USE_SHADER_REFLECTION_STRUCTS
 
     FORCEINLINE RHIShaderFrequencyFlagBits GetFrequency() const { return frequency_; }
-    FORCEINLINE bool HasBindlessResources() const { return has_bindless_resources_; }
 
     // The returned vector contains information about the bindless table,
     // which is different from pipelines that striped the bindless table from uniform descriptions.
-    FORCEINLINE const IVector<UniformBufferDesc> & GetUniformBufferDesc() const { return uniform_buffers_with_bindless_table_; }
+    FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const { return uniform_buffers_with_bindless_table_; }
 
-    FORCEINLINE const IVector<StorageBufferDesc> & GetStorageBufferDesc() const { return storage_buffers_; }
-    FORCEINLINE const IVector<UAVDesc> & GetUAVDesc() const { return uavs_; }
-    FORCEINLINE const IVector<SRVDesc> & GetSRVDesc() const { return srvs_; }
-    FORCEINLINE const IVector<SamplerDesc> & GetSamplerDesc() const { return samplers_; }
-    FORCEINLINE const IVector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const { return immutable_samplers_; }
-    FORCEINLINE const IVector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const { return acceleration_structures_; }
+    FORCEINLINE const std::vector<StorageBufferDesc> & GetStorageBufferDesc() const { return storage_buffers_; }
+    FORCEINLINE const std::vector<UAVDesc> & GetUAVDesc() const { return uavs_; }
+    FORCEINLINE const std::vector<SRVDesc> & GetSRVDesc() const { return srvs_; }
+    FORCEINLINE const std::vector<SamplerDesc> & GetSamplerDesc() const { return samplers_; }
+    FORCEINLINE const std::vector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const { return immutable_samplers_; }
+    FORCEINLINE const std::vector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const { return acceleration_structures_; }
     FORCEINLINE const CommandConstantDesc & GetCommandConstantDesc() const { return command_constant_[0]; }
     FORCEINLINE bool  HasCommandConstant() const { return !command_constant_.empty(); }
-    FORCEINLINE const IVector<ShaderVertexInputDesc> & GetVertexInputDesc() const { return vertex_inputs_; }
-    FORCEINLINE const IVector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const { return fragment_outputs_; }
+    FORCEINLINE const std::vector<ShaderVertexInputDesc> & GetVertexInputDesc() const { return vertex_inputs_; }
+    FORCEINLINE const std::vector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const { return fragment_outputs_; }
 
     // Return a default vertex input attribute description for the pipeline.
     // Assume all attributes are piled up in a single buffer (which is a common case).
-    IVector<RHIVertexInputAttributeDesc> GetVertexInputAttributeDescForPipeline (int src_binding) const ;
+    std::vector<RHIVertexInputAttributeDesc> GetVertexInputAttributeDescForPipeline (int src_binding) const ;
     // Get the total size of one vertex in bytes (usually as the default stride).
     uint32_t GetVertexStride () const ;
 
@@ -67,29 +65,26 @@ protected:
 
     RHIShaderFrequencyFlagBits frequency_;
 
-    IString entry_name_;
+    std::string entry_name_;
 
     std::byte * ir_;
     uint32_t ir_size_;
     RHIShaderIRType ir_type_;
 
-    IVector<UniformBufferDesc> uniform_buffers_with_bindless_table_;
-    IVector<StorageBufferDesc> storage_buffers_;
-    IVector<UAVDesc> uavs_;
-    IVector<SRVDesc> srvs_;
-    IVector<SamplerDesc> samplers_;
-    IVector<ImmutableSamplerDesc> immutable_samplers_;
-    IVector<AccelerationStructureDesc> acceleration_structures_;
+    std::vector<UniformBufferDesc> uniform_buffers_with_bindless_table_;
+    std::vector<StorageBufferDesc> storage_buffers_;
+    std::vector<UAVDesc> uavs_;
+    std::vector<SRVDesc> srvs_;
+    std::vector<SamplerDesc> samplers_;
+    std::vector<ImmutableSamplerDesc> immutable_samplers_;
+    std::vector<AccelerationStructureDesc> acceleration_structures_;
     // The vector should be of length 1.
-    IVector<CommandConstantDesc> command_constant_;
+    std::vector<CommandConstantDesc> command_constant_;
 
     // Only makes sense for vertex shaders
-    IVector<ShaderVertexInputDesc> vertex_inputs_;
+    std::vector<ShaderVertexInputDesc> vertex_inputs_;
     // Only makes sense for fragment shaders
-    IVector<ShaderFragmentOutputDesc> fragment_outputs_;
-
-    bool has_bindless_resources_ {};
-    int  bindless_table_uniform_index_ {};
+    std::vector<ShaderFragmentOutputDesc> fragment_outputs_;
 
     bool is_valid_ {};
 };
