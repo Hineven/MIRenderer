@@ -10,7 +10,6 @@
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_resource.h"
-#include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -35,18 +34,9 @@ public:
         return {this, offset, size == 0 ? buffer_size_ : size};
     }
 
-    // View it as a storage buffer or uniform buffer.
-    void ConvertToBindless (bool read_only) ;
-
-    FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadonly() { return bindless_slot_readonly_; }
-    FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadwrite() { return bindless_slot_readwrite_; }
-
 protected:
     size_t buffer_size_;
     RHIBufferUsageFlags usage_;
-
-    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readonly_ {};
-    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};
 
     bool is_mapped_ {false};
 };

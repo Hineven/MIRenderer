@@ -7,10 +7,10 @@
 #include "core/infra.h"
 #include "infra_impl/infra.h"
 #include "rhi/rhi.h"
-#include "rhi/rhi_thread.h"
+#include "rhi/rhi_texture.h"
 #include "rhi/rhi_shader.h"
 #include "rhi/rhi_pipeline.h"
-#include "rhi/rhi_texture.h"
+#include "core/thr.h"
 
 #include <exception>
 #include <cpptrace/from_current.hpp>
@@ -28,7 +28,7 @@ TEST(RHITest, RHIStart) {
     // Hack: we need to pretend that we're a render thread to pass the assertions
     SetCurrentThreadType(ThreadType::kRenderThread);
 
-    RHI::InitializeSingleton(RHIType::kVulkan);
+    RHI::InitializeSingleton();
     RHI::DestroySingleton();
 
     GetInfra().Shutdown();
@@ -41,7 +41,7 @@ TEST(RHITest, RHIShaderCompile) {
     GetInfra().Init();
     // Hack: we need to pretend that we're a render thread to pass the assertions
     SetCurrentThreadType(ThreadType::kRenderThread);
-    RHI::InitializeSingleton(RHIType::kVulkan);
+    RHI::InitializeSingleton();
     // Sim render thread scope
     {
         std::vector<std::string> options;
@@ -70,43 +70,6 @@ TEST(RHITest, RHIShaderCompile) {
     RHI::DestroySingleton();
     GetInfra().Shutdown();
     DestroyInfra();
-}
-
-TEST(RHITest, RHIThreadTasks) {
-    using namespace mi;
-    TransferInfra(std::make_unique<MyInfra>());
-    GetInfra().Init();
-    // Hack: we need to pretend that we're a render thread to pass the assertions
-    SetCurrentThreadType(ThreadType::kRenderThread);
-    RHI::InitializeSingleton(RHIType::kVulkan);
-    volatile static bool flag;
-    {
-        volatile static int value;
-        EnqueueRHIThreadTask([]() {
-            MI_LOG(MIInfraLogType::kInfo, "Task 1");
-            value = 123;
-        });
-        std::this_thread::sleep_for(std::chrono::milliseconds (100));
-        EXPECT_TRUE(value == 123);
-        auto fut = EnqueueRHIThreadTask([]() {
-            MI_LOG(MIInfraLogType::kInfo, "Task 2");
-        });
-        EnqueueRHIThreadTask([]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds (200));
-            flag = true;
-            MI_LOG(MIInfraLogType::kInfo, "Task 3");
-        });
-        fut.wait();
-        EXPECT_FALSE(flag);
-        EnqueueRHIThreadTask([]() {
-            MI_LOG(MIInfraLogType::kInfo, "Task 4");
-        });
-    }
-    RHI::DestroySingleton();
-    EXPECT_TRUE(flag);
-    GetInfra().Shutdown();
-    DestroyInfra();
-
 }
 
 static auto v_shader_code = "// Vertex Shader\n"
@@ -153,7 +116,7 @@ TEST(RHITest, RHIPipelineAssemble) {
         GetInfra().Init();
         // Hack: we need to pretend that we're a render thread to pass the assertions
         SetCurrentThreadType(ThreadType::kRenderThread);
-        RHI::InitializeSingleton(RHIType::kVulkan);
+        RHI::InitializeSingleton();
         // Sim render thread scope
         {
             std::vector<std::string> options;
@@ -383,7 +346,7 @@ TEST(RHITest, RHIPipelineAssemble) {
             );
             queue.CopyTextureToBuffer(texture0.Raw(), staging_buf->GetSpan());
             auto sync = RHI::Get().CreateSyncPoint();
-            queue.EnqueueTranslateAndSubmit(sync.Raw());
+            queue.Submit(sync.Raw());
             sync->Wait();
             // Convert to bitmap
             auto fp16tex = (uint16_t *) staging_buf->Map();

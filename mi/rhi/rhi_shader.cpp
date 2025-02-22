@@ -79,17 +79,6 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
         desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
         command_constant_.push_back(desc);
     }
-    // Look for bindless table uniform buffer
-    int bindless_table_index = 0;
-    for(auto & uniforms : uniform_buffers_with_bindless_table_) {
-        if(uniforms.name == TO_STR(BINDLESS_TABLE_UNIFORM_BUFFER_NAME)) {
-            break;
-        }
-        bindless_table_index ++;
-    }
-    has_bindless_resources_ = bindless_table_index != uniform_buffers_with_bindless_table_.size();
-    bindless_table_uniform_index_ = bindless_table_index;
-
 
     // Reflect shader inputs & outputs
     if(frequency_ == RHIShaderFrequencyFlagBits::kVertex) {
@@ -179,9 +168,9 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
         MI_LOG(MIInfraLogType::kWarning, "Failed to strip reflection info from SPIRV IR.");
         return false;
     }
-    GetInfra().Free(ir_);
+    delete ir_;
     ir_size_ = (uint32_t)optimized_ir.size() * 4;
-    ir_ = static_cast<std::byte *>(GetInfra().Allocate(ir_size_));
+    ir_ = new std::byte[ir_size_];
     std::copy(optimized_ir.begin(), optimized_ir.end(), (uint32_t*)ir_);
 
     return true;
@@ -200,8 +189,6 @@ void RHIShader::Reset () {
     immutable_samplers_.clear();
     command_constant_.clear();
     acceleration_structures_.clear();
-    has_bindless_resources_ = false;
-    bindless_table_uniform_index_ = 0;
     vertex_inputs_.clear();
     fragment_outputs_.clear();
 
@@ -217,11 +204,11 @@ void RHIShader::Compile () {
 }
 
 
-IVector<RHIVertexInputAttributeDesc> RHIShader::GetVertexInputAttributeDescForPipeline (
+std::vector<RHIVertexInputAttributeDesc> RHIShader::GetVertexInputAttributeDescForPipeline (
         int src_binding
 ) const {
     mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kVertex, "Only vertex shader has vertex inputs.");
-    IVector<RHIVertexInputAttributeDesc> attributes;
+    std::vector<RHIVertexInputAttributeDesc> attributes;
     uint32_t offset = 0;
     for(auto & input : vertex_inputs_) {
         RHIVertexInputAttributeDesc desc;

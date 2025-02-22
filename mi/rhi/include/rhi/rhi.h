@@ -42,14 +42,14 @@ public:
 
     virtual const char * GetName() const = 0;
 
-    // Create a buffer, thread safe
+    // Create a buffer
     virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlagBits type) = 0;
 
-    // Create a texture, thread safe
+    // Create a texture
     virtual RHITextureRef CreateTexture (
         RHITextureType type,
         RHITextureDimensions dimensions,
-        PixelFormatType format
+        PixelFormatType format,
         RHITextureUsageFlags usage,
         int mip_levels = 1, int array_layers = 1
     ) = 0;
@@ -95,7 +95,7 @@ public:
     // Move to next frame. Performing logic like RHI resource recycling, queue flushing,
     // queue allocator swapping, etc. This should be called upon frame end.
     // @param in_sync_point a sync point that can be waited on for the device to complete executing submitted frame commands.
-    virtual AdvanceFrame (RHISyncPoint * in_sync_point = nullptr) = 0;
+    void AdvanceFrame (RHISyncPoint * in_sync_point = nullptr) ;
 
     // The frame index of the entire RHI system
     // it is never decreased, and is increased by 1 every time AdvanceFrame is called.
@@ -131,8 +131,6 @@ protected:
     RHICommandQueueGraphics graphics_command_queue_ {};
 
     size_t frame_index_ {0};
-
-    std::unique_ptr<std::thread> rhi_thread_ {};
 };
 
 // Check if the current thread is the RHI thread

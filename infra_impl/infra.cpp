@@ -52,16 +52,6 @@ uint32_t MyInfra::GenerateSeed() {
     return seed_identifier_ ++;
 }
 
-void *MyInfra::Allocate(size_t size, size_t alignment) {
-    // Use the native C++ runtime implementation.
-    return ::operator new(size, std::align_val_t(alignment));
-}
-
-void MyInfra::Free(void *ptr, size_t alignment) {
-    // Use the native C++ runtime implementation.
-    ::operator delete(ptr, std::align_val_t(alignment));
-}
-
 float MyInfra::GetTimeSinceStart() {
     return std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - start_time_).count();
 }

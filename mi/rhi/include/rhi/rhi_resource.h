@@ -8,6 +8,7 @@
 #define MIRENDERER_RHI_RESOURCE_H
 
 #include <atomic>
+#include <string>
 #include "core/refcounted.h"
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_types.h"
@@ -44,7 +45,7 @@ public:
         return name_;
     }
 
-    FORCEINLINE void SetName (std::string name) const {
+    FORCEINLINE void SetName (std::string name) {
         name_ = name;
     }
 

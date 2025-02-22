@@ -26,7 +26,7 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
     // Omit empty shaders.
     if(!shader) return true;
     // Gather & align shader slots to pipeline slots
-    auto GatherShaderSlots = [&]<RHIPipelineResourceType Type, typename T1, typename T2>(const IVector<T1> & resource_descs, IVector<T2> & pipeline_resource_descs) {
+    auto GatherShaderSlots = [&]<RHIPipelineResourceType Type, typename T1, typename T2>(const std::vector<T1> & resource_descs, std::vector<T2> & pipeline_resource_descs) {
         for(int i = 0; i < resource_descs.size(); ++i) {
             int pipeline_slot;
             for(pipeline_slot = 0; pipeline_slot < pipeline_resource_descs.size(); ++pipeline_slot) {
@@ -83,7 +83,7 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
 }
 
 bool RHIPipeline::CheckNoOverlappingNamesAmongDifferentTypes() {
-    IVector<uint32_t> name_crc;
+    std::vector<uint32_t> name_crc;
     auto Inject = [&] (const auto & arr) {
         for(const auto & desc : arr) {
             name_crc.push_back(desc.name_crc);

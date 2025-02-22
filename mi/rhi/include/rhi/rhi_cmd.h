@@ -14,7 +14,6 @@
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
-#include "rhi_thread.h"
 #include "rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
@@ -36,14 +35,8 @@ protected:
     inline auto & GetBufferAllocator () {
         return buffer_allocator_[allocator_index_];
     }
-    inline auto & GetCommandAllocator () {
-        return command_allocator_[allocator_index_];
-    }
 public:
-    RHICommandQueueBase() {
-        // Idle command
-        first_command_ = last_command_ = AllocateCommand<RHICommandBase>();
-    }
+    RHICommandQueueBase() {}
     virtual ~RHICommandQueueBase() = default;
 
     // Wait for all commands to finish execution and reset the command buffer,

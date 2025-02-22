@@ -7,7 +7,6 @@
 #include "rhi/rhi.h"
 #include "rhi/rhi_resource.h"
 #include "core/util/lockfree.h"
-#include "rhi_bindless.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -22,7 +21,7 @@ void RHIResource::QueueForDeletion() {
     mi_assert(RHI::HasSingleton(), "Potentially deleting a resource after RHI shutdown.");
     // This function lives in the render thread, so we use the frame index of the render thread.
     // It is always bigger than the frame index of the RHI thread.
-    mi_assert(RHI::Get().AddResourcePendingForDeletion(this), "Resource deletion queue overflow.");
+    RHI::Get().AddResourcePendingForDeletion(this);
 }
 
 MI_NAMESPACE_END

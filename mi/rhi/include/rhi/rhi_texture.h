@@ -12,7 +12,6 @@
 #include "rhi/rhi_resource.h"
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_desc.h"
-#include "rhi/rhi_bindlesskeeper.h"
 #include "core/constants.h"
 
 MI_NAMESPACE_BEGIN
@@ -38,23 +37,7 @@ public:
     FORCEINLINE uint32_t GetDepth() const { return dimensions_.depth; }
     FORCEINLINE RHITextureLayoutType const GetLayout() const { return layout_; }
 
-    // Convert this texture to a bindless texture
-    // If optimal_access is true, the texture will always be in optimal layout when accessed.
-    void ConvertToBindless (bool optimal_access) ;
-
-    // Returns true if the texture is bindless and should always be in optimal
-    // layout when accessed. (And you should manually take care of layout transitions.)
-    // Usually read-only atlas textures should enable this and transit to shader
-    // readonly optimal.
-    FORCEINLINE bool IsBindlessUseOptimalAccess () {return is_bindless_optimal_accessed_;}
-
-    FORCEINLINE RHIBindlessSlotRef<RHITexture> GetBindlessSlotReadonly() { return bindless_slot_readonly_; }
-    FORCEINLINE RHIBindlessSlotRef<RHITexture> GetBindlessSlotReadwrite() { return bindless_slot_readwrite_; }
-
 protected:
-
-    RHIBindlessSlotRef<RHITexture> bindless_slot_readonly_;
-    RHIBindlessSlotRef<RHITexture> bindless_slot_readwrite_;
 
     RHITextureLayoutType layout_ {RHITextureLayoutType::kUndefined};
     RHITextureType type_;
@@ -63,8 +46,6 @@ protected:
     RHITextureUsageFlags usage_;
     int mip_levels_;
     int array_layers_;
-
-    bool is_bindless_optimal_accessed_ {false};
 };
 
 MI_NAMESPACE_END

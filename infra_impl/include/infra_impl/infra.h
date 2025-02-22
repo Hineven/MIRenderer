@@ -103,10 +103,6 @@ public:
 
     uint32_t GenerateSeed() override;
 
-    void *Allocate(size_t size, size_t alignment = 1) override;
-
-    void Free(void *ptr, size_t alignment = 1) override;
-
     float GetTimeSinceStart() override;
 
     void ProfileStart(const std::string &name) override;

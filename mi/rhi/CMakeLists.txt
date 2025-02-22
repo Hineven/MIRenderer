@@ -1,10 +1,7 @@
 set(SOURCE_FILES
-        rhi_thread.cpp
         rhi_shader.cpp
         rhi_pipeline.cpp
-        rhi_bindless.cpp
         rhi_resource.cpp
-        rhi_cmd.cpp
         rhi_texture.cpp
         rhi_buffer.cpp
         rhi.cpp
@@ -14,6 +11,7 @@ add_library(rhi STATIC ${SOURCE_FILES})
 target_include_directories(rhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(MI_BUILD_RHI_VULKAN)
+    target_compile_definitions(rhi PUBLIC MI_RHI_VULKAN)
     # Our findvulkan fix
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
     # VMA-HPP from vcpkg
@@ -42,7 +40,6 @@ if(MI_BUILD_RHI_VULKAN)
         vk/vk_texture.cpp
         vk/vk_resource.cpp
         vk/vk_buffer.cpp
-        vk/vk_bindless.cpp
         vk/vk_rhi.cpp
         vk/vk_shader.cpp
         vk/vma_impl.cpp
@@ -69,7 +66,8 @@ if(MI_BUILD_RHI_VULKAN)
     )
 endif()
 
-if(MI_BUILD_RHI_DX12)
+if(MI_BUILD_RHI_D3D12)
+    target_compile_definitions(rhi PUBLIC MI_RHI_D3D12)
     # DX12
     find_package(directx-headers CONFIG REQUIRED GLOBAL)
     find_package(directx12-agility CONFIG REQUIRED GLOBAL)
@@ -82,6 +80,12 @@ if(MI_BUILD_RHI_DX12)
                 COMMAND_EXPAND_LISTS
         )
     endif()
+        # Vulkan implementation
+    list(APPEND SOURCE_FILES
+            d3d12/d3d12_rhi_cmd.cpp
+            d3d12/d3d12_rhi.cpp
+    )
+
 endif()
 
 target_link_libraries(rhi PUBLIC core ${EXTERNAL_LIBRARIES})

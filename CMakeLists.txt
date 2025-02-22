@@ -6,11 +6,11 @@ enable_language(CXX)
 set(CMAKE_CXX_STANDARD 20)
 
 # Building options
-option(MI_BUILD_RHI_DX12 "Build a RHI with DX12 backend" ON)
+option(MI_BUILD_RHI_D3D12 "Build a RHI with D3D12 backend" ON)
 option(MI_BUILD_RHI_VULKAN "Build a RHI with Vulkan backend" OFF)
 
 # Only one backend can be enabled
-if(MI_BUILD_RHI_DX12 AND MI_BUILD_RHI_VULKAN)
+if(MI_BUILD_RHI_D3D12 AND MI_BUILD_RHI_VULKAN)
     message(FATAL_ERROR "Only one RHI backend can be enabled")
 endif()
 
