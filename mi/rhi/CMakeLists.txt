@@ -71,7 +71,6 @@ if(MI_BUILD_RHI_D3D12)
     # DX12
     find_package(directx-headers CONFIG REQUIRED GLOBAL)
     find_package(directx12-agility CONFIG REQUIRED GLOBAL)
-    list(APPEND EXTERNAL_LIBRARIES ${dxc_library_target} Microsoft::DirectX-Headers Microsoft::DirectX-Guids Microsoft::DirectX12-Agility)
     if(TARGET Microsoft::DirectX12-Agility)
         file(MAKE_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/D3D12")
         add_custom_command(TARGET rhi POST_BUILD
@@ -84,8 +83,24 @@ if(MI_BUILD_RHI_D3D12)
     list(APPEND SOURCE_FILES
             d3d12/d3d12_rhi_cmd.cpp
             d3d12/d3d12_rhi.cpp
+            d3d12/d3d12_rhi_buffer.cpp
+            d3d12/d3d12_rhi_intenral.cpp
     )
-
+    list(APPEND EXTERNAL_LIBRARIES
+        ${dxc_library_target}
+        # D3D12
+        Microsoft::DirectX-Headers
+        Microsoft::DirectX-Guids
+        Microsoft::DirectX12-Agility
+        # Reflection
+        spirv-cross-core
+        spirv-cross-glsl
+        spirv-cross-hlsl
+        spirv-cross-cpp
+        # SPV processing
+        SPIRV-Tools-static
+        SPIRV-Tools-opt
+    )
 endif()
 
 target_link_libraries(rhi PUBLIC core ${EXTERNAL_LIBRARIES})

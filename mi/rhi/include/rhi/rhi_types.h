@@ -12,7 +12,7 @@ MI_NAMESPACE_BEGIN
 
 enum class RHIType {
     kVulkan,
-    kDX12
+    kD3D12
 };
 enum class RHIBindPointType {
     kGraphics,

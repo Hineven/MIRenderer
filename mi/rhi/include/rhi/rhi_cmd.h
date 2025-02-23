@@ -85,6 +85,7 @@ protected:
 };
 
 // The first command queue takes care of graphics commands.
+// (Interface)
 class RHICommandQueueGraphics : public RHICommandQueueBase {
 protected:
     FORCEINLINE RHICommandQueueGraphics(): RHICommandQueueBase() {
@@ -92,24 +93,24 @@ protected:
     }
 public:
     friend class RHI;
-    void ClearTexture (RHITexture * texture, std::array<float, 4> clear_value = {0, 0, 0, 1},
-                                   uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1) ;
+    virtual void ClearTexture (RHITexture * texture, std::array<float, 4> clear_value = {0, 0, 0, 1},
+                                   uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1) = 0;
     // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
     // in the buffer
     // Unspecified dst_tex_width, dst_tex_height, dst_tex_depth is the same as the texture's dimensions
-    void CopyBufferToTexture (RHIBufferSpan buffer, RHITexture * texture,
+    virtual void CopyBufferToTexture (RHIBufferSpan buffer, RHITexture * texture,
                                     uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1,
                                     uint32_t src_tex_width = 0, uint32_t src_tex_height = 0,
                                     int dst_tex_x = 0, int dst_tex_y = 0, int dst_tex_z = 0,
-                                    uint32_t dst_tex_width = 0, uint32_t dst_tex_height = 0, uint32_t dst_tex_depth = 0) ;
+                                    uint32_t dst_tex_width = 0, uint32_t dst_tex_height = 0, uint32_t dst_tex_depth = 0) = 0;
     // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
     // in the buffer
     // Unspecified src_tex_width, src_tex_height, src_tex_depth is the same as the texture's dimensions
-    FORCEINLINE void CopyTextureToBuffer (RHITexture * texture, RHIBufferSpan buffer,
+    virtual void CopyTextureToBuffer (RHITexture * texture, RHIBufferSpan buffer,
                                     uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1,
                                     uint32_t dst_tex_width = 0, uint32_t dst_tex_height = 0,
                                     int src_tex_x = 0, int src_tex_y = 0, int src_tex_z = 0,
-                                    uint32_t src_tex_width = 0, uint32_t src_tex_height = 0, uint32_t src_tex_depth = 0) ;
+                                    uint32_t src_tex_width = 0, uint32_t src_tex_height = 0, uint32_t src_tex_depth = 0) = 0;
     FORCEINLINE void CopyBuffer (RHIBufferSpan src, RHIBufferSpan dst) ;
 
     FORCEINLINE void UpdateDrawState (const RHIDrawDesc & draw_state) ;
