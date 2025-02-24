@@ -244,21 +244,21 @@ void VulkanBindlessManager::SwapSets_RHIThread () {
     set_index_ ++;
     auto device = GetVulkanRHI()->GetDevice();
     // Copy the previous set to the new set
-    uint32_t num_descriptors = 0;
-    // Copy all the descriptors
-    for(auto & channel : bindless_channels_) {
-        num_descriptors += channel.size;
+    std::vector<vk::CopyDescriptorSet> copies;
+    for (int i = 0; i < std::size(bindless_channels_); i++) {
+        auto size = bindless_channels_[i].size;
+        auto copy = vk::CopyDescriptorSet {
+            bindless_descriptor_sets_[set_index_ ^ 1],
+            (uint32_t)i,
+            0,
+            bindless_descriptor_sets_[set_index_],
+            (uint32_t)i,
+            0,
+            (uint32_t)size
+        };
+        copies.push_back(copy);
     }
-    auto copy = vk::CopyDescriptorSet {
-        bindless_descriptor_sets_[set_index_ ^ 1],
-        0,
-        0,
-        bindless_descriptor_sets_[set_index_],
-        0,
-        0,
-        num_descriptors
-    };
-    device.updateDescriptorSets({}, copy);
+    device.updateDescriptorSets({}, copies);
 }
 
 MI_NAMESPACE_END

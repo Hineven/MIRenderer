@@ -120,7 +120,7 @@ protected:
         void Clear (bool return_resources_to_system) ;
 
         void BeginCmd ();
-        void CloseCmd ();
+        bool CloseCmd ();
 
         void SetupDefaultDynamicStates ();
     };

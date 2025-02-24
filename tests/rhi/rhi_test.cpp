@@ -47,6 +47,7 @@ TEST(RHITest, RHIShaderCompile) {
         std::vector<std::string> options;
         options.push_back("-fspv-target-env=vulkan1.3");
         options.push_back("-fvk-use-scalar-layout");
+        options.push_back("-Zi");
 
         auto shader_code = "RWTexture2D<float4> Tex; [numthreads(1, 1, 1)] void Main() {Tex[int2(0, 0)] = 0.f.xxxx;}";
         auto shader_code_span = std::span(reinterpret_cast<const char *>(shader_code), strlen(shader_code));
@@ -146,7 +147,7 @@ static auto f_shader_code = "// Fragment Shader\n"
                      "    return output;\n"
                      "}";
 
-TEST(RHITest, RHIPipelineAssemble) {
+TEST(RHITest, RHITriangle) {
     using namespace mi;
     CPPTRACE_TRY {
         TransferInfra(std::make_unique<MyInfra>());
@@ -159,6 +160,7 @@ TEST(RHITest, RHIPipelineAssemble) {
             std::vector<std::string> options;
             options.push_back("-fspv-target-env=vulkan1.3");
             options.push_back("-fvk-use-scalar-layout");
+            options.push_back("-Zi");
 
             std::string errmsg;
 
@@ -351,9 +353,9 @@ TEST(RHITest, RHIPipelineAssemble) {
                     RHIBufferUsageFlagBits::kStaging
             );
             float vbuf_host[] = {
-                    0.f, -0.5f, 0.1f, 0.f, 0.f,
-                    0.5f, 0.5f, 0.1f, 0.f, 1.f,
-                    -0.5f, 0.5f, 0.1f, 1.f, 0.f
+                    -0.5f, -0.5f, 0.1f, 0.f, 0.f,
+                     0.5f, -0.5f, 0.1f, 0.f, 1.f,
+                     0.f,   0.5f, 0.1f, 1.f, 0.f
             };
             memcpy(staging_buf->Map(), vbuf_host, 3 * sizeof(float) * 5);
             queue.CopyBuffer(staging_buf->GetSpan(), vtx_buf->GetSpan());
@@ -385,6 +387,7 @@ TEST(RHITest, RHIPipelineAssemble) {
             auto sync = RHI::Get().CreateSyncPoint();
             queue.EnqueueTranslateAndSubmit(sync.Raw());
             sync->Wait();
+            RHI::Get().AdvanceFrame();
             // Convert to bitmap
             auto fp16tex = (uint16_t *) staging_buf->Map();
             auto bitmap = new uint32_t[1280 * 720];

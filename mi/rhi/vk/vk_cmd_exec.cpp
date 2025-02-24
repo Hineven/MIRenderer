@@ -605,13 +605,15 @@ VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISy
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
     auto & cmd = state.cmd;
-    state.CloseCmd();
+    bool dirty = state.CloseCmd();
     auto vk_rhi = GetVulkanRHI();
     auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
     auto submit_info = vk::SubmitInfo()
             .setCommandBufferCount(1)
             .setPCommandBuffers(&cmd);
-    queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
+    if (dirty) {
+        queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
+    }
     if(sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
     // Allocate a new command buffer
     // TODO accelerate this?
@@ -752,11 +754,13 @@ void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
     }
 }
 
-void VulkanCommandExecutor::CommandQueueState::CloseCmd () {
+bool VulkanCommandExecutor::CommandQueueState::CloseCmd () {
     if(cmd_recording_started) {
         cmd_recording_started = false;
         cmd.end();
+        return true;
     }
+    return false;
 }
 
 void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() {

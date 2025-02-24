@@ -245,47 +245,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     pipeline_info_vk.setLayout(vk_pipeline_layout_);
 
-//    std::vector<vk::AttachmentDescription> attachments_vk;
-//    for(auto & attachment : pipeline_info.color_attachments) {
-//        vk::ImageLayout initial_layout = vk::ImageLayout::eColorAttachmentOptimal;
-//        // We can not use eUndefined as initial layout as the user may assume that the texture
-//        // data is preserved before and after the render pass if it's untouched.
-////        if(attachment.load_op != RHILoadOpType::kLoad) {
-////            initial_layout = vk::ImageLayout::eUndefined;
-////        }
-//        auto desc = vk::AttachmentDescription()
-//                .setFormat(GetVulkanPixelFormat(attachment.format))
-//                .setSamples(vk::SampleCountFlagBits::e1)
-//                .setInitialLayout(initial_layout)
-//                .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
-//        attachments_vk.push_back(desc);
-//    }
-//    auto subpass_color_attachments_vk = std::vector<vk::AttachmentReference>(attachments_vk.size());
-//    for(int i = 0; i < attachments_vk.size(); ++i) {
-//        subpass_color_attachments_vk[i].setAttachment(i);
-//        subpass_color_attachments_vk[i].setLayout(vk::ImageLayout::eColorAttachmentOptimal);
-//    }
     bool has_depth_stencil = pipeline_info.depth_stencil_attachment.format != PixelFormatType::kUnknown;
-//    if(has_depth_stencil) {
-//        auto desc = vk::AttachmentDescription()
-//                .setFormat(GetVulkanPixelFormat(pipeline_info.depth_stencil_attachment.format))
-//                .setSamples(vk::SampleCountFlagBits::e1)
-//                .setLoadOp(GetVulkanLoadOp(pipeline_info.depth_stencil_attachment.load_op))
-//                .setStoreOp(GetVulkanStoreOp(pipeline_info.depth_stencil_attachment.store_op))
-//                .setStencilLoadOp(GetVulkanLoadOp(pipeline_info.depth_stencil_attachment.load_op))
-//                .setStencilStoreOp(GetVulkanStoreOp(pipeline_info.depth_stencil_attachment.store_op))
-//                .setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
-//                .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-//        // Append depth stencil attachment as the last attachment
-//        attachments_vk.push_back(desc);
-//    }
-//    auto subpass_depth_stencil_vk = vk::AttachmentReference()
-//            .setAttachment((uint32_t)attachments_vk.size() - 1)
-//            .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
-//
-//    auto subpass_vk = vk::SubpassDescription()
-//            .setColorAttachments(subpass_color_attachments_vk);
-//    if(has_depth_stencil) subpass_vk.setPDepthStencilAttachment(&subpass_depth_stencil_vk);
     // Dynamic rendering support
     auto color_attachment_formats = std::vector<vk::Format>(pipeline_info.color_attachments.size());
     {
@@ -301,13 +261,10 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         };
         pipeline_info_vk.setPNext(&rdn_info);
     }
-//
-//    // We do not use multiple subpasses as we are targeting at desktop level IBR devices.
-//    pipeline_info_vk.setSubpass(0);
 
     auto result = device.createGraphicsPipeline(GetVulkanRHI()->GetPipelineCache(), pipeline_info_vk);
     if(result.result != vk::Result::eSuccess) {
-        MI_LOG(MIInfraLogType::kWarning, "Failed to create graphics pipeline: %s.", GetName());
+        MI_LOG(MIInfraLogType::kWarning, "Failed to create graphics pipeline: %s. Error code: %s", GetName(), vk::to_string(result.result));
         device.destroy(vk_pipeline_layout_);
         device.destroy(vk_render_pass_);
         vk_pipeline_layout_ = nullptr;

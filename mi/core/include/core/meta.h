@@ -18,12 +18,13 @@ struct TIsTypeComplete : std::false_type {};
 template<typename T>
 struct TIsTypeComplete<T, std::void_t<decltype(sizeof(T))>> : std::true_type {};
 
-template<typename T>
-concept CMemTrivial = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
-
 // Array of unknown bound
 template<typename T>
 concept CAOUB = std::is_array_v<T> && std::extent_v<T> == 0;
+
+// Trivial type and arrays of known bounds.
+template<typename T>
+concept CMemTrivial = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && !CAOUB<T>;
 
 template <template <typename...> class, typename>
 struct TIsTemplateInstance : std::false_type {};

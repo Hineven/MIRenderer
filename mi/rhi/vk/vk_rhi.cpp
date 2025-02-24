@@ -234,6 +234,8 @@ VulkanRHI::VulkanRHI() {
         enabled_features.fragmentStoresAndAtomics = VK_TRUE; // Used by some algorithms
         enabled_features.geometryShader = VK_TRUE;
         enabled_features.shaderInt64 = VK_TRUE; // Required by acceleration structure & buffer reference
+        enabled_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+        enabled_features.fragmentStoresAndAtomics = VK_TRUE;
         vk::StructureChain<vk::DeviceCreateInfo,
                 vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
                 vk::PhysicalDeviceMeshShaderFeaturesEXT,
