@@ -82,7 +82,7 @@ protected:
 
     std::atomic<int> num_unfinished_precedents_ {0};
     std::packaged_task<void()> task_;
-    std::vector<TaskRef, InfraDefaultAllocator<TaskRef>> successors_;
+    std::vector<TaskRef> successors_;
 
     // The thread used to create this task.
     uint32_t created_thread_id_ {0};

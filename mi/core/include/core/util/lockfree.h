@@ -11,6 +11,7 @@
 #include <type_traits>
 #include <atomic>
 #include <cassert>
+#include <mutex>
 #include "core/common.h"
 
 MI_NAMESPACE_BEGIN

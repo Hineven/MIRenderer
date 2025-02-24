@@ -12,7 +12,6 @@
 #include "rhi/rhi_resource.h"
 #include "rhi_shader.h"
 #include "rhi_desc.h"
-#include "core/conalloc.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -32,11 +31,11 @@ public:
     }
 
     // Get the resource slot by the name of the resource reflected from shaders
-    RHIPipelineResourceSlot ReflectResourceSlot (const IString & name) const;
+    RHIPipelineResourceSlot ReflectResourceSlot (const std::string & name) const;
 
     FORCEINLINE bool HasBindlessResources() const {return has_bindless_resources_;}
 
-    FORCEINLINE const IString & GetName () const {return name_;}
+    FORCEINLINE const std::string & GetName () const {return name_;}
     FORCEINLINE void SetName () {name_ = name_; OnNameChanged();}
 
     RHIPipeline(std::string_view name) : name_(name) {}
@@ -63,45 +62,45 @@ protected:
     virtual void ResetRHI () {};
     virtual void OnNameChanged () = 0;
 
-    IString name_;
+    std::string name_;
     bool is_valid_ {false};
 
     // Aggregated by the pipeline
     USE_PIPELINE_REFLECTION_STRUCTS
 
-    IVector<UniformBufferDesc> uniform_buffers_;
-    IVector<StorageBufferDesc> storage_buffers_;
-    IVector<UAVDesc> uavs_;
-    IVector<SRVDesc> srvs_;
-    IVector<SamplerDesc> samplers_;
-    IVector<ImmutableSamplerDesc> immutable_samplers_;
-    IVector<AccelerationStructureDesc> acceleration_structures_;
-    IVector<CommandConstantDesc> command_constant_;
+    std::vector<UniformBufferDesc> uniform_buffers_;
+    std::vector<StorageBufferDesc> storage_buffers_;
+    std::vector<UAVDesc> uavs_;
+    std::vector<SRVDesc> srvs_;
+    std::vector<SamplerDesc> samplers_;
+    std::vector<ImmutableSamplerDesc> immutable_samplers_;
+    std::vector<AccelerationStructureDesc> acceleration_structures_;
+    std::vector<CommandConstantDesc> command_constant_;
 
     bool has_bindless_resources_ {false};
     // Number of slots in the btb table
     uint32_t bindless_table_size_ {};
 
 public:
-    FORCEINLINE const IVector<UniformBufferDesc> & GetUniformBufferDesc() const {
+    FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const {
         return uniform_buffers_;
     }
-    FORCEINLINE const IVector<StorageBufferDesc> & GetStorageBufferDesc() const {
+    FORCEINLINE const std::vector<StorageBufferDesc> & GetStorageBufferDesc() const {
         return storage_buffers_;
     }
-    FORCEINLINE const IVector<UAVDesc> & GetUAVDesc() const {
+    FORCEINLINE const std::vector<UAVDesc> & GetUAVDesc() const {
         return uavs_;
     }
-    FORCEINLINE const IVector<SRVDesc> & GetSRVDesc() const {
+    FORCEINLINE const std::vector<SRVDesc> & GetSRVDesc() const {
         return srvs_;
     }
-    FORCEINLINE const IVector<SamplerDesc> & GetSamplerDesc() const {
+    FORCEINLINE const std::vector<SamplerDesc> & GetSamplerDesc() const {
         return samplers_;
     }
-    FORCEINLINE const IVector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const {
+    FORCEINLINE const std::vector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const {
         return immutable_samplers_;
     }
-    FORCEINLINE const IVector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const {
+    FORCEINLINE const std::vector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const {
         return acceleration_structures_;
     }
     FORCEINLINE const CommandConstantDesc & GetCommandConstantDesc() const {
@@ -116,10 +115,10 @@ public:
     virtual void Reset () override;
     void Compile (const RHIGraphicsPipelineDesc &) ;
 
-    FORCEINLINE const IVector<ShaderVertexInputDesc> & GetVertexInputDesc() const {
+    FORCEINLINE const std::vector<ShaderVertexInputDesc> & GetVertexInputDesc() const {
         return vertex_inputs_;
     }
-    FORCEINLINE const IVector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const {
+    FORCEINLINE const std::vector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const {
         return fragment_outputs_;
     }
     FORCEINLINE bool IsDepthTestEnabled() const {
@@ -132,8 +131,8 @@ protected:
 
     bool depth_test_enable_ {false};
 
-    IVector<ShaderVertexInputDesc> vertex_inputs_;
-    IVector<ShaderFragmentOutputDesc> fragment_outputs_;
+    std::vector<ShaderVertexInputDesc> vertex_inputs_;
+    std::vector<ShaderFragmentOutputDesc> fragment_outputs_;
 };
 
 class RHIComputePipeline : public RHIPipeline {

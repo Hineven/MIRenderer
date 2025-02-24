@@ -108,8 +108,7 @@ void RHI::DestroySingleton () {
         EnqueueRHIThreadTask([](){
             RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread(true);
         }).wait();
-        GDynamicRHI->~RHI();
-        GetInfra().Free(GDynamicRHI);
+        delete GDynamicRHI;
         GDynamicRHI = nullptr;
     }
 }

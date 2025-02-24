@@ -20,7 +20,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     // Gather pipeline layout
     {
-        IVector<vk::DescriptorSetLayout> descriptor_set_layouts;
+        std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
         // If the pipeline contains bindless resources, take set 0 as bindless set.
         if (HasBindlessResources()) {
             // Use set 0 for bindless resources.
@@ -29,7 +29,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
             descriptor_set_layouts.push_back(bindless_descriptor_layout);
             // No remapping required for bindless resources
         }
-        IVector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
+        std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
         // Take the next descriptor set for bindfull resources
         {
             int set_index = (int)descriptor_set_layouts.size();
@@ -95,7 +95,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     // Specify creation configuration
     vk::GraphicsPipelineCreateInfo pipeline_info_vk {};
 
-    IVector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
     // Shader stages
     {
         auto PushShaderStage = [&] (RHIShader * shader) {
@@ -116,8 +116,8 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     // Vertex input
     vk::PipelineVertexInputStateCreateInfo vertex_input_vk {};
-    IVector<vk::VertexInputBindingDescription> vertex_buffers;
-    IVector<vk::VertexInputAttributeDescription> vertex_attributes;
+    std::vector<vk::VertexInputBindingDescription> vertex_buffers;
+    std::vector<vk::VertexInputAttributeDescription> vertex_attributes;
     {
         for(auto & buffer_binding : pipeline_info.vertex_input.vertex_buffers) {
             vertex_buffers.push_back(vk::VertexInputBindingDescription()
@@ -200,7 +200,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         pipeline_info_vk.setPDepthStencilState(&depth_stencil_vk);
     }
 
-    IVector<vk::PipelineColorBlendAttachmentState> blend_attachments;
+    std::vector<vk::PipelineColorBlendAttachmentState> blend_attachments;
     vk::PipelineColorBlendStateCreateInfo color_blend_vk {};
     {
         color_blend_vk.setLogicOpEnable(false);
@@ -225,7 +225,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     }
 
     vk::PipelineDynamicStateCreateInfo dynamic_state_vk {};
-    IVector<vk::DynamicState> dynamic_states {
+    std::vector<vk::DynamicState> dynamic_states {
             vk::DynamicState::eViewportWithCount,
             vk::DynamicState::eScissorWithCount,
             vk::DynamicState::eDepthClampEnableEXT,
@@ -245,7 +245,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     pipeline_info_vk.setLayout(vk_pipeline_layout_);
 
-//    IVector<vk::AttachmentDescription> attachments_vk;
+//    std::vector<vk::AttachmentDescription> attachments_vk;
 //    for(auto & attachment : pipeline_info.color_attachments) {
 //        vk::ImageLayout initial_layout = vk::ImageLayout::eColorAttachmentOptimal;
 //        // We can not use eUndefined as initial layout as the user may assume that the texture
@@ -260,7 +260,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 //                .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
 //        attachments_vk.push_back(desc);
 //    }
-//    auto subpass_color_attachments_vk = IVector<vk::AttachmentReference>(attachments_vk.size());
+//    auto subpass_color_attachments_vk = std::vector<vk::AttachmentReference>(attachments_vk.size());
 //    for(int i = 0; i < attachments_vk.size(); ++i) {
 //        subpass_color_attachments_vk[i].setAttachment(i);
 //        subpass_color_attachments_vk[i].setLayout(vk::ImageLayout::eColorAttachmentOptimal);
@@ -287,7 +287,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 //            .setColorAttachments(subpass_color_attachments_vk);
 //    if(has_depth_stencil) subpass_vk.setPDepthStencilAttachment(&subpass_depth_stencil_vk);
     // Dynamic rendering support
-    auto color_attachment_formats = IVector<vk::Format>(pipeline_info.color_attachments.size());
+    auto color_attachment_formats = std::vector<vk::Format>(pipeline_info.color_attachments.size());
     {
         for(int i = 0; i < pipeline_info.color_attachments.size(); ++i) {
             color_attachment_formats[i] = GetVulkanPixelFormat(
@@ -356,8 +356,8 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
             .setPName("Main");
 
     // Gather pipeline layout
-    IVector<BindingRemappingInfo> remapping_infos;
-    IVector<vk::DescriptorSetLayout> descriptor_set_layouts;
+    std::vector<BindingRemappingInfo> remapping_infos;
+    std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
     // If the pipeline contains bindless resources, take set 0 as bindless set.
     if(HasBindlessResources()) {
         // Use set 0 for bindless resources.
@@ -365,7 +365,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
         descriptor_set_layouts.push_back(bindless_descriptor_layout);
         // No remapping required for bindless resources
     }
-    IVector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
+    std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
     // Take the next descriptor set for bindfull resources
     {
         int set_index = (int)descriptor_set_layouts.size();

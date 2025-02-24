@@ -66,7 +66,7 @@ void EnqueueRHIThreadIdleTask () {
 }
 
 void StartAndRunRHIWorkerThread() {
-    RHIWorkerThread * rhi_thread = GetInfra().New<RHIWorkerThread>();
+    RHIWorkerThread * rhi_thread = new RHIWorkerThread();
     G_RHIWorkerThread = rhi_thread;
     rhi_thread->Run();
 }

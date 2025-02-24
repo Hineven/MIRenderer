@@ -82,8 +82,7 @@ public:
 
     template<typename T>
     RHIBindlessSlotRef<T> AllocateResourceSlot(const RHIBindlessResourceDesc &desc) {
-        auto slot = (RHIBindlessSlotKeeperBase*)GetInfra().Allocate(sizeof(RHIBindlessSlotKeeperBase));
-        new(slot) RHIBindlessSlotKeeper<T>();
+        auto slot = (RHIBindlessSlotKeeperBase*)new RHIBindlessSlotKeeper<T>();
         AllocateResourceSlot(desc, slot);
         auto ptr = (RHIBindlessSlotKeeper<T>*)slot;
         return RHIBindlessSlotRef<T>(ptr);

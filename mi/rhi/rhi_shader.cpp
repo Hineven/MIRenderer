@@ -11,7 +11,6 @@
 
 #include "core/crc.h"
 #include "core/infra.h"
-#include "core/conalloc.h"
 #include "rhi/rhi_shader.h"
 #include "rhi_device_shared.h"
 
@@ -26,13 +25,13 @@ RHIShader::RHIShader(RHIShaderFrequencyFlagBits frequency, std::string_view entr
     entry_name_ = entry_name;
     ir_type_ = ir_type;
     ir_size_ = (uint32_t)ir.size();
-    ir_ = static_cast<std::byte *>(GetInfra().Allocate(ir_size_));
+    ir_ = static_cast<std::byte *>(operator new (ir_size_));
     std::copy(ir.begin(), ir.end(), ir_);
 }
 
 RHIShader::~RHIShader() {
     Reset();
-    GetInfra().Free(ir_);
+    operator delete(ir_);
 }
 
 bool RHIShader::ReflectShaderResources() {
@@ -180,9 +179,9 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
         MI_LOG(MIInfraLogType::kWarning, "Failed to strip reflection info from SPIRV IR.");
         return false;
     }
-    GetInfra().Free(ir_);
+    operator delete (ir_);
     ir_size_ = (uint32_t)optimized_ir.size() * 4;
-    ir_ = static_cast<std::byte *>(GetInfra().Allocate(ir_size_));
+    ir_ = static_cast<std::byte *>(operator new(ir_size_));
     std::copy(optimized_ir.begin(), optimized_ir.end(), (uint32_t*)ir_);
 
     return true;
@@ -218,11 +217,11 @@ void RHIShader::Compile () {
 }
 
 
-IVector<RHIVertexInputAttributeDesc> RHIShader::GetVertexInputAttributeDescForPipeline (
+std::vector<RHIVertexInputAttributeDesc> RHIShader::GetVertexInputAttributeDescForPipeline (
         int src_binding
 ) const {
     mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kVertex, "Only vertex shader has vertex inputs.");
-    IVector<RHIVertexInputAttributeDesc> attributes;
+    std::vector<RHIVertexInputAttributeDesc> attributes;
     uint32_t offset = 0;
     for(auto & input : vertex_inputs_) {
         RHIVertexInputAttributeDesc desc;

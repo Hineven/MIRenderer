@@ -28,7 +28,7 @@ public:
         ref_count_--;
         if (ref_count_ == 0) {
             // Self destruct
-            GetInfra().Delete(this);
+            delete this;
         }
         return ref_count_;
     }

@@ -21,10 +21,12 @@ struct RDGTextureDesc {
 
 class RDGTextureResource : public RDGResource {
 public:
-    RDGTextureResource (RDGTextureDesc desc) : desc_(desc) {}
+    RDGTextureResource (RDGTextureDesc desc) : RDGResource(nullptr), desc_(desc) {}
     ~RDGTextureResource () override = default;
 
     RDGTextureDesc GetDesc () const { return desc_; }
+protected:
+    RDGTextureDesc desc_;
 };
 
 MI_NAMESPACE_END

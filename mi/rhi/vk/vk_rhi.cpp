@@ -23,9 +23,7 @@ MI_NAMESPACE_BEGIN
 
 VulkanRHI::VulkanRHI() {
     {
-        vk::DynamicLoader dl;
-        auto vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+        VULKAN_HPP_DEFAULT_DISPATCHER.init();
 
         vk::ApplicationInfo app_info("MIRenderer",
                                      VK_MAKE_VERSION(MI_APPLICATION_VERSION_MAJOR, MI_APPLICATION_VERSION_MINOR, 0),
@@ -349,8 +347,8 @@ VulkanRHI::~VulkanRHI() {
     queue_.waitIdle();
 
     // Release the resources held by upper layers first
-    GetInfra().Delete(this->bindless_manager_);
-    GetInfra().Delete(this->command_executor_);
+    delete this->bindless_manager_;
+    delete this->command_executor_;
 
     vma_.destroy();
     device_.destroy(pipeline_cache_);
@@ -359,47 +357,47 @@ VulkanRHI::~VulkanRHI() {
 }
 
 RHIBufferRef VulkanRHI::CreateBuffer(size_t size, RHIBufferUsageFlagBits type) {
-    auto buffer = GetInfra().New<VulkanBuffer>(size, type);
+    auto buffer = new VulkanBuffer(size, type);
     return {buffer};
 }
 
 RHITextureRef VulkanRHI::CreateTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
                                        RHITextureUsageFlags usage, int mip_levels, int array_layers) {
-    auto texture = GetInfra().New<VulkanTexture>(type, dimensions, format, usage, mip_levels, array_layers);
+    auto texture = new VulkanTexture(type, dimensions, format, usage, mip_levels, array_layers);
     return {texture};
 }
 
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
-    auto sampler = GetInfra().New<VulkanSampler>(filter, address_mode);
+    auto sampler = new VulkanSampler(filter, address_mode);
     return {sampler};
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                      RHIShaderIRType ir_type, std::span<const std::byte> ir) {
     mi_assert(ir_type == RHIShaderIRType::kSPIRV, "Vulkan only supports SPIR-V shader IR.");
-    auto shader = GetInfra().New<VulkanShader>(frequency, entry_name, ir_type, ir);
+    auto shader = new VulkanShader(frequency, entry_name, ir_type, ir);
     shader->Compile();
     if(shader->IsValid()) return {shader};
     shader->~VulkanShader();
-    GetInfra().Delete(shader);
+    delete shader;
     return nullptr;
 }
 
 RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name) {
-    auto pipeline = GetInfra().New<VulkanGraphicsPipeline>(name);
+    auto pipeline = new VulkanGraphicsPipeline(name);
     pipeline->Compile(desc);
     if(pipeline->IsValid()) return pipeline;
     pipeline->~VulkanGraphicsPipeline();
-    GetInfra().Delete(pipeline);
+    delete pipeline;
     return nullptr;
 }
 
 RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const char * name) {
-    auto pipeline = GetInfra().New<VulkanComputePipeline>(name);
+    auto pipeline = new VulkanComputePipeline(name);
     pipeline->Compile(shader);
     if(pipeline->IsValid()) return pipeline;
     pipeline->~VulkanComputePipeline();
-    GetInfra().Delete(pipeline);
+    delete pipeline;
     return nullptr;
 }
 
@@ -447,7 +445,7 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
                                        PixelFormatType format, RHITextureUsageFlags usage, int mip_levels,
                                        int array_layers) {
     auto desc = (const VulkanTextureImportDesc *)raw_desc;
-    auto texture = GetInfra().New<VulkanTexture>(type, dimensions, format, usage, mip_levels, array_layers, true);
+    auto texture = new VulkanTexture(type, dimensions, format, usage, mip_levels, array_layers, true);
     vk::Image image_handle = {(VkImage)desc->vk_image};
     vk::ImageLayout layout = (vk::ImageLayout)(desc->vk_image_layout);
     texture->ImportFromHandle(image_handle, layout);
@@ -455,13 +453,11 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
 }
 
 void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
-    resource->~RHIResource();
-    GetInfra().Free(resource);
+    delete resource;
 }
 
 RHISyncPointRef VulkanRHI::CreateSyncPoint() {
-    auto ptr = GetInfra().Allocate(sizeof(VulkanSyncPoint));
-    new (ptr) VulkanSyncPoint();
+    auto ptr = new VulkanSyncPoint();
     return {(RHISyncPoint*)ptr};
 }
 
@@ -471,8 +467,8 @@ void VulkanRHI::PostInitialize() {
         mi_assert(IsRHIThreadActive(), "RHI thread must be active when creating VulkanRHI.");
         // Initialization are automatically dispatched to the RHI thread
         // via the constructor functions
-        bindless_manager_ = GetInfra().New<VulkanBindlessManager>();
-        command_executor_ = GetInfra().New<VulkanCommandExecutor>();
+        bindless_manager_ = new VulkanBindlessManager();
+        command_executor_ = new VulkanCommandExecutor();
     }
 }
 
@@ -483,8 +479,7 @@ VulkanRHI * GetVulkanRHI () {
 
 // Implement factory function declared in vk_rhi_export.h
 VulkanRHI * CreateVulkanRHI () {
-    auto RHI = GetInfra().Allocate(sizeof(VulkanRHI));
-    return new(RHI) VulkanRHI();
+    return new VulkanRHI();
 }
 
 

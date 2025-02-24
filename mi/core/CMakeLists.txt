@@ -1,7 +1,6 @@
 set(HEADER_FILES
     include/core/base.h
     include/core/common.h
-    include/core/conalloc.h
     include/core/infra.h
     include/core/meta.h
     include/core/pixel_format.h
@@ -10,8 +9,8 @@ set(HEADER_FILES
     include/core/thr.h
     include/core/task.h
     include/core/types.h
-        include/core/util/alloc.h
-        include/core/util/lockfree.h
+    include/core/util/alloc.h
+    include/core/util/lockfree.h
 )
 
 set(SOURCE_FILES

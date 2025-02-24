@@ -97,20 +97,6 @@ public:
     // Thread safety: required
     virtual uint32_t GenerateSeed () = 0;
 
-    // Basic host memory operations.
-    // Allocate a block of memory.
-    // The implementation need not be very-much optimized. The renderer will not use this function on critical
-    // program paths. Maybe a few hundred allocations per frame, usually the C runtime malloc/free is enough.
-    // @return a pointer to the allocated memory.
-    // Thread safety: required
-    virtual void * Allocate (size_t size, size_t alignment = 1) = 0;
-
-    // Free a block of memory.
-    // The implementation need not be very-much optimized. The renderer will not use this function on critical
-    // program paths. Maybe a few hundred allocations per frame, usually the C runtime malloc/free is enough.
-    // Thread safety: required
-    virtual void Free (void * ptr, size_t alignment = 1) = 0;
-
     // Get the current time since the infrastructure was initialized in seconds.
     // Precise time gives better counting accuracy, but not required.
     virtual float GetTimeSinceStart () = 0;
@@ -147,20 +133,6 @@ public:
     inline virtual void               OnFrameRHISubmit () {};
 
     virtual ~MIInfraInterface() = default;
-
-    // Shortcuts for memory management
-    template<typename T, typename...Args>
-    inline T * New (Args...args) {
-        return new(Allocate(sizeof(T))) T(args...);
-    }
-
-    // Shortcuts for memory management
-    template<typename T>
-    inline void Delete (T * ptr) {
-        ptr->~T();
-        Free(ptr);
-    }
-
 };
 
 // Get the globally unique provided infrastructure instance for the renderer.

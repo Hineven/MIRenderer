@@ -7,6 +7,7 @@
 #ifndef MI_RHI_THREAD_H
 #define MI_RHI_THREAD_H
 
+#include <future>
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "core/thr.h"
