@@ -421,6 +421,10 @@ FORCEINLINE vk::BufferUsageFlags GetVulkanBufferUsage (RHIBufferUsageFlags usage
     if(usage & RHIBufferUsageFlagBits::kStaging) {
         vk_usage |= vk::BufferUsageFlagBits::eTransferSrc;
     }
+    if ((usage & RHIBufferUsageFlagBits::kStorage)
+    || (usage & RHIBufferUsageFlagBits::kTransferSrc)) {
+        vk_usage |= vk::BufferUsageFlagBits::eTransferSrc;
+    }
     vk_usage |= vk::BufferUsageFlagBits::eTransferDst;
     return vk_usage;
 }

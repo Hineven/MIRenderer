@@ -41,7 +41,7 @@ public:
     virtual const char * GetName() const = 0;
 
     // Create a buffer, thread safe
-    virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlagBits type) = 0;
+    virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlags type) = 0;
 
     // Create a texture, thread safe
     virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;

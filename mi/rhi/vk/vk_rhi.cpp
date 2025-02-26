@@ -358,7 +358,7 @@ VulkanRHI::~VulkanRHI() {
     instance_.destroy();
 }
 
-RHIBufferRef VulkanRHI::CreateBuffer(size_t size, RHIBufferUsageFlagBits type) {
+RHIBufferRef VulkanRHI::CreateBuffer(size_t size, RHIBufferUsageFlags type) {
     auto buffer = new VulkanBuffer(size, type);
     return {buffer};
 }

@@ -291,10 +291,11 @@ namespace ShaderReflection {
 }
 
 struct RHIDrawDesc {
-    // Render rect offset
+    // Render rect offset, (render pass pass / viewport) 2 in 1,
     int rect_x {}, rect_y {};
-    // Render rect size
+    // Render rect size, (render pass area / viewport) 2 in 1,
     uint32_t rect_width {}, rect_height {};
+    // TODO add scissor
     // Framebuffer attachment count
     uint32_t num_framebuffer_attachments_ {};
     // Framebuffer attachment clear values

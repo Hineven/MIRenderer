@@ -101,6 +101,9 @@ enum class RHIBufferUsageFlagBits : uint32_t {
     kReadback = 1u<<5,
     // Used for uploading data to the GPU
     kStaging = 1u<<6,
+    // This buffer can be a source of copy command
+    // (Default enabled with kStorage, and disabled for the rest)
+    kTransferSrc = 1u<<7,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIBufferUsage)

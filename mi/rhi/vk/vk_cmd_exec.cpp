@@ -179,20 +179,7 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, RHIComma
                                           ]->GetFormat()),
                 "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
     }
-    vk::Rect2D render_area = {
-            {state.draw_state_.rect_x, state.draw_state_.rect_y},
-            {state.draw_state_.rect_width, state.draw_state_.rect_height}
-    };
-    if(render_area.extent.width == 0 && render_area.extent.height == 0
-       && render_area.offset.x == 0 && render_area.offset.y == 0) {
-        // Default to the size of the bound framebuffer if not set
-        if(state.draw_state_.attachments[0]) {
-            render_area.extent.width = state.draw_state_.attachments[0]->GetWidth();
-            render_area.extent.height = state.draw_state_.attachments[0]->GetHeight();
-        } else {
-            MI_LOG(MIInfraLogType::kWarning, "Render area not set and no framebuffer bound");
-        }
-    }
+    vk::Rect2D render_area = state.GetRenderRect();
     vk::RenderingAttachmentInfo attachments_info[C::kRHIMaxNumFramebufferAttachments];
     for(int i = 0; i < (int)state.draw_state_.num_framebuffer_attachments_; i++) {
         auto tex = (VulkanTexture*)state.draw_state_.attachments[i];
@@ -245,7 +232,7 @@ void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
                 ]->GetFormat()),
                   "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
     }
-
+    state.InstallDrawState(state.cmd);
     FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
     state.cmd.draw(draw_primitive->vertex_count_, draw_primitive->instance_count_, draw_primitive->first_vertex_, draw_primitive->first_instance_);
 }
@@ -377,6 +364,42 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHICommandFram
     }
 }
 
+// Helpers
+
+vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetRenderRect() {
+    assert(IsRHIThread());
+    vk::Rect2D rect = {
+        {draw_state_.rect_x, draw_state_.rect_y},
+        {draw_state_.rect_width, draw_state_.rect_height}
+    };
+    if(rect.extent.width == 0 && rect.extent.height == 0
+       && rect.offset.x == 0 && rect.offset.y == 0) {
+        // Default to the size of the bound framebuffer if not set
+        if(draw_state_.attachments[0]) {
+            rect.extent.width = draw_state_.attachments[0]->GetWidth();
+            rect.extent.height = draw_state_.attachments[0]->GetHeight();
+        } else {
+            MI_LOG(MIInfraLogType::kWarning, "Render area not set and no framebuffer bound");
+        }
+    }
+    return rect;
+}
+
+
+void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffer cmdb) {
+    auto rect = GetRenderRect();
+    vk::Viewport viewport = {
+        (float)rect.offset.x,
+        (float)rect.offset.y,
+        (float)rect.extent.width,
+        (float)rect.extent.height,
+        0.0f,
+        1.0f
+    };
+    cmdb.setViewport(0, 1, &viewport);
+    cmdb.setScissor(0, 1, &rect);
+}
+
 void VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
     assert(IsRHIThread());
     // Simply append all bindings
@@ -395,11 +418,12 @@ void VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge
 
 // TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
-VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescriptorWrites(
+VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
     RHICommandQueueBase * cmd, [[maybe_unused]] vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
     [[maybe_unused]] vk::CommandBuffer cmdb, [[maybe_unused]] vk::PipelineStageFlags use_stages
 ) {
     assert(IsRHIThread());
+
     // Sort and merge all recorded bindings
     auto SortUnique = [&](auto & arr) {
         std::stable_sort(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
@@ -411,19 +435,19 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
         });
         arr.erase(tail, arr.end());
     };
-    SortUnique(uniforms);
-    SortUnique(storages);
-    SortUnique(uavs);
-    SortUnique(srvs);
-    SortUnique(samplers);
-    SortUnique(acceleration_structures);
+    SortUnique(parameter_table.uniforms);
+    SortUnique(parameter_table.storages);
+    SortUnique(parameter_table.uavs);
+    SortUnique(parameter_table.srvs);
+    SortUnique(parameter_table.samplers);
+    SortUnique(parameter_table.acceleration_structures);
 
     // Count all writes that needed to allocate a WriteDescriptorSet array
     uint32_t write_count = (uint32_t)
-            (uniforms.size() + storages.size() + uavs.size() + srvs.size() + samplers.size() + acceleration_structures.size());
+            (parameter_table.uniforms.size() + parameter_table.storages.size() + parameter_table.uavs.size() + parameter_table.srvs.size() + parameter_table.samplers.size() + parameter_table.acceleration_structures.size());
     vk::WriteDescriptorSet * writes = cmd->Allocate<vk::WriteDescriptorSet[]>(write_count);
     int write_index = 0;
-    for(auto ubo : uniforms) {
+    for(auto ubo : parameter_table.uniforms) {
         auto& buffer_info = *cmd->Allocate<vk::DescriptorBufferInfo>();
         buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer(); // NOLINT its safe
         buffer_info.offset = ubo.buffer.offset;
@@ -439,7 +463,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
                 .setPBufferInfo(&buffer_info);
         writes[write_index++] = write;
     }
-    for(auto storage : storages) {
+    for(auto storage : parameter_table.storages) {
         auto& buffer_info = *cmd->Allocate<vk::DescriptorBufferInfo>();
         auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer); // NOLINT its safe
         buffer_info.buffer = buffer->GetBuffer(); // NOLINT its safe
@@ -455,7 +479,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
                 .setPBufferInfo(&buffer_info);
         writes[write_index++] = write;
     }
-    for(auto uav : uavs) {
+    for(auto uav : parameter_table.uavs) {
         auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(uav.texture);
         image_info.imageView = image->GetImageView(); // NOLINT its safe
@@ -470,7 +494,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
                 .setPImageInfo(&image_info);
         writes[write_index++] = write;
     }
-    for(auto srv : srvs) {
+    for(auto srv : parameter_table.srvs) {
         auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(srv.texture);
         image_info.imageView = image->GetImageView(); // NOLINT its safe
@@ -485,7 +509,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
                 .setPImageInfo(&image_info);
         writes[write_index++] = write;
     }
-    for(auto sampler : samplers) {
+    for(auto sampler : parameter_table.samplers) {
         auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
         image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
         auto write = vk::WriteDescriptorSet()
@@ -497,7 +521,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
                 .setPImageInfo(&image_info);
         writes[write_index++] = write;
     }
-    for(auto acc : acceleration_structures) {
+    for(auto acc : parameter_table.acceleration_structures) {
         auto& write_khr = *cmd->Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
         auto  p_ac = cmd->Allocate<vk::AccelerationStructureKHR>();
         auto write = vk::WriteDescriptorSet()
@@ -514,27 +538,27 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::FlushDescr
         writes[write_index++] = write;
     }
     // Clear all bindings
-    uniforms.clear();
-    storages.clear();
-    uavs.clear();
-    srvs.clear();
-    samplers.clear();
-    acceleration_structures.clear();
+    parameter_table.uniforms.clear();
+    parameter_table.storages.clear();
+    parameter_table.uavs.clear();
+    parameter_table.srvs.clear();
+    parameter_table.samplers.clear();
+    parameter_table.acceleration_structures.clear();
 
     // Generate btb table data for bindless resources
-    SortUnique(bindless_resources);
+    SortUnique(parameter_table.bindless_resources);
 //    auto vk_rhi = GetVulkanRHI();
 //    auto vk_bindless_mgr = vk_rhi->GetVulkanBindlessManager();
 
     // The user should manage bindless texture layouts manually.
-    for(auto & bindless : bindless_resources) {
+    for(auto & bindless : parameter_table.bindless_resources) {
         int bindless_binding = bindless.binding;
         int bindless_slot    = bindless.bindless_slot;
         btb_data[bindless_binding] = bindless_slot;
     }
 
     // Clear bindless resources
-    bindless_resources.clear();
+    parameter_table.bindless_resources.clear();
 
     return std::span<vk::WriteDescriptorSet>(writes, write_count);
 }
@@ -554,7 +578,7 @@ void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
             btb_size
     };
     point.bindless_table_top += btb_size;
-    auto descriptor_writes = point.parameter_table.FlushDescriptorWrites(
+    auto descriptor_writes = point.InstallShaderDescriptors(
             cmd, GetVulkanRHI()->GetDevice(), point.bound_private_set, btb_data,
             state.cmd, use_stages
     );

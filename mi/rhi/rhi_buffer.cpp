@@ -10,6 +10,7 @@
 MI_NAMESPACE_BEGIN
 
 void RHIBuffer::ConvertToBindless (bool readonly) {
+
     auto desc = RHIBindlessResourceDesc {
         .type = readonly ? RHIBindlessResourceType::kUniformBuffer : RHIBindlessResourceType::kStorageBuffer,
         .num_slots = 1,

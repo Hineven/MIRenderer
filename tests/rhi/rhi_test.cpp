@@ -125,10 +125,7 @@ static auto v_shader_code = "// Vertex Shader\n"
                      "VSOutput Main(VSInput input, in uint vid : SV_VertexID) {\n"
                      "    VSOutput output;\n"
                      "    output.position = float4(input.position, 1.0);"
-                     "    if(vid == 0) output.position = float4(0.f, -0.5f, 0.1f, 1.f);\n"
-                     "    if(vid == 1) output.position = float4(0.5f, 0.5f, 0.1f, 1.f);\n"
-                     "    if(vid == 2) output.position = float4(-0.5f, 0.5f, 0.1f, 1.f);\n"
-                     "    someBuffer[vid] = 1;\n"
+                     "    someBuffer[vid] = vid + 123;\n"
                      "    output.color = float3(input.color, 1);\n"
                      "    return output;\n"
                      "}";
@@ -138,12 +135,12 @@ static auto f_shader_code = "// Fragment Shader\n"
                      "};\n"
                      "struct PSOutput {"
                      "    float4 color0 : SV_Target0;\n"
-                     "    int4   color1 : SV_Target1;\n"
+                     "    uint4  color1 : SV_Target1;\n"
                      "};\n"
                      "PSOutput Main(PSInput input) {\n"
                      "    PSOutput output;\n"
                      "    output.color0 = float4(input.color, 1.0);\n"
-                     "    output.color1 = int4(input.color * 2, 0.5);\n"
+                     "    output.color1 = uint4(input.color * 200, 1);\n"
                      "    return output;\n"
                      "}";
 
@@ -346,7 +343,7 @@ TEST(RHITest, RHITriangle) {
 
             auto vtx_buf = RHI::Get().CreateBuffer(
                     3 * sizeof(float) * 5,
-                    RHIBufferUsageFlagBits::kVertex
+                    RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kTransferSrc
             );
             auto staging_buf = RHI::Get().CreateBuffer(
                     1024 * 1024 * 32,
@@ -367,7 +364,7 @@ TEST(RHITest, RHITriangle) {
             queue.BindVertexBuffer(0, vtx_buf->GetSpan());
             auto params = queue.Allocate<RHIBindPipelineParametersDesc>();
             auto storages = queue.Allocate<RHIPipelineParameterBufferDesc[]>(1);
-            storages[0].buffer  = {buf.Raw(), 0, 3 * 4};
+            storages[0].buffer  = buf->GetSpan();
             storages[0].binding = 0; // must be on 0
             params->storages = {storages, 1};
             queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
@@ -384,9 +381,44 @@ TEST(RHITest, RHITriangle) {
                     RHIGPUAccessFlagBits::kRead
             );
             queue.CopyTextureToBuffer(texture0.Raw(), staging_buf->GetSpan());
+            queue.BufferBarrier(
+                buf->GetSpan(), RHIPipelineStageFlagBits::kAll,
+                RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kRW,
+                RHIGPUAccessFlagBits::kRead
+            );
+            queue.CopyBuffer(vtx_buf->GetSpan(), staging_buf->GetSpan());
             auto sync = RHI::Get().CreateSyncPoint();
             queue.EnqueueTranslateAndSubmit(sync.Raw());
             sync->Wait();
+
+            // Validate that the vertex buffer is correctly transfered
+            {
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 5; j++) {
+                        EXPECT_EQ(vbuf_host[i * 5 + j], ((float*)staging_buf->Map())[i * 5  + j]);
+                    }
+                }
+            }
+
+            sync->Reset();
+            queue.CopyBuffer(buf->GetSpan(0, 4 * 3), staging_buf->GetSpan(0, 4 * 3));
+            queue.BufferBarrier(
+                    staging_buf->GetSpan(),
+                    RHIPipelineStageFlagBits::kTransfer,
+                    RHIPipelineStageFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kWrite,
+                    RHIGPUAccessFlagBits::kRead
+            );
+            queue.EnqueueTranslateAndSubmit(sync.Raw());
+            sync->Wait();
+
+            // Validate that we have received a correct storage buffer
+            for (int i = 0; i < 3; ++i) {
+                EXPECT_EQ((uint32_t)(i + 123), ((uint32_t*)staging_buf->Map())[i]);
+            }
+
+
             RHI::Get().AdvanceFrame();
             // Convert to bitmap
             auto fp16tex = (uint16_t *) staging_buf->Map();
