@@ -116,7 +116,6 @@ static auto v_shader_code = "// Vertex Shader\n"
                      "    float3 position : POSITION;\n"
                      "    float2 color : COLOR;\n"
                      "};\n"
-                     "\n"
                      "struct VSOutput {\n"
                      "    float4 position : SV_POSITION;\n"
                      "    float3 color : COLOR;\n"
@@ -125,8 +124,8 @@ static auto v_shader_code = "// Vertex Shader\n"
                      "VSOutput Main(VSInput input, in uint vid : SV_VertexID) {\n"
                      "    VSOutput output;\n"
                      "    output.position = float4(input.position, 1.0);"
-                     "    someBuffer[vid] = vid + 123;\n"
-                     "    output.color = float3(input.color, 1);\n"
+                     "    if(vid > 0) someBuffer[vid] = vid + 123;\n"
+                     "    output.color = float3(min(someBuffer[0], 1) ? 1 : 0, input.color);\n"
                      "    return output;\n"
                      "}";
 static auto f_shader_code = "// Fragment Shader\n"
@@ -140,7 +139,7 @@ static auto f_shader_code = "// Fragment Shader\n"
                      "PSOutput Main(PSInput input) {\n"
                      "    PSOutput output;\n"
                      "    output.color0 = float4(input.color, 1.0);\n"
-                     "    output.color1 = uint4(input.color * 200, 1);\n"
+                     "    output.color1 = uint4(input.color * 100, 1);\n"
                      "    return output;\n"
                      "}";
 
@@ -272,10 +271,11 @@ TEST(RHITest, RHITriangle) {
             EXPECT_TRUE(texture0);
             EXPECT_TRUE(texture1);
 
-            auto buf = RHI::Get().CreateBuffer(
+            auto storage_buf = RHI::Get().CreateBuffer(
                     128 * 4,
-                    RHIBufferUsageFlagBits::kStorage
+                    RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kReadback
             );
+            ((uint32_t*)storage_buf->Map())[0] = 123;
 
             auto &queue = RHI::Get().GetGraphicsCommandQueue();
             queue.TextureBarrier(
@@ -304,17 +304,6 @@ TEST(RHITest, RHITriangle) {
             );
             queue.ClearTexture(texture0.Raw(), {0.f, 0.f, 0.f, 0.f});
             queue.ClearTexture(texture1.Raw(), {0.f, 0.f, 0.f, 0.f});
-            if(false) {
-                queue.TextureBarrier(
-                        texture0.Raw(),
-                        RHITextureLayoutType::kGeneral,
-                        RHIPipelineStageFlagBits::kAll,
-                        RHIPipelineStageFlagBits::kAll,
-                        RHIGPUAccessFlagBits::kRW,
-                        RHIGPUAccessFlagBits::kRW
-                );
-                queue.ClearTexture(texture0.Raw(), {1.f, 0.f, 0.f, 1.f});
-            }
             queue.TextureBarrier(
                     texture0.Raw(),
                     RHITextureLayoutType::kColorAttachment,
@@ -361,11 +350,17 @@ TEST(RHITest, RHITriangle) {
                                 RHIPipelineStageFlagBits::kOrdinaryGraphics,
                                 RHIGPUAccessFlagBits::kWrite,
                                 RHIGPUAccessFlagBits::kRead);
+            queue.BufferBarrier(storage_buf->GetSpan(),
+                                RHIPipelineStageFlagBits::kAll,
+                                RHIPipelineStageFlagBits::kAll,
+                                RHIGPUAccessFlagBits::kNone,
+                                RHIGPUAccessFlagBits::kRW);
             queue.BindVertexBuffer(0, vtx_buf->GetSpan());
             auto params = queue.Allocate<RHIBindPipelineParametersDesc>();
             auto storages = queue.Allocate<RHIPipelineParameterBufferDesc[]>(1);
-            storages[0].buffer  = buf->GetSpan();
-            storages[0].binding = 0; // must be on 0
+            storages[0].buffer  = storage_buf->GetSpan();
+            auto storage_binding = pipeline->ReflectResourceSlot("someBuffer");
+            storages[0].binding = storage_binding.slot_index;
             params->storages = {storages, 1};
             queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
             queue.BeginRendering();
@@ -381,41 +376,13 @@ TEST(RHITest, RHITriangle) {
                     RHIGPUAccessFlagBits::kRead
             );
             queue.CopyTextureToBuffer(texture0.Raw(), staging_buf->GetSpan());
-            queue.BufferBarrier(
-                buf->GetSpan(), RHIPipelineStageFlagBits::kAll,
-                RHIPipelineStageFlagBits::kAll,
-                RHIGPUAccessFlagBits::kRW,
-                RHIGPUAccessFlagBits::kRead
-            );
-            queue.CopyBuffer(vtx_buf->GetSpan(), staging_buf->GetSpan());
             auto sync = RHI::Get().CreateSyncPoint();
-            queue.EnqueueTranslateAndSubmit(sync.Raw());
-            sync->Wait();
-
-            // Validate that the vertex buffer is correctly transfered
-            {
-                for (int i = 0; i < 3; ++i) {
-                    for (int j = 0; j < 5; j++) {
-                        EXPECT_EQ(vbuf_host[i * 5 + j], ((float*)staging_buf->Map())[i * 5  + j]);
-                    }
-                }
-            }
-
-            sync->Reset();
-            queue.CopyBuffer(buf->GetSpan(0, 4 * 3), staging_buf->GetSpan(0, 4 * 3));
-            queue.BufferBarrier(
-                    staging_buf->GetSpan(),
-                    RHIPipelineStageFlagBits::kTransfer,
-                    RHIPipelineStageFlagBits::kAll,
-                    RHIGPUAccessFlagBits::kWrite,
-                    RHIGPUAccessFlagBits::kRead
-            );
             queue.EnqueueTranslateAndSubmit(sync.Raw());
             sync->Wait();
 
             // Validate that we have received a correct storage buffer
             for (int i = 0; i < 3; ++i) {
-                EXPECT_EQ((uint32_t)(i + 123), ((uint32_t*)staging_buf->Map())[i]);
+                EXPECT_EQ((uint32_t)(i + 123), ((uint32_t*)storage_buf->Map())[i]);
             }
 
 

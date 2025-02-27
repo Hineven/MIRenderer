@@ -56,7 +56,7 @@ protected:
     vk::DescriptorSetLayout vk_private_descriptor_set_layout_;
     vk::RenderPass vk_render_pass_;
 
-    // The remapping info for the "bindfull" resources
+    // The remapping info for the "bindfull" resources (map index of its kind of descriptor to the set and binding)
     VulkanPipelineBindingRemappings remappings_;
     // Bindless resources are directly mapped via their identity indices within the bindless table uniform buffer.
     // so no need to keep track of their mappings.

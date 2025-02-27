@@ -24,7 +24,7 @@ public:
     FORCEINLINE size_t GetBufferSize () const {return buffer_size_;}
     FORCEINLINE RHIBufferUsageFlags GetBufferUsage () const {return usage_;}
 
-    // Only buffers that are created with the RHIBufferType::kStaging type can be mapped
+    // Only buffers that are created with the RHIBufferType::kStaging / kReadback type can be mapped
     virtual void * Map () = 0;
     // Unmap the buffer
     virtual void Unmap () = 0;

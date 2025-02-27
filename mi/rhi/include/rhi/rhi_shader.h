@@ -32,6 +32,9 @@ public:
     FORCEINLINE RHIShaderFrequencyFlagBits GetFrequency() const { return frequency_; }
     FORCEINLINE bool HasBindlessResources() const { return has_bindless_resources_; }
 
+    // Find a corresponding resource index among its kind in the shader. -1 if not found.
+    int ReflectResourceIndex (RHIPipelineResourceType type, uint32_t name_crc) const ;
+
     // The returned vector contains information about the bindless table,
     // which is different from pipelines that striped the bindless table from uniform descriptions.
     FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const { return uniform_buffers_with_bindless_table_; }
@@ -46,6 +49,10 @@ public:
     FORCEINLINE bool  HasCommandConstant() const { return !command_constant_.empty(); }
     FORCEINLINE const std::vector<ShaderVertexInputDesc> & GetVertexInputDesc() const { return vertex_inputs_; }
     FORCEINLINE const std::vector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const { return fragment_outputs_; }
+
+    FORCEINLINE std::vector<std::byte> DuplicateShaderIRByteCode () {
+        return std::vector<std::byte>(ir_, ir_ + ir_size_);
+    }
 
     // Return a default vertex input attribute description for the pipeline.
     // Assume all attributes are piled up in a single buffer (which is a common case).
@@ -69,7 +76,7 @@ protected:
     std::string entry_name_;
 
     std::byte * ir_;
-    uint32_t ir_size_;
+    uint32_t ir_size_; // Byte size of the bytecode
     RHIShaderIRType ir_type_;
 
     std::vector<UniformBufferDesc> uniform_buffers_with_bindless_table_;

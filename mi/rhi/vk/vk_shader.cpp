@@ -12,20 +12,11 @@ VulkanShader::~VulkanShader () {
 }
 
 bool VulkanShader::CompileRHI() {
-    auto device = GetVulkanRHI()->GetDevice();
-    vk_shader_module_ = device.createShaderModule(
-            vk::ShaderModuleCreateInfo()
-            .setPCode(reinterpret_cast<const uint32_t *>(ir_)).setCodeSize(ir_size_)
-    );
-    return (bool)vk_shader_module_;
+    // Nah
+    return true;
 }
-
 void VulkanShader::ResetRHI() {
-    auto device = GetVulkanRHI()->GetDevice();
-    if(vk_shader_module_) {
-        device.destroyShaderModule(vk_shader_module_);
-    }
-    vk_shader_module_ = nullptr;
+    // Nah
 }
 
 MI_NAMESPACE_END

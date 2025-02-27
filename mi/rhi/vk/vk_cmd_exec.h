@@ -37,6 +37,8 @@ public:
     void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
+    void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) override;
+    void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetScissor *set_scissor) override;
     void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandUpdateDrawState * update_draw_state) override ;
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
@@ -49,7 +51,7 @@ public:
 protected:
 
 
-    void FlushBindPointDescriptorWrites (RHICommandQueueBase *, RHIBindPointType, vk::PipelineStageFlags use_stages) ;
+    void FlushBindPointState (RHICommandQueueBase *, RHIBindPointType, vk::PipelineStageFlags use_stages) ;
 
     void Initialize_RHIThread () ;
     void Destroy_RHIThread () ;
@@ -66,7 +68,8 @@ protected:
 
         // Kept draw state.
         RHIDrawDesc draw_state_ {};
-        vk::Rect2D GetRenderRect ();
+        vk::Rect2D GetScissorRect ();
+        vk::Viewport GetViewport ();
         void InstallDrawState (vk::CommandBuffer cmdb);
 
         // Keep states of each bind point
@@ -81,7 +84,8 @@ protected:
 
             // Bound private descriptor set (allocated from the descriptor pool)
             vk::DescriptorSet bound_private_set {};
-            // Store a pointer to the currently bound pipeline
+            bool bound_pipeline_dirty {false};
+            // Store a pointer to the pipeline should be bound to when dispatching commands
             RHIPipeline * bound_pipeline {};
             template<typename T>
             inline T * As() {

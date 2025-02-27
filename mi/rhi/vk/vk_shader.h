@@ -15,16 +15,12 @@ class VulkanShader : public RHIShader {
 public:
     // Inherit the constructor
     using RHIShader::RHIShader;
-    FORCEINLINE vk::ShaderModule GetShaderModule() {
-        return vk_shader_module_;
-    }
     ~VulkanShader () override ;
 protected:
 
     bool CompileRHI () override ;
     void ResetRHI () override ;
 
-    vk::ShaderModule vk_shader_module_;
 };
 
 MI_NAMESPACE_END

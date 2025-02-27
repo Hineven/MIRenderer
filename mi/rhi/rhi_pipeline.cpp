@@ -9,11 +9,27 @@
 
 MI_NAMESPACE_BEGIN
 
+RHIPipelineResourceSlot RHIPipeline::ReflectResourceSlot(std::string_view name) const {
+    return ReflectResourceSlot(CRC32(name.data(), name.size()));
+}
+
+RHIPipelineResourceSlot RHIPipeline::ReflectResourceSlot(uint32_t name_crc) const {
+    return pipeline_resource_index_.at(name_crc);
+}
+
+bool RHIPipeline::HasResourceSlot(std::string_view name) const {
+    return HasResourceSlot(CRC32(name.data(), name.size()));
+}
+
+bool RHIPipeline::HasResourceSlot(uint32_t name_crc) const {
+    return pipeline_resource_index_.find(name_crc) != pipeline_resource_index_.end();
+}
+
 template<typename T1, typename T2, typename = void> struct CheckSize {
     CheckSize ([[maybe_unused]] T1 val, [[maybe_unused]] T2 op)  {}
     bool operator()() {return true;}
 };
-template<typename T1, typename T2> struct CheckSize<T1, T2, decltype(std::declval<T1>()->val)> {
+template<typename T1, typename T2> struct CheckSize<T1, T2, std::void_t<decltype(std::declval<T1>()->val)>> {
     T1 val;
     T2 op;
     CheckSize (T1 val, T2 op) : val(val), op(op) {}
@@ -25,6 +41,7 @@ template<typename T1, typename T2> struct CheckSize<T1, T2, decltype(std::declva
 bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
     // Omit empty shaders.
     if(!shader) return true;
+
     // Gather & align shader slots to pipeline slots
     auto GatherShaderSlots = [&]<RHIPipelineResourceType Type, typename T1, typename T2>(const std::vector<T1> & resource_descs, std::vector<T2> & pipeline_resource_descs) {
         for(int i = 0; i < resource_descs.size(); ++i) {
@@ -37,7 +54,7 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
             if(pipeline_slot == pipeline_resource_descs.size()) {
                 // Assign new slot
                 auto & desc = pipeline_resource_descs.emplace_back(resource_descs[i].ToPipelineDesc());
-                desc.frequency_bits = desc.frequency_bits | shader->GetFrequency();
+                desc.frequency_bits = shader->GetFrequency();
             } else {
                 // Check their sizes if possible
                 bool sizes_matched = CheckSize(&resource_descs[i], &pipeline_resource_descs[pipeline_slot])();
@@ -148,6 +165,25 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     if(!CheckAndRemapShaderResources(desc.stages.mesh_shader)) return;
     if(!CheckAndRemapShaderResources(desc.stages.task_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
+
+    auto RegisterPipelineResourcesIndex = [&] (RHIPipelineResourceType type, const auto & arr) {
+        for(int i = 0; i < arr.size(); ++i) {
+            pipeline_resource_index_[arr[i].name_crc] = {
+                type,
+                arr[i].frequency_bits,
+                i
+            };
+        }
+    };
+
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kUniformBuffer, uniform_buffers_);
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kStorageBuffer, storage_buffers_);
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kUAV, uavs_);
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kSRV, srvs_);
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kSampler, samplers_);
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kImmutableSampler, immutable_samplers_);
+    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kAccelerationStructure, acceleration_structures_);
+
     TryLocateAndStripBindlessTableUniformBuffer();
     depth_test_enable_ = desc.depth_stencil.depth_test_enable;
     vertex_inputs_    = desc.stages.vertex_shader->GetVertexInputDesc();
@@ -198,6 +234,7 @@ void RHIGraphicsPipeline::Reset() {
     depth_test_enable_ = false;
     vertex_inputs_.clear();
     fragment_outputs_.clear();
+    pipeline_resource_index_.clear();
     RHIPipeline::Reset();
 }
 

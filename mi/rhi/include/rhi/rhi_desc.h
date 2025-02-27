@@ -226,8 +226,8 @@ namespace PipelineReflection {
 namespace ShaderReflection {
     // Specify the offset of the decorations of a particular resource within the shader IR.
     struct IRBindingDecorationLocation {
-        uint32_t binding_offset;
-        uint32_t set_offset;
+        uint32_t binding_offset; // Word offset of the resource binding number
+        uint32_t set_offset;     // Word offset of the resource set number
     };
     struct UniformBufferDesc {
         IRBindingDecorationLocation locations;
@@ -291,11 +291,15 @@ namespace ShaderReflection {
 }
 
 struct RHIDrawDesc {
-    // Render rect offset, (render pass pass / viewport) 2 in 1,
-    int rect_x {}, rect_y {};
-    // Render rect size, (render pass area / viewport) 2 in 1,
-    uint32_t rect_width {}, rect_height {};
-    // TODO add scissor
+    struct {
+        float x {}, y {};
+        float width {}, height {};
+        float min_depth {}, max_depth {1.f};
+    } viewport;
+    struct {
+        int x {}, y {};
+        uint32_t width {}, height{};
+    } scissor;
     // Framebuffer attachment count
     uint32_t num_framebuffer_attachments_ {};
     // Framebuffer attachment clear values
@@ -323,16 +327,10 @@ struct RHIDrawDesc {
     FORCEINLINE void SetClearValue (uint32_t index, std::array<float, 4> in_clear_value) {
         clear_values[index] = in_clear_value;
     }
-    FORCEINLINE void SetRenderArea(int x, int y, uint32_t width, uint32_t height) {
-        rect_x = x;
-        rect_y = y;
-        rect_width = width;
-        rect_height = height;
-    }
     FORCEINLINE void Reset () {
         num_framebuffer_attachments_ = 0;
-        rect_x = rect_y = 0;
-        rect_width = rect_height = 0;
+        viewport = {};
+        scissor = {};
         for(auto & v : clear_values) {
             v=  {0, 0, 0, 1};
         }

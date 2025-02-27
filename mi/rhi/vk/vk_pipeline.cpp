@@ -4,6 +4,10 @@
  * See LICENSE for licensing.
  */
 #include "vk_pipeline.h"
+
+#include <iostream>
+#include <spirv-tools/optimizer.hpp>
+
 #include "vk_shader.h"
 #include "rhi/rhi_texture.h"
 
@@ -15,10 +19,84 @@
 
 MI_NAMESPACE_BEGIN
 
+struct VkShaderModuleKeeper {
+    vk::ShaderModule module {};
+    FORCEINLINE VkShaderModuleKeeper(vk::ShaderModule module) : module(module) {}
+    VkShaderModuleKeeper(const VkShaderModuleKeeper &) = delete;
+    FORCEINLINE VkShaderModuleKeeper(VkShaderModuleKeeper && t): module(t.module) {
+        t.module = nullptr;
+    }
+    FORCEINLINE ~VkShaderModuleKeeper() {
+        if (module) {
+            auto device = GetVulkanRHI()->GetDevice();
+            device.destroy(module);
+        }
+    }
+};
+
+static void RelocateShaderResourceBindings (
+    RHIPipeline * pipeline, vk::Device device, RHIShader * shader, VulkanPipelineBindingRemappings & remappings,
+    std::vector<vk::PipelineShaderStageCreateInfo> & shader_stages, std::vector<VkShaderModuleKeeper> & shader_module_keepers
+) {
+    if(!shader) return ;
+    // Duplicate bytecode for compilation
+    auto ir = shader->DuplicateShaderIRByteCode();
+    auto RelocateResourcesInIR = [&] (RHIPipelineResourceType type, const auto & shader_resources) {
+        // Relocate binding numbers in the shader IR
+        for (int i = 0; i < (int)shader_resources.size(); i++) {
+            auto shader_resource_desc = shader_resources[i];
+            // Shader resources should always be present in the pipeline resources
+            auto pipeline_res_slot = pipeline->ReflectResourceSlot(shader_resources[i].name_crc);
+            auto remap = remappings.GetDestination(
+                type, pipeline_res_slot.slot_index
+            );
+            printf("[%d][%s]original binding: %u\n",
+                (int)shader_stages.size(),
+                shader_resource_desc.name.c_str(), ((uint32_t*)ir.data())[shader_resource_desc.locations.binding_offset]);
+            std::flush(std::cout);
+            // Modify the bytecode to actually use the remapped binding in the shader
+            ((uint32_t*)ir.data())[shader_resource_desc.locations.binding_offset] = remap.binding;
+            ((uint32_t*)ir.data())[shader_resource_desc.locations.set_offset] = remap.set;
+        }
+    };
+    RelocateResourcesInIR(RHIPipelineResourceType::kUniformBuffer, shader->GetUniformBufferDesc());
+    RelocateResourcesInIR(RHIPipelineResourceType::kStorageBuffer, shader->GetStorageBufferDesc());
+    RelocateResourcesInIR(RHIPipelineResourceType::kUAV, shader->GetUAVDesc());
+    RelocateResourcesInIR(RHIPipelineResourceType::kSRV, shader->GetSRVDesc());
+    RelocateResourcesInIR(RHIPipelineResourceType::kSampler, shader->GetSamplerDesc());
+    RelocateResourcesInIR(RHIPipelineResourceType::kImmutableSampler, shader->GetImmutableSamplerDesc());
+    RelocateResourcesInIR(RHIPipelineResourceType::kAccelerationStructure, shader->GetAccelerationStructureDesc());
+
+    std::vector<uint32_t> optimized_ir;
+    {
+        // Strip the extensions declared to support shader reflection produced by dxc if present
+        // This is a workaround for the issue that the reflection extensions is not supported
+        // by NVIDIA drivers. Anyway they are just annotations and won't affect real shader behavior.
+        spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
+        auto pass_token = spvtools::CreateStripNonSemanticInfoPass();
+        optimizer.RegisterPass(std::move(pass_token));
+        if(!optimizer.Run((uint32_t*)ir.data(), ir.size() / 4, &optimized_ir)) {
+            MI_LOG(MIInfraLogType::kWarning, "Failed to strip reflection info from SPIRV IR.");
+            return ;
+        }
+    }
+    // Another way is to simply mute pCode-08742.
+
+    auto create_info = vk::ShaderModuleCreateInfo()
+            .setCodeSize(optimized_ir.size() * sizeof(uint32_t))
+            .setPCode(optimized_ir.data());
+    auto vk_shader = device.createShaderModule(create_info);
+    shader_stages.push_back(vk::PipelineShaderStageCreateInfo()
+                                    .setStage(GetVulkanShaderStage(shader->GetFrequency()))
+                                    .setModule(vk_shader)
+                                    .setPName(shader->GetEntryName().c_str()));
+    shader_module_keepers.emplace_back(vk_shader);
+};
+
 bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info) {
     auto device = GetVulkanRHI()->GetDevice();
 
-    // Gather pipeline layout
+    // Gather pipeline layout, align descriptor bindings
     {
         std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
         // If the pipeline contains bindless resources, take set 0 as bindless set.
@@ -37,19 +115,17 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
             auto AddBindings = [&](const auto &desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
                 if (!desc.empty()) {
+                    int i = 0;
                     for (auto &res: desc) {
                         bindfull_bindings.emplace_back()
                                 .setBinding(current_binding_index)
                                 .setDescriptorType(type)
                                 .setDescriptorCount(1)
                                 .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
-                        current_binding_index++;
+                        remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index);
+                        i ++, current_binding_index ++;
                     }
                 }
-                for (int i = 0; i < (int) desc.size(); ++i) {
-                    remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
-                }
-                current_binding_index += (int)desc.size();
             };
             AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
             AddBindings(storage_buffers_, vk::DescriptorType::eStorageBuffer, RHIPipelineResourceType::kStorageBuffer);
@@ -96,21 +172,16 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     vk::GraphicsPipelineCreateInfo pipeline_info_vk {};
 
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    std::vector<VkShaderModuleKeeper> shader_module_keepers;
     // Shader stages
     {
-        auto PushShaderStage = [&] (RHIShader * shader) {
-            if(!shader) return ;
-            auto vk_shader = static_cast<VulkanShader *>(shader);
-            shader_stages.push_back(vk::PipelineShaderStageCreateInfo()
-                                            .setStage(GetVulkanShaderStage(shader->GetFrequency()))
-                                            .setModule(vk_shader->GetShaderModule())
-                                            .setPName(shader->GetEntryName().c_str()));
-        };
-        PushShaderStage(pipeline_info.stages.vertex_shader);
-        PushShaderStage(pipeline_info.stages.fragment_shader);
-        PushShaderStage(pipeline_info.stages.geometry_shader);
-        PushShaderStage(pipeline_info.stages.task_shader);
-        PushShaderStage(pipeline_info.stages.mesh_shader);
+        RelocateShaderResourceBindings(this, device, pipeline_info.stages.vertex_shader, remappings_, shader_stages, shader_module_keepers);
+        // RelocateShaderResourceBindings(this, device, pipeline_info.stages.tess_control_shader, remappings_, shader_stages, shader_module_keepers);
+        // RelocateShaderResourceBindings(this, device, pipeline_info.stages.tess_evaluation_shader, remappings_, shader_stages, shader_module_keepers);
+        RelocateShaderResourceBindings(this, device, pipeline_info.stages.geometry_shader, remappings_, shader_stages, shader_module_keepers);
+        RelocateShaderResourceBindings(this, device, pipeline_info.stages.fragment_shader, remappings_, shader_stages, shader_module_keepers);
+        RelocateShaderResourceBindings(this, device, pipeline_info.stages.task_shader, remappings_, shader_stages, shader_module_keepers);
+        RelocateShaderResourceBindings(this, device, pipeline_info.stages.mesh_shader, remappings_, shader_stages, shader_module_keepers);
         pipeline_info_vk.setStages(shader_stages);
     }
 
@@ -227,7 +298,9 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     vk::PipelineDynamicStateCreateInfo dynamic_state_vk {};
     std::vector<vk::DynamicState> dynamic_states {
             vk::DynamicState::eViewportWithCount,
+            // vk::DynamicState::eViewport,
             vk::DynamicState::eScissorWithCount,
+            // vk::DynamicState::eScissor,
             vk::DynamicState::eDepthClampEnableEXT,
 //            vk::DynamicState::eRasterizerDiscardEnable,
             vk::DynamicState::ePolygonModeEXT,
@@ -307,10 +380,11 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
 bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     auto device = GetVulkanRHI()->GetDevice();
     auto compute_shader = static_cast<VulkanShader *>(shader);
-    auto compute_stage = vk::PipelineShaderStageCreateInfo()
-            .setStage(vk::ShaderStageFlagBits::eCompute)
-            .setModule(compute_shader->GetShaderModule())
-            .setPName("Main");
+    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    std::vector<VkShaderModuleKeeper> shader_module_keepers;
+    {
+        RelocateShaderResourceBindings(this, device, compute_shader, remappings_, shader_stages, shader_module_keepers);
+    }
 
     // Gather pipeline layout
     std::vector<BindingRemappingInfo> remapping_infos;
@@ -382,7 +456,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
             GetVulkanRHI()->GetPipelineCache(),
             vk::ComputePipelineCreateInfo()
                     .setLayout(vk_pipeline_layout_)
-                    .setStage(compute_stage)
+                    .setStage(shader_stages[0])
     );
 
     if(result.result != vk::Result::eSuccess) {

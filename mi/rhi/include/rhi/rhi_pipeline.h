@@ -7,6 +7,9 @@
 #ifndef MIRENDERER_RHI_PIPELINE_H
 #define MIRENDERER_RHI_PIPELINE_H
 
+#include <map>
+#include <unordered_map>
+
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_resource.h"
@@ -19,9 +22,9 @@ struct RHIPipelineResourceSlot {
     // The type of the resource
     RHIPipelineResourceType resource_type;
     // In which stages the resource is used
-    RHIShaderFrequencyFlagBits available_stages;
+    RHIShaderFrequencyFlags available_stages;
     // The index of the resource within the list of the same typed ones
-    int resource_index;
+    int slot_index;
 };
 
 class RHIPipeline : public RHIResource {
@@ -31,7 +34,11 @@ public:
     }
 
     // Get the resource slot by the name of the resource reflected from shaders
-    RHIPipelineResourceSlot ReflectResourceSlot (const std::string & name) const;
+    RHIPipelineResourceSlot ReflectResourceSlot (std::string_view name) const;
+    RHIPipelineResourceSlot ReflectResourceSlot (uint32_t name_crc) const;
+
+    bool HasResourceSlot (std::string_view name) const;
+    bool HasResourceSlot (uint32_t name_crc) const;
 
     FORCEINLINE bool HasBindlessResources() const {return has_bindless_resources_;}
 
@@ -67,6 +74,8 @@ protected:
 
     // Aggregated by the pipeline
     USE_PIPELINE_REFLECTION_STRUCTS
+
+    std::unordered_map<uint32_t, RHIPipelineResourceSlot> pipeline_resource_index_;
 
     std::vector<UniformBufferDesc> uniform_buffers_;
     std::vector<StorageBufferDesc> storage_buffers_;
@@ -143,6 +152,7 @@ protected:
     virtual ~RHIComputePipeline() = default;
     virtual bool CompileRHI (RHIShader * compute_shader) = 0;
 };
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_RHI_PIPELINE_H

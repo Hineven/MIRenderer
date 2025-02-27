@@ -179,7 +179,7 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, RHIComma
                                           ]->GetFormat()),
                 "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
     }
-    vk::Rect2D render_area = state.GetRenderRect();
+    vk::Rect2D render_area = state.GetScissorRect();
     vk::RenderingAttachmentInfo attachments_info[C::kRHIMaxNumFramebufferAttachments];
     for(int i = 0; i < (int)state.draw_state_.num_framebuffer_attachments_; i++) {
         auto tex = (VulkanTexture*)state.draw_state_.attachments[i];
@@ -233,7 +233,7 @@ void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
                   "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
     }
     state.InstallDrawState(state.cmd);
-    FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
+    FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
     state.cmd.draw(draw_primitive->vertex_count_, draw_primitive->instance_count_, draw_primitive->first_vertex_, draw_primitive->first_instance_);
 }
 
@@ -243,7 +243,7 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
 //    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
-    FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
+    FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
 //    for(auto & vb : state.bound_vertex_buffers) {
 //        if(!vb.IsValid()) continue;
@@ -264,7 +264,7 @@ void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDisp
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 //    auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
-    FlushBindPointDescriptorWrites(cmd, RHIBindPointType::kCompute, vk::PipelineStageFlagBits::eComputeShader);
+    FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::PipelineStageFlagBits::eComputeShader);
     state.cmd.dispatch(dispatch->group_count_x_, dispatch->group_count_y_, dispatch->group_count_z_);
 }
 
@@ -275,25 +275,25 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
     auto pipeline = static_cast<VulkanGraphicsPipeline*>(bind_graphics_pipeline->pipeline_); // NOLINT its safe
     auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
     if(point.bound_pipeline != pipeline) {
+        point.bound_pipeline_dirty = true;
         point.bound_private_set = nullptr;
-        auto set_layout = pipeline->GetPrivateDescriptorSetLayout();
-        if(set_layout) {
-            auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
-                    vk::DescriptorSetAllocateInfo()
-                            .setDescriptorPool(state.descriptor_pool)
-                            .setDescriptorSetCount(1)
-                            .setSetLayouts(set_layout)
-            );
-            mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
-            point.bound_private_set = descriptor_set[0];
-        }
-        state.cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->GetPipeline());
-        if(point.bound_private_set) {
-            state.cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline->GetPipelineLayout(), 0,
-                                         {point.bound_private_set}, {});
-        }
         point.bound_pipeline = pipeline;
     }
+}
+
+void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetScissor *set_scissor) {
+    assert(IsRHIThread());
+    state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.scissor = {
+        set_scissor->x_, set_scissor->y_, set_scissor->width_, set_scissor->height_
+    };
+}
+
+void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) {
+    assert(IsRHIThread());
+    state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.viewport = {
+        set_viewport->x_, set_viewport->y_, set_viewport->width_, set_viewport->height_,
+        set_viewport->min_depth_, set_viewport->max_depth_
+    };
 }
 
 void
@@ -310,6 +310,7 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     auto pipeline = static_cast<VulkanComputePipeline*>(bind_compute_pipeline->pipeline_); // NOLINT its safe
     auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
     if(point.bound_pipeline != pipeline) {
+        point.bound_pipeline_dirty = true;
         point.bound_private_set = nullptr;
         auto set_layout = pipeline->GetPrivateDescriptorSetLayout();
         if(set_layout) {
@@ -321,11 +322,6 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
             );
             mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
             point.bound_private_set = descriptor_set[0];
-        }
-        state.cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->GetPipeline());
-        if(point.bound_private_set) {
-            state.cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline->GetPipelineLayout(), 0,
-                                         {point.bound_private_set}, {});
         }
         state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
     }
@@ -366,11 +362,11 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHICommandFram
 
 // Helpers
 
-vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetRenderRect() {
+vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetScissorRect() {
     assert(IsRHIThread());
     vk::Rect2D rect = {
-        {draw_state_.rect_x, draw_state_.rect_y},
-        {draw_state_.rect_width, draw_state_.rect_height}
+        {draw_state_.scissor.x, draw_state_.scissor.y},
+        {draw_state_.scissor.width, draw_state_.scissor.height}
     };
     if(rect.extent.width == 0 && rect.extent.height == 0
        && rect.offset.x == 0 && rect.offset.y == 0) {
@@ -379,23 +375,41 @@ vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetRenderRect() {
             rect.extent.width = draw_state_.attachments[0]->GetWidth();
             rect.extent.height = draw_state_.attachments[0]->GetHeight();
         } else {
-            MI_LOG(MIInfraLogType::kWarning, "Render area not set and no framebuffer bound");
+            MI_LOG(MIInfraLogType::kWarning, "Scissor not set and no framebuffer bound");
         }
     }
     return rect;
 }
 
+vk::Viewport VulkanCommandExecutor::CommandQueueState::GetViewport() {
+    assert(IsRHIThread());
+    vk::Viewport viewport = {
+        draw_state_.viewport.x, draw_state_.viewport.y,
+        draw_state_.viewport.width, draw_state_.viewport.height,
+        draw_state_.viewport.min_depth, draw_state_.viewport.max_depth
+    };
+    if(viewport.width == 0 && viewport.height == 0
+       && viewport.x == 0 && viewport.y == 0) {
+        // Default to the size of the bound framebuffer if not set
+        if(draw_state_.attachments[0]) {
+            viewport.width = (float)draw_state_.attachments[0]->GetWidth();
+            viewport.height = (float)draw_state_.attachments[0]->GetHeight();
+        } else {
+            MI_LOG(MIInfraLogType::kWarning, "Viewport not set and no framebuffer bound");
+        }
+    }
+    // Invert y-axis to match D3D12 and OpenGL conventions of the NDC
+    // Note: In Vulkan, NDC y is positive downwards (rhs consistency), but in D3D12 and OpenGL, it is positive upwards (lhs).
+    vk::Viewport vk_viewport = viewport;
+    vk_viewport.y += viewport.height;
+    vk_viewport.height = -viewport.height;
+    return vk_viewport;
+}
+
 
 void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffer cmdb) {
-    auto rect = GetRenderRect();
-    vk::Viewport viewport = {
-        (float)rect.offset.x,
-        (float)rect.offset.y,
-        (float)rect.extent.width,
-        (float)rect.extent.height,
-        0.0f,
-        1.0f
-    };
+    auto rect = GetScissorRect();
+    vk::Viewport viewport = GetViewport();
     cmdb.setViewport(0, 1, &viewport);
     cmdb.setScissor(0, 1, &rect);
 }
@@ -563,11 +577,48 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
     return std::span<vk::WriteDescriptorSet>(writes, write_count);
 }
 
-void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
+
+// Bind pipeline, descriptor set and flush descriptor writes.
+void VulkanCommandExecutor::FlushBindPointState(
         RHICommandQueueBase * cmd, RHIBindPointType point_t, vk::PipelineStageFlags use_stages) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & point = state.points[(uint32_t)point_t];
+
+    vk::PipelineBindPoint vk_point {};
+    vk::PipelineLayout vk_pipeline_layout {};
+    if (point.bound_pipeline_dirty) {
+        vk::Pipeline vk_pipeline {};
+        vk::DescriptorSetLayout set_layout {};
+        if (point_t == RHIBindPointType::kGraphics) {
+            auto g_pipeline = (VulkanGraphicsPipeline*)point.bound_pipeline;
+            set_layout = g_pipeline->GetPrivateDescriptorSetLayout();
+            vk_pipeline = g_pipeline->GetPipeline();
+            vk_pipeline_layout = g_pipeline->GetPipelineLayout();
+            vk_point = vk::PipelineBindPoint::eGraphics;
+        } else if (point_t == RHIBindPointType::kCompute) {
+            auto c_pipeline = (VulkanComputePipeline*)point.bound_pipeline;
+            set_layout = c_pipeline->GetPrivateDescriptorSetLayout();
+            vk_pipeline = c_pipeline->GetPipeline();
+            vk_pipeline_layout = c_pipeline->GetPipelineLayout();
+            vk_point = vk::PipelineBindPoint::eCompute;
+        } else {
+            assert(false);
+            vk_point = vk::PipelineBindPoint::eRayTracingKHR;
+        }
+        state.cmd.bindPipeline(vk_point, vk_pipeline);
+        if(set_layout) {
+            auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
+                    vk::DescriptorSetAllocateInfo()
+                            .setDescriptorPool(state.descriptor_pool)
+                            .setDescriptorSetCount(1)
+                            .setSetLayouts(set_layout)
+            );
+            mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
+            point.bound_private_set = descriptor_set[0];
+        }
+    }
+
     // Assign btb on the fly
     uint32_t btb_size = RoundUp(
             point.bound_pipeline->GetBindlessTableSize(),
@@ -591,6 +642,14 @@ void VulkanCommandExecutor::FlushBindPointDescriptorWrites(
             }
         }
         GetVulkanRHI()->GetDevice().updateDescriptorSets(descriptor_writes, {});
+    }
+    // Non-bindless descriptor sets doesn't support update-after-bind. So we bind them at last.
+    if (point.bound_pipeline_dirty) {
+        if(point.bound_private_set) {
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                         {point.bound_private_set}, {});
+        }
+        point.bound_pipeline_dirty = false;
     }
 }
 

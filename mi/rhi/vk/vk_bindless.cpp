@@ -89,7 +89,10 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
                     static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kSampler].size), stages
             }
     };
-    auto layout_create_info = vk::DescriptorSetLayoutCreateInfo {{}, layout_bindings};
+    auto layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+        vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool,
+        layout_bindings
+    };
     bindless_descriptor_set_layout_ = device.createDescriptorSetLayout(layout_create_info);
     mi_assert(bindless_descriptor_set_layout_, "Failed to create descriptor layout");
 

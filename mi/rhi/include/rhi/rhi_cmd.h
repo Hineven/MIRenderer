@@ -323,6 +323,32 @@ public:
     uint32_t first_instance_;
 };
 
+class RHICommandSetScissor : public TRHICommand<RHICommandSetScissor> {
+public:
+    RHICommandSetScissor(int x, int y, uint32_t width, uint32_t height)
+        : x_(x), y_(y), width_(width), height_(height) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    int x_;
+    int y_;
+    uint32_t width_;
+    uint32_t height_;
+};
+
+class RHICommandSetViewport : public TRHICommand<RHICommandSetViewport> {
+public:
+    RHICommandSetViewport(float x, float y, float width, float height, float min_depth, float max_depth)
+        : x_(x), y_(y), width_(width), height_(height), min_depth_(min_depth), max_depth_(max_depth) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    float x_;
+    float y_;
+    float width_;
+    float height_;
+    float min_depth_;
+    float max_depth_;
+};
+
 class RHICommandDrawIndexedPrimitive : public TRHICommand<RHICommandDrawIndexedPrimitive> {
 public:
     RHICommandDrawIndexedPrimitive(RHIBufferSpan index_buffer, uint32_t index_count_,
@@ -504,6 +530,13 @@ public:
                                           uint32_t first_instance_index, RHIIndexType index_type) {
         AddCommand(AllocateCommand<RHICommandDrawIndexedPrimitive>(index_buffer, index_count, instance_count, first_index, base_vertex_index, first_instance_index, index_type));
     }
+    FORCEINLINE void SetScissor (int x, int y, uint32_t width, uint32_t height) {
+        AddCommand(AllocateCommand<RHICommandSetScissor>(x, y, width, height));
+    }
+    FORCEINLINE void SetViewport (float x, float y, float width, float height, float min_depth = 0.f, float max_depth = 1.f) {
+        AddCommand(AllocateCommand<RHICommandSetViewport>(x, y, width, height, min_depth, max_depth));
+    }
+
     FORCEINLINE void Dispatch (uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) {
         AddCommand(AllocateCommand<RHICommandDispatch>(group_count_x, group_count_y, group_count_z));
     }

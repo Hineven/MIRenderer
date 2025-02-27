@@ -42,13 +42,15 @@ bool RHIShader::ReflectShaderResources() {
 template<typename T, typename = void>
 struct THasSize : std::false_type {};
 template<typename T>
-struct THasSize <T, decltype(std::declval<T>.size)> : std::true_type {};
+struct THasSize <T, std::void_t<decltype(std::declval<T>().size)>> : std::true_type {};
 
 bool RHIShader::ReflectShaderResourcesSPIRV() {
+
     if(ir_size_ % 4 != 0) {
         MI_LOG(MIInfraLogType::kWarning, "SPIRV IR code size must be a multiple of 4");
         return false;
     }
+
     // We assume that the SPIRV code is compiled from HLSL
     spirv_cross::CompilerHLSL compiler_hlsl((uint32_t*)ir_, ir_size_ / 4);
     auto shader_resources = compiler_hlsl.get_shader_resources();
@@ -166,26 +168,38 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
         }
     }
 
-
-    // Strip the extensions declared to support shader reflection produced by dxc if present
-    // This is a workaround for the issue that the reflection extensions is not supported
-    // by NVIDIA drivers. Anyway they are just annotations and won't affect real shader behavior.
-    spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
-    auto pass_token = spvtools::CreateStripNonSemanticInfoPass();
-    optimizer.RegisterPass(std::move(pass_token));
-    // Okay, optimizer does not support anything other than std::vector<uint32_t>
-    std::vector<uint32_t> optimized_ir;
-    if(!optimizer.Run((uint32_t*)ir_, ir_size_ / 4, &optimized_ir)) {
-        MI_LOG(MIInfraLogType::kWarning, "Failed to strip reflection info from SPIRV IR.");
-        return false;
-    }
-    operator delete (ir_);
-    ir_size_ = (uint32_t)optimized_ir.size() * 4;
-    ir_ = static_cast<std::byte *>(operator new(ir_size_));
-    std::copy(optimized_ir.begin(), optimized_ir.end(), (uint32_t*)ir_);
-
     return true;
 }
+
+int RHIShader::ReflectResourceIndex(RHIPipelineResourceType type, uint32_t name_crc) const {
+    auto FindResourceIndexImpl = [&] <typename T> (const auto & resources) {
+        for(int i = 0; i < resources.size(); i++) {
+            if(resources[i].name_crc == name_crc) {
+                return i;
+            }
+        }
+        return -1;
+    };
+    switch (type) {
+        case RHIPipelineResourceType::kUniformBuffer:
+            return FindResourceIndexImpl.operator()<UniformBufferDesc>(uniform_buffers_with_bindless_table_);
+        case RHIPipelineResourceType::kStorageBuffer:
+            return FindResourceIndexImpl.operator()<StorageBufferDesc>(storage_buffers_);
+        case RHIPipelineResourceType::kUAV:
+            return FindResourceIndexImpl.operator()<UAVDesc>(uavs_);
+        case RHIPipelineResourceType::kSRV:
+            return FindResourceIndexImpl.operator()<SRVDesc>(srvs_);
+        case RHIPipelineResourceType::kSampler:
+            return FindResourceIndexImpl.operator()<SamplerDesc>(samplers_);
+        case RHIPipelineResourceType::kImmutableSampler:
+            return FindResourceIndexImpl.operator()<ImmutableSamplerDesc>(immutable_samplers_);
+        case RHIPipelineResourceType::kAccelerationStructure:
+            return FindResourceIndexImpl.operator()<AccelerationStructureDesc>(acceleration_structures_);
+        default: ;
+    }
+    return -1;
+}
+
 
 void RHIShader::Reset () {
 
