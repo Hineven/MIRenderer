@@ -63,6 +63,24 @@ FORCEINLINE uint32_t CRC32(const void *data, size_t size) {
     }
     return crc ^ 0xFFFFFFFF;
 }
+constexpr uint32_t ConstStrHash32(const char* str) {
+    uint32_t crc = 0xFFFFFFFF;
+    while (*str) {
+        crc ^= static_cast<uint8_t>(*str++);
+        for (int k = 0; k < 8; k++) {
+#ifdef MI_COMPILER_MSVC
+// Disable C4146
+#pragma warning(push)
+#pragma warning(disable:4146)
+#endif
+            crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+#ifdef MI_COMPILER_MSVC
+#pragma warning(pop)
+#endif
+        }
+    }
+    return ~crc;
+}
 
 MI_NAMESPACE_END
 

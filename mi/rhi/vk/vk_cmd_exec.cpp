@@ -205,11 +205,10 @@ void VulkanCommandExecutor::RHIEndRendering(RHICommandQueueBase *cmd, RHICommand
     state.cmd.endRendering();
 }
 
-const static vk::PipelineStageFlags kBasicDrawStages = vk::PipelineStageFlagBits::eGeometryShader
-    | vk::PipelineStageFlagBits::eVertexInput | vk::PipelineStageFlagBits::eVertexShader
-    | vk::PipelineStageFlagBits::eTessellationControlShader | vk::PipelineStageFlagBits::eTessellationEvaluationShader
-    | vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests
-    | vk::PipelineStageFlagBits::eFragmentShader;
+const static vk::ShaderStageFlags kBasicDrawStages =
+    vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eTessellationControl
+| vk::ShaderStageFlagBits::eTessellationEvaluation | vk::ShaderStageFlagBits::eGeometry
+| vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eTaskEXT | vk::ShaderStageFlagBits::eMeshEXT;
 
 void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
                                              RHICommandDrawPrimitive *draw_primitive) {
@@ -242,14 +241,8 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
-//    auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
-//    for(auto & vb : state.bound_vertex_buffers) {
-//        if(!vb.IsValid()) continue;
-//        auto * buffer = static_cast<VulkanBuffer*>(vb.buffer); // NOLINT its safe
-//        buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eVertexAttributeRead);
-//    }
     auto index_buffer = static_cast<VulkanBuffer*>(draw_indexed_primitive->index_buffer_.buffer); // NOLINT its safe
 //    index_buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eIndexRead);
     state.cmd.bindIndexBuffer(index_buffer->GetBuffer(), draw_indexed_primitive->index_buffer_.offset, GetVulkanIndexType(draw_indexed_primitive->index_type_));
@@ -264,7 +257,7 @@ void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDisp
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 //    auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
-    FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::PipelineStageFlagBits::eComputeShader);
+    FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::ShaderStageFlagBits::eCompute);
     state.cmd.dispatch(dispatch->group_count_x_, dispatch->group_count_y_, dispatch->group_count_z_);
 }
 
@@ -276,7 +269,7 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
     auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
-        point.bound_private_set = nullptr;
+        point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = pipeline;
     }
 }
@@ -311,7 +304,7 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
-        point.bound_private_set = nullptr;
+        point.bound_private_descriptor_set = nullptr;
         auto set_layout = pipeline->GetPrivateDescriptorSetLayout();
         if(set_layout) {
             auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
@@ -321,7 +314,7 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
                             .setSetLayouts(set_layout)
             );
             mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
-            point.bound_private_set = descriptor_set[0];
+            point.bound_private_descriptor_set = descriptor_set[0];
         }
         state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
     }
@@ -333,7 +326,7 @@ void VulkanCommandExecutor::RHIBindPipelineParameters(
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
     auto table = bind_pipeline_parameters->table_;
     auto & point = state.points[(uint32_t)bind_pipeline_parameters->point_];
-    point.parameter_table.Merge(table);
+    point.bound_descriptor_dirty |= point.parameter_table.Merge(table);
 }
 
 void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
@@ -414,27 +407,66 @@ void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffe
     cmdb.setScissor(0, 1, &rect);
 }
 
-void VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
+bool VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
     assert(IsRHIThread());
-    // Simply append all bindings
-    uniforms.insert(uniforms.end(), desc->uniforms.begin(), desc->uniforms.end());
-    storages.insert(storages.end(), desc->storages.begin(), desc->storages.end());
-    uavs.insert(uavs.end(), desc->uavs.begin(), desc->uavs.end());
-    srvs.insert(srvs.end(), desc->srvs.begin(), desc->srvs.end());
-    samplers.insert(samplers.end(), desc->samplers.begin(), desc->samplers.end());
-    acceleration_structures.insert(acceleration_structures.end(), desc->acceleration_structures.begin(), desc->acceleration_structures.end());
-    bindless_resources.insert(bindless_resources.end(), desc->bindless_resources.begin(), desc->bindless_resources.end());
-    // Overwrite push constants if any
+    auto CompareAndInsert = [&] <typename T>  (std::vector<T> & dst, std::span<T> src) {
+        bool dirty = false;
+        for (const auto & e : src) {
+            auto it = std::find_if(dst.begin(), dst.end(), [&](const auto & a) {
+                return a.binding == e.binding;
+            });
+            if (it == dst.end()) {
+                dst.push_back(e);
+                dirty = true;
+            } else {
+                if constexpr (std::is_same_v<T, RHIPipelineParameterBufferDesc>) {
+                    if (it->buffer.buffer != e.buffer.buffer || it->buffer.offset != e.buffer.offset || it->buffer.size != e.buffer.size) {
+                        *it = e;
+                        dirty = true;
+                    }
+                }
+                if constexpr (std::is_same_v<T, RHIPipelineParameterTextureDesc>) {
+                    if (it->texture != e.texture) {
+                        *it = e;
+                        dirty = true;
+                    }
+                }
+                if constexpr (std::is_same_v<T, RHIPipelineParameterResourceDesc>) {
+                    if (it->resource != e.resource) {
+                        *it = e;
+                        dirty = true;
+                    }
+                }
+                if constexpr (std::is_same_v<T, RHIPipelineBindlessResourceDesc>) {
+                    if (it->bindless_slot != e.bindless_slot || it->count != e.count || it->type != e.type) {
+                        *it = e;
+                        dirty = true;
+                    }
+                }
+            }
+        }
+        return dirty;
+    };
+    bool dirty = false;
+    dirty |= CompareAndInsert(uniforms, desc->uniforms);
+    dirty |= CompareAndInsert(storages, desc->storages);
+    dirty |= CompareAndInsert(uavs, desc->uavs);
+    dirty |= CompareAndInsert(srvs, desc->srvs);
+    dirty |= CompareAndInsert(samplers, desc->samplers);
+    dirty |= CompareAndInsert(acceleration_structures, desc->acceleration_structures);
+    dirty |= CompareAndInsert(bindless_resources, desc->bindless_resources);
+    // Overwrite push constants if any (and it does not affect the dirty flag)
     if(!desc->constants.empty()) {
         push_constants = desc->constants;
     }
+    return dirty;
 }
 
 // TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
     RHICommandQueueBase * cmd, [[maybe_unused]] vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
-    [[maybe_unused]] vk::CommandBuffer cmdb, [[maybe_unused]] vk::PipelineStageFlags use_stages
+    [[maybe_unused]] vk::CommandBuffer cmdb
 ) {
     assert(IsRHIThread());
 
@@ -561,8 +593,6 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 
     // Generate btb table data for bindless resources
     SortUnique(parameter_table.bindless_resources);
-//    auto vk_rhi = GetVulkanRHI();
-//    auto vk_bindless_mgr = vk_rhi->GetVulkanBindlessManager();
 
     // The user should manage bindless texture layouts manually.
     for(auto & bindless : parameter_table.bindless_resources) {
@@ -580,16 +610,18 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 
 // Bind pipeline, descriptor set and flush descriptor writes.
 void VulkanCommandExecutor::FlushBindPointState(
-        RHICommandQueueBase * cmd, RHIBindPointType point_t, vk::PipelineStageFlags use_stages) {
+        RHICommandQueueBase * cmd, RHIBindPointType point_t, vk::ShaderStageFlags use_shaders) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & point = state.points[(uint32_t)point_t];
 
     vk::PipelineBindPoint vk_point {};
     vk::PipelineLayout vk_pipeline_layout {};
+    vk::Pipeline vk_pipeline {};
+    vk::DescriptorSetLayout set_layout {};
+    // Rebind pipeline
     if (point.bound_pipeline_dirty) {
-        vk::Pipeline vk_pipeline {};
-        vk::DescriptorSetLayout set_layout {};
+        point.bound_descriptor_dirty = true;
         if (point_t == RHIBindPointType::kGraphics) {
             auto g_pipeline = (VulkanGraphicsPipeline*)point.bound_pipeline;
             set_layout = g_pipeline->GetPrivateDescriptorSetLayout();
@@ -607,34 +639,40 @@ void VulkanCommandExecutor::FlushBindPointState(
             vk_point = vk::PipelineBindPoint::eRayTracingKHR;
         }
         state.cmd.bindPipeline(vk_point, vk_pipeline);
-        if(set_layout) {
-            auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
-                    vk::DescriptorSetAllocateInfo()
-                            .setDescriptorPool(state.descriptor_pool)
-                            .setDescriptorSetCount(1)
-                            .setSetLayouts(set_layout)
-            );
-            mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
-            point.bound_private_set = descriptor_set[0];
-        }
+    }
+
+    // Allocate descriptor set
+    if(point.bound_descriptor_dirty && set_layout) {
+        auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
+                vk::DescriptorSetAllocateInfo()
+                        .setDescriptorPool(state.descriptor_pool)
+                        .setDescriptorSetCount(1)
+                        .setSetLayouts(set_layout)
+        );
+        mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
+        point.bound_private_descriptor_set = descriptor_set[0];
     }
 
     // Assign btb on the fly
-    uint32_t btb_size = RoundUp(
-            point.bound_pipeline->GetBindlessTableSize(),
-            RoundUp(GetVulkanRHI()->QueryRHIBindlessSupportInfo().descriptor_buffer_offset_alignment, sizeof(uint32_t))
-    );
-    std::span<uint32_t> btb_data = {
+    uint32_t btb_size_raw = point.bound_pipeline->GetBindlessTableSize();
+    std::span<uint32_t> btb_data {};
+    if (btb_size_raw) {
+        uint32_t btb_size = RoundUp(
+            btb_size_raw,
+                RoundUp(GetVulkanRHI()->QueryRHIBindlessSupportInfo().descriptor_buffer_offset_alignment, sizeof(uint32_t))
+        );
+        btb_data = {
             point.bindless_table_buffer_mapped + point.bindless_table_top,
             btb_size
-    };
-    point.bindless_table_top += btb_size;
+        };
+        point.bindless_table_top += btb_size;
+    }
     auto descriptor_writes = point.InstallShaderDescriptors(
-            cmd, GetVulkanRHI()->GetDevice(), point.bound_private_set, btb_data,
-            state.cmd, use_stages
+            cmd, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set, btb_data,
+            state.cmd
     );
     if(!descriptor_writes.empty()) {
-        if(!point.bound_private_set) {
+        if(!point.bound_private_descriptor_set) {
             if(!point.bound_pipeline) {
                 MI_LOG(MIInfraLogType::kWarning, "Flushed resources to null pipeline.");
             } else {
@@ -643,13 +681,22 @@ void VulkanCommandExecutor::FlushBindPointState(
         }
         GetVulkanRHI()->GetDevice().updateDescriptorSets(descriptor_writes, {});
     }
+
+    // Bind descriptor set
     // Non-bindless descriptor sets doesn't support update-after-bind. So we bind them at last.
-    if (point.bound_pipeline_dirty) {
-        if(point.bound_private_set) {
-            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                         {point.bound_private_set}, {});
-        }
-        point.bound_pipeline_dirty = false;
+    if(point.bound_descriptor_dirty && point.bound_private_descriptor_set) {
+        state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                     {point.bound_private_descriptor_set}, {});
+    }
+    point.bound_pipeline_dirty = false;
+    point.bound_descriptor_dirty = false;
+
+    // Push constants
+    if(!point.parameter_table.push_constants.empty()) {
+        state.cmd.pushConstants(vk_pipeline_layout, use_shaders,
+            0, (uint32_t)point.parameter_table.push_constants.size() * sizeof(uint32_t),
+            point.parameter_table.push_constants.data());
+        point.parameter_table.push_constants = {};
     }
 }
 
@@ -749,7 +796,7 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
             auto res = rhi->GetVmaAllocator().mapMemory(point.bindless_table_buffer_allocation, (void**)&point.bindless_table_buffer_mapped);
             mi_assert(res == vk::Result::eSuccess, "Failed to map bindless table buffer memory");
             point.bindless_table_top = 0;
-            point.bound_private_set = nullptr;
+            point.bound_private_descriptor_set = nullptr;
             point.bound_pipeline = nullptr;
             point.parameter_table = {};
         }
@@ -812,9 +859,9 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
     assert(IsRHIThread());
     auto rhi = GetVulkanRHI();
     for(auto & point : points) {
-        if(point.bound_private_set) {
-            rhi->GetDevice().freeDescriptorSets(descriptor_pool, point.bound_private_set);
-            point.bound_private_set = nullptr;
+        if(point.bound_private_descriptor_set) {
+            rhi->GetDevice().freeDescriptorSets(descriptor_pool, point.bound_private_descriptor_set);
+            point.bound_private_descriptor_set = nullptr;
         }
         point.bound_pipeline = nullptr;
         point.parameter_table = {};

@@ -44,10 +44,9 @@ public:
         return "Vulkan";
     }
 
-    RHIBufferRef CreateBuffer(size_t size, RHIBufferUsageFlags type) override;
+    RHIBufferRef CreateBuffer(RHIBufferDesc desc) override;
 
-    RHITextureRef CreateTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
-                                RHITextureUsageFlags usage, int mip_levels, int array_layers) override;
+    RHITextureRef CreateTexture(RHITextureDesc desc) override;
 
     RHISamplerRef CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) override;
 

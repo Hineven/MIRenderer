@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 
+
 struct SomeS {
     float x{};
     float y{1};

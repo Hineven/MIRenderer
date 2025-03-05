@@ -51,7 +51,7 @@ public:
 protected:
 
 
-    void FlushBindPointState (RHICommandQueueBase *, RHIBindPointType, vk::PipelineStageFlags use_stages) ;
+    void FlushBindPointState (RHICommandQueueBase *, RHIBindPointType, vk::ShaderStageFlags use_shaders) ;
 
     void Initialize_RHIThread () ;
     void Destroy_RHIThread () ;
@@ -82,11 +82,14 @@ protected:
             // Mapped pointer for btb
             std::uint32_t * bindless_table_buffer_mapped {};
 
-            // Bound private descriptor set (allocated from the descriptor pool)
-            vk::DescriptorSet bound_private_set {};
+            // Dirty (pipeline & descriptor set)
             bool bound_pipeline_dirty {false};
             // Store a pointer to the pipeline should be bound to when dispatching commands
             RHIPipeline * bound_pipeline {};
+            // Dirty (descriptors)
+            bool bound_descriptor_dirty {false};
+            // Bound private descriptor set (allocated from the descriptor pool)
+            vk::DescriptorSet bound_private_descriptor_set {};
             template<typename T>
             inline T * As() {
                 return static_cast<T *>(bound_pipeline);
@@ -100,8 +103,8 @@ protected:
                 std::vector<RHIPipelineParameterResourceDesc> acceleration_structures;
                 std::vector<RHIPipelineBindlessResourceDesc> bindless_resources;
                 std::span<const std::byte> push_constants;
-                // Merge incoming table
-                void Merge (const RHIBindPipelineParametersDesc * desc);
+                // Merge incoming table, return dirty bit (if the merge has changed the state)
+                bool Merge (const RHIBindPipelineParametersDesc * desc);
             } parameter_table;
 
             // Install bind point states, Clear parameter table and launch descriptor writes.
@@ -113,7 +116,7 @@ protected:
             DescriptorWrites InstallShaderDescriptors (
                     RHICommandQueueBase * cmd, vk::Device device,
                     vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
-                    vk::CommandBuffer cmdb, vk::PipelineStageFlags use_stages
+                    vk::CommandBuffer cmdb
             );
         } points[(uint32_t)RHIBindPointType::kMax];
 

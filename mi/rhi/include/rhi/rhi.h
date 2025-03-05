@@ -41,10 +41,17 @@ public:
     virtual const char * GetName() const = 0;
 
     // Create a buffer, thread safe
-    virtual RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlags type) = 0;
+    FORCEINLINE RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlags type) {
+        return CreateBuffer({size, type});
+    }
+
+    virtual RHIBufferRef CreateBuffer (RHIBufferDesc desc) = 0;
 
     // Create a texture, thread safe
-    virtual RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1) = 0;
+    RHITextureRef CreateTexture (RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage,
+        uint32_t mip_levels = 1, uint32_t array_layers = 1) ;
+
+    virtual RHITextureRef CreateTexture (RHITextureDesc desc) = 0;
 
     // Import a texture from a native handle, thread safe
     // The import_desc is a pointer to the corresponding structs in `rhi_import.h`

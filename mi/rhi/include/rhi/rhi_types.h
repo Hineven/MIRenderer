@@ -108,6 +108,11 @@ enum class RHIBufferUsageFlagBits : uint32_t {
 };
 MAKE_FLAGS(RHIBufferUsage)
 
+struct RHIBufferDesc {
+    size_t size;
+    RHIBufferUsageFlags usage;
+};
+
 enum class RHIGPUAccessFlagBits : uint32_t {
     kNone = 0,
     kRead = 1<<0,
@@ -177,6 +182,7 @@ enum class RHIBindlessResourceType {
     kSRV,
     kUAV,
     kAccelerationStructure,
+    // TODO remove support for sampler
     kSampler,
     // Max, also the real binding number for immutable samplers.
     kMaxAndImmSampler

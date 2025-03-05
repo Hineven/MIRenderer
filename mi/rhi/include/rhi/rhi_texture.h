@@ -20,22 +20,23 @@ MI_NAMESPACE_BEGIN
 class RHITexture : public RHIResource {
 protected:
     // You can only create buffers via factory functions in the RHI instance
-    RHITexture(
+    FORCEINLINE RHITexture(
             RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
-            RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
-    );
+            RHITextureUsageFlags usage, uint32_t mip_levels = 1, uint32_t array_layers = 1
+    ): RHITexture(RHITextureDesc{type, dimensions, mip_levels, array_layers, format, usage}) {}
+    RHITexture(RHITextureDesc desc);
     ~RHITexture() override;
 public:
 
-    FORCEINLINE int GetMipLevels() const { return mip_levels_; }
-    FORCEINLINE int GetArrayLayers() const { return array_layers_; }
-    FORCEINLINE RHITextureType GetType() const { return type_; }
-    FORCEINLINE RHITextureDimensions GetDimensions() const { return dimensions_; }
-    FORCEINLINE PixelFormatType GetFormat() const { return format_; }
-    FORCEINLINE RHITextureUsageFlags GetUsage() const { return usage_; }
-    FORCEINLINE uint32_t GetWidth() const { return dimensions_.width; }
-    FORCEINLINE uint32_t GetHeight() const { return dimensions_.height; }
-    FORCEINLINE uint32_t GetDepth() const { return dimensions_.depth; }
+    FORCEINLINE int GetMipLevels() const { return desc_.mip_levels; }
+    FORCEINLINE int GetArrayLayers() const { return desc_.array_layers; }
+    FORCEINLINE RHITextureType GetType() const { return desc_.type; }
+    FORCEINLINE RHITextureDimensions GetDimensions() const { return desc_.dimensions; }
+    FORCEINLINE PixelFormatType GetFormat() const { return desc_.format; }
+    FORCEINLINE RHITextureUsageFlags GetUsage() const { return desc_.usage; }
+    FORCEINLINE uint32_t GetWidth() const { return desc_.dimensions.width; }
+    FORCEINLINE uint32_t GetHeight() const { return desc_.dimensions.height; }
+    FORCEINLINE uint32_t GetDepth() const { return desc_.dimensions.depth; }
     FORCEINLINE RHITextureLayoutType const GetLayout() const { return layout_; }
 
     // Convert this texture to a bindless texture
@@ -57,12 +58,7 @@ protected:
     RHIBindlessSlotRef<RHITexture> bindless_slot_readwrite_;
 
     RHITextureLayoutType layout_ {RHITextureLayoutType::kUndefined};
-    RHITextureType type_;
-    RHITextureDimensions dimensions_;
-    PixelFormatType format_;
-    RHITextureUsageFlags usage_;
-    int mip_levels_;
-    int array_layers_;
+    RHITextureDesc desc_;
 
     bool is_bindless_optimal_accessed_ {false};
 };

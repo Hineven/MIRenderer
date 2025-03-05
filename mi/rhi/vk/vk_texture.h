@@ -15,10 +15,11 @@ MI_NAMESPACE_BEGIN
 
 class VulkanTexture : public RHITexture {
 public:
-    VulkanTexture(
+    FORCEINLINE VulkanTexture(
             RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
-            RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1, bool imported = false
-    ) ;
+            RHITextureUsageFlags usage, uint32_t mip_levels = 1, uint32_t array_layers = 1, bool imported = false
+    ): VulkanTexture(RHITextureDesc{type, dimensions, mip_levels, array_layers, format, usage}, imported) {}
+    VulkanTexture (RHITextureDesc, bool imported = false) ;
     ~VulkanTexture() override;
 
     FORCEINLINE vk::Image GetImage() const { return vk_image_; }
@@ -40,9 +41,9 @@ public:
         barrier.dstAccessMask = dst_access;
         barrier.subresourceRange.aspectMask = vk_aspect_;
         barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = mip_levels_;
+        barrier.subresourceRange.levelCount = desc_.mip_levels;
         barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = array_layers_;
+        barrier.subresourceRange.layerCount = desc_.array_layers;
         cmd.pipelineBarrier(src_stage, dst_stage, {}, nullptr, nullptr, barrier);
         using_stages = dst_stage;
         using_accesses = dst_access;
@@ -75,9 +76,9 @@ public:
         barrier.dstAccessMask = use_access;
         barrier.subresourceRange.aspectMask = vk_aspect_;
         barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = mip_levels_;
+        barrier.subresourceRange.levelCount = desc_.mip_levels;
         barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = array_layers_;
+        barrier.subresourceRange.layerCount = desc_.array_layers;
         cmd.pipelineBarrier(using_stages, use_stage, {}, nullptr, nullptr, barrier);
         using_stages = use_stage;
         using_accesses = use_access;

@@ -358,14 +358,13 @@ VulkanRHI::~VulkanRHI() {
     instance_.destroy();
 }
 
-RHIBufferRef VulkanRHI::CreateBuffer(size_t size, RHIBufferUsageFlags type) {
-    auto buffer = new VulkanBuffer(size, type);
+RHIBufferRef VulkanRHI::CreateBuffer(RHIBufferDesc desc) {
+    auto buffer = new VulkanBuffer(desc);
     return {buffer};
 }
 
-RHITextureRef VulkanRHI::CreateTexture(RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
-                                       RHITextureUsageFlags usage, int mip_levels, int array_layers) {
-    auto texture = new VulkanTexture(type, dimensions, format, usage, mip_levels, array_layers);
+RHITextureRef VulkanRHI::CreateTexture(RHITextureDesc desc) {
+    auto texture = new VulkanTexture(desc);
     return {texture};
 }
 

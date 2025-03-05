@@ -2,6 +2,8 @@ set(SOURCE_FILES
         include/rdg/rdg.h
     rdg.cpp
     rdg_resource.cpp
+    rdg_base.cpp
+    rdg_pass.cpp
 )
 
 add_library(rdg STATIC ${SOURCE_FILES})

@@ -6,27 +6,34 @@
 
 #ifndef MI_RDG_RESOURCE_H
 #define MI_RDG_RESOURCE_H
-#include "rdg/rdg.h"
-#include "rhi/rhi_resource.h"
+
+#include "rhi/rhi.h"
+#include "rdg/rdg_base.h"
+#include "rhi/rhi_texture.h"
 #include "core/pixel_format.h"
 
 MI_NAMESPACE_BEGIN
 
-struct RDGTextureDesc {
-    int width, height, depth;
-    int mip_levels;
-    int array_layers;
-    PixelFormatType format;
+class RDGTexture : public RDGResource {
+public:
+    RDGTexture (RHITextureDesc desc) : RDGResource(nullptr), desc_(desc) {}
+    ~RDGTexture () override = default;
+    FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
+protected:
+    RHITextureDesc desc_;
+    TRef<RHITexture> texture_;
 };
 
-class RDGTextureResource : public RDGResource {
+class RDGBuffer : public RDGResource {
 public:
-    RDGTextureResource (RDGTextureDesc desc) : RDGResource(nullptr), desc_(desc) {}
-    ~RDGTextureResource () override = default;
-
-    RDGTextureDesc GetDesc () const { return desc_; }
+    RDGBuffer (RHIBufferUsageFlags usage, size_t size) : RDGResource(nullptr), desc_({size, usage}) {}
+    ~RDGBuffer () override = default;
+    FORCEINLINE size_t GetSize () const { return desc_.size; }
+    FORCEINLINE RHIBufferUsageFlags GetUsage () const { return desc_.usage; }
+    FORCEINLINE RHIBufferDesc GetDesc () const { return desc_; }
 protected:
-    RDGTextureDesc desc_;
+    RHIBufferDesc desc_;
+    TRef<RHIBuffer> buffer_;
 };
 
 MI_NAMESPACE_END

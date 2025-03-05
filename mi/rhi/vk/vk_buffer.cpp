@@ -8,18 +8,18 @@
 
 MI_NAMESPACE_BEGIN
 
-VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage)
-        : RHIBuffer(buffer_size, usage) {
+VulkanBuffer::VulkanBuffer(RHIBufferDesc desc)
+        : RHIBuffer(desc) {
     vk::BufferCreateInfo buffer_info;
-    buffer_info.size = buffer_size;
-    buffer_info.usage = GetVulkanBufferUsage(usage);
+    buffer_info.size = desc.size;
+    buffer_info.usage = GetVulkanBufferUsage(desc.usage);
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
     vma::AllocationCreateFlags alloc_flags {};
-    if(usage & RHIBufferUsageFlagBits::kStaging) {
+    if(desc.usage & RHIBufferUsageFlagBits::kStaging) {
         alloc_flags |= vma::AllocationCreateFlagBits::eHostAccessSequentialWrite;
     }
-    if(usage & RHIBufferUsageFlagBits::kReadback) {
+    if(desc.usage & RHIBufferUsageFlagBits::kReadback) {
         alloc_flags = vma::AllocationCreateFlagBits::eHostAccessRandom;
     }
     vma::AllocationCreateInfo alloc_info {
@@ -33,7 +33,7 @@ VulkanBuffer::VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage)
 }
 
 void *VulkanBuffer::Map() {
-    if(!(usage_ & RHIBufferUsageFlagBits::kStaging) && !(usage_ & RHIBufferUsageFlagBits::kReadback)) {
+    if(!(desc_.usage & RHIBufferUsageFlagBits::kStaging) && !(desc_.usage & RHIBufferUsageFlagBits::kReadback)) {
         mi_assert(false, "Buffer is not staging / readback buffer, cannot map!");
     }
     if(!is_mapped_) {

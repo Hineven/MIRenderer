@@ -14,7 +14,7 @@ MI_NAMESPACE_BEGIN
 
 class VulkanBuffer : public RHIBuffer {
 public:
-    VulkanBuffer(size_t buffer_size, RHIBufferUsageFlags usage);
+    VulkanBuffer(RHIBufferDesc desc);
     virtual ~VulkanBuffer() override;
 
     vk::Buffer GetBuffer() const { return vk_buffer_; }

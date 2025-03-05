@@ -8,11 +8,9 @@
 
 MI_NAMESPACE_BEGIN
 
-VulkanTexture::VulkanTexture(RHITextureType type, RHITextureDimensions dimensions,
-                             PixelFormatType format, RHITextureUsageFlags usage, int mip_levels,
-                             int array_layers, bool imported):
-                         RHITexture(type, dimensions, format, usage, mip_levels, array_layers) {
-    vk_aspect_ = GetVulkanImageAspectFlags(usage);
+VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported):
+                         RHITexture(desc) {
+    vk_aspect_ = GetVulkanImageAspectFlags(desc.usage);
 
     if(imported) {
         return;
@@ -21,22 +19,22 @@ VulkanTexture::VulkanTexture(RHITextureType type, RHITextureDimensions dimension
     auto device = GetVulkanRHI()->GetDevice();
     auto vma = GetVulkanRHI()->GetVmaAllocator();
 
-    if(type == RHITextureType::kCube) {
-        mi_assert(array_layers == 6, "Cube texture must have 6 array layers!");
+    if(desc.type == RHITextureType::kCube) {
+        mi_assert(desc.array_layers == 6, "Cube texture must have 6 array layers!");
     }
 
     // Create image
     vk::ImageCreateInfo image_create_info{
             vk::ImageCreateFlags{},
-            GetVulkanImageType(type),
-            GetVulkanPixelFormat(format),
-            vk::Extent3D{static_cast<uint32_t>(dimensions.width), static_cast<uint32_t>(dimensions.height),
-                         static_cast<uint32_t>(dimensions.depth)},
-            static_cast<uint32_t>(mip_levels),
-            static_cast<uint32_t>(array_layers),
+            GetVulkanImageType(desc.type),
+            GetVulkanPixelFormat(desc.format),
+            vk::Extent3D{static_cast<uint32_t>(desc.dimensions.width), static_cast<uint32_t>(desc.dimensions.height),
+                         static_cast<uint32_t>(desc.dimensions.depth)},
+            static_cast<uint32_t>(desc.mip_levels),
+            static_cast<uint32_t>(desc.array_layers),
             vk::SampleCountFlagBits::e1,
             vk::ImageTiling::eOptimal,
-            GetVulkanImageUsage(usage),
+            GetVulkanImageUsage(desc.usage),
             vk::SharingMode::eExclusive,
             0,
             nullptr,
@@ -44,8 +42,8 @@ VulkanTexture::VulkanTexture(RHITextureType type, RHITextureDimensions dimension
     };
     // Allocate memory for the image
     bool use_dedicated_allocation =
-            (usage & RHITextureUsageFlagBits::kDepthStencil)
-            || (usage & RHITextureUsageFlagBits::kRenderTarget);
+            (desc.usage & RHITextureUsageFlagBits::kDepthStencil)
+            || (desc.usage & RHITextureUsageFlagBits::kRenderTarget);
 
     auto result = vma.createImage(image_create_info, vma::AllocationCreateInfo{
             use_dedicated_allocation

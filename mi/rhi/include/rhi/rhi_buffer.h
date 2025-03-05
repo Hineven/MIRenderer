@@ -17,12 +17,12 @@ MI_NAMESPACE_BEGIN
 class RHIBuffer : public RHIResource {
 protected:
     // You can only create buffers via factory functions in the RHI instance
-    inline RHIBuffer (size_t buffer_size, RHIBufferUsageFlags usage) : buffer_size_(buffer_size), usage_(usage) {}
+    RHIBuffer (RHIBufferDesc desc) : desc_(desc) {}
     virtual ~RHIBuffer() = default;
 
 public:
-    FORCEINLINE size_t GetBufferSize () const {return buffer_size_;}
-    FORCEINLINE RHIBufferUsageFlags GetBufferUsage () const {return usage_;}
+    FORCEINLINE size_t GetBufferSize () const {return desc_.size;}
+    FORCEINLINE RHIBufferUsageFlags GetBufferUsage () const {return desc_.usage;}
 
     // Only buffers that are created with the RHIBufferType::kStaging / kReadback type can be mapped
     virtual void * Map () = 0;
@@ -32,7 +32,7 @@ public:
     FORCEINLINE bool IsMapped () const {return is_mapped_;}
 
     FORCEINLINE RHIBufferSpan GetSpan (size_t offset = 0, size_t size = 0) {
-        return {this, offset, size == 0 ? buffer_size_ : size};
+        return {this, offset, size == 0 ? desc_.size : size};
     }
 
     // View it as a storage buffer or uniform buffer.
@@ -42,8 +42,7 @@ public:
     FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadwrite() { return bindless_slot_readwrite_; }
 
 protected:
-    size_t buffer_size_;
-    RHIBufferUsageFlags usage_;
+    RHIBufferDesc desc_;
 
     RHIBindlessSlotRef<RHIBuffer> bindless_slot_readonly_ {};
     RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};

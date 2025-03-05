@@ -118,6 +118,15 @@ struct RHITextureDimensions {
     uint32_t depth {1};
 };
 
+struct RHITextureDesc {
+    RHITextureType type;
+    RHITextureDimensions dimensions;
+    uint32_t mip_levels {1};
+    uint32_t array_layers {1};
+    PixelFormatType format {PixelFormatType::kUnknown};
+    RHITextureUsageFlags usage {};
+};
+
 struct RHIPipelineParameterBufferDesc {
     RHIBufferSpan buffer;
     // Binding number to bind on the pipeline
