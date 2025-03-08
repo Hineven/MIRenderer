@@ -22,3 +22,8 @@ add_executable(rhi_test rhi/rhi_test.cpp)
 target_include_directories(rhi_test PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(rhi_test PRIVATE cpptrace::cpptrace infra rhi core ${GTEST_LIBRARIES})
 add_test(NAME rhi COMMAND rhi_test)
+
+# RDG
+add_executable(rdg_test rdg/rdg_test.cpp)
+target_link_libraries(rdg_test PRIVATE infra rhi rdg core ${GTEST_LIBRARIES})
+add_test(NAME rdg COMMAND rdg_test)

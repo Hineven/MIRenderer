@@ -11,6 +11,7 @@
 #include "rhi/rhi_shader.h"
 #include "rhi/rhi_pipeline.h"
 #include "rhi/rhi_texture.h"
+#include "rhi/rhi_param.h"
 
 #include <exception>
 #include <cpptrace/from_current.hpp>
@@ -396,13 +397,13 @@ TEST(RHITest, RHITriangle) {
                 int mant = v & 0x03FF;
                 if (exp == 0) {
                     if (mant == 0) return 0.f;
-                    return sgn * std::pow(2, -14) * (mant / 1024.f);
+                    return sgn * float(std::pow(2, -14)) * float(mant / 1024.f);
                 }
                 if (exp == 31) {
                     if (mant == 0) return sgn * std::numeric_limits<float>::infinity();
                     return std::numeric_limits<float>::quiet_NaN();
                 }
-                return sgn * std::pow(2, exp - 15) * (1 + mant / 1024.f);
+                return sgn * float(std::pow(2, exp - 15)) * float((1 + mant / 1024.f));
             };
             for (int i = 0; i < 1280 * 720; ++i) {
                 auto r = static_cast<uint8_t>(fp16tofp32(fp16tex[i * 4 + 0]) * 255);
@@ -423,6 +424,8 @@ TEST(RHITest, RHITriangle) {
         FAIL() << e.what();
     }
 }
+
+MI_NAMESPACE_BEGIN
 
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);

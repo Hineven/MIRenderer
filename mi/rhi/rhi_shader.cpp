@@ -59,7 +59,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             T desc;
             desc.name = resource.name;
             if constexpr (THasSize<T>::value) {
-                desc.size = compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
+                desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
             }
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationDescriptorSet, desc.locations.set_offset);

@@ -7,6 +7,7 @@ set(SOURCE_FILES
     rhi_cmd.cpp
     rhi_texture.cpp
     rhi_buffer.cpp
+    rhi_param.cpp
     rhi.cpp
         vk/vk_pipeline.cpp
         vk/vk_device.cpp

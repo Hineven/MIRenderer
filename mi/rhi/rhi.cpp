@@ -15,6 +15,12 @@
 
 MI_NAMESPACE_BEGIN
 
+RHITextureRef RHI::CreateTexture(RHITextureType type, RHITextureDimensions dimensions,
+    PixelFormatType format, RHITextureUsageFlags usage, uint32_t mip_levels, uint32_t array_layers) {
+    return CreateTexture({type, dimensions, mip_levels, array_layers, format, usage});
+}
+
+
 std::future<void> RHI::AdvanceFrame() {
     auto & queue = GetGraphicsCommandQueue();
     // Detour the limitation that std function wrapper can not wrap non-copyable objects.
