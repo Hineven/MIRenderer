@@ -143,6 +143,13 @@ enum class RHIPrimitiveType {
     kMax
 };
 
+enum class RHIPipelineType {
+    kGraphics,
+    kCompute,
+    kRayTracing,
+    kMax
+};
+
 enum class RHITextureType {
     k2D,
     k2DArray,

@@ -21,7 +21,7 @@
 MI_NAMESPACE_BEGIN
 
 // Interface for the render hardware
-class RHI {
+class RHI : public NonMovable, public NonCopyable {
 protected:
     virtual ~RHI();
     // Called when GDynamicRHI is set but InitializeSingleton has not yet returned.

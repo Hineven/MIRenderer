@@ -63,6 +63,11 @@ FORCEINLINE uint32_t CRC32(const void *data, size_t size) {
     }
     return crc ^ 0xFFFFFFFF;
 }
+
+FORCEINLINE uint32_t CRC32(const char *str) {
+    return CRC32(str, strlen(str));
+}
+
 constexpr uint32_t ConstStrHash32(const char* str) {
     uint32_t crc = 0xFFFFFFFF;
     while (*str) {

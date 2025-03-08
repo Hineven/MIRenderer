@@ -7,12 +7,16 @@
 #ifndef RHI_PARAM_H
 #define RHI_PARAM_H
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstddef>
+#include <iterator>
 #include <core/crc.h>
 #include <glm/glm.hpp>
 
+#include "core/util/byte_strided_span.h"
 #include "rhi/rhi_common.h"
 
 MI_NAMESPACE_BEGIN
@@ -127,7 +131,7 @@ struct RHIParamInfo {
 };
 
 struct RHIParamStructInfo {
-    std::vector<RHIParamInfo> members;
+    byte_strided_span<RHIParamInfo> members;
     FORCEINLINE uint32_t GetSize () const {
         uint32_t curr_position = 0;
         for (auto & e : members) {

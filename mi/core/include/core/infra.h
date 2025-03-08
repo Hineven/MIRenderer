@@ -20,6 +20,8 @@ MI_NAMESPACE_BEGIN
 enum class MIInfraResourceHintType {
     // The resource is plain binary, no prior knowledge.
     kBlob,
+    // The resource is a shader source, and the renderer will use it as a shader.
+    kShaderSource,
     // The resource is a texture, and the renderer will use it as a texture.
     kTexture,
     // The resource is a buffer for geometry computation (vertex/index buffers, etc)
