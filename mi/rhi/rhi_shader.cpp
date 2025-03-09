@@ -3,15 +3,18 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-
+#include <span>
+#include <ranges>
 #include <spirv_cross/spirv_hlsl.hpp>
 #include <spirv-tools/libspirv.hpp>
 #include <spirv-tools/optimizer.hpp>
-#include <span>
 
 #include "core/crc.h"
 #include "core/infra.h"
 #include "rhi/rhi_shader.h"
+
+#include <rhi/rhi_param.h>
+
 #include "rhi_device_shared.h"
 
 MI_NAMESPACE_BEGIN
@@ -68,6 +71,95 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
         }
     };
     ReflectResources.operator()<UniformBufferDesc>(shader_resources.uniform_buffers, uniform_buffers_with_bindless_table_);
+    // Deep reflection of the uniform buffers. Reveal their underlying structures.
+    {
+        auto IsBasicType = [](spirv_cross::SPIRType::BaseType t) {
+            if (
+                t == spirv_cross::SPIRType::Image || t == spirv_cross::SPIRType::Sampler || t == spirv_cross::SPIRType::SampledImage
+                || t == spirv_cross::SPIRType::AccelerationStructure || t == spirv_cross::SPIRType::Struct
+            ) {
+                return false;
+            }
+            if (
+                t == spirv_cross::SPIRType::Float || t == spirv_cross::SPIRType::Int || t == spirv_cross::SPIRType::UInt) {
+                return true;
+            }
+            assert(false && "Not Implemented");
+        };
+        auto GetBasicParamType = [](spirv_cross::SPIRType::BaseType t, uint32_t vec_size) {
+            if (t == spirv_cross::SPIRType::Float) {
+                if (vec_size == 1) {
+                    return RHIBasicParamType::kFloat;
+                } else if (vec_size == 2) {
+                    return RHIBasicParamType::kFloat2;
+                } else if (vec_size == 3) {
+                    return RHIBasicParamType::kFloat3;
+                } else if (vec_size == 4) {
+                    return RHIBasicParamType::kFloat4;
+                }
+            } else if (t == spirv_cross::SPIRType::Int) {
+                if (vec_size == 1) {
+                    return RHIBasicParamType::kInt;
+                } else if (vec_size == 2) {
+                    return RHIBasicParamType::kInt2;
+                } else if (vec_size == 3) {
+                    return RHIBasicParamType::kInt3;
+                } else if (vec_size == 4) {
+                    return RHIBasicParamType::kInt4;
+                }
+            } else if (t == spirv_cross::SPIRType::UInt) {
+                if (vec_size == 1) {
+                    return RHIBasicParamType::kUInt;
+                } else if (vec_size == 2) {
+                    return RHIBasicParamType::kUInt2;
+                } else if (vec_size == 3) {
+                    return RHIBasicParamType::kUInt3;
+                } else if (vec_size == 4) {
+                    return RHIBasicParamType::kUInt4;
+                }
+            }
+            assert(false && "Not Implemented");
+            return RHIBasicParamType::kMax;
+        };
+        std::function<RHIParamStructInfo*(spirv_cross::TypeID)> RecursiveDeepReflection = [&] (spirv_cross::TypeID reflecting_type_id) {
+            RHIParamStructInfo * ret = new RHIParamStructInfo;
+            spirv_cross::SPIRType type = compiler_hlsl.get_type(reflecting_type_id);
+            std::vector<RHIParamInfo> reflected_members;
+            for (auto const & [i, member] : type.member_types | std::views::enumerate) {
+                spirv_cross::SPIRType member_type = compiler_hlsl.get_type(member);
+                RHIParamInfo info {};
+                info.name = compiler_hlsl.get_member_name(reflecting_type_id, member);
+                info.size = compiler_hlsl.get_declared_struct_size(member_type);
+                info.offset = compiler_hlsl.type_struct_member_offset(type, i);
+                if (IsBasicType(member_type.basetype)) {
+                    // Stop recursion
+                    info.type = RHIParamType::kBasic;
+                    info.basic_type = GetBasicParamType(member_type.basetype, member_type.vecsize);
+                } else {
+                    // There are only structs in uniform buffers
+                    if (member_type.basetype != spirv_cross::SPIRType::Struct) {
+                        assert(false && "Invalid uniform buffer. Constant buffers should not contain shader resources.");
+                    }
+                    info.type = RHIParamType::kStruct;
+                    info.struct_info = RecursiveDeepReflection(member);
+                }
+                reflected_members.push_back(info);
+            }
+            auto members_mem = new RHIParamInfo[reflected_members.size()];
+            std::copy(reflected_members.begin(), reflected_members.end(), members_mem);
+            ret->members = byte_strided_span((RHIParamInfo*)members_mem, reflected_members.size(), sizeof(RHIParamInfo));
+            return ret;
+        };
+        for (const auto& [i, compiler_resource]: std::views::enumerate(shader_resources.uniform_buffers)) {
+            auto& desc = uniform_buffers_with_bindless_table_[i];
+            const auto& type = compiler_hlsl.get_type(compiler_resource.base_type_id);
+            if (type.basetype != spirv_cross::SPIRType::Struct) {
+                assert(false && "Invalid uniform buffer. Constant buffers should always be structs.");
+            }
+            desc.struct_reflection = RecursiveDeepReflection(compiler_resource.base_type_id);
+        }
+    }
+
     ReflectResources.operator()<StorageBufferDesc>( shader_resources.storage_buffers, storage_buffers_);
     ReflectResources.operator()<UAVDesc>( shader_resources.storage_images, uavs_);
     ReflectResources.operator()<SRVDesc>( shader_resources.separate_images, srvs_);

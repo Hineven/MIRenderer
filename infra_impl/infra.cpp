@@ -9,12 +9,19 @@
 
 MI_NAMESPACE_BEGIN
 
+MyInfra::MyInfra(std::string resource_directory) {
+    resource_directory_ = std::filesystem::path(resource_directory);
+}
+
+
 void MyInfra::Init() {
     start_time_ = std::chrono::high_resolution_clock::now();
 
-    // Create / Get directories
-    resource_directory_ =
-            std::filesystem::current_path() / "resources";
+    if (resource_directory_ == "") {
+        // Create / Get directories
+        resource_directory_ =
+                std::filesystem::current_path() / "resources";
+    }
     if (!std::filesystem::exists(resource_directory_)) {
         LogMessage(MIInfraLogType::kInfo, "Creating resource directory: " + resource_directory_.string());
         std::filesystem::create_directory(resource_directory_);

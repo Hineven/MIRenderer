@@ -27,7 +27,7 @@ enum class RHIParamType {
     kUAVTexture,
     kSRVTexture,
     kSampler,
-    kConstantBuffer, // Uniform buffer
+    // kConstantBuffer, // Uniform buffer
     kStruct,
     kBasic,
     kMax,
@@ -73,7 +73,7 @@ FORCEINLINE RHIParamType StringToRHIParamType (std::string_view type) {
     if(type == "StructuredBuffer") return RHIParamType::kSRVBuffer;
     if(type == "RWBuffer") return RHIParamType::kUAVBuffer;
     if(type == "RWStructuredBuffer") return RHIParamType::kUAVBuffer;
-    if(type == "ConstantBuffer") return RHIParamType::kConstantBuffer;
+    if(type == "ConstantBuffer") return RHIParamType::kStruct;
     if(StringToRHIBasicParamType(type) != RHIBasicParamType::kMax) return RHIParamType::kBasic;
     return RHIParamType::kStruct;
 }

@@ -84,7 +84,7 @@ struct HLSLCompilerContext;
 // Windows, Vulkan 1.3, NVIDIA
 class MyInfra : public MIInfraInterface {
 public:
-    MyInfra() = default;
+    MyInfra(std::string resource_directory = "") ;
 
     MIInfraLimits GetResourceLimits () override;
 

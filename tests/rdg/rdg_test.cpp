@@ -7,6 +7,7 @@
 #include "core/infra.h"
 #include "infra_impl/infra.h"
 #include "rhi/rhi.h"
+#include "rdg/rdg_shader.h"
 #include "rdg/rdg_param.h"
 
 MI_NAMESPACE_BEGIN
@@ -34,7 +35,7 @@ END_SHADER_PARAMETERS()
 
 MI_NAMESPACE_END
 
-TEST(RHITest, RHIShaderParams) {
+TEST(RDGTest, RDGShaderParams) {
     using namespace mi;
     TransferInfra(std::make_unique<MyInfra>());
     GetInfra().Init();
@@ -104,6 +105,30 @@ TEST(RHITest, RHIShaderParams) {
     EXPECT_EQ(meta_test.GetMemberIndex("TestFloat3_1"), 4);
     EXPECT_EQ(meta_test.GetMemberIndex("TestInteger0"), 5);
     EXPECT_EQ(meta_test.GetMemberIndex("TestInteger2_0"), 6);
+}
+
+using namespace mi;
+class TestShader1 : public RDGShader {
+public:
+    BEGIN_SHADER_PARAMETERS(Parameters)
+        SHADER_PARAMETER(float4, TestFloat4)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Parameters)
+    std::vector<std::string> GetDefaultMacros() {
+        return {};
+    }
+};
+
+IMPLEMENT_RDG_SHADER(TestShader1, "test_shader_1.hlsl", "Main", RHIPipelineType::kCompute);
+
+TEST(RDGTest, RDGShaderLibrary) {
+    using namespace mi;
+    auto pwd = std::filesystem::current_path();
+    auto resource_dir = pwd / "resources";
+    TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
+    GetInfra().Init();
+
+
 }
 
 

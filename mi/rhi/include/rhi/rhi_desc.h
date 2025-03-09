@@ -16,9 +16,12 @@
 #include "core/pixel_format.h"
 #include "core/constants.h"
 
-MI_NAMESPACE_BEGIN
+namespace mi {
+    struct RHIParamStructInfo;
+}
 
-struct RHIBufferSpan {
+MI_NAMESPACE_BEGIN
+    struct RHIBufferSpan {
     RHIBuffer * buffer;
     size_t offset;
     size_t size;
@@ -190,7 +193,8 @@ namespace PipelineReflection {
         uint32_t name_crc;
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
-        // TODO reflection into uniform buffer structs
+        // Deep reflection into constant buffer structs in the shader
+        RHIParamStructInfo * struct_reflection;
         std::string name;
     };
     struct StorageBufferDesc {
