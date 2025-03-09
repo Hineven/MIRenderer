@@ -10,6 +10,20 @@
 
 MI_NAMESPACE_BEGIN
 
+bool RDGShaderParamStructInfo::CanBeImported () const {
+    for (auto & member : cpp_members) {
+        if (member.type != RHIParamType::kStruct && member.type != RHIParamType::kBasic) {
+            return false;
+        }
+        // If the struct contain references to other structs, it can't be imported
+        if (member.type == RHIParamType::kStruct
+        && member.cpp_imported_struct_info.cpp_import_type == RDGShaderParamStructImportType::kReference) {
+            return false;
+        }
+    }
+    return true;
+}
+
 RDGShaderRegistrator::RDGShaderRegistrator(
         size_t type_hash,
         std::function<RDGShaderInitializationInfo()> get_init_info
@@ -96,6 +110,21 @@ static void RecursiveCheckConstantBufferDefinitions (
 }
 
 void RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderParamStructInfo &info) {
+    // Firstly, export uniform buffers from cpp shader param struct reflection
+    TOneTimeLinearAllocator<> aloc;
+    std::vector<const RHIParamStructInfo*> cpp_ref_uniform_buffers;
+    for (const auto& member : info.cpp_members) {
+        if (member.type == RHIParamType::kStruct
+        && member.cpp_imported_struct_info.cpp_import_type == RDGShaderParamStructImportType::kReference) {
+            cpp_ref_uniform_buffers.push_back(member.cpp_imported_struct_info.cpp_struct_info);
+        }
+    }
+    // Quick compare with hash values for the referenced structs
+    auto & shader_reflected_uniform_buffers = shader->GetUniformBufferDesc();
+
+
+    // Then, gather the global uniform buffer.
+
     // Check uniform buffers
     for (const auto& ub : shader->GetUniformBufferDesc()) {
         int index = info.GetMemberIndex(ub.name);

@@ -148,6 +148,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             auto members_mem = new RHIParamInfo[reflected_members.size()];
             std::copy(reflected_members.begin(), reflected_members.end(), members_mem);
             ret->members = byte_strided_span((RHIParamInfo*)members_mem, reflected_members.size(), sizeof(RHIParamInfo));
+            ret->InitializeLayoutHash();
             return ret;
         };
         for (const auto& [i, compiler_resource]: std::views::enumerate(shader_resources.uniform_buffers)) {

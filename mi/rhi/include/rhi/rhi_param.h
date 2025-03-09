@@ -132,6 +132,7 @@ struct RHIParamInfo {
 
 struct RHIParamStructInfo {
     byte_strided_span<RHIParamInfo> members;
+    uint32_t layout_hash;
     FORCEINLINE uint32_t GetSize () const {
         uint32_t curr_position = 0;
         for (auto & e : members) {
@@ -141,6 +142,7 @@ struct RHIParamStructInfo {
         }
         return curr_position;
     }
+    void InitializeLayoutHash ();
 };
 
 MI_NAMESPACE_END
