@@ -9,7 +9,7 @@
 #include "rdg/rdg_base.h"
 MI_NAMESPACE_BEGIN
 
-class RDGPass : public NonMovable, public NonCopyable{
+class RDGPass : public NonMovable, public NonCopyable {
 protected:
     // Can only be allocated by RDG
     RDGPass() = default;

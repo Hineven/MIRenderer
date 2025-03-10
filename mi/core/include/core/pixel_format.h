@@ -63,6 +63,31 @@ FORCEINLINE const char * GetPixelFormatName (PixelFormatType type) {
     }
 }
 
+FORCEINLINE bool IsFloatPixelFormat (PixelFormatType type) {
+    switch (type) {
+        case PixelFormatType::kR8G8B8A8_UNORM:
+        case PixelFormatType::kR8G8B8A8_SRGB:
+        case PixelFormatType::kR16G16B16A16_FLOAT:
+        case PixelFormatType::kR16G16_FLOAT:
+        case PixelFormatType::kR32G32B32A32_FLOAT:
+        case PixelFormatType::kR32G32B32_FLOAT:
+        case PixelFormatType::kR32G32_FLOAT:
+        case PixelFormatType::kR32_FLOAT:
+            return true;
+        default: return false;
+    }
+}
+
+FORCEINLINE bool IsUIntPixelFormat (PixelFormatType type) {
+    switch (type) {
+        case PixelFormatType::kR32G32B32A32_UINT:
+        case PixelFormatType::kR32G32_UINT:
+        case PixelFormatType::kR32_UINT:
+            return true;
+        default: return false;
+    }
+}
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_PIXEL_FORMAT_H

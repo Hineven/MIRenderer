@@ -37,10 +37,11 @@ RDGShader::RDGShader(RDGShaderInitializationInfo ini)
         : name_(ini.name),
           source_location_(std::move(ini.source_location)),
           type_(ini.type) {
-    shaders_.compute_entry = ini.compute_entry_;
-    shaders_.vertex_entry = ini.vertex_entry_;
-    shaders_.fragment_entry = ini.fragment_entry_;
+    shader_entries_.compute = ini.compute_entry_;
+    shader_entries_.vertex = ini.vertex_entry_;
+    shader_entries_.fragment = ini.fragment_entry_;
     child_methods_.GetShaderParamInfo = ini.GetShaderParamInfo;
+    child_methods_.GetShaderPipelineConfig = ini.GetShaderPipelineConfig;
 }
 
 static std::string LoadFile(const std::string & path) {
@@ -402,12 +403,18 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
 
 bool RDGShader::Recompile() {
 
+    // Clear legacy resources
+    graphics_pipeline_ = {};
+    shaders_ = {};
+
     auto source_code = LoadSource();
     if (source_code.empty()) {
         MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", source_location_);
         return false;
     }
     if (!RecompileShaders(source_code)) return false;
+
+    auto pipeline_config = child_methods_.GetShaderPipelineConfig();
 
     // Assemble the pipeline
     if (type_ == RHIPipelineType::kCompute) {
@@ -441,15 +448,72 @@ bool RDGShader::Recompile() {
         // TOOD depth testing
 
         auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
-        std::vector<RHIColorAttachmentDesc> color_attachments;
-        for (auto e : fragment_outputs) {
-            RHIColorAttachmentBlendDesc blend {};
-            color_attachments.emplace_back(blend, e.format);
+        std::vector<RHIColorAttachmentDesc> color_attachments = pipeline_config.color_attachments;
+        auto GuessFormat = [] (RHIFragmentOutputFormatType fragment_output) {
+            switch (fragment_output) {
+                case RHIFragmentOutputFormatType::k4xFp32:
+                    return PixelFormatType::kR8G8B8A8_UNORM;
+                case RHIFragmentOutputFormatType::k4xUIint32:
+                    return PixelFormatType::kR32G32B32A32_UINT;
+                default:
+                    assert(false);
+            }
+            return PixelFormatType::kUnknown;
+        };
+        if (color_attachments.empty()) {
+            // Infer from fragment shader reflection
+            int max_index = 0;
+            for (auto e : fragment_outputs) {
+                max_index = std::max((int)e.location, max_index);
+            }
+            color_attachments.resize(max_index + 1, {});
+            for (auto e : fragment_outputs) {
+                RHIColorAttachmentBlendDesc blend {};
+                color_attachments[e.location] = {blend, GuessFormat(e.format)};
+            }
+        } else {
+            // Check if the attachment count & format matches
+            if (color_attachments.size() != fragment_outputs.size()) {
+                MI_LOG(MIInfraLogType::kWarning, "Shader {} Color attachment count mismatch, expected {}, got {}",
+                       GetName(), fragment_outputs.size(), color_attachments.size());
+            }
+            // formats and locations
+            for (size_t i = 0; i < std::min(color_attachments.size(), fragment_outputs.size()); ++i) {
+                auto output = fragment_outputs[i].format;
+                auto location = fragment_outputs[i].location;
+                if (location < color_attachments.size()) {
+                    auto pixel_format = color_attachments[location].format;
+                    if (output == RHIFragmentOutputFormatType::k4xFp32) {
+                        bool compatiable = IsFloatPixelFormat(pixel_format);
+                        if (!compatiable) {
+                            MI_LOG(MIInfraLogType::kWarning, "Shader {} Fragment output location {} format mismatch",
+                                   GetName(), location);
+                        }
+                    } else if (output == RHIFragmentOutputFormatType::k4xUIint32) {
+                        bool compatiable = IsUIntPixelFormat(pixel_format);
+                        if (!compatiable) {
+                            MI_LOG(MIInfraLogType::kWarning, "Shader {} Fragment output location {} format mismatch",
+                                   GetName(), location);
+                        }
+                    } else {
+                        assert(false && "This should not happen");
+                    }
+                } else {
+                    MI_LOG(MIInfraLogType::kWarning, "Shader {} Fragment output location {} is out of range. "
+                                                     "Number of color attachments declared in c++ is {}.",
+                                                     GetName(), location, color_attachments.size());
+                }
+            }
         }
-
+        desc.color_attachments = color_attachments;
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, GetName().c_str()
         );
+        if (!pipeline) {
+            MI_LOG(MIInfraLogType::kError, "Failed to create graphics pipeline");
+            return false;
+        }
+        graphics_pipeline_ = pipeline;
     }
 }
 

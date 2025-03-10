@@ -61,6 +61,13 @@ public:
     FORCEINLINE const ShaderEntries & GetShaderEntries () const {return shader_entries_;}
     FORCEINLINE const std::string & GetName () const {return name_;}
 
+    FORCEINLINE static RDGShaderPipelineConfig GetDefaultShaderPipelineConfig () {
+        return RDGShaderPipelineConfig {
+            RHIPrimitiveTopologyType::kTriangleList,
+            {} // Infer attachments from fragment shader reflection
+        };
+    }
+
 protected:
 
     std::string LoadSource () const ;
@@ -86,7 +93,18 @@ protected:
 
     struct {
         std::function<RDGShaderParamStructInfo*()> GetShaderParamInfo {};
+        std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig {};
     } child_methods_;
+};
+
+template<typename T, typename = void>
+struct TGetShaderPipelineConfig {
+    constexpr auto value = RDGShader::GetDefaultShaderPipelineConfig;
+};
+
+template<typename T>
+struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConfig)>> {
+    constexpr auto value = T::GetShaderPipelineConfig;
 };
 
 // Compute
@@ -99,7 +117,7 @@ protected:
             Type, SourcePath, \
             EntryPoint, "", "" \
             ClassName::GetParamsMetaData, \
-            ClassName::GetShaderPipelineConfig}; \
+            TGetShaderPipelineConfig<ClassName>::value}; \
         } \
     );
 
@@ -114,7 +132,7 @@ protected:
                 Type, SourcePath, \
                 "", EntryPoint_VS, EntryPoint_PS, \
                 ClassName::GetParamsMetaData, \
-                ClassName::GetShaderPipelineConfig}; \
+                TGetShaderPipelineConfig<ClassName>::value}; \
         } \
     );
 
