@@ -78,6 +78,7 @@ struct RHIColorAttachmentBlendDesc {
 struct RHIColorAttachmentDesc {
     RHIColorAttachmentBlendDesc blending;
     PixelFormatType format {PixelFormatType::kUnknown};
+    // Load and store ops are dynamic (in render pass via render begin command)
 //    RHILoadOpType load_op {RHILoadOpType::kClear};
 //    RHIStoreOpType store_op {RHIStoreOpType::kStore};
 };
@@ -193,15 +194,16 @@ namespace PipelineReflection {
         uint32_t name_crc;
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
+        std::string name;
         // Deep reflection into constant buffer structs in the shader
         RHIParamStructInfo * struct_reflection;
-        std::string name;
     };
     struct StorageBufferDesc {
         uint32_t name_crc;
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
+        RHIGPUAccessFlags access_flags;
     };
     struct UAVDesc {
         uint32_t name_crc;
@@ -248,16 +250,23 @@ namespace ShaderReflection {
         uint32_t name_crc;
         // TODO reflection into uniform buffer structs
         std::string name;
+        // Deep reflection into constant buffer structs in the shader
+        RHIParamStructInfo * struct_reflection;
         FORCEINLINE PipelineReflection::UniformBufferDesc ToPipelineDesc() const {
-            return {size, name_crc, 0, name};
+            return {size, name_crc, 0, name,
+                // FIXME Here we directly shares the memory among RHIShader's reflection and RHIPipeline's reflection.
+                // The current implementation simply leaks all memory for shader struct reflection.
+                // If we further implemented proper memory recycling, this may cause a floating pointer error.
+                struct_reflection};
         }
     };
     struct StorageBufferDesc {
         IRBindingDecorationLocation locations;
         uint32_t name_crc;
         std::string name;
+        RHIGPUAccessFlags access_flags;
         FORCEINLINE PipelineReflection::StorageBufferDesc ToPipelineDesc() const {
-            return {name_crc, 0, name};
+            return {name_crc, 0, name, access_flags};
         }
     };
     struct UAVDesc {

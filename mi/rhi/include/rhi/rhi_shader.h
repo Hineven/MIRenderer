@@ -27,6 +27,9 @@ public:
     FORCEINLINE bool IsValid () const { return is_valid_; }
     FORCEINLINE const std::string & GetEntryName () const { return entry_name_; }
 
+    FORCEINLINE void SetSourceFilePath (std::string_view path) { source_file_path_ = path; }
+    FORCEINLINE std::string GetSourceFilePath () const { return source_file_path_; }
+
     USE_SHADER_REFLECTION_STRUCTS
 
     FORCEINLINE RHIShaderFrequencyFlagBits GetFrequency() const { return frequency_; }
@@ -61,6 +64,9 @@ public:
     uint32_t GetVertexStride () const ;
 
 protected:
+
+    // Only used for debugging and tracking shaders.
+    std::string source_file_path_ {"<unknown>"};
 
     virtual bool CompileRHI () = 0;
 

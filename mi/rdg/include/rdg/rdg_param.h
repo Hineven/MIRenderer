@@ -62,97 +62,66 @@ struct RDGShaderParamStructInfo : public RHIParamStructInfo {
 };
 
 // Map hlsl type strings to C++ metadata and types
-template<uint32_t CRC> struct TRDGParamType;
-template<> struct TRDGParamType<ConstStrHash32("int")> {
-    typedef int PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kInt;
+template<uint32_t CRC> struct TRDGShaderParamPlaceHolderType;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int")> {
+    typedef int value;
 };
-template<> struct TRDGParamType<ConstStrHash32("int2")> {
-    typedef glm::ivec2 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kInt2;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int2")> {
+    typedef glm::ivec2 value;
 };
-template<> struct TRDGParamType<ConstStrHash32("int3")> {
-    typedef glm::ivec3 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kInt3;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int3")> {
+    typedef glm::ivec3 value;
 };
-template<> struct TRDGParamType<ConstStrHash32("int4")> {
-    typedef glm::ivec4 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kInt4;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int4")> {
+    typedef glm::ivec4 value;
 };
 
-template<> struct TRDGParamType<ConstStrHash32("uint")> {
-    typedef uint32_t PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kUInt;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint")> {
+    typedef uint32_t value;
 };
-template<> struct TRDGParamType<ConstStrHash32("uint2")> {
-    typedef glm::uvec2 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kUInt2;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint2")> {
+    typedef glm::uvec2 value;
 };
-template<> struct TRDGParamType<ConstStrHash32("uint3")> {
-    typedef glm::uvec2 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kUInt3;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint3")> {
+    typedef glm::uvec2 value;
 };
-template<> struct TRDGParamType<ConstStrHash32("uint4")> {
-    typedef glm::uvec2 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kUInt4;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint4")> {
+    typedef glm::uvec2 value;
 };
 
-template<> struct TRDGParamType<ConstStrHash32("float")> {
-    typedef float PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kFloat;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float")> {
+    typedef float value;
 };
-template<> struct TRDGParamType<ConstStrHash32("float2")> {
-    typedef glm::vec2 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kFloat2;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float2")> {
+    typedef glm::vec2 value;
 };
-template<> struct TRDGParamType<ConstStrHash32("float3")> {
-    typedef glm::vec3 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kFloat3;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float3")> {
+    typedef glm::vec3 value;
 };
-template<> struct TRDGParamType<ConstStrHash32("float4")> {
-    typedef glm::vec4 PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kBasic;
-    static constexpr RHIBasicParamType BasicParamType = RHIBasicParamType::kFloat4;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float4")> {
+    typedef glm::vec4 value;
 };
 
-template<> struct TRDGParamType<ConstStrHash32("Texture2D")> {
-    typedef RDGTexture * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kSRVTexture;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {
+    typedef RDGTexture * value;
 };
-template<> struct TRDGParamType<ConstStrHash32("RWTexture2D")> {
-    typedef RDGTexture * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kUAVTexture;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWTexture2D")> {
+    typedef RDGTexture * value;
 };
-template<> struct TRDGParamType<ConstStrHash32("Sampler")> {
-    typedef RHISampler * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kSampler;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Sampler")> {
+    typedef RHISampler * value;
 };
-template<> struct TRDGParamType<ConstStrHash32("Buffer")> {
-    typedef RDGBuffer * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kSRVBuffer;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {
+    typedef RDGBuffer * value;
 };
-template<> struct TRDGParamType<ConstStrHash32("StructuredBuffer")> {
-    typedef RDGBuffer * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kSRVBuffer;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("StructuredBuffer")> {
+    typedef RDGBuffer * value;
 };
-template<> struct TRDGParamType<ConstStrHash32("RWBuffer")> {
-    typedef RDGBuffer * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kUAVBuffer;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWBuffer")> {
+    typedef RDGBuffer * value;
 };
-template<> struct TRDGParamType<ConstStrHash32("RWStructuredBuffer")> {
-    typedef RDGBuffer * PlaceHolderType;
-    static constexpr RHIParamType ParamType = RHIParamType::kUAVBuffer;
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWStructuredBuffer")> {
+    typedef RDGBuffer * value;
 };
 
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
@@ -160,9 +129,11 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     const RDGShaderParamStructInfo * cpp_struct_info = nullptr, RDGShaderParamStructImportType import_type = RDGShaderParamStructImportType::kNested) {
     RDGShaderParamInfo info {};
     info.name = param_name;
-    info.type = StringToRHIParamType(type_name);
+    info.type = RHITypeNameStringToParamType(type_name);
+    info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
+
     if(info.type == RHIParamType::kBasic) {
-        info.basic_type = StringToRHIBasicParamType(type_name);
+        info.basic_type = RHITypeNameStringToBasicParamType(type_name);
     }
     if (info.type == RHIParamType::kStruct) {
         info.struct_info = cpp_struct_info;
@@ -226,7 +197,7 @@ private: \
 #define SHADER_PARAMETER(Type, Name) \
     zz##Name##_PrevTypeID; \
 public: \
-    TRDGParamType<ConstStrHash32(#Type)>::PlaceHolderType Name; \
+    TRDGShaderParamPlaceHolderType<ConstStrHash32(#Type)>::value Name; \
 private: \
     struct zz##Name##_TypeID { \
         static constexpr const char * name = #Name; \

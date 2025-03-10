@@ -16,20 +16,21 @@
 #include <core/crc.h>
 #include <glm/glm.hpp>
 
+#include "rhi_types.h"
 #include "core/util/byte_strided_span.h"
 #include "rhi/rhi_common.h"
 
 MI_NAMESPACE_BEGIN
 
 enum class RHIParamType {
-    kUAVBuffer,
-    kSRVBuffer,
+    kStorageBuffer,
+    kUniformBuffer,
     kUAVTexture,
     kSRVTexture,
     kSampler,
-    // kConstantBuffer, // Uniform buffer
     kStruct,
     kBasic,
+    kAccelerationStructure,
     kMax,
 };
 
@@ -49,7 +50,7 @@ enum class RHIBasicParamType {
     kMax
 };
 
-FORCEINLINE RHIBasicParamType StringToRHIBasicParamType (std::string_view type) {
+FORCEINLINE RHIBasicParamType RHITypeNameStringToBasicParamType (std::string_view type) {
     if(type == "float") return RHIBasicParamType::kFloat;
     if(type == "float2") return RHIBasicParamType::kFloat2;
     if(type == "float3") return RHIBasicParamType::kFloat3;
@@ -65,17 +66,25 @@ FORCEINLINE RHIBasicParamType StringToRHIBasicParamType (std::string_view type) 
     return RHIBasicParamType::kMax;
 }
 
-FORCEINLINE RHIParamType StringToRHIParamType (std::string_view type) {
+FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "Texture2D") return RHIParamType::kSRVTexture;
     if(type == "RWTexture2D") return RHIParamType::kUAVTexture;
     if(type == "Sampler") return RHIParamType::kSampler;
-    if(type == "Buffer") return RHIParamType::kSRVBuffer;
-    if(type == "StructuredBuffer") return RHIParamType::kSRVBuffer;
-    if(type == "RWBuffer") return RHIParamType::kUAVBuffer;
-    if(type == "RWStructuredBuffer") return RHIParamType::kUAVBuffer;
-    if(type == "ConstantBuffer") return RHIParamType::kStruct;
-    if(StringToRHIBasicParamType(type) != RHIBasicParamType::kMax) return RHIParamType::kBasic;
+    if(type == "Buffer") return RHIParamType::kStorageBuffer;
+    if(type == "StructuredBuffer") return RHIParamType::kStorageBuffer;
+    if(type == "RWBuffer") return RHIParamType::kStorageBuffer;
+    if(type == "RWStructuredBuffer") return RHIParamType::kStorageBuffer;
+    if(type == "ConstantBuffer") return RHIParamType::kUniformBuffer;
+    if(type == "AccelerationStructure") return RHIParamType::kAccelerationStructure;
+    if(RHITypeNameStringToBasicParamType(type) != RHIBasicParamType::kMax) return RHIParamType::kBasic;
     return RHIParamType::kStruct;
+}
+
+FORCEINLINE RHIGPUAccessFlags TypeNameStringToRHIAccessFlags (std::string_view type) {
+    if (type.length() >= 2 && type.starts_with("RW")) {
+        return RHIGPUAccessFlagBits::kAll;
+    }
+    return RHIGPUAccessFlagBits::kRead;
 }
 
 FORCEINLINE uint32_t RHIGetBasicParamSize (RHIBasicParamType type) {
@@ -124,6 +133,8 @@ struct RHIParamInfo {
     RHIBasicParamType basic_type;
     // Reflection valid for StructuredBuffer, RWStructuredBuffer, ConstantBuffer
     const RHIParamStructInfo * struct_info;
+    // Currently only meaningful for storage buffers. Otherwise, it can be any value.
+    RHIGPUAccessFlags access_flags;
     uint32_t offset; // Only makes sense for members inside a struct
     uint32_t size;
     // uint32_t array_size; // Arrays not supported currently
@@ -131,8 +142,8 @@ struct RHIParamInfo {
 };
 
 struct RHIParamStructInfo {
-    byte_strided_span<RHIParamInfo> members;
     uint32_t layout_hash;
+    byte_strided_span<RHIParamInfo> members;
     FORCEINLINE uint32_t GetSize () const {
         uint32_t curr_position = 0;
         for (auto & e : members) {

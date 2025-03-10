@@ -48,7 +48,6 @@ template<typename T>
 struct THasSize <T, std::void_t<decltype(std::declval<T>().size)>> : std::true_type {};
 
 bool RHIShader::ReflectShaderResourcesSPIRV() {
-
     if(ir_size_ % 4 != 0) {
         MI_LOG(MIInfraLogType::kWarning, "SPIRV IR code size must be a multiple of 4");
         return false;
@@ -83,7 +82,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             if (
                 t == spirv_cross::SPIRType::Float || t == spirv_cross::SPIRType::Int || t == spirv_cross::SPIRType::UInt) {
                 return true;
-            }
+                }
             assert(false && "Not Implemented");
         };
         auto GetBasicParamType = [](spirv_cross::SPIRType::BaseType t, uint32_t vec_size) {
@@ -160,8 +159,23 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             desc.struct_reflection = RecursiveDeepReflection(compiler_resource.base_type_id);
         }
     }
-
-    ReflectResources.operator()<StorageBufferDesc>( shader_resources.storage_buffers, storage_buffers_);
+    // Manually reflect storage buffers to separate RW / R only buffers
+    {
+        for (auto & resource : shader_resources.storage_buffers) {
+            StorageBufferDesc desc;
+            desc.name = resource.name;
+            compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);
+            compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationDescriptorSet, desc.locations.set_offset);
+            uint32_t word_offset;
+            compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationNonWritable, word_offset);
+            bool is_read_only = (bool)(((uint32_t*)ir_)[word_offset]);
+            desc.access_flags = {};
+            if (!is_read_only) desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kWrite;
+            desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kRead;
+            desc.name_crc = CRC32(desc.name.data(), desc.name.size());
+            storage_buffers_.push_back(desc);
+        }
+    }
     ReflectResources.operator()<UAVDesc>( shader_resources.storage_images, uavs_);
     ReflectResources.operator()<SRVDesc>( shader_resources.separate_images, srvs_);
     ReflectResources.operator()<SamplerDesc>( shader_resources.separate_samplers, samplers_);
