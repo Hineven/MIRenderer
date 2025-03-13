@@ -425,7 +425,6 @@ TEST(RHITest, RHITriangle) {
     }
 }
 
-MI_NAMESPACE_BEGIN
 
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);

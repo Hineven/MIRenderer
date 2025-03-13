@@ -16,12 +16,11 @@
 #include "core/pixel_format.h"
 #include "core/constants.h"
 
-namespace mi {
-    struct RHIParamStructInfo;
-}
-
 MI_NAMESPACE_BEGIN
-    struct RHIBufferSpan {
+
+struct RHIParamStructInfo;
+
+struct RHIBufferSpan {
     RHIBuffer * buffer;
     size_t offset;
     size_t size;

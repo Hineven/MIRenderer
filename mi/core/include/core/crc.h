@@ -63,11 +63,11 @@ FORCEINLINE uint32_t CRC32(const void *data, size_t size, uint32_t crc = 0xFFFFF
     return crc ^ 0xFFFFFFFF;
 }
 
-FORCEINLINE uint32_t CRC32(const char *str, uint32_t crc = 0xFFFFFFFF) {
+FORCEINLINE uint32_t CRC32String(const char *str, uint32_t crc = 0xFFFFFFFF) {
     return CRC32(str, strlen(str), crc);
 }
 
-FORCEINLINE uint32_t CRC32(std::string_view str, uin32_t crc = 0xFFFFFFFF) {
+FORCEINLINE uint32_t CRC32String(std::string_view str, uint32_t crc = 0xFFFFFFFF) {
     return CRC32(str.data(), str.size(), crc);
 }
 

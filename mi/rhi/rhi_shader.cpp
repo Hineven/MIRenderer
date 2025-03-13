@@ -167,10 +167,10 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationDescriptorSet, desc.locations.set_offset);
             uint32_t word_offset;
-            compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationNonWritable, word_offset);
-            bool is_read_only = (bool)(((uint32_t*)ir_)[word_offset]);
+            bool has_decoration = compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationNonWritable, word_offset);
+            bool read_only = has_decoration && (bool)(((uint32_t*)ir_)[word_offset]);
             desc.access_flags = {};
-            if (!is_read_only) desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kWrite;
+            if (!read_only) desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kWrite;
             desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kRead;
             desc.name_crc = CRC32(desc.name.data(), desc.name.size());
             storage_buffers_.push_back(desc);

@@ -21,7 +21,9 @@ public:
     FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
 protected:
     RHITextureDesc desc_;
-    TRef<RHITexture> texture_;
+    // Underlying RHI texture, can be null if not allocated.
+    // The reference is kept by RDG resource pool, we'll just use plain pointer here.
+    RHITexture * rhi_texture_ {};
 };
 
 class RDGBuffer : public RDGResource {
@@ -33,7 +35,9 @@ public:
     FORCEINLINE RHIBufferDesc GetDesc () const { return desc_; }
 protected:
     RHIBufferDesc desc_;
-    TRef<RHIBuffer> buffer_;
+    // Underlying RHI buffer, can be null if not allocated.
+    // The reference is kept by RDG resource pool, we'll just use plain pointer here.
+    RHIBufferSpan rhi_buffer_span_;
 };
 
 MI_NAMESPACE_END

@@ -16,8 +16,6 @@
 
 MI_NAMESPACE_BEGIN
 
-struct RDGParamStructInfo;
-
 enum class RDGShaderParamStructImportType {
     // (cpp side) included the entire parameter in the struct memory
     kNested,
@@ -54,10 +52,10 @@ struct RDGShaderParamStructInfo : public RHIParamStructInfo {
         return it->second;
     }
     FORCEINLINE int GetMemberIndex (const char * name) const {
-        return GetMemberIndex(CRC32(name));
+        return GetMemberIndex(CRC32String(name));
     }
     FORCEINLINE int GetMemberIndex (std::string_view name) const {
-        return GetMemberIndex(CRC32(name));
+        return GetMemberIndex(CRC32String(name));
     }
 };
 
@@ -143,7 +141,7 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     // info.offset = offset; // Offsets will be assigned when finalizing
     info.cpp_offset = cpp_offset;
     if (info.struct_info) {
-        info.size = cpp_struct_info->GetSize();
+        info.size = cpp_struct_info->ComputeSize();
     } else if (info.type == RHIParamType::kBasic) {
         info.size = RHIGetBasicParamSize(info.basic_type);
     }
@@ -151,32 +149,36 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
 }
 
 namespace details {
+    // Compute the device-side uniform buffer size of the parameter struct
     FORCEINLINE bool zzFinalizeParams(std::vector<RDGShaderParamInfo> & params) {
         uint32_t curr_position = 0;
         std::map<std::string, size_t> name_to_offset;
         name_to_offset.clear();
         for (auto & e : params) {
-            auto alignment = e.GetAlignment();
-            curr_position = (curr_position + alignment - 1) & ~(alignment - 1);
-            // Buffer-row rule check: if the element lies on the 16-byte boundary, it should be aligned to 16 bytes
-            if (e.type == RHIParamType::kBasic) {
-                auto param_size = RHIGetBasicParamSize(e.basic_type);
-                auto start_row = curr_position / 16;
-                auto end_row = (curr_position + param_size - 1) / 16;
-                if (start_row != end_row) {
-                    curr_position = (curr_position + 16 - 1) & ~(16 - 1);
+            // Ignore non-uniform buffer contents (shader resources, uniform buffer ref)
+            if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
+                auto alignment = e.GetAlignment();
+                curr_position = (curr_position + alignment - 1) & ~(alignment - 1);
+                // HLSL buffer-row rule check: if the element lies on the 16-byte boundary, it should be aligned to 16 bytes
+                if (e.type == RHIParamType::kBasic) {
+                    auto param_size = RHIGetBasicParamSize(e.basic_type);
+                    auto start_row = curr_position / 16;
+                    auto end_row = (curr_position + param_size - 1) / 16;
+                    if (start_row != end_row) {
+                        curr_position = (curr_position + 16 - 1) & ~(16 - 1);
+                    }
                 }
+                e.offset = curr_position;
+                curr_position += e.size;
+                auto it = name_to_offset.find(e.name);
+                if (it != name_to_offset.end()) {
+                    // FIXME compile error, why?
+                    assert(false);
+                    // MI_LOG(MIInfraLogType::kError, "Duplicate param name: {}", e.name);
+                    return false;
+                }
+                name_to_offset[e.name] = e.offset;
             }
-            e.offset = curr_position;
-            curr_position += e.size;
-            auto it = name_to_offset.find(e.name);
-            if (it != name_to_offset.end()) {
-                // FIXME compile error, why?
-                assert(false);
-                // MI_LOG(MIInfraLogType::kError, "Duplicate param name: {}", e.name);
-                return false;
-            }
-            name_to_offset[e.name] = e.offset;
         }
         return true;
     }

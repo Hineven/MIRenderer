@@ -135,6 +135,7 @@ struct RHIParamInfo {
     const RHIParamStructInfo * struct_info;
     // Currently only meaningful for storage buffers. Otherwise, it can be any value.
     RHIGPUAccessFlags access_flags;
+    // Device side (shader) memory offset within the parent struct.
     uint32_t offset; // Only makes sense for members inside a struct
     uint32_t size;
     // uint32_t array_size; // Arrays not supported currently
@@ -144,16 +145,10 @@ struct RHIParamInfo {
 struct RHIParamStructInfo {
     uint32_t layout_hash;
     byte_strided_span<RHIParamInfo> members;
-    FORCEINLINE uint32_t GetSize () const {
-        uint32_t curr_position = 0;
-        for (auto & e : members) {
-            auto alignment = e.GetAlignment();
-            curr_position = (curr_position + alignment - 1) & ~(alignment - 1);
-            curr_position += e.size;
-        }
-        return curr_position;
-    }
     void InitializeLayoutHash ();
+    // Compute device-side uniform buffer size for this struct.
+    // Note: we'll omit shader resource members (such as textures) that can not reside in uniform buffers.
+    uint32_t ComputeSize () const;
 };
 
 MI_NAMESPACE_END

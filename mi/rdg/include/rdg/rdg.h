@@ -8,27 +8,21 @@
 #define RDG_H
 
 #include "rdg_base.h"
+#include "rdg_pass.h"
 #include "rhi/rhi.h"
 
 MI_NAMESPACE_BEGIN
+class RDGShader;
+
 class RenderGraph : public RefCounted<> {
-public:
+protected:
     void Execute (RenderResourcePool & pool) ;
+    void ExecutePass (RDGPass & pass) ;
+public:
+    friend class RDGCommands;
 };
 
 typedef TRef<RenderGraph> RenderGraphRef;
-
-class RenderGraphBuilder : public NonCopyable, public NonMovable {
-public:
-    void AddPass (const char *name, std::function<void()> pass) ;
-    RenderGraphRef Compile ();
-
-    RDGTexture ImportResource (const char *name, TRef<RHITexture> resource) ;
-    RDGBuffer  ImportResource (const char *name, TRef<RHIBuffer> resource) ;
-    RDGResource ImportResource (const char * name, TRef<RHIResource> resource) ;
-    RDGTexture ExportResource (const char *name, RDGTexture texture) ;
-
-};
 
 MI_NAMESPACE_END
 

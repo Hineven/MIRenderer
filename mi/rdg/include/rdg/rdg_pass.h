@@ -8,6 +8,7 @@
 #define RDG_PASS_H
 #include "rdg/rdg_base.h"
 MI_NAMESPACE_BEGIN
+struct RDGShaderParamStructInfo;
 
 class RDGPass : public NonMovable, public NonCopyable {
 protected:
@@ -17,17 +18,20 @@ public:
     virtual ~RDGPass() = default;
     virtual void Execute (RenderResourcePool & pool) = 0;
 protected:
-    template<typename T>
-    struct RDGResourceAccess {
-        TRef<T> resource;
-        RHIGPUAccessFlags access;
-    };
-    typedef RDGResourceAccess<RDGTexture> RDGTextureAccess;
-    typedef RDGResourceAccess<RDGBuffer> RDGBufferAccess;
+    const RDGShaderParamStructInfo * shader_param_struct_info_;
+    const void * shader_param_data_;
+    // It's the graph's task to count resource usage. We'll use plain pointers here.
+    std::vector<RDGTexture*> out_textures_;
+    std::vector<RDGBuffer*> out_buffers_;
+    std::vector<RDGTexture*> in_textures_;
+    std::vector<RDGBuffer*> in_buffers_;
+    // Private uniform buffer
+    RDGBuffer * uniform_buffer_;
+    //
+    std::vector<const RDGBuffer*> referenced_uniform_buffers_;
 
-    std::vector<RDGTextureAccess> accessed_textures_;
-    std::vector<RDGBufferAccess> accessed_buffers_;
-    // std::vector<RDGResourceAccess> accessed_acceleration_structures_;
+    // Gather resources accessed by the shader, initialize in/out resources
+    void GatherInOutResources () ;
 
     std::function<void()> pass_;
 };
