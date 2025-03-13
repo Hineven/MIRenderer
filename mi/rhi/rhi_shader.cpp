@@ -274,7 +274,6 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             fragment_outputs_.push_back(desc);
         }
     }
-
     return true;
 }
 

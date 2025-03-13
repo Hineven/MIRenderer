@@ -59,6 +59,11 @@ struct RDGShaderParamStructInfo : public RHIParamStructInfo {
     }
 };
 
+struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
+    // Cache the device size of the parameter struct at the outer most level
+    uint32_t size;
+};
+
 // Map hlsl type strings to C++ metadata and types
 template<uint32_t CRC> struct TRDGShaderParamPlaceHolderType;
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int")> {
@@ -285,9 +290,9 @@ private: \
     zzzLastParam_PrevTypeID; \
     typedef zzFuncPtr (*zzMemberFunc)(zzzFirstParam_TypeID, std::vector<RDGShaderParamInfo> *);\
 public: \
-    static const RDGShaderParamStructInfo * GetParamStructInfo () \
+    static const RDGShaderParamStructAndSizeInfo * GetParamStructInfo () \
 	{ \
-        static RDGShaderParamStructInfo * params_struct_info_ {}; \
+        static RDGShaderParamStructAndSizeInfo * params_struct_info_ {}; \
         if (params_struct_info_) return * params_struct_info_; \
 		std::vector<RDGShaderParamInfo> params; \
 		zzFuncPtr (*LastFunc)(zzzLastParam_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
@@ -299,7 +304,7 @@ public: \
 		bool success = details::zzFinalizeParams(params); \
         if(!success) { \
             MI_LOG(MIInfraLogType::kError, "Failed to finalize shader parameters"); \
-            params_struct_info_ = new RDGShaderParamStructInfo {}; \
+            params_struct_info_ = new RDGShaderParamStructAndSizeInfo {}; \
             return * params_struct_info_; \
         } \
         auto params_mem = new RDGShaderParamInfo[params.size()]; \
@@ -310,9 +315,12 @@ public: \
         } \
         auto params_span = byte_strided_span((RHIParamInfo*)params_mem, params.size(), sizeof(RDGShaderParamInfo)); \
         auto cpp_params_span = std::span(params_mem, params.size()); \
-        params_struct_info_ = new RDGShaderParamStructInfo {params_span, cpp_params_span}; \
+        params_struct_info_ = new RDGShaderParamStructAndSizeInfo {}; \
+        params_struct_info_->members = params_span; \
+        params_struct_info_->cpp_members = cpp_params_span; \
         params_struct_info_->member_index_map = member_index_map; \
         params_struct_info_->InitializeLayoutHash(); \
+        params_struct_info_->size = params_struct_info_->ComputeSize(); \
         return * params_struct_info_; \
 	} \
 };

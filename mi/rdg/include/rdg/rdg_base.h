@@ -14,23 +14,20 @@
 MI_NAMESPACE_BEGIN
 
 // A resource that is imported into / exist only within a render graph
-class RDGResource : public NonCopyable, public RefCounted<> {
+// Only the render thread can access its references, so no need for thread-safe reference counting.
+class RDGResource : public NonCopyable, public RefCounted<false> {
 public:
-    RDGResource (RHIResource * resource) : resource_(resource) {}
-    RHIResource * GetResource () const { return resource_; }
-    FORCEINLINE void Use (RHIGPUAccessFlags access) { accumulated_access_ = accumulated_access_ | access; }
-    FORCEINLINE RHIGPUAccessFlags GetAccessFlags () const { return accumulated_access_; }
+    friend class RDGResourcePool;
+    FORCEINLINE RDGResource (RDGResourcePool * pool) : pool_(pool) {}
+    virtual ~RDGResource () = default;
+    // Get the hash value for mapping RDG resources to RHI resources. (classify resources)
+    virtual uint32_t GetResourceClassHash () const = 0;
+    // Release the underlying RHI resource to the pool
+    virtual void ReleaseRHI () = 0;
+    // Request the underlying RHI resource from the pool
+    virtual void RequestRHI () = 0;
 protected:
-    // Currently accumulated access flags on this resource
-    RHIGPUAccessFlags accumulated_access_ {};
-    // Kept by raw pointer. The resource won't be destroyed until the commands from next frame
-    // start submitting even if it has 0 refcount. So it's safe.
-    RHIResource * resource_;
-};
-
-class RDGPool : public NonCopyable, public NonMovable {
-public:
-    RDGPool () {};
+    RDGResourcePool * pool_ {};
 };
 
 typedef TRef<RDGResource> RDGResourceRef;

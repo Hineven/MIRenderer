@@ -30,7 +30,7 @@ struct RDGShaderInitializationInfo {
     std::string compute_entry_;
     std::string vertex_entry_;
     std::string fragment_entry_;
-    std::function<RDGShaderParamStructInfo*()> GetShaderParamInfo;
+    std::function<RDGShaderParamStructAndSizeInfo*()> GetShaderParamInfo;
     std::vector<std::string> default_macros;
     std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig;
 };
@@ -92,7 +92,7 @@ protected:
     } shaders_;
 
     struct {
-        std::function<RDGShaderParamStructInfo*()> GetShaderParamInfo {};
+        std::function<RDGShaderParamStructAndSizeInfo*()> GetShaderParamInfo {};
         std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig {};
     } child_methods_;
 };
@@ -138,8 +138,8 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
     using ShaderParameters = Name; \
-    static RDGShaderParamStructInfo GetParamsMetaData() { \
-        return ShaderParameters::GetParamsMetaData(); \
+    static const RDGShaderParamStructAndSizeInfo * GetParamsStructInfo() { \
+        return ShaderParameters::GetParamsStructInfo(); \
     }
 
 class RDGShaderLibrary : public NonMovable, public NonCopyable {

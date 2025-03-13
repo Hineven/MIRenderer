@@ -16,11 +16,16 @@ MI_NAMESPACE_BEGIN
 
 class RDGTexture : public RDGResource {
 public:
-    RDGTexture (RHITextureDesc desc) : RDGResource(nullptr), desc_(desc) {}
-    ~RDGTexture () override = default;
+    friend class RDGResourcePool;
+    FORCEINLINE RDGTexture (RDGResourcePool * pool, RHITextureDesc desc) : RDGResource(pool), desc_(desc) {}
+    ~RDGTexture () override ;
     FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
+    uint32_t GetResourceClassHash () const override;
+    void RequestRHI() override;
+    void ReleaseRHI() override;
+    FORCEINLINE bool IsAllocated () const { return rhi_texture_ != nullptr; }
 protected:
-    RHITextureDesc desc_;
+    RHITextureDesc desc_ {};
     // Underlying RHI texture, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHITexture * rhi_texture_ {};
@@ -28,16 +33,28 @@ protected:
 
 class RDGBuffer : public RDGResource {
 public:
-    RDGBuffer (RHIBufferUsageFlags usage, size_t size) : RDGResource(nullptr), desc_({size, usage}) {}
-    ~RDGBuffer () override = default;
+    friend class RDGResourcePool;
+    FORCEINLINE RDGBuffer (RDGResourcePool * pool, RHIBufferUsageFlags usage, size_t size) : RDGResource(pool), desc_({size, usage}) {}
+    FORCEINLINE void SetDedicated (bool value = true) {
+        assert(!rhi_buffer_span_.buffer && "Cannot set dedicated flag after buffer allocation.");
+        dedicated_ = value;
+    }
+    ~RDGBuffer () override ;
+    uint32_t GetResourceClassHash () const override;
     FORCEINLINE size_t GetSize () const { return desc_.size; }
     FORCEINLINE RHIBufferUsageFlags GetUsage () const { return desc_.usage; }
     FORCEINLINE RHIBufferDesc GetDesc () const { return desc_; }
+    void RequestRHI() override;
+    void ReleaseRHI() override;
+    FORCEINLINE bool IsAllocated () const { return rhi_buffer_span_.buffer != nullptr; }
 protected:
-    RHIBufferDesc desc_;
+    // If true, RDG resource pool tends to map the buffer to a dedicated RHI buffer.
+    // when set, rhi_buffer_span_ should have 0 offset.
+    bool dedicated_ {};
+    RHIBufferDesc desc_ {};
     // Underlying RHI buffer, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
-    RHIBufferSpan rhi_buffer_span_;
+    RHIBufferSpan rhi_buffer_span_ {};
 };
 
 MI_NAMESPACE_END

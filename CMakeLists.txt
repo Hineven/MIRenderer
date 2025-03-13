@@ -55,6 +55,9 @@ else()
     set(dxc_library_target Vulkan::dxc_lib)
 endif()
 
+# Simple external packages
+find_package(xxHash CONFIG REQUIRED)
+
 # Simple implementation for the infrastracture abstraction within MI
 # Doing environment specific stuff.
 add_subdirectory(infra_impl)

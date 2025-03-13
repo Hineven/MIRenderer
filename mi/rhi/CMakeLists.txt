@@ -22,7 +22,7 @@ set(SOURCE_FILES
         vk/vk_dispatcher.cpp
 )
 
-add_library(rhi STATIC ${SOURCE_FILES})
+add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})
 target_include_directories(rhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 list(
