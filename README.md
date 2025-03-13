@@ -1,5 +1,7 @@
 # MI
 A set of CG libraries.
+### Extenal Dependencies
+* `Vulkan SDK`: https://vulkan.lunarg.com/
 ### Vcpkg Dependencies
 * `glm`
 * `spirv-cross`
@@ -13,6 +15,7 @@ A set of CG libraries.
 * `stb`
 * `gtest`
 * `cpptrace`
+* `xxhash`
 ### TODO
 * Infra
   * Res : ok
