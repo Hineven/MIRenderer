@@ -7,6 +7,37 @@
 #ifndef MIRENDERER_CORE_TYPES_H
 #define MIRENDERER_CORE_TYPES_H
 
+// Helper macro to easily make flags for a certain enum type.
+#define MAKE_FLAGS(FlagName) \
+struct FlagName##Flags { \
+uint32_t flags; \
+FORCEINLINE FlagName##Flags() : flags(0) {} \
+FORCEINLINE FlagName##Flags(FlagName##FlagBits flag) : flags(static_cast<uint32_t>(flag)) {}  \
+FORCEINLINE FlagName##Flags(uint32_t flags) : flags(flags) {}  \
+FORCEINLINE operator bool() const { return flags != 0; }                                  \
+FORCEINLINE explicit operator unsigned () const { return flags; }                          \
+FORCEINLINE bool operator==(FlagName##Flags other) const { return flags == other.flags; } \
+FORCEINLINE bool operator!=(FlagName##Flags other) const { return flags != other.flags; } \
+}; \
+FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##FlagBits b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##FlagBits b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator|(FlagName##Flags a, FlagName##FlagBits b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator&(FlagName##Flags a, FlagName##FlagBits b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##Flags b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##Flags b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
+}
+
 #include "core/common.h"
 MI_NAMESPACE_BEGIN
 
@@ -39,36 +70,6 @@ enum class LightType {
     kArea,
     kMax
 };
-
-#define MAKE_FLAGS(FlagName) \
-struct FlagName##Flags { \
-    uint32_t flags; \
-    FORCEINLINE FlagName##Flags() : flags(0) {} \
-    FORCEINLINE FlagName##Flags(FlagName##FlagBits flag) : flags(static_cast<uint32_t>(flag)) {}  \
-    FORCEINLINE FlagName##Flags(uint32_t flags) : flags(flags) {}  \
-    FORCEINLINE operator bool() const { return flags != 0; }  \
-    FORCEINLINE explicit operator unsigned() const { return flags; }  \
-    FORCEINLINE bool operator==(FlagName##Flags other) const { return flags == other.flags; } \
-    FORCEINLINE bool operator!=(FlagName##Flags other) const { return flags != other.flags; } \
-}; \
-FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator|(FlagName##Flags a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator&(FlagName##Flags a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##Flags b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##Flags b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
-}
 
 enum class BlobResourceAccessFlagBits : uint32_t {
     kRead = 1u<<0,
@@ -108,8 +109,6 @@ __forceinline BlobResourceAccessFlags operator|(BlobResourceAccessFlagBits a, Bl
 __forceinline BlobResourceAccessFlags operator&(BlobResourceAccessFlagBits a, BlobResourceAccessFlags b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
 }
-
-#undef MAKE_FLAGS
 
 MI_NAMESPACE_END
 #endif //MIRENDERER_CORE_TYPES_H

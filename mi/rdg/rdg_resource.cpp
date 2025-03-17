@@ -19,38 +19,39 @@ RDGBuffer::~RDGBuffer() {
     RDGBuffer::ReleaseRHI();
 }
 
-void RDGTexture::RequestRHI() {
+void RDGTexture::RequestRHI(RDGResourcePool * pool) {
     if (!rhi_texture_) {
+        pool_ = pool;
         pool_->AllocateResource(this);
+    } else {
+        assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
     }
 }
 void RDGTexture::ReleaseRHI() {
     if (rhi_texture_) {
         pool_->RecycleResource(this);
         rhi_texture_ = nullptr;
+        pool_ = nullptr;
     }
 }
-void RDGBuffer::RequestRHI() {
+void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
     if (!rhi_buffer_span_.buffer) {
+        pool_ = pool;
         pool_->AllocateResource(this);
+    } else {
+        assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
     }
 }
 void RDGBuffer::ReleaseRHI() {
     if (rhi_buffer_span_.buffer) {
         pool_->RecycleResource(this);
         rhi_buffer_span_ = {};
+        pool_ = nullptr;
     }
 }
 
-uint32_t RDGBuffer::GetResourceClassHash() const {
-    if (!dedicated_) {
-        // Minimum class is 1k bytes
-        auto log2size = std::max((uint32_t)log2(desc_.size), 10u) - 10u;
-        return CRC32(&desc_.usage, sizeof(desc_.usage), CRC32(&log2size, sizeof(log2size)));
-    } else {
-        // Dedicated allocation should exactly match the size and usage
-        return CRC32(&desc_, sizeof(desc_), 71893718u);
-    }
+uint32_t RDGBuffer::GetResourceClassHash () const {
+    return RDGBuffer::GetResourceClassHash(desc_, dedicated_);
 }
 uint32_t RDGTexture::GetResourceClassHash() const {
     // Strictly classify them by size and usage

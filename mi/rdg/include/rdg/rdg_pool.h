@@ -21,6 +21,13 @@ protected:
     TOneTimeLinearAllocator<> buffer_allocator_;
 public:
 
+    // 128MB
+    constexpr static uint32_t kBufferBlockSizeLog2 = 27;
+    constexpr static size_t kBufferBlockSize = 1ull << kBufferBlockSizeLog2;
+    constexpr static uint32_t kBufferReusingThresholdLog2 = 4;
+    // Do not reuse buffers larger than 16MB (which increases overall memory consumption)
+    constexpr static uint32_t kBufferReusingAbsoluteThresholdLog2 = 24;
+
     FORCEINLINE TOneTimeLinearAllocator<> & GetBufferAllocator() {
         return buffer_allocator_;
     }

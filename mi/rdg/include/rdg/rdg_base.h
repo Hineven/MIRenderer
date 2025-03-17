@@ -18,15 +18,16 @@ MI_NAMESPACE_BEGIN
 class RDGResource : public NonCopyable, public RefCounted<false> {
 public:
     friend class RDGResourcePool;
-    FORCEINLINE RDGResource (RDGResourcePool * pool) : pool_(pool) {}
+    FORCEINLINE RDGResource () {}
     virtual ~RDGResource () = default;
     // Get the hash value for mapping RDG resources to RHI resources. (classify resources)
     virtual uint32_t GetResourceClassHash () const = 0;
     // Release the underlying RHI resource to the pool
     virtual void ReleaseRHI () = 0;
     // Request the underlying RHI resource from the pool
-    virtual void RequestRHI () = 0;
+    virtual void RequestRHI (RDGResourcePool * pool) = 0;
 protected:
+    // The pool that allocated RHI resources for this render graph resource
     RDGResourcePool * pool_ {};
 };
 
@@ -35,13 +36,17 @@ typedef TRef<RDGResource> RDGResourceRef;
 class RenderGraphTexture ;
 class RenderGraphBuffer  ;
 
-class RenderResourcePool : public NonCopyable, public NonMovable {
-public:
-    // TODO
-};
-
 class RDGBuffer;
 class RDGTexture;
+
+enum class RDGPassType {
+    // Invoking draw commands
+    kGraphics,
+    // Compute shader
+    kCompute,
+    // TODO add more (mesh, raytracing, etc)
+    kMax
+};
 
 MI_NAMESPACE_END
 #endif //MI_RDG_H

@@ -31,6 +31,9 @@ enum class RHIParamType {
     kStruct,
     kBasic,
     kAccelerationStructure,
+    kRenderTarget,
+    kVertexBuffer,
+    kIndexBuffer,
     kMax,
 };
 

@@ -127,6 +127,16 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWStructuredBuf
     typedef RDGBuffer * value;
 };
 
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RenderTarget")> {
+    // TODO
+};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("VertexBuffer")> {
+    // TODO
+};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("IndexBuffer")> {
+    // TODO
+};
+
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     std::string type_name, std::string param_name, uint32_t cpp_offset,
     const RDGShaderParamStructInfo * cpp_struct_info = nullptr, RDGShaderParamStructImportType import_type = RDGShaderParamStructImportType::kNested) {

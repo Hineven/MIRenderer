@@ -8,7 +8,7 @@
 #include <rdg/rdg_param.h>
 
 MI_NAMESPACE_BEGIN
-void RDGPass::GatherInOutResources() {
+void RDGPass::GatherResourceAccesses() {
     // Enumerate the shader_param_data_ using reflection from shader_param_struct_info_, and gather accessed resources
     // Store them in in_xxx and out_xxx. Also, gather uniform buffers accessed.
     if (!shader_param_struct_info_ || !shader_param_data_) {
@@ -21,6 +21,9 @@ void RDGPass::GatherInOutResources() {
     out_textures_.clear();
     out_buffers_.clear();
     referenced_uniform_buffers_.clear();
+
+    used_textures_.clear();
+    used_buffers_.clear();
 
     // Iterate through all shader parameters using reflection
     for (int i = 0; i < (int)shader_param_struct_info_->cpp_members.size(); i++) {
@@ -35,6 +38,10 @@ void RDGPass::GatherInOutResources() {
                 continue;
             }
             in_textures_.push_back(texture);
+            used_textures_.emplace_back(
+                RDGTextureUsage::kShaderRead,
+                texture
+            );
         }
         else if (field.type == RHIParamType::kUAVTexture) {
             RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
@@ -43,27 +50,48 @@ void RDGPass::GatherInOutResources() {
                 continue;
             }
             out_textures_.push_back(texture);
+            used_textures_.emplace_back(
+                RDGTextureUsage::kShaderReadWrite,
+                texture
+            );
         } else if (field.type == RHIParamType::kStorageBuffer) {
             RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
             if (!buffer) continue;
-
+            auto usage = RDGBufferUsage{{}, buffer};
             // Add to appropriate collection based on access flags
             if (field.access_flags & RHIGPUAccessFlagBits::kWrite) {
                 out_buffers_.push_back(buffer);
+                usage.usage = RDGBufferUsage::kReadWriteStorage;
+            } else {
+                usage.usage = RDGBufferUsage::kReadOnlyStorge;
             }
             if (field.access_flags & RHIGPUAccessFlagBits::kRead) {
                 in_buffers_.push_back(buffer);
             }
+            used_buffers_.emplace_back(usage);
         }
         else if (field.cpp_imported_struct_info.cpp_struct_info) {
             if (field.cpp_imported_struct_info.cpp_import_type == RDGShaderParamStructImportType::kReference) {
                 auto ub = *static_cast<RDGBuffer*const *>(field_data);
                 referenced_uniform_buffers_.push_back(ub);
+                used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, ub);
             }
         } else {
+            // TODO add support for vertex buffer, index buffer, render target...
             assert(false && "Unsupported");
         }
     }
+
+    // Also, consider the potential indirect buffer
+    if (indirect_buffer_) {
+        in_buffers_.push_back(indirect_buffer_.Raw());
+        used_buffers_.emplace_back(RDGBufferUsage::kIndirectBuffer, indirect_buffer_);
+    }
+
+    // Lastly, create and store the uniform buffer usage
+    uniform_buffer_ = new RDGBuffer(RHIBufferUsageFlagBits::kUniform, shader_param_struct_info_->size);
+    in_buffers_.emplace_back(uniform_buffer_.Raw());
+    used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, uniform_buffer_);
 }
 
 MI_NAMESPACE_END

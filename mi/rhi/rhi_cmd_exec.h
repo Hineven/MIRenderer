@@ -38,7 +38,7 @@ public:
     virtual void RHIBindPipelineParameters (RHICommandQueueBase * buffer, RHICommandBindPipelineParameters * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
-    virtual void RHIBufferBarrier (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
+    virtual void RHIBufferBarriers (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
     // The command marks the last command of the frame.
     virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHICommandFrameEnd * cmd) = 0;
 

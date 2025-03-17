@@ -447,13 +447,13 @@ public:
 class RHICommandBufferBarrier : public TRHICommand<RHICommandBufferBarrier> {
 public:
     RHICommandBufferBarrier(
-            RHIBufferSpan buffer,
+            std::span<RHIBufferSpan> buffers,
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
-    ): buffer_(buffer), src_stages_(src_stages), dst_stages_(dst_stages),
+    ): buffers_(buffers), src_stages_(src_stages), dst_stages_(dst_stages),
        src_access_(src_access), dst_access_(dst_access) {}
     void Execute(RHICommandQueueBase & cmd) override ;
-    RHIBufferSpan buffer_;
+    std::span<RHIBufferSpan> buffers_;
     RHIPipelineStageFlags src_stages_;
     RHIPipelineStageFlags dst_stages_;
     RHIGPUAccessFlags src_access_;
@@ -554,18 +554,36 @@ public:
 
     FORCEINLINE void TextureBarrier (
             RHITexture * texture, RHITextureLayoutType layout,
-            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            /*RHIPipelineStageFlags src_stages,*/ RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
     ) {
+        // TODO simplified to all stages. Will this cost a lot?
+        RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
         AddCommand(AllocateCommand<RHICommandTextureBarrier>(texture, layout, src_stages, dst_stages, src_access, dst_access));
     }
 
+    // TODO add batched texture barrier support
+
     FORCEINLINE void BufferBarrier (
             RHIBufferSpan buffer,
-            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            /*RHIPipelineStageFlags src_stages,*/ RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
     ) {
-        AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer, src_stages, dst_stages, src_access, dst_access));
+        auto * desc = Allocate<RHIBufferSpan[]>(1);
+        desc[0] = buffer;
+        // TODO simplified to all stages. Will this cost a lot?
+        RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
+        AddCommand(AllocateCommand<RHICommandBufferBarrier>(std::span(desc, 1), src_stages, dst_stages, src_access, dst_access));
+    }
+
+    FORCEINLINE void BufferBarriers (
+            std::span<RHIBufferSpan> buffers,
+            /*RHIPipelineStageFlags src_stages,*/
+            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses,
+            RHIPipelineStageFlags dst_stages
+    ) {asdasdasdsadsad
+
+        AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffers, src_stages, dst_stages, src_access, dst_access));
     }
 
     FORCEINLINE void FrameEnd (bool return_resources_to_system) {

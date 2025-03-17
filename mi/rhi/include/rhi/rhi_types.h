@@ -7,7 +7,9 @@
 #ifndef MIRENDERERDEV_RHI_TYPES_H
 #define MIRENDERERDEV_RHI_TYPES_H
 
+#include "core/types.h"
 #include "rhi/rhi_common.h"
+
 MI_NAMESPACE_BEGIN
 
 enum class RHIType {
@@ -19,36 +21,6 @@ enum class RHIBindPointType {
     kRayTracing,
     kMax
 };
-
-#define MAKE_FLAGS(FlagName) \
-struct FlagName##Flags { \
-    uint32_t flags; \
-    FORCEINLINE FlagName##Flags() : flags(0) {} \
-    FORCEINLINE FlagName##Flags(FlagName##FlagBits flag) : flags(static_cast<uint32_t>(flag)) {}  \
-    FORCEINLINE FlagName##Flags(uint32_t flags) : flags(flags) {}  \
-    FORCEINLINE operator bool() const { return flags != 0; }                                  \
-    FORCEINLINE explicit operator unsigned () const { return flags; }                          \
-    FORCEINLINE bool operator==(FlagName##Flags other) const { return flags == other.flags; } \
-    FORCEINLINE bool operator!=(FlagName##Flags other) const { return flags != other.flags; } \
-}; \
-FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator|(FlagName##Flags a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator&(FlagName##Flags a, FlagName##FlagBits b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##Flags b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
-} \
-FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##Flags b) { \
-    return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
-}
 
 enum class RHIShaderFrequencyFlagBits : uint32_t {
     kVertex = 1u<<0,
@@ -66,7 +38,8 @@ enum class RHIShaderFrequencyFlagBits : uint32_t {
 MAKE_FLAGS(RHIShaderFrequency)
 
 enum class RHIPipelineStageFlagBits : uint32_t {
-    kAll = 0xffffffffu,
+    // No stages to wait / barrier
+    kNone = 0,
     // Geom, vert, tess, depth, frag, fbo write...
     kOrdinaryGraphics = 1u<<0,
     // Compute
@@ -81,8 +54,7 @@ enum class RHIPipelineStageFlagBits : uint32_t {
     kIndirect = 1u<<5,
     // update/build accel
     kAccelBuild = 1u<<6,
-    // No stages to wait / barrier
-    kNone = 0
+    kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIPipelineStage);
 
@@ -406,8 +378,6 @@ enum class RHITextureLayoutType {
 };
 
 MAKE_FLAGS(RHIResource)
-
-#undef MAKE_FLAGS
 
 MI_NAMESPACE_END
 

@@ -15,6 +15,8 @@ MI_NAMESPACE_BEGIN
 
 class VulkanTexture : public RHITexture {
 public:
+    friend class VulkanCommandExecutor;
+
     FORCEINLINE VulkanTexture(
             RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format,
             RHITextureUsageFlags usage, uint32_t mip_levels = 1, uint32_t array_layers = 1, bool imported = false

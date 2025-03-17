@@ -100,7 +100,7 @@ void RHICommandTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
 }
 
 void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIBufferBarrier(&cmd, this);
+    RHI::Get().GetCommandExecutor()->RHIBufferBarriers(&cmd, this);
 }
 
 void RHICommandFrameEnd::Execute(RHICommandQueueBase &cmd) {

@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <ranges>
 #include "vk_rhi.h"
 #include "vk_cmd_exec.h"
 #include "vk_resource.h"
@@ -712,22 +713,26 @@ void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
                      GetVulkanAccessFlags(barrier->src_access_),
                      GetVulkanAccessFlags(barrier->dst_access_)
     );
+    texture->layout_ = barrier->layout_;
 }
 
 void
-VulkanCommandExecutor::RHIBufferBarrier(RHICommandQueueBase *cmd, RHICommandBufferBarrier *barrier) {
+VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBufferBarrier *barrier) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
-    auto buffer = static_cast<VulkanBuffer*>(barrier->buffer_.buffer);
-    buffer->MemBarrier(state.cmd,
-                       GetVulkanPipelineStageFlags(barrier->src_stages_),
-                       GetVulkanPipelineStageFlags(barrier->dst_stages_),
-                       GetVulkanAccessFlags(barrier->src_access_),
-                       GetVulkanAccessFlags(barrier->dst_access_),
-                       barrier->buffer_.offset,
-                       barrier->buffer_.size
-    );
+    auto buffers = barrier->buffers_;
+    auto vk_barriers = cmd->Allocate<vk::BufferMemoryBarrier[]>(buffers.size());
+    for (auto [i, e] : std::views::enumerate(buffers)) {
+        vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_access_);
+        vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_access_);
+        vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        vk_barriers[i].buffer = ((VulkanBuffer*)buffers[i].buffer)->GetBuffer();
+        vk_barriers[i].offset = buffers[i].offset;
+        vk_barriers[i].size = buffers[i].size;
+        state.cmd.pipelineBarrier(src_stages, dst_stages, {}, nullptr, barrier, nullptr);
+    }
 }
 
 void
