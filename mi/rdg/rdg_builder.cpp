@@ -152,6 +152,9 @@ RenderGraphRef RenderGraphBuilder::Compile() {
     graph->edges_ = std::move(culled_edges);
     graph->pass_node_heads_ = std::move(culled_pass_heads);
     graph->num_pass_predecessors_.resize(culled_pass_heads.size(), 0);
+    for (auto e : exporting_resources_) {
+        graph->exporting_resources_.emplace_back(e);
+    }
     // Calculate number of predecessors for each pass
     for (int i = 0; i < (int)culled_pass_heads.size(); i++) {
         for (int edge_index = culled_pass_heads[i]; edge_index != -1; edge_index = culled_edges[edge_index].next_edge) {

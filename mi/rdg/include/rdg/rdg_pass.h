@@ -103,7 +103,7 @@ protected:
     // Gather resources accessed by the shader, initialize in/out resources and detailed resource usage
     void GatherResourceAccesses () ;
 
-    std::function<void()> pass_;
+    std::function<void(RHICommandQueueGraphics &)> pass_;
 };
 
 MI_NAMESPACE_END

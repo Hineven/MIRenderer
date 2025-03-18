@@ -3,11 +3,12 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "rdg/rdg.h"
-
+#include <ranges>
 #include <corecrt_io.h>
 #include <map>
 #include <queue>
+#include "rdg/rdg.h"
+
 MI_NAMESPACE_BEGIN
 void RenderGraph::Execute (RDGResourcePool * pool) {
 
@@ -35,91 +36,76 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
         }
         // Place resource barriers.
         RHIPipelineStageFlags new_stages = pass->GetStageFlags();
-        for (const auto & texture_use : pass->used_textures_) {
-            auto & old_state = resource_accesses_[texture_use.texture.Raw()];
-            if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderRead) {
-                cmd.TextureBarrier(
-                    texture_use.texture->GetRHI(),
-                    RHITextureLayoutType::kShaderReadOnlyOptimal,
-                    new_stages,
-                    old_state.access,
-                    RHIGPUAccessFlagBits::kRead
-                );
-                // The barrier-chain rule allows us to replace the access mask with the new one.
-                // For example, Write, Read, Read produces a W-R barrier and a R-R barrier.
-                // The R-R barrier may be incorrect if it is standalone, but it is correct if it's following the
-                // W-R barrier (chaining up, see Vulkan Barrier Chain).
-                old_state.access = RHIGPUAccessFlagBits::kRead;
+        {
+            auto textures = cmd.Allocate<RHITexture*>(pass->used_textures_.size());
+            auto layouts = cmd.Allocate<RHITextureLayoutType>(pass->used_textures_.size());
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_textures_.size());
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_textures_.size());
+            for (const auto & [i, texture_use] : std::views::enumerate(pass->used_textures_)) {
+                textures[i] = texture_use.texture->GetRHI();
+                auto & old_state = resource_accesses_[texture_use.texture.Raw()];
+                src_accesses[i] = old_state.access;
+                if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderRead) {
+                    layouts[i] = RHITextureLayoutType::kShaderReadOnlyOptimal;
+                    dst_accesses[i] = RHIGPUAccessFlagBits::kRead;
+                    // The barrier-chain rule allows us to replace the access mask with the new one.
+                    // For example, Write, Read, Read produces a W-R barrier and a R-R barrier.
+                    // The R-R barrier may be incorrect if it is standalone, but it is correct if it's following the
+                    // W-R barrier (chaining up, see Vulkan Barrier Chain).
+                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderReadWrite) {
+                    layouts[i] = RHITextureLayoutType::kGeneral;
+                    dst_accesses[i] = RHIGPUAccessFlagBits::kAll;
+                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kOutputAttachment) {
+                    layouts[i] = RHITextureLayoutType::kColorAttachment;
+                    // Read for (potentially) alpha blending
+                    dst_accesses[i] = RHIGPUAccessFlagBits::kAll;
+                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kDepthStencilAttachment) {
+                    layouts[i] = RHITextureLayoutType::kDepthStencilAttachment;
+                    dst_accesses[i] = RHIGPUAccessFlagBits::kAll;
+                } else {
+                    assert(false);
+                }
+                old_state.access = dst_accesses[i];
                 old_state.stages = new_stages;
-            } else if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderReadWrite) {
-                cmd.TextureBarrier(
-                    texture_use.texture->GetRHI(),
-                    RHITextureLayoutType::kGeneral,
-                    new_stages,
-                    old_state.access,
-                    RHIGPUAccessFlagBits::kAll
-                );
-                old_state.access = RHIGPUAccessFlagBits::kAll;
-                old_state.stages = new_stages;
-            } else if (texture_use.usage == RDGPass::RDGTextureUsage::kOutputAttachment) {
-                cmd.TextureBarrier(
-                    texture_use.texture->GetRHI(),
-                    RHITextureLayoutType::kColorAttachment,
-                    new_stages,
-                    old_state.access,
-                    // Alpha blending may need reading the old value.
-                    RHIGPUAccessFlagBits::kAll
-                );
-                old_state.access = RHIGPUAccessFlagBits::kAll;
-                old_state.stages = new_stages;
-            } else if (texture_use.usage == RDGPass::RDGTextureUsage::kDepthStencilAttachment) {
-                cmd.TextureBarrier(
-                    texture_use.texture->GetRHI(),
-                    RHITextureLayoutType::kDepthStencilAttachment,
-                    new_stages,
-                    old_state.access,
-                    RHIGPUAccessFlagBits::kAll
-                );
-                old_state.access = RHIGPUAccessFlagBits::kAll;
-                old_state.stages = new_stages;
-            } else {
-                assert(false);
+            }
+            cmd.TextureBarriers(pass->used_textures_.size(), textures, layouts, new_stages, src_accesses, dst_accesses);
+        }
+        {
+            auto buffers = cmd.Allocate<RHIBufferSpan>(pass->used_buffers_.size());
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_buffers_.size());
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_buffers_.size());
+            for (const auto & [i, buffer_use] : std::views::enumerate(pass->used_buffers_)) {
+                auto & old_state = resource_accesses_[buffer_use.buffer.Raw()];
+                buffers[i] = buffer_use.buffer->GetRHI();
+                src_accesses[i] = old_state.access;
+                RHIGPUAccessFlags access = {};
+                switch (buffer_use.usage) {
+                    case RDGPass::RDGBufferUsage::kUniformBuffer:
+                    case RDGPass::RDGBufferUsage::kIndexBuffer:
+                    case RDGPass::RDGBufferUsage::kVertexBuffer:
+                    case RDGPass::RDGBufferUsage::kReadOnlyStorge:
+                    case RDGPass::RDGBufferUsage::kIndirectBuffer:
+                        access = RHIGPUAccessFlagBits::kRead;
+                    break;
+                    default:
+                        access = RHIGPUAccessFlagBits::kAll;
+                }
+                dst_accesses[i] = access;
+            }
+            cmd.BufferBarriers(pass->used_buffers_.size(), buffers, new_stages, src_accesses, dst_accesses);
+        }
+        // Execute the pass
+        pass->pass_(cmd);
+        // Mark the pass as executed
+        for (int e = pass_node_heads_[pass_index]; e != -1; e = edges_[e].next_edge) {
+            const auto & edge = edges_[e];
+            if (! (--num_pass_predecessors_[edge.dst_pass_index])) {
+                // All predecessors are executed, queue it up for execution.
+                ready_passes.push(edge.dst_pass_index);
             }
         }
-        for (const auto & buffer_use : pass->used_buffers_) {
-            auto & old_state = resource_accesses_[buffer_use.buffer.Raw()];
-            auto access =
-            if (buffer_use.usage == RDGPass::RDGBufferUsage::kUniformBuffer) {
-                cmd.BufferBarrier(
-                    buffer_use.buffer->GetRHI(),
-                    new_stages,
-                    old_state.access,
-                    RHIGPUAccessFlagBits::kRead
-                );
-                old_state.access = RHIGPUAccessFlagBits::kRead;
-                old_state.stages = new_stages;
-            } else if (buffer_use.usage == RDGPass::RDGBufferUsage::kReadOnlyStorge) {
-                cmd.BufferBarrier(
-                    buffer_use.buffer->GetRHI(),
-                    new_stages,
-                    old_state.access,
-                    RHIGPUAccessFlagBits::kRead
-                );
-                old_state.access = RHIGPUAccessFlagBits::kRead;
-                old_state.stages = new_stages;
-            } else if (buffer_use.usage == RDGPass::RDGBufferUsage::kOutputAttachment) {
-                cmd.BufferBarrier(
-                    buffer_use.buffer->GetRHI(),
-                    new_stages,
-                    old_state.access,
-                    RHIGPUAccessFlagBits::kAll
-                );
-                old_state.access = RHIGPUAccessFlagBits::kAll;
-                old_state.stages = new_stages;
-            } else {
-                assert(false);
-            }
-        }
+        // Release the pass (and decrement the reference count of the resources its holding)
+        pass.reset();
     }
 
 }

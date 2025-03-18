@@ -19,17 +19,17 @@ BEGIN_SHADER_PARAMETERS(TestParamInnerStruct)
 END_SHADER_PARAMETERS()
 
 BEGIN_SHADER_PARAMETERS(TestParamsInnerStructRef)
-    SHADER_PARAMETER_INCLUDE(TestParamInnerStruct, inner2)
+    SHADER_PARAMETER_STRUCT_INCLUDE(TestParamInnerStruct, inner2)
     SHADER_PARAMETER(float3, TestFloat3)
     SHADER_PARAMETER(float3, TestFloat3_1)
 END_SHADER_PARAMETERS()
 
 BEGIN_SHADER_PARAMETERS(TestParams)
     SHADER_PARAMETER_STRUCT_REF(TestParamInnerStruct, in1)
-    SHADER_PARAMETER_INCLUDE(TestParamsInnerStructRef, in2)
+    SHADER_PARAMETER_STRUCT_INCLUDE(TestParamsInnerStructRef, in2)
     SHADER_PARAMETER(int, TestInteger0)
     SHADER_PARAMETER(int2, TestInteger2_0)
-    SHADER_PARAMETER_STRUCT(TestParamInnerStruct, inner)
+    SHADER_PARAMETER_STRUCT_NESTED(TestParamInnerStruct, inner)
     SHADER_PARAMETER(int, TestInteger33)
     SHADER_PARAMETER(int4, TestInteger44)
 END_SHADER_PARAMETERS()
@@ -42,14 +42,14 @@ TEST(RDGTest, RDGShaderParams) {
     GetInfra().Init();
     TestParams t {};
 
-    auto meta_test_inner = TestParamInnerStruct::GetParamsMetaData();
+    auto meta_test_inner = *TestParamInnerStruct::GetParamStructInfo();
     EXPECT_EQ(meta_test_inner.cpp_members.size(), 2);
     EXPECT_EQ(meta_test_inner.cpp_members[0].name, "TestInteger1");
     EXPECT_EQ(meta_test_inner.cpp_members[1].name, "TestInteger2_1");
     EXPECT_EQ(meta_test_inner.cpp_members[0].cpp_offset, offsetof(TestParamInnerStruct, TestInteger1));
     EXPECT_EQ(meta_test_inner.cpp_members[1].cpp_offset, offsetof(TestParamInnerStruct, TestInteger2_1));
 
-    auto meta_test_inner2 = TestParamsInnerStructRef::GetParamsMetaData();
+    auto meta_test_inner2 = *TestParamsInnerStructRef::GetParamStructInfo();
     EXPECT_EQ(meta_test_inner2.cpp_members.size(), 4);
     EXPECT_EQ(meta_test_inner2.cpp_members[0].name, "TestInteger1");
     EXPECT_EQ(meta_test_inner2.cpp_members[1].name, "TestInteger2_1");
@@ -60,7 +60,7 @@ TEST(RDGTest, RDGShaderParams) {
     EXPECT_EQ(meta_test_inner2.cpp_members[2].cpp_offset, offsetof(TestParamsInnerStructRef, TestFloat3));
     EXPECT_EQ(meta_test_inner2.cpp_members[3].cpp_offset, offsetof(TestParamsInnerStructRef, TestFloat3_1));
 
-    auto meta_test = TestParams::GetParamsMetaData();
+    auto meta_test = *TestParams::GetParamStructInfo();
     EXPECT_EQ(meta_test.cpp_members.size(), 10);
     EXPECT_EQ(meta_test.cpp_members[0].name, "in1");
     EXPECT_EQ(meta_test.cpp_members[1].name, "TestInteger1");
@@ -113,9 +113,12 @@ class TestShader1 : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Parameters)
         SHADER_PARAMETER(float4, TestFloat4)
+        SHADER_VERTEX_BUFFER(16, vertex_buffer)
+        SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k2xFp32, uv)
+        SHADER_DISPATCH_COMMAND(command)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Parameters)
-    std::vector<std::string> GetDefaultMacros() {
+    static std::vector<std::string> GetDefaultMacros() {
         return {};
     }
 };

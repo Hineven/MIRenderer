@@ -705,15 +705,32 @@ void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
                                               RHICommandTextureBarrier *barrier) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto texture = static_cast<VulkanTexture*>(barrier->texture_);
-    texture->Barrier(state.cmd,
-                     GetVulkanImageLayout(barrier->layout_),
-                     GetVulkanPipelineStageFlags(barrier->src_stages_),
-                     GetVulkanPipelineStageFlags(barrier->dst_stages_),
-                     GetVulkanAccessFlags(barrier->src_access_),
-                     GetVulkanAccessFlags(barrier->dst_access_)
+    auto barriers = cmd->Allocate<vk::ImageMemoryBarrier[]>(barrier->num_textures_);
+    for (int i = 0; i < (int)barrier->num_textures_; i++) {
+        auto texture = static_cast<VulkanTexture*>(barrier->textures_[i]);
+        barriers[i] = vk::ImageMemoryBarrier()
+                .setSrcAccessMask(GetVulkanAccessFlags(barrier->src_accesses_[i]))
+                .setDstAccessMask(GetVulkanAccessFlags(barrier->dst_accesses_[i]))
+                .setOldLayout(texture->vk_image_layout_)
+                .setNewLayout(GetVulkanImageLayout(barrier->layouts_[i]))
+                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setImage(texture->GetImage())
+                .setSubresourceRange(vk::ImageSubresourceRange()
+                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                        .setBaseMipLevel(0)
+                        .setLevelCount(texture->GetMipLevels())
+                        .setBaseArrayLayer(0)
+                        .setLayerCount(texture->GetArrayLayers())
+                );
+        texture->layout_ = barrier->layouts_[i];
+    }
+    state.cmd.pipelineBarrier(
+            GetVulkanPipelineStageFlags(barrier->src_stages_),
+            GetVulkanPipelineStageFlags(barrier->dst_stages_),
+            {}, 0, nullptr, 0, nullptr,
+            barrier->num_textures_, barriers
     );
-    texture->layout_ = barrier->layout_;
 }
 
 void
@@ -724,15 +741,19 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     auto buffers = barrier->buffers_;
     auto vk_barriers = cmd->Allocate<vk::BufferMemoryBarrier[]>(buffers.size());
     for (auto [i, e] : std::views::enumerate(buffers)) {
-        vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_access_);
-        vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_access_);
+        vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
+        vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
         vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].buffer = ((VulkanBuffer*)buffers[i].buffer)->GetBuffer();
         vk_barriers[i].offset = buffers[i].offset;
         vk_barriers[i].size = buffers[i].size;
-        state.cmd.pipelineBarrier(src_stages, dst_stages, {}, nullptr, barrier, nullptr);
     }
+    state.cmd.pipelineBarrier(
+        GetVulkanPipelineStageFlags(barrier->src_stages_),
+        GetVulkanPipelineStageFlags(barrier->dst_stages_),
+        {}, 0, nullptr, buffers.size(), vk_barriers, 0, nullptr
+    );
 }
 
 void

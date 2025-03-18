@@ -138,8 +138,8 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
     using ShaderParameters = Name; \
-    static const RDGShaderParamStructAndSizeInfo * GetParamsStructInfo() { \
-        return ShaderParameters::GetParamsStructInfo(); \
+    static const RDGShaderParamStructAndSizeInfo * GetParamStructInfo() { \
+        return ShaderParameters::GetParamStructInfo(); \
     }
 
 class RDGShaderLibrary : public NonMovable, public NonCopyable {

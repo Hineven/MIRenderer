@@ -302,6 +302,17 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
             }
         }
     }
+
+    // Check vertex attributes
+    for (const auto& vb : shader->GetVertexInputDesc()) {
+        ...
+    }
+
+    // Give warning about unused vertex buffers (if any present)
+
+    // Check fragment outputs (RenderTarget vs fragment output reflected from SPIR-V, check format compatibility)
+
+
     // TODO check immutable samplers, ...
     return passed_checking;
 }

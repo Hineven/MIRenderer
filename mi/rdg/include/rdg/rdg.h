@@ -28,6 +28,8 @@ protected:
     std::vector<int>  pass_node_heads_;
     std::vector<Edge> edges_;
     std::vector<int>  num_pass_predecessors_;
+    // Hold references to resources for exporting (prevent them from being evicted from the pool)
+    std::vector<RDGResourceRef> exporting_resources_;
 
     // Keep track of previous reosurce accesses, used to place barriers.
     struct ResourceAccess {

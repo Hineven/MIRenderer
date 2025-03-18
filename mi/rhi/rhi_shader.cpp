@@ -199,6 +199,9 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
     has_bindless_resources_ = bindless_table_index != uniform_buffers_with_bindless_table_.size();
     bindless_table_uniform_index_ = bindless_table_index;
 
+    // Index buffers and dispatch command can not be reflected from SPIRV. They are declared in the cpp-side code
+    // of RDG shaders.
+    // Vertex buffers and render targets are (partially) reflected via the following code:
 
     // Reflect shader inputs & outputs
     if(frequency_ == RHIShaderFrequencyFlagBits::kVertex) {

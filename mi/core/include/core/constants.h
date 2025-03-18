@@ -23,6 +23,11 @@ namespace C {
     constexpr uint64_t kRHIPreferredGPUHeapBlockSize = 256 * 1024 * 1024; // 256MB
     // Maximum number of framebuffer attachments
     constexpr uint32_t kRHIMaxNumFramebufferAttachments = 4;
+
+    // Maximum number of render targets (hardcoded)
+    constexpr uint32_t kMaxNumRenderTargets = 8;
+    // Maximum number of vertex buffers for 1 shader (hardcoded)
+    constexpr uint32_t kMaxNumVertexBuffers = 4;
 }
 
 MI_NAMESPACE_END

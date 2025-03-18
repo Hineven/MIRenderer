@@ -31,9 +31,12 @@ enum class RHIParamType {
     kStruct,
     kBasic,
     kAccelerationStructure,
+    // The following 5 types have no mapping in hlsl, just corporate with RDG shader reflection.
     kRenderTarget,
+    kVertexAttribute,
     kVertexBuffer,
     kIndexBuffer,
+    kDispatchCommand,
     kMax,
 };
 
@@ -79,6 +82,12 @@ FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "RWStructuredBuffer") return RHIParamType::kStorageBuffer;
     if(type == "ConstantBuffer") return RHIParamType::kUniformBuffer;
     if(type == "AccelerationStructure") return RHIParamType::kAccelerationStructure;
+    // The following 4 types have no mapping in hlsl, just corporate with RDG shader reflection.
+    if(type == "RenderTarget") return RHIParamType::kRenderTarget;
+    if(type == "VertexAttribute") return RHIParamType::kVertexAttribute;
+    if(type == "VertexBuffer") return RHIParamType::kVertexBuffer;
+    if(type == "IndexBuffer") return RHIParamType::kIndexBuffer;
+    if(type == "DispatchCommand") return RHIParamType::kDispatchCommand;
     if(RHITypeNameStringToBasicParamType(type) != RHIBasicParamType::kMax) return RHIParamType::kBasic;
     return RHIParamType::kStruct;
 }

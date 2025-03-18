@@ -430,34 +430,40 @@ public:
 class RHICommandTextureBarrier : public TRHICommand<RHICommandTextureBarrier> {
 public:
     RHICommandTextureBarrier(
-            RHITexture * texture, RHITextureLayoutType layout,
+            uint32_t num_textures,
+            RHITexture ** textures, RHITextureLayoutType * layouts,
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
-            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
-    ): texture_(texture), layout_(layout), src_stages_(src_stages), dst_stages_(dst_stages),
-    src_access_(src_access), dst_access_(dst_access) {}
+            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ): num_textures_(num_textures),
+    textures_(textures), layouts_(layouts), src_stages_(src_stages), dst_stages_(dst_stages),
+    src_accesses_(src_accesses), dst_accesses_(dst_accesses) {}
     void Execute(RHICommandQueueBase & cmd) override ;
-    RHITexture * texture_;
-    RHITextureLayoutType layout_;
+    uint32_t num_textures_;
+    RHITexture ** textures_;
+    RHITextureLayoutType * layouts_;
     RHIPipelineStageFlags src_stages_;
     RHIPipelineStageFlags dst_stages_;
-    RHIGPUAccessFlags src_access_;
-    RHIGPUAccessFlags dst_access_;
+    RHIGPUAccessFlags * src_accesses_;
+    RHIGPUAccessFlags * dst_accesses_;
 };
 
 class RHICommandBufferBarrier : public TRHICommand<RHICommandBufferBarrier> {
 public:
     RHICommandBufferBarrier(
-            std::span<RHIBufferSpan> buffers,
+            uint32_t num_buffers,
+            RHIBufferSpan ** buffers,
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
-            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
-    ): buffers_(buffers), src_stages_(src_stages), dst_stages_(dst_stages),
-       src_access_(src_access), dst_access_(dst_access) {}
+            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ): num_buffers_(num_buffers),
+        buffers_(buffers), src_stages_(src_stages), dst_stages_(dst_stages),
+        src_accesses_(src_accesses), dst_accesses_(dst_accesses) {}
     void Execute(RHICommandQueueBase & cmd) override ;
-    std::span<RHIBufferSpan> buffers_;
+    uint32_t num_buffers_;
+    RHIBufferSpan ** buffers_;
     RHIPipelineStageFlags src_stages_;
     RHIPipelineStageFlags dst_stages_;
-    RHIGPUAccessFlags src_access_;
-    RHIGPUAccessFlags dst_access_;
+    RHIGPUAccessFlags * src_accesses_;
+    RHIGPUAccessFlags * dst_accesses_;
 };
 
 class RHICommandFrameEnd : public TRHICommand<RHICommandFrameEnd> {
@@ -559,10 +565,25 @@ public:
     ) {
         // TODO simplified to all stages. Will this cost a lot?
         RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
-        AddCommand(AllocateCommand<RHICommandTextureBarrier>(texture, layout, src_stages, dst_stages, src_access, dst_access));
+        auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
+        src_access_ptr[0] = src_access;
+        auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
+        dst_access_ptr[0] = dst_access;
+        auto * texture_ptr = Allocate<RHITexture*>();
+        texture_ptr[0] = texture;
+        auto * layout_ptr = Allocate<RHITextureLayoutType>();
+        layout_ptr[0] = layout;
+        AddCommand(AllocateCommand<RHICommandTextureBarrier>(1, texture_ptr, layout_ptr, src_stages, dst_stages, src_access_ptr, dst_access_ptr));
     }
 
-    // TODO add batched texture barrier support
+    FORCEINLINE void TextureBarriers (
+        uint32_t texture_count, RHITexture ** textures, RHITextureLayoutType * layouts,
+        /*RHIPipelineStageFlags src_stages,*/ RHIPipelineStageFlags dst_stages,
+        RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ) {
+        auto src_stages = RHIPipelineStageFlagBits::kAll;
+        AddCommand(AllocateCommand<RHICommandTextureBarrier>(texture_count, textures, layouts, src_stages, dst_stages, src_accesses, dst_accesses));
+    }
 
     FORCEINLINE void BufferBarrier (
             RHIBufferSpan buffer,
@@ -573,17 +594,21 @@ public:
         desc[0] = buffer;
         // TODO simplified to all stages. Will this cost a lot?
         RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
-        AddCommand(AllocateCommand<RHICommandBufferBarrier>(std::span(desc, 1), src_stages, dst_stages, src_access, dst_access));
+        auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
+        src_access_ptr[0] = src_access;
+        auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
+        dst_access_ptr[0] = dst_access;
+        AddCommand(AllocateCommand<RHICommandBufferBarrier>(1, desc, src_stages, dst_stages, src_access_ptr, dst_access_ptr));
     }
 
     FORCEINLINE void BufferBarriers (
-            std::span<RHIBufferSpan> buffers,
+            uint32_t buffer_count, RHIBufferSpan * buffers,
             /*RHIPipelineStageFlags src_stages,*/
-            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses,
-            RHIPipelineStageFlags dst_stages
-    ) {asdasdasdsadsad
-
-        AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffers, src_stages, dst_stages, src_access, dst_access));
+            RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ) {
+        RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
+        AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer_count, buffers, src_stages, dst_stages, src_accesses, dst_accesses));
     }
 
     FORCEINLINE void FrameEnd (bool return_resources_to_system) {
