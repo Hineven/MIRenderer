@@ -13,6 +13,16 @@
 #include "rhi/rhi_resource.h"
 MI_NAMESPACE_BEGIN
 
+enum class RDGPassFlagBits : unsigned {
+    // Do not cull this pass when compiling the graph
+    kNeverCull = 1 << 0,
+    // This pass is a graphics pass (dispatch some draw commands)
+    kGraphics = 1 << 1,
+    kAll = 0xffffffffu
+};
+
+MAKE_FLAGS(RDGPass);
+
 // A resource that is imported into / exist only within a render graph
 // Only the render thread can access its references, so no need for thread-safe reference counting.
 class RDGResource : public NonCopyable, public RefCounted<false> {

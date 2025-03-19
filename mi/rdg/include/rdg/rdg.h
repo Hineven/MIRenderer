@@ -8,11 +8,11 @@
 #define RDG_H
 
 #include "rdg_base.h"
-#include "rdg_pass.h"
 #include "rhi/rhi.h"
 
 MI_NAMESPACE_BEGIN
 class RDGShader;
+class RDGPass;
 
 class RenderGraph : public RefCounted<> {
 public:

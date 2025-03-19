@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <cpptrace/from_current.hpp>
 #include <gtest/gtest.h>
 #include "core/infra.h"
 #include "infra_impl/infra.h"
@@ -123,16 +124,26 @@ public:
     }
 };
 
-IMPLEMENT_RDG_SHADER(TestShader1, "test_shader_1.hlsl", "Main", RHIPipelineType::kCompute);
+IMPLEMENT_RDG_COMPUTE_SHADER(TestShader1, "test_shader_1.hlsl", RHIPipelineType::kCompute, "Main")
 
 TEST(RDGTest, RDGShaderLibrary) {
     using namespace mi;
-    auto pwd = std::filesystem::current_path();
-    auto resource_dir = pwd / "resources";
-    TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
-    GetInfra().Init();
-
-
+    CPPTRACE_TRY {
+        auto pwd = std::filesystem::current_path();
+        auto resource_dir = pwd / "resources";
+        TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
+        GetInfra().Init();
+        SetCurrentThreadType(ThreadType::kRenderThread);
+        RHI::InitializeSingleton(RHIType::kVulkan);
+        {
+            auto shader = RDGShaderLibrary::GetShader<TestShader1>();
+            EXPECT_TRUE(shader);
+            EXPECT_EQ(shader.GetType(), RHIShaderFrequencyFlagBits::kCompute);
+        }
+    } CPPTRACE_CATCH (const std::exception &e) {
+        cpptrace::from_current_exception().print();
+        FAIL() << e.what();
+    }
 }
 
 

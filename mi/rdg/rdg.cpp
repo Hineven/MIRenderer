@@ -8,6 +8,7 @@
 #include <map>
 #include <queue>
 #include "rdg/rdg.h"
+#include "rdg/rdg_pass.h"
 
 MI_NAMESPACE_BEGIN
 void RenderGraph::Execute (RDGResourcePool * pool) {
@@ -68,7 +69,7 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
                 old_state.access = dst_accesses[i];
                 old_state.stages = new_stages;
             }
-            cmd.TextureBarriers(pass->used_textures_.size(), textures, layouts, new_stages, src_accesses, dst_accesses);
+            cmd.TextureBarriers((uint32_t)pass->used_textures_.size(), textures, layouts, new_stages, src_accesses, dst_accesses);
         }
         {
             auto buffers = cmd.Allocate<RHIBufferSpan>(pass->used_buffers_.size());
@@ -92,7 +93,7 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
                 }
                 dst_accesses[i] = access;
             }
-            cmd.BufferBarriers(pass->used_buffers_.size(), buffers, new_stages, src_accesses, dst_accesses);
+            cmd.BufferBarriers((uint32_t)pass->used_buffers_.size(), buffers, new_stages, src_accesses, dst_accesses);
         }
         // Execute the pass
         pass->pass_(cmd);

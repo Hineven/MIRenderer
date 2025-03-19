@@ -451,7 +451,7 @@ class RHICommandBufferBarrier : public TRHICommand<RHICommandBufferBarrier> {
 public:
     RHICommandBufferBarrier(
             uint32_t num_buffers,
-            RHIBufferSpan ** buffers,
+            RHIBufferSpan * buffers,
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ): num_buffers_(num_buffers),
@@ -459,7 +459,7 @@ public:
         src_accesses_(src_accesses), dst_accesses_(dst_accesses) {}
     void Execute(RHICommandQueueBase & cmd) override ;
     uint32_t num_buffers_;
-    RHIBufferSpan ** buffers_;
+    RHIBufferSpan * buffers_;
     RHIPipelineStageFlags src_stages_;
     RHIPipelineStageFlags dst_stages_;
     RHIGPUAccessFlags * src_accesses_;

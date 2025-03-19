@@ -160,7 +160,7 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
     cmd.copyImage2(copy_info);
 }
 
-void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, RHICommandBeginRendering *begin_rendering) {
+void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_unused]] RHICommandBeginRendering *begin_rendering) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
@@ -200,7 +200,7 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, RHIComma
     state.cmd.beginRendering(rendering_info);
 }
 
-void VulkanCommandExecutor::RHIEndRendering(RHICommandQueueBase *cmd, RHICommandEndRendering *end_rendering) {
+void VulkanCommandExecutor::RHIEndRendering(RHICommandQueueBase *cmd, [[maybe_unused]] RHICommandEndRendering *end_rendering) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     state.cmd.endRendering();
@@ -708,22 +708,24 @@ void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
     auto barriers = cmd->Allocate<vk::ImageMemoryBarrier[]>(barrier->num_textures_);
     for (int i = 0; i < (int)barrier->num_textures_; i++) {
         auto texture = static_cast<VulkanTexture*>(barrier->textures_[i]);
+        auto dst_vk_layout = GetVulkanImageLayout(barrier->layouts_[i]);
         barriers[i] = vk::ImageMemoryBarrier()
                 .setSrcAccessMask(GetVulkanAccessFlags(barrier->src_accesses_[i]))
                 .setDstAccessMask(GetVulkanAccessFlags(barrier->dst_accesses_[i]))
                 .setOldLayout(texture->vk_image_layout_)
-                .setNewLayout(GetVulkanImageLayout(barrier->layouts_[i]))
+                .setNewLayout(dst_vk_layout)
                 .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                 .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                 .setImage(texture->GetImage())
                 .setSubresourceRange(vk::ImageSubresourceRange()
-                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                        .setAspectMask(texture->GetImageAspect())
                         .setBaseMipLevel(0)
                         .setLevelCount(texture->GetMipLevels())
                         .setBaseArrayLayer(0)
                         .setLayerCount(texture->GetArrayLayers())
                 );
         texture->layout_ = barrier->layouts_[i];
+        texture->vk_image_layout_ = dst_vk_layout;
     }
     state.cmd.pipelineBarrier(
             GetVulkanPipelineStageFlags(barrier->src_stages_),
@@ -739,8 +741,8 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
     auto buffers = barrier->buffers_;
-    auto vk_barriers = cmd->Allocate<vk::BufferMemoryBarrier[]>(buffers.size());
-    for (auto [i, e] : std::views::enumerate(buffers)) {
+    auto vk_barriers = cmd->Allocate<vk::BufferMemoryBarrier[]>(barrier->num_buffers_);
+    for (auto [i, e] : std::views::enumerate(std::span(buffers, barrier->num_buffers_))) {
         vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
         vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
         vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -752,7 +754,8 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     state.cmd.pipelineBarrier(
         GetVulkanPipelineStageFlags(barrier->src_stages_),
         GetVulkanPipelineStageFlags(barrier->dst_stages_),
-        {}, 0, nullptr, buffers.size(), vk_barriers, 0, nullptr
+        {}, 0, nullptr, barrier->num_buffers_,
+        vk_barriers, 0, nullptr
     );
 }
 

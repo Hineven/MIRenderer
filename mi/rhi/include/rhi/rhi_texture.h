@@ -55,7 +55,7 @@ public:
 protected:
 
     RHIBindlessSlotRef<RHITexture> bindless_slot_readonly_;
-    RHIBindlessSlotRef<RH ITexture> bindless_slot_readwrite_;
+    RHIBindlessSlotRef<RHITexture> bindless_slot_readwrite_;
 
     RHITextureLayoutType layout_ {RHITextureLayoutType::kUndefined};
     RHITextureDesc desc_;

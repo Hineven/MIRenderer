@@ -18,7 +18,6 @@ uint32_t RHIParamInfo::GetAlignment () const {
 
 void RHIParamStructInfo::InitializeLayoutHash () {
     uint32_t hash = 0;
-    uint32_t current_position = 0;
     for (auto & e : members) {
         hash = CRC32(e.name.c_str(), e.name.size(), hash);
         hash = CRC32(&e.size, sizeof(e.size), hash);

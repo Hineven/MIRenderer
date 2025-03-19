@@ -250,13 +250,17 @@ namespace details {
         }
         // Do some simple validation
         bool index_present = false;
+        std::vector<bool> used_vertex_buffer;
+        used_vertex_buffer.resize(vertex_buffer_index, false);
         for (auto & e : params) {
             if (e.type == RHIParamType::kVertexAttribute) {
-                if (e.cpp_extra.vertex_attribute_info->buffer_index >= vertex_attribute_index) {
+                if (e.cpp_extra.vertex_attribute_info->buffer_index >= vertex_buffer_index) {
                     MI_LOG(MIInfraLogType::kError,
-                        "Invalid vertex attribute buffer index (provided {}, {} is out of range, attribute name {}).",
-                        e.cpp_extra.vertex_attribute_info->buffer_index, vertex_attribute_index, e.name);
+                        "Invalid vertex attribute buffer index {} is out of range (vertex buffer count {}), attribute name {}).",
+                        e.cpp_extra.vertex_attribute_info->buffer_index, vertex_buffer_index, e.name);
                     return false;
+                } else {
+                    used_vertex_buffer[e.cpp_extra.vertex_attribute_info->buffer_index] = true;
                 }
             }
             if (e.type == RHIParamType::kIndexBuffer) {
@@ -266,6 +270,13 @@ namespace details {
                         "More than one index buffer is provided. (provided {}).", e.name
                     );
                 }
+            }
+        }
+        for (int i = 0; i < (int)used_vertex_buffer.size(); i++) {
+            if (!used_vertex_buffer[i]) {
+                MI_LOG(MIInfraLogType::kWarning,
+                    "Vertex buffer index {} is not used by any vertex attribute.", i
+                );
             }
         }
         return true;
@@ -307,6 +318,8 @@ private: \
         return (zzFuncPtr)PrevFunc; \
     } \
     typedef zz##Name##_TypeID
+
+// TODO support more blending operations
 
 // Declare render targets
 // Usage: SHADER_RENDER_TARGET(PixelFormat::kR8G8B8A8_UNORM, Name)

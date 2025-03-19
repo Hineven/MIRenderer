@@ -6,7 +6,6 @@
 
 #ifndef RDG_PASS_H
 #define RDG_PASS_H
-#include "rdg_builder.h"
 #include "rdg_resource.h"
 #include "rdg/rdg_base.h"
 MI_NAMESPACE_BEGIN
@@ -19,7 +18,7 @@ protected:
         int index,
         RDGPassType pass_type,
         RDGPassFlags flags,
-        std::function<void()> && pass,
+        std::function<void(RHICommandQueueGraphics&)> && pass,
         const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
         const void * shader_param_data,
         RDGBuffer * indirect_buffer = nullptr

@@ -7,6 +7,8 @@
 #ifndef MIRENDERERDEV_CRC_H
 #define MIRENDERERDEV_CRC_H
 
+#include <cstring>
+#include <string_view>
 #include "core/common.h"
 MI_NAMESPACE_BEGIN
 

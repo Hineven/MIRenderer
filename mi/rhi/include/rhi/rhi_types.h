@@ -7,6 +7,7 @@
 #ifndef MIRENDERERDEV_RHI_TYPES_H
 #define MIRENDERERDEV_RHI_TYPES_H
 
+#include "core/pixel_format.h"
 #include "core/types.h"
 #include "rhi/rhi_common.h"
 
@@ -248,6 +249,16 @@ enum class RHIFragmentOutputFormatType {
     k4xUIint32,
     kMax
 };
+
+FORCEINLINE bool RHIIsOutputCompatiablePixelFormat (RHIFragmentOutputFormatType output, PixelFormatType type) {
+    if (IsFloatPixelFormat(type) && output == RHIFragmentOutputFormatType::k4xFp32) {
+        return true;
+    }
+    if (IsUIntPixelFormat(type) && output == RHIFragmentOutputFormatType::k4xUIint32) {
+        return true;
+    }
+    return false;
+}
 
 FORCEINLINE const char * GetRHIFragmentOutputFormatName (RHIFragmentOutputFormatType type) {
     switch(type) {

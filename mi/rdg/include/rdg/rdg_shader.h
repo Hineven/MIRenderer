@@ -20,7 +20,7 @@ class RHIComputePipeline;
 
 struct RDGShaderPipelineConfig {
     RHIPrimitiveTopologyType topology {};
-    std::vector<RHIColorAttachmentDesc> color_attachments;
+    // std::vector<RHIColorAttachmentDesc> color_attachments;
 };
 
 struct RDGShaderInitializationInfo {
@@ -30,7 +30,7 @@ struct RDGShaderInitializationInfo {
     std::string compute_entry_;
     std::string vertex_entry_;
     std::string fragment_entry_;
-    std::function<RDGShaderParamStructAndSizeInfo*()> GetShaderParamInfo;
+    std::function<RDGShaderParamStructAndSizeInfo*()> GetParamStructInfo;
     std::vector<std::string> default_macros;
     std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig;
 };
@@ -52,7 +52,7 @@ protected:
     } shader_entries_ ;
 public:
     RDGShader (RDGShaderInitializationInfo ini) ;
-    bool Recompile () ;
+    bool Recompile (RDGShaderParamStructAndSizeInfo * info) ;
 //    The following functions should be implemented by sub-classes
 //  staitc std::vector<std::string> GetDefaultMacros () ;
     FORCEINLINE bool IsValid () const {return is_valid_;}
@@ -63,8 +63,7 @@ public:
 
     FORCEINLINE static RDGShaderPipelineConfig GetDefaultShaderPipelineConfig () {
         return RDGShaderPipelineConfig {
-            RHIPrimitiveTopologyType::kTriangleList,
-            {} // Infer attachments from fragment shader reflection
+            RHIPrimitiveTopologyType::kTriangleList
         };
     }
 
@@ -92,7 +91,7 @@ protected:
     } shaders_;
 
     struct {
-        std::function<RDGShaderParamStructAndSizeInfo*()> GetShaderParamInfo {};
+        std::function<RDGShaderParamStructAndSizeInfo*()> GetParamStructInfo {};
         std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig {};
     } child_methods_;
 };
@@ -108,30 +107,30 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
 };
 
 // Compute
-#define IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint) \
+#define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, Type, EntryPoint) \
     static RDGShaderRegistrator ClassName##Registrator( \
         typeid(ClassName).hash_code(), \
         []() -> RDGShaderInitializationInfo { \
             static_assert(Type == RHIPipelineType::kCompute); \
-            return {#Name, \
+            return {#ClassName, \
             Type, SourcePath, \
-            EntryPoint, "", "" \
-            ClassName::GetParamsMetaData, \
+            EntryPoint, "", "", \
+            ClassName::GetParamStructInfo, \
             TGetShaderPipelineConfig<ClassName>::value}; \
         } \
     );
 
 // Graphics
-#define IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_VS, EntryPoint_PS) \
+#define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, Type, EntryPoint_VS, EntryPoint_PS) \
     static RDGShaderRegistrator ClassName##Registrator( \
         typeid(ClassName).hash_code(), \
         []() -> RDGShaderInitializationInfo { \
             static_assert(Type == RHIPipelineType::kGraphics); \
             return { \
-                #Name, \
+                #ClassName, \
                 Type, SourcePath, \
                 "", EntryPoint_VS, EntryPoint_PS, \
-                ClassName::GetParamsMetaData, \
+                ClassName::GetParamStructInfo, \
                 TGetShaderPipelineConfig<ClassName>::value}; \
         } \
     );

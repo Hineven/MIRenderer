@@ -10,21 +10,11 @@
 #include <set>
 
 #include "core/types.h"
-#include "rdg/rdg.h"
 #include "rdg/rdg_param.h"
 
 MI_NAMESPACE_BEGIN
 class RDGPass;
-
-enum class RDGPassFlagBits {
-    // Do not cull this pass when compiling the graph
-    kNeverCull = 1 << 0,
-    // This pass is a graphics pass (dispatch some draw commands)
-    kGraphics = 1 << 1,
-    kAll = 0xffffffffu
-};
-
-MAKE_FLAGS(RDGPass);
+class RenderGraph;
 
 class RenderGraphBuilder : public NonCopyable, public NonMovable {
 public:
@@ -37,7 +27,7 @@ public:
         RDGPassFlags flags,
         std::function<void()> && pass) ;
 
-    RenderGraphRef Compile ();
+    TRef<RenderGraph> Compile ();
 
     RDGBuffer  ImportResource (const char *name, TRef<RHIBuffer> resource) ;
     RDGTexture ImportResource (const char *name, TRef<RHITexture> resource) ;

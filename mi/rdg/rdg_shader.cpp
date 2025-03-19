@@ -305,13 +305,93 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
 
     // Check vertex attributes
     for (const auto& vb : shader->GetVertexInputDesc()) {
-        ...
+        int index = info.GetMemberIndex(vb.name);
+        if (index == -1) {
+            MI_LOG(MIInfraLogType::kWarning,
+                "Shader '{}' uses vertex attribute '{}' (location {}) which is not defined in shader parameters",
+                source_location_, vb.name, vb.location);
+            passed_checking = false;
+            // Find the vertex attribute with corresponding location
+            for (auto & member : info.cpp_members) {
+                if (member.type == RHIParamType::kVertexAttribute
+                && member.cpp_extra.vertex_attribute_info->attribute_index == vb.location) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "The declared vertex attribute with corresponding location is {}",
+                        member.name);
+                    break;
+                }
+            }
+        } else {
+            auto & member = info.cpp_members[index];
+            if (member.type != RHIParamType::kVertexAttribute) {
+                MI_LOG(MIInfraLogType::kWarning,
+                        "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible type."
+                        "Parameter type: {}",
+                        source_location_, vb.name, member.type);
+                passed_checking = false;
+            } else {
+                if (member.cpp_extra.vertex_attribute_info->attribute_index != vb.location) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible location."
+                        "Parameter location: {}, Shader location: {}",
+                        source_location_, vb.name, member.cpp_extra.vertex_attribute_info->attribute_index, vb.location);
+                    passed_checking = false;
+                }
+                if (member.cpp_extra.vertex_attribute_info->format != vb.format) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                            "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible format."
+                            "Parameter format: {}, Shader format: {}",
+                            source_location_, vb.name, member.cpp_extra.vertex_attribute_info->format, vb.format);
+                    passed_checking = false;
+                }
+            }
+        }
     }
 
-    // Give warning about unused vertex buffers (if any present)
-
     // Check fragment outputs (RenderTarget vs fragment output reflected from SPIR-V, check format compatibility)
-
+    for (const auto & output : shader->GetFragmentOutputDesc()) {
+        int index = info.GetMemberIndex(output.name);
+        if (index == -1) {
+            MI_LOG(MIInfraLogType::kWarning,
+                "Shader '{}' uses fragment output '{}' (location {}) which is not defined in shader parameters",
+                source_location_, output.name, output.location);
+            passed_checking = false;
+            // Find the fragment output with corresponding location
+            for (auto & member : info.cpp_members) {
+                if (member.type == RHIParamType::kRenderTarget
+                && member.cpp_extra.render_targets_info->target_index == output.location) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "The declared fragment output with corresponding location is {}",
+                        member.name);
+                    break;
+                }
+            }
+        } else {
+            auto & member = info.cpp_members[index];
+            if (member.type != RHIParamType::kRenderTarget) {
+                MI_LOG(MIInfraLogType::kWarning,
+                    "Shader '{}' defines '{}' as fragment output but parameter has incompatible type."
+                    "Parameter type: {}",
+                    source_location_, output.name, member.type);
+                passed_checking = false;
+            } else {
+                if (member.cpp_extra.render_targets_info->target_index != output.location) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "Shader '{}' defines '{}' as fragment output but parameter has incompatible location."
+                        "Parameter location: {}, Shader location: {}",
+                        source_location_, output.name, member.cpp_extra.render_targets_info->target_index, output.location);
+                    passed_checking = false;
+                }
+                if (!RHIIsOutputCompatiablePixelFormat(output.format, member.cpp_extra.render_targets_info->format)) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "Shader '{}' defines '{}' as fragment output but parameter has incompatible format."
+                        "Parameter format: {}, Shader format: {}",
+                        source_location_, output.name, member.cpp_extra.render_targets_info->format, output.format);
+                    passed_checking = false;
+                }
+            }
+        }
+    }
 
     // TODO check immutable samplers, ...
     return passed_checking;
@@ -412,7 +492,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
 
 
 
-bool RDGShader::Recompile() {
+bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
 
     // Clear legacy resources
     graphics_pipeline_ = {};
@@ -445,77 +525,35 @@ bool RDGShader::Recompile() {
         auto vertex_inputs = shaders_.vertex->GetVertexInputDesc();
         std::vector<RHIVertexInputBindingDesc> rhi_bindings;
         std::vector<RHIVertexInputAttributeDesc> rhi_attributes;
-        // TODO further support more vertex formats
-        size_t current_offset = 0;
-        for (auto e : vertex_inputs) {
-            rhi_attributes.emplace_back(e.location, 0, e.format, current_offset);
-            current_offset += GetVertexAttributeFormatSize(e.format);
+        // Gather vertex input configurations from shader param struct info
+        for (auto & e : info->cpp_members) {
+            if (e.type == RHIParamType::kVertexBuffer) {
+                auto input = e.cpp_extra.vertex_buffer_info;
+                // TODO support more input rates
+                rhi_bindings.emplace_back(input->index, input->stride, RHIVertexInputRateType::kVertex);
+            }
+            if (e.type == RHIParamType::kVertexAttribute) {
+                auto attr = e.cpp_extra.vertex_attribute_info;
+                rhi_attributes.emplace_back(attr->attribute_index, attr->buffer_index, attr->format, attr->offset);
+            }
         }
-        rhi_bindings.emplace_back(0, current_offset, RHIVertexInputRateType::kVertex);
         desc.vertex_input.vertex_buffers = rhi_bindings;
         desc.vertex_input.vertex_attributes = rhi_attributes;
         // TODO support more primitive topologies
         desc.topology = RHIPrimitiveTopologyType::kTriangleList;
-        // TOOD depth testing
+
 
         auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
-        std::vector<RHIColorAttachmentDesc> color_attachments = pipeline_config.color_attachments;
-        auto GuessFormat = [] (RHIFragmentOutputFormatType fragment_output) {
-            switch (fragment_output) {
-                case RHIFragmentOutputFormatType::k4xFp32:
-                    return PixelFormatType::kR8G8B8A8_UNORM;
-                case RHIFragmentOutputFormatType::k4xUIint32:
-                    return PixelFormatType::kR32G32B32A32_UINT;
-                default:
-                    assert(false);
-            }
-            return PixelFormatType::kUnknown;
-        };
-        if (color_attachments.empty()) {
-            // Infer from fragment shader reflection
-            int max_index = 0;
-            for (auto e : fragment_outputs) {
-                max_index = std::max((int)e.location, max_index);
-            }
-            color_attachments.resize(max_index + 1, {});
-            for (auto e : fragment_outputs) {
+        std::vector<RHIColorAttachmentDesc> color_attachments;
+        // Gather color attachment configurations from shader param struct info
+        for (auto & e : info->cpp_members) {
+            if (e.type == RHIParamType::kRenderTarget) {
+                // TODO support more blending operations
                 RHIColorAttachmentBlendDesc blend {};
-                color_attachments[e.location] = {blend, GuessFormat(e.format)};
-            }
-        } else {
-            // Check if the attachment count & format matches
-            if (color_attachments.size() != fragment_outputs.size()) {
-                MI_LOG(MIInfraLogType::kWarning, "Shader {} Color attachment count mismatch, expected {}, got {}",
-                       GetName(), fragment_outputs.size(), color_attachments.size());
-            }
-            // formats and locations
-            for (size_t i = 0; i < std::min(color_attachments.size(), fragment_outputs.size()); ++i) {
-                auto output = fragment_outputs[i].format;
-                auto location = fragment_outputs[i].location;
-                if (location < color_attachments.size()) {
-                    auto pixel_format = color_attachments[location].format;
-                    if (output == RHIFragmentOutputFormatType::k4xFp32) {
-                        bool compatiable = IsFloatPixelFormat(pixel_format);
-                        if (!compatiable) {
-                            MI_LOG(MIInfraLogType::kWarning, "Shader {} Fragment output location {} format mismatch",
-                                   GetName(), location);
-                        }
-                    } else if (output == RHIFragmentOutputFormatType::k4xUIint32) {
-                        bool compatiable = IsUIntPixelFormat(pixel_format);
-                        if (!compatiable) {
-                            MI_LOG(MIInfraLogType::kWarning, "Shader {} Fragment output location {} format mismatch",
-                                   GetName(), location);
-                        }
-                    } else {
-                        assert(false && "This should not happen");
-                    }
-                } else {
-                    MI_LOG(MIInfraLogType::kWarning, "Shader {} Fragment output location {} is out of range. "
-                                                     "Number of color attachments declared in c++ is {}.",
-                                                     GetName(), location, color_attachments.size());
-                }
+                color_attachments.push_back({blend, e.cpp_extra.render_targets_info->format});
             }
         }
+        // TODO support depth stencil
         desc.color_attachments = color_attachments;
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, GetName().c_str()
