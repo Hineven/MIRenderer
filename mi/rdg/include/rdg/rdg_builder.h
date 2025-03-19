@@ -15,17 +15,18 @@
 MI_NAMESPACE_BEGIN
 class RDGPass;
 class RenderGraph;
+typedef TRef<RDGResource> RDGResourceRef;
 
 class RenderGraphBuilder : public NonCopyable, public NonMovable {
 public:
     void AddPass (
         const char *name,
+        RDGPassType pass_type,
+        RDGPassFlags pass_flags,
         // Accessed parameters (meta and data)
         RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
         void * parameter_struct,
-        // Flags
-        RDGPassFlags flags,
-        std::function<void()> && pass) ;
+        std::function<void(RHICommandQueueGraphics&)> && pass) ;
 
     TRef<RenderGraph> Compile ();
 

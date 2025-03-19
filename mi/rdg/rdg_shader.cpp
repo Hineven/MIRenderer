@@ -4,12 +4,22 @@
  * See LICENSE for licensing.
  */
 #include <ranges>
+#include <xxhash.h>
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_pipeline.h"
 #include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
+
+size_t RDGShaderInitializationInfo::GetHash() const {
+    size_t final_hash = 0;
+    for (const auto & macro : macros) {
+        final_hash ^= XXH64(macro.c_str(), macro.size(), 12312321);
+    }
+    return final_hash;
+}
+
 
 bool RDGShaderParamStructInfo::CanBeImported () const {
     for (auto & member : cpp_members) {
@@ -25,23 +35,8 @@ bool RDGShaderParamStructInfo::CanBeImported () const {
     return true;
 }
 
-RDGShaderRegistrator::RDGShaderRegistrator(
-        size_t type_hash,
-        std::function<RDGShaderInitializationInfo()> get_init_info
-) {
-    RDGShader * shader = new RDGShader(get_init_info());
-    RDGShaderLibrary::GetInstance().RegisterShader(typeid(*shader).hash_code(), shader);
-}
+RDGShader::~RDGShader () {
 
-RDGShader::RDGShader(RDGShaderInitializationInfo ini)
-        : name_(ini.name),
-          source_location_(std::move(ini.source_location)),
-          type_(ini.type) {
-    shader_entries_.compute = ini.compute_entry_;
-    shader_entries_.vertex = ini.vertex_entry_;
-    shader_entries_.fragment = ini.fragment_entry_;
-    child_methods_.GetShaderParamInfo = ini.GetShaderParamInfo;
-    child_methods_.GetShaderPipelineConfig = ini.GetShaderPipelineConfig;
 }
 
 static std::string LoadFile(const std::string & path) {
@@ -137,7 +132,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
     if (shader_reflected_uniform_buffers.size() - has_bindless != cpp_ref_uniform_buffers.size()) {
         MI_LOG(MIInfraLogType::kWarning,
                "Shader '{}' - Uniform buffer count mismatch between C++ and shader",
-               source_location_);
+               class_registry_->source_location);
         passed_checking = false;
     }
     if (shader_reflected_uniform_buffers.size() - has_bindless > cpp_ref_uniform_buffers.size()) {
@@ -153,7 +148,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
             if (!found) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' - Uniform buffer '{}' is defined in shader but not found in C++",
-                       source_location_, shader_ub.name);
+                       class_registry_->source_location, shader_ub.name);
                 passed_checking = false;
             }
         }
@@ -170,7 +165,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (shader_ub_idx == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' - Uniform buffer '{}' is defined in C++ but not found in shader",
-                   source_location_, cpp_ref_uniform_buffer_names[i]);
+                   class_registry_->source_location, cpp_ref_uniform_buffer_names[i]);
             passed_checking = false;
             continue;
         }
@@ -178,9 +173,9 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (shader_reflected_uniform_buffers[shader_ub_idx].struct_reflection->layout_hash != e->layout_hash) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' - Uniform buffer '{}' has layout hash mismatch between C++ and shader",
-                   source_location_, cpp_ref_uniform_buffer_names[i]);
+                   class_registry_->source_location, cpp_ref_uniform_buffer_names[i]);
             passed_checking = false;
-            cpp_failure_index = i;
+            cpp_failure_index = (int)i;
             shader_failure_index = shader_ub_idx;
         }
     }
@@ -206,21 +201,21 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses storage buffer '{}' which is not defined in shader parameters",
-                   source_location_, sb.name);
+                   class_registry_->source_location, sb.name);
             passed_checking = false;
         } else {
             auto & member = info.cpp_members[index];
             if (member.type != RHIParamType::kStorageBuffer) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as storage buffer but parameter has incompatible type",
-                       source_location_, sb.name);
+                       class_registry_->source_location, sb.name);
                 passed_checking = false;
             }
             if (member.access_flags != sb.access_flags) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as storage buffer but parameter has incompatible access flags."
                        "Shader flags: {}, Parameter flags: {}",
-                       source_location_, sb.name, sb.access_flags, member.access_flags);
+                       class_registry_->source_location, sb.name, ToString(sb.access_flags), ToString(member.access_flags));
                 passed_checking = false;
             }
         }
@@ -232,7 +227,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses UAV texture '{}' which is not defined in shader parameters",
-                   source_location_, uav.name);
+                   class_registry_->source_location, uav.name);
             passed_checking = false;
         } else {
             auto & member = info.cpp_members[index];
@@ -240,7 +235,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as UAV texture but parameter has incompatible type."
                        "Parameter type: {}",
-                       source_location_, uav.name, member.type);
+                       class_registry_->source_location, uav.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -251,7 +246,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses SRV texture '{}' which is not defined in shader parameters",
-                   source_location_, srv.name);
+                   class_registry_->source_location, srv.name);
             passed_checking = false;
         } else {
             auto & member = info.cpp_members[index];
@@ -259,7 +254,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as SRV texture but parameter has incompatible type."
                        "Parameter type: {}",
-                       source_location_, srv.name, member.type);
+                       class_registry_->source_location, srv.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -270,7 +265,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses sampler '{}' which is not defined in shader parameters",
-                   source_location_, sampler.name);
+                   class_registry_->source_location, sampler.name);
             passed_checking = false;
         } else {
             auto & member = info.cpp_members[index];
@@ -278,7 +273,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as sampler but parameter has incompatible type."
                        "Parameter type: {}",
-                       source_location_, sampler.name, member.type);
+                       class_registry_->source_location, sampler.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -289,7 +284,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses acceleration structure '{}' which is not defined in shader parameters",
-                   source_location_, as.name);
+                   class_registry_->source_location, as.name);
             passed_checking = false;
         } else {
             auto & member = info.cpp_members[index];
@@ -297,7 +292,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as acceleration structure but parameter has incompatible type."
                        "Parameter type: {}",
-                       source_location_, as.name, member.type);
+                       class_registry_->source_location, as.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -309,7 +304,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                 "Shader '{}' uses vertex attribute '{}' (location {}) which is not defined in shader parameters",
-                source_location_, vb.name, vb.location);
+                class_registry_->source_location, vb.name, vb.location);
             passed_checking = false;
             // Find the vertex attribute with corresponding location
             for (auto & member : info.cpp_members) {
@@ -327,21 +322,21 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
                 MI_LOG(MIInfraLogType::kWarning,
                         "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible type."
                         "Parameter type: {}",
-                        source_location_, vb.name, member.type);
+                        class_registry_->source_location, vb.name, ToString(member.type));
                 passed_checking = false;
             } else {
                 if (member.cpp_extra.vertex_attribute_info->attribute_index != vb.location) {
                     MI_LOG(MIInfraLogType::kWarning,
                         "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible location."
                         "Parameter location: {}, Shader location: {}",
-                        source_location_, vb.name, member.cpp_extra.vertex_attribute_info->attribute_index, vb.location);
+                        class_registry_->source_location, vb.name, member.cpp_extra.vertex_attribute_info->attribute_index, vb.location);
                     passed_checking = false;
                 }
                 if (member.cpp_extra.vertex_attribute_info->format != vb.format) {
                     MI_LOG(MIInfraLogType::kWarning,
                             "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible format."
                             "Parameter format: {}, Shader format: {}",
-                            source_location_, vb.name, member.cpp_extra.vertex_attribute_info->format, vb.format);
+                            class_registry_->source_location, vb.name, ToString(member.cpp_extra.vertex_attribute_info->format), ToString(vb.format));
                     passed_checking = false;
                 }
             }
@@ -354,7 +349,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                 "Shader '{}' uses fragment output '{}' (location {}) which is not defined in shader parameters",
-                source_location_, output.name, output.location);
+                class_registry_->source_location, output.name, output.location);
             passed_checking = false;
             // Find the fragment output with corresponding location
             for (auto & member : info.cpp_members) {
@@ -372,21 +367,21 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
                 MI_LOG(MIInfraLogType::kWarning,
                     "Shader '{}' defines '{}' as fragment output but parameter has incompatible type."
                     "Parameter type: {}",
-                    source_location_, output.name, member.type);
+                    class_registry_->source_location, output.name, ToString(member.type));
                 passed_checking = false;
             } else {
                 if (member.cpp_extra.render_targets_info->target_index != output.location) {
                     MI_LOG(MIInfraLogType::kWarning,
                         "Shader '{}' defines '{}' as fragment output but parameter has incompatible location."
                         "Parameter location: {}, Shader location: {}",
-                        source_location_, output.name, member.cpp_extra.render_targets_info->target_index, output.location);
+                        class_registry_->source_location, output.name, member.cpp_extra.render_targets_info->target_index, output.location);
                     passed_checking = false;
                 }
                 if (!RHIIsOutputCompatiablePixelFormat(output.format, member.cpp_extra.render_targets_info->format)) {
                     MI_LOG(MIInfraLogType::kWarning,
                         "Shader '{}' defines '{}' as fragment output but parameter has incompatible format."
                         "Parameter format: {}, Shader format: {}",
-                        source_location_, output.name, member.cpp_extra.render_targets_info->format, output.format);
+                        class_registry_->source_location, output.name, ToString(member.cpp_extra.render_targets_info->format), ToString(output.format));
                     passed_checking = false;
                 }
             }
@@ -400,7 +395,7 @@ bool RDGShader::CheckShaderReflection(TRef<RHIShader> shader, const RDGShaderPar
 
 std::string RDGShader::LoadSource () const {
     // Firstly, load the source code from the source location
-    auto source_code = LoadFile(source_location_);
+    auto source_code = LoadFile(class_registry_->source_location);
     return source_code;
 }
 
@@ -408,18 +403,18 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
     // Re-compile the shader
     shaders_ = {};
     if (source_code.empty()) {
-        MI_LOG(MIInfraLogType::kError, "Empty shader source: {}", source_location_);
+        MI_LOG(MIInfraLogType::kError, "Empty shader source: {}", class_registry_->source_location);
         return false;
     }
     // Reflect shader struct param info
-    const RDGShaderParamStructInfo & param_info = *child_methods_.GetShaderParamInfo();
+    const RDGShaderParamStructInfo & param_info = *class_registry_->GetShaderParamStructInfo();
 
     // Compile the shader and create RHI shaders
     std::string errmsg;
-    std::wstring source_location_wstr(source_location_.begin(), source_location_.end());
-    if(type_ == RHIPipelineType::kCompute) {
+    std::wstring source_location_wstr(class_registry_->source_location.begin(), class_registry_->source_location.end());
+    if(class_registry_->type == RHIPipelineType::kCompute) {
         auto result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(GetShaderEntries().compute), "cs_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
                 std::span(source_code.data(), source_code.size()), {}, errmsg
         );
         if (result.empty()) {
@@ -429,7 +424,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
         // Create the compute shader
         auto bytecode_span = std::span(reinterpret_cast<const std::byte *>(result.data()), result.size() * sizeof(uint32_t));
         auto shader = RHI::Get().CreateShader(
-                RHIShaderFrequencyFlagBits::kCompute, GetShaderEntries().compute,
+                RHIShaderFrequencyFlagBits::kCompute, class_registry_->compute_entry_,
                 RHIShaderIRType::kSPIRV, bytecode_span
         );
         if (!shader) {
@@ -439,11 +434,11 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
         shaders_.compute = shader;
         CheckShaderReflection(shader, param_info);
     }
-    if(type_ == RHIPipelineType::kGraphics) {
+    if(class_registry_->type == RHIPipelineType::kGraphics) {
         // For graphics pipeline, we need to compile vertex and fragment shaders
         // First compile vertex shader
         auto vs_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(GetShaderEntries().vertex), "vs_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_6",
                 std::span(source_code.data(), source_code.size()), {}, errmsg
         );
         if (vs_result.empty()) {
@@ -453,7 +448,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
 
         // Then compile fragment shader
         auto fs_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(GetShaderEntries().fragment), "ps_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_6",
                 std::span(source_code.data(), source_code.size()), {}, errmsg
         );
         if (fs_result.empty()) {
@@ -492,7 +487,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
 
 
 
-bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
+bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 
     // Clear legacy resources
     graphics_pipeline_ = {};
@@ -500,17 +495,17 @@ bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
 
     auto source_code = LoadSource();
     if (source_code.empty()) {
-        MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", source_location_);
+        MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", class_registry_->source_location);
         return false;
     }
     if (!RecompileShaders(source_code)) return false;
 
-    auto pipeline_config = child_methods_.GetShaderPipelineConfig();
+    auto pipeline_config = class_registry_->GetShaderPipelineConfig();
 
     // Assemble the pipeline
-    if (type_ == RHIPipelineType::kCompute) {
+    if (class_registry_->type == RHIPipelineType::kCompute) {
         auto pipeline = RHI::Get().CreateComputePipeline(
-            shaders_.compute.Raw(), GetName().c_str()
+            shaders_.compute.Raw(), class_registry_->name.c_str()
         );
         if (!pipeline) {
             MI_LOG(MIInfraLogType::kError, "Failed to create compute pipeline");
@@ -518,7 +513,7 @@ bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
         }
         compute_pipeline_ = pipeline;
     }
-    if (type_ == RHIPipelineType::kGraphics) {
+    if (class_registry_->type == RHIPipelineType::kGraphics) {
         RHIGraphicsPipelineDesc desc {};
         desc.stages.vertex_shader = shaders_.vertex.Raw();
         desc.stages.fragment_shader = shaders_.fragment.Raw();
@@ -526,7 +521,8 @@ bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
         std::vector<RHIVertexInputBindingDesc> rhi_bindings;
         std::vector<RHIVertexInputAttributeDesc> rhi_attributes;
         // Gather vertex input configurations from shader param struct info
-        for (auto & e : info->cpp_members) {
+        auto params = class_registry_->GetShaderParamStructInfo();
+        for (auto & e : params->cpp_members) {
             if (e.type == RHIParamType::kVertexBuffer) {
                 auto input = e.cpp_extra.vertex_buffer_info;
                 // TODO support more input rates
@@ -546,7 +542,7 @@ bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
         auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
         std::vector<RHIColorAttachmentDesc> color_attachments;
         // Gather color attachment configurations from shader param struct info
-        for (auto & e : info->cpp_members) {
+        for (auto & e : params->cpp_members) {
             if (e.type == RHIParamType::kRenderTarget) {
                 // TODO support more blending operations
                 RHIColorAttachmentBlendDesc blend {};
@@ -556,7 +552,7 @@ bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
         // TODO support depth stencil
         desc.color_attachments = color_attachments;
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
-                desc, GetName().c_str()
+                desc, class_registry_->name.c_str()
         );
         if (!pipeline) {
             MI_LOG(MIInfraLogType::kError, "Failed to create graphics pipeline");
@@ -564,6 +560,57 @@ bool RDGShader::Recompile(RDGShaderParamStructAndSizeInfo * info) {
         }
         graphics_pipeline_ = pipeline;
     }
+    return true;
 }
+
+RDGShaderLibrary &RDGShaderLibrary::GetInstance() {
+    static RDGShaderLibrary * instance_ptr;
+    if (instance_ptr == nullptr) {
+        instance_ptr = new RDGShaderLibrary();
+    }
+    return *instance_ptr;
+}
+
+RDGShaderLibrary::~RDGShaderLibrary() {}
+
+RDGShader *RDGShaderLibrary::GetShader(size_t type_hash, RDGShaderInitializationInfo ini) {
+    struct {
+        size_t type_hash;
+        size_t ini_hash;
+    } hash_data;
+    hash_data.type_hash = type_hash;
+    hash_data.ini_hash = ini.GetHash();
+    size_t shader_hash = XXH64(&hash_data, sizeof(hash_data), 0);
+    auto it = cached_shaders_.find(shader_hash);
+    if (it == cached_shaders_.end()) {
+        // Not cached, try to create a new shader
+        auto reg = registered_shaders_.find(type_hash);
+        if (reg == registered_shaders_.end()) {
+            // The class does not exist.
+            return nullptr;
+        }
+        auto new_shader = reg->second->Creator(reg->second.get(), ini);
+        cached_shaders_[shader_hash].reset(new_shader);
+        return new_shader;
+    } else {
+        return it->second.get();
+    }
+}
+
+void RDGShaderLibrary::RegisterShaderClass(
+    size_t type_hash,
+    RDGShaderClassRegistry in_reg) {
+    auto it = registered_shaders_.find(type_hash);
+    if (it == registered_shaders_.end()) {
+        auto reg = std::make_unique<RDGShaderClassRegistry>();
+        *reg = in_reg;
+        registered_shaders_[type_hash] = std::move(reg);
+    } else {
+        assert(false && "Double registration, this should never happen!");
+    }
+}
+
+
+
 
 MI_NAMESPACE_END

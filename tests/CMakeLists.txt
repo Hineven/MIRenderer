@@ -25,5 +25,5 @@ add_test(NAME rhi COMMAND rhi_test)
 
 # RDG
 add_executable(rdg_test rdg/rdg_test.cpp)
-target_link_libraries(rdg_test PRIVATE infra rhi rdg core ${GTEST_LIBRARIES})
+target_link_libraries(rdg_test PRIVATE cpptrace::cpptrace infra rhi rdg core ${GTEST_LIBRARIES})
 add_test(NAME rdg COMMAND rdg_test)

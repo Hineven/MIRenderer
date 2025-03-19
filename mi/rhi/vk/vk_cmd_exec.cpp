@@ -760,7 +760,9 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
 }
 
 void
-VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync, bool recycle_resources) {
+VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
+// TODO make this useful (or completely remove it)
+[[maybe_unused]] bool recycle_resources) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
     auto & cmd = state.cmd;

@@ -31,7 +31,7 @@ void RDGPass::GatherResourceAccesses() {
         const void* field_data = static_cast<const char*>(shader_param_data_) + field.cpp_offset;
 
         // Check resource type
-        if (field.type == RHIParamType::kSRVTexture) {
+        if (field.type == RHIParamType::kSRVTexture) { // SRV
             RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
             if (!texture) {
                 // TODO should we log a warning here?
@@ -43,7 +43,7 @@ void RDGPass::GatherResourceAccesses() {
                 texture
             );
         }
-        else if (field.type == RHIParamType::kUAVTexture) {
+        else if (field.type == RHIParamType::kUAVTexture) { // UAV
             RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
             if (!texture) {
                 // TODO should we log a warning here?
@@ -54,7 +54,7 @@ void RDGPass::GatherResourceAccesses() {
                 RDGTextureUsage::kShaderReadWrite,
                 texture
             );
-        } else if (field.type == RHIParamType::kStorageBuffer) {
+        } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
             RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
             if (!buffer) continue;
             auto usage = RDGBufferUsage{{}, buffer};
@@ -70,22 +70,44 @@ void RDGPass::GatherResourceAccesses() {
             }
             used_buffers_.emplace_back(usage);
         }
-        else if (field.cpp_imported_struct_info.cpp_struct_info) {
+        else if (field.cpp_imported_struct_info.cpp_struct_info) { // Imported uniform buffer
             if (field.cpp_imported_struct_info.cpp_import_type == RDGShaderParamStructImportType::kReference) {
                 auto ub = *static_cast<RDGBuffer*const *>(field_data);
                 referenced_uniform_buffers_.push_back(ub);
                 used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, ub);
             }
+        } else if (field.type == RHIParamType::kVertexBuffer
+            || field.type == RHIParamType::kIndexBuffer
+            || field.type == RHIParamType::kDispatchCommand) { // Vertex / index/ dispatch command
+            RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
+            if (!buffer) continue;
+            auto usage = RDGBufferUsage{{}, buffer};
+            if (field.type == RHIParamType::kVertexBuffer) {
+                usage.usage = RDGBufferUsage::kVertexBuffer;
+            } else if (field.type == RHIParamType::kIndexBuffer) {
+                usage.usage = RDGBufferUsage::kIndexBuffer;
+            } else if (field.type == RHIParamType::kDispatchCommand) {
+                usage.usage = RDGBufferUsage::kIndirectBuffer;
+            }
+            in_buffers_.push_back(buffer);
+            used_buffers_.emplace_back(usage);
+        } else if (field.type == RHIParamType::kRenderTarget) {
+            // Render target
+            RDGTexture * texture = *static_cast<RDGTexture* const*>(field_data);
+            if (!texture) continue;
+            auto usage = RDGTextureUsage::kOutputAttachment;
+            if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
+                usage = RDGTextureUsage::kDepthStencilAttachment;
+            }
+            in_textures_.push_back(texture);
+            out_textures_.push_back(texture);
+            used_textures_.emplace_back(
+                usage,
+                texture
+            );
         } else {
-            // TODO add support for vertex buffer, index buffer, render target...
-            assert(false && "Unsupported");
+            assert(false && "Unsupported resource type");
         }
-    }
-
-    // Also, consider the potential indirect buffer
-    if (indirect_buffer_) {
-        in_buffers_.push_back(indirect_buffer_.Raw());
-        used_buffers_.emplace_back(RDGBufferUsage::kIndirectBuffer, indirect_buffer_);
     }
 
     // Lastly, create and store the uniform buffer usage

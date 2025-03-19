@@ -38,10 +38,10 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
         // Place resource barriers.
         RHIPipelineStageFlags new_stages = pass->GetStageFlags();
         {
-            auto textures = cmd.Allocate<RHITexture*>(pass->used_textures_.size());
-            auto layouts = cmd.Allocate<RHITextureLayoutType>(pass->used_textures_.size());
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_textures_.size());
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_textures_.size());
+            auto textures = cmd.Allocate<RHITexture*[]>(pass->used_textures_.size());
+            auto layouts = cmd.Allocate<RHITextureLayoutType[]>(pass->used_textures_.size());
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_textures_.size());
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_textures_.size());
             for (const auto & [i, texture_use] : std::views::enumerate(pass->used_textures_)) {
                 textures[i] = texture_use.texture->GetRHI();
                 auto & old_state = resource_accesses_[texture_use.texture.Raw()];
@@ -72,9 +72,9 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
             cmd.TextureBarriers((uint32_t)pass->used_textures_.size(), textures, layouts, new_stages, src_accesses, dst_accesses);
         }
         {
-            auto buffers = cmd.Allocate<RHIBufferSpan>(pass->used_buffers_.size());
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_buffers_.size());
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags>(pass->used_buffers_.size());
+            auto buffers = cmd.Allocate<RHIBufferSpan[]>(pass->used_buffers_.size());
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_buffers_.size());
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_buffers_.size());
             for (const auto & [i, buffer_use] : std::views::enumerate(pass->used_buffers_)) {
                 auto & old_state = resource_accesses_[buffer_use.buffer.Raw()];
                 buffers[i] = buffer_use.buffer->GetRHI();

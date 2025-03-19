@@ -15,20 +15,20 @@ class RDGPass : public NonMovable, public NonCopyable {
 protected:
     // Can only be allocated by RDG
     FORCEINLINE RDGPass(
+        std::string name,
         int index,
         RDGPassType pass_type,
         RDGPassFlags flags,
         std::function<void(RHICommandQueueGraphics&)> && pass,
         const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
-        const void * shader_param_data,
-        RDGBuffer * indirect_buffer = nullptr
-    ) : index_(index),
+        const void * shader_param_data
+    ) : name_(name),
+        index_(index),
         type_(pass_type),
         flags_(flags),
         pass_(std::move(pass)),
         shader_param_struct_info_(shader_param_struct_info),
-        shader_param_data_(shader_param_data),
-        indirect_buffer_(indirect_buffer) {
+        shader_param_data_(shader_param_data) {
         GatherResourceAccesses();
     }
 public:
@@ -49,6 +49,7 @@ public:
     }
 
 protected:
+    std::string name_;
     // The index when the pass is joined to the graph
     int index_;
     // Flags for the pass
@@ -62,8 +63,6 @@ protected:
     std::vector<RDGBuffer*> out_buffers_;
     std::vector<RDGTexture*> in_textures_;
     std::vector<RDGBuffer*> in_buffers_;
-    // Indirect buffer
-    RDGBufferRef indirect_buffer_ {nullptr};
 
     struct RDGTextureUsage {
         enum {

@@ -9,28 +9,33 @@
 #include <queue>
 #include <ranges>
 
+#include "rdg/rdg.h"
+
 MI_NAMESPACE_BEGIN
 void RenderGraphBuilder::AddPass(
     const char *name,
+    RDGPassType pass_type,
+    RDGPassFlags pass_flags,
     RDGShaderParamStructAndSizeInfo *shader_param_struct_info,
     void *parameter_struct,
-    RDGPassFlags flags,
-    std::function<void()> && pass
+    std::function<void(RHICommandQueueGraphics&)> && pass_lambda
 ) {
-    auto pass = std::unique_ptr(
-        new RDGPass(
+    auto ptr = new RDGPass(
+            name,
             current_pass_index_ ++,
-            std::move(pass),
+            pass_type,
+            pass_flags,
+            std::move(pass_lambda),
             shader_param_struct_info,
             parameter_struct
-        )
     );
-    pass->GatherInOutResources();
+    auto pass = std::unique_ptr<RDGPass>(ptr);
+    pass->GatherResourceAccesses();
     // Add to the pass list
     passes_.push_back(std::move(pass));
 }
 
-RenderGraphRef RenderGraphBuilder::Compile() {
+TRef<RenderGraph> RenderGraphBuilder::Compile() {
     std::map<RDGResource*, std::vector<RDGPass*>> in_resource_pass_map;
     std::map<RDGResource*, std::vector<RDGPass*>> out_resource_pass_map;
     std::vector<std::unique_ptr<RDGPass>> culled_passes;
@@ -39,12 +44,12 @@ RenderGraphRef RenderGraphBuilder::Compile() {
     pass_heads_rev.resize(passes_.size(), -1);
     std::vector<RenderGraph::Edge> culled_edges, edges_rev;
     auto AddEdge = [&](int from, int to) {
-        int edge_index = culled_edges.size();
+        int edge_index = (int)culled_edges.size();
         culled_edges.emplace_back(from, to, culled_pass_heads[to]);
         culled_pass_heads[from] = edge_index;
     };
     auto AddEdgeRev = [&](int from, int to) {
-        int edge_index_rev = edges_rev.size();
+        int edge_index_rev = (int)edges_rev.size();
         edges_rev.emplace_back(from, to, pass_heads_rev[to]);
         pass_heads_rev[from] = edge_index_rev;
     };
@@ -112,7 +117,7 @@ RenderGraphRef RenderGraphBuilder::Compile() {
                 }
             }
             if (flag) {
-                q.push(i);
+                q.push((int)i);
                 visited[i] = true;
             }
         }

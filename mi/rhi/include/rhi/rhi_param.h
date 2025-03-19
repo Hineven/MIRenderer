@@ -40,6 +40,26 @@ enum class RHIParamType {
     kMax,
 };
 
+FORCEINLINE std::string ToString (RHIParamType type) {
+    switch (type) {
+        case RHIParamType::kStorageBuffer: return "StorageBuffer";
+        case RHIParamType::kUniformBuffer: return "UniformBuffer";
+        case RHIParamType::kUAVTexture: return "UAVTexture";
+        case RHIParamType::kSRVTexture: return "SRVTexture";
+        case RHIParamType::kSampler: return "Sampler";
+        case RHIParamType::kStruct: return "Struct";
+        case RHIParamType::kBasic: return "Basic";
+        case RHIParamType::kAccelerationStructure: return "AccelerationStructure";
+        case RHIParamType::kRenderTarget: return "RenderTarget";
+        case RHIParamType::kVertexAttribute: return "VertexAttribute";
+        case RHIParamType::kVertexBuffer: return "VertexBuffer";
+        case RHIParamType::kIndexBuffer: return "IndexBuffer";
+        case RHIParamType::kDispatchCommand: return "DispatchCommand";
+        case RHIParamType::kMax: return "Max";
+        default: return "Unknown";
+    }
+}
+
 enum class RHIBasicParamType {
     kFloat,
     kFloat2,

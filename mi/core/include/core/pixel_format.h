@@ -7,6 +7,8 @@
 #ifndef MIRENDERER_CORE_PIXEL_FORMAT_H
 #define MIRENDERER_CORE_PIXEL_FORMAT_H
 
+#include <string>
+
 #include "rhi/rhi_common.h"
 
 MI_NAMESPACE_BEGIN
@@ -61,6 +63,10 @@ FORCEINLINE const char * GetPixelFormatName (PixelFormatType type) {
         default:
             return "Unknown";
     }
+}
+
+FORCEINLINE std::string ToString (PixelFormatType type) {
+    return GetPixelFormatName(type);
 }
 
 FORCEINLINE bool IsFloatPixelFormat (PixelFormatType type) {

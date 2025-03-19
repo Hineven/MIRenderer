@@ -23,43 +23,39 @@ struct RDGShaderPipelineConfig {
     // std::vector<RHIColorAttachmentDesc> color_attachments;
 };
 
+class RDGShader;
+
+// Struct used to instantiate a shader of a certain class
 struct RDGShaderInitializationInfo {
+    std::vector<std::string> macros;
+    size_t GetHash () const ;
+};
+
+// Struct used to describe a class of shaders
+struct RDGShaderClassRegistry {
     std::string name;
     RHIPipelineType type;
     std::string source_location;
     std::string compute_entry_;
     std::string vertex_entry_;
     std::string fragment_entry_;
-    std::function<RDGShaderParamStructAndSizeInfo*()> GetParamStructInfo;
-    std::vector<std::string> default_macros;
-    std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig;
-};
-
-class RDGShaderRegistrator {
-public:
-    RDGShaderRegistrator (
-        size_t type_hash,
-        std::function<RDGShaderInitializationInfo()> get_init_info
-    ) ;
+    RDGShader * (*Creator) (RDGShaderClassRegistry *, RDGShaderInitializationInfo);
+    const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)();
+    RDGShaderPipelineConfig (*GetShaderPipelineConfig)();
 };
 
 class RDGShader : public RefCounted<true> {
 protected:
-    struct ShaderEntries {
-        std::string compute {};
-        std::string vertex {};
-        std::string fragment {};
-    } shader_entries_ ;
+    FORCEINLINE RDGShader (const RDGShaderClassRegistry * class_registry) : class_registry_(class_registry) {}
+    virtual ~RDGShader() ;
 public:
-    RDGShader (RDGShaderInitializationInfo ini) ;
-    bool Recompile (RDGShaderParamStructAndSizeInfo * info) ;
+    template<typename T>
+    friend class RDGShaderClassRegistrator;
+    friend class RDGShaderLibrary;
+    bool Recompile (RDGShaderInitializationInfo ini) ;
 //    The following functions should be implemented by sub-classes
 //  staitc std::vector<std::string> GetDefaultMacros () ;
     FORCEINLINE bool IsValid () const {return is_valid_;}
-    FORCEINLINE RHIPipelineType GetType () const {return type_;}
-    FORCEINLINE const std::string & GetSourceLocation () const {return source_location_;}
-    FORCEINLINE const ShaderEntries & GetShaderEntries () const {return shader_entries_;}
-    FORCEINLINE const std::string & GetName () const {return name_;}
 
     FORCEINLINE static RDGShaderPipelineConfig GetDefaultShaderPipelineConfig () {
         return RDGShaderPipelineConfig {
@@ -69,71 +65,66 @@ public:
 
 protected:
 
-    std::string LoadSource () const ;
+    // Shader initialization info (default, given in constructor)
+    RDGShaderInitializationInfo ini_ {
+        {}
+    };
+    // Point to the class registry deriving the shader
+    const RDGShaderClassRegistry * class_registry_;
 
+    std::string LoadSource () const ;
     // Helper function, re-compile shaders only.
     bool RecompileShaders (const std::string & source_code) ;
 
-    std::string name_ {"<unknown>"};
     // Check if all parameters declared & used in the shader are defined in the shader parameter struct
     bool CheckShaderReflection (TRef<RHIShader> shader, const RDGShaderParamStructInfo & info) const ;
 
     // Resource path (infra)
-    std::string source_location_ {};
     bool is_valid_ {false};
-    RHIPipelineType type_ {};
-    TRef<RHIComputePipeline> compute_pipeline_ {nullptr};
-    TRef<RHIGraphicsPipeline> graphics_pipeline_ {nullptr};
+    TRef<RHIComputePipeline> compute_pipeline_;
+    TRef<RHIGraphicsPipeline> graphics_pipeline_;
     struct {
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};
         TRef<RHIShader> fragment {};
     } shaders_;
-
-    struct {
-        std::function<RDGShaderParamStructAndSizeInfo*()> GetParamStructInfo {};
-        std::function<RDGShaderPipelineConfig()> GetShaderPipelineConfig {};
-    } child_methods_;
 };
 
 template<typename T, typename = void>
 struct TGetShaderPipelineConfig {
-    constexpr auto value = RDGShader::GetDefaultShaderPipelineConfig;
+    constexpr static auto value = RDGShader::GetDefaultShaderPipelineConfig;
 };
 
 template<typename T>
 struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConfig)>> {
-    constexpr auto value = T::GetShaderPipelineConfig;
+    constexpr static auto value = T::GetShaderPipelineConfig;
 };
 
-// Compute
-#define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, Type, EntryPoint) \
-    static RDGShaderRegistrator ClassName##Registrator( \
-        typeid(ClassName).hash_code(), \
-        []() -> RDGShaderInitializationInfo { \
-            static_assert(Type == RHIPipelineType::kCompute); \
-            return {#ClassName, \
-            Type, SourcePath, \
-            EntryPoint, "", "", \
-            ClassName::GetParamStructInfo, \
-            TGetShaderPipelineConfig<ClassName>::value}; \
-        } \
+#define DECLARE_SHADER() \
+    template<typename T> friend class RDGShaderClassRegistrator; \
+    friend class RDGShaderLibrary; \
+    using RDGShader::RDGShader;
+
+// Generic
+#define IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS) \
+    static RDGShaderClassRegistrator<ClassName> ClassName##Registrator( \
+        #ClassName, \
+        Type,\
+        SourcePath, \
+        EntryPoint_CS, \
+        EntryPoint_VS, \
+        EntryPoint_PS, \
+        ClassName::GetParamStructInfo, \
+        TGetShaderPipelineConfig<ClassName>::value \
     );
 
+// Compute
+#define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, EntryPoint_CS) \
+    IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "")
+
 // Graphics
-#define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, Type, EntryPoint_VS, EntryPoint_PS) \
-    static RDGShaderRegistrator ClassName##Registrator( \
-        typeid(ClassName).hash_code(), \
-        []() -> RDGShaderInitializationInfo { \
-            static_assert(Type == RHIPipelineType::kGraphics); \
-            return { \
-                #ClassName, \
-                Type, SourcePath, \
-                "", EntryPoint_VS, EntryPoint_PS, \
-                ClassName::GetParamStructInfo, \
-                TGetShaderPipelineConfig<ClassName>::value}; \
-        } \
-    );
+#define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
+    IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS)
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
     using ShaderParameters = Name; \
@@ -144,11 +135,71 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
 class RDGShaderLibrary : public NonMovable, public NonCopyable {
 protected:
     RDGShaderLibrary() = default;
+    ~RDGShaderLibrary() ;
 public:
+    void Init ();
+
+    template<typename T>
+    friend class RDGShaderClassRegistrator;
     static RDGShaderLibrary & GetInstance() ;
-    template<typename T> RDGShader GetShader (std::vector<std::string> macros = {}) ;
-    template<typename T> RDGShader Recompile (std::vector<std::string> macros = {}) ;
-    void RegisterShader (size_t type_hash, RDGShader * shader) ;
+    template<typename T>
+    FORCEINLINE T * GetShader (RDGShaderInitializationInfo ini = {}) {
+        return (T*)GetShader(typeid(T).hash_code(), ini);
+    }
+    RDGShader * GetShader (size_t type_hash, RDGShaderInitializationInfo ini = {}) ;
+protected:
+    void RegisterShaderClass (size_t type_hash, RDGShaderClassRegistry registry) ;
+
+    FORCEINLINE void DeleteShader (RDGShader * shader) {
+        delete shader;
+    }
+    struct DeleteShaderType {
+        void operator() (RDGShader * shader) const {
+            delete shader;
+        }
+    };
+
+    // Shader creators
+    std::map<size_t, std::unique_ptr<RDGShaderClassRegistry>> registered_shaders_ {};
+    // Compiled shaders
+    // REMEMBER to delete shaders when removing them.
+    std::map<size_t, std::unique_ptr<RDGShader, DeleteShaderType>> cached_shaders_ {};
+};
+
+// Registrator for a class of shaders
+template<typename T>
+class RDGShaderClassRegistrator {
+public:
+    FORCEINLINE RDGShaderClassRegistrator (
+        std::string name,
+        RHIPipelineType type,
+        const std::string & source_location,
+        const std::string & compute_entry,
+        const std::string & vertex_entry,
+        const std::string & fragment_entry,
+        const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)(),
+        RDGShaderPipelineConfig (*GetShaderPipelineConfig)()
+    ) {
+        auto & lib = RDGShaderLibrary::GetInstance();
+        auto registry = RDGShaderClassRegistry {
+            name,
+            type,
+            source_location,
+            compute_entry,
+            vertex_entry,
+            fragment_entry,
+            RDGShaderClassRegistrator<T>::zzShaderFactoryFunction,
+            GetShaderParamStructInfo,
+            GetShaderPipelineConfig,
+        };
+        lib.RegisterShaderClass(typeid(T).hash_code(), registry);
+    }
+protected:
+    FORCEINLINE static RDGShader * zzShaderFactoryFunction (RDGShaderClassRegistry * registry, RDGShaderInitializationInfo info) {
+        auto shader = (RDGShader*)(new T(registry));
+        shader->Recompile(info);
+        return shader;
+    }
 };
 
 MI_NAMESPACE_END

@@ -50,7 +50,43 @@ public:
     }
 
 private:
-    mutable std::conditional_t<bThreadSafe, std::atomic<int>, int> ref_count_ {0};
+    mutable std::atomic<int> ref_count_ {0};
+};
+
+// Thread unsafe version
+template<>
+class RefCounted<false>
+{
+public:
+    RefCounted() = default;
+    virtual ~RefCounted() = default;
+
+    RefCounted(const RefCounted& Rhs) = delete;
+    RefCounted& operator=(const RefCounted& Rhs) = delete;
+
+    inline uint32_t IncRef() const
+    {
+        return ++ ref_count_;
+    }
+
+    inline uint32_t DecRef() const
+    {
+        -- ref_count_;
+        int ref_count = ref_count_;
+        if (ref_count_ == 0)
+        {
+            delete this;
+        }
+        return (uint32_t)ref_count;
+    }
+
+    uint32_t GetRefCount() const
+    {
+        return (uint32_t)ref_count_;
+    }
+
+private:
+    mutable int ref_count_ {0};
 };
 
 template<typename T>

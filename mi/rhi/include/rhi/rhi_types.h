@@ -7,6 +7,7 @@
 #ifndef MIRENDERERDEV_RHI_TYPES_H
 #define MIRENDERERDEV_RHI_TYPES_H
 
+#include <format>
 #include "core/pixel_format.h"
 #include "core/types.h"
 #include "rhi/rhi_common.h"
@@ -94,6 +95,19 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIGPUAccess)
+
+FORCEINLINE std::string ToString (RHIGPUAccessFlags flags) {
+    std::string result = "";
+    if (flags & RHIGPUAccessFlagBits::kRead) {
+        result += "Read";
+    }
+    if (flags & RHIGPUAccessFlagBits::kWrite) {
+        if (!result.empty()) result += " | ";
+        result += "Write";
+    }
+    if (result.empty()) result = "None";
+    return result;
+}
 
 enum class RHISamplerAddressModeType {
     kRepeat,
@@ -228,6 +242,21 @@ enum class RHIVertexAttributeFormatType {
     kMax
 };
 
+FORCEINLINE std::string ToString (RHIVertexAttributeFormatType type) {
+    switch (type) {
+        case RHIVertexAttributeFormatType::k1xFp32:
+            return "1xfp32";
+        case RHIVertexAttributeFormatType::k2xFp32:
+            return "2xfp32";
+        case RHIVertexAttributeFormatType::k3xFp32:
+            return "3xfp32";
+        case RHIVertexAttributeFormatType::k4xFp32:
+            return "4xfp32";
+        default:
+            return "unknown";
+    }
+}
+
 FORCEINLINE uint32_t GetVertexAttributeFormatSize (RHIVertexAttributeFormatType type) {
     switch(type) {
         case RHIVertexAttributeFormatType::k1xFp32:
@@ -249,6 +278,17 @@ enum class RHIFragmentOutputFormatType {
     k4xUIint32,
     kMax
 };
+
+FORCEINLINE std::string ToString (RHIFragmentOutputFormatType type) {
+    switch (type) {
+        case RHIFragmentOutputFormatType::k4xFp32:
+            return "4xfp32";
+        case RHIFragmentOutputFormatType::k4xUIint32:
+            return "4xuint32";
+        default:
+            return "unknown";
+    }
+}
 
 FORCEINLINE bool RHIIsOutputCompatiablePixelFormat (RHIFragmentOutputFormatType output, PixelFormatType type) {
     if (IsFloatPixelFormat(type) && output == RHIFragmentOutputFormatType::k4xFp32) {

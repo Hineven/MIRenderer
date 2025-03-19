@@ -84,6 +84,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
                 return true;
                 }
             assert(false && "Not Implemented");
+            return false;
         };
         auto GetBasicParamType = [](spirv_cross::SPIRType::BaseType t, uint32_t vec_size) {
             if (t == spirv_cross::SPIRType::Float) {
@@ -128,8 +129,8 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
                 spirv_cross::SPIRType member_type = compiler_hlsl.get_type(member);
                 RHIParamInfo info {};
                 info.name = compiler_hlsl.get_member_name(reflecting_type_id, member);
-                info.size = compiler_hlsl.get_declared_struct_size(member_type);
-                info.offset = compiler_hlsl.type_struct_member_offset(type, i);
+                info.size = (uint32_t)compiler_hlsl.get_declared_struct_size(member_type);
+                info.offset = (uint32_t)compiler_hlsl.type_struct_member_offset(type, (uint32_t)i);
                 if (IsBasicType(member_type.basetype)) {
                     // Stop recursion
                     info.type = RHIParamType::kBasic;
