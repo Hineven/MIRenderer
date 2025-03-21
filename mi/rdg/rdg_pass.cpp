@@ -8,7 +8,7 @@
 #include <rdg/rdg_param.h>
 
 MI_NAMESPACE_BEGIN
-void RDGPass::GatherResourceAccesses() {
+void RDGPass::GatherResourceAccessesAndInitializeHolders() {
     // Enumerate the shader_param_data_ using reflection from shader_param_struct_info_, and gather accessed resources
     // Store them in in_xxx and out_xxx. Also, gather uniform buffers accessed.
     if (!shader_param_struct_info_ || !shader_param_data_) {
@@ -20,7 +20,7 @@ void RDGPass::GatherResourceAccesses() {
     in_buffers_.clear();
     out_textures_.clear();
     out_buffers_.clear();
-    referenced_uniform_buffers_.clear();
+    // referenced_uniform_buffers_.clear();
 
     used_textures_.clear();
     used_buffers_.clear();
@@ -70,12 +70,10 @@ void RDGPass::GatherResourceAccesses() {
             }
             used_buffers_.emplace_back(usage);
         }
-        else if (field.cpp_imported_struct_info.cpp_struct_info) { // Imported uniform buffer
-            if (field.cpp_imported_struct_info.cpp_import_type == RDGShaderParamStructImportType::kReference) {
-                auto ub = *static_cast<RDGBuffer*const *>(field_data);
-                referenced_uniform_buffers_.push_back(ub);
-                used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, ub);
-            }
+        else if (field.type == RHIParamType::kUniformBuffer) { // Imported uniform buffer
+            auto ub = *static_cast<RDGBuffer*const *>(field_data);
+            // referenced_uniform_buffers_.push_back(ub);
+            used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, ub);
         } else if (field.type == RHIParamType::kVertexBuffer
             || field.type == RHIParamType::kIndexBuffer
             || field.type == RHIParamType::kDispatchCommand) { // Vertex / index/ dispatch command
@@ -105,15 +103,23 @@ void RDGPass::GatherResourceAccesses() {
                 usage,
                 texture
             );
+        } else if (field.type == RHIParamType::kVertexAttribute) {
+            // Do nothiong
+        } else if (field.type == RHIParamType::kBasic || field.type == RHIParamType::kStruct) {
+            // Do nothing
         } else {
-            assert(false && "Unsupported resource type");
+            assert(false && "Unsupported parameter type.");
         }
     }
 
     // Lastly, create and store the uniform buffer usage
-    uniform_buffer_ = new RDGBuffer(RHIBufferUsageFlagBits::kUniform, shader_param_struct_info_->size);
-    in_buffers_.emplace_back(uniform_buffer_.Raw());
-    used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, uniform_buffer_);
+    if (shader_param_struct_info_->size) {
+        uniform_buffer_ = new RDGBuffer(RHIBufferUsageFlagBits::kUniform, shader_param_struct_info_->size);
+        in_buffers_.emplace_back(uniform_buffer_.Raw());
+        used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, uniform_buffer_);
+    } else {
+        uniform_buffer_ = {};
+    }
 }
 
 MI_NAMESPACE_END

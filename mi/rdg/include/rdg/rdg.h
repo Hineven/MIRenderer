@@ -7,6 +7,7 @@
 #ifndef RDG_H
 #define RDG_H
 
+#include <map>
 #include "rdg_base.h"
 #include "rhi/rhi.h"
 
@@ -36,8 +37,7 @@ protected:
         RHIPipelineStageFlags stages {RHIPipelineStageFlagBits::kNone};
         RHIGPUAccessFlags access {RHIGPUAccessFlagBits::kNone};
     };
-    std::map<RDGResource*, ResourceAccess> resource_accesses_;
-
+    std::map<RHIResource*, ResourceAccess> resource_accesses_;
 };
 
 typedef TRef<RenderGraph> RenderGraphRef;

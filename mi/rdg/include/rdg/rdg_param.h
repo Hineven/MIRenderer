@@ -20,19 +20,10 @@
 
 MI_NAMESPACE_BEGIN
 
-enum class RDGShaderParamStructImportType {
-    // (cpp side) included the entire parameter in the struct memory
-    kNested,
-    // (cpp side) included a reference to the parameter in the struct memory
-    kReference,
-    kMax
-};
-
 struct RDGShaderParamStructInfo;
 
 struct RDGImportedShaderParamStructInfo {
     const RDGShaderParamStructInfo * cpp_struct_info {nullptr};
-    RDGShaderParamStructImportType cpp_import_type {RDGShaderParamStructImportType::kMax};
 };
 
 struct RDGShaderRenderTargetInfo {
@@ -83,23 +74,41 @@ struct RDGShaderParamStructInfo : public RHIParamStructInfo {
     // Whether this struct can be imported to another RDGShaderParamStructInfo and wrapped by a RDGImportedShaderParamStructInfo
     // If this struct does not contain any references and shader resources, it can be imported.
     bool CanBeImported () const ;
-    std::map<uint32_t /*CRC*/, int> member_index_map;
-    FORCEINLINE int GetMemberIndex(uint32_t crc) const {
-        auto it = member_index_map.find(crc);
-        if(it == member_index_map.end()) return -1;
+    std::map<uint32_t /*CRC*/, int> cpp_member_index_map;
+    // Get the index of the member within all members (cpp_members). (Including pseudo-members such as vertex attributes)
+    FORCEINLINE int GetCppMemberIndex(uint32_t crc) const {
+        auto it = cpp_member_index_map.find(crc);
+        if(it == cpp_member_index_map.end()) return -1;
         return it->second;
     }
-    FORCEINLINE int GetMemberIndex (const char * name) const {
-        return GetMemberIndex(CRC32String(name));
+    // Get the index of the member within all members (cpp_members). (Including pseudo-members such as vertex attributes)
+    FORCEINLINE int GetCppMemberIndex (const char * name) const {
+        return GetCppMemberIndex(CRC32String(name));
     }
-    FORCEINLINE int GetMemberIndex (std::string_view name) const {
-        return GetMemberIndex(CRC32String(name));
+    // Get the index of the member within all members (cpp_members). (Including pseudo-members such as vertex attributes)
+    FORCEINLINE int GetCppMemberIndex (std::string_view name) const {
+        return GetCppMemberIndex(CRC32String(name));
     }
+};
+
+struct RDGShaderParameterLocation {
+    const RDGShaderParamInfo * info;
+    uint32_t cpp_offset;
+    uint32_t shader_offset;
+    uint32_t size;
 };
 
 struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
     // Cache the device size of the parameter struct at the outer most level
     uint32_t size;
+    // Some other data to support fast reflection checking and parameter filling
+    std::span<RDGShaderParameterLocation> global_uniforms_;
+    std::span<RDGShaderParameterLocation> storage_buffers_;
+    std::span<RDGShaderParameterLocation> uniform_buffers_;
+    std::span<RDGShaderParameterLocation> uavs_;
+    std::span<RDGShaderParameterLocation> srvs_;
+    std::span<RDGShaderParameterLocation> samplers_;
+    std::span<RDGShaderParameterLocation> acceleration_structures_;
 };
 
 // Map hlsl type strings to C++ metadata and types
@@ -177,19 +186,22 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("IndexBuffer")> 
 
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     std::string type_name, std::string param_name, uint32_t cpp_offset,
-    const RDGShaderParamStructInfo * cpp_struct_info = nullptr, RDGShaderParamStructImportType import_type = RDGShaderParamStructImportType::kNested) {
+    const RDGShaderParamStructInfo * cpp_struct_info = nullptr, bool ub_reference = false) {
     RDGShaderParamInfo info {};
     info.name = param_name;
     info.type = RHITypeNameStringToParamType(type_name);
+    if (cpp_struct_info && ub_reference) {
+        // In this case, modify the type to UniformBuffer for uniform buffer reference.
+        info.type = RHIParamType::kUniformBuffer;
+    }
     info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
 
     if(info.type == RHIParamType::kBasic) {
         info.basic_type = RHITypeNameStringToBasicParamType(type_name);
     }
-    if (info.type == RHIParamType::kStruct) {
+    if (info.type == RHIParamType::kStruct || info.type == RHIParamType::kUniformBuffer) {
         info.struct_info = cpp_struct_info;
         info.cpp_imported_struct_info.cpp_struct_info = cpp_struct_info;
-        info.cpp_imported_struct_info.cpp_import_type = import_type;
     }
     // info.offset = offset; // Offsets will be assigned when finalizing
     info.cpp_offset = cpp_offset;
@@ -203,84 +215,8 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
 
 namespace details {
     // Compute the device-side uniform buffer size of the parameter struct
-    FORCEINLINE bool zzFinalizeParams(std::vector<RDGShaderParamInfo> & params) {
-        uint32_t curr_position = 0;
-        uint32_t vertex_buffer_index = 0;
-        uint32_t vertex_attribute_index = 0;
-        uint32_t render_target_index = 0;
-        std::map<std::string, size_t> name_to_offset;
-        name_to_offset.clear();
-        for (auto & e : params) {
-            // Ignore non-uniform buffer contents (shader resources, uniform buffer ref)
-            if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
-                auto alignment = e.GetAlignment();
-                curr_position = (curr_position + alignment - 1) & ~(alignment - 1);
-                // HLSL buffer-row rule check: if the element lies on the 16-byte boundary, it should be aligned to 16 bytes
-                if (e.type == RHIParamType::kBasic) {
-                    auto param_size = RHIGetBasicParamSize(e.basic_type);
-                    auto start_row = curr_position / 16;
-                    auto end_row = (curr_position + param_size - 1) / 16;
-                    if (start_row != end_row) {
-                        curr_position = (curr_position + 16 - 1) & ~(16 - 1);
-                    }
-                }
-                e.offset = curr_position;
-                curr_position += e.size;
-                auto it = name_to_offset.find(e.name);
-                if (it != name_to_offset.end()) {
-                    // FIXME compile error, why?
-                    assert(false);
-                    // MI_LOG(MIInfraLogType::kError, "Duplicate param name: {}", e.name);
-                    return false;
-                }
-                name_to_offset[e.name] = e.offset;
-            }
-            if (e.type == RHIParamType::kVertexBuffer) {
-                // Finalize vertex buffer index now
-                e.cpp_extra.vertex_buffer_info->index = vertex_buffer_index++;
-            }
-            if (e.type == RHIParamType::kVertexAttribute) {
-                // Finalize vertex attribute index now
-                e.cpp_extra.vertex_attribute_info->attribute_index = vertex_attribute_index++;
-            }
-            if (e.type == RHIParamType::kRenderTarget) {
-                // Finalize render target index now
-                e.cpp_extra.render_targets_info->target_index = render_target_index++;
-            }
-        }
-        // Do some simple validation
-        bool index_present = false;
-        std::vector<bool> used_vertex_buffer;
-        used_vertex_buffer.resize(vertex_buffer_index, false);
-        for (auto & e : params) {
-            if (e.type == RHIParamType::kVertexAttribute) {
-                if (e.cpp_extra.vertex_attribute_info->buffer_index >= vertex_buffer_index) {
-                    MI_LOG(MIInfraLogType::kError,
-                        "Invalid vertex attribute buffer index {} is out of range (vertex buffer count {}), attribute name {}).",
-                        e.cpp_extra.vertex_attribute_info->buffer_index, vertex_buffer_index, e.name);
-                    return false;
-                } else {
-                    used_vertex_buffer[e.cpp_extra.vertex_attribute_info->buffer_index] = true;
-                }
-            }
-            if (e.type == RHIParamType::kIndexBuffer) {
-                if (!index_present) index_present = true;
-                else {
-                    MI_LOG(MIInfraLogType::kError,
-                        "More than one index buffer is provided. (provided {}).", e.name
-                    );
-                }
-            }
-        }
-        for (int i = 0; i < (int)used_vertex_buffer.size(); i++) {
-            if (!used_vertex_buffer[i]) {
-                MI_LOG(MIInfraLogType::kWarning,
-                    "Vertex buffer index {} is not used by any vertex attribute.", i
-                );
-            }
-        }
-        return true;
-    }
+    bool zzFinalizeParams(std::vector<RDGShaderParamInfo> & params);
+    void zzFinalizeTopLevelParamsStructInfo (RDGShaderParamStructAndSizeInfo * info);
 }
 
 // Helper struct to placehold empty parameters
@@ -447,7 +383,7 @@ private: \
         auto struct_info = Type::GetParamStructInfo(); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
         assert(struct_info->CanBeImported() && "Parameter structs containing shader resources or other non-nested parameter structs can not be nested."); \
-        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset, struct_info, RDGShaderParamStructImportType::kNested)); \
+        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset, struct_info)); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
     } \
@@ -469,7 +405,7 @@ private: \
         auto struct_info = Type::GetParamStructInfo(); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
         assert(struct_info->CanBeImported() && "Parameter structs containing shader resources or other non-nested parameter structs can not be referenced."); \
-        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset, struct_info, RDGShaderParamStructImportType::kReference)); \
+        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset, struct_info, true)); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
     } \
@@ -521,18 +457,19 @@ public: \
         } \
         auto params_mem = new RDGShaderParamInfo[params.size()]; \
         std::copy(params.begin(), params.end(), params_mem); \
-        std::map<uint32_t, int> member_index_map; \
+        std::map<uint32_t, int> cpp_member_index_map; \
         for (int i = 0; i < params.size(); i++) { \
-            member_index_map[CRC32String(params[i].name.c_str())] = i; \
+            cpp_member_index_map[CRC32String(params[i].name.c_str())] = i; \
         } \
         auto params_span = byte_strided_span((RHIParamInfo*)params_mem, params.size(), sizeof(RDGShaderParamInfo)); \
         auto cpp_params_span = std::span(params_mem, params.size()); \
         params_struct_info_ = new RDGShaderParamStructAndSizeInfo {}; \
         params_struct_info_->members = params_span; \
         params_struct_info_->cpp_members = cpp_params_span; \
-        params_struct_info_->member_index_map = member_index_map; \
-        params_struct_info_->InitializeLayoutHash(); \
+        params_struct_info_->cpp_member_index_map = cpp_member_index_map; \
+        params_struct_info_->InitializeUniformsLayoutHash(); \
         params_struct_info_->size = params_struct_info_->ComputeSize(); \
+        details::zzFinalizeTopLevelParamsStructInfo(params_struct_info_); \
         return params_struct_info_; \
 	} \
 };

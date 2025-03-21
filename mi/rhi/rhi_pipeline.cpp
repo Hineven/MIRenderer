@@ -157,6 +157,25 @@ void RHIPipeline::Reset() {
     ResetRHI();
 }
 
+void RHIPipeline::BuildPipelineResourceIndex() {
+    auto Register = [&] (RHIPipelineResourceType type, const auto & arr) {
+        for(int i = 0; i < arr.size(); ++i) {
+            pipeline_resource_index_[arr[i].name_crc] = {
+                type,
+                arr[i].frequency_bits,
+                i
+            };
+        }
+    };
+    Register(RHIPipelineResourceType::kUniformBuffer, uniform_buffers_);
+    Register(RHIPipelineResourceType::kStorageBuffer, storage_buffers_);
+    Register(RHIPipelineResourceType::kUAV, uavs_);
+    Register(RHIPipelineResourceType::kSRV, srvs_);
+    Register(RHIPipelineResourceType::kSampler, samplers_);
+    Register(RHIPipelineResourceType::kImmutableSampler, immutable_samplers_);
+    Register(RHIPipelineResourceType::kAccelerationStructure, acceleration_structures_);
+}
+
 void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     Reset();
     if(!CheckAndRemapShaderResources(desc.stages.vertex_shader)) return;
@@ -166,23 +185,7 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     if(!CheckAndRemapShaderResources(desc.stages.task_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
 
-    auto RegisterPipelineResourcesIndex = [&] (RHIPipelineResourceType type, const auto & arr) {
-        for(int i = 0; i < arr.size(); ++i) {
-            pipeline_resource_index_[arr[i].name_crc] = {
-                type,
-                arr[i].frequency_bits,
-                i
-            };
-        }
-    };
-
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kUniformBuffer, uniform_buffers_);
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kStorageBuffer, storage_buffers_);
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kUAV, uavs_);
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kSRV, srvs_);
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kSampler, samplers_);
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kImmutableSampler, immutable_samplers_);
-    RegisterPipelineResourcesIndex(RHIPipelineResourceType::kAccelerationStructure, acceleration_structures_);
+    BuildPipelineResourceIndex();
 
     TryLocateAndStripBindlessTableUniformBuffer();
     depth_test_enable_ = desc.depth_stencil.depth_test_enable;
@@ -242,6 +245,7 @@ void RHIComputePipeline::Compile(mi::RHIShader *compute_shader) {
     Reset();
     if(!CheckAndRemapShaderResources(compute_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
+    BuildPipelineResourceIndex();
     TryLocateAndStripBindlessTableUniformBuffer();
     if(!CompileRHI(compute_shader)) return;
     is_valid_ = true;

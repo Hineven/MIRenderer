@@ -57,6 +57,9 @@ public:
     void AllocateResource (RDGTexture * texture) ;
     void AllocateResource (RDGBuffer * buffer) ;
 
+    // Allocate a uniform buffer (and will never be recycled)
+    void AllocateUniformBuffer (RDGBuffer * buffer) ;
+
     // Recycle the RDG resources that are no longer used (reference count approaching 0), unlink RHI resources for further reuse.
     void RecycleResource (RDGTexture * texture) ;
     void RecycleResource (RDGBuffer * buffer) ;
@@ -68,6 +71,17 @@ protected:
     std::vector<RHITexture*> rhi_allocated_textures_;
     // Keep references.
     std::vector<TRef<RHITexture>> rhi_texture_references_;
+
+    // The uniform buffer pool
+    std::vector<TRef<RHIBuffer>> rhi_uniform_buffer_references_;
+    // Current top of the uniform buffer
+    uint32_t rhi_uniform_buffer_index_ {};
+    uint32_t rhi_uniform_buffer_offset_ {};
+
+    std::vector<TRef<RHIBuffer>> rhi_staging_buffer_references_;
+    // Current top of the staging buffer
+    uint32_t rhi_staging_buffer_index_ {};
+    uint32_t rhi_staging_buffer_offset_ {};
 
     // Map descriptor hash to underlying buffer index
     std::map<uint32_t, std::vector<RHIBuffer*> > rhi_free_buffer_map_;

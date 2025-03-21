@@ -380,11 +380,6 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
 bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     auto device = GetVulkanRHI()->GetDevice();
     auto compute_shader = static_cast<VulkanShader *>(shader);
-    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
-    std::vector<VkShaderModuleKeeper> shader_module_keepers;
-    {
-        RelocateShaderResourceBindings(this, device, compute_shader, remappings_, shader_stages, shader_module_keepers);
-    }
 
     // Gather pipeline layout
     std::vector<BindingRemappingInfo> remapping_infos;
@@ -439,17 +434,23 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     // Push constant
     vk::PushConstantRange push_constant_range;
     push_constant_range.setOffset(0);
-    push_constant_roundup_size_ = RoundUp(command_constant_[0].size, 128);
+    push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
     push_constant_range.setSize(push_constant_roundup_size_);
-    push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eCompute);
+    // TODO track push constant shader stages
+    push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
     // Create pipeline layout
-    vk_pipeline_layout_ = device.createPipelineLayout(
-            vk::PipelineLayoutCreateInfo()
-                    .setSetLayoutCount((int)descriptor_set_layouts.size())
-                    .setPSetLayouts(descriptor_set_layouts.data())
-                    .setPushConstantRangeCount(1)
-                    .setPPushConstantRanges(&push_constant_range)
-    );
+    auto info = vk::PipelineLayoutCreateInfo{}
+        .setSetLayoutCount((int)descriptor_set_layouts.size())
+        .setPSetLayouts(descriptor_set_layouts.data());
+    if (push_constant_roundup_size_ > 0) {
+        info.setPushConstantRanges(push_constant_range);
+    }
+    vk_pipeline_layout_ = device.createPipelineLayout(info);
+
+    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    std::vector<VkShaderModuleKeeper> shader_module_keepers;
+    // Relocate shader resource bindings in IR, compile vk shader modules
+    RelocateShaderResourceBindings(this, device, compute_shader, remappings_, shader_stages, shader_module_keepers);
 
     // Create pipeline
     auto result = device.createComputePipeline(
@@ -471,6 +472,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
 
 void VulkanComputePipeline::ResetRHI() {
     auto device = GetVulkanRHI()->GetDevice();
+    device.destroy(vk_pipeline_);
     device.destroy(vk_pipeline_layout_);
     device.destroy(vk_private_descriptor_set_layout_);
     vk_pipeline_layout_ = nullptr;

@@ -11,6 +11,30 @@
 #include "rdg/rdg_pass.h"
 
 MI_NAMESPACE_BEGIN
+
+FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
+    switch (size) {
+        case 4: *static_cast<uint32_t*>(dst) = *static_cast<const uint32_t*>(src); break;
+        case 8: *static_cast<uint64_t*>(dst) = *static_cast<const uint64_t*>(src); break;
+        case 12: {
+            const uint32_t* s = static_cast<const uint32_t*>(src);
+            uint32_t* d = static_cast<uint32_t*>(dst);
+            d[0] = s[0];
+            d[1] = s[1];
+            d[2] = s[2];
+            break;
+        }
+        case 16: {
+            const uint64_t* s = static_cast<const uint64_t*>(src);
+            uint64_t* d = static_cast<uint64_t*>(dst);
+            d[0] = s[0];
+            d[1] = s[1];
+            break;
+        }
+        default: std::memcpy(dst, src, size);
+    }
+}
+
 void RenderGraph::Execute (RDGResourcePool * pool) {
 
     // Directly use the graphics queue.
@@ -21,6 +45,24 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
     for (int i = 0; i < (int)passes_.size(); i++) {
         if (num_pass_predecessors_[i] == 0) {
             ready_passes.push(i);
+        }
+    }
+
+    // Write and upload all uniforms
+    {
+        auto staging_buffer = RHI.CreateBuffer(RHIBufferDesc{
+            C::kRDGPoolUniformBufferBlockSize,
+            RHIBufferUsageFlagBits::kTransferSrc | RHIBufferUsageFlagBits::kStaging
+        });
+        // TODO: is there a better implementation?
+        for (auto pass : passes_) {
+            pass->uniform_buffer_->RequestRHI(pool);ghjgh
+        }
+
+        // Write global uniform buffer
+        void * mapped_uniform_buffer = (uint8_t*)shader_global_ub->GetRHI().buffer->Map() + shader_global_ub->GetRHI().offset;
+        for (auto [i, e] : std::views::enumerate(base_info->global_uniforms_)) {
+            FastTinyCopy((uint8_t*)mapped_uniform_buffer + e.shader_offset, (uint8_t*)params + e.cpp_offset, e.size);
         }
     }
 
@@ -44,7 +86,7 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_textures_.size());
             for (const auto & [i, texture_use] : std::views::enumerate(pass->used_textures_)) {
                 textures[i] = texture_use.texture->GetRHI();
-                auto & old_state = resource_accesses_[texture_use.texture.Raw()];
+                auto & old_state = resource_accesses_[texture_use.texture->GetRHI()];
                 src_accesses[i] = old_state.access;
                 if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderRead) {
                     layouts[i] = RHITextureLayoutType::kShaderReadOnlyOptimal;
@@ -76,7 +118,7 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_buffers_.size());
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_buffers_.size());
             for (const auto & [i, buffer_use] : std::views::enumerate(pass->used_buffers_)) {
-                auto & old_state = resource_accesses_[buffer_use.buffer.Raw()];
+                auto & old_state = resource_accesses_[buffer_use.buffer->GetRHI().buffer];
                 buffers[i] = buffer_use.buffer->GetRHI();
                 src_accesses[i] = old_state.access;
                 RHIGPUAccessFlags access = {};
@@ -96,7 +138,7 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
             cmd.BufferBarriers((uint32_t)pass->used_buffers_.size(), buffers, new_stages, src_accesses, dst_accesses);
         }
         // Execute the pass
-        pass->pass_(cmd);
+        pass->pass_(pass.get(), cmd);
         // Mark the pass as executed
         for (int e = pass_node_heads_[pass_index]; e != -1; e = edges_[e].next_edge) {
             const auto & edge = edges_[e];

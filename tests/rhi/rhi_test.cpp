@@ -357,12 +357,12 @@ TEST(RHITest, RHITriangle) {
                                 RHIGPUAccessFlagBits::kNone,
                                 RHIGPUAccessFlagBits::kRW);
             queue.BindVertexBuffer(0, vtx_buf->GetSpan());
-            auto params = queue.Allocate<RHIBindPipelineParametersDesc>();
+            auto params = RHIBindPipelineParametersDesc{};
             auto storages = queue.Allocate<RHIPipelineParameterBufferDesc[]>(1);
             storages[0].buffer  = storage_buf->GetSpan();
             auto storage_binding = pipeline->ReflectResourceSlot("someBuffer");
             storages[0].binding = storage_binding.slot_index;
-            params->storages = {storages, 1};
+            params.storages = {storages, 1};
             queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
             queue.BeginRendering();
             queue.DrawPrimitive(3, 1);

@@ -327,7 +327,7 @@ void VulkanCommandExecutor::RHIBindPipelineParameters(
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
     auto table = bind_pipeline_parameters->table_;
     auto & point = state.points[(uint32_t)bind_pipeline_parameters->point_];
-    point.bound_descriptor_dirty |= point.parameter_table.Merge(table);
+    point.bound_descriptor_dirty |= point.parameter_table.Merge(&table);
 }
 
 void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,

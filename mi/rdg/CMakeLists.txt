@@ -8,6 +8,7 @@ set(SOURCE_FILES
     rdg_shader.cpp
     rdg_pool.cpp
     rdg_builder.cpp
+    rdg_cmd.cpp
 )
 
 add_library(rdg STATIC ${SOURCE_FILES})

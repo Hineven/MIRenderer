@@ -10,12 +10,21 @@
 #include "rdg/rdg.h"
 MI_NAMESPACE_BEGIN
 
+struct RDGShaderParamStructAndSizeInfo;
+
 // Helpers for dispatching shaders, etc.
 // Used inside pass lambdas.
-class RDGCommands {
+class RDGCommandHelper {
 public:
     // RDG Pass API (automatically spawn resource dependencies)
-    static void Dispatch (RenderGraph & graph, TRef<RDGShader> compute_shader, int x = 1, int y = 1, int z = 1) ;
+    static void Dispatch (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
+        const RDGShaderParamStructAndSizeInfo * info, void * params, int x = 1, int y = 1, int z = 1) ;
+    template<typename T>
+    FORCEINLINE static void Dispatch (
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, void * params,
+        int x = 1, int y = 1, int z = 1) {
+        Dispatch(queue, pass, compute_shader, T::GetShaderParamStructInfo(), params, x, y, z);
+    }
     static void DispatchIndirect (RenderGraph & graph, TRef<RDGShader> compute_shader, TRef<RDGBuffer> indirect_buffer) ;
     static void Draw (RenderGraph & graph, TRef<RDGShader> graphics_shader, int vertex_count, int instance_count = 1, int first_vertex = 0, int first_instance = 0) ;
     static void DrawIndexed (RenderGraph & graph, TRef<RDGShader> graphics_shader, int index_count, int instance_count = 1, int first_index = 0, int vertex_offset = 0, int first_instance = 0) ;

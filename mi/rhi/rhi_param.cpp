@@ -16,19 +16,21 @@ uint32_t RHIParamInfo::GetAlignment () const {
     return 0;
 }
 
-void RHIParamStructInfo::InitializeLayoutHash () {
+void RHIParamStructInfo::InitializeUniformsLayoutHash () {
     uint32_t hash = 0;
     for (auto & e : members) {
-        hash = CRC32(e.name.c_str(), e.name.size(), hash);
-        hash = CRC32(&e.size, sizeof(e.size), hash);
-        hash = CRC32(&e.offset, sizeof(e.offset), hash);
-        hash = CRC32(&e.type, sizeof(e.type), hash);
-        hash = CRC32(&e.basic_type, sizeof(e.basic_type), hash);
-        if (e.struct_info) {
-            hash = CRC32(&e.struct_info->layout_hash, sizeof(e.struct_info->layout_hash), hash);
+        if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
+            hash = CRC32(e.name.c_str(), e.name.size(), hash);
+            hash = CRC32(&e.size, sizeof(e.size), hash);
+            hash = CRC32(&e.offset, sizeof(e.offset), hash);
+            hash = CRC32(&e.type, sizeof(e.type), hash);
+            hash = CRC32(&e.basic_type, sizeof(e.basic_type), hash);
+            if (e.struct_info) {
+                hash = CRC32(&e.struct_info->uniforms_layout_hash, sizeof(e.struct_info->uniforms_layout_hash), hash);
+            }
         }
     }
-    layout_hash = hash;
+    uniforms_layout_hash = hash;
 }
 
 uint32_t RHIParamStructInfo::ComputeSize() const {

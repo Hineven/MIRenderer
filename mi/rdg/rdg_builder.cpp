@@ -12,13 +12,14 @@
 #include "rdg/rdg.h"
 
 MI_NAMESPACE_BEGIN
+
 void RenderGraphBuilder::AddPass(
     const char *name,
     RDGPassType pass_type,
     RDGPassFlags pass_flags,
-    RDGShaderParamStructAndSizeInfo *shader_param_struct_info,
+    const RDGShaderParamStructAndSizeInfo *shader_param_struct_info,
     void *parameter_struct,
-    std::function<void(RHICommandQueueGraphics&)> && pass_lambda
+    RDGPassLambda && pass_lambda
 ) {
     auto ptr = new RDGPass(
             name,
@@ -30,10 +31,16 @@ void RenderGraphBuilder::AddPass(
             parameter_struct
     );
     auto pass = std::unique_ptr<RDGPass>(ptr);
-    pass->GatherResourceAccesses();
     // Add to the pass list
     passes_.push_back(std::move(pass));
 }
+
+TRef<RDGTexture> RenderGraphBuilder::CreateTexture2D(RHITextureDesc desc) {
+    auto texture = new RDGTexture(desc);
+    auto ref = TRef<RDGTexture>(texture);
+    return ref;
+}
+
 
 TRef<RenderGraph> RenderGraphBuilder::Compile() {
     std::map<RDGResource*, std::vector<RDGPass*>> in_resource_pass_map;
@@ -155,8 +162,10 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
     auto graph = RenderGraphRef(new RenderGraph());
     graph->passes_ = std::move(culled_passes);
     graph->edges_ = std::move(culled_edges);
-    graph->pass_node_heads_ = std::move(culled_pass_heads);
     graph->num_pass_predecessors_.resize(culled_pass_heads.size(), 0);
+    graph->pass_node_heads_ = std::move(culled_pass_heads);
+    // Make the graph hold references to resources for exporting
+    // so that the pool won't recycle them
     for (auto e : exporting_resources_) {
         graph->exporting_resources_.emplace_back(e);
     }
@@ -169,7 +178,6 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
     }
     return graph;
 }
-
 
 
 MI_NAMESPACE_END

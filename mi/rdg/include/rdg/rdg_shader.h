@@ -46,12 +46,13 @@ struct RDGShaderClassRegistry {
 
 class RDGShader : public RefCounted<true> {
 protected:
-    FORCEINLINE RDGShader (const RDGShaderClassRegistry * class_registry) : class_registry_(class_registry) {}
+    RDGShader (const RDGShaderClassRegistry * class_registry) ;
     virtual ~RDGShader() ;
 public:
     template<typename T>
     friend class RDGShaderClassRegistrator;
     friend class RDGShaderLibrary;
+    friend class RDGCommandHelper;
     bool Recompile (RDGShaderInitializationInfo ini) ;
 //    The following functions should be implemented by sub-classes
 //  staitc std::vector<std::string> GetDefaultMacros () ;
@@ -63,6 +64,11 @@ public:
         };
     }
 
+    template<RHIParamType type>
+    FORCEINLINE uint32_t ConvertParamResourceIndexToBinding (int index) {
+        return cpp_resource_index_to_binding_[(uint32_t)type][index];
+    }
+
 protected:
 
     // Shader initialization info (default, given in constructor)
@@ -72,12 +78,23 @@ protected:
     // Point to the class registry deriving the shader
     const RDGShaderClassRegistry * class_registry_;
 
+    // Mapping resource indices in cpp declaration (essentially the index of the resource in the top level cpp info struct)
+    // to shader binding numbers reflected via pipeline compilation.
+    // Note: special case, global uniform buffer have index ref_uniform_buffers.size() in the kUniformBuffer vector.
+    // (the last element in the vector)
+    std::vector<uint32_t> cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kMax];
+    // Clear and rebuild bindings
+    void RemapBindings ();
+
+
+
     std::string LoadSource () const ;
     // Helper function, re-compile shaders only.
     bool RecompileShaders (const std::string & source_code) ;
 
     // Check if all parameters declared & used in the shader are defined in the shader parameter struct
-    bool CheckShaderReflection (TRef<RHIShader> shader, const RDGShaderParamStructInfo & info) const ;
+    bool CheckShaderReflection (RHIShader * shader, const RDGShaderParamStructAndSizeInfo & info) ;
+
 
     // Resource path (infra)
     bool is_valid_ {false};
@@ -114,7 +131,7 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
         EntryPoint_CS, \
         EntryPoint_VS, \
         EntryPoint_PS, \
-        ClassName::GetParamStructInfo, \
+        ClassName::GetShaderParamStructInfo, \
         TGetShaderPipelineConfig<ClassName>::value \
     );
 
@@ -128,7 +145,7 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
     using ShaderParameters = Name; \
-    static const RDGShaderParamStructAndSizeInfo * GetParamStructInfo() { \
+    static const RDGShaderParamStructAndSizeInfo * GetShaderParamStructInfo() { \
         return ShaderParameters::GetParamStructInfo(); \
     }
 
@@ -138,6 +155,10 @@ protected:
     ~RDGShaderLibrary() ;
 public:
     void Init ();
+
+    // Release all compiled shaders of all shader classes.
+    // Further requests of any shader will invoke a re-compile.
+    void ReleaseCompiledShaders();
 
     template<typename T>
     friend class RDGShaderClassRegistrator;

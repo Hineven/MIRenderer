@@ -19,7 +19,7 @@ protected:
         int index,
         RDGPassType pass_type,
         RDGPassFlags flags,
-        std::function<void(RHICommandQueueGraphics&)> && pass,
+        RDGPassLambda && pass,
         const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
         const void * shader_param_data
     ) : name_(name),
@@ -29,11 +29,12 @@ protected:
         pass_(std::move(pass)),
         shader_param_struct_info_(shader_param_struct_info),
         shader_param_data_(shader_param_data) {
-        GatherResourceAccesses();
+        GatherResourceAccessesAndInitializeHolders();
     }
 public:
     friend class RenderGraphBuilder;
     friend class RenderGraph;
+    friend class RDGCommandHelper;
     FORCEINLINE RDGPassFlags GetFlags () const {return flags_;}
     FORCEINLINE RDGPassType GetType () const {return type_;}
     FORCEINLINE RHIPipelineStageFlags GetStageFlags () const {
@@ -93,15 +94,16 @@ protected:
     // Private uniform buffer
     RDGBufferRef uniform_buffer_;
     // Uniform buffers referenced
-    std::vector<RDGBufferRef> referenced_uniform_buffers_;
+    // std::vector<RDGBufferRef> referenced_uniform_buffers_;
 
     // This is filled up by the RDG builder upon spawning the pass
     std::vector<RDGPass*> successive_passes_;
 
     // Gather resources accessed by the shader, initialize in/out resources and detailed resource usage
-    void GatherResourceAccesses () ;
+    // Also, initialize reference holders to relating resources
+    void GatherResourceAccessesAndInitializeHolders () ;
 
-    std::function<void(RHICommandQueueGraphics &)> pass_;
+    RDGPassLambda pass_;
 };
 
 MI_NAMESPACE_END

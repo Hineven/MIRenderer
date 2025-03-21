@@ -28,6 +28,9 @@ namespace C {
     constexpr uint32_t kMaxNumRenderTargets = 8;
     // Maximum number of vertex buffers for 1 shader (hardcoded)
     constexpr uint32_t kMaxNumVertexBuffers = 4;
+
+    constexpr uint32_t kUniformBufferAlignment = 256;
+    constexpr uint32_t kRDGPoolUniformBufferBlockSize = 64 * 1024 * 1024; // 64MB
 }
 
 MI_NAMESPACE_END

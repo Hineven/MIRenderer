@@ -64,6 +64,9 @@ protected:
     // , remove it from uniforms_ and set relating attributes.
     void TryLocateAndStripBindlessTableUniformBuffer () ;
 
+    // Set up pipeline_resource_index_ from resource lists
+    void BuildPipelineResourceIndex ();
+
     // We're calling this function inside the base class destructor, so
     // it can not be pure virtual.
     virtual void ResetRHI () {};

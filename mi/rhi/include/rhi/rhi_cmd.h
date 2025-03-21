@@ -410,12 +410,12 @@ public:
 
 class RHICommandBindPipelineParameters : public TRHICommand<RHICommandBindPipelineParameters> {
 public:
-    RHICommandBindPipelineParameters(RHIBindPointType point, RHIBindPipelineParametersDesc * table)
+    RHICommandBindPipelineParameters(RHIBindPointType point, RHIBindPipelineParametersDesc table)
         : point_(point), table_(table) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHIBindPointType point_;
-    RHIBindPipelineParametersDesc * table_;
+    RHIBindPipelineParametersDesc table_;
 };
 
 class RHICommandBindVertexBuffer : public TRHICommand<RHICommandBindVertexBuffer> {
@@ -550,7 +550,7 @@ public:
         AddCommand(AllocateCommand<RHICommandDispatchIndirect>(dispatch_command_buffer, offset));
     }
     // Allocate RHIBindPipelineParameterDesc with the command buffer allocator.
-    FORCEINLINE void BindPipelineParameters (RHIBindPointType point, RHIBindPipelineParametersDesc * table) {
+    FORCEINLINE void BindPipelineParameters (RHIBindPointType point, RHIBindPipelineParametersDesc table) {
         AddCommand(AllocateCommand<RHICommandBindPipelineParameters>(point, table));
     }
 

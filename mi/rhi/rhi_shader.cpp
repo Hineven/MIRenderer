@@ -128,18 +128,19 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             for (auto const & [i, member] : type.member_types | std::views::enumerate) {
                 spirv_cross::SPIRType member_type = compiler_hlsl.get_type(member);
                 RHIParamInfo info {};
-                info.name = compiler_hlsl.get_member_name(reflecting_type_id, member);
-                info.size = (uint32_t)compiler_hlsl.get_declared_struct_size(member_type);
+                info.name = compiler_hlsl.get_member_name(reflecting_type_id, (uint32_t)i);
                 info.offset = (uint32_t)compiler_hlsl.type_struct_member_offset(type, (uint32_t)i);
                 if (IsBasicType(member_type.basetype)) {
                     // Stop recursion
-                    info.type = RHIParamType::kBasic;
                     info.basic_type = GetBasicParamType(member_type.basetype, member_type.vecsize);
+                    info.size = RHIGetBasicParamSize(info.basic_type);
+                    info.type = RHIParamType::kBasic;
                 } else {
                     // There are only structs in uniform buffers
                     if (member_type.basetype != spirv_cross::SPIRType::Struct) {
                         assert(false && "Invalid uniform buffer. Constant buffers should not contain shader resources.");
                     }
+                    info.size = (uint32_t)compiler_hlsl.get_declared_struct_size(member_type);
                     info.type = RHIParamType::kStruct;
                     info.struct_info = RecursiveDeepReflection(member);
                 }
@@ -148,7 +149,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             auto members_mem = new RHIParamInfo[reflected_members.size()];
             std::copy(reflected_members.begin(), reflected_members.end(), members_mem);
             ret->members = byte_strided_span((RHIParamInfo*)members_mem, reflected_members.size(), sizeof(RHIParamInfo));
-            ret->InitializeLayoutHash();
+            ret->InitializeUniformsLayoutHash();
             return ret;
         };
         for (const auto& [i, compiler_resource]: std::views::enumerate(shader_resources.uniform_buffers)) {

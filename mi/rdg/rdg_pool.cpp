@@ -10,6 +10,11 @@
 #include <rdg/rdg_resource.h>
 MI_NAMESPACE_BEGIN
 void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
+    if (buffer->desc_.usage & RHIBufferUsageFlagBits::kUniform) {
+        // Uniform buffer are allocated in a separate pool
+        AllocateUniformBuffer(buffer);
+        return ;
+    }
     // TODO better strategy. Now I'll only implement a simple one
     assert(!buffer->IsAllocated() && "This buffer should not be allocated already.");
     assert(buffer->desc_.size > 0 && "Buffer size should be greater than 0.");
@@ -82,6 +87,10 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
+    if (buffer->desc_.usage & RHIBufferUsageFlagBits::kUniform) {
+        // Uniform buffers will not be recycled.
+        return;
+    }
     auto hash = buffer->GetResourceClassHash();
     rhi_free_buffer_map_[hash].push_back(buffer->rhi_buffer_span_.buffer);
     buffer->rhi_buffer_span_ = {};
@@ -107,6 +116,40 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
     
     texture->rhi_texture_ = allocated_texture;
 }
+
+void RDGResourcePool::RecycleResource(RDGTexture *texture) {
+    assert(texture->IsAllocated() && "This texture should be allocated.");
+    auto hash = texture->GetResourceClassHash();
+    rhi_free_texture_map_[hash].push_back(texture->rhi_texture_);
+    texture->rhi_texture_ = nullptr;
+}
+
+
+void RDGResourcePool::AllocateUniformBuffer(RDGBuffer *buffer) {
+    assert(buffer->desc_.usage == RHIBufferUsageFlagBits::kUniform && "This buffer should be (and only be) a uniform buffer.");
+    assert(buffer->desc_.size > 0 && "Uniform buffer size should be greater than 0.");
+    assert(!buffer->dedicated_ && "Uniform buffers should not be dedicated");
+    if (!buffer->IsAllocated()) {
+        // Simply allocate the buffer within the uniform buffer pool
+        auto size = RoundUp(buffer->desc_.size, C::kUniformBufferAlignment);
+        assert((uint32_t)size <= C::kRDGPoolUniformBufferBlockSize && "Uniform buffer size exceeds the maximum size."); // TODO implement a better strategy
+        if (rhi_uniform_buffer_index_ >= rhi_uniform_buffer_references_.size()
+            || rhi_uniform_buffer_offset_ + size > C::kRDGPoolUniformBufferBlockSize) {
+            if (rhi_uniform_buffer_index_ + 1 >= rhi_uniform_buffer_references_.size()) {
+                // Running out, allocate a new block
+                auto desc = RHIBufferDesc{.size = C::kRDGPoolUniformBufferBlockSize, .usage = RHIBufferUsageFlagBits::kUniform};
+                auto rhi_buffer = RHI::Get().CreateBuffer(desc);
+                rhi_uniform_buffer_references_.emplace_back(std::move(rhi_buffer));
+            }
+            // Move to the next block
+            rhi_uniform_buffer_index_ = std::min((int)rhi_uniform_buffer_index_ + 1, (int)rhi_uniform_buffer_references_.size() - 1);
+            rhi_uniform_buffer_offset_ = 0;
+        }
+        buffer->rhi_buffer_span_ = {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_].Raw(), rhi_uniform_buffer_offset_, size};
+        rhi_uniform_buffer_offset_ += (uint32_t)size;
+    }
+}
+
 
 
 

@@ -16,8 +16,6 @@ MI_NAMESPACE_BEGIN
 enum class RDGPassFlagBits : unsigned {
     // Do not cull this pass when compiling the graph
     kNeverCull = 1 << 0,
-    // This pass is a graphics pass (dispatch some draw commands)
-    kGraphics = 1 << 1,
     kAll = 0xffffffffu
 };
 
@@ -57,6 +55,11 @@ enum class RDGPassType {
     // TODO add more (mesh, raytracing, etc)
     kMax
 };
+
+
+class RDGPass;
+class RHICommandQueueGraphics;
+typedef std::function<void(RDGPass*, RHICommandQueueGraphics&)> RDGPassLambda;
 
 MI_NAMESPACE_END
 #endif //MI_RDG_H

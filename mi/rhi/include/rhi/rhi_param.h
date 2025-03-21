@@ -18,12 +18,11 @@
 
 #include "rhi_types.h"
 #include "core/util/byte_strided_span.h"
-#include "rhi/rhi_common.h"
 
 MI_NAMESPACE_BEGIN
 
-enum class RHIParamType {
-    kStorageBuffer,
+enum class RHIParamType : uint32_t {
+    kStorageBuffer = 0,
     kUniformBuffer,
     kUAVTexture,
     kSRVTexture,
@@ -175,9 +174,10 @@ struct RHIParamInfo {
 };
 
 struct RHIParamStructInfo {
-    uint32_t layout_hash;
+    // Layout hash only considering uniforms and their relative orders.
+    uint32_t uniforms_layout_hash;
     byte_strided_span<RHIParamInfo> members;
-    void InitializeLayoutHash ();
+    void InitializeUniformsLayoutHash ();
     // Compute device-side uniform buffer size for this struct.
     // Note: we'll omit shader resource members (such as textures) that can not reside in uniform buffers.
     uint32_t ComputeSize () const;
