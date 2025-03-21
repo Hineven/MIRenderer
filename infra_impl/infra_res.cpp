@@ -92,7 +92,9 @@ size_t MyBlobResource::GetSize() {
         file_size_ = file_.tellg();
         file_size_dirty_ = false;
     }
-    return file_size_;
+    auto size = file_size_;
+    ReadTaskRelease();
+    return size;
 }
 
 bool MyBlobResource::ReadTaskWaitAndAcquire() {
@@ -185,6 +187,10 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
         }
     }
     auto * res = new MyBlobResource(this, file_path, hint);
+    if (!res->file_.good()) {
+        delete res;
+        return nullptr;
+    }
     return res;
 }
 

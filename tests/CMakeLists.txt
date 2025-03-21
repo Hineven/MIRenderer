@@ -25,5 +25,6 @@ add_test(NAME rhi COMMAND rhi_test)
 
 # RDG
 add_executable(rdg_test rdg/rdg_test.cpp)
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/rdg/resources/test_shader_1.hlsl DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources)
 target_link_libraries(rdg_test PRIVATE cpptrace::cpptrace infra rhi rdg core ${GTEST_LIBRARIES})
-add_test(NAME rdg COMMAND rdg_test)
+add_test(NAME rdg COMMAND rdg_test ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources/test_shader_1.hlsl)

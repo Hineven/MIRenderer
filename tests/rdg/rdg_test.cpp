@@ -5,6 +5,9 @@
  */
 #include <cpptrace/from_current.hpp>
 #include <gtest/gtest.h>
+#include <rdg/rdg_builder.h>
+#include <rdg/rdg_cmd.h>
+#include <rdg/rdg_pool.h>
 #include <rhi/rhi_pipeline.h>
 
 #include "core/infra.h"
@@ -98,24 +101,24 @@ TEST(RDGTest, RDGShaderParams) {
         // Basic types (float, int) are 4 bytes and float2/int2 are 8 bytes (aligned to 8)
         // float3/int3 are 12 bytes but aligned to 16, float4/int4 are 16 bytes
         EXPECT_EQ(meta_test.members[0].offset, 0);  // in1 (pointer) to a struct takes 12 bytes on device
-        EXPECT_EQ(meta_test.members[1].offset, 12);  // TestInteger1 (int, aligned to 4)
-        EXPECT_EQ(meta_test.members[2].offset, 16); // TestInteger2_1 (int2, aligned to 8)
-        EXPECT_EQ(meta_test.members[4].offset, 32); // TestFloat3 (float3, original alignment is 4. Buffer-row: aligned to 16)
-        EXPECT_EQ(meta_test.members[5].offset, 48); // TestFloat3_1 (float3, Buffer-row: aligned to 16)
-        EXPECT_EQ(meta_test.members[6].offset, 60); // TestInteger0 (int, aligned to 4)
-        EXPECT_EQ(meta_test.members[7].offset, 64); // TestInteger2_0 (int2, aligned to 4)
-        EXPECT_EQ(meta_test.members[8].offset, 80); // inner (struct of size 12, aligned to 16)
-        EXPECT_EQ(meta_test.members[9].offset, 92); // TestInteger33 (int, aligned to 4)
-        EXPECT_EQ(meta_test.members[10].offset, 96); // TestInteger44 (int4, aligned to 16)
+        EXPECT_EQ(meta_test.members[1].offset, 0); // TestInteger1 (int, aligned to 4)
+        EXPECT_EQ(meta_test.members[2].offset, 4); // TestInteger2_1 (int2, aligned to 4)
+        EXPECT_EQ(meta_test.members[4].offset, 16); // TestFloat3 (float3, original alignment is 4. Buffer-row: aligned to 16)
+        EXPECT_EQ(meta_test.members[5].offset, 32); // TestFloat3_1 (float3, Buffer-row: aligned to 16)
+        EXPECT_EQ(meta_test.members[6].offset, 44); // TestInteger0 (int, aligned to 4)
+        EXPECT_EQ(meta_test.members[7].offset, 48); // TestInteger2_0 (int2, aligned to 4)
+        EXPECT_EQ(meta_test.members[8].offset, 64); // inner (struct of size 12, aligned to 16 with buffer row rule)
+        EXPECT_EQ(meta_test.members[9].offset, 76); // TestInteger33 (int, aligned to 4)
+        EXPECT_EQ(meta_test.members[10].offset, 80); // TestInteger44 (int4, aligned to 16)
 
         // Query members
-        EXPECT_EQ(meta_test.GetMemberIndex("in1"), 0);
-        EXPECT_EQ(meta_test.GetMemberIndex("TestInteger1"), 1);
-        EXPECT_EQ(meta_test.GetMemberIndex("TestInteger2_1"), 2);
-        EXPECT_EQ(meta_test.GetMemberIndex("TestFloat3"), 4);
-        EXPECT_EQ(meta_test.GetMemberIndex("TestFloat3_1"), 5);
-        EXPECT_EQ(meta_test.GetMemberIndex("TestInteger0"), 6);
-        EXPECT_EQ(meta_test.GetMemberIndex("TestInteger2_0"), 7);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("in1"), 0);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("TestInteger1"), 1);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("TestInteger2_1"), 2);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("TestFloat3"), 4);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("TestFloat3_1"), 5);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("TestInteger0"), 6);
+        EXPECT_EQ(meta_test.GetCppMemberIndex("TestInteger2_0"), 7);
 
         RHI::DestroySingleton();
         GetInfra().Shutdown();
@@ -152,16 +155,57 @@ TEST(RDGTest, RDGShaderLibrary) {
     using namespace mi;
     CPPTRACE_TRY {
         auto pwd = std::filesystem::current_path();
-        auto resource_dir = pwd / "resources";
+        auto resource_dir = pwd / "rdg" / "resources";
         TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
         {
             auto & lib = RDGShaderLibrary::GetInstance();
+            lib.Init();
             auto shader = lib.GetShader<TestShader1>();
             EXPECT_TRUE(shader->IsValid());
-            // EXPECT_EQ(shader->GetType(), RHIPipelineType::kCompute);
+            lib.ReleaseCompiledShaders();
+        }
+
+        RHI::DestroySingleton();
+        GetInfra().Shutdown();
+        DestroyInfra();
+    } CPPTRACE_CATCH (const std::exception &e) {
+        cpptrace::from_current_exception().print();
+        FAIL() << e.what();
+    }
+}
+
+TEST(RDGTest, RDGSimpleComputeShader) {
+    using namespace mi;
+    CPPTRACE_TRY {
+        auto pwd = std::filesystem::current_path();
+        auto resource_dir = pwd / "rdg" / "resources";
+        TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
+        GetInfra().Init();
+        SetCurrentThreadType(ThreadType::kRenderThread);
+        RHI::InitializeSingleton(RHIType::kVulkan);
+        {
+            auto & lib = RDGShaderLibrary::GetInstance();
+            lib.Init();
+            auto shader = lib.GetShader<TestShader1>();
+            EXPECT_TRUE(shader->IsValid());
+            RenderGraphBuilder builder;
+            auto params = builder.Allocate<TestShader1::Parameters>();
+            params->TestFloat2 = {0.1f, 0.2f};
+            params->TestFloat4 = {0.3f, 0.4f, 0.5f, 0.6f};
+            auto test_texture = builder.CreateTexture2D(128, 128, PixelFormatType::kR32G32B32A32_FLOAT);
+            params->TestTexture = test_texture.Raw();
+            builder.AddPass("SimpleShader", RDGPassType::kCompute, RDGPassFlagBits::kNeverCull,
+                TestShader1::GetShaderParamStructInfo(), params,
+                [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                    RDGCommandHelper::Dispatch<TestShader1>(queue, pass, shader, params);
+                });
+            auto rdg = builder.Compile();
+            auto pool = std::make_unique<RDGResourcePool>();
+            rdg->Execute(pool.get());
+            lib.ReleaseCompiledShaders();
         }
 
         RHI::DestroySingleton();
