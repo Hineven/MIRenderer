@@ -20,10 +20,10 @@
 
 MI_NAMESPACE_BEGIN
 
-struct RDGShaderParamStructInfo;
+struct RDGShaderParamStructAndSizeInfo;
 
 struct RDGImportedShaderParamStructInfo {
-    const RDGShaderParamStructInfo * cpp_struct_info {nullptr};
+    const RDGShaderParamStructAndSizeInfo * cpp_struct_info {nullptr};
 };
 
 struct RDGShaderRenderTargetInfo {
@@ -98,6 +98,7 @@ struct RDGShaderParameterLocation {
     uint32_t size;
 };
 
+// TODO rename this
 struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
     // Cache the device size of the parameter struct at the outer most level
     uint32_t size;
@@ -186,7 +187,7 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("IndexBuffer")> 
 
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     std::string type_name, std::string param_name, uint32_t cpp_offset,
-    const RDGShaderParamStructInfo * cpp_struct_info = nullptr, bool ub_reference = false) {
+    const RDGShaderParamStructAndSizeInfo * cpp_struct_info = nullptr, bool ub_reference = false) {
     RDGShaderParamInfo info {};
     info.name = param_name;
     info.type = RHITypeNameStringToParamType(type_name);

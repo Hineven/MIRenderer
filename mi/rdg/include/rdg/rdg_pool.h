@@ -16,10 +16,17 @@ MI_NAMESPACE_BEGIN
 class RHITexture;
 class RHIBuffer;
 
-class RDGResourcePool : public NonMovable, public NonCopyable {
+
+// RDG resources allocated from the pool will keep a reference to it, preventing it from being released.
+class RDGResourcePool : public RefCounted<false>, public NonMovable, public NonCopyable {
 protected:
     TOneTimeLinearAllocator<> buffer_allocator_;
+    RDGResourcePool ();
+    ~RDGResourcePool ();
 public:
+    template<CReferenceCounted T>
+    friend class TRef;
+    static TRef<RDGResourcePool> Create () ;
 
     // 128MB
     constexpr static uint32_t kBufferBlockSizeLog2 = 27;
@@ -60,6 +67,9 @@ public:
     // Allocate a uniform buffer (and will never be recycled)
     void AllocateUniformBuffer (RDGBuffer * buffer) ;
 
+    // Transfer all staging buffers to uniform buffers
+    void StageUniformBuffers (RHICommandQueueGraphics & queue) ;
+
     // Recycle the RDG resources that are no longer used (reference count approaching 0), unlink RHI resources for further reuse.
     void RecycleResource (RDGTexture * texture) ;
     void RecycleResource (RDGBuffer * buffer) ;
@@ -74,14 +84,12 @@ protected:
 
     // The uniform buffer pool
     std::vector<TRef<RHIBuffer>> rhi_uniform_buffer_references_;
+    // For each uniform buffer, duplicate a staging buffer for CPU write
+    std::vector<TRef<RHIBuffer>> rhi_staging_buffer_references_;
     // Current top of the uniform buffer
     uint32_t rhi_uniform_buffer_index_ {};
     uint32_t rhi_uniform_buffer_offset_ {};
-
-    std::vector<TRef<RHIBuffer>> rhi_staging_buffer_references_;
-    // Current top of the staging buffer
-    uint32_t rhi_staging_buffer_index_ {};
-    uint32_t rhi_staging_buffer_offset_ {};
+    bool buffers_staged_ {};
 
     // Map descriptor hash to underlying buffer index
     std::map<uint32_t, std::vector<RHIBuffer*> > rhi_free_buffer_map_;

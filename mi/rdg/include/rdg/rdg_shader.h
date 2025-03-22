@@ -64,9 +64,10 @@ public:
         };
     }
 
+    // Convert the parameter resource index (within its kind) to pipeline slot used for RHI resource binding
     template<RHIParamType type>
-    FORCEINLINE uint32_t ConvertParamResourceIndexToBinding (int index) {
-        return cpp_resource_index_to_binding_[(uint32_t)type][index];
+    FORCEINLINE uint32_t ConvertParamResourceIndexToResourceSlot (int index) {
+        return cpp_resource_index_to_slot_[(uint32_t)type][index];
     }
 
 protected:
@@ -79,12 +80,12 @@ protected:
     const RDGShaderClassRegistry * class_registry_;
 
     // Mapping resource indices in cpp declaration (essentially the index of the resource in the top level cpp info struct)
-    // to shader binding numbers reflected via pipeline compilation.
+    // to pipeline slot numbers (used for resource binding) reflected via pipeline compilation.
     // Note: special case, global uniform buffer have index ref_uniform_buffers.size() in the kUniformBuffer vector.
     // (the last element in the vector)
-    std::vector<uint32_t> cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kMax];
-    // Clear and rebuild bindings
-    void RemapBindings ();
+    std::vector<uint32_t> cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kMax];
+    // Clear and rebuild the mapping between cpp resource indices and pipeline slots
+    void RemapResourceIndexToResourceSlots ();
 
 
 

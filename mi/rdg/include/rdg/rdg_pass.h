@@ -11,27 +11,44 @@
 MI_NAMESPACE_BEGIN
 struct RDGShaderParamStructAndSizeInfo;
 
+class RenderGraph;
+
 class RDGPass : public NonMovable, public NonCopyable {
+public:
+    struct RDGTextureUsage {
+        enum Type {
+            kTransferDst,
+            kTransferSrc,
+            kShaderRead,
+            // Storage image
+            kShaderReadWrite,
+            kOutputAttachment,
+            kDepthStencilAttachment
+        } usage;
+        RDGTextureRef texture;
+    };
+    struct RDGBufferUsage {
+        RHIGPUAccessFlags access;
+        RDGBufferRef buffer;
+    };
 protected:
     // Can only be allocated by RDG
-    FORCEINLINE RDGPass(
+    RDGPass(
         std::string name,
         int index,
         RDGPassType pass_type,
         RDGPassFlags flags,
-        RDGPassLambda && pass,
-        const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
-        const void * shader_param_data
-    ) : name_(name),
-        index_(index),
-        type_(pass_type),
-        flags_(flags),
-        pass_(std::move(pass)),
-        shader_param_struct_info_(shader_param_struct_info),
-        shader_param_data_(shader_param_data) {
-        GatherResourceAccessesAndInitializeHolders();
-    }
+        RDGPassLambda && pass
+        // const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
+        // const void * shader_param_data,
+        // RenderGraph * graph
+    );
+
+    void AddTexture (RDGTexture * texture, RDGTextureUsage::Type usage) ;
+    void AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
+
 public:
+    ~RDGPass() ;
     friend class RenderGraphBuilder;
     friend class RenderGraph;
     friend class RDGCommandHelper;
@@ -49,61 +66,47 @@ public:
         }
     }
 
+    FORCEINLINE RenderGraph * GetGraph () const {return graph_;}
+
 protected:
+
+    bool is_compiled_ {};
+    // Passes are compiled prior to RDG compilation (by the builder).
+    // Gather resources accessed by the shader, initialize in/out resources and detailed resource usage
+    // Also, initialize reference holders to relating resources
+    void Compile () ;
+
     std::string name_;
     // The index when the pass is joined to the graph
-    int index_;
+    int index_ {};
     // Flags for the pass
     RDGPassFlags flags_ {};
     RDGPassType type_ {};
-    const RDGShaderParamStructAndSizeInfo * shader_param_struct_info_;
-    const void * shader_param_data_;
 
-    // Grouping resources by access types
-    std::vector<RDGTexture*> out_textures_;
-    std::vector<RDGBuffer*> out_buffers_;
-    std::vector<RDGTexture*> in_textures_;
-    std::vector<RDGBuffer*> in_buffers_;
+    // Only make sense for non-generic passes
+    const RDGShaderParamStructAndSizeInfo * shader_param_struct_info_ {};
+    // Only make sense for non-generic passes
+    const void * shader_param_data_ {};
 
-    struct RDGTextureUsage {
-        enum {
-            kShaderRead,
-            // Storage image
-            kShaderReadWrite,
-            kOutputAttachment,
-            kDepthStencilAttachment
-        } usage;
-        RDGTextureRef texture;
-    };
-    // Details of each resource access, and reference holding
-    std::vector<RDGTextureUsage> used_textures_;
-    struct RDGBufferUsage {
-        enum {
-            kUniformBuffer,
-            kReadOnlyStorge,
-            kReadWriteStorage,
-            kVertexBuffer,
-            kIndexBuffer,
-            kIndirectBuffer
-        } usage;
-        RDGBufferRef buffer;
-    };
-    // Details of each resource access, and reference holding
-    std::vector<RDGBufferUsage> used_buffers_;
+    struct {
+        // Grouping resources by access types
+        std::vector<RDGTexture*> out_textures;
+        std::vector<RDGBuffer*> out_buffers;
+        std::vector<RDGTexture*> in_textures;
+        std::vector<RDGBuffer*> in_buffers;
 
-    // Private uniform buffer
-    RDGBufferRef uniform_buffer_;
-    // Uniform buffers referenced
-    // std::vector<RDGBufferRef> referenced_uniform_buffers_;
+        // Details of each resource access, and reference holding
+        std::vector<RDGTextureUsage> used_textures;
+        // Details of each resource access, and reference holding
+        std::vector<RDGBufferUsage> used_buffers;
+    } compiled_; // Generated after compilation
 
     // This is filled up by the RDG builder upon spawning the pass
     std::vector<RDGPass*> successive_passes_;
 
-    // Gather resources accessed by the shader, initialize in/out resources and detailed resource usage
-    // Also, initialize reference holders to relating resources
-    void GatherResourceAccessesAndInitializeHolders () ;
-
     RDGPassLambda pass_;
+
+    RenderGraph * graph_ {};
 };
 
 MI_NAMESPACE_END

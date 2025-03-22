@@ -153,7 +153,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         }
     }
     // Check and remap referenced uniform buffers
-    cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size() + cpp_has_globals, UINT32_MAX);
+    cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size() + cpp_has_globals, UINT32_MAX);
     for (auto const & [i, e] : info.uniform_buffers_ | std::views::enumerate) {
         // find corresponding uniform buffer in shader reflection
         int shader_ub_idx = -1;
@@ -242,7 +242,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     };
 
     // Check storage buffers
-    cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
+    cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
     for (const auto& sb : shader->GetStorageBufferDesc()) {
         int index = FindIndex(info.storage_buffers_, sb.name);
         if (index == -1) {
@@ -433,10 +433,10 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     return passed_checking;
 }
 
-void RDGShader::RemapBindings() {
+void RDGShader::RemapResourceIndexToResourceSlots() {
     // Clear the previous bindings
     for (int i = 0; i < (int)RHIParamType::kMax; i++) {
-        cpp_resource_index_to_binding_[i].clear();
+        cpp_resource_index_to_slot_[i].clear();
     }
     assert(IsValid() && "Only with an assembled pipeline can we remap bindings");
     auto & info = *class_registry_->GetShaderParamStructInfo();
@@ -446,7 +446,7 @@ void RDGShader::RemapBindings() {
     } else if (class_registry_->type == RHIPipelineType::kCompute) {
         pipeline = compute_pipeline_.Raw();
     }
-    auto FindIndex = [&] <typename T> (const std::string & name, T & list) {
+    auto FindSlotIndex = [&] <typename T> (const std::string & name, T & list) {
         for (int i = 0; i < (int)list.size(); ++i) {
             if (list[i].name == name) {
                 return i;
@@ -458,11 +458,11 @@ void RDGShader::RemapBindings() {
     // Remap uniform buffers
     {
         auto & ub = pipeline->GetUniformBufferDesc();
-        cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size() + cpp_has_globals, UINT32_MAX);
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size() + cpp_has_globals, UINT32_MAX);
         for (auto [i, e] : std::views::enumerate(info.uniform_buffers_)) {
-            auto index = FindIndex(e.info->name, ub);
+            auto index = FindSlotIndex(e.info->name, ub);
             if (index != -1) {
-                cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kUniformBuffer][i] = index;
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][i] = index;
             }
             // Potentially there are UBs declared in cpp but not present in shaders. Simply omit that case.
         }
@@ -470,42 +470,42 @@ void RDGShader::RemapBindings() {
     // Remap global uniform buffer
     if (cpp_has_globals) {
         auto & ub = pipeline->GetUniformBufferDesc();
-        auto index = FindIndex("type.$Globals", ub);
+        auto index = FindSlotIndex("type.$Globals", ub);
         if (index != -1) {
             // The global uniform buffer is always the last one
-            cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kUniformBuffer][info.uniform_buffers_.size()] = index;
+            cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][info.uniform_buffers_.size()] = index;
         }
     }
     // Remap storage buffers
     {
         auto & sb = pipeline->GetStorageBufferDesc();
-        cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
         for (auto [i, e] : std::views::enumerate(info.storage_buffers_)) {
-            auto index = FindIndex(e.info->name, sb);
+            auto index = FindSlotIndex(e.info->name, sb);
             if (index != -1) {
-                cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kStorageBuffer][i] = index;
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer][i] = index;
             }
         }
     }
     // Remap uavs
     {
         auto & uavs = pipeline->GetUAVDesc();
-        cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kUAVTexture].resize(info.uavs_.size(), UINT32_MAX);
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture].resize(info.uavs_.size(), UINT32_MAX);
         for (auto [i, e] : std::views::enumerate(info.uavs_)) {
-            auto index = FindIndex(e.info->name, uavs);
+            auto index = FindSlotIndex(e.info->name, uavs);
             if (index != -1) {
-                cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kUAVTexture][i] = index;
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture][i] = index;
             }
         }
     }
     // Remap srvs
     {
         auto & srvs = pipeline->GetSRVDesc();
-        cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kSRVTexture].resize(info.srvs_.size(), UINT32_MAX);
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture].resize(info.srvs_.size(), UINT32_MAX);
         for (auto [i, e] : std::views::enumerate(info.srvs_)) {
-            auto index = FindIndex(e.info->name, srvs);
+            auto index = FindSlotIndex(e.info->name, srvs);
             if (index != -1) {
-                cpp_resource_index_to_binding_[(uint32_t)RHIParamType::kSRVTexture][i] = index;
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture][i] = index;
             }
         }
     }
@@ -686,7 +686,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     is_valid_ = true;
 
     // Remap bindings, so we can actually associate the shader parameters with RHI pipeline binding slots
-    RemapBindings();
+    RemapResourceIndexToResourceSlots();
 
     return true;
 }

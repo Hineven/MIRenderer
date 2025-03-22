@@ -26,8 +26,8 @@ MAKE_FLAGS(RDGPass);
 class RDGResource : public NonCopyable, public RefCounted<false> {
 public:
     friend class RDGResourcePool;
-    FORCEINLINE RDGResource () {}
-    virtual ~RDGResource () = default;
+    RDGResource () ;
+    virtual ~RDGResource () ;
     // Get the hash value for mapping RDG resources to RHI resources. (classify resources)
     virtual uint32_t GetResourceClassHash () const = 0;
     // Release the underlying RHI resource to the pool
@@ -36,7 +36,7 @@ public:
     virtual void RequestRHI (RDGResourcePool * pool) = 0;
 protected:
     // The pool that allocated RHI resources for this render graph resource
-    RDGResourcePool * pool_ {};
+    TRef<RDGResourcePool> pool_;
 };
 
 typedef TRef<RDGResource> RDGResourceRef;
@@ -52,6 +52,8 @@ enum class RDGPassType {
     kGraphics,
     // Compute shader
     kCompute,
+    // Basic RHI commands
+    kGeneric,
     // TODO add more (mesh, raytracing, etc)
     kMax
 };

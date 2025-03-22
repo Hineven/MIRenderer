@@ -8,9 +8,17 @@
 #include <map>
 #include <queue>
 #include "rdg/rdg.h"
+
+#include <rdg/rdg_param.h>
+
 #include "rdg/rdg_pass.h"
+#include "rdg/rdg_pool.h"
 
 MI_NAMESPACE_BEGIN
+
+RenderGraph::~RenderGraph() {
+    printf("RDG destruction\n");
+}
 
 FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
     switch (size) {
@@ -35,7 +43,8 @@ FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restri
     }
 }
 
-void RenderGraph::Execute (RDGResourcePool * pool) {
+void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
+
 
     // Directly use the graphics queue.
     auto & RHI = RHI::Get();
@@ -47,23 +56,43 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
             ready_passes.push(i);
         }
     }
-
-    // Write and upload all uniforms
+    // Prepare and upload all uniforms
     {
-        auto staging_buffer = RHI.CreateBuffer(RHIBufferDesc{
-            C::kRDGPoolUniformBufferBlockSize,
-            RHIBufferUsageFlagBits::kTransferSrc | RHIBufferUsageFlagBits::kStaging
-        });
-        // TODO: is there a better implementation?
-        for (auto pass : passes_) {
-            pass->uniform_buffer_->RequestRHI(pool);ghjgh
+        auto WriteUniforms = [&] (RDGBuffer* buffer, const RDGShaderParamStructAndSizeInfo * param_info, const void * param_data) {
+            if (buffer && !buffer->IsAllocated()) {
+                buffer->RequestRHI(pool);
+                auto ptr = buffer->GetStagingMappedPtr();
+                for (auto e : param_info->global_uniforms_) {
+                    FastTinyCopy((std::byte*)ptr + e.shader_offset, (std::byte*)param_data + e.cpp_offset, e.size);
+                }
+            }
+        };
+        for (auto & pass : passes_) {
+            // Generic passes have no shader parameters and thus no need to upload uniforms.
+            if (pass->shader_param_struct_info_) {
+                auto it = ref_buffer_map_.find(pass->shader_param_data_);
+                if (it == ref_buffer_map_.end()) {
+                    // Create and write to the global buffer if not present
+                    auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, pass->shader_param_struct_info_->size);
+                    WriteUniforms(buffer.Raw(), pass->shader_param_struct_info_, pass->shader_param_data_);
+                    resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
+                    ref_buffer_map_[pass->shader_param_data_] = std::move(buffer);
+                }
+                // Also recursively request all the uniform buffers referenced
+                for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
+                    auto struct_ptr = *(void**)((std::byte*)pass->shader_param_data_ + ref.cpp_offset);
+                    auto it = ref_buffer_map_.find(struct_ptr);
+                    if (it == ref_buffer_map_.end()) {
+                        auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, ref.info->cpp_imported_struct_info.cpp_struct_info->size);
+                        WriteUniforms(buffer.Raw(), ref.info->cpp_imported_struct_info.cpp_struct_info, struct_ptr);
+                        resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
+                        ref_buffer_map_[struct_ptr] = std::move(buffer);
+                    }
+                }
+            }
         }
-
-        // Write global uniform buffer
-        void * mapped_uniform_buffer = (uint8_t*)shader_global_ub->GetRHI().buffer->Map() + shader_global_ub->GetRHI().offset;
-        for (auto [i, e] : std::views::enumerate(base_info->global_uniforms_)) {
-            FastTinyCopy((uint8_t*)mapped_uniform_buffer + e.shader_offset, (uint8_t*)params + e.cpp_offset, e.size);
-        }
+        // Copy staging buffers to uniform buffers
+        pool->StageUniformBuffers(cmd);
     }
 
     while (!ready_passes.empty()) {
@@ -71,24 +100,31 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
         ready_passes.pop();
         auto &pass = passes_[pass_index];
         // Get resources ready
-        for (auto texture_use : pass->used_textures_) {
+        for (auto texture_use : pass->compiled_.used_textures) {
             texture_use.texture->RequestRHI(pool);
         }
-        for (auto buffer_use : pass->used_buffers_) {
+        for (auto buffer_use : pass->compiled_.used_buffers) {
             buffer_use.buffer->RequestRHI(pool);
         }
         // Place resource barriers.
         RHIPipelineStageFlags new_stages = pass->GetStageFlags();
         {
-            auto textures = cmd.Allocate<RHITexture*[]>(pass->used_textures_.size());
-            auto layouts = cmd.Allocate<RHITextureLayoutType[]>(pass->used_textures_.size());
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_textures_.size());
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_textures_.size());
-            for (const auto & [i, texture_use] : std::views::enumerate(pass->used_textures_)) {
+            auto num_barriers = pass->compiled_.used_textures.size();
+            auto textures = cmd.Allocate<RHITexture*[]>(num_barriers);
+            auto layouts = cmd.Allocate<RHITextureLayoutType[]>(num_barriers);
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            for (const auto & [i, texture_use] : std::views::enumerate(pass->compiled_.used_textures)) {
                 textures[i] = texture_use.texture->GetRHI();
                 auto & old_state = resource_accesses_[texture_use.texture->GetRHI()];
                 src_accesses[i] = old_state.access;
-                if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderRead) {
+                if (texture_use.usage == RDGPass::RDGTextureUsage::kTransferSrc) {
+                    layouts[i] = RHITextureLayoutType::kTransferSrcOptimal;
+                    dst_accesses[i] = RHIGPUAccessFlagBits::kRead;
+                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kTransferDst) {
+                    layouts[i] = RHITextureLayoutType::kTransferDstOptimal;
+                    dst_accesses[i] = RHIGPUAccessFlagBits::kWrite;
+                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderRead) {
                     layouts[i] = RHITextureLayoutType::kShaderReadOnlyOptimal;
                     dst_accesses[i] = RHIGPUAccessFlagBits::kRead;
                     // The barrier-chain rule allows us to replace the access mask with the new one.
@@ -111,31 +147,21 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
                 old_state.access = dst_accesses[i];
                 old_state.stages = new_stages;
             }
-            cmd.TextureBarriers((uint32_t)pass->used_textures_.size(), textures, layouts, new_stages, src_accesses, dst_accesses);
+            cmd.TextureBarriers((uint32_t)num_barriers, textures, layouts, new_stages, src_accesses, dst_accesses);
         }
         {
-            auto buffers = cmd.Allocate<RHIBufferSpan[]>(pass->used_buffers_.size());
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_buffers_.size());
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(pass->used_buffers_.size());
-            for (const auto & [i, buffer_use] : std::views::enumerate(pass->used_buffers_)) {
+            auto num_barriers = pass->compiled_.used_buffers.size();
+            auto buffers = cmd.Allocate<RHIBufferSpan[]>(num_barriers);
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            for (const auto & [i, buffer_use] : std::views::enumerate(pass->compiled_.used_buffers)) {
                 auto & old_state = resource_accesses_[buffer_use.buffer->GetRHI().buffer];
                 buffers[i] = buffer_use.buffer->GetRHI();
                 src_accesses[i] = old_state.access;
-                RHIGPUAccessFlags access = {};
-                switch (buffer_use.usage) {
-                    case RDGPass::RDGBufferUsage::kUniformBuffer:
-                    case RDGPass::RDGBufferUsage::kIndexBuffer:
-                    case RDGPass::RDGBufferUsage::kVertexBuffer:
-                    case RDGPass::RDGBufferUsage::kReadOnlyStorge:
-                    case RDGPass::RDGBufferUsage::kIndirectBuffer:
-                        access = RHIGPUAccessFlagBits::kRead;
-                    break;
-                    default:
-                        access = RHIGPUAccessFlagBits::kAll;
-                }
-                dst_accesses[i] = access;
+                old_state.access = buffer_use.access;
+                dst_accesses[i] = buffer_use.access;
             }
-            cmd.BufferBarriers((uint32_t)pass->used_buffers_.size(), buffers, new_stages, src_accesses, dst_accesses);
+            cmd.BufferBarriers((uint32_t)num_barriers, buffers, new_stages, src_accesses, dst_accesses);
         }
         // Execute the pass
         pass->pass_(pass.get(), cmd);
@@ -150,6 +176,9 @@ void RenderGraph::Execute (RDGResourcePool * pool) {
         // Release the pass (and decrement the reference count of the resources its holding)
         pass.reset();
     }
+    cmd.EnqueueTranslateAndSubmit(sync_point);
+    // Release referenced RDG buffers
+    ref_buffer_map_.clear();
 
 }
 MI_NAMESPACE_END

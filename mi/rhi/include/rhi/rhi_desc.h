@@ -132,29 +132,29 @@ struct RHITextureDesc {
 
 struct RHIPipelineParameterBufferDesc {
     RHIBufferSpan buffer;
-    // Binding number to bind on the pipeline
-    uint32_t binding;
+    // On which resource slot to bind the resource
+    uint32_t slot;
 };
 struct RHIPipelineParameterTextureDesc {
     RHITexture * texture;
-    // Binding number to bind on the pipeline
-    uint32_t binding;
+    // On which resource slot to bind the resource
+    uint32_t slot;
 };
 struct RHIPipelineParameterResourceDesc {
     RHIResource * resource;
-    // Binding number to bind on the pipeline
-    uint32_t binding;
+    // On which resource slot to bind the resource
+    uint32_t slot;
 };
 struct RHIPipelineBindlessResourceDesc {
     // The type of the set bindless resource.
     RHIBindlessResourceType type;
-    // Slot allocated to the bindless resource, same meaning as it is in the bindless
-    // manager. Combined with the type to form a unique identifier.
+    // Used to reference the bindless resource. Each bindless resource is allocated a
+    // unique bindless slot (within its type) for identification.
     uint32_t bindless_slot;
     // Binding number to bind on the pipeline. bindless_slot is stored on the binding
     // number entry of the btb table for shaders to query.
     // btb[binding] = bindless_slot
-    uint32_t binding;
+    uint32_t slot;
     // Number of consecutive slots that the shader uses. Potentially an atlas.
     uint32_t count;
 };

@@ -45,8 +45,8 @@ protected:
     RHIBufferDesc desc_;
 
     RHIBindlessSlotRef<RHIBuffer> bindless_slot_readonly_ {};
-    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};
 
+    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};
     bool is_mapped_ {false};
 };
 

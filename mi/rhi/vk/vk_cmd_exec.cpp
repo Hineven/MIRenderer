@@ -408,13 +408,13 @@ void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffe
     cmdb.setScissor(0, 1, &rect);
 }
 
-bool VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
+bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
     assert(IsRHIThread());
     auto CompareAndInsert = [&] <typename T>  (std::vector<T> & dst, std::span<T> src) {
         bool dirty = false;
         for (const auto & e : src) {
             auto it = std::find_if(dst.begin(), dst.end(), [&](const auto & a) {
-                return a.binding == e.binding;
+                return a.slot == e.slot;
             });
             if (it == dst.end()) {
                 dst.push_back(e);
@@ -465,20 +465,20 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoints::ParameterTable::Merge
 
 // TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
-VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
+VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     RHICommandQueueBase * cmd, [[maybe_unused]] vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
     [[maybe_unused]] vk::CommandBuffer cmdb
 ) {
     assert(IsRHIThread());
 
-    // Sort and merge all recorded bindings
+    // Sort and merge all recorded slot bindings
     auto SortUnique = [&](auto & arr) {
         std::stable_sort(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
-            return a.binding < b.binding;
+            return a.slot < b.slot;
         });
         std::reverse(arr.begin(), arr.end());
         auto tail = std::unique(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
-            return a.binding == b.binding;
+            return a.slot == b.slot;
         });
         arr.erase(tail, arr.end());
     };
@@ -488,6 +488,15 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
     SortUnique(parameter_table.srvs);
     SortUnique(parameter_table.samplers);
     SortUnique(parameter_table.acceleration_structures);
+
+    const VulkanPipelineBindingRemappings * remapping = nullptr;
+    if (bind_point_type == RHIBindPointType::kGraphics) {
+        remapping = &((VulkanGraphicsPipeline*)bound_pipeline)->GetRemappings();
+    } else if (bind_point_type == RHIBindPointType::kCompute) {
+        remapping = &((VulkanComputePipeline*)bound_pipeline)->GetRemappings();
+    } else {
+        assert(false && "Not implemented");
+    }
 
     // Count all writes that needed to allocate a WriteDescriptorSet array
     uint32_t write_count = (uint32_t)
@@ -503,7 +512,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 //        buffer->Use(cmdb, use_stages, vk::AccessFlagBits::eUniformRead);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(ubo.binding)
+                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot).binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eUniformBuffer)
@@ -519,7 +528,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 //        buffer->Use(cmdb, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(storage.binding)
+                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot).binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eStorageBuffer)
@@ -534,7 +543,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 //        image->Use(cmdb, vk::ImageLayout::eGeneral, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(uav.binding)
+                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot).binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eStorageImage)
@@ -549,7 +558,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 //        image->Use(cmdb, vk::ImageLayout::eShaderReadOnlyOptimal, use_stages, vk::AccessFlagBits::eShaderRead);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(srv.binding)
+                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eSampledImage)
@@ -561,7 +570,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
         image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(sampler.binding)
+                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot).binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eSampler)
@@ -573,7 +582,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
         auto  p_ac = cmd->Allocate<vk::AccelerationStructureKHR>();
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(acc.binding)
+                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot).binding)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
                 .setPNext(&write_khr);
@@ -597,9 +606,9 @@ VulkanCommandExecutor::CommandQueueState::BindPoints::InstallShaderDescriptors(
 
     // The user should manage bindless texture layouts manually.
     for(auto & bindless : parameter_table.bindless_resources) {
-        int bindless_binding = bindless.binding;
+        int bindless_binding_slot = bindless.slot;
         int bindless_slot    = bindless.bindless_slot;
-        btb_data[bindless_binding] = bindless_slot;
+        btb_data[bindless_binding_slot] = bindless_slot;
     }
 
     // Clear bindless resources
@@ -807,10 +816,13 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
                         1
                 }
         )[0];
+        // Push default dynamic states for vulkan command buffers
         SetupDefaultDynamicStates();
+        // Clear bound vertex buffers
         for(auto & span = bound_vertex_buffers; auto & buf : span)
             buf = RHIBufferSpan{};
-        for(auto & point : points) {
+        // Initialize all bind point states
+        for(auto [i, point] : std::views::enumerate(points)) {
             auto alloc = rhi->GetVmaAllocator().createBuffer(
                     vk::BufferCreateInfo{
                             {},
@@ -830,6 +842,7 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
             point.bound_private_descriptor_set = nullptr;
             point.bound_pipeline = nullptr;
             point.parameter_table = {};
+            point.bind_point_type = (RHIBindPointType) i;
         }
         // We reset the descriptor pool every frame.
         vk::DescriptorPoolSize pool_sizes[] = {

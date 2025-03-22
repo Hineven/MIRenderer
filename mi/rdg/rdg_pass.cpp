@@ -8,22 +8,56 @@
 #include <rdg/rdg_param.h>
 
 MI_NAMESPACE_BEGIN
-void RDGPass::GatherResourceAccessesAndInitializeHolders() {
-    // Enumerate the shader_param_data_ using reflection from shader_param_struct_info_, and gather accessed resources
-    // Store them in in_xxx and out_xxx. Also, gather uniform buffers accessed.
+
+RDGPass::RDGPass(
+        std::string name,
+        int index,
+        RDGPassType pass_type,
+        RDGPassFlags flags,
+        RDGPassLambda && pass
+    ) : name_(name),
+        index_(index),
+        type_(pass_type),
+        flags_(flags),
+        pass_(std::move(pass)) {
+}
+
+RDGPass::~RDGPass() {
+    printf("Pass destruction\n");
+}
+
+void RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsage::Type usage) {
+    if (usage != RDGTextureUsage::kTransferDst) {
+        compiled_.in_textures.emplace_back(texture);
+    }
+    switch (usage) {
+        case RDGTextureUsage::kShaderReadWrite:
+        case RDGTextureUsage::kOutputAttachment:
+        case RDGTextureUsage::kDepthStencilAttachment:
+        case RDGTextureUsage::kTransferDst:
+            compiled_.out_textures.emplace_back(texture);
+            break;
+        default:
+            // do nothing
+            break;
+    }
+    compiled_.used_textures.emplace_back(usage, texture);
+}
+
+void RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access) {
+    if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
+    if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
+    compiled_.used_buffers.emplace_back(access, buffer);
+}
+
+void RDGPass::Compile() {
+
+    assert(!is_compiled_ && "Each pass may only be compiled once.");
+    is_compiled_ = true;
+    // No need to compile as we have no shader parameters present
     if (!shader_param_struct_info_ || !shader_param_data_) {
         return;
     }
-
-    // Clear previous resources
-    in_textures_.clear();
-    in_buffers_.clear();
-    out_textures_.clear();
-    out_buffers_.clear();
-    // referenced_uniform_buffers_.clear();
-
-    used_textures_.clear();
-    used_buffers_.clear();
 
     // Iterate through all shader parameters using reflection
     for (int i = 0; i < (int)shader_param_struct_info_->cpp_members.size(); i++) {
@@ -37,11 +71,7 @@ void RDGPass::GatherResourceAccessesAndInitializeHolders() {
                 // TODO should we log a warning here?
                 continue;
             }
-            in_textures_.push_back(texture);
-            used_textures_.emplace_back(
-                RDGTextureUsage::kShaderRead,
-                texture
-            );
+            AddTexture(texture, RDGTextureUsage::kShaderRead);
         }
         else if (field.type == RHIParamType::kUAVTexture) { // UAV
             RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
@@ -49,46 +79,20 @@ void RDGPass::GatherResourceAccessesAndInitializeHolders() {
                 // TODO should we log a warning here?
                 continue;
             }
-            out_textures_.push_back(texture);
-            used_textures_.emplace_back(
-                RDGTextureUsage::kShaderReadWrite,
-                texture
-            );
+            AddTexture(texture, RDGTextureUsage::kShaderReadWrite);
         } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
             RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
             if (!buffer) continue;
             auto usage = RDGBufferUsage{{}, buffer};
-            // Add to appropriate collection based on access flags
-            if (field.access_flags & RHIGPUAccessFlagBits::kWrite) {
-                out_buffers_.push_back(buffer);
-                usage.usage = RDGBufferUsage::kReadWriteStorage;
-            } else {
-                usage.usage = RDGBufferUsage::kReadOnlyStorge;
-            }
-            if (field.access_flags & RHIGPUAccessFlagBits::kRead) {
-                in_buffers_.push_back(buffer);
-            }
-            used_buffers_.emplace_back(usage);
+            AddBuffer(buffer, field.access_flags);
         }
-        else if (field.type == RHIParamType::kUniformBuffer) { // Imported uniform buffer
-            auto ub = *static_cast<RDGBuffer*const *>(field_data);
-            // referenced_uniform_buffers_.push_back(ub);
-            used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, ub);
-        } else if (field.type == RHIParamType::kVertexBuffer
+        else if (field.type == RHIParamType::kUniformBuffer
+            || field.type == RHIParamType::kVertexBuffer
             || field.type == RHIParamType::kIndexBuffer
             || field.type == RHIParamType::kDispatchCommand) { // Vertex / index/ dispatch command
             RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
             if (!buffer) continue;
-            auto usage = RDGBufferUsage{{}, buffer};
-            if (field.type == RHIParamType::kVertexBuffer) {
-                usage.usage = RDGBufferUsage::kVertexBuffer;
-            } else if (field.type == RHIParamType::kIndexBuffer) {
-                usage.usage = RDGBufferUsage::kIndexBuffer;
-            } else if (field.type == RHIParamType::kDispatchCommand) {
-                usage.usage = RDGBufferUsage::kIndirectBuffer;
-            }
-            in_buffers_.push_back(buffer);
-            used_buffers_.emplace_back(usage);
+            AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
         } else if (field.type == RHIParamType::kRenderTarget) {
             // Render target
             RDGTexture * texture = *static_cast<RDGTexture* const*>(field_data);
@@ -97,12 +101,7 @@ void RDGPass::GatherResourceAccessesAndInitializeHolders() {
             if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
                 usage = RDGTextureUsage::kDepthStencilAttachment;
             }
-            in_textures_.push_back(texture);
-            out_textures_.push_back(texture);
-            used_textures_.emplace_back(
-                usage,
-                texture
-            );
+            AddTexture(texture, usage);
         } else if (field.type == RHIParamType::kVertexAttribute) {
             // Do nothiong
         } else if (field.type == RHIParamType::kBasic || field.type == RHIParamType::kStruct) {
@@ -110,15 +109,6 @@ void RDGPass::GatherResourceAccessesAndInitializeHolders() {
         } else {
             assert(false && "Unsupported parameter type.");
         }
-    }
-
-    // Lastly, create and store the uniform buffer usage
-    if (shader_param_struct_info_->size) {
-        uniform_buffer_ = new RDGBuffer(RHIBufferUsageFlagBits::kUniform, shader_param_struct_info_->size);
-        in_buffers_.emplace_back(uniform_buffer_.Raw());
-        used_buffers_.emplace_back(RDGBufferUsage::kUniformBuffer, uniform_buffer_);
-    } else {
-        uniform_buffer_ = {};
     }
 }
 

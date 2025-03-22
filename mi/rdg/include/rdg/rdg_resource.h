@@ -17,9 +17,21 @@
 MI_NAMESPACE_BEGIN
 
 class RDGTexture : public RDGResource {
+    FORCEINLINE RDGTexture (RHITextureDesc desc) : desc_(desc) {}
 public:
     friend class RDGResourcePool;
-    FORCEINLINE RDGTexture (RHITextureDesc desc) : desc_(desc) {}
+    static TRef<RDGTexture> Create (RHITextureDesc desc) {
+        return TRef<RDGTexture>(new RDGTexture(desc));
+    }
+    FORCEINLINE static TRef<RDGTexture> CreateTexture2D (
+        uint32_t width, uint32_t height, PixelFormatType format,
+        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
+        return Create(RHITextureDesc{
+            RHITextureType::k2D,
+            {width, height, 1},
+            1, 1, format, usage
+        });
+    }
     ~RDGTexture () override ;
     FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
     uint32_t GetResourceClassHash () const override;
@@ -35,7 +47,12 @@ protected:
 };
 
 class RDGBuffer : public RDGResource {
+protected:
+    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size) : desc_({size, usage}) {}
 public:
+    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size) {
+        return TRef<RDGBuffer>(new RDGBuffer(usage, size));
+    }
     constexpr static uint32_t kMinBufferSizeLog2 = 10;
     constexpr static uint32_t kMinBufferSize = 1 << kMinBufferSizeLog2;
     FORCEINLINE static uint32_t GetResourceClassHash (RHIBufferDesc desc, bool dedicated) {
@@ -50,7 +67,6 @@ public:
     }
 
     friend class RDGResourcePool;
-    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size) : desc_({size, usage}) {}
     FORCEINLINE void SetDedicated (bool value = true) {
         assert(!rhi_buffer_span_.buffer && "Cannot set dedicated flag after buffer allocation.");
         dedicated_ = value;
@@ -64,6 +80,9 @@ public:
     void ReleaseRHI() override;
     FORCEINLINE bool IsAllocated () const { return rhi_buffer_span_.buffer != nullptr; }
     FORCEINLINE RHIBufferSpan GetRHI () const { return rhi_buffer_span_; }
+    // Use this if you want to upload data to a uniform buffer.
+    // Do not use GetRHI().buffer->Map(), that is not a staging buffer, but the uniform buffer itself.
+    FORCEINLINE void * GetStagingMappedPtr () const { return staging_mapped_ptr_; }
 protected:
     // If true, RDG resource pool tends to map the buffer to a dedicated RHI buffer.
     // when set, rhi_buffer_span_ should have 0 offset.
@@ -72,6 +91,8 @@ protected:
     // Underlying RHI buffer, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHIBufferSpan rhi_buffer_span_ {};
+    // If the buffer allows staging, this is the mapped pointer.
+    void * staging_mapped_ptr_ {};
 };
 
 typedef TRef<RDGTexture> RDGTextureRef;

@@ -9,6 +9,20 @@
 #include "rhi/rhi.h"
 #include <rdg/rdg_resource.h>
 MI_NAMESPACE_BEGIN
+
+RDGResourcePool::RDGResourcePool() {
+
+}
+
+RDGResourcePool::~RDGResourcePool() {
+    printf("pool destruction\n");
+}
+
+TRef<RDGResourcePool> RDGResourcePool::Create() {
+    return TRef<RDGResourcePool>(new RDGResourcePool());
+}
+
+
 void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
     if (buffer->desc_.usage & RHIBufferUsageFlagBits::kUniform) {
         // Uniform buffer are allocated in a separate pool
@@ -140,17 +154,39 @@ void RDGResourcePool::AllocateUniformBuffer(RDGBuffer *buffer) {
                 auto desc = RHIBufferDesc{.size = C::kRDGPoolUniformBufferBlockSize, .usage = RHIBufferUsageFlagBits::kUniform};
                 auto rhi_buffer = RHI::Get().CreateBuffer(desc);
                 rhi_uniform_buffer_references_.emplace_back(std::move(rhi_buffer));
+                // Also remember to duplicate a new block in the staging buffer pool
+                desc.usage = RHIBufferUsageFlagBits::kTransferSrc | RHIBufferUsageFlagBits::kStaging;
+                auto staging_buffer = RHI::Get().CreateBuffer(desc);
+                staging_buffer->Map();
+                rhi_staging_buffer_references_.emplace_back(std::move(staging_buffer));
             }
             // Move to the next block
             rhi_uniform_buffer_index_ = std::min((int)rhi_uniform_buffer_index_ + 1, (int)rhi_uniform_buffer_references_.size() - 1);
             rhi_uniform_buffer_offset_ = 0;
         }
         buffer->rhi_buffer_span_ = {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_].Raw(), rhi_uniform_buffer_offset_, size};
+        // Assign the staging buffer for the uniform buffer
+        buffer->staging_mapped_ptr_ = (std::byte*)rhi_staging_buffer_references_[rhi_uniform_buffer_index_]->Map() + rhi_uniform_buffer_offset_;
         rhi_uniform_buffer_offset_ += (uint32_t)size;
     }
 }
 
-
-
+void RDGResourcePool::StageUniformBuffers(RHICommandQueueGraphics &queue) {
+    // TODO support multiple stage operations (more than 1 graphs share the same resource pool)
+    assert(!buffers_staged_ && "Twice staging uniform buffers is not allowed.");
+    for (int i = 0; i < ((int)rhi_uniform_buffer_index_ - 1); i++) {
+        queue.CopyBuffer(
+            rhi_staging_buffer_references_[i]->GetSpan(),
+            rhi_uniform_buffer_references_[i]->GetSpan()
+        );
+    }
+    if (rhi_uniform_buffer_index_ > 0) {
+        queue.CopyBuffer(
+            {rhi_staging_buffer_references_[rhi_uniform_buffer_index_ - 1].Raw(), 0, rhi_uniform_buffer_offset_},
+            {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_ - 1].Raw(), 0, rhi_uniform_buffer_offset_}
+        );
+    }
+    buffers_staged_ = true;
+}
 
 MI_NAMESPACE_END

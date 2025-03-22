@@ -361,7 +361,7 @@ TEST(RHITest, RHITriangle) {
             auto storages = queue.Allocate<RHIPipelineParameterBufferDesc[]>(1);
             storages[0].buffer  = storage_buf->GetSpan();
             auto storage_binding = pipeline->ReflectResourceSlot("someBuffer");
-            storages[0].binding = storage_binding.slot_index;
+            storages[0].slot = storage_binding.slot_index;
             params.storages = {storages, 1};
             queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
             queue.BeginRendering();

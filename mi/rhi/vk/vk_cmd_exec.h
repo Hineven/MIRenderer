@@ -73,7 +73,8 @@ protected:
         void InstallDrawState (vk::CommandBuffer cmdb);
 
         // Keep states of each bind point
-        struct BindPoints {
+        struct BindPoint {
+            RHIBindPointType bind_point_type {};
             // Bindless table buffer
             vk::Buffer bindless_table_buffer {};
             vma::Allocation bindless_table_buffer_allocation {};

@@ -43,6 +43,8 @@ public:
     FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
     FORCEINLINE vk::RenderPass GetRenderPass() const { return vk_render_pass_; }
 
+    FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
+
     ~VulkanGraphicsPipeline();
 
 protected:
@@ -56,7 +58,8 @@ protected:
     vk::DescriptorSetLayout vk_private_descriptor_set_layout_;
     vk::RenderPass vk_render_pass_;
 
-    // The remapping info for the "bindfull" resources (map index of its kind of descriptor to the set and binding)
+    // The remapping info for the "bindfull" resources
+    // map slot number (index of its kind) to the set and binding number
     VulkanPipelineBindingRemappings remappings_;
     // Bindless resources are directly mapped via their identity indices within the bindless table uniform buffer.
     // so no need to keep track of their mappings.
@@ -72,6 +75,8 @@ public:
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
     FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
+
+    FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
     ~VulkanComputePipeline();
 

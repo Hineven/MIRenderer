@@ -283,6 +283,16 @@ public:
         return ptr_;
     }
 
+    // Release the pointer without decrementing the reference count.
+    // Be careful when using this function, as it can cause a memory leak if not used properly.
+    FORCEINLINE void ForceRelease () // NOLINT
+    {
+        if (ptr_)
+        {
+            ptr_ = nullptr;
+        }
+    }
+
     FORCEINLINE friend bool IsValidRef(const TRef& InReference)
     {
         return InReference.ptr_ != nullptr;

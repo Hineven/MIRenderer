@@ -10,13 +10,19 @@
 #include <rdg/rdg_pool.h>
 MI_NAMESPACE_BEGIN
 
+RDGResource::RDGResource() {}
+
+RDGResource::~RDGResource() {}
+
 RDGTexture::~RDGTexture() {
     // Ref count approaching zero, recycle the resource and release corresponding RHI resource.
     RDGTexture::ReleaseRHI();
+    printf("RDGTexture destruction\n");
 }
 RDGBuffer::~RDGBuffer() {
     // Ref count approaching zero, recycle the resource and release corresponding RHI resource.
     RDGBuffer::ReleaseRHI();
+    printf("RDGBuffer destruction\n");
 }
 
 void RDGTexture::RequestRHI(RDGResourcePool * pool) {
@@ -47,6 +53,7 @@ void RDGBuffer::ReleaseRHI() {
         pool_->RecycleResource(this);
         rhi_buffer_span_ = {};
         pool_ = nullptr;
+        staging_mapped_ptr_ = nullptr;
     }
 }
 

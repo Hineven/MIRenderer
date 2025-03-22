@@ -17,8 +17,8 @@ MI_NAMESPACE_BEGIN
 enum class RHIType {
     kVulkan,
 };
-enum class RHIBindPointType {
-    kGraphics,
+enum class RHIBindPointType : uint32_t {
+    kGraphics = 0,
     kCompute,
     kRayTracing,
     kMax

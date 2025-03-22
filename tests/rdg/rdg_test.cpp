@@ -195,7 +195,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
             auto params = builder.Allocate<TestShader1::Parameters>();
             params->TestFloat2 = {0.1f, 0.2f};
             params->TestFloat4 = {0.3f, 0.4f, 0.5f, 0.6f};
-            auto test_texture = builder.CreateTexture2D(128, 128, PixelFormatType::kR32G32B32A32_FLOAT);
+            auto test_texture = RDGTexture::CreateTexture2D(128, 128, PixelFormatType::kR32G32B32A32_FLOAT);
             params->TestTexture = test_texture.Raw();
             builder.AddPass("SimpleShader", RDGPassType::kCompute, RDGPassFlagBits::kNeverCull,
                 TestShader1::GetShaderParamStructInfo(), params,
@@ -203,8 +203,9 @@ TEST(RDGTest, RDGSimpleComputeShader) {
                     RDGCommandHelper::Dispatch<TestShader1>(queue, pass, shader, params);
                 });
             auto rdg = builder.Compile();
-            auto pool = std::make_unique<RDGResourcePool>();
-            rdg->Execute(pool.get());
+            auto pool = RDGResourcePool::Create();
+            rdg->Execute(pool.Raw());
+            RHI::Get().WaitForIdle();
             lib.ReleaseCompiledShaders();
         }
 

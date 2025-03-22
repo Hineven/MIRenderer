@@ -13,6 +13,15 @@
 
 MI_NAMESPACE_BEGIN
 
+RenderGraphBuilder::RenderGraphBuilder () {
+    allocator_ = std::make_unique<TOneTimeLinearAllocator<>>();
+}
+
+RenderGraphBuilder::~RenderGraphBuilder() {
+    printf("Builder destruction\n");
+}
+
+
 void RenderGraphBuilder::AddPass(
     const char *name,
     RDGPassType pass_type,
@@ -26,23 +35,22 @@ void RenderGraphBuilder::AddPass(
             current_pass_index_ ++,
             pass_type,
             pass_flags,
-            std::move(pass_lambda),
-            shader_param_struct_info,
-            parameter_struct
+            std::move(pass_lambda)
     );
+    ptr->shader_param_struct_info_ = shader_param_struct_info;
+    ptr->shader_param_data_ = parameter_struct;
     auto pass = std::unique_ptr<RDGPass>(ptr);
     // Add to the pass list
     passes_.push_back(std::move(pass));
 }
 
-TRef<RDGTexture> RenderGraphBuilder::CreateTexture2D(RHITextureDesc desc) {
-    auto texture = new RDGTexture(desc);
-    auto ref = TRef<RDGTexture>(texture);
-    return ref;
-}
-
 
 TRef<RenderGraph> RenderGraphBuilder::Compile() {
+    // Compile all passes first
+    for (auto & pass : passes_) {
+        pass->Compile();
+    }
+
     std::map<RDGResource*, std::vector<RDGPass*>> in_resource_pass_map;
     std::map<RDGResource*, std::vector<RDGPass*>> out_resource_pass_map;
     std::vector<std::unique_ptr<RDGPass>> culled_passes;
@@ -64,13 +72,13 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
         // Find dependencies (to prior passes)
         std::vector<RDGPass*> dependencies;
         // W-R
-        for(auto & in_texture : pass->in_textures_) {
+        for(auto & in_texture : pass->compiled_.in_textures) {
             for(auto & out_pass : out_resource_pass_map[in_texture]) {
                 dependencies.push_back(out_pass);
             }
         }
         // RW-W
-        for(auto & out_texture : pass->out_textures_) {
+        for(auto & out_texture : pass->compiled_.out_textures) {
             for(auto & out_pass : out_resource_pass_map[out_texture]) {
                 dependencies.push_back(out_pass);
             }
@@ -89,16 +97,16 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
         }
 
         // Gather resource accesses
-        for(auto & in_texture : pass->in_textures_) {
+        for(auto & in_texture : pass->compiled_.in_textures) {
             in_resource_pass_map[in_texture].emplace_back(pass.get());
         }
-        for(auto & in_buffer : pass->in_buffers_) {
+        for(auto & in_buffer : pass->compiled_.in_buffers) {
             in_resource_pass_map[in_buffer].emplace_back(pass.get());
         }
-        for(auto & out_texture : pass->out_textures_) {
+        for(auto & out_texture : pass->compiled_.out_textures) {
             out_resource_pass_map[out_texture].emplace_back(pass.get());
         }
-        for(auto & out_buffer : pass->out_buffers_) {
+        for(auto & out_buffer : pass->compiled_.out_buffers) {
             out_resource_pass_map[out_buffer].emplace_back(pass.get());
         }
     }
@@ -113,12 +121,12 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
                 flag = true;
             }
             // The pass is writing to a resource that is meant for export
-            for (auto res : e->out_buffers_) {
+            for (auto res : e->compiled_.out_buffers) {
                 if (exporting_resources_.find(res) != exporting_resources_.end()) {
                     flag = true;
                 }
             }
-            for (auto res : e->out_textures_) {
+            for (auto res : e->compiled_.out_textures) {
                 if (exporting_resources_.find(res) != exporting_resources_.end()) {
                     flag = true;
                 }
@@ -161,6 +169,9 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
     // Culling completed, write to the graph
     auto graph = RenderGraphRef(new RenderGraph());
     graph->passes_ = std::move(culled_passes);
+    for (auto & pass : graph->passes_) {
+        pass->graph_ = graph.Raw();
+    }
     graph->edges_ = std::move(culled_edges);
     graph->num_pass_predecessors_.resize(culled_pass_heads.size(), 0);
     graph->pass_node_heads_ = std::move(culled_pass_heads);
@@ -169,6 +180,8 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
     for (auto e : exporting_resources_) {
         graph->exporting_resources_.emplace_back(e);
     }
+    // Transfer allocator, let the graph keep the ownership
+    graph->allocator_ = std::move(allocator_);
     // Calculate number of predecessors for each pass
     for (int i = 0; i < (int)culled_pass_heads.size(); i++) {
         for (int edge_index = culled_pass_heads[i]; edge_index != -1; edge_index = culled_edges[edge_index].next_edge) {

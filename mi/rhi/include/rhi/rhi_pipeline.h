@@ -24,6 +24,7 @@ struct RHIPipelineResourceSlot {
     // In which stages the resource is used
     RHIShaderFrequencyFlags available_stages;
     // The index of the resource within the list of the same typed ones
+    // Used to specify the slot when binding resources to the slot.
     int slot_index;
 };
 

@@ -23,6 +23,9 @@ typedef TRef<RDGResource> RDGResourceRef;
 
 class RenderGraphBuilder : public NonCopyable, public NonMovable {
 public:
+    RenderGraphBuilder();
+    ~RenderGraphBuilder();
+
     void AddPass (
         const char *name,
         RDGPassType pass_type,
@@ -32,19 +35,8 @@ public:
         void * parameter_struct,
         RDGPassLambda && pass) ;
 
+
     TRef<RenderGraph> Compile ();
-
-    TRef<RDGTexture> CreateTexture2D (RHITextureDesc desc) ;
-
-    FORCEINLINE TRef<RDGTexture> CreateTexture2D (
-        uint32_t width, uint32_t height,
-        PixelFormatType format, RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
-        return CreateTexture2D(RHITextureDesc{
-            RHITextureType::k2D,
-            {width, height, 1},
-            1, 1, format, usage
-        });
-    }
 
     TRef<RDGBuffer>  ImportResource (const char *name, TRef<RHIBuffer> resource) ;
     TRef<RDGTexture> ImportResource (const char *name, TRef<RHITexture> resource) ;
@@ -53,7 +45,7 @@ public:
     TRef<RDGTexture> ExportResource (const char *name, TRef<RDGTexture> resource) ;
 
     FORCEINLINE void * Allocate (size_t size) {
-        return allocator_.Allocate(size);
+        return allocator_->Allocate(size);
     }
     template<CMemTrivial T>
     FORCEINLINE T * Allocate (bool zero = true) {
@@ -65,7 +57,7 @@ public:
     }
 protected:
 
-    TOneTimeLinearAllocator<> allocator_;
+    std::unique_ptr<TOneTimeLinearAllocator<>> allocator_;
 
     std::vector<std::unique_ptr<RDGPass>> passes_;
     std::set<RDGResource*> exporting_resources_;
