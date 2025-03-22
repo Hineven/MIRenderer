@@ -43,11 +43,12 @@ protected:
         // const void * shader_param_data,
         // RenderGraph * graph
     );
-
-    void AddTexture (RDGTexture * texture, RDGTextureUsage::Type usage) ;
-    void AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
-
 public:
+
+    RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsage::Type usage) ;
+    RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
+
+
     ~RDGPass() ;
     friend class RenderGraphBuilder;
     friend class RenderGraph;
@@ -60,6 +61,9 @@ public:
                 return RHIPipelineStageFlagBits::kOrdinaryGraphics;
             case RDGPassType::kCompute:
                 return RHIPipelineStageFlagBits::kCompute;
+            case RDGPassType::kGeneric:
+                // TODO stricter control
+                return RHIPipelineStageFlagBits::kAll;
             default:
                 assert(false);
                 return {};

@@ -22,7 +22,7 @@ RenderGraphBuilder::~RenderGraphBuilder() {
 }
 
 
-void RenderGraphBuilder::AddPass(
+RDGPass * RenderGraphBuilder::AddPass(
     const char *name,
     RDGPassType pass_type,
     RDGPassFlags pass_flags,
@@ -42,6 +42,7 @@ void RenderGraphBuilder::AddPass(
     auto pass = std::unique_ptr<RDGPass>(ptr);
     // Add to the pass list
     passes_.push_back(std::move(pass));
+    return ptr;
 }
 
 

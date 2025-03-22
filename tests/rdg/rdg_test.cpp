@@ -136,6 +136,7 @@ public:
     BEGIN_SHADER_PARAMETERS(Parameters)
         SHADER_PARAMETER(float4, TestFloat4)
         SHADER_PARAMETER(float2, TestFloat2)
+        SHADER_PARAMETER(RWStructuredBuffer, TestBuffer)
         SHADER_PARAMETER(RWTexture2D, TestTexture)
         // SHADER_VERTEX_BUFFER(16, vertex_buffer)
         // SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k4xFp32, pos)
@@ -195,17 +196,64 @@ TEST(RDGTest, RDGSimpleComputeShader) {
             auto params = builder.Allocate<TestShader1::Parameters>();
             params->TestFloat2 = {0.1f, 0.2f};
             params->TestFloat4 = {0.3f, 0.4f, 0.5f, 0.6f};
-            auto test_texture = RDGTexture::CreateTexture2D(128, 128, PixelFormatType::kR32G32B32A32_FLOAT);
+            auto storage_buffer_ref = RDGBuffer::Create(RHIBufferUsageFlagBits::kStorage, 1024);
+            params->TestBuffer = storage_buffer_ref.Raw();
+            auto test_texture = RDGTexture::CreateTexture2D(
+                128, 128, PixelFormatType::kR32G32B32A32_FLOAT,
+                RHITextureUsageFlagBits::kTransferSrc | RHITextureUsageFlagBits::kUnorderedAccess
+            );
             params->TestTexture = test_texture.Raw();
             builder.AddPass("SimpleShader", RDGPassType::kCompute, RDGPassFlagBits::kNeverCull,
                 TestShader1::GetShaderParamStructInfo(), params,
                 [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
                     RDGCommandHelper::Dispatch<TestShader1>(queue, pass, shader, params);
                 });
+            auto out_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kReadback, 1024 * 1024 * 16);
+            builder.AddPass(RDGPassFlagBits::kNeverCull,
+                [ttex = test_texture.Raw(), obuf = out_buffer.Raw(), stor = storage_buffer_ref.Raw()]
+                ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+                // queue.CopyTextureToBuffer(ttex->GetRHI(), obuf->GetRHI());
+                auto src_span = stor->GetRHI();
+                src_span.size = 64;
+                auto dst_span = obuf->GetRHI();
+                dst_span.offset = 128;
+                dst_span.size = 64;
+                queue.CopyBuffer(src_span, dst_span);
+            })->AddTexture(test_texture.Raw(), RDGPass::RDGTextureUsage::kTransferSrc)
+              ->AddBuffer(out_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
+              ->AddBuffer(storage_buffer_ref.Raw(), RHIGPUAccessFlagBits::kRead);
             auto rdg = builder.Compile();
             auto pool = RDGResourcePool::Create();
             rdg->Execute(pool.Raw());
             RHI::Get().WaitForIdle();
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
+            auto out_buffer_span = out_buffer->GetRHI();
+            auto out_ptr = (std::byte*)out_buffer_span.buffer->Map() + out_buffer_span.offset;
+            auto out_float_array = (float*)out_ptr;
+
+            // First pixel: TestFloat4
+            EXPECT_EQ(out_float_array[0], 0.3f);
+            EXPECT_EQ(out_float_array[1], 0.4f);
+            EXPECT_EQ(out_float_array[2], 0.5f);
+            EXPECT_EQ(out_float_array[3], 0.6f);
+            // Second pixel: TestFloat2 and 2 ones
+            EXPECT_EQ(out_float_array[4], 0.1f);
+            EXPECT_EQ(out_float_array[5], 0.2f);
+            EXPECT_EQ(out_float_array[6], 1.0f);
+            EXPECT_EQ(out_float_array[7], 1.0f);
+
+            // Test storage buffer
+            EXPECT_EQ(out_float_array[16], 123.0f);
+            EXPECT_EQ(out_float_array[17], 0.0f);
+            EXPECT_EQ(out_float_array[18], 111.0f);
+
+            EXPECT_EQ(out_float_array[20], 0.3f);
+            EXPECT_EQ(out_float_array[21], 0.4f);
+            EXPECT_EQ(out_float_array[22], 0.5f);
+            EXPECT_EQ(out_float_array[23], 0.6f);
+
             lib.ReleaseCompiledShaders();
         }
 

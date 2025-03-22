@@ -58,6 +58,8 @@ enum class RDGPassType {
     kMax
 };
 
+const char * ToCString (RDGPassType type) ;
+
 
 class RDGPass;
 class RHICommandQueueGraphics;

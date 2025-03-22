@@ -92,7 +92,7 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kRead = 1<<0,
     kWrite = 1<<1,
     kRW = kRead | kWrite,
-    kAll = 0xffffffffu
+    kAll = kRW
 };
 MAKE_FLAGS(RHIGPUAccess)
 

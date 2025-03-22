@@ -26,7 +26,7 @@ public:
     RenderGraphBuilder();
     ~RenderGraphBuilder();
 
-    void AddPass (
+    RDGPass * AddPass (
         const char *name,
         RDGPassType pass_type,
         RDGPassFlags pass_flags,
@@ -34,6 +34,18 @@ public:
         const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
         void * parameter_struct,
         RDGPassLambda && pass) ;
+
+    FORCEINLINE RDGPass * AddPass (
+        RDGPassFlags pass_flags,
+        RDGPassLambda && pass
+    ) {
+        return AddPass(
+            "<annoymous generic pass>",
+            RDGPassType::kGeneric, pass_flags,
+            nullptr, nullptr,
+            std::move(pass)
+        );
+    }
 
 
     TRef<RenderGraph> Compile ();

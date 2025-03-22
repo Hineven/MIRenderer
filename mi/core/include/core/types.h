@@ -16,6 +16,7 @@ FORCEINLINE FlagName##Flags(FlagName##FlagBits flag) : flags(static_cast<uint32_
 FORCEINLINE FlagName##Flags(uint32_t flags) : flags(flags) {}  \
 FORCEINLINE operator bool() const { return flags != 0; }                                  \
 FORCEINLINE explicit operator unsigned () const { return flags; }                          \
+FORCEINLINE FlagName##Flags operator ~ () const { return ~flags; }                        \
 FORCEINLINE bool operator==(FlagName##Flags other) const { return flags == other.flags; } \
 FORCEINLINE bool operator!=(FlagName##Flags other) const { return flags != other.flags; } \
 }; \

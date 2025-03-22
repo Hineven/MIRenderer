@@ -26,7 +26,8 @@ RDGPass::~RDGPass() {
     printf("Pass destruction\n");
 }
 
-void RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsage::Type usage) {
+RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsage::Type usage) {
+    assert(!is_compiled_);
     if (usage != RDGTextureUsage::kTransferDst) {
         compiled_.in_textures.emplace_back(texture);
     }
@@ -42,74 +43,76 @@ void RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsage::Type usage) {
             break;
     }
     compiled_.used_textures.emplace_back(usage, texture);
+    return this;
 }
 
-void RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access) {
+RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access) {
+    assert(!is_compiled_);
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
     compiled_.used_buffers.emplace_back(access, buffer);
+    return this;
 }
 
 void RDGPass::Compile() {
 
     assert(!is_compiled_ && "Each pass may only be compiled once.");
-    is_compiled_ = true;
     // No need to compile as we have no shader parameters present
-    if (!shader_param_struct_info_ || !shader_param_data_) {
-        return;
-    }
+    if (shader_param_struct_info_) {
+        assert(shader_param_data_);
+        // Iterate through all shader parameters using reflection
+        for (int i = 0; i < (int)shader_param_struct_info_->cpp_members.size(); i++) {
+            const auto& field = shader_param_struct_info_->cpp_members[i];
+            const void* field_data = static_cast<const char*>(shader_param_data_) + field.cpp_offset;
 
-    // Iterate through all shader parameters using reflection
-    for (int i = 0; i < (int)shader_param_struct_info_->cpp_members.size(); i++) {
-        const auto& field = shader_param_struct_info_->cpp_members[i];
-        const void* field_data = static_cast<const char*>(shader_param_data_) + field.cpp_offset;
-
-        // Check resource type
-        if (field.type == RHIParamType::kSRVTexture) { // SRV
-            RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
-            if (!texture) {
-                // TODO should we log a warning here?
-                continue;
+            // Check resource type
+            if (field.type == RHIParamType::kSRVTexture) { // SRV
+                RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
+                if (!texture) {
+                    // TODO should we log a warning here?
+                    continue;
+                }
+                AddTexture(texture, RDGTextureUsage::kShaderRead);
             }
-            AddTexture(texture, RDGTextureUsage::kShaderRead);
-        }
-        else if (field.type == RHIParamType::kUAVTexture) { // UAV
-            RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
-            if (!texture) {
-                // TODO should we log a warning here?
-                continue;
+            else if (field.type == RHIParamType::kUAVTexture) { // UAV
+                RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
+                if (!texture) {
+                    // TODO should we log a warning here?
+                    continue;
+                }
+                AddTexture(texture, RDGTextureUsage::kShaderReadWrite);
+            } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
+                RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
+                if (!buffer) continue;
+                auto usage = RDGBufferUsage{{}, buffer};
+                AddBuffer(buffer, field.access_flags);
             }
-            AddTexture(texture, RDGTextureUsage::kShaderReadWrite);
-        } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
-            RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
-            if (!buffer) continue;
-            auto usage = RDGBufferUsage{{}, buffer};
-            AddBuffer(buffer, field.access_flags);
-        }
-        else if (field.type == RHIParamType::kUniformBuffer
-            || field.type == RHIParamType::kVertexBuffer
-            || field.type == RHIParamType::kIndexBuffer
-            || field.type == RHIParamType::kDispatchCommand) { // Vertex / index/ dispatch command
-            RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
-            if (!buffer) continue;
-            AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
-        } else if (field.type == RHIParamType::kRenderTarget) {
-            // Render target
-            RDGTexture * texture = *static_cast<RDGTexture* const*>(field_data);
-            if (!texture) continue;
-            auto usage = RDGTextureUsage::kOutputAttachment;
-            if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
-                usage = RDGTextureUsage::kDepthStencilAttachment;
+            else if (field.type == RHIParamType::kUniformBuffer
+                || field.type == RHIParamType::kVertexBuffer
+                || field.type == RHIParamType::kIndexBuffer
+                || field.type == RHIParamType::kDispatchCommand) { // Vertex / index/ dispatch command
+                RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
+                if (!buffer) continue;
+                AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
+            } else if (field.type == RHIParamType::kRenderTarget) {
+                // Render target
+                RDGTexture * texture = *static_cast<RDGTexture* const*>(field_data);
+                if (!texture) continue;
+                auto usage = RDGTextureUsage::kOutputAttachment;
+                if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
+                    usage = RDGTextureUsage::kDepthStencilAttachment;
+                }
+                AddTexture(texture, usage);
+            } else if (field.type == RHIParamType::kVertexAttribute) {
+                // Do nothiong
+            } else if (field.type == RHIParamType::kBasic || field.type == RHIParamType::kStruct) {
+                // Do nothing
+            } else {
+                assert(false && "Unsupported parameter type.");
             }
-            AddTexture(texture, usage);
-        } else if (field.type == RHIParamType::kVertexAttribute) {
-            // Do nothiong
-        } else if (field.type == RHIParamType::kBasic || field.type == RHIParamType::kStruct) {
-            // Do nothing
-        } else {
-            assert(false && "Unsupported parameter type.");
         }
     }
+    is_compiled_ = true;
 }
 
 MI_NAMESPACE_END

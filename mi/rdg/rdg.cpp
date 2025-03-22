@@ -70,13 +70,15 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         for (auto & pass : passes_) {
             // Generic passes have no shader parameters and thus no need to upload uniforms.
             if (pass->shader_param_struct_info_) {
-                auto it = ref_buffer_map_.find(pass->shader_param_data_);
-                if (it == ref_buffer_map_.end()) {
-                    // Create and write to the global buffer if not present
-                    auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, pass->shader_param_struct_info_->size);
-                    WriteUniforms(buffer.Raw(), pass->shader_param_struct_info_, pass->shader_param_data_);
-                    resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
-                    ref_buffer_map_[pass->shader_param_data_] = std::move(buffer);
+                {
+                    auto it = ref_buffer_map_.find(pass->shader_param_data_);
+                    if (it == ref_buffer_map_.end()) {
+                        // Create and write to the global buffer if not present
+                        auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, pass->shader_param_struct_info_->size);
+                        WriteUniforms(buffer.Raw(), pass->shader_param_struct_info_, pass->shader_param_data_);
+                        resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
+                        ref_buffer_map_[pass->shader_param_data_] = std::move(buffer);
+                    }
                 }
                 // Also recursively request all the uniform buffers referenced
                 for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
