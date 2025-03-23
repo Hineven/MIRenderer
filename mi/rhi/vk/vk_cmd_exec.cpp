@@ -101,9 +101,9 @@ void VulkanCommandExecutor::RHICopyTextureToBuffer(RHICommandQueueBase *cmd,
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
     auto src_texture = static_cast<VulkanTexture*>(copy_texture_to_buffer->texture_);
-    auto dst_buffer = static_cast<VulkanBuffer*>(copy_texture_to_buffer->buffer_.buffer);
+    auto dst_buffer = static_cast<VulkanBuffer*>(copy_texture_to_buffer->buffer_);
     auto & region = vk::BufferImageCopy()
-            .setBufferOffset(copy_texture_to_buffer->buffer_.offset)
+            .setBufferOffset(copy_texture_to_buffer->buffer_offset_)
             .setBufferRowLength(copy_texture_to_buffer->dst_tex_width_)
             .setBufferImageHeight(copy_texture_to_buffer->dst_tex_height_)
             .setImageSubresource(vk::ImageSubresourceLayers()

@@ -56,7 +56,8 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             ready_passes.push(i);
         }
     }
-    // Prepare and upload all uniforms
+    // Uniform buffers are handled upon pass execution
+    // Create and upload all uniform buffers. Also, inject usage to passes
     {
         auto WriteUniforms = [&] (RDGBuffer* buffer, const RDGShaderParamStructAndSizeInfo * param_info, const void * param_data) {
             if (buffer && !buffer->IsAllocated()) {
@@ -77,6 +78,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                         auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, pass->shader_param_struct_info_->size);
                         WriteUniforms(buffer.Raw(), pass->shader_param_struct_info_, pass->shader_param_data_);
                         resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
+                        pass->compiled_.used_buffers.emplace_back(RHIGPUAccessFlagBits::kRead, buffer.Raw());
                         ref_buffer_map_[pass->shader_param_data_] = std::move(buffer);
                     }
                 }
@@ -88,6 +90,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                         auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, ref.info->cpp_imported_struct_info.cpp_struct_info->size);
                         WriteUniforms(buffer.Raw(), ref.info->cpp_imported_struct_info.cpp_struct_info, struct_ptr);
                         resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
+                        pass->compiled_.used_buffers.emplace_back(RHIGPUAccessFlagBits::kRead, buffer.Raw());
                         ref_buffer_map_[struct_ptr] = std::move(buffer);
                     }
                 }

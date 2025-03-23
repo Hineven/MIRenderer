@@ -376,7 +376,7 @@ TEST(RHITest, RHITriangle) {
                     RHIGPUAccessFlagBits::kWrite,
                     RHIGPUAccessFlagBits::kRead
             );
-            queue.CopyTextureToBuffer(texture0.Raw(), staging_buf->GetSpan());
+            queue.CopyTextureToBuffer(texture0.Raw(), staging_buf.Raw());
             auto sync = RHI::Get().CreateSyncPoint();
             queue.EnqueueTranslateAndSubmit(sync.Raw());
             sync->Wait();

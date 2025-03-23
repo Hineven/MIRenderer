@@ -224,12 +224,12 @@ public:
 
 class RHICommandCopyTextureToBuffer : public TRHICommand<RHICommandCopyTextureToBuffer> {
 public:
-    RHICommandCopyTextureToBuffer(RHITexture * texture, RHIBufferSpan buffer,
+    RHICommandCopyTextureToBuffer(RHITexture * texture, RHIBuffer * buffer, size_t buffer_offset,
                                   uint32_t mip_level, uint32_t base_layer, uint32_t layer_count,
                                   uint32_t dst_tex_width, uint32_t dst_tex_height,
                                   int src_tex_x, int src_tex_y, int src_tex_z,
                                   uint32_t src_tex_width, uint32_t src_tex_height, uint32_t src_tex_depth)
-        : texture_(texture), buffer_(buffer), mip_level_(mip_level),
+        : texture_(texture), buffer_(buffer), buffer_offset_(buffer_offset), mip_level_(mip_level),
           base_layer_(base_layer), layer_count_(layer_count),
           dst_tex_width_(dst_tex_width), dst_tex_height_(dst_tex_height),
           src_tex_x_(src_tex_x), src_tex_y_(src_tex_y), src_tex_z_(src_tex_z),
@@ -237,7 +237,8 @@ public:
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHITexture * texture_;
-    RHIBufferSpan buffer_;
+    RHIBuffer * buffer_;
+    size_t buffer_offset_;
     uint32_t mip_level_;
     uint32_t base_layer_;
     uint32_t layer_count_;
@@ -502,13 +503,14 @@ public:
     // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
     // in the buffer
     // Unspecified src_tex_width, src_tex_height, src_tex_depth is the same as the texture's dimensions
-    FORCEINLINE void CopyTextureToBuffer (RHITexture * texture, RHIBufferSpan buffer,
+    FORCEINLINE void CopyTextureToBuffer (RHITexture * texture, RHIBuffer * buffer, size_t buffer_offset = 0,
                                     uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1,
                                     uint32_t dst_tex_width = 0, uint32_t dst_tex_height = 0,
                                     int src_tex_x = 0, int src_tex_y = 0, int src_tex_z = 0,
                                     uint32_t src_tex_width = 0, uint32_t src_tex_height = 0, uint32_t src_tex_depth = 0) {
         AddCommand(AllocateCommand<RHICommandCopyTextureToBuffer>(
-                texture, buffer, mip_level, base_layer, layer_count,
+                texture, buffer, buffer_offset,
+                mip_level, base_layer, layer_count,
                 dst_tex_width, dst_tex_height,
                 src_tex_x, src_tex_y, src_tex_z,
                 src_tex_width, src_tex_height, src_tex_depth));

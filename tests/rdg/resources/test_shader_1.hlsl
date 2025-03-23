@@ -7,7 +7,7 @@ RWStructuredBuffer<float4> TestBuffer;
 [numthreads(1, 1, 1)]
 void TestComputeShaderMain () {
     TestTexture[uint2(0, 0)] = TestFloat4;
-    TestTexture[uint2(0, 1)] = float4(TestFloat2, 0, 0);
+    TestTexture[uint2(0, 1)] = float4(TestFloat2, 1, 1);
     TestBuffer[0] = float4(123, 0, 111, 0);
     TestBuffer[1] = TestFloat4;
 }

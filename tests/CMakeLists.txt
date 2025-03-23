@@ -25,7 +25,26 @@ add_test(NAME rhi COMMAND rhi_test)
 
 # RDG
 add_executable(rdg_test rdg/rdg_test.cpp)
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/rdg/resources/test_shader_1.hlsl DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources)
+# Create custom commands to copy the shader file at build time
+file(GLOB SHADER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/rdg/resources/*.hlsl")
+foreach(SHADER_FILE ${SHADER_FILES})
+    get_filename_component(FILENAME ${SHADER_FILE} NAME)
+    add_custom_command(
+            TARGET rdg_test
+            PRE_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${SHADER_FILE}
+            ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources/${FILENAME}
+    )
+endforeach()
+
+# Make sure the destination directory exists
+add_custom_command(
+        TARGET rdg_test
+        PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources/
+)
 # Add resource file to the test target
 target_link_libraries(rdg_test PRIVATE cpptrace::cpptrace infra rhi rdg core ${GTEST_LIBRARIES})
 add_test(NAME rdg COMMAND rdg_test ${CMAKE_CURRENT_SOURCE_DIR}/rdg/resources/test_shader_1.hlsl)

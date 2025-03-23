@@ -174,16 +174,16 @@ void RDGResourcePool::AllocateUniformBuffer(RDGBuffer *buffer) {
 void RDGResourcePool::StageUniformBuffers(RHICommandQueueGraphics &queue) {
     // TODO support multiple stage operations (more than 1 graphs share the same resource pool)
     assert(!buffers_staged_ && "Twice staging uniform buffers is not allowed.");
-    for (int i = 0; i < ((int)rhi_uniform_buffer_index_ - 1); i++) {
+    for (int i = 0; i < (int)rhi_uniform_buffer_index_; i++) {
         queue.CopyBuffer(
             rhi_staging_buffer_references_[i]->GetSpan(),
             rhi_uniform_buffer_references_[i]->GetSpan()
         );
     }
-    if (rhi_uniform_buffer_index_ > 0) {
+    if (rhi_uniform_buffer_references_.size() > 0) {
         queue.CopyBuffer(
-            {rhi_staging_buffer_references_[rhi_uniform_buffer_index_ - 1].Raw(), 0, rhi_uniform_buffer_offset_},
-            {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_ - 1].Raw(), 0, rhi_uniform_buffer_offset_}
+            {rhi_staging_buffer_references_[rhi_uniform_buffer_index_].Raw(), 0, rhi_uniform_buffer_offset_},
+            {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_].Raw(), 0, rhi_uniform_buffer_offset_}
         );
     }
     buffers_staged_ = true;
