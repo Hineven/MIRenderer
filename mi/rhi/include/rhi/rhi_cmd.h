@@ -9,13 +9,13 @@
 
 #include <format>
 #include <array>
+
+#include "rhi_desc.h"
 #include "core/base.h"
 #include "core/util/alloc.h"
-#include "rhi/rhi_common.h"
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_thread.h"
-#include "rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
 

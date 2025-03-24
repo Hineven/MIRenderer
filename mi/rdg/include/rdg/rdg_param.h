@@ -273,7 +273,7 @@ private: \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
         auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, cpp_offset); \
-        param_info->cpp_extra.render_targets_info = new RDGShaderRenderTargetInfo {0xffffffffu, Format}; \
+        param_info.cpp_extra.render_targets_info = new RDGShaderRenderTargetInfo {0xffffffffu, Format}; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \

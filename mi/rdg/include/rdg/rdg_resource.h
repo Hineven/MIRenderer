@@ -80,9 +80,8 @@ public:
     void ReleaseRHI() override;
     FORCEINLINE bool IsAllocated () const { return rhi_buffer_span_.buffer != nullptr; }
     FORCEINLINE RHIBufferSpan GetRHI () const { return rhi_buffer_span_; }
-    // Use this if you want to upload data to a uniform buffer.
-    // Do not use GetRHI().buffer->Map(), that is not a staging buffer, but the uniform buffer itself.
-    FORCEINLINE void * GetStagingMappedPtr () const { return staging_mapped_ptr_; }
+    // Short hand for (std::byte*)GetRHI().buffer->Map() + GetRHI().offset
+    FORCEINLINE void * Map () const { return (std::byte*)rhi_buffer_span_.buffer->Map() + rhi_buffer_span_.offset; }
 protected:
     // If true, RDG resource pool tends to map the buffer to a dedicated RHI buffer.
     // when set, rhi_buffer_span_ should have 0 offset.
@@ -91,8 +90,6 @@ protected:
     // Underlying RHI buffer, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHIBufferSpan rhi_buffer_span_ {};
-    // If the buffer allows staging, this is the mapped pointer.
-    void * staging_mapped_ptr_ {};
 };
 
 typedef TRef<RDGTexture> RDGTextureRef;

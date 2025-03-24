@@ -25,12 +25,16 @@ static RHIBindPipelineParametersDesc UploadShaderParams(RDGPass * pass, RDGShade
             auto struct_ptr = *(void**)((uint8_t*)params + base_info->uniform_buffers_[i].cpp_offset);
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>((int)i);
             auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
-            ret.uniforms[i] = {buffer_ptr->GetRHI(), slot};
+            auto span = buffer_ptr.buffer->GetRHI();
+            span.offset += buffer_ptr.offset;
+            ret.uniforms[i] = {span, slot};
         }
         if (has_globals) {
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>(num_ref_uniform_buffers);
             auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(params);
-            ret.uniforms[num_ref_uniform_buffers] = {buffer_ptr->GetRHI(), slot};
+            auto span = buffer_ptr.buffer->GetRHI();
+            span.offset += buffer_ptr.offset;
+            ret.uniforms[num_ref_uniform_buffers] = {span, slot};
         }
     }
     // Bind storage buffers

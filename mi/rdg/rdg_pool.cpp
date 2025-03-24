@@ -101,8 +101,8 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
-    if (buffer->desc_.usage & RHIBufferUsageFlagBits::kUniform) {
-        // Uniform buffers will not be recycled.
+    if (buffer->desc_.usage & (RHIBufferUsageFlagBits::kUniform | RHIBufferUsageFlagBits::kStaging)) {
+        // Uniform buffers and staging buffers will be recycled in other routines.
         return;
     }
     auto hash = buffer->GetResourceClassHash();
@@ -138,55 +138,60 @@ void RDGResourcePool::RecycleResource(RDGTexture *texture) {
     texture->rhi_texture_ = nullptr;
 }
 
+void RDGResourcePool::NewFrame () {
+    one_time_use_buffer_pool_index_ = (one_time_use_buffer_pool_index_ + 1) % 2;
+    auto FreePool = [&] (OneTimeUseBufferPool & pool) {
+        // Check reference counts.
+        for (auto ref : pool.allocated_buffer_references) {
+            assert(ref->GetRefCount() == 1 && "Resource reference count should be 1 when recycling.");
+        }
+        pool.allocated_buffer_references.clear();
+        pool.buffer_index = 0;
+        pool.buffer_offset = 0;
+    };
+    FreePool(uniforms[one_time_use_buffer_pool_index_]);
+    FreePool(staging[one_time_use_buffer_pool_index_]);
+}
+
 
 void RDGResourcePool::AllocateUniformBuffer(RDGBuffer *buffer) {
     assert(buffer->desc_.usage == RHIBufferUsageFlagBits::kUniform && "This buffer should be (and only be) a uniform buffer.");
     assert(buffer->desc_.size > 0 && "Uniform buffer size should be greater than 0.");
     assert(!buffer->dedicated_ && "Uniform buffers should not be dedicated");
+    AllocateOneTimeUseBuffer(uniforms[one_time_use_buffer_pool_index_], buffer);
+}
+
+void RDGResourcePool::AllocateStagingBuffer(RDGBuffer *buffer) {
+    assert((buffer->desc_.usage | (RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc)
+        == (RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc))
+        && "This buffer should be (and only be) a staging buffer (or with kTransferSrc usage).");
+    assert(buffer->desc_.size > 0 && "Staging buffer size should be greater than 0.");
+    assert(!buffer->dedicated_ && "Staging buffers should not be dedicated");
+    AllocateOneTimeUseBuffer(staging[one_time_use_buffer_pool_index_], buffer);
+}
+
+void RDGResourcePool::AllocateOneTimeUseBuffer(OneTimeUseBufferPool &pool, RDGBuffer *buffer) {
     if (!buffer->IsAllocated()) {
         // Simply allocate the buffer within the uniform buffer pool
         auto size = RoundUp(buffer->desc_.size, C::kUniformBufferAlignment);
         assert((uint32_t)size <= C::kRDGPoolUniformBufferBlockSize && "Uniform buffer size exceeds the maximum size."); // TODO implement a better strategy
-        if (rhi_uniform_buffer_index_ >= rhi_uniform_buffer_references_.size()
-            || rhi_uniform_buffer_offset_ + size > C::kRDGPoolUniformBufferBlockSize) {
-            if (rhi_uniform_buffer_index_ + 1 >= rhi_uniform_buffer_references_.size()) {
+        if (pool.buffer_index >= pool.rhi_pool_buffer_references.size()
+            || pool.buffer_offset + size > C::kRDGPoolUniformBufferBlockSize) {
+            if (pool.buffer_index + 1 >= pool.rhi_pool_buffer_references.size()) {
                 // Running out, allocate a new block
                 auto desc = RHIBufferDesc{.size = C::kRDGPoolUniformBufferBlockSize, .usage = RHIBufferUsageFlagBits::kUniform};
                 auto rhi_buffer = RHI::Get().CreateBuffer(desc);
-                rhi_uniform_buffer_references_.emplace_back(std::move(rhi_buffer));
-                // Also remember to duplicate a new block in the staging buffer pool
-                desc.usage = RHIBufferUsageFlagBits::kTransferSrc | RHIBufferUsageFlagBits::kStaging;
-                auto staging_buffer = RHI::Get().CreateBuffer(desc);
-                staging_buffer->Map();
-                rhi_staging_buffer_references_.emplace_back(std::move(staging_buffer));
+                pool.rhi_pool_buffer_references.emplace_back(std::move(rhi_buffer));
             }
             // Move to the next block
-            rhi_uniform_buffer_index_ = std::min((int)rhi_uniform_buffer_index_ + 1, (int)rhi_uniform_buffer_references_.size() - 1);
-            rhi_uniform_buffer_offset_ = 0;
+            pool.buffer_index  = std::min((int)pool.buffer_index + 1, (int)pool.rhi_pool_buffer_references.size() - 1);
+            pool.buffer_offset = 0;
         }
-        buffer->rhi_buffer_span_ = {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_].Raw(), rhi_uniform_buffer_offset_, size};
-        // Assign the staging buffer for the uniform buffer
-        buffer->staging_mapped_ptr_ = (std::byte*)rhi_staging_buffer_references_[rhi_uniform_buffer_index_]->Map() + rhi_uniform_buffer_offset_;
-        rhi_uniform_buffer_offset_ += (uint32_t)size;
+        buffer->rhi_buffer_span_ = {pool.rhi_pool_buffer_references[pool.buffer_index].Raw(), pool.buffer_offset, size};
+        pool.buffer_offset += (uint32_t)size;
+        // Record the buffer for validation when recycling
+        pool.allocated_buffer_references.emplace_back(buffer);
     }
-}
-
-void RDGResourcePool::StageUniformBuffers(RHICommandQueueGraphics &queue) {
-    // TODO support multiple stage operations (more than 1 graphs share the same resource pool)
-    assert(!buffers_staged_ && "Twice staging uniform buffers is not allowed.");
-    for (int i = 0; i < (int)rhi_uniform_buffer_index_; i++) {
-        queue.CopyBuffer(
-            rhi_staging_buffer_references_[i]->GetSpan(),
-            rhi_uniform_buffer_references_[i]->GetSpan()
-        );
-    }
-    if (rhi_uniform_buffer_references_.size() > 0) {
-        queue.CopyBuffer(
-            {rhi_staging_buffer_references_[rhi_uniform_buffer_index_].Raw(), 0, rhi_uniform_buffer_offset_},
-            {rhi_uniform_buffer_references_[rhi_uniform_buffer_index_].Raw(), 0, rhi_uniform_buffer_offset_}
-        );
-    }
-    buffers_staged_ = true;
 }
 
 MI_NAMESPACE_END

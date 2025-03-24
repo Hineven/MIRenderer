@@ -62,13 +62,17 @@ public:
 
     // Called by RDG before pass execution. Map real RHI resources to the RDG resources.
     void AllocateResource (RDGTexture * texture) ;
+    // Note: uniform and staging buffers should never be transient across frames. The correct behavior
+    // is to allocate them on each frame (if you have demands).
     void AllocateResource (RDGBuffer * buffer) ;
 
-    // Allocate a uniform buffer (and will never be recycled)
+    // Allocate a uniform buffer (and will never be recycled within the frame)
     void AllocateUniformBuffer (RDGBuffer * buffer) ;
+    // Allocate a staging buffer (and will never be recycled within the frame)
+    void AllocateStagingBuffer (RDGBuffer * buffer) ;
 
-    // Transfer all staging buffers to uniform buffers
-    void StageUniformBuffers (RHICommandQueueGraphics & queue) ;
+    // Move to next frame, and free the resources for the previous frame.
+    void NewFrame ();
 
     // Recycle the RDG resources that are no longer used (reference count approaching 0), unlink RHI resources for further reuse.
     void RecycleResource (RDGTexture * texture) ;
@@ -82,14 +86,23 @@ protected:
     // Keep references.
     std::vector<TRef<RHITexture>> rhi_texture_references_;
 
-    // The uniform buffer pool
-    std::vector<TRef<RHIBuffer>> rhi_uniform_buffer_references_;
-    // For each uniform buffer, duplicate a staging buffer for CPU write
-    std::vector<TRef<RHIBuffer>> rhi_staging_buffer_references_;
-    // Current top of the uniform buffer
-    uint32_t rhi_uniform_buffer_index_ {};
-    uint32_t rhi_uniform_buffer_offset_ {};
-    bool buffers_staged_ {};
+    // Some of the buffers have simpler allocation and recycling rules
+    // for performance or synchronization considerations. They may not be transient across frames.
+    // They are not recycled within a frame, and will be recycled after the frame completed
+    // running on GPU. It is designed assuming that no two frames will be concurrently running on the GPU.
+    struct OneTimeUseBufferPool {
+        std::vector<TRef<RHIBuffer>> rhi_pool_buffer_references;
+        // Current top of the uniform buffer
+        uint32_t buffer_index {};
+        uint32_t buffer_offset {};
+        // Upon frame end, all the allocated buffers in the vector should have only 1 reference.
+        // The pool will check for that.
+        std::vector<TRef<RDGBuffer>> allocated_buffer_references;
+    } uniforms[2], staging[2];
+
+    int one_time_use_buffer_pool_index_ {};
+
+    void AllocateOneTimeUseBuffer (OneTimeUseBufferPool & pool, RDGBuffer * buffer) ;
 
     // Map descriptor hash to underlying buffer index
     std::map<uint32_t, std::vector<RHIBuffer*> > rhi_free_buffer_map_;

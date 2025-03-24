@@ -10,7 +10,6 @@
 #include <span>
 #include <string>
 #include <array>
-#include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_types.h"
 #include "core/pixel_format.h"

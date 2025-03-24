@@ -59,45 +59,59 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     // Uniform buffers are handled upon pass execution
     // Create and upload all uniform buffers. Also, inject usage to passes
     {
-        auto WriteUniforms = [&] (RDGBuffer* buffer, const RDGShaderParamStructAndSizeInfo * param_info, const void * param_data) {
-            if (buffer && !buffer->IsAllocated()) {
-                buffer->RequestRHI(pool);
-                auto ptr = buffer->GetStagingMappedPtr();
-                for (auto e : param_info->global_uniforms_) {
-                    FastTinyCopy((std::byte*)ptr + e.shader_offset, (std::byte*)param_data + e.cpp_offset, e.size);
-                }
+        auto WriteUniforms = [&] (void * ptr, const RDGShaderParamStructAndSizeInfo * param_info, const void * param_data) {
+            for (auto e : param_info->global_uniforms_) {
+                FastTinyCopy((std::byte*)ptr + e.shader_offset, (std::byte*)param_data + e.cpp_offset, e.size);
             }
         };
+        size_t all_uniform_buffer_size = 0;
+
         for (auto & pass : passes_) {
             // Generic passes have no shader parameters and thus no need to upload uniforms.
             if (pass->shader_param_struct_info_) {
                 {
-                    auto it = ref_buffer_map_.find(pass->shader_param_data_);
-                    if (it == ref_buffer_map_.end()) {
-                        // Create and write to the global buffer if not present
-                        auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, pass->shader_param_struct_info_->size);
-                        WriteUniforms(buffer.Raw(), pass->shader_param_struct_info_, pass->shader_param_data_);
-                        resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
-                        pass->compiled_.used_buffers.emplace_back(RHIGPUAccessFlagBits::kRead, buffer.Raw());
-                        ref_buffer_map_[pass->shader_param_data_] = std::move(buffer);
+                    auto it = param_ptr_to_uniform_buffer_segment_.find(pass->shader_param_data_);
+                    if (it == param_ptr_to_uniform_buffer_segment_.end()) {
+                        auto aligned_size = RoundUp(pass->shader_param_struct_info_->size, C::kUniformBufferAlignment);
+                        param_ptr_to_uniform_buffer_segment_[pass->shader_param_data_] = {
+                            all_uniform_buffer_size,
+                            pass->shader_param_struct_info_
+                        };
+                        all_uniform_buffer_size += aligned_size;
                     }
                 }
                 // Also recursively request all the uniform buffers referenced
                 for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
                     auto struct_ptr = *(void**)((std::byte*)pass->shader_param_data_ + ref.cpp_offset);
-                    auto it = ref_buffer_map_.find(struct_ptr);
-                    if (it == ref_buffer_map_.end()) {
-                        auto buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, ref.info->cpp_imported_struct_info.cpp_struct_info->size);
-                        WriteUniforms(buffer.Raw(), ref.info->cpp_imported_struct_info.cpp_struct_info, struct_ptr);
-                        resource_accesses_[buffer->GetRHI().buffer] = {RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kWrite};
-                        pass->compiled_.used_buffers.emplace_back(RHIGPUAccessFlagBits::kRead, buffer.Raw());
-                        ref_buffer_map_[struct_ptr] = std::move(buffer);
+                    auto it = param_ptr_to_uniform_buffer_segment_.find(struct_ptr);
+                    if (it == param_ptr_to_uniform_buffer_segment_.end()) {
+                        auto aligned_size = RoundUp(ref.info->cpp_imported_struct_info.cpp_struct_info->size, C::kUniformBufferAlignment);
+                        param_ptr_to_uniform_buffer_segment_[struct_ptr] = {
+                            all_uniform_buffer_size,
+                            ref.info->cpp_imported_struct_info.cpp_struct_info
+                        };
+                        all_uniform_buffer_size += aligned_size;
                     }
                 }
             }
         }
-        // Copy staging buffers to uniform buffers
-        pool->StageUniformBuffers(cmd);
+        // Batch allocate all uniform buffers
+        auto uniform_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, all_uniform_buffer_size);
+        // Staging buffer as well
+        auto staging_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc, all_uniform_buffer_size);
+        uniform_buffer->RequestRHI(pool);
+        staging_buffer->RequestRHI(pool);
+        // Write to staging buffer
+        auto staging_ptr = staging_buffer->Map();
+        for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
+            WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
+        }
+        // Schedule the copy
+        cmd.CopyBuffer(staging_buffer->GetRHI(), uniform_buffer->GetRHI());
+        // Insert a manual barrier
+        cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kAll,
+            RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+        // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
     }
 
     while (!ready_passes.empty()) {
@@ -182,8 +196,5 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         pass.reset();
     }
     cmd.EnqueueTranslateAndSubmit(sync_point);
-    // Release referenced RDG buffers
-    ref_buffer_map_.clear();
-
 }
 MI_NAMESPACE_END

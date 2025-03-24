@@ -13,6 +13,7 @@
 #include "rhi/rhi.h"
 
 MI_NAMESPACE_BEGIN
+struct RDGShaderParamStructAndSizeInfo;
 class RDGShader;
 class RDGPass;
 
@@ -22,13 +23,17 @@ public:
     void Execute (RDGResourcePool * pool, RHISyncPoint * sync_point = nullptr) ;
     friend class RenderGraphBuilder;
 
+    struct RDGUniformBufferPtr {
+        RDGBuffer * buffer {};
+        size_t offset;
+    };
     // Used for running passes to query underlying uniform buffers with parameter struct pointers
-    FORCEINLINE RDGBuffer * GetUniformBufferForParameterStruct (const void * ptr) const {
-        auto it = ref_buffer_map_.find(ptr);
-        if (it == ref_buffer_map_.end()) {
-            return nullptr;
+    FORCEINLINE RDGUniformBufferPtr GetUniformBufferForParameterStruct (const void * ptr) const {
+        auto it = param_ptr_to_uniform_buffer_segment_.find(ptr);
+        if (it == param_ptr_to_uniform_buffer_segment_.end()) {
+            return {};
         }
-        return it->second.Raw();
+        return {uniform_buffer_.Raw(), it->second.offset};
     }
 protected:
     std::vector<std::unique_ptr<RDGPass>> passes_;
@@ -43,10 +48,14 @@ protected:
     // Hold references to resources for exporting (prevent them from being evicted from the pool)
     std::vector<RDGResourceRef> exporting_resources_;
 
-    // Used to query referenced uniform buffer resources according to parameter structs when running the graph
-    // Referenced buffers are not directly created via pass->uniform_buffer_, so we have to manually create them
-    // The map keeps a relation between cpp param struct pointers and the corresponding RDGBuffer
-    std::map<const void*, RDGBufferRef> ref_buffer_map_;
+    struct UniformBufferSegment {
+        size_t offset;
+        const RDGShaderParamStructAndSizeInfo * param_info;
+    };
+    // Used to query uniform buffer offsets according to parameter structs when running the graph.
+    std::map<const void*, UniformBufferSegment> param_ptr_to_uniform_buffer_segment_;
+    // The uniform buffer that holds all the uniform data for all the passes.
+    TRef<RDGBuffer> uniform_buffer_;
 
     // Keep track of previous reosurce accesses, used to place barriers.
     struct ResourceAccess {
