@@ -4,9 +4,9 @@
  * See LICENSE for licensing.
  */
 
-#include "rdg/rdg_pool.h"
-
 #include "rhi/rhi.h"
+#include "rhi/rhi_buffer.h"
+#include "rdg/rdg_pool.h"
 #include <rdg/rdg_resource.h>
 MI_NAMESPACE_BEGIN
 
@@ -22,18 +22,12 @@ TRef<RDGResourcePool> RDGResourcePool::Create() {
     return TRef<RDGResourcePool>(new RDGResourcePool());
 }
 
-
 void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
-    if (buffer->desc_.usage & RHIBufferUsageFlagBits::kUniform) {
-        // Uniform buffer are allocated in a separate pool
-        AllocateUniformBuffer(buffer);
-        return ;
-    }
     // TODO better strategy. Now I'll only implement a simple one
     assert(!buffer->IsAllocated() && "This buffer should not be allocated already.");
     assert(buffer->desc_.size > 0 && "Buffer size should be greater than 0.");
     auto & RHI = RHI::Get();
-    RHIBuffer * allocated_buffer = nullptr;
+    RDGPoolFreeBufferRecord allocated = {};
     size_t requested_size = buffer->GetSize();
     if (buffer->dedicated_) {
         // Allocate a new buffer
@@ -41,7 +35,7 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
         auto rhi_buffer = RHI.CreateBuffer(desc);
         // Round up the size for alignment requirement
         desc.size = RoundUp(desc.size, RDGBuffer::kMinBufferSize);
-        allocated_buffer = rhi_buffer.Raw();
+        allocated = {rhi_buffer.Raw(), RHIGPUAccessFlagBits::kNone};
         rhi_buffer_references_.emplace_back(std::move(rhi_buffer));
     } else {
         if (buffer->desc_.size <= kBufferBlockSize) {
@@ -54,23 +48,23 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
                 desc.size = block_size;
                 int ratio = i - (int)log2(requested_size);
                 if (ratio > kBufferReusingThresholdLog2) {
-                    // Too large to reuse, stop searching
+                    // Too large to reuse, stop searching and allocate a new buffer block
                     break;
                 }
                 auto hash = RDGBuffer::GetResourceClassHash(desc, false);
                 auto & slot = rhi_free_buffer_map_[hash];
                 if (!slot.empty()) {
                     // Found one, allocate it
-                    allocated_buffer = slot.back();
+                    allocated = slot.back();
                     slot.pop_back();
                     break;
                 }
             }
             // Pool memory ran out, allocate a new buffer block
-            if (!allocated_buffer) {
+            if (!allocated.buffer) {
                 desc.size = kBufferBlockSize;
                 auto rhi_buffer = RHI.CreateBuffer(desc);
-                allocated_buffer = rhi_buffer.Raw();
+                allocated = {rhi_buffer.Raw(), RHIGPUAccessFlagBits::kNone};
                 rhi_buffer_references_.emplace_back(std::move(rhi_buffer));
             }
         } else {
@@ -79,35 +73,22 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
             // Round up the size for alignment requirement
             desc.size = RoundUp(desc.size, RDGBuffer::kMinBufferSize);
             auto rhi_buffer = RHI.CreateBuffer(desc);
-            allocated_buffer = rhi_buffer.Raw();
+            allocated = {rhi_buffer.Raw(), RHIGPUAccessFlagBits::kNone};
             rhi_buffer_references_.emplace_back(std::move(rhi_buffer));
         }
     }
-    // Try to split the allocated buffer (if it is too large)
-    // TODO no splitting is present currently. Maybe I'll implement it later.
-    // if (allocated_buffer->GetBufferSize() > buffer->GetSize()) {
-    //     auto desc = buffer->GetDesc();
-    //     desc.size = allocated_buffer->GetBufferSize() - buffer->GetSize();
-    //     // Round down to the nearest power of 2 for insertion
-    //     desc.size = 1ull << (uint32_t)log2(desc.size);
-    //     if (desc.size < RDGBuffer::kMinBufferSize) {
-    //
-    //     }
-    //     auto hash = RDGBuffer::GetResourceClassHash(buffer->GetDesc(), false);
-    //     rhi_free_buffer_map_[hash].push_back(allocated_buffer);
-    //     allocated_buffer = nullptr;
-    // }
-    buffer->rhi_buffer_span_ = {allocated_buffer, 0, buffer->GetSize()};
+    buffer->rhi_buffer_span_ = {allocated.buffer, 0, buffer->GetSize()};
+    buffer->usage_ = allocated.last_usage;
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
-    if (buffer->desc_.usage & (RHIBufferUsageFlagBits::kUniform | RHIBufferUsageFlagBits::kStaging)) {
-        // Uniform buffers and staging buffers will be recycled in other routines.
-        return;
-    }
     auto hash = buffer->GetResourceClassHash();
-    rhi_free_buffer_map_[hash].push_back(buffer->rhi_buffer_span_.buffer);
+    rhi_free_buffer_map_[hash].push_back({
+        buffer->rhi_buffer_span_.buffer,
+        buffer->usage_
+    });
     buffer->rhi_buffer_span_ = {};
+    buffer->usage_ = {};
 }
 
 void RDGResourcePool::AllocateResource(RDGTexture *texture) {
@@ -115,83 +96,31 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
     auto & RHI = RHI::Get();
     auto hash = texture->GetResourceClassHash();
     auto & slot = rhi_free_texture_map_[hash];
-    RHITexture * allocated_texture = nullptr;
+    RDGPoolFreeTextureRecord allocated = {};
     if (slot.empty()) {
         // Allocate a new texture
         auto desc = texture->GetDesc();
         auto rhi_texture = RHI.CreateTexture(desc);
-        allocated_texture = rhi_texture.Raw();
+        allocated = {rhi_texture.Raw(), RDGTextureUsageType::kNone};
         rhi_texture_references_.emplace_back(std::move(rhi_texture));
     }
     else {
-        allocated_texture = slot.back();
+        allocated = slot.back();
         slot.pop_back();
     }
     
-    texture->rhi_texture_ = allocated_texture;
+    texture->rhi_texture_ = allocated.texture;
+    texture->usage_ = allocated.last_usage;
 }
 
 void RDGResourcePool::RecycleResource(RDGTexture *texture) {
     assert(texture->IsAllocated() && "This texture should be allocated.");
     auto hash = texture->GetResourceClassHash();
-    rhi_free_texture_map_[hash].push_back(texture->rhi_texture_);
+    rhi_free_texture_map_[hash].emplace_back(texture->rhi_texture_, texture->usage_);
     texture->rhi_texture_ = nullptr;
-}
-
-void RDGResourcePool::NewFrame () {
-    one_time_use_buffer_pool_index_ = (one_time_use_buffer_pool_index_ + 1) % 2;
-    auto FreePool = [&] (OneTimeUseBufferPool & pool) {
-        // Check reference counts.
-        for (auto ref : pool.allocated_buffer_references) {
-            assert(ref->GetRefCount() == 1 && "Resource reference count should be 1 when recycling.");
-        }
-        pool.allocated_buffer_references.clear();
-        pool.buffer_index = 0;
-        pool.buffer_offset = 0;
-    };
-    FreePool(uniforms[one_time_use_buffer_pool_index_]);
-    FreePool(staging[one_time_use_buffer_pool_index_]);
+    texture->usage_ = {};
 }
 
 
-void RDGResourcePool::AllocateUniformBuffer(RDGBuffer *buffer) {
-    assert(buffer->desc_.usage == RHIBufferUsageFlagBits::kUniform && "This buffer should be (and only be) a uniform buffer.");
-    assert(buffer->desc_.size > 0 && "Uniform buffer size should be greater than 0.");
-    assert(!buffer->dedicated_ && "Uniform buffers should not be dedicated");
-    AllocateOneTimeUseBuffer(uniforms[one_time_use_buffer_pool_index_], buffer);
-}
-
-void RDGResourcePool::AllocateStagingBuffer(RDGBuffer *buffer) {
-    assert((buffer->desc_.usage | (RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc)
-        == (RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc))
-        && "This buffer should be (and only be) a staging buffer (or with kTransferSrc usage).");
-    assert(buffer->desc_.size > 0 && "Staging buffer size should be greater than 0.");
-    assert(!buffer->dedicated_ && "Staging buffers should not be dedicated");
-    AllocateOneTimeUseBuffer(staging[one_time_use_buffer_pool_index_], buffer);
-}
-
-void RDGResourcePool::AllocateOneTimeUseBuffer(OneTimeUseBufferPool &pool, RDGBuffer *buffer) {
-    if (!buffer->IsAllocated()) {
-        // Simply allocate the buffer within the uniform buffer pool
-        auto size = RoundUp(buffer->desc_.size, C::kUniformBufferAlignment);
-        assert((uint32_t)size <= C::kRDGPoolUniformBufferBlockSize && "Uniform buffer size exceeds the maximum size."); // TODO implement a better strategy
-        if (pool.buffer_index >= pool.rhi_pool_buffer_references.size()
-            || pool.buffer_offset + size > C::kRDGPoolUniformBufferBlockSize) {
-            if (pool.buffer_index + 1 >= pool.rhi_pool_buffer_references.size()) {
-                // Running out, allocate a new block
-                auto desc = RHIBufferDesc{.size = C::kRDGPoolUniformBufferBlockSize, .usage = RHIBufferUsageFlagBits::kUniform};
-                auto rhi_buffer = RHI::Get().CreateBuffer(desc);
-                pool.rhi_pool_buffer_references.emplace_back(std::move(rhi_buffer));
-            }
-            // Move to the next block
-            pool.buffer_index  = std::min((int)pool.buffer_index + 1, (int)pool.rhi_pool_buffer_references.size() - 1);
-            pool.buffer_offset = 0;
-        }
-        buffer->rhi_buffer_span_ = {pool.rhi_pool_buffer_references[pool.buffer_index].Raw(), pool.buffer_offset, size};
-        pool.buffer_offset += (uint32_t)size;
-        // Record the buffer for validation when recycling
-        pool.allocated_buffer_references.emplace_back(buffer);
-    }
-}
 
 MI_NAMESPACE_END

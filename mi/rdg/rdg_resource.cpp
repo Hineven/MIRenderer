@@ -8,9 +8,9 @@
 
 #include <core/crc.h>
 #include <rdg/rdg_pool.h>
+#include <rhi/rhi_buffer.h>
 MI_NAMESPACE_BEGIN
-
-RDGResource::RDGResource() {}
+    RDGResource::RDGResource() {}
 
 RDGResource::~RDGResource() {}
 
@@ -53,9 +53,13 @@ void RDGBuffer::ReleaseRHI() {
         pool_->RecycleResource(this);
         rhi_buffer_span_ = {};
         pool_ = nullptr;
-        staging_mapped_ptr_ = nullptr;
     }
 }
+
+void *RDGBuffer::Map() const {
+    return (std::byte*)rhi_buffer_span_.buffer->Map() + rhi_buffer_span_.offset;
+}
+
 
 uint32_t RDGBuffer::GetResourceClassHash () const {
     return RDGBuffer::GetResourceClassHash(desc_, dedicated_);

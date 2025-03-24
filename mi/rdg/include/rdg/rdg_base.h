@@ -60,6 +60,17 @@ enum class RDGPassType {
 
 const char * ToCString (RDGPassType type) ;
 
+enum class RDGTextureUsageType : uint32_t {
+    kNone = 0,
+    kTransferDst,
+    kTransferSrc,
+    kShaderRead,
+    // Storage image
+    kShaderReadWrite,
+    kOutputAttachment,
+    kDepthStencilAttachment,
+    kMax
+};
 
 class RDGPass;
 class RHICommandQueueGraphics;

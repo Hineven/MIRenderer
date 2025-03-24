@@ -16,7 +16,6 @@ MI_NAMESPACE_BEGIN
 class RHITexture;
 class RHIBuffer;
 
-
 // RDG resources allocated from the pool will keep a reference to it, preventing it from being released.
 class RDGResourcePool : public RefCounted<false>, public NonMovable, public NonCopyable {
 protected:
@@ -66,49 +65,36 @@ public:
     // is to allocate them on each frame (if you have demands).
     void AllocateResource (RDGBuffer * buffer) ;
 
-    // Allocate a uniform buffer (and will never be recycled within the frame)
-    void AllocateUniformBuffer (RDGBuffer * buffer) ;
-    // Allocate a staging buffer (and will never be recycled within the frame)
-    void AllocateStagingBuffer (RDGBuffer * buffer) ;
-
-    // Move to next frame, and free the resources for the previous frame.
-    void NewFrame ();
-
     // Recycle the RDG resources that are no longer used (reference count approaching 0), unlink RHI resources for further reuse.
     void RecycleResource (RDGTexture * texture) ;
     void RecycleResource (RDGBuffer * buffer) ;
 
 protected:
 
+    struct RDGPoolFreeBufferRecord {
+        RHIBuffer * buffer;
+        // Keep the last access of the buffer, used to initialize the RDG buffer usage
+        // when it's allocated.
+        RHIGPUAccessFlags last_usage;
+    };
+
+    // Map descriptor hash to underlying buffer index
+    std::map<uint32_t, std::vector<RDGPoolFreeBufferRecord> > rhi_free_buffer_map_;
+    // Keep references of all created RHI buffers. Dont let them be released.
+    std::vector<TRef<RHIBuffer>> rhi_buffer_references_;
+
+    struct RDGPoolFreeTextureRecord {
+        RHITexture * texture;
+        // Keep the last access of the texture, used to initialize the RDG texture usage
+        // when it's allocated.
+        RDGTextureUsageType last_usage;
+    };
+
     // Map descriptor hash to underlying texture index
-    std::map<uint32_t, std::vector<RHITexture*> > rhi_free_texture_map_;
-    std::vector<RHITexture*> rhi_allocated_textures_;
+    std::map<uint32_t, std::vector<RDGPoolFreeTextureRecord> > rhi_free_texture_map_;
     // Keep references.
     std::vector<TRef<RHITexture>> rhi_texture_references_;
 
-    // Some of the buffers have simpler allocation and recycling rules
-    // for performance or synchronization considerations. They may not be transient across frames.
-    // They are not recycled within a frame, and will be recycled after the frame completed
-    // running on GPU. It is designed assuming that no two frames will be concurrently running on the GPU.
-    struct OneTimeUseBufferPool {
-        std::vector<TRef<RHIBuffer>> rhi_pool_buffer_references;
-        // Current top of the uniform buffer
-        uint32_t buffer_index {};
-        uint32_t buffer_offset {};
-        // Upon frame end, all the allocated buffers in the vector should have only 1 reference.
-        // The pool will check for that.
-        std::vector<TRef<RDGBuffer>> allocated_buffer_references;
-    } uniforms[2], staging[2];
-
-    int one_time_use_buffer_pool_index_ {};
-
-    void AllocateOneTimeUseBuffer (OneTimeUseBufferPool & pool, RDGBuffer * buffer) ;
-
-    // Map descriptor hash to underlying buffer index
-    std::map<uint32_t, std::vector<RHIBuffer*> > rhi_free_buffer_map_;
-    std::vector<RHIBuffer*> rhi_allocated_buffers_;
-    // Keep references.
-    std::vector<TRef<RHIBuffer>> rhi_buffer_references_;
 
 };
 

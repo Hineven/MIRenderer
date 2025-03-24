@@ -16,15 +16,7 @@ class RenderGraph;
 class RDGPass : public NonMovable, public NonCopyable {
 public:
     struct RDGTextureUsage {
-        enum Type {
-            kTransferDst,
-            kTransferSrc,
-            kShaderRead,
-            // Storage image
-            kShaderReadWrite,
-            kOutputAttachment,
-            kDepthStencilAttachment
-        } usage;
+        RDGTextureUsageType usage;
         RDGTextureRef texture;
     };
     struct RDGBufferUsage {
@@ -45,7 +37,7 @@ protected:
     );
 public:
 
-    RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsage::Type usage) ;
+    RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsageType usage) ;
     RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
 
 

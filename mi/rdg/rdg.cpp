@@ -10,6 +10,7 @@
 #include "rdg/rdg.h"
 
 #include <rdg/rdg_param.h>
+#include <rhi/rhi_buffer.h>
 
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_pool.h"
@@ -43,8 +44,54 @@ FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restri
     }
 }
 
-void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
+static RHIGPUAccessFlags GetTextureUsageAccess (RDGTextureUsageType usage) {
+    if (usage == RDGTextureUsageType::kTransferSrc) {
+        return RHIGPUAccessFlagBits::kRead;
+    } else if (usage == RDGTextureUsageType::kTransferDst) {
+        return RHIGPUAccessFlagBits::kWrite;
+    } else if (usage == RDGTextureUsageType::kShaderRead) {
+        // The barrier-chain rule allows us to replace the access mask with the new one.
+        // For example, Write, Read, Read produces a W-R barrier and a R-R barrier.
+        // The R-R barrier may be incorrect if it is standalone, but it is correct if it's following the
+        // W-R barrier (chaining up, see Vulkan Barrier Chain).
+        return RHIGPUAccessFlagBits::kRead;
+    } else if (usage == RDGTextureUsageType::kShaderReadWrite) {
+        return RHIGPUAccessFlagBits::kAll;
+    } else if (usage == RDGTextureUsageType::kOutputAttachment) {
+        // Read for (potentially) alpha blending
+        return RHIGPUAccessFlagBits::kAll;
+    } else if (usage == RDGTextureUsageType::kDepthStencilAttachment) {
+        return RHIGPUAccessFlagBits::kAll;
+    } else if (usage == RDGTextureUsageType::kNone) {
+        return RHIGPUAccessFlagBits::kNone;
+    } else {
+        assert(false);
+        return RHIGPUAccessFlagBits::kNone; // Default return to avoid compiler warnings
+    }
+}
 
+static RHITextureLayoutType GetTextureLayout (RDGTextureUsageType usage) {
+    if (usage == RDGTextureUsageType::kTransferSrc) {
+        return RHITextureLayoutType::kTransferSrcOptimal;
+    } else if (usage == RDGTextureUsageType::kTransferDst) {
+        return RHITextureLayoutType::kTransferDstOptimal;
+    } else if (usage == RDGTextureUsageType::kShaderRead) {
+        return RHITextureLayoutType::kShaderReadOnlyOptimal;
+    } else if (usage == RDGTextureUsageType::kShaderReadWrite) {
+        return RHITextureLayoutType::kGeneral;
+    } else if (usage == RDGTextureUsageType::kOutputAttachment) {
+        return RHITextureLayoutType::kColorAttachment;
+    } else if (usage == RDGTextureUsageType::kDepthStencilAttachment) {
+        return RHITextureLayoutType::kDepthStencilAttachment;
+    } else if (usage == RDGTextureUsageType::kNone) {
+        return RHITextureLayoutType::kUndefined;
+    } else {
+        assert(false);
+        return RHITextureLayoutType::kUndefined; // Default return to avoid compiler warnings
+    }
+}
+
+void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     // Directly use the graphics queue.
     auto & RHI = RHI::Get();
@@ -96,18 +143,21 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             }
         }
         // Batch allocate all uniform buffers
-        auto uniform_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, all_uniform_buffer_size);
-        // Staging buffer as well
-        auto staging_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc, all_uniform_buffer_size);
-        uniform_buffer->RequestRHI(pool);
-        staging_buffer->RequestRHI(pool);
+        uniform_buffer_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, all_uniform_buffer_size);
+
+        // Staging buffer as well, here we directly create from RHI because it relates to GPU-CPU synchronization,
+        // and thus it should not reside in the RDG resource pool for further reusing and recycling.
+        // RHI layer recycling mechanism will take care of it.
+        auto staging_buffer = RHI::Get().CreateBuffer(
+            all_uniform_buffer_size, RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc);
+        uniform_buffer_->RequestRHI(pool);
         // Write to staging buffer
         auto staging_ptr = staging_buffer->Map();
         for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
             WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
         }
         // Schedule the copy
-        cmd.CopyBuffer(staging_buffer->GetRHI(), uniform_buffer->GetRHI());
+        cmd.CopyBuffer(staging_buffer->GetSpan(), uniform_buffer_->GetRHI());
         // Insert a manual barrier
         cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kAll,
             RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
@@ -135,36 +185,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & [i, texture_use] : std::views::enumerate(pass->compiled_.used_textures)) {
                 textures[i] = texture_use.texture->GetRHI();
-                auto & old_state = resource_accesses_[texture_use.texture->GetRHI()];
-                src_accesses[i] = old_state.access;
-                if (texture_use.usage == RDGPass::RDGTextureUsage::kTransferSrc) {
-                    layouts[i] = RHITextureLayoutType::kTransferSrcOptimal;
-                    dst_accesses[i] = RHIGPUAccessFlagBits::kRead;
-                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kTransferDst) {
-                    layouts[i] = RHITextureLayoutType::kTransferDstOptimal;
-                    dst_accesses[i] = RHIGPUAccessFlagBits::kWrite;
-                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderRead) {
-                    layouts[i] = RHITextureLayoutType::kShaderReadOnlyOptimal;
-                    dst_accesses[i] = RHIGPUAccessFlagBits::kRead;
-                    // The barrier-chain rule allows us to replace the access mask with the new one.
-                    // For example, Write, Read, Read produces a W-R barrier and a R-R barrier.
-                    // The R-R barrier may be incorrect if it is standalone, but it is correct if it's following the
-                    // W-R barrier (chaining up, see Vulkan Barrier Chain).
-                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kShaderReadWrite) {
-                    layouts[i] = RHITextureLayoutType::kGeneral;
-                    dst_accesses[i] = RHIGPUAccessFlagBits::kAll;
-                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kOutputAttachment) {
-                    layouts[i] = RHITextureLayoutType::kColorAttachment;
-                    // Read for (potentially) alpha blending
-                    dst_accesses[i] = RHIGPUAccessFlagBits::kAll;
-                } else if (texture_use.usage == RDGPass::RDGTextureUsage::kDepthStencilAttachment) {
-                    layouts[i] = RHITextureLayoutType::kDepthStencilAttachment;
-                    dst_accesses[i] = RHIGPUAccessFlagBits::kAll;
-                } else {
-                    assert(false);
-                }
-                old_state.access = dst_accesses[i];
-                old_state.stages = new_stages;
+                src_accesses[i] = GetTextureUsageAccess(texture_use.texture->GetLastUsage());
+                layouts[i] = GetTextureLayout(texture_use.usage);
+                dst_accesses[i] = GetTextureUsageAccess(texture_use.usage);
+                texture_use.texture->Use(texture_use.usage);
             }
             cmd.TextureBarriers((uint32_t)num_barriers, textures, layouts, new_stages, src_accesses, dst_accesses);
         }
@@ -174,11 +198,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & [i, buffer_use] : std::views::enumerate(pass->compiled_.used_buffers)) {
-                auto & old_state = resource_accesses_[buffer_use.buffer->GetRHI().buffer];
                 buffers[i] = buffer_use.buffer->GetRHI();
-                src_accesses[i] = old_state.access;
-                old_state.access = buffer_use.access;
+                src_accesses[i] = buffer_use.buffer->GetLastUsage();
                 dst_accesses[i] = buffer_use.access;
+                buffer_use.buffer->Use(buffer_use.access);
             }
             cmd.BufferBarriers((uint32_t)num_barriers, buffers, new_stages, src_accesses, dst_accesses);
         }

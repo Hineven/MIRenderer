@@ -39,11 +39,17 @@ public:
     void ReleaseRHI() override;
     FORCEINLINE bool IsAllocated () const { return rhi_texture_ != nullptr; }
     FORCEINLINE RHITexture * GetRHI () const { return rhi_texture_; }
+
+    FORCEINLINE RDGTextureUsageType GetLastUsage () const { return usage_; }
+    FORCEINLINE void Use (RDGTextureUsageType usage) { usage_ = usage; }
+
 protected:
     RHITextureDesc desc_ {};
     // Underlying RHI texture, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHITexture * rhi_texture_ {};
+    // Track the last access of the texture, used for barrier placement.
+    RDGTextureUsageType usage_ {};
 };
 
 class RDGBuffer : public RDGResource {
@@ -80,8 +86,12 @@ public:
     void ReleaseRHI() override;
     FORCEINLINE bool IsAllocated () const { return rhi_buffer_span_.buffer != nullptr; }
     FORCEINLINE RHIBufferSpan GetRHI () const { return rhi_buffer_span_; }
+
+    FORCEINLINE RHIGPUAccessFlags GetLastUsage () const { return usage_; }
+    FORCEINLINE void Use (RHIGPUAccessFlags usage) { usage_ = usage; }
+
     // Short hand for (std::byte*)GetRHI().buffer->Map() + GetRHI().offset
-    FORCEINLINE void * Map () const { return (std::byte*)rhi_buffer_span_.buffer->Map() + rhi_buffer_span_.offset; }
+    void * Map () const ;
 protected:
     // If true, RDG resource pool tends to map the buffer to a dedicated RHI buffer.
     // when set, rhi_buffer_span_ should have 0 offset.
@@ -90,6 +100,8 @@ protected:
     // Underlying RHI buffer, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHIBufferSpan rhi_buffer_span_ {};
+    // Track the last access of the buffer, used for barrier placement.
+    RHIGPUAccessFlags usage_ {};
 };
 
 typedef TRef<RDGTexture> RDGTextureRef;

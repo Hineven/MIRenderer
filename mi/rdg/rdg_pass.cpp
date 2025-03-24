@@ -26,16 +26,16 @@ RDGPass::~RDGPass() {
     printf("Pass destruction\n");
 }
 
-RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsage::Type usage) {
+RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage) {
     assert(!is_compiled_);
-    if (usage != RDGTextureUsage::kTransferDst) {
+    if (usage != RDGTextureUsageType::kTransferDst) {
         compiled_.in_textures.emplace_back(texture);
     }
     switch (usage) {
-        case RDGTextureUsage::kShaderReadWrite:
-        case RDGTextureUsage::kOutputAttachment:
-        case RDGTextureUsage::kDepthStencilAttachment:
-        case RDGTextureUsage::kTransferDst:
+        case RDGTextureUsageType::kShaderReadWrite:
+        case RDGTextureUsageType::kOutputAttachment:
+        case RDGTextureUsageType::kDepthStencilAttachment:
+        case RDGTextureUsageType::kTransferDst:
             compiled_.out_textures.emplace_back(texture);
             break;
         default:
@@ -72,7 +72,7 @@ void RDGPass::Compile() {
                     // TODO should we log a warning here?
                     continue;
                 }
-                AddTexture(texture, RDGTextureUsage::kShaderRead);
+                AddTexture(texture, RDGTextureUsageType::kShaderRead);
             }
             else if (field.type == RHIParamType::kUAVTexture) { // UAV
                 RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
@@ -80,7 +80,7 @@ void RDGPass::Compile() {
                     // TODO should we log a warning here?
                     continue;
                 }
-                AddTexture(texture, RDGTextureUsage::kShaderReadWrite);
+                AddTexture(texture, RDGTextureUsageType::kShaderReadWrite);
             } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
                 RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
                 if (!buffer) continue;
@@ -98,9 +98,9 @@ void RDGPass::Compile() {
                 // Render target
                 RDGTexture * texture = *static_cast<RDGTexture* const*>(field_data);
                 if (!texture) continue;
-                auto usage = RDGTextureUsage::kOutputAttachment;
+                auto usage = RDGTextureUsageType::kOutputAttachment;
                 if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
-                    usage = RDGTextureUsage::kDepthStencilAttachment;
+                    usage = RDGTextureUsageType::kDepthStencilAttachment;
                 }
                 AddTexture(texture, usage);
             } else if (field.type == RHIParamType::kVertexAttribute) {
