@@ -54,10 +54,16 @@ protected:
 
 class RDGBuffer : public RDGResource {
 protected:
-    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size) : desc_({size, usage}) {}
+    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) :
+    desc_({size, usage}), dedicated_(dedicated) {
+        if (!no_warning && ((usage & RHIBufferUsageFlagBits::kStaging) || (usage & RHIBufferUsageFlagBits::kReadback))) {
+            MI_LOG(MIInfraLogType::kWarning, "We suggest using RHI directly with staging and readback buffers (fire and forgot)."
+                                             "Otherwise you may carefully handle their lifetimes when performing GPU-CPU data-transactions.");
+        }
+    }
 public:
-    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size) {
-        return TRef<RDGBuffer>(new RDGBuffer(usage, size));
+    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) {
+        return TRef<RDGBuffer>(new RDGBuffer(usage, size, dedicated, no_warning));
     }
     constexpr static uint32_t kMinBufferSizeLog2 = 10;
     constexpr static uint32_t kMinBufferSize = 1 << kMinBufferSizeLog2;

@@ -151,8 +151,10 @@ void DestroyInfra () ;
 
 #ifndef NDEBUG
 #define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::exception("assertion failure.");}}while(false)
+#define mi_warning(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kWarning, fmt, ##__VA_ARGS__); }}while(false)
 #else
 #define mi_assert(cond, msg)
+#define mi_warning(cond, msg)
 #endif
 
 template<typename T>

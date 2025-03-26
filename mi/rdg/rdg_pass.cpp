@@ -94,15 +94,19 @@ void RDGPass::Compile() {
                 RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
                 if (!buffer) continue;
                 AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
-            } else if (field.type == RHIParamType::kRenderTarget) {
-                // Render target
-                RDGTexture * texture = *static_cast<RDGTexture* const*>(field_data);
-                if (!texture) continue;
-                auto usage = RDGTextureUsageType::kOutputAttachment;
-                if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
-                    usage = RDGTextureUsageType::kDepthStencilAttachment;
+            } else if (field.type == RHIParamType::kRenderPass) {
+                // Render pass
+                auto ptr = *static_cast<void* const*>(field_data);
+                auto pass_info = field.cpp_imported_struct_info.cpp_struct_info;
+                for (auto e : pass_info->render_targets_) {
+                    RDGTexture * texture = *(RDGTexture**)((std::byte*)ptr + e.cpp_offset);
+                    if (!texture) continue;
+                    auto usage = RDGTextureUsageType::kOutputAttachment;
+                    if (UINT32_MAX == e.info->cpp_extra.render_targets_info->target_index) {
+                        usage = RDGTextureUsageType::kDepthStencilAttachment;
+                    }
+                    AddTexture(texture, usage);
                 }
-                AddTexture(texture, usage);
             } else if (field.type == RHIParamType::kVertexAttribute) {
                 // Do nothiong
             } else if (field.type == RHIParamType::kBasic || field.type == RHIParamType::kStruct) {

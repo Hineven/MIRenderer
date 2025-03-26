@@ -13,7 +13,9 @@
 
 MI_NAMESPACE_BEGIN
 
-static RHIBindPipelineParametersDesc UploadShaderParams(RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue, const RDGShaderParamStructAndSizeInfo * base_info, void * params) {
+static RHIBindPipelineParametersDesc UploadShaderParams(
+    RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
+    const RDGShaderParamStructAndSizeInfo * base_info, const void * params) {
     RHIBindPipelineParametersDesc ret = {};
     // Bind uniform buffers
     bool has_globals = base_info->global_uniforms_.size() > 0;
@@ -64,17 +66,70 @@ static RHIBindPipelineParametersDesc UploadShaderParams(RDGPass * pass, RDGShade
             ret.srvs[i] = {texture_ptr->GetRHI(), slot};
         }
     }
-    // TODO Bind samplers, etc...
+    // TODO bind samplers, as, etc...
     return ret;
 }
 
 void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
-    const RDGShaderParamStructAndSizeInfo * info, void * params, int x, int y, int z) {
+    const RDGShaderParamStructAndSizeInfo * info, const void * params, int x, int y, int z) {
     auto desc = UploadShaderParams(pass, shader, queue, info, params);
     queue.BindPipeline(shader->compute_pipeline_.Raw());
     queue.BindPipelineParameters(RHIBindPointType::kCompute, desc);
     queue.Dispatch(x, y, z);
 }
 
+void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void *params,
+    int vertex_count, int instance_count, int first_vertex, int first_instance) {
+    auto desc = UploadShaderParams(pass, graphics_shader, queue, info, params);
+    queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw());
+    queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc);
+    if (!info->vertex_buffers_.empty()) {
+        for (auto e : info->vertex_buffers_) {
+            auto ptr = (RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset);
+            if (ptr) {
+                queue.BindVertexBuffer(
+                    e.info->cpp_extra.vertex_buffer_info->index,
+                    ((RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset))->GetRHI()
+                );
+            } else {
+                MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null vertex buffer for paramter '{}'. Draw cancelled.",
+                    graphics_shader->class_registry_->name, e.info->name);
+                // cancel the draw
+                return ;
+            }
+        }
+    }
+    RHIDrawDesc ds {};
+    if (info->renderpass_.info) {
+        auto pass_params = *(void**)((std::byte*)params + info->renderpass_.cpp_offset);
+        auto pass_info = info->renderpass_.info->cpp_imported_struct_info.cpp_struct_info;
+        for (auto [i, e] : std::views::enumerate(pass_info->render_targets_)) {
+            auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)pass_params + e.cpp_offset);
+            RHITexture * to_bound = nullptr;
+            if (param.texture == nullptr) {
+                MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null render target for paramter '{}'. It will not be drawn.",
+                    graphics_shader->class_registry_->name, e.info->name);
+            } else {
+                mi_warning(param.texture->GetDesc().usage & RHITextureUsageFlagBits::kRenderTarget,
+                    "Shader {}: Assigned render target texture for {} is not created with kRenderTarget usage.",
+                    graphics_shader->class_registry_->name, e.info->name);
+                to_bound = param.texture->GetRHI();
+            }
+            ds.SetAttachment(
+                e.info->cpp_extra.render_targets_info->target_index, to_bound,
+                param.load_op, param.store_op, param.clear_value
+            );
+            if (e.info->cpp_extra.render_targets_info->target_index == -1) {
+                ds.SetDepthStencilAttachment(to_bound, param.load_op, param.store_op, param.clear_value);
+            }
+        }
+    }
+    queue.UpdateDrawState(ds);
+    // TODO multi draw in a single render pass support.
+    queue.BeginRendering();
+    queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);\
+    queue.EndRendering();
+}
 
 MI_NAMESPACE_END

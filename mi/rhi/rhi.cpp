@@ -9,6 +9,7 @@
 #include "rhi/rhi_cmd.h"
 #include "rhi_bindless.h"
 #include "rhi/rhi_texture.h"
+#include "rhi/rhi_buffer.h"
 
 // Import different kinds of RHI implementations
 #include "vk/vk_rhi_export.h"
@@ -18,6 +19,10 @@ MI_NAMESPACE_BEGIN
 RHITextureRef RHI::CreateTexture(RHITextureType type, RHITextureDimensions dimensions,
     PixelFormatType format, RHITextureUsageFlags usage, uint32_t mip_levels, uint32_t array_layers) {
     return CreateTexture({type, dimensions, mip_levels, array_layers, format, usage});
+}
+
+RHIBufferRef RHI::CreateBuffer(size_t size, RHIBufferUsageFlags type) {
+    return CreateBuffer({size, type});
 }
 
 

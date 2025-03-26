@@ -10,6 +10,8 @@
 #include <span>
 #include <string>
 #include <array>
+#include <glm/detail/qualifier.hpp>
+
 #include "rhi/rhi_fwd.h"
 #include "rhi_types.h"
 #include "core/pixel_format.h"
@@ -84,8 +86,9 @@ struct RHIColorAttachmentDesc {
 struct RHIDepthStencilAttachmentDesc {
     // Unknown for no depth stencil attachment
     PixelFormatType format {PixelFormatType::kUnknown};
-    RHILoadOpType load_op;
-    RHIStoreOpType store_op;
+    // Load and store ops are dynamic (in render pass via render begin command)
+    // RHILoadOpType load_op;
+    // RHIStoreOpType store_op;
 };
 
 struct RHIGraphicsPipelineDesc {
@@ -331,6 +334,11 @@ struct RHIDrawDesc {
     // Framebuffer attachment store ops
     RHIStoreOpType store_ops[C::kRHIMaxNumFramebufferAttachments] {};
 
+    RHITexture * depth_stencil_attachment {};
+    std::array<float, 4> depth_stencil_clear_value {};
+    RHILoadOpType depth_stencil_load_op {};
+    RHIStoreOpType depth_stencil_store_op {};
+
     FORCEINLINE void SetClearValues(std::array<float, 4> in_clear_values[C::kRHIMaxNumFramebufferAttachments]) {
         for(int i = 0; i < C::kRHIMaxNumFramebufferAttachments; ++i) {
             clear_values[i] = in_clear_values[i];
@@ -369,11 +377,25 @@ struct RHIDrawDesc {
     }
     FORCEINLINE void SetAttachment(uint32_t index, RHITexture * texture,
                                    RHILoadOpType load_op = RHILoadOpType::kClear,
-                                   RHIStoreOpType store_op = RHIStoreOpType::kStore) {
+                                   RHIStoreOpType store_op = RHIStoreOpType::kStore,
+                                   std::array<float, 4> clear_value = {0, 0, 0, 1}) {
         attachments[index] = texture;
         load_ops[index] = load_op;
         store_ops[index] = store_op;
         num_framebuffer_attachments_ = std::max(num_framebuffer_attachments_, index + 1);
+        clear_values[index] = clear_value;
+    }
+    FORCEINLINE void SetDepthStencilAttachment (RHITexture * texture,
+        RHILoadOpType load_op = RHILoadOpType::kClear,
+        RHIStoreOpType store_op = RHIStoreOpType::kStore,
+        std::array<float, 4> clear_value = {0, 0, 0, 1}) {
+        depth_stencil_attachment = texture;
+        depth_stencil_load_op = load_op;
+        depth_stencil_store_op = store_op;
+        depth_stencil_clear_value = clear_value;
+    }
+    FORCEINLINE void SetDepthStencilClearValue (std::array<float, 4> clear_value) {
+        depth_stencil_clear_value = clear_value;
     }
 };
 

@@ -557,6 +557,7 @@ public:
     }
 
     FORCEINLINE void BindVertexBuffer (uint32_t binding, RHIBufferSpan buffer) {
+        // TODO switch to batched binding (bind vertex buffers)
         AddCommand(AllocateCommand<RHICommandBindVertexBuffer>(binding, buffer));
     }
 

@@ -68,7 +68,8 @@ static void RelocateShaderResourceBindings (
     RelocateResourcesInIR(RHIPipelineResourceType::kAccelerationStructure, shader->GetAccelerationStructureDesc());
 
     std::vector<uint32_t> optimized_ir;
-    {
+    // Because we removed '-spirv-reflect' from dxc default parameters, now we do not need to strip reflection info.
+    if (false) {
         // Strip the extensions declared to support shader reflection produced by dxc if present
         // This is a workaround for the issue that the reflection extensions is not supported
         // by NVIDIA drivers. Anyway they are just annotations and won't affect real shader behavior.
@@ -79,6 +80,9 @@ static void RelocateShaderResourceBindings (
             MI_LOG(MIInfraLogType::kWarning, "Failed to strip reflection info from SPIRV IR.");
             return ;
         }
+    } else {
+        optimized_ir.resize(ir.size() / 4);
+        memcpy(optimized_ir.data(), ir.data(), ir.size());
     }
     // Another way is to simply mute pCode-08742.
 

@@ -57,6 +57,7 @@ void RDGBuffer::ReleaseRHI() {
 }
 
 void *RDGBuffer::Map() const {
+    assert(IsAllocated() && "Buffer must be allocated before mapping.");
     return (std::byte*)rhi_buffer_span_.buffer->Map() + rhi_buffer_span_.offset;
 }
 

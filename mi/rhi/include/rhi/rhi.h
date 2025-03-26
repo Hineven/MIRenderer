@@ -41,9 +41,7 @@ public:
     virtual const char * GetName() const = 0;
 
     // Create a buffer, thread safe
-    FORCEINLINE RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlags type) {
-        return CreateBuffer({size, type});
-    }
+    RHIBufferRef CreateBuffer (size_t size, RHIBufferUsageFlags type) ;
 
     virtual RHIBufferRef CreateBuffer (RHIBufferDesc desc) = 0;
 

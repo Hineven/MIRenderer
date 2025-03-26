@@ -221,7 +221,7 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
             }
         }
     }
-    if(desc.depth_stencil_attachment.format != PixelFormatType::kD32_FLOAT) {
+    if(depth_test_enable_ && desc.depth_stencil_attachment.format != PixelFormatType::kD32_FLOAT) {
         MI_LOG(MIInfraLogType::kWarning, "Depth stencil attachment format mismatch");
         return ;
     }

@@ -81,7 +81,9 @@ MyInfra::CompileHLSLToSPIRV(
     };
     // Instruct dxc to compile adequate SPIRV
     add_option(L"-spirv");
-    add_option(L"-fspv-reflect");
+    add_option(L"-Ges");
+    // Seems redundant
+    // add_option(L"-fspv-reflect");
 
     auto w_options_cstr = std::vector<const wchar_t *>(w_options.size());
     for (size_t i = 0; i < w_options.size(); i++) {

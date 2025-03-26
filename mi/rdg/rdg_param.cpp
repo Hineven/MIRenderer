@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <ranges>
 #include "rdg/rdg_param.h"
 
 MI_NAMESPACE_BEGIN
@@ -15,6 +16,7 @@ namespace details {
         uint32_t render_target_index = 0;
         std::map<std::string, size_t> name_to_offset;
         name_to_offset.clear();
+        bool is_renderpass = false;
         for (auto & e : params) {
             // Ignore non-uniform buffer contents (shader resources, uniform buffer ref)
             if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
@@ -50,7 +52,10 @@ namespace details {
             }
             if (e.type == RHIParamType::kRenderTarget) {
                 // Finalize render target index now
-                e.cpp_extra.render_targets_info->target_index = render_target_index++;
+                if (!IsDepthStencilPixelFormat(e.cpp_extra.render_targets_info->format))
+                    e.cpp_extra.render_targets_info->target_index = render_target_index++;
+                else e.cpp_extra.render_targets_info->target_index = UINT32_MAX; // stands for depth stencil
+                is_renderpass = true;
             }
         }
         // Do some simple validation
@@ -58,6 +63,14 @@ namespace details {
         std::vector<bool> used_vertex_buffer;
         used_vertex_buffer.resize(vertex_buffer_index, false);
         for (auto & e : params) {
+            if (is_renderpass && e.type != RHIParamType::kRenderTarget) {
+                MI_LOG(MIInfraLogType::kError,
+                    "Renderpass struct should only contain render target parameters. "
+                    "Conventional shader parameter struct should not contain any render target parameters."
+                    " (param name {}).", e.name
+                );
+                return false;
+            }
             if (e.type == RHIParamType::kVertexAttribute) {
                 if (e.cpp_extra.vertex_attribute_info->buffer_index >= vertex_buffer_index) {
                     MI_LOG(MIInfraLogType::kError,
@@ -89,7 +102,9 @@ namespace details {
 
     void zzFinalizeTopLevelParamsStructInfo(RDGShaderParamStructAndSizeInfo *info) {
         std::vector<RDGShaderParameterLocation> global_uniforms, storage_buffers, uniform_buffers,
-            uavs, srvs, samplers, acceleration_structures;
+            uavs, srvs, samplers, acceleration_structures, vertex_buffers, vertex_attributes,
+            render_targets;
+        RDGShaderParameterLocation index_buffer, dispatch_command, renderpass;
         std::function<void(const RDGShaderParamStructInfo *info, uint32_t base_cpp_offset, uint32_t base_offset)> Recurse
             = [&](const RDGShaderParamStructInfo *info, uint32_t base_cpp_offset, uint32_t base_offset) {
             for (auto & e : info->cpp_members) {
@@ -108,13 +123,17 @@ namespace details {
                 } else if (e.type == RHIParamType::kSRVTexture) {
                     srvs.emplace_back(&e, cpp_offset, offset, 0);
                 } else if (e.type == RHIParamType::kVertexBuffer) {
-                    // TODO
+                    vertex_buffers.emplace_back(&e, cpp_offset, offset, 0);
+                } else if (e.type == RHIParamType::kVertexAttribute) {
+                    vertex_attributes.emplace_back(&e, cpp_offset, offset, 0);
                 } else if (e.type == RHIParamType::kIndexBuffer) {
-                    // TODO
+                    index_buffer = {&e, cpp_offset, offset, 0};
                 } else if (e.type == RHIParamType::kRenderTarget) {
-                    // TODO
+                    render_targets.emplace_back(&e, cpp_offset, offset, 0);
                 } else if (e.type == RHIParamType::kDispatchCommand) {
-                    // TODO
+                    dispatch_command = {&e, cpp_offset, offset, 0};
+                } else if (e.type == RHIParamType::kRenderPass) {
+                    renderpass = {&e, cpp_offset, offset, 0};
                 } else {
                     assert(false && "Unimplemented");
                 }
@@ -150,6 +169,43 @@ namespace details {
                 info->acceleration_structures_ = std::span(new RDGShaderParameterLocation[acceleration_structures.size()], acceleration_structures.size());
                 std::copy(acceleration_structures.begin(), acceleration_structures.end(), info->acceleration_structures_.begin());
             } else info->acceleration_structures_ = {};
+            if (!vertex_buffers.empty()) {
+                info->vertex_buffers_ = std::span(new RDGShaderParameterLocation[vertex_buffers.size()], vertex_buffers.size());
+                std::copy(vertex_buffers.begin(), vertex_buffers.end(), info->vertex_buffers_.begin());
+            } else info->vertex_buffers_ = {};
+            if (!vertex_attributes.empty()) {
+                info->vertex_attributes_ = std::span(new RDGShaderParameterLocation[vertex_attributes.size()], vertex_attributes.size());
+                std::copy(vertex_attributes.begin(), vertex_attributes.end(), info->vertex_attributes_.begin());
+            } else info->vertex_attributes_ = {};
+            if (!render_targets.empty()) {
+                info->render_targets_ = std::span(new RDGShaderParameterLocation[render_targets.size()], render_targets.size());
+                std::copy(render_targets.begin(), render_targets.end(), info->render_targets_.begin());
+            } else info->render_targets_ = {};
+            if (index_buffer.info) {
+                info->index_buffer_ = index_buffer;
+            } else info->index_buffer_ = {};
+            if (dispatch_command.info) {
+                info->dispatch_command_ = dispatch_command;
+            } else info->dispatch_command_ = {};
+            if (renderpass.info) {
+                info->renderpass_ = renderpass;
+            } else info->renderpass_ = {};
+        }
+        // Some late validations
+        {
+            for (auto [i, e] : std::views::enumerate(info->vertex_attributes_)) {
+                auto component_size = GetVertexAttributeFormatSize(e.info->cpp_extra.vertex_attribute_info->format);
+                uint32_t end_offset = e.info->cpp_extra.vertex_attribute_info->offset + component_size;
+                auto vbuf_index = e.info->cpp_extra.vertex_attribute_info->buffer_index;
+                auto vbuf_stride = info->vertex_buffers_[vbuf_index].info->cpp_extra.vertex_buffer_info->stride;
+                if (end_offset > vbuf_stride) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "Vertex attribute {} have end offset {}, which exceeds the "
+                        "stride of vertex buffer {}, which is {}.",
+                        i, end_offset, vbuf_index, vbuf_stride
+                    );
+                }
+            }
         }
     }
 

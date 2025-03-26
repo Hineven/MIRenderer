@@ -17,10 +17,19 @@ struct VS_Output {
     float2 uv : TEXCOORD0;
 };
 
-VS_Output VSMain(float4 pos : POSITION, float2 uv : TEXCOORD0) {
+VS_Output TestGraphicsShaderVS(float3 pos : pos, float2 uv : uv) {
     VS_Output output;
-    output.pos = pos;
+    output.pos = float4(pos, 1);
     output.uv = uv;
     return output;
 }
 
+struct PS_Output {
+    float4 OutColor : SV_TARGET0;
+};
+
+PS_Output TestGraphicsShaderPS(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) {
+    PS_Output output = (PS_Output)0;
+    output.OutColor = float4(uv, TestFloat2);
+    return output;
+}

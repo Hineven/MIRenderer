@@ -30,12 +30,13 @@ enum class RHIParamType : uint32_t {
     kStruct,
     kBasic,
     kAccelerationStructure,
-    // The following 5 types have no mapping in hlsl, just corporate with RDG shader reflection.
+    // The following 6 types have no mapping in hlsl, just corporate with RDG shader reflection.
     kRenderTarget,
     kVertexAttribute,
     kVertexBuffer,
     kIndexBuffer,
     kDispatchCommand,
+    kRenderPass,
     kMax,
 };
 

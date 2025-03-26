@@ -57,13 +57,6 @@ protected:
     // The uniform buffer that holds all the uniform data for all the passes.
     TRef<RDGBuffer> uniform_buffer_;
 
-    // Keep track of previous reosurce accesses, used to place barriers.
-    struct ResourceAccess {
-        RHIPipelineStageFlags stages {RHIPipelineStageFlagBits::kNone};
-        RHIGPUAccessFlags access {RHIGPUAccessFlagBits::kNone};
-    };
-    std::map<RHIResource*, ResourceAccess> resource_accesses_;
-
     // Temporary memory allocator (transferred from the RDG builder)
     std::unique_ptr<TOneTimeLinearAllocator<>> allocator_;
 };

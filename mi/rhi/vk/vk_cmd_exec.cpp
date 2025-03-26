@@ -165,21 +165,6 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
 
-    // Check the compatibility of the bound pipeline and the bound framebuffer
-    mi_assert(graphics.bound_pipeline, "No graphics pipeline bound");
-    auto graphics_pipeline = (RHIGraphicsPipeline*)graphics.bound_pipeline;
-    auto depth_enabled = graphics_pipeline->IsDepthTestEnabled();
-    mi_assert(graphics_pipeline->GetFragmentOutputDesc().size() + depth_enabled
-              == state.draw_state_.num_framebuffer_attachments_,
-              "Mismatched number of framebuffer attachments and fragment outputs");
-    if(depth_enabled) {
-        mi_assert(
-                state.draw_state_.num_framebuffer_attachments_ > 0 &&
-                IsDepthStencilPixelFormat(state.draw_state_.attachments[
-                                                  state.draw_state_.num_framebuffer_attachments_ - 1
-                                          ]->GetFormat()),
-                "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
-    }
     vk::Rect2D render_area = state.GetScissorRect();
     vk::RenderingAttachmentInfo attachments_info[C::kRHIMaxNumFramebufferAttachments];
     for(int i = 0; i < (int)state.draw_state_.num_framebuffer_attachments_; i++) {
@@ -193,9 +178,18 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_
                 {state.draw_state_.clear_values[i]}
         };
     }
+    vk::RenderingAttachmentInfo depth_stencil_info {};
+    if (auto ptr = state.draw_state_.depth_stencil_attachment) {
+        auto vk_ptr = (VulkanTexture*)ptr;
+        depth_stencil_info.imageView = vk_ptr->GetImageView();
+        depth_stencil_info.imageLayout = vk_ptr->GetImageLayout();
+        depth_stencil_info.loadOp = GetVulkanLoadOp(state.draw_state_.depth_stencil_load_op);
+        depth_stencil_info.storeOp = GetVulkanStoreOp(state.draw_state_.depth_stencil_store_op);
+        depth_stencil_info.clearValue = {state.draw_state_.depth_stencil_clear_value};
+    }
     auto rendering_info = vk::RenderingInfo {
-            {}, render_area, 1, {}, state.draw_state_.num_framebuffer_attachments_ - depth_enabled, attachments_info,
-            depth_enabled ? (&attachments_info[state.draw_state_.num_framebuffer_attachments_ - 1]) : nullptr
+            {}, render_area, 1, {}, state.draw_state_.num_framebuffer_attachments_, attachments_info,
+            state.draw_state_.depth_stencil_attachment ? &depth_stencil_info : nullptr
     };
     state.cmd.beginRendering(rendering_info);
 }

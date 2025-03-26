@@ -18,6 +18,8 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <rhi/rhi_buffer.h>
+
 #include "stb_image.h"
 #include "stb_image_write.h"
 
