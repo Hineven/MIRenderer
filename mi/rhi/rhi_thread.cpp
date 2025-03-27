@@ -32,7 +32,7 @@ struct RHIThreadTask {
 };
 
 // Task queue and relating semaphore
-static TLockFreeQueue<RHIThreadTask, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne> task_queue_;
+static TLockFreeQueue<RHIThreadTask, LockFreeQueueUserType::kMultiple, LockFreeQueueUserType::kOne> task_queue_ {};
 static std::counting_semaphore<> task_queue_sem_ {0};
 
 // The thread
@@ -117,6 +117,7 @@ void RHIWorkerThread::Run() {
     }
     is_running_ = true;
     MI_LOG(MIInfraLogType::kInfo, "RHI thread started.");
+    int cnt = 0;
     while(!stop_signal_) {
         RHIThreadTask task;
         // Wait for at least one task

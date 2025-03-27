@@ -181,7 +181,7 @@ protected:
         std::lock_guard<std::mutex> lock(task->state_mutex_);
         assert(task->state_ == TaskStateType::kReady && "Task is not ready to run");
         task->state_ = TaskStateType::kReady;
-        assert(task_queue_.Push(task) && "Task queue overflowed");
+        task_queue_.Push(task);
         task_semaphore_.release();
     }
 

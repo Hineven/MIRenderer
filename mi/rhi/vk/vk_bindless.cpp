@@ -244,7 +244,7 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
 }
 
 void VulkanBindlessManager::SwapSets_RHIThread () {
-    set_index_ ++;
+    set_index_ = (set_index_ + 1) % 2;
     auto device = GetVulkanRHI()->GetDevice();
     // Copy the previous set to the new set
     std::vector<vk::CopyDescriptorSet> copies;

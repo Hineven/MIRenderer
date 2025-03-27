@@ -768,6 +768,15 @@ VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISy
 [[maybe_unused]] bool recycle_resources) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
+    if (sync) {
+        // Place an execution barrier if sync point is specified, barrier the previously submitted commands
+        state.BeginCmd();
+        state.cmd.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAllCommands,
+            vk::PipelineStageFlagBits::eNone,
+            {}, {}, {}, {}
+        );
+    }
     auto & cmd = state.cmd;
     bool dirty = state.CloseCmd();
     auto vk_rhi = GetVulkanRHI();
@@ -775,9 +784,8 @@ VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISy
     auto submit_info = vk::SubmitInfo()
             .setCommandBufferCount(1)
             .setPCommandBuffers(&cmd);
-    if (dirty) {
-        queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
-    }
+    if (dirty) queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
+
     if(sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
     // Allocate a new command buffer
     // TODO accelerate this?

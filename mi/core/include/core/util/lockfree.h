@@ -33,12 +33,12 @@ public:
     template<typename U = T>
     FORCEINLINE bool Push (U&& t) {
         static_assert(std::is_same_v<std::remove_cvref_t<U>, T>, "Push type must be the same as the queue type");
-        size_t head = head_.load(std::memory_order_relaxed);
-        size_t next_head = (head + 1) % RingBudget;
+        size_t old_head = head_.load(std::memory_order_relaxed);
+        size_t next_head = (old_head + 1) % RingBudget;
         if (next_head == tail_.load(std::memory_order_acquire)) {
             return false;
         }
-        ring_[head] = std::forward<U>(t);
+        ring_[old_head] = std::forward<U>(t);
         // Flush the ring_[head] = t write visible for all threads
         // before updating head_ using release semantics
         head_.store(next_head, std::memory_order_release);
@@ -60,7 +60,7 @@ public:
     }
 
 private:
-    T ring_[RingBudget];
+    T ring_[RingBudget] {};
     std::atomic<size_t> head_ {0};
     std::atomic<size_t> tail_ {0};
 };
@@ -72,39 +72,42 @@ public:
     inline TLockFreeQueue() = default;
 
     template<typename U = T>
-    FORCEINLINE bool Push (U&& t) {
+    FORCEINLINE void Push (U&& t) {
         static_assert(std::is_same_v<std::remove_cvref_t<U>, T>, "Push type must be the same as the queue type");
-        std::lock_guard<std::mutex> lock(mutex_);
-        size_t head = head_ ++;
-        size_t next_head = (head + 1) % RingBudget;
-        if (next_head == tail_.load(std::memory_order_acquire)) {
-            head_ --;
-            return false;
+        while (true) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            size_t old_head = head_;
+            size_t next_head = (old_head + 1) % RingBudget;
+            if (next_head == tail_) {
+                std::this_thread::yield();
+            } else {
+                ring_[old_head] = std::forward<U>(t);
+                head_ = next_head;
+                break;
+            }
         }
-        ring_[head] = std::forward<U>(t);
-        return true;
     }
 
     FORCEINLINE bool Empty () const {
-        return head_.load(std::memory_order_acquire) == tail_.load(std::memory_order_acquire);
+        return head_ == tail_;
     }
 
     FORCEINLINE bool Pop (T& t) {
         std::lock_guard<std::mutex> lock(mutex_);
-        size_t tail = tail_.load(std::memory_order_relaxed);
-        if (tail == head_.load(std::memory_order_acquire)) {
+        size_t tail = tail_;
+        if (tail == head_) {
             return false;
         }
         t = std::move(ring_[tail]);
-        tail_.store((tail + 1) % RingBudget, std::memory_order_release);
+        tail_ = (tail + 1) % RingBudget;
         return true;
     }
 private:
 
     // I don't know how to implement this, so just use mutex
-    std::mutex mutex_;
+    std::mutex mutex_ {};
 
-    T ring_[RingBudget];
+    T ring_[RingBudget] {};
     std::atomic<size_t> head_ {0};
     std::atomic<size_t> tail_ {0};
 
