@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include "../rdg/include/rdg/rdg_shader.h"
 #include "ml/ml.h"
 #include "core/task.h"
 #include "rhi/rhi_thread.h"
@@ -11,13 +12,32 @@
 
 MI_NAMESPACE_BEGIN
 
-void MainLoop::Start () {
+void MainLoop::Start (std::unique_ptr<MIInfraInterface> && infra, MainLoopStartConfig cfg) {
+
+    static MainLoop * instance_ = nullptr;
+    if (instance_ != nullptr) {
+        MI_WARN("Potentially double calling MainLoop::Start()");
+        return ;
+    } else {
+        instance_ = new MainLoop();
+    }
+
+    auto pwd = std::filesystem::current_path();
+
+    // Transfer ownership of underlying infrastructure and initialize
+    TransferInfra(std::move(infra));
+    GetInfra().Init();
+
+    instance_->config_ = cfg;
+
     if(GetCurrentThreadType() != ThreadType::kUnknown) {
-        mi_assert(false, "Render thread started within a known thread.");
+        mi_assert(false, "MainLoop: somehow the thread calling Start() is known.");
     }
     SetCurrentThreadType(ThreadType::kRenderThread);
+    RHI::InitializeSingleton(RHIType::kVulkan);
 
-    auto limits = infra_->GetResourceLimits();
+    auto limits = GetInfra().GetResourceLimits();
+
     // Initialize task graph
     if(limits.max_high_performance_thread_count < 2) {
         mi_assert(false, "At least 2 high performance threads are required.");
@@ -31,20 +51,20 @@ void MainLoop::Start () {
     // Initialize the task graph singleton and its workers.
     TaskGraph::InitializeSingleton(limits.max_low_performance_thread_count, task_graph_hpt_count);
 
-    // Initialize RHI
-    // We only have vulkan supported now.
-    RHI::InitializeSingleton(RHIType::kVulkan);
+    // Initialize shader library
+    auto & shader_lib = RDGShaderLibrary::Get();
+    shader_lib.Init();
 
-    {
-        // Render thread
-        auto result = infra_->LaunchThread(ThreadPerformanceType::kHigh, [this] {
-            Run();
-        });
-        mi_assert(result, "Failed to launch render thread.");
-        render_thread_ = std::move(result.value());
-    }
+    // Set up window
+    instance_->StartWindow();
+
     MI_LOG(MIInfraLogType::kInfo, "Main loop initialization complete.");
 }
+
+void MainLoop::StartWindow() {
+
+}
+
 
 
 void MainLoop::Run () {

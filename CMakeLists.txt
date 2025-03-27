@@ -41,6 +41,9 @@ find_package(SPIRV-Tools-opt CONFIG REQUIRED)
 # this is buggy
 #find_package(SPIRV-Tools-reduce CONFIG REQUIRED)
 
+# GLFW for cross platform window creation and input handling
+find_package(glfw3 CONFIG REQUIRED GLOBAL)
+
 if(NOT Vulkan_dxc_lib_FOUND OR NOT Vulkan_dxc_DEBUG_LIBRARY)
     # Fallback to standalone DXC
     message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")
@@ -65,13 +68,8 @@ add_subdirectory(infra_impl)
 # Core implementations
 add_subdirectory(mi)
 
-# Samples
-
-add_executable(
-    hello
-    samples/hello/main.cpp
-)
-target_link_libraries(hello core mi ${dxc_library_target} Vulkan::Vulkan spirv-cross-cpp spirv-cross-core spirv-cross-hlsl)
-
 # tests
 add_subdirectory(tests)
+
+# application executables
+add_subdirectory(applications)

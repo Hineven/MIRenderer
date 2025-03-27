@@ -6,10 +6,13 @@
 
 #include <string>
 #include "rhi/rhi.h"
-#include "rhi/rhi_import.h"
 #include "core/infra.h"
 
 #include "vk_rhi.h"
+#include "rhi/vk/vk_export.h"
+
+#include <glfw/glfw3.h>
+
 #include "vk_resource.h"
 #include "vk_buffer.h"
 #include "vk_texture.h"
@@ -17,11 +20,12 @@
 #include "vk_pipeline.h"
 #include "vk_bindless.h"
 #include "vk_cmd_exec.h"
+#include "vk_conversion.h"
 #include "rhi/rhi_thread.h"
 
 MI_NAMESPACE_BEGIN
 
-VulkanRHI::VulkanRHI() {
+VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init();
 
@@ -42,7 +46,7 @@ VulkanRHI::VulkanRHI() {
 #endif
 
         // Enable extensions
-        std::array enabled_extension_names = {
+        std::vector enabled_extension_names = {
                 VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #ifndef NDEBUG
                 VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
@@ -50,6 +54,12 @@ VulkanRHI::VulkanRHI() {
                 VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
                 VK_KHR_SURFACE_EXTENSION_NAME
         };
+        // Append extra instance extensions
+        if(extra) {
+            for(int i = 0; i < (int)extra->extra_instance_extension_count; i++) {
+                enabled_extension_names.push_back(extra->extra_instance_extensions[i]);
+            }
+        }
 
         auto extension_props = vk::enumerateInstanceExtensionProperties();
         auto layer_props = vk::enumerateInstanceLayerProperties();
@@ -334,6 +344,13 @@ VulkanRHI::VulkanRHI() {
             instance_,
             MI_MIN_VULKAN_API_VERSION
     });
+
+    // Initialize struct for export handles
+    export_handles_ = {
+        instance_,
+        device_,
+        physical_device_
+    };
 }
 
 void VulkanRHI::InvalidateDiskPipelineCache() {
@@ -352,11 +369,110 @@ VulkanRHI::~VulkanRHI() {
     delete this->bindless_manager_;
     delete this->command_executor_;
 
+    // Release swapchain (if present)
+    if(swapchain_) {
+        rhi_swapchain_textures_.clear();
+        swapchain_images.clear();
+        device_.destroy(swapchain_);
+    }
+
     vma_.destroy();
     device_.destroy(pipeline_cache_);
     device_.destroy();
     instance_.destroy();
 }
+
+bool VulkanRHI::InitializeSwapChain(const void *surface_handle_ptr, uint32_t width, uint32_t height) {
+
+    assert(surface_ == nullptr);
+
+    vk::SurfaceKHR surface = *(const vk::SurfaceKHR*)surface_handle_ptr;
+
+    auto capabilities = physical_device_.getSurfaceCapabilitiesKHR(surface);
+    auto formats = physical_device_.getSurfaceFormatsKHR(surface);
+    auto present_modes = physical_device_.getSurfacePresentModesKHR(surface);
+
+    vk::SurfaceFormatKHR surface_format = formats[0];
+    for (const auto& format : formats) {
+        if (format.format == vk::Format::eB8G8R8A8Srgb &&
+            format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+            surface_format = format;
+            break;
+        }
+    }
+
+    vk::PresentModeKHR present_mode = vk::PresentModeKHR::eFifo;
+    for (const auto& mode : present_modes) {
+        if (mode == vk::PresentModeKHR::eMailbox) {
+            present_mode = mode;
+            break;
+        }
+    }
+
+    vk::Extent2D extent;
+    if (capabilities.currentExtent.width != UINT32_MAX) {
+        extent = capabilities.currentExtent;
+    } else {
+        extent = vk::Extent2D{width, height};
+        extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    }
+
+    uint32_t image_count = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount) {
+        image_count = capabilities.maxImageCount;
+    }
+
+    vk::SwapchainCreateInfoKHR create_info{};
+    create_info.surface = surface;
+    create_info.minImageCount = image_count;
+    create_info.imageFormat = surface_format.format;
+    create_info.imageColorSpace = surface_format.colorSpace;
+    create_info.imageExtent = extent;
+    create_info.imageArrayLayers = 1;
+    create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
+
+    uint32_t graphics_queue_family_index = GetGraphicsQueueFamilyIndex();
+    // The same for now
+    uint32_t present_queue_family_index = graphics_queue_family_index;
+
+    if (graphics_queue_family_index != present_queue_family_index) {
+        create_info.imageSharingMode = vk::SharingMode::eConcurrent;
+        create_info.queueFamilyIndexCount = 2;
+        uint32_t queue_family_indices[] = {graphics_queue_family_index, present_queue_family_index};
+        create_info.pQueueFamilyIndices = queue_family_indices;
+    } else {
+        create_info.imageSharingMode = vk::SharingMode::eExclusive;
+    }
+
+    create_info.preTransform = capabilities.currentTransform;
+    create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+    create_info.presentMode = present_mode;
+    create_info.clipped = VK_TRUE;
+    create_info.oldSwapchain = nullptr;
+
+    swapchain_ = device_.createSwapchainKHR(create_info);
+
+    swapchain_images = device_.getSwapchainImagesKHR(swapchain_);
+
+    // Wrap them up with RHI abstraction
+    for (size_t i = 0; i < swapchain_images.size(); i++) {
+        VulkanTextureImportDesc im_desc {
+            swapchain_images[i],
+            vk::ImageLayout::eUndefined
+        };
+        auto tex = ImportTexture(&im_desc, RHITextureType::k2D, RHITextureDimensions {width, height, 1},
+            GetPixelFormatFromVulkanFormat(surface_format.format), RHITextureUsageFlagBits::kRenderTarget, 1, 1);
+        rhi_swapchain_textures_.emplace_back(tex);
+    }
+
+    return true;
+}
+
+RHITexture *VulkanRHI::GetBackBuffer() const {
+    return rhi_swapchain_textures_[frame_index_ % rhi_swapchain_textures_.size()].Raw();
+}
+
 
 RHIBufferRef VulkanRHI::CreateBuffer(RHIBufferDesc desc) {
     auto buffer = new VulkanBuffer(desc);
@@ -434,7 +550,7 @@ RHICommandExecutorInterface * VulkanRHI::GetCommandExecutor() {
 void VulkanRHI::WaitForIdle(bool host_only) {
     assert(IsRenderThread());
     // Simply wait the RHI thread to finish its work
-    auto fut = EnqueueRHIThreadTask([](){});
+    auto fut = EnqueueRHIThreadTask([]() {});
     fut.wait();
 
     if(!host_only) {
@@ -451,6 +567,10 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
     vk::ImageLayout layout = (vk::ImageLayout)(desc->vk_image_layout);
     texture->ImportFromHandle(image_handle, layout);
     return nullptr;
+}
+
+const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
+    return & export_handles_;
 }
 
 void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
@@ -479,9 +599,10 @@ VulkanRHI * GetVulkanRHI () {
 }
 
 // Implement factory function declared in vk_rhi_export.h
-VulkanRHI * CreateVulkanRHI () {
-    return new VulkanRHI();
+VulkanRHI * CreateVulkanRHI (const VulkanRHICreateInfo * extra) {
+    return new VulkanRHI(extra);
 }
+
 
 
 MI_NAMESPACE_END

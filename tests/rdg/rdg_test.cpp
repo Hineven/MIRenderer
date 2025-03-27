@@ -166,7 +166,7 @@ TEST(RDGTest, RDGShaderLibrary) {
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
         {
-            auto & lib = RDGShaderLibrary::GetInstance();
+            auto & lib = RDGShaderLibrary::Get();
             lib.Init();
             auto shader = lib.GetShader<TestShader1>();
             EXPECT_TRUE(shader->IsValid());
@@ -192,7 +192,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
         {
-            auto & lib = RDGShaderLibrary::GetInstance();
+            auto & lib = RDGShaderLibrary::Get();
             lib.Init();
             auto shader = lib.GetShader<TestShader1>();
             EXPECT_TRUE(shader->IsValid());
@@ -294,7 +294,7 @@ public:
 IMPLEMENT_RDG_GRAPHICS_SHADER(TestShader2, "test_shader_1.hlsl", "TestGraphicsShaderVS", "TestGraphicsShaderPS")
 
 TEST(RDGTest, RDGSimpleGraphicsShader) {
-        using namespace mi;
+    using namespace mi;
     CPPTRACE_TRY {
         auto pwd = std::filesystem::current_path();
         auto resource_dir = pwd / "rdg" / "resources";
@@ -303,7 +303,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
         {
-            auto & lib = RDGShaderLibrary::GetInstance();
+            auto & lib = RDGShaderLibrary::Get();
             lib.Init();
             auto shader = lib.GetShader<TestShader2>();
             EXPECT_TRUE(shader->IsValid());

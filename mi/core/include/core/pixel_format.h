@@ -14,7 +14,9 @@
 MI_NAMESPACE_BEGIN
 
 enum class PixelFormatType {
-    kUnknown,
+    kUnknown = 0,
+    kB8G8R8A8_UNORM,
+    kB8G8R8A8_SRGB,
     kR8G8B8A8_UNORM,
     kR8G8B8A8_SRGB,
     kR16G16B16A16_FLOAT,
@@ -36,6 +38,10 @@ FORCEINLINE bool IsDepthStencilPixelFormat (PixelFormatType format) {
 
 FORCEINLINE const char * GetPixelFormatName (PixelFormatType type) {
     switch (type) {
+        case PixelFormatType::kB8G8R8A8_UNORM:
+            return "B8G8R8A8_UNORM";
+        case PixelFormatType::kB8G8R8A8_SRGB:
+            return "B8G8R8A8_SRGB";
         case PixelFormatType::kR8G8B8A8_UNORM:
             return "R8G8B8A8_UNORM";
         case PixelFormatType::kR8G8B8A8_SRGB:
@@ -71,6 +77,8 @@ FORCEINLINE std::string ToString (PixelFormatType type) {
 
 FORCEINLINE bool IsFloatPixelFormat (PixelFormatType type) {
     switch (type) {
+        case PixelFormatType::kB8G8R8A8_UNORM:
+        case PixelFormatType::kB8G8R8A8_SRGB:
         case PixelFormatType::kR8G8B8A8_UNORM:
         case PixelFormatType::kR8G8B8A8_SRGB:
         case PixelFormatType::kR16G16B16A16_FLOAT:

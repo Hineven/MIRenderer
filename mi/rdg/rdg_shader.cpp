@@ -431,7 +431,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         }
     }
     for (const auto & [i, output] : std::views::enumerate(shader->GetFragmentOutputDesc())) {
-        int index = i;
+        int index = (int)i;
         auto pass = info.renderpass_;
         if (pass.info) {
             auto & member = *pass.info->cpp_imported_struct_info.cpp_struct_info->render_targets_[index].info;
@@ -732,12 +732,19 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     return true;
 }
 
-RDGShaderLibrary &RDGShaderLibrary::GetInstance() {
-    static RDGShaderLibrary * instance_ptr;
-    if (instance_ptr == nullptr) {
-        instance_ptr = new RDGShaderLibrary();
+static RDGShaderLibrary * shader_library_instance_ptr;
+RDGShaderLibrary &RDGShaderLibrary::Get() {
+    if (shader_library_instance_ptr == nullptr) {
+        shader_library_instance_ptr = new RDGShaderLibrary();
     }
-    return *instance_ptr;
+    return *shader_library_instance_ptr;
+}
+
+void RDGShaderLibrary::DestroySingleton() {
+    if (shader_library_instance_ptr) {
+        delete shader_library_instance_ptr;
+        shader_library_instance_ptr = {};
+    }
 }
 
 RDGShaderLibrary::~RDGShaderLibrary() {}

@@ -149,12 +149,14 @@ void DestroyInfra () ;
 
 #define MI_LOG(level, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
 
+#define MI_WARN(fmt, ...) MI_LOG(MIInfraLogType::kWarning, fmt, ##__VA_ARGS__)
+
 #ifndef NDEBUG
 #define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::exception("assertion failure.");}}while(false)
 #define mi_warning(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kWarning, fmt, ##__VA_ARGS__); }}while(false)
 #else
-#define mi_assert(cond, msg)
-#define mi_warning(cond, msg)
+#define mi_assert(cond, msg, ...)
+#define mi_warning(cond, msg, ...)
 #endif
 
 template<typename T>

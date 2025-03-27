@@ -14,6 +14,10 @@ MI_NAMESPACE_BEGIN
 
 FORCEINLINE vk::Format GetVulkanPixelFormat (PixelFormatType format) {
     switch(format) {
+        case PixelFormatType::kB8G8R8A8_UNORM:
+            return vk::Format::eB8G8R8A8Unorm;
+        case PixelFormatType::kB8G8R8A8_SRGB:
+            return vk::Format::eB8G8R8A8Srgb;
         case PixelFormatType::kR8G8B8A8_UNORM:
             return vk::Format::eR8G8B8A8Unorm;
         case PixelFormatType::kR8G8B8A8_SRGB:
@@ -43,6 +47,42 @@ FORCEINLINE vk::Format GetVulkanPixelFormat (PixelFormatType format) {
         default:
             mi_assert(false, "Unrecognized pixel format by the Vulkan backend. Missing transition code?");
             return vk::Format::eUndefined;
+    }
+}
+
+FORCEINLINE PixelFormatType GetPixelFormatFromVulkanFormat (vk::Format format) {
+    switch(format) {
+        case vk::Format::eB8G8R8A8Unorm:
+            return PixelFormatType::kB8G8R8A8_UNORM;
+        case vk::Format::eB8G8R8A8Srgb:
+            return PixelFormatType::kB8G8R8A8_SRGB;
+        case vk::Format::eR8G8B8A8Unorm:
+            return PixelFormatType::kR8G8B8A8_UNORM;
+        case vk::Format::eR8G8B8A8Srgb:
+            return PixelFormatType::kR8G8B8A8_SRGB;
+        case vk::Format::eR16G16B16A16Sfloat:
+            return PixelFormatType::kR16G16B16A16_FLOAT;
+        case vk::Format::eR16G16Sfloat:
+            return PixelFormatType::kR16G16_FLOAT;
+        case vk::Format::eR32G32B32A32Sfloat:
+            return PixelFormatType::kR32G32B32A32_FLOAT;
+        case vk::Format::eR32G32B32Sfloat:
+            return PixelFormatType::kR32G32B32_FLOAT;
+        case vk::Format::eR32G32Sfloat:
+            return PixelFormatType::kR32G32_FLOAT;
+        case vk::Format::eR32Sfloat:
+            return PixelFormatType::kR32_FLOAT;
+        case vk::Format::eD32Sfloat:
+            return PixelFormatType::kD32_FLOAT;
+        case vk::Format::eR32G32B32A32Uint:
+            return PixelFormatType::kR32G32B32A32_UINT;
+        case vk::Format::eR32G32Uint:
+            return PixelFormatType::kR32G32_UINT;
+        case vk::Format::eR32Uint:
+            return PixelFormatType::kR32_UINT;
+        default:
+            mi_assert(false, "Unrecognized pixel format by the Vulkan backend. Missing transition code?");
+            return PixelFormatType::kUnknown;
     }
 }
 

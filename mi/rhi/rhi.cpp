@@ -26,24 +26,12 @@ RHIBufferRef RHI::CreateBuffer(size_t size, RHIBufferUsageFlags type) {
 }
 
 
-std::future<void> RHI::AdvanceFrame() {
+std::future<void> RHI::AdvanceFrame(RHISyncPoint * sync_point) {
     auto & queue = GetGraphicsCommandQueue();
-    // Detour the limitation that std function wrapper can not wrap non-copyable objects.
-    // (Lambda capturing unmovable objects is not copyable)
-//    int __index = (int)__tiny_buffer_for_hacking_[0];
-//    __index = (__index + 1) % (std::size(__tiny_buffer_for_hacking_) - 1);
-//    static_assert(sizeof(__tiny_buffer_for_hacking_) - 4 >= sizeof(std::future<void>) * 4);
-//    auto fut_ptr = new(__tiny_buffer_for_hacking_ + __index * sizeof(std::future<void>) + 1)
-//            std::future<void>(queue.EnqueueTranslateAndSubmit());
-//    auto lambda = [fut_ptr]() {
-//        fut_ptr->wait();
-//        RHICommandQueueGraphics::Get().SwapAllocators_RHIThread();
-//        fut_ptr->~future<void>();
-//    };
 
     // We can do this because there are only 1 RHI thread.
     queue.FrameEnd(false);
-    queue.EnqueueTranslateAndSubmit();
+    queue.EnqueueTranslateAndSubmit(sync_point);
     auto lambda = []() {
         // Swap allocators after the command buffer is submitted
         // The swapped out memory will last for about 1 frame more and silently be recycled
@@ -94,13 +82,13 @@ RHI & RHI::Get () {
     return *GDynamicRHI;
 }
 
-void RHI::InitializeSingleton (RHIType type) {
+void RHI::InitializeSingleton (RHIType type, const void * extra) {
     if(GDynamicRHI) {
         mi_assert(false, "RHI instance already created");
     }
     switch (type) {
         case RHIType::kVulkan:
-            GDynamicRHI = reinterpret_cast<RHI *>(CreateVulkanRHI());
+            GDynamicRHI = reinterpret_cast<RHI *>(CreateVulkanRHI((const VulkanRHICreateInfo*)extra));
             break;
         // ...
         default:

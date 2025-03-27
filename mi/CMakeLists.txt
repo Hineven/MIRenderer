@@ -5,4 +5,4 @@ add_subdirectory(rhi)
 # render graph
 add_subdirectory(rdg)
 # top layer renderer logic
-add_subdirectory(ml)
+add_subdirectory(app)

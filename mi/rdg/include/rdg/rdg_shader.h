@@ -163,7 +163,9 @@ public:
 
     template<typename T>
     friend class RDGShaderClassRegistrator;
-    static RDGShaderLibrary & GetInstance() ;
+    static RDGShaderLibrary & Get() ;
+    static void DestroySingleton () ;
+
     template<typename T>
     FORCEINLINE T * GetShader (RDGShaderInitializationInfo ini = {}) {
         return (T*)GetShader(typeid(T).hash_code(), ini);
@@ -202,7 +204,7 @@ public:
         const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)(),
         RDGShaderPipelineConfig (*GetShaderPipelineConfig)()
     ) {
-        auto & lib = RDGShaderLibrary::GetInstance();
+        auto & lib = RDGShaderLibrary::Get();
         auto registry = RDGShaderClassRegistry {
             name,
             type,

@@ -28,13 +28,21 @@ protected:
     virtual void PostInitialize () = 0;
 public:
     // Initialize the RHI layer
-    static void InitializeSingleton (RHIType type) ;
+    static void InitializeSingleton (RHIType type, const void * extra = nullptr) ;
     // Destroy the RHI layer
     static void DestroySingleton () ;
     static bool HasSingleton () ;
 
     // Get the active RHI singleton
     static RHI & Get() ;
+
+    // Initialize swap chain on window surface for real-time windowed applications
+    // @param surface_handle The handle of the window surface, RHI type dependent.
+    // for Vulkan, it's a VkSurfaceKHR*
+    virtual bool InitializeSwapChain (const void * surface_handle_ptr, uint32_t width, uint32_t height) = 0;
+
+    // Return the back buffer of this frame to draw to (if swapchain is initialized)
+    virtual RHITexture * GetBackBuffer () const = 0;
 
     virtual RHIType GetType() const = 0 ;
 
@@ -52,7 +60,7 @@ public:
     virtual RHITextureRef CreateTexture (RHITextureDesc desc) = 0;
 
     // Import a texture from a native handle, thread safe
-    // The import_desc is a pointer to the corresponding structs in `rhi_import.h`
+    // The import_desc is a pointer to the corresponding structs in `rhi/<backend>/xxx.h`
     virtual RHITextureRef ImportTexture (
             const void * import_desc,
             RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
@@ -95,7 +103,7 @@ public:
     // is ready to be rendered.
     // Note: The future will not be waiting for device operations of the previous frame to
     // complete.
-    virtual std::future<void> AdvanceFrame () ;
+    virtual std::future<void> AdvanceFrame (RHISyncPoint * sync_point = nullptr) ;
 
     // The frame index of the entire RHI system
     // it is never decreased, and is increased by 1 every time AdvanceFrame is called.
@@ -106,6 +114,10 @@ public:
     FORCEINLINE RHICommandQueueGraphics & GetGraphicsCommandQueue () {
         return graphics_command_queue_;
     }
+
+    // Return a pointer to a struct containing the underlying graphics API handles
+    // You should cast the pointer to the corresponding struct type for the RHI backend
+    virtual const void * GetUnderlyingGraphicsAPIHandles () const = 0;
 
     friend class RHIResource;
 protected:
@@ -140,7 +152,6 @@ protected:
     // and assign it to this pointer. It should also be manually deleted.
     RHIBindlessManager * bindless_manager_ {};
     size_t frame_index_ {0};
-    uint32_t __tiny_buffer_for_hacking_ [128];
 
     std::unique_ptr<std::thread> rhi_thread_ {};
 };

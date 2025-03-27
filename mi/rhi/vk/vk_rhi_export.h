@@ -12,9 +12,9 @@ MI_NAMESPACE_BEGIN
 
 class VulkanRHI;
 class VulkanRHICommandExecutor;
-
+struct VulkanRHICreateInfo;
 // Instantiate a VulkanRHI instance and return
-VulkanRHI * CreateVulkanRHI ();
+VulkanRHI * CreateVulkanRHI (const VulkanRHICreateInfo * extra);
 
 MI_NAMESPACE_END
 

@@ -8,11 +8,11 @@
 
 MI_NAMESPACE_BEGIN
 
-VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported):
+VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
                          RHITexture(desc) {
     vk_aspect_ = GetVulkanImageAspectFlags(desc.usage);
-
     if(imported) {
+        flags_ = flags_ | RHIResourceFlagBits::kImported;
         return;
     }
 
@@ -81,10 +81,10 @@ void VulkanTexture::CreateDefaultImageView () {
 }
 
 VulkanTexture::~VulkanTexture () {
+    auto device = GetVulkanRHI()->GetDevice();
+    device.destroyImageView(vk_default_image_view_);
     if(!(GetFlags() & RHIResourceFlagBits::kImported)) {
-        auto device = GetVulkanRHI()->GetDevice();
         auto vma = GetVulkanRHI()->GetVmaAllocator();
-        device.destroyImageView(vk_default_image_view_);
         vma.destroyImage(vk_image_, allocation_);
         allocation_ = nullptr;
     }

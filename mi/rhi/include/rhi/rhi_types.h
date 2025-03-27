@@ -414,8 +414,10 @@ enum class RHIResourceFlagBits {
     // Imported resource won't be actually released on the device by RHI if
     // their reference counter drops to 0. And sometimes they have harder
     // usage restrictions.
-    kImported
+    kImported = 1 << 0
 };
+
+MAKE_FLAGS(RHIResource)
 
 enum class RHITextureLayoutType {
     kUndefined,
@@ -428,7 +430,6 @@ enum class RHITextureLayoutType {
     kMax
 };
 
-MAKE_FLAGS(RHIResource)
 
 MI_NAMESPACE_END
 

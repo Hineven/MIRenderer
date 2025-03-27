@@ -19,6 +19,7 @@
 #include "vma_overrides.h"
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include "rhi/rhi.h"
+#include "rhi/vk/vk_export.h"
 
 
 // Minimum Vulkan API version required by the RHI implementation to work
@@ -33,7 +34,7 @@ class VulkanRHI : public RHI {
 protected:
     void PostInitialize() override;
 public:
-    VulkanRHI() ;
+    VulkanRHI(const VulkanRHICreateInfo * extra) ;
     ~VulkanRHI() override ;
 
     // Virtual functions from RHI interface
@@ -43,6 +44,10 @@ public:
     inline const char * GetName () const override {
         return "Vulkan";
     }
+
+    bool InitializeSwapChain(const void *surface_handle_ptr, uint32_t width, uint32_t height) override;
+
+    RHITexture * GetBackBuffer() const override;
 
     RHIBufferRef CreateBuffer(RHIBufferDesc desc) override;
 
@@ -100,6 +105,8 @@ public:
 
     RHIBindlessSupportInfo QueryRHIBindlessSupportInfo() override;
 
+    const void *GetUnderlyingGraphicsAPIHandles() const override;
+
     uint32_t GetGraphicsQueueFamilyIndex();
 
     uint32_t GetQueueFamilyIndex(RHICommandQueueType type);
@@ -107,6 +114,7 @@ public:
     FORCEINLINE VulkanBindlessManager * GetVulkanBindlessManager() {
         return (VulkanBindlessManager*)bindless_manager_;
     }
+
 
 protected:
 
@@ -117,12 +125,18 @@ protected:
 
     VulkanCommandExecutor * command_executor_ {};
 
+    VulkanRHIHandles export_handles_ {};
+
     vk::Instance instance_ {};
     vk::PhysicalDevice physical_device_ {};
     vk::Device device_ {};
     vk::Queue queue_ {};
+
     vk::SurfaceKHR surface_ {};
     vk::SwapchainKHR swapchain_ {};
+    std::vector<vk::Image> swapchain_images;
+    std::vector<RHITextureRef> rhi_swapchain_textures_;
+
     vk::PipelineCache pipeline_cache_ {};
 
     int surface_offset_x_ {};

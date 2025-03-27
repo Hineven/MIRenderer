@@ -8,4 +8,4 @@ set(SOURCE_FILES
 add_library(ml STATIC ${SOURCE_FILES})
 target_include_directories(ml PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(ml PUBLIC core rhi)
+target_link_libraries(ml PUBLIC core rhi glfw)
