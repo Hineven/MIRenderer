@@ -3,11 +3,12 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "rdg/rdg_pass.h"
-#include "rdg/rdg_builder.h"
-
 #include <queue>
 #include <ranges>
+
+#include "rdg/rdg_pass.h"
+#include "rdg/rdg_builder.h"
+#include "rhi/rhi_buffer.h"
 
 #include "rdg/rdg.h"
 
@@ -17,9 +18,7 @@ RenderGraphBuilder::RenderGraphBuilder () {
     allocator_ = std::make_unique<TOneTimeLinearAllocator<>>();
 }
 
-RenderGraphBuilder::~RenderGraphBuilder() {
-    printf("Builder destruction\n");
-}
+RenderGraphBuilder::~RenderGraphBuilder() {}
 
 
 RDGPass * RenderGraphBuilder::AddPass(
@@ -78,12 +77,25 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
                 dependencies.push_back(out_pass);
             }
         }
+        for (auto & in_buffer : pass->compiled_.in_buffers) {
+            for (auto & out_pass : out_resource_pass_map[in_buffer]) {
+                dependencies.push_back(out_pass);
+            }
+        }
         // RW-W
         for(auto & out_texture : pass->compiled_.out_textures) {
             for(auto & out_pass : out_resource_pass_map[out_texture]) {
                 dependencies.push_back(out_pass);
             }
             for(auto & in_pass : in_resource_pass_map[out_texture]) {
+                dependencies.push_back(in_pass);
+            }
+        }
+        for (auto & out_buffer : pass->compiled_.out_buffers) {
+            for (auto & out_pass : out_resource_pass_map[out_buffer]) {
+                dependencies.push_back(out_pass);
+            }
+            for (auto & in_pass : in_resource_pass_map[out_buffer]) {
                 dependencies.push_back(in_pass);
             }
         }

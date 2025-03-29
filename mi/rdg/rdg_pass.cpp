@@ -23,7 +23,6 @@ RDGPass::RDGPass(
 }
 
 RDGPass::~RDGPass() {
-    printf("Pass destruction\n");
 }
 
 RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage) {

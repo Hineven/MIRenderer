@@ -9,8 +9,7 @@
 
 #include <rdg/rdg_shader.h>
 
-void DrawTriangle () {
-    
-}
+class mi::RDGResourcePool;
+void RenderFrame (mi::TRef<mi::RDGResourcePool> pool) ;
 
 #endif //SPINNING_TRIANGLE_H

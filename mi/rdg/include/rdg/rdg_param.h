@@ -221,7 +221,7 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     // info.offset = offset; // Offsets will be assigned when finalizing
     info.cpp_offset = cpp_offset;
     if (info.struct_info) {
-        info.size = cpp_struct_info->ComputeSize();
+        info.size = cpp_struct_info->size;
     } else if (info.type == RHIParamType::kBasic) {
         info.size = RHIGetBasicParamSize(info.basic_type);
     }

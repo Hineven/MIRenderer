@@ -128,7 +128,7 @@ void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGSh
     queue.UpdateDrawState(ds);
     // TODO multi draw in a single render pass support.
     queue.BeginRendering();
-    queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);\
+    queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);
     queue.EndRendering();
 }
 

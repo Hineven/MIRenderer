@@ -34,7 +34,12 @@ public:
     virtual void ReleaseRHI () = 0;
     // Request the underlying RHI resource from the pool
     virtual void RequestRHI (RDGResourcePool * pool) = 0;
+
+    FORCEINLINE bool IsImported () const {return is_imported_;}
+
 protected:
+    // Whether the resource is imported from external RHI resource. (thus should not be related to the pool)
+    bool is_imported_ {false};
     // The pool that allocated RHI resources for this render graph resource
     TRef<RDGResourcePool> pool_;
 };
@@ -57,6 +62,16 @@ enum class RDGPassType {
     // TODO add more (mesh, raytracing, etc)
     kMax
 };
+
+FORCEINLINE RDGPassType GetRDGPassType (RHIPipelineType type) {
+    switch (type) {
+        case RHIPipelineType::kGraphics: return RDGPassType::kGraphics;
+        case RHIPipelineType::kCompute: return RDGPassType::kCompute;
+        default:
+            assert(false && "Not implemented");
+            return RDGPassType::kMax;
+    }
+}
 
 const char * ToCString (RDGPassType type) ;
 

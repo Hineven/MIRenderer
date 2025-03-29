@@ -17,39 +17,41 @@ RDGResource::~RDGResource() {}
 RDGTexture::~RDGTexture() {
     // Ref count approaching zero, recycle the resource and release corresponding RHI resource.
     RDGTexture::ReleaseRHI();
-    printf("RDGTexture destruction\n");
 }
 RDGBuffer::~RDGBuffer() {
     // Ref count approaching zero, recycle the resource and release corresponding RHI resource.
     RDGBuffer::ReleaseRHI();
-    printf("RDGBuffer destruction\n");
 }
 
 void RDGTexture::RequestRHI(RDGResourcePool * pool) {
-    if (!rhi_texture_) {
-        pool_ = pool;
-        pool_->AllocateResource(this);
-    } else {
-        assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
+    if (!is_imported_) {
+        if (!rhi_texture_) {
+            pool_ = pool;
+            pool_->AllocateResource(this);
+        } else {
+            assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
+        }
     }
 }
 void RDGTexture::ReleaseRHI() {
-    if (rhi_texture_) {
+    if (!is_imported_ && rhi_texture_) {
         pool_->RecycleResource(this);
         rhi_texture_ = nullptr;
         pool_ = nullptr;
     }
 }
 void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
-    if (!rhi_buffer_span_.buffer) {
-        pool_ = pool;
-        pool_->AllocateResource(this);
-    } else {
-        assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
+    if (!is_imported_) {
+        if (!rhi_buffer_span_.buffer) {
+            pool_ = pool;
+            pool_->AllocateResource(this);
+        } else {
+            assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
+        }
     }
 }
 void RDGBuffer::ReleaseRHI() {
-    if (rhi_buffer_span_.buffer) {
+    if (!is_imported_ && rhi_buffer_span_.buffer) {
         pool_->RecycleResource(this);
         rhi_buffer_span_ = {};
         pool_ = nullptr;
@@ -61,7 +63,6 @@ void *RDGBuffer::Map() const {
     return (std::byte*)rhi_buffer_span_.buffer->Map() + rhi_buffer_span_.offset;
 }
 
-
 uint32_t RDGBuffer::GetResourceClassHash () const {
     return RDGBuffer::GetResourceClassHash(desc_, dedicated_);
 }
@@ -69,5 +70,24 @@ uint32_t RDGTexture::GetResourceClassHash() const {
     // Strictly classify them by size and usage
     return CRC32(&desc_, sizeof(desc_));
 }
+
+TRef<RDGTexture> RDGTexture::Import([[maybe_unused]] const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) {
+    auto texture_raw_ptr = new RDGTexture(resource->GetDesc());
+    auto texture = TRef<RDGTexture>(texture_raw_ptr);
+    texture->rhi_texture_ = resource;
+    texture->usage_ = prev_usage;
+    texture->is_imported_ = true;
+    return texture;
+}
+
+TRef<RDGBuffer> RDGBuffer::Import([[maybe_unused]] const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) {
+    auto buffer_raw_ptr = new RDGBuffer(resource->GetDesc());
+    auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
+    buffer->rhi_buffer_span_ = resource->GetSpan();
+    buffer->usage_ = prev_access;
+    buffer->is_imported_ = true;
+    return buffer;
+}
+
 
 MI_NAMESPACE_END

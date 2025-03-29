@@ -35,6 +35,8 @@ public:
         return {this, offset, size == 0 ? desc_.size : size};
     }
 
+    FORCEINLINE RHIBufferDesc GetDesc () const {return desc_;}
+
     // View it as a storage buffer or uniform buffer.
     void ConvertToBindless (bool read_only) ;
 

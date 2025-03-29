@@ -119,9 +119,13 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
 };
 
 #define DECLARE_SHADER() \
+protected: \
+    using RDGShader::RDGShader; \
+public: \
     template<typename T> friend class RDGShaderClassRegistrator; \
     friend class RDGShaderLibrary; \
-    using RDGShader::RDGShader;
+    static RDGPassType GetRDGPassType () ; \
+    static const char * GetShaderTypeName () ; \
 
 // Generic
 #define IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS) \
@@ -134,7 +138,9 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
         EntryPoint_PS, \
         ClassName::GetShaderParamStructInfo, \
         TGetShaderPipelineConfig<ClassName>::value \
-    );
+    ); \
+    RDGPassType ClassName::GetRDGPassType () {return ::MI_NAMESPACE::GetRDGPassType(Type);} \
+    const char * ClassName::GetShaderTypeName () {return #ClassName;}
 
 // Compute
 #define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, EntryPoint_CS) \
@@ -145,6 +151,7 @@ struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConf
     IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS)
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
+public: \
     using ShaderParameters = Name; \
     static const RDGShaderParamStructAndSizeInfo * GetShaderParamStructInfo() { \
         return ShaderParameters::GetParamStructInfo(); \

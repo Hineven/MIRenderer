@@ -39,10 +39,19 @@ public:
     // Initialize swap chain on window surface for real-time windowed applications
     // @param surface_handle The handle of the window surface, RHI type dependent.
     // for Vulkan, it's a VkSurfaceKHR*
-    virtual bool InitializeSwapChain (const void * surface_handle_ptr, uint32_t width, uint32_t height) = 0;
+    bool InitializeSwapChain (const void * surface_handle_ptr, uint32_t width, uint32_t height) ;
+
+    FORCEINLINE bool IsSwapChainInitialized() const {
+        return is_swapchain_initialized_;
+    }
 
     // Return the back buffer of this frame to draw to (if swapchain is initialized)
-    virtual RHITexture * GetBackBuffer () const = 0;
+    FORCEINLINE RHITexture * GetBackBuffer () const {
+        return GetBackBufferForFrameIndex(frame_index_);
+    }
+
+    // Return the back buffer of this frame to draw to (if swapchain is initialized)
+    virtual RHITexture * GetBackBufferForFrameIndex (size_t index) const = 0;
 
     virtual RHIType GetType() const = 0 ;
 
@@ -99,10 +108,11 @@ public:
 
     // Move to next frame. Performing logic like RHI resource recycling, queue flushing,
     // queue allocator swapping, etc.
-    // @return A future that will be set when all host operations are done and the next frame
+    // This SHOULD NOT be called if the frame before the current frame (which is ending) is not
+    // finished on the device yet.
+    // @param sync_point A sync point that can be waited on for the device to complete executing the whole frame.
+    // @return A future that will be set when all HOST operations are done and the next frame
     // is ready to be rendered.
-    // Note: The future will not be waiting for device operations of the previous frame to
-    // complete.
     virtual std::future<void> AdvanceFrame (RHISyncPoint * sync_point = nullptr) ;
 
     // The frame index of the entire RHI system
@@ -146,6 +156,9 @@ protected:
     // potentially not ready to be recycled.
     void RecycleRHIResourcesPendingForDeletion_RHIThread(bool force = false) ;
 
+
+    virtual bool InitializeSwapChain_RHI (const void * surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * swapchain_size) = 0;
+
     RHICommandQueueGraphics graphics_command_queue_ {};
 
     // The implementation should create their own bindless manager
@@ -154,6 +167,9 @@ protected:
     size_t frame_index_ {0};
 
     std::unique_ptr<std::thread> rhi_thread_ {};
+
+    bool is_swapchain_initialized_ {};
+    uint32_t swapchain_size_ {};
 };
 
 // Check if the current thread is the RHI thread

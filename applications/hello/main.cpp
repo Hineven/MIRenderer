@@ -14,11 +14,15 @@
 #include <rhi/vk/vk_export.h>
 
 // #include "core/task.h"
+#include <rdg/rdg_pool.h>
+
+#include "spinning_triangle.h"
 #include "infra_impl/infra.h"
 #include "rhi/rhi_thread.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_cmd.h"
 #include "rdg/rdg_shader.h"
+#include "prof.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -115,6 +119,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
     rhi.InitializeSwapChain(&surface_tmp, cfg.window_width, cfg.window_height);
 
+    auto pool = RDGResourcePool::Create();
+
     {
         std::future<void> previous_frame_future;
         TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
@@ -125,28 +131,45 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             glfwPollEvents();
 
             // Render
-            // ...
-
-            // Start recording first
-            rhi.GetGraphicsCommandQueue().EnqueueTranslation();
+            {
+                PROFILE_SECTION(Rendering);
+                RenderFrame(pool);
+            }
+            if (rhi.GetFrameIndex() % 20 == 0) {
+                printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
+                fflush(stdout);
+            }
             if (first_frame) {
                 first_frame = false;
             } else {
-                // Wait for the previous frame to finish submission
-                previous_frame_future.wait();
-                // Also, wait for the previous frame to finish execution on GPU before submitting commands about this frame
-                previous_frame_sync_point->Wait();
+                {
+                    PROFILE_SECTION(WaitPreviousFrame);
+                    // Wait for the previous frame to finish execution on GPU before submitting commands about this frame
+                    if (previous_frame_future.valid()) {
+                        previous_frame_future.wait();
+                    }
+                }
+                {
+                    PROFILE_SECTION(WaitFence);
+                    // Wait for the previous frame to finish execution on GPU before submitting commands about this frame
+                    previous_frame_sync_point->Wait();
+                }
                 previous_frame_sync_point->Reset();
             }
-            // Submit commands recorded for this frame, and switch to next frame
-            previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
-
-            glfwSwapBuffers(window);
+            {
+                PROFILE_SECTION(AdvanceFrame);
+                // Submit commands recorded for this frame, and switch to next frame
+                previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
+            }
+            // We're using Vulkan, so we don't need to swap buffers
+            // glfwSwapBuffers(window);
         }
     }
 
 
     RHI::Get().WaitForIdle();
+
+    pool.SafeRelease();
 
     // TaskGraph::DestroySingleton();
     RDGShaderLibrary::DestroySingleton();

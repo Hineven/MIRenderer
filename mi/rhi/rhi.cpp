@@ -25,13 +25,20 @@ RHIBufferRef RHI::CreateBuffer(size_t size, RHIBufferUsageFlags type) {
     return CreateBuffer({size, type});
 }
 
+bool RHI::InitializeSwapChain(const void *surface_handle_ptr, uint32_t width, uint32_t height) {
+    assert(!is_swapchain_initialized_ && "Double initialization of swapchain");
+    if (InitializeSwapChain_RHI(surface_handle_ptr, width, height, &swapchain_size_)) {
+        is_swapchain_initialized_ = true;
+    }
+    return is_swapchain_initialized_;
+}
 
+// This can not be called if the frame before the current frame (which is ending) is not finished yet.
 std::future<void> RHI::AdvanceFrame(RHISyncPoint * sync_point) {
     auto & queue = GetGraphicsCommandQueue();
 
-    // We can do this because there are only 1 RHI thread.
-    queue.FrameEnd(false);
-    queue.EnqueueTranslateAndSubmit(sync_point);
+    // Translate and submit all commands, present the backbuffer, step to the next frame.
+    queue.FrameEnd(sync_point);
     auto lambda = []() {
         // Swap allocators after the command buffer is submitted
         // The swapped out memory will last for about 1 frame more and silently be recycled

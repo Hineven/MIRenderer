@@ -371,22 +371,43 @@ VulkanRHI::~VulkanRHI() {
 
     // Release swapchain (if present)
     if(swapchain_) {
-        rhi_swapchain_textures_.clear();
-        swapchain_images.clear();
+        // The RHI thread is stopped later, so automatic resource recycling is still functional now.
+        for (auto & e : rhi_backbuffer_textures) e.SafeRelease();
         device_.destroy(swapchain_);
+        // Release semaphores
+        for (int i = 0; i < (int)swapchain_images.size(); i++) {
+            device_.destroy(vk_swapchain_image_available_semaphores_[i]);
+            device_.destroy(vk_swapchain_render_finished_semaphores_[i]);
+        }
+        swapchain_images.clear();
     }
 
+    // If the surface is created, destroy it
+    if(surface_) {
+        instance_.destroy(surface_);
+        surface_ = nullptr;
+    }
+
+    // Recycle unused resources
+    EnqueueRHIThreadTask([this](){
+        RecycleRHIResourcesPendingForDeletion_RHIThread(true);
+    }).wait();
+
+    // We can safely destroy device resources now
     vma_.destroy();
     device_.destroy(pipeline_cache_);
     device_.destroy();
     instance_.destroy();
+
+    // The RHI thread is stopped later.
 }
 
-bool VulkanRHI::InitializeSwapChain(const void *surface_handle_ptr, uint32_t width, uint32_t height) {
+bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) {
 
     assert(surface_ == nullptr);
 
     vk::SurfaceKHR surface = *(const vk::SurfaceKHR*)surface_handle_ptr;
+    surface_ = surface;
 
     auto capabilities = physical_device_.getSurfaceCapabilitiesKHR(surface);
     auto formats = physical_device_.getSurfaceFormatsKHR(surface);
@@ -430,7 +451,8 @@ bool VulkanRHI::InitializeSwapChain(const void *surface_handle_ptr, uint32_t wid
     create_info.imageColorSpace = surface_format.colorSpace;
     create_info.imageExtent = extent;
     create_info.imageArrayLayers = 1;
-    create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
+    // Swapchain images are only being copied to
+    create_info.imageUsage = vk::ImageUsageFlagBits::eTransferDst;
 
     uint32_t graphics_queue_family_index = GetGraphicsQueueFamilyIndex();
     // The same for now
@@ -454,23 +476,36 @@ bool VulkanRHI::InitializeSwapChain(const void *surface_handle_ptr, uint32_t wid
     swapchain_ = device_.createSwapchainKHR(create_info);
 
     swapchain_images = device_.getSwapchainImagesKHR(swapchain_);
+    if (out_swapchain_size) {
+        *out_swapchain_size = (uint32_t)swapchain_images.size();
+    }
 
-    // Wrap them up with RHI abstraction
-    for (size_t i = 0; i < swapchain_images.size(); i++) {
-        VulkanTextureImportDesc im_desc {
-            swapchain_images[i],
-            vk::ImageLayout::eUndefined
-        };
-        auto tex = ImportTexture(&im_desc, RHITextureType::k2D, RHITextureDimensions {width, height, 1},
-            GetPixelFormatFromVulkanFormat(surface_format.format), RHITextureUsageFlagBits::kRenderTarget, 1, 1);
-        rhi_swapchain_textures_.emplace_back(tex);
+    // Set up semaphores for presentation
+    {
+        vk_swapchain_image_available_semaphores_.resize(swapchain_images.size());
+        vk_swapchain_render_finished_semaphores_.resize(swapchain_images.size());
+        for (int i = 0; i < (int)swapchain_images.size(); i++) {
+            vk::SemaphoreCreateInfo semaphore_info {};
+            vk_swapchain_image_available_semaphores_[i] = device_.createSemaphore(semaphore_info);
+            vk_swapchain_render_finished_semaphores_[i] = device_.createSemaphore(semaphore_info);
+        }
+    }
+
+    // Create back buffers (always 2)
+    for (size_t i = 0; i < 2; i++) {
+        auto tex = new VulkanTexture(RHITextureType::k2D, {width, height, 1},
+                            GetPixelFormatFromVulkanFormat(surface_format.format),
+                            RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc
+                            | RHITextureUsageFlagBits::kShaderResource, 1, 1
+        );
+        rhi_backbuffer_textures[i] = tex;
     }
 
     return true;
 }
 
-RHITexture *VulkanRHI::GetBackBuffer() const {
-    return rhi_swapchain_textures_[frame_index_ % rhi_swapchain_textures_.size()].Raw();
+RHITexture *VulkanRHI::GetBackBufferForFrameIndex(size_t index) const {
+    return rhi_backbuffer_textures[index & 1].Raw();
 }
 
 
@@ -566,7 +601,7 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
     vk::Image image_handle = {(VkImage)desc->vk_image};
     vk::ImageLayout layout = (vk::ImageLayout)(desc->vk_image_layout);
     texture->ImportFromHandle(image_handle, layout);
-    return nullptr;
+    return texture;
 }
 
 const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
@@ -574,6 +609,7 @@ const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
 }
 
 void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
+    // printf("Free resource %p\n", resource);
     delete resource;
 }
 

@@ -78,7 +78,7 @@ public:
 
     // Flush existing commands, and send to RHI thread for translation
     // @return a future that will be ready when the translation is completed.
-    inline std::future<void> EnqueueTranslation () {
+    FORCEINLINE std::future<void> EnqueueTranslation () {
         auto tmp = first_command_;
         first_command_ = last_command_ = AllocateCommand<RHICommandBase>();
         return EnqueueRHICommandTranslationTask(this, tmp);
@@ -89,7 +89,7 @@ public:
     // @param recycle_resources whether to recycle translated commands immediately after submission rather than in
     // frame intervals. May cause overhead.
     // @return a future that will be ready when the submission is completed.
-    inline std::future<void> SubmitTranslatedCommands (
+    FORCEINLINE std::future<void> SubmitTranslatedCommands (
             RHISyncPoint * in_sync_point = nullptr,
             bool recycle_resources = false) {
         return EnqueueRHICommandBufferSubmitTask(this, in_sync_point, recycle_resources);
@@ -100,17 +100,27 @@ public:
     // @param recycle_resources whether to recycle translated commands immediately after submission rather than in
     // frame intervals. May cause overhead.
     // @return a future that will be ready when the submission is completed.
-    inline std::future<void> EnqueueTranslateAndSubmit (RHISyncPoint * in_sync_point = nullptr,
+    FORCEINLINE std::future<void> EnqueueTranslateAndSubmit (RHISyncPoint * in_sync_point = nullptr,
                                                         bool recycle_resources = false) {
         EnqueueTranslation();
         return SubmitTranslatedCommands(in_sync_point, recycle_resources);
     }
+
+    // End the frame, enqueue a present command, and return resources to the system if requested.
+    // The command is special, it does not require submission to execute. Translation will be enough.
+    // @param sync_point: the fence to set when the frame finished presenting.
+    FORCEINLINE void FrameEnd (RHISyncPoint * sync_point) {
+        EnqueueTranslation();
+        EnqueueRHIFrameEndTask(this, sync_point);
+    }
+
 
     // Allocate a piece of frame local host buffer memory. Very fast linear allocation. Use this
     // function to allocate frame temporaries. The memory will be automatically freed when the command buffer is reset.
     // (That is, when the frame ends.)
     template<CMemTrivial T>
     T * Allocate (auto...args) {
+        assert(IsRenderThread());
         auto ptr = GetBufferAllocator().Allocate(sizeof(T));
         return new(ptr) T(args...);
     }
@@ -120,6 +130,7 @@ public:
     // (That is, when the frame ends.)
     template<CAOUB T>
     std::remove_all_extents_t<T> * Allocate (size_t count) {
+        assert(IsRenderThread());
         using TElem = std::remove_all_extents_t<T>;
         auto ptr = GetBufferAllocator().Allocate(sizeof(TElem) * count);
         return new(ptr) TElem[count];
@@ -467,13 +478,6 @@ public:
     RHIGPUAccessFlags * dst_accesses_;
 };
 
-class RHICommandFrameEnd : public TRHICommand<RHICommandFrameEnd> {
-public:
-    RHICommandFrameEnd(bool return_resources_to_system): return_resources_to_system_(return_resources_to_system) {};
-    void Execute(RHICommandQueueBase & cmd) override ;
-    bool return_resources_to_system_;
-};
-
 // The first command queue takes care of graphics commands.
 class RHICommandQueueGraphics : public RHICommandQueueBase {
 protected:
@@ -612,10 +616,6 @@ public:
     ) {
         RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
         AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer_count, buffers, src_stages, dst_stages, src_accesses, dst_accesses));
-    }
-
-    FORCEINLINE void FrameEnd (bool return_resources_to_system) {
-        AddCommand(AllocateCommand<RHICommandFrameEnd>(return_resources_to_system));
     }
 
     FORCEINLINE void BindPipeline(RHIGraphicsPipeline * pipeline) {

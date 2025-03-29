@@ -69,6 +69,10 @@ public:
     void RecycleResource (RDGTexture * texture) ;
     void RecycleResource (RDGBuffer * buffer) ;
 
+    FORCEINLINE size_t GetTotalDeviceMemoryUsage () const {
+        return total_device_memory_usage_;
+    }
+
 protected:
 
     struct RDGPoolFreeBufferRecord {
@@ -83,6 +87,8 @@ protected:
     // Keep references of all created RHI buffers. Dont let them be released.
     std::vector<TRef<RHIBuffer>> rhi_buffer_references_;
 
+    RDGPoolFreeBufferRecord AllocateBufferBlock (RHIBufferDesc for_buffer_desc);
+
     struct RDGPoolFreeTextureRecord {
         RHITexture * texture;
         // Keep the last access of the texture, used to initialize the RDG texture usage
@@ -94,6 +100,8 @@ protected:
     std::map<uint32_t, std::vector<RDGPoolFreeTextureRecord> > rhi_free_texture_map_;
     // Keep references.
     std::vector<TRef<RHITexture>> rhi_texture_references_;
+
+    size_t total_device_memory_usage_ {0};
 
 
 };

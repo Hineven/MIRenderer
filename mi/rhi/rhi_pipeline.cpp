@@ -197,24 +197,18 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     }
     for(int i = 0; i < desc.color_attachments.size(); ++i) {
         if(fragment_outputs_[i].format == RHIFragmentOutputFormatType::k4xFp32) {
-            if(desc.color_attachments[i].format != PixelFormatType::kR16G16B16A16_FLOAT
-            && desc.color_attachments[i].format != PixelFormatType::kR32G32B32A32_FLOAT
-            && desc.color_attachments[i].format != PixelFormatType::kR16G16_FLOAT
-            && desc.color_attachments[i].format != PixelFormatType::kR32G32B32_FLOAT
-            && desc.color_attachments[i].format != PixelFormatType::kR32G32_FLOAT
-            && desc.color_attachments[i].format != PixelFormatType::kR32_FLOAT
-            && desc.color_attachments[i].format != PixelFormatType::kR8G8B8A8_UNORM
-            && desc.color_attachments[i].format != PixelFormatType::kR8G8B8A8_SRGB) {
-                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} format mismatch", i);
+            if(!IsFloatPixelFormat(desc.color_attachments[i].format)) {
+                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} ({}) format mismatch,"
+                                                 "provided {}, reflected {}", i, fragment_outputs_[i].name,
+                                                 GetPixelFormatName(desc.color_attachments[i].format),
+                                                 GetRHIFragmentOutputFormatName(fragment_outputs_[i].format));
                 return ;
             }
         } else if(fragment_outputs_[i].format == RHIFragmentOutputFormatType::k4xUIint32) {
-            if(desc.color_attachments[i].format != PixelFormatType::kR32G32B32A32_UINT
-            && desc.color_attachments[i].format != PixelFormatType::kR32G32_UINT
-            && desc.color_attachments[i].format != PixelFormatType::kR32_UINT) {
-                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} format mismatch,"
+            if(!IsUIntPixelFormat(desc.color_attachments[i].format)) {
+                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} ({}) format mismatch,"
                                                  "provided {}, reflected {}",
-                                                 i,
+                                                 i, fragment_outputs_[i].name,
                                                  GetPixelFormatName(desc.color_attachments[i].format),
                                                  GetRHIFragmentOutputFormatName(fragment_outputs_[i].format));
                 return ;

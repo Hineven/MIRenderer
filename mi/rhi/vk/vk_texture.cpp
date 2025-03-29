@@ -51,6 +51,9 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
             vma::MemoryUsage::eAutoPreferDevice
     });
 
+    // Set the size of the image
+    size_ = vma.getAllocationInfo(result.second).size;
+
     vk_image_layout_ = vk::ImageLayout::eUndefined;
 
     vk_image_ = result.first;
@@ -83,6 +86,7 @@ void VulkanTexture::CreateDefaultImageView () {
 VulkanTexture::~VulkanTexture () {
     auto device = GetVulkanRHI()->GetDevice();
     device.destroyImageView(vk_default_image_view_);
+    // Imported textures should not be destroyed because they are allocated externally by the user
     if(!(GetFlags() & RHIResourceFlagBits::kImported)) {
         auto vma = GetVulkanRHI()->GetVmaAllocator();
         vma.destroyImage(vk_image_, allocation_);

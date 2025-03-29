@@ -46,6 +46,7 @@ add_custom_command(
         ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources/
 )
 # Add resource file to the test target
+target_sources(rdg_test PRIVATE ${SHADER_FILES})
 target_include_directories(rdg_test PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(rdg_test PRIVATE cpptrace::cpptrace infra rhi rdg core ${GTEST_LIBRARIES})
-add_test(NAME rdg COMMAND rdg_test ${CMAKE_CURRENT_SOURCE_DIR}/rdg/resources/test_shader_1.hlsl)
+add_test(NAME rdg COMMAND rdg_test)

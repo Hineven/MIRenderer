@@ -36,13 +36,17 @@ void RHIParamStructInfo::InitializeUniformsLayoutHash () {
 uint32_t RHIParamStructInfo::ComputeSize() const {
     uint32_t current_position = 0;
     for (auto & e : members) {
-        auto alignment = e.GetAlignment();
-        uint32_t next_position = (current_position + alignment - 1) & ~(alignment - 1);
-        bool crossing_border = (next_position / 16) != (current_position / 16);
-        // HLSL buffer-row rule check: if the element lies on the 16-byte boundary, it should be aligned to 16 bytes
-        if (crossing_border) alignment = 16;
-        current_position = (current_position + alignment - 1) & ~(alignment - 1);
-        current_position += e.size;
+        if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
+            auto alignment = e.GetAlignment();
+            if (alignment) {
+                uint32_t next_position = (current_position + alignment - 1) & ~(alignment - 1);
+                bool crossing_border = (next_position / 16) != (current_position / 16);
+                // HLSL buffer-row rule check: if the element lies on the 16-byte boundary, it should be aligned to 16 bytes
+                if (crossing_border) alignment = 16;
+                current_position = (current_position + alignment - 1) & ~(alignment - 1);
+                current_position += e.size;
+            }
+        }
     }
     return current_position;
 }

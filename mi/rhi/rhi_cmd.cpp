@@ -103,10 +103,6 @@ void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBufferBarriers(&cmd, this);
 }
 
-void RHICommandFrameEnd::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIFrameEnd(&cmd, this);
-}
-
 MI_NAMESPACE_END
 
 

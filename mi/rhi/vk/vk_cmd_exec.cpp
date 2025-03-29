@@ -163,7 +163,7 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
 void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_unused]] RHICommandBeginRendering *begin_rendering) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
+    [[maybe_unused]] auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
 
     vk::Rect2D render_area = state.GetScissorRect();
     vk::RenderingAttachmentInfo attachments_info[C::kRHIMaxNumFramebufferAttachments];
@@ -300,17 +300,6 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
         point.bound_private_descriptor_set = nullptr;
-        auto set_layout = pipeline->GetPrivateDescriptorSetLayout();
-        if(set_layout) {
-            auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
-                    vk::DescriptorSetAllocateInfo()
-                            .setDescriptorPool(state.descriptor_pool)
-                            .setDescriptorSetCount(1)
-                            .setSetLayouts(set_layout)
-            );
-            mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
-            point.bound_private_descriptor_set = descriptor_set[0];
-        }
         state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
     }
 }
@@ -335,17 +324,140 @@ void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
     state.bound_vertex_buffers[bind_vertex_buffer->binding_] = vb;
 }
 
-void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHICommandFrameEnd *frame_end) {
+void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint * sync) {
     assert(IsRHIThread());
     auto & chain = state_chains_[(uint32_t)cmd->GetCommandQueueType()];
+    auto & state = chain.Current();
+    auto vk_rhi = GetVulkanRHI();
+    if (!vk_rhi->IsSwapChainInitialized()) {
+        // Offscreen rendering, no need for presenting, simply do a submission
+        RHISubmitCommandBuffer(cmd, sync, false);
+    } else {
+        // Do present if needed
+        auto queue = vk_rhi->GetQueue(cmd->GetCommandQueueType());
+        auto device = vk_rhi->GetDevice();
+        // 1. acquire the next swapchain image
+        auto swapchain = vk_rhi->GetSwapChain();
+        uint32_t swapchain_image_index;
+        vk::Semaphore image_ready_sem = vk_rhi->vk_swapchain_image_available_semaphores_[
+            GetCurrentFrameIndex_RHIThread() % vk_rhi->swapchain_images.size()
+        ];
+        auto result = device.acquireNextImageKHR(swapchain, C::kMaxFrameTimeoutNanoseconds, image_ready_sem, {}, &swapchain_image_index);
+        if (result == vk::Result::eErrorOutOfDateKHR) {
+            MI_LOG(MIInfraLogType::kError, "Swapchain out of date");
+            return;
+        } else if (result != vk::Result::eSuccess) {
+            MI_LOG(MIInfraLogType::kError, "Failed to acquire swapchain image: {}", vk::to_string(result));
+            return;
+        }
+        // 2. copy backbuffer to swapchain image
+        state.BeginCmd();
+        // 2.1 transit image layout
+        auto backbuffer = vk_rhi->GetBackBufferForFrameIndex(GetCurrentFrameIndex_RHIThread());
+        vk::Image swapchain_image = vk_rhi->swapchain_images[swapchain_image_index];
+        vk::ImageMemoryBarrier image_barrier_x {
+            vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
+            vk::AccessFlagBits::eTransferRead,
+            GetVulkanImageLayout(backbuffer->GetLayout()),
+            vk::ImageLayout::eTransferSrcOptimal,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            ((VulkanTexture*)backbuffer)->GetImage(),
+            vk::ImageSubresourceRange {
+                vk::ImageAspectFlagBits::eColor,
+                0, 1, 0, 1
+            }
+        };
+        vk::ImageMemoryBarrier image_barrier_y = image_barrier_x;
+        image_barrier_y.image = swapchain_image;
+        image_barrier_y.oldLayout = vk::ImageLayout::eUndefined;
+        image_barrier_y.newLayout = vk::ImageLayout::eTransferDstOptimal;
+        image_barrier_y.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+        {
+            vk::ImageMemoryBarrier barriers[] = {image_barrier_x, image_barrier_y};
+            state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer, {},
+                {}, {}, barriers);
+            ((VulkanTexture*)backbuffer)->vk_image_layout_ = vk::ImageLayout::eTransferSrcOptimal;
+            ((VulkanTexture*)backbuffer)->layout_ = RHITextureLayoutType::kTransferSrcOptimal;
+            ((VulkanTexture*)backbuffer)->using_stages = vk::PipelineStageFlagBits::eTransfer;
+            // The images in the swapchain are not used by the application, so we don't need to update the layout
+        }
+        // 2.2 copy backbuffer to swapchain image
+        auto copy_region = vk::ImageCopy {
+            vk::ImageSubresourceLayers {
+                vk::ImageAspectFlagBits::eColor,
+                0, 0, 1
+            },
+            {0, 0, 0},
+            vk::ImageSubresourceLayers {
+                vk::ImageAspectFlagBits::eColor,
+                0, 0, 1
+            },
+            {0, 0, 0},
+            {backbuffer->GetWidth(), backbuffer->GetHeight(), backbuffer->GetDepth()}
+        };
+        state.cmd.copyImage(
+            ((VulkanTexture*)backbuffer)->GetImage(),
+            vk::ImageLayout::eTransferSrcOptimal,
+            swapchain_image,
+            vk::ImageLayout::eTransferDstOptimal,
+            copy_region
+        );
+        // 2.3 transit swapchain image layout
+        vk::ImageMemoryBarrier swapchain_barrier {
+            vk::AccessFlagBits::eTransferWrite,
+            vk::AccessFlagBits::eMemoryRead,
+            vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::ePresentSrcKHR,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            swapchain_image,
+            vk::ImageSubresourceRange {
+                vk::ImageAspectFlagBits::eColor,
+                0, 1, 0, 1
+            }
+        };
+        state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+            {}, {}, {}, swapchain_barrier);
+        // 2.4 Execution barrier, make sure all previously submitted commands are finished before this one finishes
+        // Thus the completion of this command buffer will mark the end of the whole frame.
+        state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eNone,
+            {}, {}, {}, {});
+        // 3. end and submit command buffer.
+        state.CloseCmd();
+        vk::Semaphore present_ready_sem = vk_rhi->vk_swapchain_render_finished_semaphores_[
+            GetCurrentFrameIndex_RHIThread() % vk_rhi->swapchain_images.size()
+        ];
+        vk::PipelineStageFlags submit_wait_stages = vk::PipelineStageFlagBits::eTransfer;
+        auto submit_info = vk::SubmitInfo {
+            1, &image_ready_sem, &submit_wait_stages,
+            1, &state.cmd,
+            1, &present_ready_sem
+        };
+        auto vk_sync = (VulkanSyncPoint*)sync;
+        queue.submit(submit_info, vk_sync ? vk_sync->GetFence() : nullptr);
+        // Submission is done, we can reset the command buffer handle to make sure it is not used again
+        state.cmd = nullptr;
+        // 4. present the swapchain image
+        vk::Result present_result;
+        auto present_info = vk::PresentInfoKHR {
+            1, &present_ready_sem, 1, &swapchain,
+            &swapchain_image_index, &present_result
+        };
+        result = queue.presentKHR(present_info);
+        if (result != vk::Result::eSuccess) {
+            MI_LOG(MIInfraLogType::kError, "Failed to present swapchain image: {}", vk::to_string(result));
+        }
+    }
+
+    // Switch double buffered states
     {
         // Release resources allocated for the frame before current frame
         int prev_state_index = (chain.state_index - 1 + (int) std::size(chain.states)) % (int) std::size(chain.states);
         auto &prev_state = chain.states[prev_state_index];
-        prev_state.Clear(frame_end->return_resources_to_system_);
+        prev_state.Clear(false);
         // Switch to the next state
         chain.state_index = (chain.state_index + 1) % (int) std::size(chain.states);
     }
+    if (sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
 }
 
 // Helpers
@@ -460,7 +572,8 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
 // TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
-    RHICommandQueueBase * cmd, [[maybe_unused]] vk::Device device, vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
+    VulkanCommandExecutor::CommandQueueState & state, [[maybe_unused]] vk::Device device,
+    vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
     [[maybe_unused]] vk::CommandBuffer cmdb
 ) {
     assert(IsRHIThread());
@@ -494,11 +607,12 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
 
     // Count all writes that needed to allocate a WriteDescriptorSet array
     uint32_t write_count = (uint32_t)
-            (parameter_table.uniforms.size() + parameter_table.storages.size() + parameter_table.uavs.size() + parameter_table.srvs.size() + parameter_table.samplers.size() + parameter_table.acceleration_structures.size());
-    vk::WriteDescriptorSet * writes = cmd->Allocate<vk::WriteDescriptorSet[]>(write_count);
+            (parameter_table.uniforms.size() + parameter_table.storages.size() + parameter_table.uavs.size()
+                + parameter_table.srvs.size() + parameter_table.samplers.size() + parameter_table.acceleration_structures.size());
+    vk::WriteDescriptorSet * writes = state.Allocate<vk::WriteDescriptorSet[]>(write_count);
     int write_index = 0;
     for(auto ubo : parameter_table.uniforms) {
-        auto& buffer_info = *cmd->Allocate<vk::DescriptorBufferInfo>();
+        auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
         buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer(); // NOLINT its safe
         buffer_info.offset = ubo.buffer.offset;
         buffer_info.range = ubo.buffer.size;
@@ -514,7 +628,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         writes[write_index++] = write;
     }
     for(auto storage : parameter_table.storages) {
-        auto& buffer_info = *cmd->Allocate<vk::DescriptorBufferInfo>();
+        auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
         auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer); // NOLINT its safe
         buffer_info.buffer = buffer->GetBuffer(); // NOLINT its safe
         buffer_info.offset = storage.buffer.offset;
@@ -530,7 +644,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         writes[write_index++] = write;
     }
     for(auto uav : parameter_table.uavs) {
-        auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
+        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(uav.texture);
         image_info.imageView = image->GetImageView(); // NOLINT its safe
         image_info.imageLayout = vk::ImageLayout::eGeneral;
@@ -545,7 +659,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         writes[write_index++] = write;
     }
     for(auto srv : parameter_table.srvs) {
-        auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
+        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(srv.texture);
         image_info.imageView = image->GetImageView(); // NOLINT its safe
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -560,7 +674,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         writes[write_index++] = write;
     }
     for(auto sampler : parameter_table.samplers) {
-        auto& image_info = *cmd->Allocate<vk::DescriptorImageInfo>();
+        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
@@ -572,8 +686,8 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         writes[write_index++] = write;
     }
     for(auto acc : parameter_table.acceleration_structures) {
-        auto& write_khr = *cmd->Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
-        auto  p_ac = cmd->Allocate<vk::AccelerationStructureKHR>();
+        auto& write_khr = *state.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
+        auto  p_ac = state.Allocate<vk::AccelerationStructureKHR>();
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot).binding)
@@ -672,7 +786,7 @@ void VulkanCommandExecutor::FlushBindPointState(
         point.bindless_table_top += btb_size;
     }
     auto descriptor_writes = point.InstallShaderDescriptors(
-            cmd, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set, btb_data,
+            state, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set, btb_data,
             state.cmd
     );
     if(!descriptor_writes.empty()) {
@@ -708,7 +822,7 @@ void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
                                               RHICommandTextureBarrier *barrier) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto barriers = cmd->Allocate<vk::ImageMemoryBarrier[]>(barrier->num_textures_);
+    auto barriers = state.Allocate<vk::ImageMemoryBarrier[]>(barrier->num_textures_);
     for (int i = 0; i < (int)barrier->num_textures_; i++) {
         auto texture = static_cast<VulkanTexture*>(barrier->textures_[i]);
         auto dst_vk_layout = GetVulkanImageLayout(barrier->layouts_[i]);
@@ -744,7 +858,7 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
     auto buffers = barrier->buffers_;
-    auto vk_barriers = cmd->Allocate<vk::BufferMemoryBarrier[]>(barrier->num_buffers_);
+    auto vk_barriers = state.Allocate<vk::BufferMemoryBarrier[]>(barrier->num_buffers_);
     for (auto [i, e] : std::views::enumerate(std::span(buffers, barrier->num_buffers_))) {
         vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
         vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
@@ -786,24 +900,18 @@ VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISy
             .setPCommandBuffers(&cmd);
     if (dirty) queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
 
+    // Reset the handle to the command buffer after submission
+    state.cmd = nullptr;
+
     if(sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
-    // Allocate a new command buffer
-    // TODO accelerate this?
-    cmd = vk_rhi->GetDevice().allocateCommandBuffers(
-            vk::CommandBufferAllocateInfo{
-                    state.cmd_pool,
-                    vk::CommandBufferLevel::ePrimary,
-                    1
-            }
-    )[0];
-    // Setup default dynamic states.
-    state.SetupDefaultDynamicStates();
 }
 
 void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
     assert(IsRHIThread());
     {
-        CloseCmd();
+        assert(cmd_pool == nullptr);
+        assert(cmd == nullptr);
+
         auto rhi = GetVulkanRHI();
         cmd_pool = rhi->GetDevice().createCommandPool(
                 vk::CommandPoolCreateInfo{
@@ -811,15 +919,6 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
                         rhi->GetQueueFamilyIndex(type)
                 }
         );
-        cmd = rhi->GetDevice().allocateCommandBuffers(
-                vk::CommandBufferAllocateInfo{
-                        cmd_pool,
-                        vk::CommandBufferLevel::ePrimary,
-                        1
-                }
-        )[0];
-        // Push default dynamic states for vulkan command buffers
-        SetupDefaultDynamicStates();
         // Clear bound vertex buffers
         for(auto & span = bound_vertex_buffers; auto & buf : span)
             buf = RHIBufferSpan{};
@@ -875,7 +974,7 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
         };
         descriptor_pool = rhi->GetDevice().createDescriptorPool(
                 vk::DescriptorPoolCreateInfo{
-                        vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind,
+                        {},
                         C::kMaxNumDescriptorSetsPerFrame,
                         pool_sizes
                 }
@@ -903,16 +1002,17 @@ void VulkanCommandExecutor::CommandQueueState::Destroy() {
 
 void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_system) {
     assert(IsRHIThread());
+    // Clear states, get ready for the next frame.
     auto rhi = GetVulkanRHI();
     for(auto & point : points) {
-        if(point.bound_private_descriptor_set) {
-            rhi->GetDevice().freeDescriptorSets(descriptor_pool, point.bound_private_descriptor_set);
-            point.bound_private_descriptor_set = nullptr;
-        }
+        point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = nullptr;
         point.parameter_table = {};
     }
-    CloseCmd();
+    // Reset the temporary allocator
+    allocator.Reset();
+    // This should always be true as a frame should end with FrameEnd(), which contains a submit.
+    assert(cmd == nullptr);
     // Do not recycle resources back to the system. We may be able to reuse them in the later frames.
     rhi->GetDevice().resetCommandPool(cmd_pool,
                   return_resources_to_system
@@ -925,8 +1025,21 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
 
 void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
     if(!cmd_recording_started) {
+        assert(cmd == nullptr);
         cmd_recording_started = true;
+        auto device = GetVulkanRHI()->GetDevice();
+        // Allocate a new command buffer
+        // TODO accelerate this?
+        cmd = device.allocateCommandBuffers(
+                vk::CommandBufferAllocateInfo{
+                        cmd_pool,
+                        vk::CommandBufferLevel::ePrimary,
+                        1
+                }
+        )[0];
         cmd.begin(vk::CommandBufferBeginInfo{});
+        // Setup default dynamic states.
+        SetupDefaultDynamicStates();
     }
 }
 
@@ -940,7 +1053,6 @@ bool VulkanCommandExecutor::CommandQueueState::CloseCmd () {
 }
 
 void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() {
-    BeginCmd();
     // TODO provide a way to dynamically set these values
     cmd.setCullMode(vk::CullModeFlagBits::eNone);
     cmd.setDepthBiasEnable(false);

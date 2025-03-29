@@ -102,6 +102,15 @@ FORCEINLINE bool IsUIntPixelFormat (PixelFormatType type) {
     }
 }
 
+FORCEINLINE bool IsPixelFormat4ComponentFloat (PixelFormatType type) {
+    return type == PixelFormatType::kR32G32B32A32_FLOAT ||
+           type == PixelFormatType::kR16G16B16A16_FLOAT ||
+           type == PixelFormatType::kB8G8R8A8_UNORM ||
+           type == PixelFormatType::kB8G8R8A8_SRGB ||
+           type == PixelFormatType::kR8G8B8A8_UNORM ||
+           type == PixelFormatType::kR8G8B8A8_SRGB;
+}
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_PIXEL_FORMAT_H

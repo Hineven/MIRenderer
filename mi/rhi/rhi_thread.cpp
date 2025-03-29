@@ -14,7 +14,8 @@ MI_NAMESPACE_BEGIN
 enum class RHIThreadTaskType {
     kLambda,
     kTranslate,
-    kSubmit
+    kSubmit,
+    kFrameEnd,
 };
 
 struct RHIThreadTask {
@@ -24,6 +25,9 @@ struct RHIThreadTask {
             RHISyncPoint * sync_point;
             bool recycle;
         } submit;
+        struct {
+            RHISyncPoint * sync_point;
+        } frame_end;
     } param;
     std::function<void()> lambda;
     RHIThreadTaskType type;
@@ -36,7 +40,7 @@ static TLockFreeQueue<RHIThreadTask, LockFreeQueueUserType::kMultiple, LockFreeQ
 static std::counting_semaphore<> task_queue_sem_ {0};
 
 // The thread
-static RHIWorkerThread * G_RHIWorkerThread = nullptr;
+static RHIWorkerThread * rhi_worker_thread_ = nullptr;
 
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) {
     RHIThreadTask task;
@@ -61,25 +65,36 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * comma
     return future;
 }
 
+std::future<void> EnqueueRHIFrameEndTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync) {
+    RHIThreadTask task;
+    task.type = RHIThreadTaskType::kFrameEnd;
+    task.queue = command_buffer;
+    task.param.frame_end.sync_point = sync;
+    auto future = task.promise.get_future();
+    task_queue_.Push(std::move(task));
+    task_queue_sem_.release();
+    return future;
+}
+
 void EnqueueRHIThreadIdleTask () {
     task_queue_sem_.release();
 }
 
 void StartAndRunRHIWorkerThread() {
     RHIWorkerThread * rhi_thread = new RHIWorkerThread();
-    G_RHIWorkerThread = rhi_thread;
+    rhi_worker_thread_ = rhi_thread;
     rhi_thread->Run();
 }
 
 void SignalStopRHIWorkerThreads() {
-    if(G_RHIWorkerThread) {
-        G_RHIWorkerThread->SignalStop();
+    if(rhi_worker_thread_) {
+        rhi_worker_thread_->SignalStop();
         EnqueueRHIThreadIdleTask();
     }
 }
 
 bool IsRHIThreadActive() {
-    return G_RHIWorkerThread && G_RHIWorkerThread->IsRunning();
+    return rhi_worker_thread_ && rhi_worker_thread_->IsRunning();
 }
 
 std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
@@ -95,7 +110,7 @@ std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
 
 void AdvanceFrame_RHIThread() {
     mi_assert(IsRHIThread(), "AdvanceFrame_RHIThread must be called in RHI thread.");
-    G_RHIWorkerThread->AdvanceFrame();
+    rhi_worker_thread_->AdvanceFrame();
 }
 
 void RHIWorkerThread::Run() {
@@ -117,7 +132,6 @@ void RHIWorkerThread::Run() {
     }
     is_running_ = true;
     MI_LOG(MIInfraLogType::kInfo, "RHI thread started.");
-    int cnt = 0;
     while(!stop_signal_) {
         RHIThreadTask task;
         // Wait for at least one task
@@ -144,6 +158,14 @@ void RHIWorkerThread::Run() {
             } else if(task.type == RHIThreadTaskType::kLambda) {
                 task.lambda();
                 task.promise.set_value();
+            } else if (task.type == RHIThreadTaskType::kFrameEnd) {
+                // Frame end
+                RHI::Get().GetCommandExecutor()->RHIFrameEnd(
+                        task.queue,
+                        task.param.frame_end.sync_point
+                );
+                // Notify the task is finished
+                task.promise.set_value();
             } else {
                 MI_LOG(MIInfraLogType::kError, "Unknown task type");
             }
@@ -161,5 +183,10 @@ RHIWorkerThread::~RHIWorkerThread () {
     // The thread may be running even after the destructor is called.
     // but we've set the stop signal, so it will exit soon.
 }
+
+size_t GetCurrentFrameIndex_RHIThread() {
+    return rhi_worker_thread_->GetFrameIndex();
+}
+
 
 MI_NAMESPACE_END

@@ -39,11 +39,11 @@ public:
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
     virtual void RHIBufferBarriers (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
-    // The command marks the last command of the frame.
-    virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHICommandFrameEnd * cmd) = 0;
 
     // Submit all translated command stored within the command buffer and clear them.
     virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point, bool recycle_resources) = 0;
+    // End the frame, enqueue a present command.
+    virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHISyncPoint * sync) = 0;
 
 };
 

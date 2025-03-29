@@ -20,7 +20,8 @@ class RDGTexture : public RDGResource {
     FORCEINLINE RDGTexture (RHITextureDesc desc) : desc_(desc) {}
 public:
     friend class RDGResourcePool;
-    static TRef<RDGTexture> Create (RHITextureDesc desc) {
+    friend class RenderGraphBuilder;
+    FORCEINLINE static TRef<RDGTexture> Create (RHITextureDesc desc) {
         return TRef<RDGTexture>(new RDGTexture(desc));
     }
     FORCEINLINE static TRef<RDGTexture> CreateTexture2D (
@@ -31,6 +32,12 @@ public:
             {width, height, 1},
             1, 1, format, usage
         });
+    }
+    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
+    static TRef<RDGTexture> Import (const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) ;
+    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
+    FORCEINLINE static TRef<RDGTexture> Import (RHITexture * resource, RDGTextureUsageType prev_usage = RDGTextureUsageType::kNone) {
+        return Import("<unnamed>", resource, prev_usage);
     }
     ~RDGTexture () override ;
     FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
@@ -54,17 +61,28 @@ protected:
 
 class RDGBuffer : public RDGResource {
 protected:
-    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) :
-    desc_({size, usage}), dedicated_(dedicated) {
-        if (!no_warning && ((usage & RHIBufferUsageFlagBits::kStaging) || (usage & RHIBufferUsageFlagBits::kReadback))) {
+    FORCEINLINE RDGBuffer(RHIBufferDesc desc, bool dedicated = false, bool no_warning = false) : desc_(desc), dedicated_(dedicated) {
+        if (!no_warning && ((desc.usage & RHIBufferUsageFlagBits::kStaging) || (desc.usage & RHIBufferUsageFlagBits::kReadback))) {
             MI_LOG(MIInfraLogType::kWarning, "We suggest using RHI directly with staging and readback buffers (fire and forgot)."
                                              "Otherwise you may carefully handle their lifetimes when performing GPU-CPU data-transactions.");
         }
     }
+    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false):
+        RDGBuffer(RHIBufferDesc{ size, usage}, dedicated, no_warning) {}
 public:
+    friend class RDGResourcePool;
+    friend class RenderGraphBuilder;
+
     FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) {
         return TRef<RDGBuffer>(new RDGBuffer(usage, size, dedicated, no_warning));
     }
+    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
+    static TRef<RDGBuffer> Import (const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) ;
+    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
+    FORCEINLINE static TRef<RDGBuffer> Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone) {
+        return Import("<unnamed>", resource, prev_access);
+    }
+
     constexpr static uint32_t kMinBufferSizeLog2 = 10;
     constexpr static uint32_t kMinBufferSize = 1 << kMinBufferSizeLog2;
     FORCEINLINE static uint32_t GetResourceClassHash (RHIBufferDesc desc, bool dedicated) {
@@ -78,7 +96,6 @@ public:
         }
     }
 
-    friend class RDGResourcePool;
     FORCEINLINE void SetDedicated (bool value = true) {
         assert(!rhi_buffer_span_.buffer && "Cannot set dedicated flag after buffer allocation.");
         dedicated_ = value;

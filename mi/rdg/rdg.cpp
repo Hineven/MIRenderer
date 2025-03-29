@@ -17,9 +17,7 @@
 
 MI_NAMESPACE_BEGIN
 
-RenderGraph::~RenderGraph() {
-    printf("RDG destruction\n");
-}
+RenderGraph::~RenderGraph() {}
 
 FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
     switch (size) {
@@ -93,6 +91,10 @@ static RHITextureLayoutType GetTextureLayout (RDGTextureUsageType usage) {
 
 void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
+    if (passes_.size() == 0) {
+        MI_WARN("All graph passes are culled, nothing to execute.");
+    }
+
     // Directly use the graphics queue.
     auto & RHI = RHI::Get();
     auto & cmd = RHI.GetGraphicsCommandQueue();
@@ -142,25 +144,28 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
             }
         }
-        // Batch allocate all uniform buffers
-        uniform_buffer_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, all_uniform_buffer_size);
 
         // Staging buffer as well, here we directly create from RHI because it relates to GPU-CPU synchronization,
         // and thus it should not reside in the RDG resource pool for further reusing and recycling.
         // RHI layer recycling mechanism will take care of it.
-        auto staging_buffer = RHI::Get().CreateBuffer(
-            all_uniform_buffer_size, RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc);
-        uniform_buffer_->RequestRHI(pool);
-        // Write to staging buffer
-        auto staging_ptr = staging_buffer->Map();
-        for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
-            WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
+        if (all_uniform_buffer_size) {
+            // Batch allocate all uniform buffers
+            uniform_buffer_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, all_uniform_buffer_size);
+
+            auto staging_buffer = RHI::Get().CreateBuffer(
+                all_uniform_buffer_size, RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc);
+            uniform_buffer_->RequestRHI(pool);
+            // Write to staging buffer
+            auto staging_ptr = staging_buffer->Map();
+            for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
+                WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
+            }
+            // Schedule the copy
+            cmd.CopyBuffer(staging_buffer->GetSpan(), uniform_buffer_->GetRHI());
+            // Insert a manual barrier
+            cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
         }
-        // Schedule the copy
-        cmd.CopyBuffer(staging_buffer->GetSpan(), uniform_buffer_->GetRHI());
-        // Insert a manual barrier
-        cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kAll,
-            RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
     }
 

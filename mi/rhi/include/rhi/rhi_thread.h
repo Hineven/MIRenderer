@@ -59,6 +59,9 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * comma
 // @return a future that will be ready when the task is completed on RHI thread.
 std::future<void> EnqueueRHIThreadTask (std::function<void()> && task) ;
 
+// Submit all translated commands, present the back buffer. Called once per frame.
+std::future<void> EnqueueRHIFrameEndTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync) ;
+
 // Invoke the RHI thread to do 1 loop.
 void EnqueueRHIThreadIdleTask ();
 
@@ -66,6 +69,9 @@ void EnqueueRHIThreadIdleTask ();
 // The counter is used to filter RHI resources to recycle. Resources that are at least
 // 1 frame older than the current frame will be recycled.
 void AdvanceFrame_RHIThread () ;
+
+// Get the frame index of RHI thread (may lagging behind RHI::Get().FrameIndex(), used by the RHI thread)
+size_t GetCurrentFrameIndex_RHIThread () ;
 
 MI_NAMESPACE_END
 #endif //MI_RHI_THREAD_H

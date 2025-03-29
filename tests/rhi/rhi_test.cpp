@@ -249,9 +249,7 @@ TEST(RHITest, RHITriangle) {
                             attachment_descs.begin(), attachment_descs.end()
                     },
                     .depth_stencil_attachment = {
-                            .format = PixelFormatType::kD32_FLOAT,
-                            .load_op = RHILoadOpType::kClear,
-                            .store_op = RHIStoreOpType::kStore,
+                            .format = PixelFormatType::kD32_FLOAT
                     },
             };
             auto pipeline = RHI::Get().CreateGraphicsPipeline(pipeline_desc);

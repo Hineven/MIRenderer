@@ -36,25 +36,45 @@ public:
         RDGPassLambda && pass) ;
 
     FORCEINLINE RDGPass * AddPass (
+        const char *name,
         RDGPassFlags pass_flags,
         RDGPassLambda && pass
     ) {
         return AddPass(
-            "<annoymous generic pass>",
+            name,
             RDGPassType::kGeneric, pass_flags,
             nullptr, nullptr,
             std::move(pass)
         );
     }
 
+    FORCEINLINE RDGPass * AddPass (
+        RDGPassFlags pass_flags,
+        RDGPassLambda && pass
+    ) {
+        return AddPass(
+            "<anonymous generic pass>",
+            RDGPassType::kGeneric, pass_flags,
+            nullptr, nullptr,
+            std::move(pass)
+        );
+    }
 
+    template<typename T>
+    FORCEINLINE RDGPass * AddPass (
+        RDGPassFlags pass_flags,
+        typename T::ShaderParameters * parameter_struct,
+        RDGPassLambda && pass
+    ) {
+        return AddPass(
+            T::GetShaderTypeName(),
+            T::GetRDGPassType(), pass_flags,
+            T::GetShaderParamStructInfo(), parameter_struct,
+            std::move(pass)
+        );
+    }
+    
     TRef<RenderGraph> Compile ();
-
-    TRef<RDGBuffer>  ImportResource (const char *name, TRef<RHIBuffer> resource) ;
-    TRef<RDGTexture> ImportResource (const char *name, TRef<RHITexture> resource) ;
-
-    TRef<RDGBuffer>  ExportResource (const char *name, TRef<RHIBuffer> resource) ;
-    TRef<RDGTexture> ExportResource (const char *name, TRef<RDGTexture> resource) ;
 
     FORCEINLINE void * Allocate (size_t size) {
         return allocator_->Allocate(size);
@@ -67,6 +87,7 @@ public:
         }
         return ptr;
     }
+
 protected:
 
     std::unique_ptr<TOneTimeLinearAllocator<>> allocator_;

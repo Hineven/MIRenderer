@@ -31,6 +31,8 @@ namespace C {
 
     constexpr uint32_t kUniformBufferAlignment = 256;
     constexpr uint32_t kRDGPoolUniformBufferBlockSize = 64 * 1024 * 1024; // 64MB
+
+    constexpr uint64_t kMaxFrameTimeoutNanoseconds = 10000000000; // 10 seconds
 }
 
 MI_NAMESPACE_END

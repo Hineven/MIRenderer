@@ -39,6 +39,9 @@ public:
     FORCEINLINE uint32_t GetDepth() const { return desc_.dimensions.depth; }
     FORCEINLINE RHITextureLayoutType const GetLayout() const { return layout_; }
 
+    FORCEINLINE RHITextureDesc GetDesc() const { return desc_; }
+    FORCEINLINE size_t GetSize () const { return size_; }
+
     // Convert this texture to a bindless texture
     // If optimal_access is true, the texture will always be in optimal layout when accessed.
     void ConvertToBindless (bool optimal_access) ;
@@ -59,6 +62,8 @@ protected:
 
     RHITextureLayoutType layout_ {RHITextureLayoutType::kUndefined};
     RHITextureDesc desc_;
+
+    size_t size_ {};
 
     bool is_bindless_optimal_accessed_ {false};
 };

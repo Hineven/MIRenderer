@@ -34,6 +34,9 @@ class VulkanRHI : public RHI {
 protected:
     void PostInitialize() override;
 public:
+    // TODO remove this friend declaration.
+    friend class VulkanCommandExecutor;
+
     VulkanRHI(const VulkanRHICreateInfo * extra) ;
     ~VulkanRHI() override ;
 
@@ -45,9 +48,7 @@ public:
         return "Vulkan";
     }
 
-    bool InitializeSwapChain(const void *surface_handle_ptr, uint32_t width, uint32_t height) override;
-
-    RHITexture * GetBackBuffer() const override;
+    RHITexture * GetBackBufferForFrameIndex(size_t index) const override;
 
     RHIBufferRef CreateBuffer(RHIBufferDesc desc) override;
 
@@ -115,8 +116,12 @@ public:
         return (VulkanBindlessManager*)bindless_manager_;
     }
 
+    FORCEINLINE vk::SwapchainKHR GetSwapChain () const {return swapchain_;}
+
 
 protected:
+
+    bool InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) override;
 
     void FreeResource_RHIThread(RHIResource * resource) override;
 
@@ -135,7 +140,11 @@ protected:
     vk::SurfaceKHR surface_ {};
     vk::SwapchainKHR swapchain_ {};
     std::vector<vk::Image> swapchain_images;
-    std::vector<RHITextureRef> rhi_swapchain_textures_;
+    // Back buffer is double buffered. Then copied to the swapchain
+    RHITextureRef rhi_backbuffer_textures[2];
+
+    std::vector<vk::Semaphore> vk_swapchain_image_available_semaphores_;
+    std::vector<vk::Semaphore> vk_swapchain_render_finished_semaphores_;
 
     vk::PipelineCache pipeline_cache_ {};
 

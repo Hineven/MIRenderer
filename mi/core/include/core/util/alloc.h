@@ -28,9 +28,9 @@ public:
     }
 
     void * Allocate (size_t size) {
-        mi_assert(size <= BlockSize, "Allocation size exceeds block size");
         if(size == 0) return nullptr; // Silently ignore zero size allocation
         size = RoundUp(size, Alignment);
+        mi_assert(size <= BlockSize, "Allocation size exceeds block size");
         if(current_offset_ + size > BlockSize) {
             auto new_block = reinterpret_cast<Block*>(operator new (sizeof(Block), std::align_val_t(Alignment)));
             new_block->next = nullptr;
