@@ -12,14 +12,37 @@ MI_NAMESPACE_BEGIN
 
 struct RDGShaderParamStructAndSizeInfo;
 
+template<typename T>
+concept CShaderType = std::is_base_of<RDGShader, std::remove_cvref_t<T>>::value;
+
 // Helpers for dispatching shaders, etc.
 // Used inside pass lambdas.
 class RDGCommandHelper {
 public:
+
+    // Convenience function to upload shader parameters
+    static RHIBindPipelineParametersDesc UploadShaderParams(
+        RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
+        const RDGShaderParamStructAndSizeInfo * base_info, const void * params) ;
+    template <CShaderType T>
+    FORCEINLINE static RHIBindPipelineParametersDesc UploadShaderParams(
+        RDGPass * pass, T * shader, RHICommandQueueGraphics & queue, const void * params) {
+        return UploadShaderParams(pass, shader, queue, T::GetShaderParamStructInfo(), params);
+    }
+
+    static void BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
+
+    template<CShaderType T>
+    FORCEINLINE static void BindGraphicsShader (
+        RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const void * params) {
+        BindGraphicsShader(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params);
+    }
+
     // RDG Pass API (automatically spawn resource dependencies)
     static void Dispatch (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
         const RDGShaderParamStructAndSizeInfo * info, const void * params, int x = 1, int y = 1, int z = 1) ;
-    template<typename T>
+    template<CShaderType T>
     FORCEINLINE static void Dispatch (
         RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const void * params,
         int x = 1, int y = 1, int z = 1) {
@@ -31,7 +54,7 @@ public:
     static void Draw (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
         const RDGShaderParamStructAndSizeInfo * info, const void * params,
         int vertex_count, int instance_count = 1, int first_vertex = 0, int first_instance = 0) ;
-    template<typename T>
+    template<CShaderType T>
     FORCEINLINE static void Draw (
         RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, const void * params,
         int vertex_count, int instance_count = 1, int first_vertex = 0, int first_instance = 0) {

@@ -128,7 +128,7 @@ public: \
     static const char * GetShaderTypeName () ; \
 
 // Generic
-#define IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS) \
+#define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS) \
     static RDGShaderClassRegistrator<ClassName> ClassName##Registrator( \
         #ClassName, \
         Type,\
@@ -144,11 +144,11 @@ public: \
 
 // Compute
 #define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, EntryPoint_CS) \
-    IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "")
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "")
 
 // Graphics
 #define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
-    IMPLEMENT_RDG_GENERIC_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS)
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS)
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
 public: \

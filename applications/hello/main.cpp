@@ -11,9 +11,9 @@
  */
 #include "vulkan/vulkan.hpp"
 #include <glfw/glfw3.h>
-#include <rhi/vk/vk_export.h>
+#include <imgui.h>
 
-// #include "core/task.h"
+#include <rhi/vk/vk_export.h>
 #include <rdg/rdg_pool.h>
 
 #include "spinning_triangle.h"
@@ -97,6 +97,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     // Initialize the task graph singleton and its workers.
     // TaskGraph::InitializeSingleton(limits.max_low_performance_thread_count, task_graph_hpt_count);
 
+    // ImGui initialization
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(cfg.window_width, cfg.window_height);
+    ImGui_ImplGlfw_InitForVulkan(window, true);
 
     // Initialize shader library
     auto & shader_lib = RDGShaderLibrary::Get();
@@ -121,6 +127,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     auto pool = RDGResourcePool::Create();
 
+
+
     {
         std::future<void> previous_frame_future;
         TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
@@ -130,6 +138,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
+            ImGui::NewFrame();
             // Render
             {
                 // PROFILE_SECTION(Rendering);
@@ -173,6 +182,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     // TaskGraph::DestroySingleton();
     RDGShaderLibrary::DestroySingleton();
+
+    ImGui::DestroyContext();
+
     RHI::DestroySingleton();
 
     GetInfra().Shutdown();

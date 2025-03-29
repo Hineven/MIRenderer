@@ -13,7 +13,7 @@
 
 MI_NAMESPACE_BEGIN
 
-static RHIBindPipelineParametersDesc UploadShaderParams(
+RHIBindPipelineParametersDesc RDGCommandHelper::UploadShaderParams(
     RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
     const RDGShaderParamStructAndSizeInfo * base_info, const void * params) {
     RHIBindPipelineParametersDesc ret = {};
@@ -78,9 +78,8 @@ void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass,
     queue.Dispatch(x, y, z);
 }
 
-void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
-    const RDGShaderParamStructAndSizeInfo * info, const void *params,
-    int vertex_count, int instance_count, int first_vertex, int first_instance) {
+void RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void * params) {
     auto desc = UploadShaderParams(pass, graphics_shader, queue, info, params);
     queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw());
     queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc);
@@ -126,6 +125,12 @@ void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGSh
         }
     }
     queue.UpdateDrawState(ds);
+}
+
+void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void *params,
+    int vertex_count, int instance_count, int first_vertex, int first_instance) {
+    BindGraphicsShader(queue, pass, graphics_shader, info, params);
     // TODO multi draw in a single render pass support.
     queue.BeginRendering();
     queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);

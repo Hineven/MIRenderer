@@ -1,5 +1,14 @@
 add_executable(hello main.cpp spinning_triangle.cpp)
 
+# ImGUI
+find_package(imgui)
+if (imgui_FOUND)
+    target_link_libraries(hello PRIVATE imgui::imgui)
+else()
+    message(FATAL_ERROR "imgui not found")
+endif()
+
+
 # 使用自定义目标来复制着色器文件
 file(GLOB SHADER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.hlsl")
 set(SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/resources)

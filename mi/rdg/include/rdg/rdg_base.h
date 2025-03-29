@@ -23,7 +23,7 @@ MAKE_FLAGS(RDGPass);
 
 // A resource that is imported into / exist only within a render graph
 // Only the render thread can access its references, so no need for thread-safe reference counting.
-class RDGResource : public NonCopyable, public RefCounted<false> {
+class RDGResource : public NonCopyable, public NonMovable, public RefCounted<false> {
 public:
     friend class RDGResourcePool;
     RDGResource () ;
