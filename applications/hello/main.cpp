@@ -22,7 +22,7 @@
 #include "rhi/rhi.h"
 #include "rhi/rhi_cmd.h"
 #include "rdg/rdg_shader.h"
-#include "prof.h"
+#include "core/util/debug_prof.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -132,7 +132,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
             // Render
             {
-                PROFILE_SECTION(Rendering);
+                // PROFILE_SECTION(Rendering);
                 RenderFrame(pool);
             }
             if (rhi.GetFrameIndex() % 20 == 0) {
@@ -143,21 +143,21 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 first_frame = false;
             } else {
                 {
-                    PROFILE_SECTION(WaitPreviousFrame);
+                    // PROFILE_SECTION(WaitPreviousFrame);
                     // Wait for the previous frame to finish execution on GPU before submitting commands about this frame
                     if (previous_frame_future.valid()) {
                         previous_frame_future.wait();
                     }
                 }
                 {
-                    PROFILE_SECTION(WaitFence);
+                    // PROFILE_SECTION(WaitFence);
                     // Wait for the previous frame to finish execution on GPU before submitting commands about this frame
                     previous_frame_sync_point->Wait();
                 }
                 previous_frame_sync_point->Reset();
             }
             {
-                PROFILE_SECTION(AdvanceFrame);
+                // PROFILE_SECTION(AdvanceFrame);
                 // Submit commands recorded for this frame, and switch to next frame
                 previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
             }

@@ -9,6 +9,8 @@
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi.h"
 
+#include "core/util/debug_prof.h"
+
 MI_NAMESPACE_BEGIN
 
 enum class RHIThreadTaskType {
@@ -127,7 +129,7 @@ void RHIWorkerThread::Run() {
     bool expected = false;
     rhi_thread_started.compare_exchange_strong(expected, true);
     if(expected) {
-        MI_LOG(MIInfraLogType::kInfo, "There are more than one started RHI threads. Exiting.");
+        MI_LOG(MIInfraLogType::kWarning, "There are more than one started RHI threads. Exiting.");
         return ;
     }
     is_running_ = true;

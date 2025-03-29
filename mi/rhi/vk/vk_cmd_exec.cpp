@@ -12,6 +12,17 @@
 #include "vk_pipeline.h"
 #include "vk_conversion.h"
 #include "vk_bindless.h"
+#include "core/util/debug_prof.h"
+
+// On NVIDIA hardware, vkResetCommandPool become very slow after multiple frames
+// I tried to add a command buffer reset flag to the command pool upon creation
+// (https://github.com/vulkano-rs/vulkano/issues/1521) but that further slowed
+// down the entire program. So I just recreated the command pool every frame.
+// https://github.com/GPUOpen-Drivers/xgl/issues/63
+
+// False for recreating the command pool every frame.
+// True for using vkResetCommandPool
+#define RESET_COMMAND_POOL false
 
 MI_NAMESPACE_BEGIN
 
@@ -915,7 +926,7 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
         auto rhi = GetVulkanRHI();
         cmd_pool = rhi->GetDevice().createCommandPool(
                 vk::CommandPoolCreateInfo{
-                        {},
+                        vk::CommandPoolCreateFlagBits::eTransient,
                         rhi->GetQueueFamilyIndex(type)
                 }
         );
@@ -996,7 +1007,6 @@ void VulkanCommandExecutor::CommandQueueState::Destroy() {
     }
     CloseCmd();
     rhi->GetDevice().destroyDescriptorPool(descriptor_pool);
-    rhi->GetDevice().freeCommandBuffers(cmd_pool, cmd);
     rhi->GetDevice().destroyCommandPool(cmd_pool);
 }
 
@@ -1013,11 +1023,24 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
     allocator.Reset();
     // This should always be true as a frame should end with FrameEnd(), which contains a submit.
     assert(cmd == nullptr);
-    // Do not recycle resources back to the system. We may be able to reuse them in the later frames.
-    rhi->GetDevice().resetCommandPool(cmd_pool,
-                  return_resources_to_system
-                  ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
-    rhi->GetDevice().resetDescriptorPool(descriptor_pool);
+    // Sometimes we do not return resources back to the system. We may be able to reuse them in the later frames.
+    {
+        if constexpr (RESET_COMMAND_POOL) {
+            rhi->GetDevice().resetCommandPool(cmd_pool,
+                          return_resources_to_system
+                          ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
+        } else { rhi->GetDevice().destroy(cmd_pool);
+            cmd_pool = rhi->GetDevice().createCommandPool(
+                    vk::CommandPoolCreateInfo{
+                            vk::CommandPoolCreateFlagBits::eTransient,
+                            rhi->GetQueueFamilyIndex(RHICommandQueueType::kGraphics)
+                    }
+            );
+        }
+    }
+    {
+        rhi->GetDevice().resetDescriptorPool(descriptor_pool);
+    }
 
     for(auto & s : bound_vertex_buffers) s = {};
     draw_state_.Reset();
