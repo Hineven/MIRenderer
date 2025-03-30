@@ -60,4 +60,9 @@ VulkanBuffer::~VulkanBuffer() {
     GetVulkanRHI()->GetVmaAllocator().destroyBuffer(vk_buffer_, allocation_);
 }
 
+void *VulkanBuffer::GetAPIHandle() const {
+    return (void*)vk_buffer_;
+}
+
+
 MI_NAMESPACE_END

@@ -44,6 +44,8 @@ public:
         return bindless_;
     }
 
+    virtual void * GetAPIHandle () const = 0;
+
 protected:
     // Can only be allocated by RHI and memory is allocated via infrastructure.
     RHIResource() ;

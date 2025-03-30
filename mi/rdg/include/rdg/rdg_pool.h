@@ -33,6 +33,7 @@ public:
     constexpr static uint32_t kBufferReusingThresholdLog2 = 4;
     // Do not reuse buffers larger than 16MB (which increases overall memory consumption)
     constexpr static uint32_t kBufferReusingAbsoluteThresholdLog2 = 24;
+    constexpr static size_t kBufferReusingAbsoluteThreshold = 1ull << kBufferReusingAbsoluteThresholdLog2;
 
     FORCEINLINE TOneTimeLinearAllocator<> & GetBufferAllocator() {
         return buffer_allocator_;
@@ -77,6 +78,7 @@ protected:
 
     struct RDGPoolFreeBufferRecord {
         RHIBuffer * buffer;
+        size_t size;
         // Keep the last access of the buffer, used to initialize the RDG buffer usage
         // when it's allocated.
         RHIGPUAccessFlags last_usage;

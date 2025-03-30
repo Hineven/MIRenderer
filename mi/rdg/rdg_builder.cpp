@@ -39,6 +39,8 @@ RDGPass * RenderGraphBuilder::AddPass(
     ptr->shader_param_struct_info_ = shader_param_struct_info;
     ptr->shader_param_data_ = parameter_struct;
     auto pass = std::unique_ptr<RDGPass>(ptr);
+    // Compile the pass, to keep references to RDG resources alive
+    pass->Compile();
     // Add to the pass list
     passes_.push_back(std::move(pass));
     return ptr;
@@ -46,10 +48,6 @@ RDGPass * RenderGraphBuilder::AddPass(
 
 
 TRef<RenderGraph> RenderGraphBuilder::Compile() {
-    // Compile all passes first
-    for (auto & pass : passes_) {
-        pass->Compile();
-    }
 
     std::map<RDGResource*, std::vector<RDGPass*>> in_resource_pass_map;
     std::map<RDGResource*, std::vector<RDGPass*>> out_resource_pass_map;

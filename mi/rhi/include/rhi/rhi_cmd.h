@@ -23,7 +23,7 @@ class RHICommandBase {
 public:
     virtual ~RHICommandBase() = default;
     // Only called once per object
-    virtual void ExecuteAndDestruct ([[maybe_unused]] RHICommandQueueBase & cmd) {};
+    virtual void ExecuteAndDestruct ([[maybe_unused]] RHICommandQueueBase & cmd) ;
     // Give direct access to the rhi translation thread.
     friend class RHIWorkerThread;
 protected:
@@ -140,7 +140,7 @@ public:
 
     // Clear and swap allocators. Move on to the next frame.
     // Called by RHI thread
-    inline void SwapAllocators_RHIThread () {
+    FORCEINLINE void SwapAllocators_RHIThread () {
         allocator_index_ = 1 - allocator_index_;
         buffer_allocator_[allocator_index_].Reset();
         command_allocator_[allocator_index_].Reset();

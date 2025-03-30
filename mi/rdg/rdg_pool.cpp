@@ -22,11 +22,9 @@ TRef<RDGResourcePool> RDGResourcePool::Create() {
 }
 
 RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (RHIBufferDesc for_buffer_desc) {
-    // Round up the size for alignment requirement
-    for_buffer_desc.size = RoundUp(for_buffer_desc.size, RDGBuffer::kMinBufferSize);
     // Allocate a new buffer
     auto rhi_buffer = RHI::Get().CreateBuffer(for_buffer_desc);
-    RDGPoolFreeBufferRecord allocated = {rhi_buffer.Raw(), RHIGPUAccessFlagBits::kNone};
+    RDGPoolFreeBufferRecord allocated = {rhi_buffer.Raw(), for_buffer_desc.size, RHIGPUAccessFlagBits::kNone};
     rhi_buffer_references_.emplace_back(std::move(rhi_buffer));
 
     total_device_memory_usage_ += for_buffer_desc.size;
@@ -35,32 +33,21 @@ RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (R
 }
 
 void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
+    // printf("AllocateResource size %llu\n", buffer->GetRequestedSize());
     assert(!buffer->is_imported_ && "Imported buffer should not be allocated by the pool.");
     // TODO better strategy. Now I'll only implement a simple one
     assert(!buffer->IsAllocated() && "This buffer should not be allocated already.");
-    assert(buffer->desc_.size > 0 && "Buffer size should be greater than 0.");
+    assert(buffer->requested_size_ > 0 && "Buffer size should be greater than 0.");
     RDGPoolFreeBufferRecord allocated = {};
-    size_t requested_size = buffer->GetSize();
+    size_t requested_size = buffer->GetRequestedSize();
     if (buffer->dedicated_) {
         // Allocate a new buffer
         allocated = AllocateBufferBlock(buffer->GetDesc());
     } else {
-        if (buffer->desc_.size <= kBufferBlockSize) {
-            // Running out, find a larger one.
-            auto desc = buffer->GetDesc();
-            size_t min_pow2_size = UINT64_MAX;
-            for (int i = RDGBuffer::kMinBufferSizeLog2;
-                i <= kBufferBlockSizeLog2; i++) {
-                size_t block_size = 1ull << i;
-                if (block_size < requested_size) continue;
-                min_pow2_size = std::min(min_pow2_size, block_size);
-                desc.size = block_size;
-                int ratio = i - (int)log2(requested_size);
-                if (i >= kBufferReusingAbsoluteThresholdLog2
-                    || (i != RDGBuffer::kMinBufferSizeLog2 && ratio > kBufferReusingThresholdLog2)) {
-                    // Too large to reuse, stop searching and allocate a new buffer block
-                    break;
-                }
+        auto & desc = buffer->desc_;
+        desc.size = RDGBuffer::GetBestAllocationSizeFromRequestedSize(requested_size);
+        if (desc.size <= kBufferBlockSize) {
+            while (true) {
                 auto hash = RDGBuffer::GetResourceClassHash(desc, false);
                 auto & slot = rhi_free_buffer_map_[hash];
                 if (!slot.empty()) {
@@ -69,31 +56,36 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
                     slot.pop_back();
                     break;
                 }
+                if (log2(desc.size / requested_size) >= kBufferReusingThresholdLog2
+                    || desc.size > kBufferReusingAbsoluteThreshold) {
+                    // Too large to reuse, stop searching and allocate a new buffer block
+                    break;
+                }
+                desc.size *= 2;
             }
             // Pool memory ran out, allocate a new buffer block
-            if (!allocated.buffer) {
-                desc.size = min_pow2_size;
+            if (!allocated.buffer)
                 allocated = AllocateBufferBlock(desc);
-            }
         } else {
-            // Use dedicated allocation for buffers larger than buffer block, no longer rounding it up to the next power of 2
-            auto desc = buffer->GetDesc();
-            desc.size = RoundUp(desc.size, RDGBuffer::kMinBufferSize);
+            // use dedicated allocation for large buffers
             allocated = AllocateBufferBlock(desc);
         }
     }
-    buffer->rhi_buffer_span_ = {allocated.buffer, 0, buffer->GetSize()};
+    buffer->rhi_buffer_span_ = {allocated.buffer, 0, requested_size};
     buffer->usage_ = allocated.last_usage;
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
+    // printf("RecycleBuffer size %llu\n", buffer->GetAllocationSize());
     auto hash = buffer->GetResourceClassHash();
-    rhi_free_buffer_map_[hash].push_back({
+    rhi_free_buffer_map_[hash].emplace_back(
         buffer->rhi_buffer_span_.buffer,
+        buffer->desc_.size,
         buffer->usage_
-    });
+    );
     buffer->rhi_buffer_span_ = {};
     buffer->usage_ = {};
+    buffer->desc_.size = 0;
 }
 
 void RDGResourcePool::AllocateResource(RDGTexture *texture) {

@@ -26,7 +26,7 @@ RDGPass::~RDGPass() {
 }
 
 RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage) {
-    assert(!is_compiled_);
+    // assert(!is_compiled_);
     if (usage != RDGTextureUsageType::kTransferDst) {
         compiled_.in_textures.emplace_back(texture);
     }
@@ -46,7 +46,7 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage) {
 }
 
 RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access) {
-    assert(!is_compiled_);
+    // assert(!is_compiled_);
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
     compiled_.used_buffers.emplace_back(access, buffer);

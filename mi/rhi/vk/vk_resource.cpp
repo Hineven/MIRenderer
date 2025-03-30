@@ -39,6 +39,15 @@ VulkanSampler::~VulkanSampler() {
     device.destroySampler(vk_sampler_);
 }
 
+void * VulkanSampler::GetAPIHandle() const {
+    return (void*)vk_sampler_;
+}
+
+void *VulkanAccelerationStructure::GetAPIHandle() const {
+    return (void*)as_;
+}
+
+
 VulkanSyncPoint::VulkanSyncPoint() {
     auto device = GetVulkanRHI()->GetDevice();
     vk_fence_ = device.createFence({});
@@ -71,6 +80,10 @@ void VulkanSyncPoint::NotifySubmission() {
     assert(IsRHIThread());
     assert(can_be_waited_);
     submission_sem_.release();
+}
+
+void *VulkanSyncPoint::GetAPIHandle() const {
+    return (void*)vk_fence_;
 }
 
 MI_NAMESPACE_END

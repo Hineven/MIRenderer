@@ -81,7 +81,8 @@ TRef<RDGTexture> RDGTexture::Import([[maybe_unused]] const char * name, RHITextu
 }
 
 TRef<RDGBuffer> RDGBuffer::Import([[maybe_unused]] const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) {
-    auto buffer_raw_ptr = new RDGBuffer(resource->GetDesc());
+    auto desc = resource->GetDesc();
+    auto buffer_raw_ptr = new RDGBuffer(desc.size, desc);
     auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
     buffer->rhi_buffer_span_ = resource->GetSpan();
     buffer->usage_ = prev_access;

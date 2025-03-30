@@ -47,6 +47,8 @@ public:
 
     ~VulkanGraphicsPipeline();
 
+    void *GetAPIHandle() const override;
+
 protected:
 
     bool CompileRHI (const RHIGraphicsPipelineDesc &) override;
@@ -79,6 +81,8 @@ public:
     FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
     ~VulkanComputePipeline();
+
+    void *GetAPIHandle() const override;
 
 protected:
 

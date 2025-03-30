@@ -105,6 +105,7 @@ public:
     FORCEINLINE vk::ImageAspectFlags GetImageAspect () {
         return vk_aspect_;
     }
+    void * GetAPIHandle() const override ;
     
     void ImportFromHandle (vk::Image image_handle, vk::ImageLayout imported_layout) ;
 

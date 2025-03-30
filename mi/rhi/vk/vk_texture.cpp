@@ -104,4 +104,9 @@ void VulkanTexture::ImportFromHandle(vk::Image image_handle, vk::ImageLayout imp
     CreateDefaultImageView();
 }
 
+void *VulkanTexture::GetAPIHandle() const {
+    return (void*)vk_image_;
+}
+
+
 MI_NAMESPACE_END

@@ -16,6 +16,8 @@ public:
     // Inherit the constructor
     using RHIShader::RHIShader;
     ~VulkanShader () override ;
+
+    void * GetAPIHandle() const override;
 protected:
 
     bool CompileRHI () override ;

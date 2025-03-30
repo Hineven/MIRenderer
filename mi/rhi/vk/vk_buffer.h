@@ -22,6 +22,8 @@ public:
     void * Map() override;
     void Unmap() override;
 
+    void * GetAPIHandle() const override;
+
 protected:
     vk::Buffer vk_buffer_;
     vma::Allocation allocation_;

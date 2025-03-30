@@ -19,6 +19,8 @@ public:
     ~VulkanSampler() override;
 
     FORCEINLINE vk::Sampler GetSampler() const { return vk_sampler_; }
+
+    void *GetAPIHandle() const override;
 protected:
     vk::Sampler vk_sampler_;
 };
@@ -32,6 +34,8 @@ public:
     }
 
     FORCEINLINE vk::AccelerationStructureKHR GetAccelerationStructure() const { return as_; }
+
+    void *GetAPIHandle() const override;
 
 //    void Use (vk::CommandBuffer cmd, vk::PipelineStageFlags use_stages, vk::AccessFlags use_access) ;
 protected:
@@ -49,6 +53,8 @@ public:
     FORCEINLINE vk::Fence GetFence () const {
         return vk_fence_;
     }
+    void *GetAPIHandle() const override;
+
     friend class VulkanRHI;
 protected:
     std::binary_semaphore submission_sem_ {0};

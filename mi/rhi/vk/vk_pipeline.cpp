@@ -380,6 +380,11 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
     ResetRHI();
 }
 
+void *VulkanGraphicsPipeline::GetAPIHandle() const {
+    return (void*)vk_pipeline_;
+}
+
+
 // Called from parent's constructor
 bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     auto device = GetVulkanRHI()->GetDevice();
@@ -499,5 +504,10 @@ void VulkanComputePipeline::OnNameChanged() {
 VulkanComputePipeline::~VulkanComputePipeline() {
     ResetRHI();
 }
+
+void *VulkanComputePipeline::GetAPIHandle() const {
+    return (void*)vk_pipeline_;
+}
+
 
 MI_NAMESPACE_END

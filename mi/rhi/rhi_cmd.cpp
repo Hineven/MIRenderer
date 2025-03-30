@@ -9,6 +9,10 @@
 #include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 
+void RHICommandBase::ExecuteAndDestruct(RHICommandQueueBase &cmd) {
+
+}
+
 void RHICommandClearTexture::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIClearTexture(&cmd, this);
 }

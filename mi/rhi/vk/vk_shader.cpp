@@ -11,6 +11,13 @@ VulkanShader::~VulkanShader () {
     ResetRHI();
 }
 
+void *VulkanShader::GetAPIHandle() const {
+    MI_WARN("VulkanShader::GetAPIHandle() will return nullptr."
+            "VkShaderModule is only created when assembling pipelines.");
+    return (void*)nullptr;
+}
+
+
 bool VulkanShader::CompileRHI() {
     // Nah
     return true;

@@ -9,6 +9,7 @@
 
 #include <core/crc.h>
 
+#include "rdg_pool.h"
 #include "rhi/rhi.h"
 #include "rdg/rdg_base.h"
 #include "rhi/rhi_texture.h"
@@ -61,39 +62,41 @@ protected:
 
 class RDGBuffer : public RDGResource {
 protected:
-    FORCEINLINE RDGBuffer(RHIBufferDesc desc, bool dedicated = false, bool no_warning = false) : desc_(desc), dedicated_(dedicated) {
+    FORCEINLINE RDGBuffer(size_t req_size, RHIBufferDesc desc, bool dedicated = false, bool no_warning = false) :
+        requested_size_(req_size), desc_(desc), dedicated_(dedicated) {
         if (!no_warning && ((desc.usage & RHIBufferUsageFlagBits::kStaging) || (desc.usage & RHIBufferUsageFlagBits::kReadback))) {
             MI_LOG(MIInfraLogType::kWarning, "We suggest using RHI directly with staging and readback buffers (fire and forgot)."
                                              "Otherwise you may carefully handle their lifetimes when performing GPU-CPU data-transactions.");
         }
     }
-    FORCEINLINE RDGBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false):
-        RDGBuffer(RHIBufferDesc{ size, usage}, dedicated, no_warning) {}
+    FORCEINLINE RDGBuffer (size_t req_size, RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false):
+        RDGBuffer(req_size, RHIBufferDesc{ size, usage}, dedicated, no_warning) {}
 public:
     friend class RDGResourcePool;
     friend class RenderGraphBuilder;
 
-    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) {
-        return TRef<RDGBuffer>(new RDGBuffer(usage, size, dedicated, no_warning));
+    FORCEINLINE static size_t GetBestAllocationSizeFromRequestedSize (size_t requested_size) {
+        int l = std::max((int)std::ceil(log2(requested_size)), (int)kMinBufferSizeLog2);
+        if (l > RDGResourcePool::kBufferBlockSizeLog2) {
+            return requested_size;
+        }
+        return 1ull << l;
     }
-    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
+
+    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) {
+        return TRef<RDGBuffer>(new RDGBuffer(size, usage, 0, dedicated, no_warning));
+    }
+    // Import a rhi buffer. NOTE: the reference is not kept by RDGBuffer, you should manage the lifetime of the resource.
     static TRef<RDGBuffer> Import (const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) ;
-    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
+    // Import a rhi buffer. NOTE: the reference is not kept by RDGBuffer, you should manage the lifetime of the resource.
     FORCEINLINE static TRef<RDGBuffer> Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone) {
         return Import("<unnamed>", resource, prev_access);
     }
 
     constexpr static uint32_t kMinBufferSizeLog2 = 10;
     constexpr static uint32_t kMinBufferSize = 1 << kMinBufferSizeLog2;
-    FORCEINLINE static uint32_t GetResourceClassHash (RHIBufferDesc desc, bool dedicated) {
-        if (!dedicated) {
-            // Minimum class is 1k bytes
-            auto log2size = std::max((uint32_t)log2(desc.size), kMinBufferSizeLog2) - kMinBufferSizeLog2;
-            return CRC32(&desc.usage, sizeof(desc.usage), CRC32(&log2size, sizeof(log2size)));
-        } else {
-            // Dedicated allocation should exactly match the size and usage
-            return CRC32(&desc, sizeof(desc), 71893718u);
-        }
+    FORCEINLINE static uint32_t GetResourceClassHash (RHIBufferDesc desc, [[maybe_unused]] bool dedicated) {
+        return CRC32(&desc.usage, sizeof(desc.usage), CRC32(&desc.size, sizeof(desc.size)));
     }
 
     FORCEINLINE void SetDedicated (bool value = true) {
@@ -102,7 +105,8 @@ public:
     }
     ~RDGBuffer () override ;
     uint32_t GetResourceClassHash () const override;
-    FORCEINLINE size_t GetSize () const { return desc_.size; }
+    FORCEINLINE size_t GetRequestedSize () const { return requested_size_; }
+    FORCEINLINE size_t GetAllocationSize () const { return desc_.size; }
     FORCEINLINE RHIBufferUsageFlags GetUsage () const { return desc_.usage; }
     FORCEINLINE RHIBufferDesc GetDesc () const { return desc_; }
     void RequestRHI(RDGResourcePool * pool) override;
@@ -119,6 +123,9 @@ protected:
     // If true, RDG resource pool tends to map the buffer to a dedicated RHI buffer.
     // when set, rhi_buffer_span_ should have 0 offset.
     bool dedicated_ {};
+    // User requested size, used for buffer allocation, may be smaller than the actual size.
+    size_t requested_size_;
+    // Real info for potential allocation.
     RHIBufferDesc desc_ {};
     // Underlying RHI buffer, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
