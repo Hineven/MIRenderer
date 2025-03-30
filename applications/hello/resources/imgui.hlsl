@@ -7,12 +7,14 @@ struct ImGuiVertInput {
 struct ImGuiVertOutput {
     float4 pos : SV_POSITION;
     float2 uv  : TEXCOORD0;
-    float3 col : TEXCOORD1;
+    float4 col : TEXCOORD1;
 };
+
+float2 Scale;
 
 ImGuiVertOutput ImGuiVS(ImGuiVertInput input) {
     ImGuiVertOutput output;
-    output.pos = float4(input.pos, 0, 1);
+    output.pos = float4(2 * (float2(0.f, 1.f) + float2(input.pos.x, -input.pos.y) * Scale) - 1, 0, 1);
     output.uv  = input.uv;
     uint input_col = asuint(input.col);
     // Unpack to RGBA
@@ -31,6 +33,6 @@ struct ImGuiFragOutput {
 };
 ImGuiFragOutput ImGuiPS(ImGuiVertOutput input) {
     ImGuiFragOutput output;
-    output.OutColor = float4(input.col, 1);
+    output.OutColor = input.col;
     return output;
 }

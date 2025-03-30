@@ -77,6 +77,7 @@ void RenderTriangle (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
 class ImGuiRenderShader : public RDGShader {
     DECLARE_SHADER()
     BEGIN_SHADER_PARAMETERS(Parameters)
+        SHADER_PARAMETER(float2, Scale)
         SHADER_USE_RENDERPASS(BackbufferRenderPass, pass)
         SHADER_VERTEX_BUFFER(sizeof(ImDrawVert), vertex_buffer)
         SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k2xFp32, pos)
@@ -92,6 +93,9 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "imgui.hlsl", "ImGuiVS", "ImGui
 void RenderImGui (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
     ImGui::Render();
     ImDrawData * draw_data = ImGui::GetDrawData();
+    if (draw_data->TotalVtxCount == 0 || draw_data->TotalIdxCount == 0) {
+        return;
+    }
     auto vertex_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kVertex, draw_data->TotalVtxCount * sizeof(ImDrawVert));
     auto index_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kIndex, draw_data->TotalIdxCount * sizeof(ImDrawIdx));
 
@@ -119,6 +123,7 @@ void RenderImGui (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
     auto params = builder.Allocate<ImGuiRenderShader::ShaderParameters>();
     params->pass = pass;
     params->vertex_buffer = vertex_buffer.Raw();
+    params->Scale = {1.f / 800, 1.f / 600}; // TODO: Get actual scale
 
     // Upload vertex data
     builder.AddPass("Upload ImGui Vertices", {},

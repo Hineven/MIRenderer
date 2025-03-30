@@ -15,6 +15,8 @@
 
 #include <rhi/vk/vk_export.h>
 #include <rdg/rdg_pool.h>
+#include <rhi/rhi_buffer.h>
+#include <rhi/rhi_texture.h>
 
 #include "spinning_triangle.h"
 #include "infra_impl/infra.h"
@@ -23,7 +25,7 @@
 #include "rhi/rhi_cmd.h"
 #include "rdg/rdg_shader.h"
 #include "core/util/debug_prof.h"
-
+#include "imgui_impl_glfw.h"
 MI_NAMESPACE_BEGIN
 
 struct MainLoopStartConfig {
@@ -97,13 +99,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     // Initialize the task graph singleton and its workers.
     // TaskGraph::InitializeSingleton(limits.max_low_performance_thread_count, task_graph_hpt_count);
 
-    // ImGui initialization
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize = ImVec2(cfg.window_width, cfg.window_height);
-    ImGui_ImplGlfw_InitForVulkan(window, true);
-
     // Initialize shader library
     auto & shader_lib = RDGShaderLibrary::Get();
     shader_lib.Init();
@@ -112,6 +107,41 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     // Set up window
     auto window = StartWindow(cfg);
+
+    // Keep alive until window is closed
+    RHITextureRef font_texture;
+
+    // ImGui initialization
+    {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGui_ImplGlfw_InitForVulkan(window, true);
+        // Upload fonts
+        {
+            unsigned char* pixels;
+            int width, height;
+            ImGuiIO& io = ImGui::GetIO();
+            io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+            auto & rhi = RHI::Get();
+            // 创建字体纹理
+            font_texture = rhi.CreateTexture(RHITextureType::k2D,
+                {(uint32_t)width, (uint32_t)height, 1},
+                PixelFormatType::kR8G8B8A8_UNORM,
+                RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransferDst);
+            // 上传数据
+            auto staging = rhi.CreateBuffer(width * height * 4, RHIBufferUsageFlagBits::kStaging);
+            memcpy(staging->Map(), pixels, width * height * 4);
+            auto  & cmd = rhi.GetGraphicsCommandQueue();
+            cmd.TextureBarrier(font_texture.Raw(), RHITextureLayoutType::kTransferDstOptimal,
+                RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kWrite);
+            cmd.CopyBufferToTexture(staging->GetSpan(), font_texture.Raw());
+            cmd.EnqueueTranslateAndSubmit();
+            rhi.WaitForIdle();
+            // 设置ImGui纹理ID
+            io.Fonts->SetTexID((ImTextureID)(intptr_t)font_texture->GetAPIHandle());
+            io.Fonts->ClearTexData(); // 清理CPU端数据
+        }
+    }
 
     // 创建surface
     VkSurfaceKHR surface_tmp;
@@ -138,7 +168,11 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
-            ImGui::NewFrame();
+            // ImGui new frame routine
+            {
+                ImGui_ImplGlfw_NewFrame();
+                ImGui::NewFrame();
+            }
             // Render
             {
                 // PROFILE_SECTION(Rendering);
@@ -183,7 +217,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     // TaskGraph::DestroySingleton();
     RDGShaderLibrary::DestroySingleton();
 
+    ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    font_texture.SafeRelease();
 
     RHI::DestroySingleton();
 
