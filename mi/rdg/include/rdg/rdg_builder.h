@@ -51,7 +51,7 @@ public:
     FORCEINLINE RDGPass * AddPass (
         RDGPassFlags pass_flags,
         RDGPassLambda && pass
-    ) {
+) {
         return AddPass(
             "<anonymous generic pass>",
             RDGPassType::kGeneric, pass_flags,
@@ -85,6 +85,7 @@ public:
         if (zero) {
             memset(ptr, 0, sizeof(T));
         }
+        new (ptr) T();
         return ptr;
     }
 

@@ -11,6 +11,8 @@ struct ImGuiVertOutput {
 };
 
 float2 Scale;
+Texture2D <float4> ImGuiTexture : register(t0);
+SamplerState ImGuiSampler : register(s0);
 
 ImGuiVertOutput ImGuiVS(ImGuiVertInput input) {
     ImGuiVertOutput output;
@@ -33,6 +35,8 @@ struct ImGuiFragOutput {
 };
 ImGuiFragOutput ImGuiPS(ImGuiVertOutput input) {
     ImGuiFragOutput output;
-    output.OutColor = input.col;
+    float4 texColor = ImGuiTexture.Sample(ImGuiSampler, input.uv);
+    output.OutColor = input.col * texColor;
+    if (output.OutColor.w < 0.5f) discard;
     return output;
 }

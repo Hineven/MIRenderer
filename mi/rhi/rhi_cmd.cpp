@@ -9,7 +9,7 @@
 #include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 
-void RHICommandBase::ExecuteAndDestruct(RHICommandQueueBase &cmd) {
+void RHICommandBase::ExecuteAndDestruct([[maybe_unused]] RHICommandQueueBase &cmd) {
 
 }
 

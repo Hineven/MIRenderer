@@ -91,5 +91,15 @@ class RDGPass;
 class RHICommandQueueGraphics;
 typedef std::function<void(RDGPass*, RHICommandQueueGraphics&)> RDGPassLambda;
 
+// Some pointer-based shader parameters that can be set to null are initialized to this value
+// to indicate that they are not set by the user.
+// This is used to check if the user has set the parameter (setting to nullptr also counts).
+constexpr static uint64_t RDGParameter_UnsetPointer = 0xffffffffffffffffull;
+template<typename T> concept CPointerType = std::is_pointer_v<T>;
+template<CPointerType T>
+FORCEINLINE bool RDGParameter_IsUnsetPointer (T ptr) {
+    return reinterpret_cast<uint64_t>(ptr) == RDGParameter_UnsetPointer;
+}
+
 MI_NAMESPACE_END
 #endif //MI_RDG_H

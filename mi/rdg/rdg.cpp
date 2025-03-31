@@ -132,6 +132,9 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 // Also recursively request all the uniform buffers referenced
                 for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
                     auto struct_ptr = *(void**)((std::byte*)pass->shader_param_data_ + ref.cpp_offset);
+                    if (struct_ptr == nullptr || RDGParameter_IsUnsetPointer(struct_ptr)) {
+                        continue ;
+                    }
                     auto it = param_ptr_to_uniform_buffer_segment_.find(struct_ptr);
                     if (it == param_ptr_to_uniform_buffer_segment_.end()) {
                         auto aligned_size = RoundUp(ref.info->cpp_imported_struct_info.cpp_struct_info->size, C::kUniformBufferAlignment);

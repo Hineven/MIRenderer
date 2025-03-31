@@ -11,6 +11,7 @@
 #include <map>
 #include <regex>
 #include <set>
+#include <utility>
 #include <core/constants.h>
 
 #include "core/crc.h"
@@ -125,80 +126,82 @@ struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
 template<uint32_t CRC> struct TRDGShaderParamPlaceHolderType;
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int")> {
     typedef int value;
+    FORCEINLINE static int default_value() {return 0;}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int2")> {
     typedef glm::ivec2 value;
+    FORCEINLINE static glm::ivec2 default_value() {return {0, 0};}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int3")> {
     typedef glm::ivec3 value;
+    FORCEINLINE static glm::ivec3 default_value() {return {0, 0, 0};}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int4")> {
     typedef glm::ivec4 value;
+    FORCEINLINE static glm::ivec4 default_value() {return {0, 0, 0, 0};}
 };
 
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint")> {
     typedef uint32_t value;
+    FORCEINLINE static uint32_t default_value() {return 0;}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint2")> {
     typedef glm::uvec2 value;
+    FORCEINLINE static glm::uvec2 default_value() {return {0, 0};}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint3")> {
-    typedef glm::uvec2 value;
+    typedef glm::uvec3 value;
+    FORCEINLINE static glm::uvec3 default_value() {return {0, 0, 0};}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint4")> {
-    typedef glm::uvec2 value;
+    typedef glm::uvec4 value;
+    FORCEINLINE static glm::uvec4 default_value() {return {0, 0, 0, 0};}
 };
 
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float")> {
     typedef float value;
+    FORCEINLINE static float default_value() {return 0.0f;}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float2")> {
     typedef glm::vec2 value;
+    FORCEINLINE static glm::vec2 default_value() {return {0.0f, 0.0f};}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float3")> {
     typedef glm::vec3 value;
+    FORCEINLINE static glm::vec3 default_value() {return {0.0f, 0.0f, 0.0f};}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float4")> {
     typedef glm::vec4 value;
+    FORCEINLINE static glm::vec4 default_value() {return {0.0f, 0.0f, 0.0f, 0.0f};}
 };
 
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {
     typedef RDGTexture * value;
+    FORCEINLINE static RDGTexture * default_value() {return reinterpret_cast<RDGTexture*>(RDGParameter_UnsetPointer);}
 };
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWTexture2D")> {
-    typedef RDGTexture * value;
-};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWTexture2D")>
+: public TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {};
+
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Sampler")> {
     typedef RHISampler * value;
+    FORCEINLINE static RHISampler * default_value() {return reinterpret_cast<RHISampler*>(RDGParameter_UnsetPointer);}
 };
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {
     typedef RDGBuffer * value;
+    FORCEINLINE static RDGBuffer * default_value() {return reinterpret_cast<RDGBuffer*>(RDGParameter_UnsetPointer);}
 };
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("StructuredBuffer")> {
-    typedef RDGBuffer * value;
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWBuffer")> {
-    typedef RDGBuffer * value;
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWStructuredBuffer")> {
-    typedef RDGBuffer * value;
-};
-
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RenderTarget")> {
-    typedef RDGTexture * value;
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("VertexBuffer")> {
-    typedef RDGBuffer * value;
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("IndexBuffer")> {
-    typedef RDGBuffer * value;
-};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("StructuredBuffer")>
+: public TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWBuffer")>
+: public TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWStructuredBuffer")>
+: public TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {};
 
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
-    std::string type_name, std::string param_name, uint32_t cpp_offset,
+    const std::string& type_name, std::string param_name, uint32_t cpp_offset,
     const RDGShaderParamStructAndSizeInfo * cpp_struct_info = nullptr, bool ub_reference = false, bool renderpass = false) {
     RDGShaderParamInfo info {};
-    info.name = param_name;
+    info.name = std::move(param_name);
     info.type = RHITypeNameStringToParamType(type_name);
     if (cpp_struct_info) {
         // In this case, modify the type to UniformBuffer for uniform buffer reference.
@@ -255,7 +258,8 @@ private: \
 #define SHADER_PARAMETER(Type, Name) \
     zz##Name##_PrevTypeID; \
 public: \
-    TRDGShaderParamPlaceHolderType<ConstStrHash32(#Type)>::value Name; \
+    TRDGShaderParamPlaceHolderType<ConstStrHash32(#Type)>::value Name \
+     = TRDGShaderParamPlaceHolderType<ConstStrHash32(#Type)>::default_value(); \
 private: \
     struct zz##Name##_TypeID { \
         static constexpr const char * name = #Name; \
@@ -313,7 +317,7 @@ private: \
 #define SHADER_USE_RENDERPASS(PassType, Name) \
     zz##Name##_PrevTypeID; \
 public: \
-    PassType * Name; \
+    PassType * Name {}; \
 private: \
     struct zz##Name##_TypeID { \
         static constexpr const char * name = #Name; \
@@ -335,7 +339,7 @@ private: \
 #define SHADER_VERTEX_BUFFER(Stride, Name) \
     zz##Name##_PrevTypeID; \
 public: \
-    RDGBuffer * Name; \
+    RDGBuffer * Name {}; \
 private: \
     struct zz##Name##_TypeID { \
         static constexpr const char * name = #Name; \
@@ -379,7 +383,7 @@ private: \
 #define SHADER_DISPATCH_COMMAND(Name) \
     zz##Name##_PrevTypeID; \
 public: \
-    RDGBuffer * Name; \
+    RDGBuffer * Name {}; \
 private: \
     struct zz##Name##_TypeID { \
         static constexpr const char * name = #Name; \
@@ -423,7 +427,7 @@ private: \
 #define SHADER_PARAMETER_STRUCT_REF(Type, Name) \
     zz##Name##_PrevTypeID; \
 public: \
-    Type * Name; \
+    Type * Name = reinterpret_cast<Type*>(RDGParameter_UnsetPointer); \
 private: \
     struct zz##Name##_TypeID { \
         static constexpr const char * name = #Name; \

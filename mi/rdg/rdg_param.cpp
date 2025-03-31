@@ -134,6 +134,10 @@ namespace details {
                     dispatch_command = {&e, cpp_offset, offset, 0};
                 } else if (e.type == RHIParamType::kRenderPass) {
                     renderpass = {&e, cpp_offset, offset, 0};
+                } else if (e.type == RHIParamType::kAccelerationStructure){
+                    acceleration_structures.emplace_back(&e, cpp_offset, offset, 0);
+                } else if (e.type == RHIParamType::kSampler) {
+                    samplers.emplace_back(&e, cpp_offset, offset, 0);
                 } else {
                     assert(false && "Unimplemented");
                 }

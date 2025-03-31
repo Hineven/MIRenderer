@@ -123,8 +123,6 @@ protected:
 
     bool InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) override;
 
-    void FreeResource_RHIThread(RHIResource * resource) override;
-
     void InvalidateDiskPipelineCache () ;
     void LoadPipelineCache ();
 
