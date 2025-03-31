@@ -24,8 +24,9 @@ MI_NAMESPACE_BEGIN
 class RHI : public NonMovable, public NonCopyable {
 protected:
     virtual ~RHI();
+    void PreDestruction ();
     // Called when GDynamicRHI is set but InitializeSingleton has not yet returned.
-    virtual void PostInitialize () = 0;
+    virtual void PostInitialize () ;
 public:
     // Initialize the RHI layer
     static void InitializeSingleton (RHIType type, const void * extra = nullptr) ;
@@ -130,7 +131,18 @@ public:
     virtual const void * GetUnderlyingGraphicsAPIHandles () const = 0;
 
     friend class RHIResource;
+
+    struct GlobalSamplers {
+        RHISampler * linear_wrap;
+    };
+
+    FORCEINLINE GlobalSamplers GetGlobalSamplers () const {
+        return global_samplers_;
+    }
+
 protected:
+
+    GlobalSamplers global_samplers_ {};
 
     RHI() ;
 
@@ -149,8 +161,6 @@ protected:
     inline bool AddResourcePendingForDeletion (RHIResource * resource) {
         return resources_pending_for_deletion_.Push({resource, frame_index_});
     }
-    // Free a resource allocated by the RHI.
-    virtual void FreeResource_RHIThread (RHIResource * resource) = 0;
 
     // @param force if true, all pending resources will be recycled even if they are
     // potentially not ready to be recycled.

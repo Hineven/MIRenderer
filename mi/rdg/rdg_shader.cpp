@@ -4,6 +4,7 @@
  * See LICENSE for licensing.
  */
 #include <ranges>
+#include <utility>
 #include <xxhash.h>
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi.h"
@@ -311,7 +312,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     }
     // Check SRV textures
     for (const auto& srv : shader->GetSRVDesc()) {
-        int index = FindIndex(info.uavs_, srv.name);
+        int index = FindIndex(info.srvs_, srv.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses SRV texture '{}' which is not defined in shader parameters",
@@ -331,7 +332,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
 
     // Check samplers
     for (const auto& sampler : shader->GetSamplerDesc()) {
-        int index = FindIndex(info.uavs_, sampler.name);
+        int index = FindIndex(info.samplers_, sampler.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses sampler '{}' which is not defined in shader parameters",
@@ -351,7 +352,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
 
     // Check acceleration structures
     for (const auto& as : shader->GetAccelerationStructureDesc()) {
-        int index = FindIndex(info.uavs_, as.name);
+        int index = FindIndex(info.acceleration_structures_, as.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}' uses acceleration structure '{}' which is not defined in shader parameters",
@@ -466,9 +467,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
 
 void RDGShader::RemapResourceIndexToResourceSlots() {
     // Clear the previous bindings
-    for (int i = 0; i < (int)RHIParamType::kMax; i++) {
-        cpp_resource_index_to_slot_[i].clear();
-    }
+    for (auto & e : cpp_resource_index_to_slot_) e.clear();
     assert(IsValid() && "Only with an assembled pipeline can we remap bindings");
     auto & info = *class_registry_->GetShaderParamStructInfo();
     RHIPipeline * pipeline = nullptr;
@@ -540,7 +539,28 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
             }
         }
     }
-    // TODO remap samplers, as, ...
+    // Remap samplers
+    {
+        auto & samplers = pipeline->GetSamplerDesc();
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler].resize(info.samplers_.size(), UINT32_MAX);
+        for (auto [i, e] : std::views::enumerate(info.samplers_)) {
+            auto index = FindSlotIndex(e.info->name, samplers);
+            if (index != -1) {
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler][i] = index;
+            }
+        }
+    }
+    // Remap as
+    {
+        auto & as = pipeline->GetAccelerationStructureDesc();
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure].resize(info.acceleration_structures_.size(), UINT32_MAX);
+        for (auto [i, e] : std::views::enumerate(info.acceleration_structures_)) {
+            auto index = FindSlotIndex(e.info->name, as);
+            if (index != -1) {
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = index;
+            }
+        }
+    }
 }
 
 
@@ -564,10 +584,18 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
     // Compile the shader and create RHI shaders
     std::string errmsg;
     std::wstring source_location_wstr(class_registry_->source_location.begin(), class_registry_->source_location.end());
+
+    // Stack macros
+    std::vector<std::string> extra_options;
+    auto macros = class_registry_->GetShaderDefaultMacros();
+    for (const auto & macro : macros) {
+        extra_options.emplace_back("-D" + macro);
+    }
+
     if(class_registry_->type == RHIPipelineType::kCompute) {
         auto result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
-                std::span(source_code.data(), source_code.size()), {}, errmsg
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg
         );
         if (result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
@@ -591,7 +619,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
         // First compile vertex shader
         auto vs_result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_3",
-                std::span(source_code.data(), source_code.size()), {}, errmsg
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg
         );
         if (vs_result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
@@ -601,7 +629,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
         // Then compile fragment shader
         auto fs_result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_3",
-                std::span(source_code.data(), source_code.size()), {}, errmsg
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg
         );
         if (fs_result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
@@ -784,8 +812,7 @@ void RDGShaderLibrary::RegisterShaderClass(
     RDGShaderClassRegistry in_reg) {
     auto it = registered_shaders_.find(type_hash);
     if (it == registered_shaders_.end()) {
-        auto reg = std::make_unique<RDGShaderClassRegistry>();
-        *reg = in_reg;
+        auto reg = std::make_unique<RDGShaderClassRegistry>(in_reg);
         registered_shaders_[type_hash] = std::move(reg);
     } else {
         assert(false && "Double registration, this should never happen!");

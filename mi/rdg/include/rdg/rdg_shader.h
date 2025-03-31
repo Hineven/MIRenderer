@@ -40,6 +40,7 @@ struct RDGShaderClassRegistry {
     std::string vertex_entry_;
     std::string fragment_entry_;
     RDGShader * (*Creator) (RDGShaderClassRegistry *, RDGShaderInitializationInfo);
+    std::vector<std::string> (*GetShaderDefaultMacros)();
     const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)();
     RDGShaderPipelineConfig (*GetShaderPipelineConfig)();
 };
@@ -49,20 +50,15 @@ protected:
     RDGShader (const RDGShaderClassRegistry * class_registry) ;
     virtual ~RDGShader() ;
 public:
+
     template<typename T>
     friend class RDGShaderClassRegistrator;
     friend class RDGShaderLibrary;
     friend class RDGCommandHelper;
-    bool Recompile (RDGShaderInitializationInfo ini) ;
-//    The following functions should be implemented by sub-classes
-//  staitc std::vector<std::string> GetDefaultMacros () ;
-    FORCEINLINE bool IsValid () const {return is_valid_;}
 
-    FORCEINLINE static RDGShaderPipelineConfig GetDefaultShaderPipelineConfig () {
-        return RDGShaderPipelineConfig {
-            RHIPrimitiveTopologyType::kTriangleList
-        };
-    }
+    bool Recompile (RDGShaderInitializationInfo ini) ;
+
+    FORCEINLINE bool IsValid () const {return is_valid_;}
 
     // Convert the parameter resource index (within its kind) to pipeline slot used for RHI resource binding
     template<RHIParamType type>
@@ -70,8 +66,18 @@ public:
         return cpp_resource_index_to_slot_[(uint32_t)type][index];
     }
 
-protected:
 
+    // The following functions CAN be implemented by sub-classes to specify special shader attributes
+    FORCEINLINE static std::vector<std::string> GetShaderDefaultMacros () {
+        return {};
+    }
+    FORCEINLINE static RDGShaderPipelineConfig  GetShaderPipelineConfig () {
+        return RDGShaderPipelineConfig {
+            RHIPrimitiveTopologyType::kTriangleList
+        };
+    }
+
+protected:
     // Shader initialization info (default, given in constructor)
     RDGShaderInitializationInfo ini_ {
         {}
@@ -110,12 +116,20 @@ protected:
 
 template<typename T, typename = void>
 struct TGetShaderPipelineConfig {
-    constexpr static auto value = RDGShader::GetDefaultShaderPipelineConfig;
+    constexpr static auto value = RDGShader::GetShaderPipelineConfig;
 };
-
 template<typename T>
 struct TGetShaderPipelineConfig<T, std::void_t<decltype(T::GetShaderPipelineConfig)>> {
     constexpr static auto value = T::GetShaderPipelineConfig;
+};
+
+template<typename T, typename = void>
+struct TGetShaderDefaultMacros {
+    constexpr static auto value = RDGShader::GetShaderDefaultMacros;
+};
+template<typename T>
+struct TGetShaderDefaultMacros<T, std::void_t<decltype(T::GetShaderDefaultMacros)>> {
+    constexpr static auto value = T::GetShaderDefaultMacros;
 };
 
 #define DECLARE_SHADER() \
@@ -135,9 +149,7 @@ public: \
         SourcePath, \
         EntryPoint_CS, \
         EntryPoint_VS, \
-        EntryPoint_PS, \
-        ClassName::GetShaderParamStructInfo, \
-        TGetShaderPipelineConfig<ClassName>::value \
+        EntryPoint_PS \
     ); \
     RDGPassType ClassName::GetRDGPassType () {return ::MI_NAMESPACE::GetRDGPassType(Type);} \
     const char * ClassName::GetShaderTypeName () {return #ClassName;}
@@ -207,9 +219,7 @@ public:
         const std::string & source_location,
         const std::string & compute_entry,
         const std::string & vertex_entry,
-        const std::string & fragment_entry,
-        const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)(),
-        RDGShaderPipelineConfig (*GetShaderPipelineConfig)()
+        const std::string & fragment_entry
     ) {
         auto & lib = RDGShaderLibrary::Get();
         auto registry = RDGShaderClassRegistry {
@@ -220,8 +230,9 @@ public:
             vertex_entry,
             fragment_entry,
             RDGShaderClassRegistrator<T>::zzShaderFactoryFunction,
-            GetShaderParamStructInfo,
-            GetShaderPipelineConfig,
+            TGetShaderDefaultMacros<T>::value,
+            T::GetShaderParamStructInfo,
+            TGetShaderPipelineConfig<T>::value
         };
         lib.RegisterShaderClass(typeid(T).hash_code(), registry);
     }

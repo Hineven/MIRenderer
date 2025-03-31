@@ -40,11 +40,15 @@ GLFWwindow* StartWindow (const MainLoopStartConfig & cfg) {
         return nullptr;
     }
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // 为Vulkan准备
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     std::string window_name = "MIRenderer";
     if (!cfg.window_name.empty()) window_name = cfg.window_name;
-    GLFWwindow* window = glfwCreateWindow(cfg.window_width, cfg.window_height, window_name.c_str(), nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(
+        cfg.window_width, cfg.window_height, window_name.c_str(),
+        nullptr, nullptr
+    );
     if (!window) {
         glfwTerminate();
         mi_assert(false, "Failed to create GLFW window");
@@ -135,10 +139,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             cmd.TextureBarrier(font_texture.Raw(), RHITextureLayoutType::kTransferDstOptimal,
                 RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kWrite);
             cmd.CopyBufferToTexture(staging->GetSpan(), font_texture.Raw());
+            cmd.TextureBarrier(font_texture.Raw(), RHITextureLayoutType::kShaderReadOnlyOptimal,
+                RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
             cmd.EnqueueTranslateAndSubmit();
             rhi.WaitForIdle();
             // 设置ImGui纹理ID
-            io.Fonts->SetTexID((ImTextureID)(intptr_t)font_texture->GetAPIHandle());
+            io.Fonts->SetTexID((ImTextureID)font_texture.Raw());
             io.Fonts->ClearTexData(); // 清理CPU端数据
         }
     }

@@ -10,10 +10,10 @@
 #include <rdg/rdg_pool.h>
 #include <rdg/rdg_resource.h>
 #include <rdg/rdg_shader.h>
+#include <rhi/rhi_buffer.h>
 
 MI_NAMESPACE_BEGIN
-
-RHIBindPipelineParametersDesc RDGCommandHelper::UploadShaderParams(
+    std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParams(
     RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
     const RDGShaderParamStructAndSizeInfo * base_info, const void * params) {
     RHIBindPipelineParametersDesc ret = {};
@@ -26,10 +26,19 @@ RHIBindPipelineParametersDesc RDGCommandHelper::UploadShaderParams(
         for (int i = 0; i < num_ref_uniform_buffers; i++) {
             auto struct_ptr = *(void**)((uint8_t*)params + base_info->uniform_buffers_[i].cpp_offset);
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>((int)i);
-            auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
-            auto span = buffer_ptr.buffer->GetRHI();
-            span.offset += buffer_ptr.offset;
-            ret.uniforms[i] = {span, slot};
+            if (!struct_ptr) {
+                MI_WARN("Referenced uniform buffer pointer {} is null, which should not happen.", base_info->uniform_buffers_[i].info->name);
+                return std::nullopt;
+            } else {
+                if (RDGParameter_IsUnsetPointer(struct_ptr)) {
+                    MI_WARN("Referenced uniform buffer pointer {} is unset, which should not happen.", base_info->uniform_buffers_[i].info->name);
+                    return std::nullopt;
+                }
+                auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
+                auto span = buffer_ptr.buffer->GetRHI();
+                span.offset += buffer_ptr.offset;
+                ret.uniforms[i] = {span, slot};
+            }
         }
         if (has_globals) {
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>(num_ref_uniform_buffers);
@@ -42,19 +51,27 @@ RHIBindPipelineParametersDesc RDGCommandHelper::UploadShaderParams(
     // Bind storage buffers
     {
         ret.storages = std::span(queue.Allocate<RHIPipelineParameterBufferDesc[]>(base_info->storage_buffers_.size()), base_info->storage_buffers_.size());
-        for (auto [i, e] : std::views::enumerate(base_info->storage_buffers_)) {
+        for (const auto& [i, e] : std::views::enumerate(base_info->storage_buffers_)) {
             auto buffer_ptr = *static_cast<RDGBuffer**>((void*)((uint8_t*)params + e.cpp_offset));
+            if (RDGParameter_IsUnsetPointer(buffer_ptr)) {
+                MI_WARN("Referenced storage buffer pointer {} is unset, which should not happen.", e.info->name);
+                return std::nullopt;
+            }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kStorageBuffer>((int)i);
-            ret.storages[i] = {buffer_ptr->GetRHI(), slot};
+            ret.storages[i] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
         }
     }
     // Bind UAVs
     {
         ret.uavs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->uavs_.size()), base_info->uavs_.size());
-        for (auto [i, e] : std::views::enumerate(base_info->uavs_)) {
+        for (const auto& [i, e] : std::views::enumerate(base_info->uavs_)) {
             auto texture_ptr = *static_cast<RDGTexture**>((void*)((uint8_t*)params + e.cpp_offset));
+            if (RDGParameter_IsUnsetPointer(texture_ptr)) {
+                MI_WARN("Referenced UAV texture pointer {} is unset, which should not happen.", e.info->name);
+                return std::nullopt;
+            }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
-            ret.uavs[i] = {texture_ptr->GetRHI(), slot};
+            ret.uavs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot};
         }
     }
     // Bind SRVs
@@ -62,27 +79,54 @@ RHIBindPipelineParametersDesc RDGCommandHelper::UploadShaderParams(
         ret.srvs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->srvs_.size()), base_info->srvs_.size());
         for (auto [i, e] : std::views::enumerate(base_info->srvs_)) {
             auto texture_ptr = *static_cast<RDGTexture**>((void*)((uint8_t*)params + e.cpp_offset));
+            if (RDGParameter_IsUnsetPointer(texture_ptr)) {
+                MI_WARN("Referenced SRV texture pointer {} is unset, which should not happen.", e.info->name);
+                return std::nullopt;
+            }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
-            ret.srvs[i] = {texture_ptr->GetRHI(), slot};
+            ret.srvs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot};
         }
     }
-    // TODO bind samplers, as, etc...
+    // Bind samplers
+    {
+        ret.samplers = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(base_info->samplers_.size()), base_info->samplers_.size());
+        for (auto [i, e] : std::views::enumerate(base_info->samplers_)) {
+            auto sampler_ptr = *static_cast<RHISampler**>((void*)((uint8_t*)params + e.cpp_offset));
+            if (!sampler_ptr || RDGParameter_IsUnsetPointer(sampler_ptr)) {
+                MI_WARN("Referenced sampler pointer {} is null/unset, which should not happen.", e.info->name);
+                return std::nullopt;
+            }
+            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>((int)i);
+            ret.samplers[i] = {sampler_ptr, slot};
+        }
+    }
+    // TODO bind as, etc...
     return ret;
 }
 
 void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params, int x, int y, int z) {
     auto desc = UploadShaderParams(pass, shader, queue, info, params);
-    queue.BindPipeline(shader->compute_pipeline_.Raw());
-    queue.BindPipelineParameters(RHIBindPointType::kCompute, desc);
-    queue.Dispatch(x, y, z);
+    if (desc.has_value()) {
+        queue.BindPipeline(shader->compute_pipeline_.Raw());
+        queue.BindPipelineParameters(RHIBindPointType::kCompute, desc.value());
+        queue.Dispatch(x, y, z);
+    } else {
+        MI_WARN("Shader {}: Failed to upload shader parameters. Dispatch cancelled.",
+            shader->class_registry_->name);
+    }
 }
 
-void RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
+bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) {
     auto desc = UploadShaderParams(pass, graphics_shader, queue, info, params);
+    if (!desc.has_value()) {
+        MI_WARN("Shader {}: Failed to upload shader parameters. Draw cancelled.",
+            graphics_shader->class_registry_->name);
+        return false;
+    }
     queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw());
-    queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc);
+    queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc.value());
     if (!info->vertex_buffers_.empty()) {
         for (auto e : info->vertex_buffers_) {
             auto ptr = (RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset);
@@ -95,7 +139,7 @@ void RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
                 MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null vertex buffer for paramter '{}'. Draw cancelled.",
                     graphics_shader->class_registry_->name, e.info->name);
                 // cancel the draw
-                return ;
+                return false;
             }
         }
     }
@@ -103,7 +147,7 @@ void RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
     if (info->renderpass_.info) {
         auto pass_params = *(void**)((std::byte*)params + info->renderpass_.cpp_offset);
         auto pass_info = info->renderpass_.info->cpp_imported_struct_info.cpp_struct_info;
-        for (auto [i, e] : std::views::enumerate(pass_info->render_targets_)) {
+        for (const auto& [i, e] : std::views::enumerate(pass_info->render_targets_)) {
             auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)pass_params + e.cpp_offset);
             RHITexture * to_bound = nullptr;
             if (param.texture == nullptr) {
@@ -125,16 +169,17 @@ void RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
         }
     }
     queue.UpdateDrawState(ds);
+    return true;
 }
 
 void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void *params,
     int vertex_count, int instance_count, int first_vertex, int first_instance) {
-    BindGraphicsShader(queue, pass, graphics_shader, info, params);
-    // TODO multi draw in a single render pass support.
-    queue.BeginRendering();
-    queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);
-    queue.EndRendering();
+    if (BindGraphicsShader(queue, pass, graphics_shader, info, params)) {
+        queue.BeginRendering();
+        queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);
+        queue.EndRendering();
+    }
 }
 
 MI_NAMESPACE_END

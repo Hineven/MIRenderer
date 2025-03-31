@@ -21,7 +21,7 @@ class RDGCommandHelper {
 public:
 
     // Convenience function to upload shader parameters
-    static RHIBindPipelineParametersDesc UploadShaderParams(
+    static std::optional<RHIBindPipelineParametersDesc> UploadShaderParams(
         RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
         const RDGShaderParamStructAndSizeInfo * base_info, const void * params) ;
     template <CShaderType T>
@@ -30,13 +30,13 @@ public:
         return UploadShaderParams(pass, shader, queue, T::GetShaderParamStructInfo(), params);
     }
 
-    static void BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
+    static bool BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
 
     template<CShaderType T>
-    FORCEINLINE static void BindGraphicsShader (
+    FORCEINLINE static bool BindGraphicsShader (
         RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const void * params) {
-        BindGraphicsShader(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params);
+        return BindGraphicsShader(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params);
     }
 
     // RDG Pass API (automatically spawn resource dependencies)

@@ -60,7 +60,7 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
     if(remaining_resource_record_pending_for_deletion_.resource) {
         removal = false;
         if(force || remaining_resource_record_pending_for_deletion_.frame_index < RHI::Get().GetFrameIndex()) {
-            FreeResource_RHIThread(remaining_resource_record_pending_for_deletion_.resource);
+            delete remaining_resource_record_pending_for_deletion_.resource;
             remaining_resource_record_pending_for_deletion_ = {};
             removal = true;
         }
@@ -70,7 +70,7 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
         RHIResourceToRecycle resource {};
         while(resources_pending_for_deletion_.Pop(resource)) {
             if(force || resource.frame_index < RHI::Get().GetFrameIndex() - 1) {
-                FreeResource_RHIThread(resource.resource);
+                delete resource.resource;
             } else {
                 // The resource is not ready to be deleted, delay it to the next frame;
                 remaining_resource_record_pending_for_deletion_ = resource;
@@ -107,9 +107,20 @@ void RHI::InitializeSingleton (RHIType type, const void * extra) {
     GDynamicRHI->PostInitialize();
 }
 
+void RHI::PostInitialize() {
+    // Create global samplers
+    {
+        auto linear_wrap = CreateSampler(RHISamplerFilterType::kLinear, RHISamplerAddressModeType::kRepeat);
+        linear_wrap->IncRef();
+        global_samplers_.linear_wrap = linear_wrap.Raw();
+    }
+}
+
+
 void RHI::DestroySingleton () {
     if(GDynamicRHI) {
         GDynamicRHI->WaitForIdle();
+        GDynamicRHI->PreDestruction();
         // Recycle all pending resources before the real destruction of RHI.
         EnqueueRHIThreadTask([](){
             RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread(true);
@@ -121,6 +132,11 @@ void RHI::DestroySingleton () {
 
 bool RHI::HasSingleton() {
     return GDynamicRHI != nullptr;
+}
+
+void RHI::PreDestruction () {
+    // Release samplers
+    global_samplers_.linear_wrap->DecRef();
 }
 
 RHI::RHI() {
@@ -135,7 +151,7 @@ RHI::~RHI() {
     // Stop RHI thread
     SignalStopRHIWorkerThreads();
     rhi_thread_->join();
-    // Make unique_ptr on incomplete type work
+    // Make unique_ptr on incomplete types work
 }
 
 MI_NAMESPACE_END

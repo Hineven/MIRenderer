@@ -608,17 +608,13 @@ const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
     return & export_handles_;
 }
 
-void VulkanRHI::FreeResource_RHIThread(RHIResource *resource) {
-    // printf("Free resource %p\n", resource);
-    delete resource;
-}
-
 RHISyncPointRef VulkanRHI::CreateSyncPoint() {
     auto ptr = new VulkanSyncPoint();
     return {(RHISyncPoint*)ptr};
 }
 
 void VulkanRHI::PostInitialize() {
+    RHI::PostInitialize();
     // Create bindless manager and command executor
     {
         mi_assert(IsRHIThreadActive(), "RHI thread must be active when creating VulkanRHI.");
