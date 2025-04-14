@@ -10,6 +10,7 @@
 #include <rdg/rdg_resource.h>
 MI_NAMESPACE_BEGIN
 
+
 RDGResourcePool::RDGResourcePool() {
 
 }

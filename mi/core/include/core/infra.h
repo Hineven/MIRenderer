@@ -159,15 +159,6 @@ void DestroyInfra () ;
 #define mi_warning(cond, msg, ...)
 #endif
 
-template<typename T>
-class DeleteOnInfra {
-public:
-    inline void operator()(T * ptr) const {
-        ptr->~T();
-        GetInfra().Free(ptr);
-    }
-};
-
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_INFTRA_H

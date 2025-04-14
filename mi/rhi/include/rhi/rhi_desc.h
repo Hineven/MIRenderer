@@ -418,6 +418,24 @@ using AccelerationStructureDesc = PipelineReflection::AccelerationStructureDesc;
 using CommandConstantDesc = PipelineReflection::CommandConstantDesc;
 
 
+struct RHIDrawIndirectCommand {
+    uint32_t vertex_count {};
+    uint32_t instance_count {};
+    uint32_t first_vertex {};
+    uint32_t first_instance {};
+};
+
+struct RHIDrawIndexedIndirectCommand {
+    uint32_t index_count {};
+    uint32_t instance_count {};
+    uint32_t first_index {};
+    uint32_t vertex_offset {};
+    uint32_t first_instance {};
+    uint32_t padding0 {};
+    uint32_t padding1 {};
+    uint32_t padding2 {};
+};
+
 MI_NAMESPACE_END
 
 #endif //MI_RHI_DESC_H

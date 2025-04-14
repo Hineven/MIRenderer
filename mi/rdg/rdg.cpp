@@ -43,7 +43,9 @@ FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restri
 }
 
 static RHIGPUAccessFlags GetTextureUsageAccess (RDGTextureUsageType usage) {
-    if (usage == RDGTextureUsageType::kTransferSrc) {
+    if (usage == RDGTextureUsageType::kDontCare) {
+        return RHIGPUAccessFlagBits::kAll;
+    } else if (usage == RDGTextureUsageType::kTransferSrc) {
         return RHIGPUAccessFlagBits::kRead;
     } else if (usage == RDGTextureUsageType::kTransferDst) {
         return RHIGPUAccessFlagBits::kWrite;
@@ -69,7 +71,9 @@ static RHIGPUAccessFlags GetTextureUsageAccess (RDGTextureUsageType usage) {
 }
 
 static RHITextureLayoutType GetTextureLayout (RDGTextureUsageType usage) {
-    if (usage == RDGTextureUsageType::kTransferSrc) {
+    if (usage == RDGTextureUsageType::kDontCare) {
+        return RHITextureLayoutType::kUndefined;
+    } else if (usage == RDGTextureUsageType::kTransferSrc) {
         return RHITextureLayoutType::kTransferSrcOptimal;
     } else if (usage == RDGTextureUsageType::kTransferDst) {
         return RHITextureLayoutType::kTransferDstOptimal;
