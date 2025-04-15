@@ -71,6 +71,10 @@ void RHICommandDrawIndexedPrimitive::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDrawIndexedPrimitive(&cmd, this);
 }
 
+void RHICommandDrawIndexedIndirect::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDrawIndexedIndirect(&cmd, this);
+}
+
 void RHICommandSetScissor::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIUpdateDrawState(&cmd, this);
 }

@@ -36,13 +36,6 @@ public:
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
-    TRef<Material> CreateMaterial () ;
-    TRef<Geometry> CreateGeometry () ;
-
-    // Create a static mesh renderable and add it to the renderer.
-    // Releasing the reference yourself will remove it from the renderer.
-    TRef<StaticMesh> CreateStaticMeshRenderable () ;
-
 protected:
 
     // A list of renderables. Ones with reference count approaching 1 will be removed from the list prior to frame

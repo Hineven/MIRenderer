@@ -381,6 +381,18 @@ public:
     RHIIndexType index_type_;
 };
 
+class RHICommandDrawIndexedIndirect : public TRHICommand<RHICommandDrawIndexedIndirect> {
+public:
+    RHICommandDrawIndexedIndirect(RHIBufferSpan index_buffer, RHIBufferSpan indirect_buffer, uint32_t draw_count, RHIIndexType index_type):
+        index_buffer_(index_buffer), indirect_buffer_(indirect_buffer), draw_count_(draw_count), index_type_(index_type) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIBufferSpan index_buffer_;
+    RHIBufferSpan indirect_buffer_;
+    uint32_t draw_count_;
+    RHIIndexType index_type_;
+};
+
 class RHICommandDispatch : public TRHICommand<RHICommandDispatch> {
 public:
     RHICommandDispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z)
@@ -541,6 +553,9 @@ public:
                                           uint32_t instance_count, uint32_t first_index, uint32_t base_vertex_index,
                                           uint32_t first_instance_index, RHIIndexType index_type) {
         AddCommand(AllocateCommand<RHICommandDrawIndexedPrimitive>(index_buffer, index_count, instance_count, first_index, base_vertex_index, first_instance_index, index_type));
+    }
+    FORCEINLINE void DrawIndexedIndirect (RHIBufferSpan index_buffer, RHIBufferSpan commands, uint32_t count, RHIIndexType type = RHIIndexType::kUint32) {
+        AddCommand(AllocateCommand<RHICommandDrawIndexedIndirect>(index_buffer, commands, count, type));
     }
     FORCEINLINE void SetScissor (int x, int y, uint32_t width, uint32_t height) {
         AddCommand(AllocateCommand<RHICommandSetScissor>(x, y, width, height));

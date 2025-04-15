@@ -38,8 +38,8 @@ protected:
     size_t device_vertex_buffer_offset_;
     TRef<RHIBuffer> device_index_buffer_;
     size_t device_index_buffer_offset_;
-    // uint32_t device_vertex_count_;
-    // uint32_t device_index_count_;
+    // The first index to draw of the geometry in the device index buffer.
+    uint32_t device_first_index_;
 public:
     friend class StaticMesh;
     bool dirty_ {false};
@@ -65,6 +65,10 @@ public:
     }
     FORCEINLINE size_t GetDeviceIndexBufferOffset () const {
         return device_index_buffer_offset_;
+    }
+
+    FORCEINLINE size_t GetDeviceFirstIndex () const {
+        return device_first_index_;
     }
 };
 

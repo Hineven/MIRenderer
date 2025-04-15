@@ -3,6 +3,7 @@ set(SOURCES
         mi_static_mesh.cpp
         mi_material.cpp
         mi_renderable.cpp
+        mi_world.cpp
 )
 
 add_library(renderer ${SOURCES})

@@ -28,6 +28,7 @@ public:
     virtual void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) = 0;
     virtual void RHIDrawPrimitive (RHICommandQueueBase * buffer, RHICommandDrawPrimitive * cmd) = 0;
     virtual void RHIDrawIndexedPrimitive (RHICommandQueueBase * buffer, RHICommandDrawIndexedPrimitive * cmd) = 0;
+    virtual void RHIDrawIndexedIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndexedIndirect * draw_indexed_indirect) = 0;
     virtual void RHIDispatch (RHICommandQueueBase * buffer, RHICommandDispatch * cmd) = 0;
     virtual void RHIBindGraphicsPipeline (RHICommandQueueBase * buffer, RHICommandBindGraphicsPipeline * cmd) = 0;
     // This is the super-set for scissor update, .... etc

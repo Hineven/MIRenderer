@@ -250,14 +250,31 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
     auto index_buffer = static_cast<VulkanBuffer*>(draw_indexed_primitive->index_buffer_.buffer); // NOLINT its safe
-//    index_buffer->Use(state.cmd, vk::PipelineStageFlagBits::eVertexInput, vk::AccessFlagBits::eIndexRead);
-    state.cmd.bindIndexBuffer(index_buffer->GetBuffer(), draw_indexed_primitive->index_buffer_.offset, GetVulkanIndexType(draw_indexed_primitive->index_type_));
+    state.BindIndexBuffer(draw_indexed_primitive->index_buffer_, draw_indexed_primitive->index_type_);
     state.cmd.drawIndexed(draw_indexed_primitive->index_count_,
                           draw_indexed_primitive->instance_count_,
                           draw_indexed_primitive->first_index_,
                           draw_indexed_primitive->base_vertex_index_,
                           draw_indexed_primitive->first_instance_index_);
 }
+
+void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
+                                                    RHICommandDrawIndexedIndirect *draw_indexed_indirect) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
+
+    auto index_buffer = static_cast<VulkanBuffer*>(draw_indexed_indirect->index_buffer_.buffer); // NOLINT its safe
+    state.BindIndexBuffer(draw_indexed_indirect->index_buffer_, draw_indexed_indirect->index_type_);
+    auto vk_buffer = static_cast<VulkanBuffer*>(draw_indexed_indirect->indirect_buffer_.buffer); // NOLINT its safe
+    state.cmd.drawIndexedIndirect(
+        vk_buffer->GetBuffer(),
+        draw_indexed_indirect->indirect_buffer_.offset,
+        draw_indexed_indirect->draw_count_, sizeof(RHIDrawIndexedIndirectCommand)
+    );
+}
+
 
 void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDispatch *dispatch) {
     assert(IsRHIThread());
@@ -1014,6 +1031,12 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
     assert(IsRHIThread());
     // Clear states, get ready for the next frame.
     auto rhi = GetVulkanRHI();
+    {
+        memset(bound_vertex_buffers, 0, sizeof(bound_vertex_buffers));
+        bound_index_buffer = {};
+        bound_index_type = RHIIndexType::kMax;
+        draw_state_.Reset();
+    }
     for(auto & point : points) {
         point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = nullptr;
@@ -1041,10 +1064,17 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
     {
         rhi->GetDevice().resetDescriptorPool(descriptor_pool);
     }
-
-    for(auto & s : bound_vertex_buffers) s = {};
-    draw_state_.Reset();
 }
+
+void VulkanCommandExecutor::CommandQueueState::BindIndexBuffer(RHIBufferSpan span, RHIIndexType type) {
+    if (bound_index_buffer != span || bound_index_type != type) {
+        auto vk_buffer = static_cast<VulkanBuffer*>(span.buffer)->GetBuffer();
+        cmd.bindIndexBuffer(vk_buffer, span.offset, GetVulkanIndexType(type));
+        bound_index_buffer = span;
+        bound_index_type = type;
+    }
+}
+
 
 void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
     if(!cmd_recording_started) {

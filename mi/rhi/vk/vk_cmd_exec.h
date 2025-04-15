@@ -35,6 +35,7 @@ public:
     void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) override ;
     void RHIDrawPrimitive(RHICommandQueueBase * cmd, RHICommandDrawPrimitive * draw_primitive) override ;
     void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
+    void RHIDrawIndexedIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndexedIndirect * draw_indexed_indirect) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
     void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) override;
@@ -65,12 +66,16 @@ protected:
         bool cmd_recording_started {};
         // Can bind up to 8 vertex buffers
         RHIBufferSpan bound_vertex_buffers[8] {};
+        RHIBufferSpan bound_index_buffer {};
+        RHIIndexType  bound_index_type {RHIIndexType::kMax};
 
         // Kept draw state.
         RHIDrawDesc draw_state_ {};
         vk::Rect2D GetScissorRect ();
         vk::Viewport GetViewport ();
         void InstallDrawState (vk::CommandBuffer cmdb);
+
+        void BindIndexBuffer (RHIBufferSpan span, RHIIndexType type) ;
 
         // Keep states of each bind point
         struct BindPoint {
