@@ -17,6 +17,10 @@ class Transform;
 class Geometry;
 class StaticMesh;
 
+class RenderResourceAllocator;
+class GPUBufferHeapInterface;
+class GPUBufferHeapBuffer;
+
 struct MinimumMaterial {
     glm::vec3 albedo_ {0.5f};
     float alpha_ {1.f};
@@ -28,6 +32,13 @@ struct MinimumMaterial {
     uint32_t normal_map_ {UINT32_MAX};
     uint32_t emissive_map_ {UINT32_MAX};
     uint32_t roughness_map_ {UINT32_MAX};
+};
+
+// Default vertex format
+struct DefaultStaticMeshVertex {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 uv;
 };
 
 MI_NAMESPACE_END

@@ -8,15 +8,14 @@
 #define MI_WORLD_H
 
 #include <set>
+#include <stack>
 #include <vector>
-#include <rhi/rhi_texture.h>
-
 #include "core/base.h"
 #include "core/refcounted.h"
+#include <rhi/rhi_texture.h>
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
-class GPUBufferHeapBuffer;
 // Interface for resource level buffer allocator
 class GPUBufferHeapInterface : public NonMovable, public RefCounted<> {
 public:
@@ -75,23 +74,61 @@ protected:
     std::mutex mutex_;
 };
 
-// Keeping all GPU resources used for rendering (geometries, meshes, materials, etc)
-class RenderResourceLibrary : public NonCopyable, public NonMovable {
+// Allocate GPU resources used for rendering (geometries, meshes, materials, etc)
+class RenderResourceAllocator : public NonCopyable, public NonMovable {
 public:
-    RenderResourceLibrary (GPUBufferHeapInterface * vertex_buffer_heap, GPUBufferHeapInterface * index_buffer_heap);
-
-    TRef<Geometry> CreateGeometry () ;
-    TRef<Material> CreateMaterial () ;
+    RenderResourceAllocator (
+        GPUBufferHeapInterface * vertex_buffer_heap,
+        GPUBufferHeapInterface * index_buffer_heap
+    );
+    friend class Geometry;
+    friend class Material;
 
 protected:
-    // Bindless texture array for all materials
-    std::vector<TRef<RHITexture>> textures_;
-    std::vector<TRef<Geometry>> geometries_;
-    std::vector<TRef<Material>> materials_;
+
+
+    uint32_t top_material_slot_ {};
+    uint32_t top_texture_slot_ {};
+    std::stack<uint32_t> free_texture_slots_;
+    std::stack<uint32_t> free_material_slots_;
+
+    // Called by material / bindless texture destructor
+    FORCEINLINE void ReleaseMaterialIndex (int index) {
+        free_material_slots_.push(index);
+    }
+    FORCEINLINE void ReleaseTextureIndex (int index) {
+        free_texture_slots_.push(index);
+    }
+    // Called by material / bindless texture constructor
+    FORCEINLINE uint32_t AllocateMaterialIndex () {
+        if(free_material_slots_.empty()) {
+            return top_material_slot_++;
+        } else {
+            int index = free_material_slots_.top();
+            free_material_slots_.pop();
+            return index;
+        }
+    }
+    FORCEINLINE uint32_t AllocateTextureIndex () {
+        if(free_texture_slots_.empty()) {
+            return top_texture_slot_++;
+        } else {
+            int index = free_texture_slots_.top();
+            free_texture_slots_.pop();
+            return index;
+        }
+    }
 
     // Heaps for consistent geometry
     TRef<GPUBufferHeapInterface> vertex_buffer_heap_;
     TRef<GPUBufferHeapInterface> index_buffer_heap_;
+
+    FORCEINLINE TRef<GPUBufferHeapBuffer> AllocateVertexBuffer (uint32_t size) {
+        return vertex_buffer_heap_->Allocate(size);
+    }
+    FORCEINLINE TRef<GPUBufferHeapBuffer> AllocateIndexBuffer (uint32_t size) {
+        return index_buffer_heap_->Allocate(size);
+    }
 };
 
 // Integrated class managing the world.

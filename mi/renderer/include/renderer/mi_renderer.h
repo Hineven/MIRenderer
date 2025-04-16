@@ -40,43 +40,6 @@ protected:
 
     // A list of renderables. Ones with reference count approaching 1 will be removed from the list prior to frame
     std::vector<TRef<Renderable>> renderables_;
-    // Vertex buffer pool
-    std::vector<TRef<RHIBuffer>> vertex_buffers_;
-    // Index buffer pool
-    std::vector<TRef<RHIBuffer>> index_buffers_;
-
-    // The renderer does not keep materials and textures itself (they are kept by the material classes),
-    uint32_t top_texture_slot_ {};
-    uint32_t top_material_slot_ {};
-    std::stack<uint32_t> free_texture_slots_;
-    std::stack<uint32_t> free_material_slots_;
-
-    // Called by material / bindless texture destructor
-    FORCEINLINE void ReleaseMaterialIndex (int index) {
-        free_material_slots_.push(index);
-    }
-    FORCEINLINE void ReleaseTextureIndex (int index) {
-        free_texture_slots_.push(index);
-    }
-    // Called by material / bindless texture constructor
-    FORCEINLINE uint32_t AllocateMaterialIndex () {
-        if(free_material_slots_.empty()) {
-            return top_material_slot_++;
-        } else {
-            int index = free_material_slots_.top();
-            free_material_slots_.pop();
-            return index;
-        }
-    }
-    FORCEINLINE uint32_t AllocateTextureIndex () {
-        if(free_texture_slots_.empty()) {
-            return top_texture_slot_++;
-        } else {
-            int index = free_texture_slots_.top();
-            free_texture_slots_.pop();
-            return index;
-        }
-    }
 };
 
 

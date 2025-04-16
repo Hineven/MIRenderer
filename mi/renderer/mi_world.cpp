@@ -5,10 +5,14 @@
  */
 #include "renderer/mi_world.h"
 
+#include <renderer/mi_static_mesh.h>
 #include <rhi/rhi.h>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
 
 MI_NAMESPACE_BEGIN
-    GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
+
+GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
     heap->Free(this);
 }
 
@@ -119,6 +123,46 @@ void SimpleGPUBufferHeap::Free (GPUBufferHeapBuffer * buffer) {
         }
     }
     GPUBufferHeapInterface::Free(buffer);
+}
+
+DeviceGeometry::DeviceGeometry(RenderResourceAllocator * allocator) {
+
+}
+
+DeviceGeometry::~DeviceGeometry() {
+    // ...
+}
+
+
+TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> vertices, std::span<uint32_t> indices) {
+    auto geom = TRef<Geometry>(new Geometry());
+    if (indices.data() == nullptr) {
+        // Non-indexed geometry
+        assert(false && "Not implemented");
+        return nullptr;
+    }
+    geom->vertices_.resize(vertices.size());
+    geom->indices_.resize(indices.size());
+    std::copy(vertices.begin(), vertices.end(), geom->vertices_.begin());
+    std::copy(indices.begin(), indices.end(), geom->indices_.begin());
+    return geom;
+}
+
+void Geometry::CreateOnDevice(RenderResourceAllocator *alloc) {
+    mi_assert(!device_geometry_, "Device geometry already created.");
+    auto device = TRef(new DeviceGeometry(alloc));
+    auto vbuf = alloc->AllocateVertexBuffer(
+        vertices_.size() * sizeof(DefaultStaticMeshVertex)
+    );
+    auto ibuf = alloc->AllocateIndexBuffer(
+        indices_.size() * sizeof(uint32_t)
+    );
+    device->vertex_buffer_ = vbuf;
+    device->index_buffer_ = ibuf;
+    device->first_index_ = 0;
+    device->vertex_count_ = (int)vertices_.size();
+    device->index_count_ = (int)indices_.size();
+    device_geometry_ = std::move(device);
 }
 
 MI_NAMESPACE_END

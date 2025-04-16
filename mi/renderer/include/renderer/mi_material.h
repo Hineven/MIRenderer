@@ -12,8 +12,13 @@
 #include "core/common.h"
 #include "mi_renderer_fwd.h"
 #include "core/refcounted.h"
+
+namespace mi {
+    class RenderResourceLibrary;
+}
+
 MI_NAMESPACE_BEGIN
-class RHITexture;
+    class RHITexture;
 
 
 // Bindless texture the renderer uses.
@@ -34,8 +39,10 @@ public:
     friend class Renderer;
     FORCEINLINE uint32_t GetIndex () const {return index_;}
 protected:
-    Material ();
+    Material (RenderResourceLibrary * library);
     ~Material () ;
+
+    RenderResourceLibrary * library_ {};
 
     // Index of the material (assigned by the renderer)
     uint32_t index_ {UINT32_MAX};
