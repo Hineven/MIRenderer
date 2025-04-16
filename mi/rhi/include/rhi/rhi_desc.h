@@ -31,6 +31,10 @@ struct RHIBufferSpan {
 
     FORCEINLINE bool operator==(const RHIBufferSpan & span) const = default;
     FORCEINLINE bool operator!=(const RHIBufferSpan & span) const = default;
+
+    FORCEINLINE operator bool () const { // NOLINT
+        return IsValid();
+    }
 };
 
 struct RHIBindlessSupportInfo {

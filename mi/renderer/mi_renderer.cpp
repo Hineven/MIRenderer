@@ -67,19 +67,18 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<RHIDrawIndexedIndirectCommand> indirect_commands;
     struct DrawHeader {
         int material_index;
-        size_t vertex_buffer_offset;
-        size_t index_buffer_offset;
-        RHIBuffer * vertex_buffer;
-        RHIBuffer * index_buffer;
+        RHIBufferSpan vertex_buffer;
+        RHIBufferSpan index_buffer;
     };
     std::vector<DrawHeader> draw_headers;
     {
         for (auto & e : renderables_) {
             if (auto mesh = e->As<StaticMesh>()) {
                 for (auto [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
+                    auto dev = geom->GetDeviceGeometry();
                     RHIDrawIndexedIndirectCommand cmd {};
                     cmd.first_instance = 0;
-                    cmd.first_index = geom->GetDeviceFirstIndex();
+                    cmd.first_index = dev->GetDeviceFirstIndex();
                     cmd.instance_count = 1;
                     cmd.index_count = geom->GetIndexCount();
                     // Padding 0 is used for material index
@@ -87,10 +86,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                     indirect_commands.push_back(cmd);
                     DrawHeader header {};
                     header.material_index = mat->GetIndex();
-                    header.vertex_buffer_offset = geom->GetDeviceVertexBufferOffset();
-                    header.index_buffer_offset = geom->GetDeviceIndexBufferOffset();
-                    header.vertex_buffer = geom->GetDeviceVertexBuffer();
-                    header.index_buffer = geom->GetDeviceIndexBuffer();
+                    header.vertex_buffer = dev->GetDeviceVertexBuffer();
+                    header.index_buffer = dev->GetDeviceIndexBuffer();
                     draw_headers.push_back(header);
                 }
             }
@@ -98,41 +95,36 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         auto size = sizeof(RHIDrawIndexedIndirectCommand) * indirect_commands.size();
         view->static_mesh_draw_commands_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kIndirect, size);
 
-        Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_.Raw(), indirect_commands.data(), size);
+        Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_->GetRHI(), indirect_commands.data(), size);
 
     }
     // Add a pass to rasterize static meshes
+    // manual barrier placement
     auto raster_pass = builder.AddPass("RasterizeStaticMeshCommands", RDGPassType::kGraphics, {}, nullptr, nullptr,
         [indirect_commands, draw_headers, rdg_draw_cmd = view->static_mesh_draw_commands_.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            RHIBuffer * last_vertex_buffer = nullptr;
-            size_t last_vertex_buffer_offset = 0;
-            RHIBuffer * last_index_buffer = nullptr;
-            size_t last_index_buffer_offset = 0;
+            RHIBufferSpan last_vertex_buffer {};
+            RHIBufferSpan last_index_buffer {};
             RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
             // TODO sort commands first to minimize draw calls
             for (int i = 0; i < (int)indirect_commands.size(); i++) {
-                auto & cmd = indirect_commands[i];
+                // auto & cmd = indirect_commands[i];
                 auto & hdr = draw_headers[i];
-                if (last_vertex_buffer != hdr.vertex_buffer || last_vertex_buffer_offset != hdr.vertex_buffer_offset
-                || last_index_buffer != hdr.index_buffer || last_index_buffer_offset != hdr.index_buffer_offset) {
+                if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
                     if (i > 0) {
                         // Batch submit previous commands sharing the same vertex & index buffer settings.
                         auto first_cmd = cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand);
-                        queue.DrawIndexedIndirect(
-                            RHIBufferSpan(hdr.index_buffer, hdr.index_buffer_offset, hdr.index_buffer->GetBufferSize()),
-                            cmd_span,  i - first_cmd
-                        );
+                        queue.DrawIndexedIndirect(hdr.index_buffer, cmd_span,  i - first_cmd);
                         cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                     }
                     last_vertex_buffer = hdr.vertex_buffer;
-                    last_vertex_buffer_offset = hdr.vertex_buffer_offset;
                     last_index_buffer = hdr.index_buffer;
-                    last_index_buffer_offset = hdr.index_buffer_offset;
+                    queue.BindVertexBuffer(0, hdr.vertex_buffer);
                 }
             }
         }
     );
 
+    // Place barriers manually
     {
         // TODO make vertex / index buffers allocated from a pool. So that we can control the number of barriers
         std::set<RHIBuffer*> barrier_buffers;
@@ -140,8 +132,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             if (!e->IsDirty()) continue ;
             if (auto mesh = e->As<StaticMesh>()) {
                 for (auto geom : mesh->GetGeometries()) {
-                    if (auto vb = geom->GetDeviceVertexBuffer()) barrier_buffers.insert(vb);
-                    if (auto ib = geom->GetDeviceIndexBuffer()) barrier_buffers.insert(ib);
+                    if (auto dev = geom->GetDeviceGeometry()) {
+                        if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb.buffer);
+                        if (auto ib = dev->GetDeviceIndexBuffer()) barrier_buffers.insert(ib.buffer);
+                    }
                 }
             }
         }
@@ -167,6 +161,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             RDGTextureUsageType::kOutputAttachment
         );
     }
+
+    // Draw G-Buffer to output directly for debug purposes
+    Render_DrawToOutput(view->G_albedo_);
 }
 
 MI_NAMESPACE_END

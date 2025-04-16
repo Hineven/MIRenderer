@@ -7,10 +7,8 @@
 #ifndef MIRENDERERDEV_RHI_H
 #define MIRENDERERDEV_RHI_H
 
-#include <string>
 #include <memory>
 #include <future>
-#include "rhi/rhi_common.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"

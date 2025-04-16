@@ -12,8 +12,8 @@ class RHIBuffer;
 class RDGBuffer;
 class RenderGraphBuilder;
 namespace Helpers {
-    static void Upload (RHIBuffer * buffer, const void * data, size_t size) ;
-    static void UploadWithRDG (RenderGraphBuilder & builder, RDGBuffer * buffer, const void * data, size_t size) ;
+    static void Upload (RHIBufferSpan buffer, const void * data, size_t size) ;
+    static void UploadWithRDG (RenderGraphBuilder & builder, RHIBufferSpan buffer, const void * data, size_t size) ;
 }
 
 MI_NAMESPACE_END
