@@ -23,6 +23,8 @@ struct RendererView {
     uint32_t frame_index_ {};
     uint32_t view_index_ {};
 
+    World * world;
+
     TRef<RDGBuffer> static_mesh_draw_commands_;
 
     TRef<RDGTexture> G_depth_;
@@ -34,6 +36,9 @@ struct RendererView {
     TRef<RDGTexture> prev_G_albedo_;
     TRef<RDGTexture> prev_G_normal_;
     TRef<RHITexture> prev_G_roughness_;
+
+    // Imported back buffer
+    TRef<RDGTexture> output_;
 };
 
 MI_NAMESPACE_END

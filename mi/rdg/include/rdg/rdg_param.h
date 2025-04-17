@@ -182,7 +182,7 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWTexture2D")>
 : public TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {};
 
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Sampler")> {
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("SamplerState")> {
     typedef RHISampler * value;
     FORCEINLINE static RHISampler * default_value() {return reinterpret_cast<RHISampler*>(RDGParameter_UnsetPointer);}
 };

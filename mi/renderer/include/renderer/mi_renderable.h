@@ -31,13 +31,14 @@ public:
 
     template<typename T>
     FORCEINLINE T* As () {return static_cast<T>(this);}
+
+    Transform transform_;
 protected:
     Renderable();
     // Invisible renderables wont be rendered.
     bool visible_ {true};
     bool dirty_ {false};
     RenderableType type_ {RenderableType::kStaticMesh};
-    Transform transform_;
 };
 
 

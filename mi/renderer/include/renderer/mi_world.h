@@ -14,17 +14,34 @@
 #include "core/refcounted.h"
 #include <rhi/rhi_texture.h>
 #include "renderer/mi_renderer_fwd.h"
+#include "rdg/rdg_base.h"
 MI_NAMESPACE_BEGIN
+
+class DeviceWorld : public NonCopyable, public NonMovable {
+public:
+    TRef<RDGBuffer> renderable_transforms_;
+};
 
 // Integrated class managing the world.
 class World : public NonCopyable, public NonMovable {
 public:
-
     // Create a static mesh renderable and add it to the world.
     // Releasing the reference yourself will remove it from the renderer.
-    TRef<StaticMesh> CreateStaticMeshRenderable () ;
-protected:
+    StaticMesh * CreateStaticMeshRenderable () ;
 
+    void RemoveRenderable (Renderable * renderable) ;
+
+    FORCEINLINE const std::vector<TRef<Renderable>> & GetRenderables () const {
+        return renderables_;
+    }
+
+    FORCEINLINE DeviceWorld * GetDevice () const {
+        return device_world_.get();
+    }
+
+protected:
+    std::vector<TRef<Renderable>> renderables_;
+    std::unique_ptr<DeviceWorld> device_world_;
 };
 
 MI_NAMESPACE_END

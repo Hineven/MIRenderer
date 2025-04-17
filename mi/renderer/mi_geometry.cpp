@@ -8,6 +8,7 @@
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_geometry.h>
 #include <renderer/mi_helpers.h>
+#include <rhi/rhi.h>
 
 #include "renderer/mi_world.h"
 MI_NAMESPACE_BEGIN
@@ -55,6 +56,8 @@ void Geometry::SyncAndUpdateOnDevice () {
     mi_assert(device_geometry_, "Device geometry not created.");
     Helpers::Upload(device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
     Helpers::Upload(device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
+    RHI::Get().GetGraphicsCommandQueue().EnqueueTranslateAndSubmit();
+    RHI::Get().WaitForIdle();
     device_geometry_->first_index_ = 0;
     dirty_ = false;
 }

@@ -43,27 +43,50 @@ void Renderer::Init() {
 
 }
 
+void Renderer::UpdateView(RendererView *view) {
+    view->output_ = RDGTexture::Import(view->output_->GetRHI());
+}
+
+
 void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
+
+    UpdateView(view);
+
+    if (!view->world) {
+        MI_WARN("World is not present in the view.");
+        return ;
+    }
     mi_assert(view->view_index_ == 0, "Only one view is supported for now");
     // Remove renderables with ref count approaching 1
     std::vector<TRef<Renderable>> active_renderables;
-    active_renderables.reserve(renderables_.size());
-    for (auto & e : renderables_) {
-        if (e.GetRefCount() == 1) {
-            e.SafeRelease();
-        } else {
-            active_renderables.push_back(e);
+    auto all_renderables = view->world->GetRenderables();
+    active_renderables.reserve(all_renderables.size());
+    // Update renderable transforms
+    {
+        std::vector<glm::mat4x3> transforms;
+        transforms.reserve(all_renderables.size());
+        for (auto & e : all_renderables) {
+            transforms.push_back(e->transform_.GetToWorldTransformMatrix());
         }
+        Helpers::UploadWithRDG(
+            builder, view->world->GetDevice()->renderable_transforms_->GetRHI(),
+            transforms.data(), sizeof(glm::mat4x3) * transforms.size()
+        );
     }
-    renderables_ = std::move(active_renderables);
-    // Update dirty renderables
-    for (auto & e : renderables_) {
+    // Update dirty renderables with custom logic
+    for (auto & e : all_renderables) {
         if (e->IsDirty()) {
             e->Update(builder);
             e->SetDirty(false);
         }
     }
 
+    // Filter visible rendeables
+    for (auto & e : all_renderables) {
+        if (e->IsVisible()) active_renderables.push_back(e);
+    }
+
+    // Generate indirect draw commands
     std::vector<RHIDrawIndexedIndirectCommand> indirect_commands;
     struct DrawHeader {
         int material_index;
@@ -72,7 +95,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     };
     std::vector<DrawHeader> draw_headers;
     {
-        for (auto & e : renderables_) {
+        for (auto & e : active_renderables) {
             if (auto mesh = e->As<StaticMesh>()) {
                 for (auto [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
                     auto dev = geom->GetDeviceGeometry();
@@ -98,7 +121,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_->GetRHI(), indirect_commands.data(), size);
 
     }
-    // Add a pass to rasterize static meshes
+
+    // Rasterize static meshes with batched drawing
     // manual barrier placement
     auto raster_pass = builder.AddPass("RasterizeStaticMeshCommands", RDGPassType::kGraphics, {}, nullptr, nullptr,
         [indirect_commands, draw_headers, rdg_draw_cmd = view->static_mesh_draw_commands_.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
@@ -128,7 +152,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     {
         // TODO make vertex / index buffers allocated from a pool. So that we can control the number of barriers
         std::set<RHIBuffer*> barrier_buffers;
-        for (auto & e : renderables_) {
+        for (auto & e : active_renderables) {
             if (!e->IsDirty()) continue ;
             if (auto mesh = e->As<StaticMesh>()) {
                 for (auto geom : mesh->GetGeometries()) {
@@ -143,6 +167,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             // Destructors of temporaries created in one line of code will destruct after the line
             raster_pass->AddBuffer(RDGBuffer::Import(e, RHIGPUAccessFlagBits::kAll).Raw(), RHIGPUAccessFlagBits::kRead);
         }
+        // Indirect command
+        raster_pass->AddBuffer(view->static_mesh_draw_commands_.Raw(), RHIGPUAccessFlagBits::kRead);
         // G-buffers
         raster_pass->AddTexture(
             view->G_depth_.Raw(),
@@ -163,7 +189,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Draw G-Buffer to output directly for debug purposes
-    Render_DrawToOutput(view->G_albedo_);
+    Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
 }
 
 MI_NAMESPACE_END

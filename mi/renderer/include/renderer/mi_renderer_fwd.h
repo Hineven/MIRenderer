@@ -17,6 +17,8 @@ class Transform;
 class Geometry;
 class StaticMesh;
 
+class World;
+
 class RenderResourceAllocator;
 class GPUBufferHeapInterface;
 class GPUBufferHeapBuffer;

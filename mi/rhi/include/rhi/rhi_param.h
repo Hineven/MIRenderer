@@ -95,7 +95,7 @@ FORCEINLINE RHIBasicParamType RHITypeNameStringToBasicParamType (std::string_vie
 FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "Texture2D") return RHIParamType::kSRVTexture;
     if(type == "RWTexture2D") return RHIParamType::kUAVTexture;
-    if(type == "Sampler") return RHIParamType::kSampler;
+    if(type == "SamplerState") return RHIParamType::kSampler;
     if(type == "Buffer") return RHIParamType::kStorageBuffer;
     if(type == "StructuredBuffer") return RHIParamType::kStorageBuffer;
     if(type == "RWBuffer") return RHIParamType::kStorageBuffer;

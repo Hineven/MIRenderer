@@ -5,9 +5,12 @@
  */
 #include "renderer/mi_resource_allocator.h"
 
-MI_NAMESPACE_BEGIN
+#include <rhi/rhi.h>
 
-GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
+#include "core/infra.h"
+
+MI_NAMESPACE_BEGIN
+    GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
     heap->Free(buffer);
 }
 

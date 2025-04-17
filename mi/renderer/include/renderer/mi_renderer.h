@@ -38,11 +38,11 @@ public:
 
 protected:
 
-    // Draw a texture to back buffer directly.
-    void Render_DrawToOutput (RDGTexture * texture);
+    void UpdateView (RendererView * view) ;
 
-    // A list of renderables. Ones with reference count approaching 1 will be removed from the list prior to frame
-    std::vector<TRef<Renderable>> renderables_;
+    // Draw a texture to back buffer directly.
+    void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture);
+
 };
 
 

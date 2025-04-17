@@ -23,11 +23,15 @@ public:
     StaticMesh() ;
     ~StaticMesh() override;
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
-    void Update(RenderGraphBuilder &builder) override;
+    void Update (RenderGraphBuilder & builder);
+    FORCEINLINE bool IsDirty () const {return dirty_;}
 
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 protected:
+
+    bool dirty_ {true};
+
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
 };
