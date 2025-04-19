@@ -26,10 +26,10 @@
 #include "rdg/rdg_shader.h"
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
+#include "../../mi/renderer/include/renderer/mi_renderer.h"
 
 MI_NAMESPACE_BEGIN
-
-struct MainLoopStartConfig {
+    struct MainLoopStartConfig {
     std::string window_name;
     uint32_t window_width;
     uint32_t window_height;
@@ -58,6 +58,7 @@ GLFWwindow* StartWindow (const MainLoopStartConfig & cfg) {
 
     return window;
 }
+
 
 void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfig & cfg) {
 
@@ -150,7 +151,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    // 创建surface
+    // Swapchain & Surface
     VkSurfaceKHR surface_tmp;
     auto & rhi = RHI::Get();
     auto handles = static_cast<const VulkanRHIHandles*>(rhi.GetUnderlyingGraphicsAPIHandles());
@@ -161,6 +162,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
     rhi.InitializeSwapChain(&surface_tmp, cfg.window_width, cfg.window_height);
+
+    // Renderer
+    Renderer::Get().Init();
 
     auto pool = RDGResourcePool::Create();
 

@@ -6,6 +6,8 @@
 #include <imgui.h>
 
 #include "3d_viewer.h"
+#include "../../mi/renderer/include/renderer/mi_renderer.h"
+#include "../../mi/renderer/include/renderer/mi_renderer_view.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
 #include "rdg/rdg_pool.h"
@@ -131,7 +133,7 @@ void RenderImGui (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder, RDGT
     })->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kRead);
 }
 
-void RenderFrame(RDGResourcePool * pool) {
+void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
 
     auto backbuffer = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
@@ -142,15 +144,19 @@ void RenderFrame(RDGResourcePool * pool) {
     ImGui::End();
 
     RenderGraphBuilder builder;
+
     // Clear backbuffer
     {
         builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {},
             [bf = backbuffer.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            queue.ClearTexture(bf->GetRHI(), {1, 0, 0, 1});
+            queue.ClearTexture(bf->GetRHI(), {0, 0, 0, 1});
         })->AddTexture(backbuffer.Raw(), RDGTextureUsageType::kTransferDst);
     }
 
-    // RenderTriangle(pool, builder);
+    auto & renderer = Renderer::Get();
+    renderer.Render(view_state, builder);
+
+
     RenderImGui(pool, builder, backbuffer.Raw());
     auto graph = builder.Compile();
     graph->Execute(pool);

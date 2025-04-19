@@ -85,6 +85,7 @@ MyInfra::CompileHLSLToSPIRV(
     // Seems redundant? it triggers validation error VUID-VkShaderModuleCreateInfo-pCode-08742
     // however its just about reflection data and does not affect the real behavior of shaders.
     add_option(L"-fspv-reflect");
+    // add_option(L"-fspv-print-all");
     // FIXME other debug flags? if we have some other backends
     add_option(L"-fspv-debug=vulkan-with-source");
 

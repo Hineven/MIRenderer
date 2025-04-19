@@ -10,28 +10,9 @@
 #include <functional>
 #include "core/common.h"
 #include "core/base.h"
-#include "rhi/rhi_resource.h"
+#include "rdg/rdg_fwd.h"
+#include "rhi/rhi_types.h"
 MI_NAMESPACE_BEGIN
-
-enum class RDGPassFlagBits : unsigned {
-    kNone = 0,
-    // Do not cull this pass when compiling the graph
-    kNeverCull = 1 << 0,
-    kAll = 0xffffffffu
-};
-
-MAKE_FLAGS(RDGPass);
-
-enum class RDGResourceFlagBits : unsigned {
-    kNone = 0,
-    // The resource may be used among multiple RDGs, making passes writing to it never be culled
-    kPersistent = 1 << 0,
-    // Whether the resource is imported from external RHI resource. (thus should not be related to the pool)
-    // Imported resources are also created with persistent flag.
-    kImported = 1 << 1
-};
-
-MAKE_FLAGS(RDGResource);
 
 // A resource that is imported into / exist only within a render graph
 // Only the render thread can access its references, so no need for thread-safe reference counting.
@@ -55,25 +36,6 @@ protected:
     TRef<RDGResourcePool> pool_;
 };
 
-typedef TRef<RDGResource> RDGResourceRef;
-
-class RenderGraphTexture ;
-class RenderGraphBuffer  ;
-
-class RDGBuffer;
-class RDGTexture;
-
-enum class RDGPassType {
-    // Invoking draw commands
-    kGraphics,
-    // Compute shader
-    kCompute,
-    // Basic RHI commands
-    kGeneric,
-    // TODO add more (mesh, raytracing, etc)
-    kMax
-};
-
 FORCEINLINE RDGPassType GetRDGPassType (RHIPipelineType type) {
     switch (type) {
         case RHIPipelineType::kGraphics: return RDGPassType::kGraphics;
@@ -86,29 +48,6 @@ FORCEINLINE RDGPassType GetRDGPassType (RHIPipelineType type) {
 
 const char * ToCString (RDGPassType type) ;
 
-enum class RDGTextureUsageType : uint32_t {
-    kNone = 0,
-    // No usage specified, barrier all operations and discard the contents
-    kDontCare,
-    kTransferDst,
-    kTransferSrc,
-    kShaderRead,
-    // Storage image
-    kShaderReadWrite,
-    kOutputAttachment,
-    kDepthStencilAttachment,
-    kMax
-};
-
-class RDGPass;
-class RHICommandQueueGraphics;
-typedef std::function<void(RDGPass*, RHICommandQueueGraphics&)> RDGPassLambda;
-
-// Some pointer-based shader parameters that can be set to null are initialized to this value
-// to indicate that they are not set by the user.
-// This is used to check if the user has set the parameter (setting to nullptr also counts).
-constexpr static uint64_t RDGParameter_UnsetPointer = 0xffffffffffffffffull;
-template<typename T> concept CPointerType = std::is_pointer_v<T>;
 template<CPointerType T>
 FORCEINLINE bool RDGParameter_IsUnsetPointer (T ptr) {
     return reinterpret_cast<uint64_t>(ptr) == RDGParameter_UnsetPointer;

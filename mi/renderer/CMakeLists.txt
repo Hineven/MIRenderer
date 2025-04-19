@@ -7,6 +7,7 @@ set(SOURCES
         mi_renderable.cpp
         mi_world.cpp
         mi_helpers.cpp
+        mi_renderer_view.cpp
         # Implementing the renderer
         renderer/r_draw_to_output.cpp
 )

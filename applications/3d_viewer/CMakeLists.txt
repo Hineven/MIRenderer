@@ -37,4 +37,4 @@ add_dependencies(3d_viewer 3d_viewer_shaders)
 # Add the shader files to the target sources
 target_sources(3d_viewer PRIVATE ${SHADER_FILES})
 
-target_link_libraries(3d_viewer PUBLIC infra core rhi rdg glfw)
+target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer glfw)

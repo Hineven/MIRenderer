@@ -14,6 +14,7 @@
 #include "core/common.h"
 #include "core/refcounted.h"
 #include "rhi/rhi_desc.h"
+#include "rdg/rdg_base.h"
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/mi_renderer_view.h"
 #include "renderer/mi_camera.h"
@@ -32,7 +33,7 @@ public:
     static Renderer * GetPointer ();
     static void DestroySingleton () ;
 
-    void Init () ;
+    void Init (RDGResourcePool * pool) ;
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 

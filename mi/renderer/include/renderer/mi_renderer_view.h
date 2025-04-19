@@ -12,18 +12,24 @@
 MI_NAMESPACE_BEGIN
 class RDGTexture;
 class RDGBuffer;
+class RDGPool;
 
+// Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
-    RendererView ();
+    RendererView (uint32_t width, uint32_t height, World * world);
     ~RendererView();
 
+
+    uint32_t frame_index_ {};
+
     Camera camera_, prev_camera_;
+
     uint32_t film_width_ {};
     uint32_t film_height_ {};
-    uint32_t frame_index_ {};
+
     uint32_t view_index_ {};
 
-    World * world;
+    World * world_;
 
     TRef<RDGBuffer> static_mesh_draw_commands_;
 
