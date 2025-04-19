@@ -158,6 +158,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         if (all_uniform_buffer_size) {
             // Batch allocate all uniform buffers
             uniform_buffer_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kUniform, all_uniform_buffer_size);
+            uniform_buffer_->SetName("UniformBuffer");
 
             auto staging_buffer = RHI::Get().CreateBuffer(
                 all_uniform_buffer_size, RHIBufferUsageFlagBits::kStaging | RHIBufferUsageFlagBits::kTransferSrc);
@@ -167,6 +168,11 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
                 WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
             }
+            // Barrier the uniform buffer
+            cmd.BufferBarrier(
+                uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite
+            );
             // Schedule the copy
             cmd.CopyBuffer(staging_buffer->GetSpan(), uniform_buffer_->GetRHI());
             // Insert a manual barrier

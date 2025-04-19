@@ -72,6 +72,9 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
             allocated = AllocateBufferBlock(desc);
         }
     }
+    if (!buffer->name_.empty()) {
+        allocated.buffer->SetName(buffer->name_);
+    }
     buffer->rhi_buffer_span_ = {allocated.buffer, 0, requested_size};
     buffer->usage_ = allocated.last_usage;
 }

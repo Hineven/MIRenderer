@@ -75,6 +75,8 @@ public:
     friend class RDGResourcePool;
     friend class RenderGraphBuilder;
 
+    FORCEINLINE void SetName (const std::string & name) {name_ = name;}
+
     FORCEINLINE static size_t GetBestAllocationSizeFromRequestedSize (size_t requested_size) {
         int l = std::max((int)std::ceil(log2(requested_size)), (int)kMinBufferSizeLog2);
         if (l > RDGResourcePool::kBufferBlockSizeLog2) {
@@ -132,6 +134,9 @@ protected:
     RHIBufferSpan rhi_buffer_span_ {};
     // Track the last access of the buffer, used for barrier placement.
     RHIGPUAccessFlags usage_ {};
+
+    // Name of the buffer, used for debug tracking
+    std::string name_ {};
 };
 
 typedef TRef<RDGTexture> RDGTextureRef;

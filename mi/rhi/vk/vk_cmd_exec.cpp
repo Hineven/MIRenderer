@@ -247,6 +247,8 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
+
+    state.InstallDrawState(state.cmd);
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
     state.BindIndexBuffer(draw_indexed_primitive->index_buffer_, draw_indexed_primitive->index_type_);
@@ -262,6 +264,7 @@ void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
+    state.InstallDrawState(state.cmd);
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
     state.BindIndexBuffer(draw_indexed_indirect->index_buffer_, draw_indexed_indirect->index_type_);
@@ -534,10 +537,11 @@ vk::Viewport VulkanCommandExecutor::CommandQueueState::GetViewport() {
 
 
 void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffer cmdb) {
+    // TODO lazy install
     auto rect = GetScissorRect();
     vk::Viewport viewport = GetViewport();
-    cmdb.setViewport(0, 1, &viewport);
-    cmdb.setScissor(0, 1, &rect);
+    cmdb.setViewportWithCount(viewport);
+    cmdb.setScissorWithCount(rect);
 }
 
 bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {

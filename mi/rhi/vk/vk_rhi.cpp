@@ -466,7 +466,10 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
     create_info.imageExtent = extent;
     create_info.imageArrayLayers = 1;
     // Swapchain images are only being copied to
-    create_info.imageUsage = vk::ImageUsageFlagBits::eTransferDst;
+    create_info.imageUsage = vk::ImageUsageFlagBits::eTransferDst
+    // 25.4.19 However, to be compatiable with NSight Graphics, extra usages are required
+    // otherwise it will silently present wrong images when visualizing rasterization
+        | vk::ImageUsageFlagBits::eColorAttachment;
 
     uint32_t graphics_queue_family_index = GetGraphicsQueueFamilyIndex();
     // The same for now
@@ -514,6 +517,12 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             name_info2.pObjectName = name.c_str();
             device_.setDebugUtilsObjectNameEXT(name_info);
             device_.setDebugUtilsObjectNameEXT(name_info2);
+
+            vk::DebugUtilsObjectNameInfoEXT name_info3 {};
+            name_info3.objectType = vk::ObjectType::eImage;
+            name_info3.objectHandle = (uint64_t)(VkImage)swapchain_images[i];
+            name_info3.pObjectName = (std::string("Swapchain image ") + std::to_string(i)).c_str();
+            device_.setDebugUtilsObjectNameEXT(name_info3);
         }
     }
 
