@@ -13,6 +13,15 @@ MyInfra::MyInfra(std::string resource_directory) {
     resource_directory_ = std::filesystem::path(resource_directory);
 }
 
+std::filesystem::path MyInfra::GetResourceDirectory() {
+    return resource_directory_;
+}
+
+std::filesystem::path MyInfra::GetTempDirectory() {
+    return temp_directory_;
+}
+
+
 
 void MyInfra::Init() {
     start_time_ = std::chrono::high_resolution_clock::now();
@@ -27,6 +36,16 @@ void MyInfra::Init() {
         std::filesystem::create_directory(resource_directory_);
     } else {
         LogMessage(MIInfraLogType::kInfo, "Resource directory: " + resource_directory_.string());
+    }
+    if (temp_directory_ == "") {
+        temp_directory_ =
+                std::filesystem::current_path() / "temp";
+    }
+    if (!std::filesystem::exists(temp_directory_)) {
+        LogMessage(MIInfraLogType::kInfo, "Creating temp directory: " + temp_directory_.string());
+        std::filesystem::create_directory(temp_directory_);
+    } else {
+        LogMessage(MIInfraLogType::kInfo, "Resource directory: " + temp_directory_.string());
     }
 
     // Query for the number of logical cores

@@ -86,6 +86,10 @@ class MyInfra : public MIInfraInterface {
 public:
     MyInfra(std::string resource_directory = "") ;
 
+    std::filesystem::path GetResourceDirectory() override;
+
+    std::filesystem::path GetTempDirectory() override;
+
     MIInfraLimits GetResourceLimits () override;
 
     void Init () override;
@@ -145,6 +149,7 @@ protected:
 
     // Directories
     std::filesystem::path resource_directory_;
+    std::filesystem::path temp_directory_;
 
     // FIO
     // The flag is used to stop the file io threads. Make it atomic to ensure mem visibility to all other threads

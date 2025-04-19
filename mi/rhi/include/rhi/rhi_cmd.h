@@ -200,7 +200,7 @@ class RHICommandClearTexture : public TRHICommand<RHICommandClearTexture> {
 public:
     RHICommandClearTexture(RHITexture * texture, const std::array<float, 4> & clear_value,
                            uint32_t mip_level, uint32_t base_layer, uint32_t layer_count)
-        : texture_(texture), clear_value_(clear_value), mip_level_(mip_level),
+    : texture_(texture), clear_value_(clear_value), mip_level_(mip_level),
           base_layer_(base_layer), layer_count_(layer_count) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 

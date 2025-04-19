@@ -522,7 +522,7 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
         auto tex = new VulkanTexture(RHITextureType::k2D, {width, height, 1},
                             GetPixelFormatFromVulkanFormat(surface_format.format),
                             RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc
-                            | RHITextureUsageFlagBits::kShaderResource, 1, 1
+                            | RHITextureUsageFlagBits::kTransferDst | RHITextureUsageFlagBits::kShaderResource, 1, 1
         );
         tex->SetName("BackBuffer#" + std::to_string(i));
         rhi_backbuffer_textures[i] = tex;

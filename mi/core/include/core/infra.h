@@ -59,6 +59,12 @@ struct MIInfraLimits {
 // Some of the implementations should be asynchronous to avoid blocking the renderer.
 class MIInfraInterface {
 public:
+
+    // Get the directory for the renderer's resources.
+    virtual std::filesystem::path GetResourceDirectory () = 0;
+    // Get the directory for temporary files.
+    virtual std::filesystem::path GetTempDirectory () = 0;
+
     // Return the ranges of computation resources that the renderer is allowed to use
     // The renderer will not request resources exceeding these limits (if it's just working as intended).
     virtual MIInfraLimits GetResourceLimits () = 0;

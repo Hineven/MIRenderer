@@ -593,10 +593,16 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
     }
 
     if(class_registry_->type == RHIPipelineType::kCompute) {
+        // extra_options.emplace_back("-Fd");
+        // auto random_string = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+        // extra_options.emplace_back(
+        //     (GetInfra().GetTempDirectory() / "shader_pdb" / std::filesystem::path(class_registry_->name + random_string)).string()
+        // );
         auto result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg
         );
+        // extra_options.pop_back(); extra_options.pop_back();
         if (result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
             return false;
@@ -615,25 +621,42 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
         CheckShaderReflection(shader.Raw(), param_info);
     }
     if(class_registry_->type == RHIPipelineType::kGraphics) {
+        std::vector<uint32_t> vs_result, fs_result;
         // For graphics pipeline, we need to compile vertex and fragment shaders
         // First compile vertex shader
-        auto vs_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_3",
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg
-        );
-        if (vs_result.empty()) {
-            MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
-            return false;
+        {
+            // extra_options.emplace_back("-Fd");
+            // auto random_string = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+           //  extra_options.emplace_back(
+           //     (GetInfra().GetTempDirectory() / "shader_pdb" / std::filesystem::path(class_registry_->name + random_string)).string()
+           // );
+            vs_result = GetInfra().CompileHLSLToSPIRV(
+                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_3",
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg
+            );
+            // extra_options.pop_back(); extra_options.pop_back();
+            if (vs_result.empty()) {
+                MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
+                return false;
+            }
         }
 
-        // Then compile fragment shader
-        auto fs_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_3",
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg
-        );
-        if (fs_result.empty()) {
-            MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
-            return false;
+        {
+            // extra_options.emplace_back("-Fd");
+            // auto random_string = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+            // extra_options.emplace_back(
+            //     (GetInfra().GetTempDirectory() / "shader_pdb" / std::filesystem::path(class_registry_->name + random_string)).string()
+            // );
+            // Then compile fragment shader
+            fs_result = GetInfra().CompileHLSLToSPIRV(
+                    source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_3",
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg
+            );
+            // extra_options.pop_back(); extra_options.pop_back();
+            if (fs_result.empty()) {
+                MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
+                return false;
+            }
         }
 
         // Create the vertex shader

@@ -82,8 +82,11 @@ MyInfra::CompileHLSLToSPIRV(
     // Instruct dxc to compile adequate SPIRV
     add_option(L"-spirv");
     add_option(L"-Ges");
-    // Seems redundant
-    // add_option(L"-fspv-reflect");
+    // Seems redundant? it triggers validation error VUID-VkShaderModuleCreateInfo-pCode-08742
+    // however its just about reflection data and does not affect the real behavior of shaders.
+    add_option(L"-fspv-reflect");
+    // FIXME other debug flags? if we have some other backends
+    add_option(L"-fspv-debug=vulkan-with-source");
 
     auto w_options_cstr = std::vector<const wchar_t *>(w_options.size());
     for (size_t i = 0; i < w_options.size(); i++) {
