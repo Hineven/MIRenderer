@@ -21,6 +21,7 @@ public:
     FORCEINLINE vk::Sampler GetSampler() const { return vk_sampler_; }
 
     void *GetAPIHandle() const override;
+    void SetName(const std::string& name) override;
 protected:
     vk::Sampler vk_sampler_;
 };
@@ -36,6 +37,7 @@ public:
     FORCEINLINE vk::AccelerationStructureKHR GetAccelerationStructure() const { return as_; }
 
     void *GetAPIHandle() const override;
+    void SetName(const std::string& name) override;
 
 //    void Use (vk::CommandBuffer cmd, vk::PipelineStageFlags use_stages, vk::AccessFlags use_access) ;
 protected:

@@ -10,11 +10,19 @@
 #include "rhi_bindless.h"
 #include "rhi/rhi_texture.h"
 #include "rhi/rhi_buffer.h"
+#include "rhi/rhi_thread.h"
 
 // Import different kinds of RHI implementations
 #include "vk/vk_rhi_export.h"
 
 MI_NAMESPACE_BEGIN
+    size_t GetFrameIndexForCurrentThread() {
+    if (GetCurrentThreadType() == ThreadType::kRHIThread) {
+        return GetCurrentFrameIndex_RHIThread();
+    } else {
+        return RHI::Get().GetFrameIndex();
+    }
+}
 
 RHITextureRef RHI::CreateTexture(RHITextureType type, RHITextureDimensions dimensions,
     PixelFormatType format, RHITextureUsageFlags usage, uint32_t mip_levels, uint32_t array_layers) {
@@ -39,10 +47,10 @@ std::future<void> RHI::AdvanceFrame(RHISyncPoint * sync_point) {
 
     // Translate and submit all commands, present the backbuffer, step to the next frame.
     queue.FrameEnd(sync_point);
+    // Swap allocators after the termination of this frame. No new commands shall be allocated with the old allocators.
+    // The swapped out memory will last for about 1 frame more and silently be recycled
+    queue.SwapAllocators();
     auto lambda = []() {
-        // Swap allocators after the command buffer is submitted
-        // The swapped out memory will last for about 1 frame more and silently be recycled
-        RHI::Get().GetGraphicsCommandQueue().SwapAllocators_RHIThread();
         // Swap the bindless descriptor set after the command buffer is submitted
         RHI::Get().GetBindlessManager().SwapSets_RHIThread();
         // Recycle resources that are pending for deletion

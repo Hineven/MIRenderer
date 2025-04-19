@@ -119,7 +119,7 @@ public:
             ptr_(nullptr)
     { }
 
-    TRef(ReferencedType* in_ptr, bool inc_ref = true) // NOLINT implicit conversion from raw pointers
+    TRef(ReferencedType* in_ptr, bool inc_ref = true) // NOLINT implicit conversion from raw pointer
     {
         ptr_ = in_ptr;
         if(ptr_ && inc_ref)
@@ -127,6 +127,8 @@ public:
             ptr_->IncRef();
         }
     }
+
+    TRef([[maybe_unused]] std::nullptr_t in_ptr): ptr_(nullptr) {} // NOLINT implicit conversion from nullptr
 
     TRef(const TRef& Copy)
     {

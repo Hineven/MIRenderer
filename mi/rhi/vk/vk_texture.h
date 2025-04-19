@@ -109,6 +109,8 @@ public:
     
     void ImportFromHandle (vk::Image image_handle, vk::ImageLayout imported_layout) ;
 
+    void SetName(const std::string& name) override;
+
     friend class VulkanRHI;
 protected:
 

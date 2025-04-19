@@ -108,5 +108,23 @@ void *VulkanTexture::GetAPIHandle() const {
     return (void*)vk_image_;
 }
 
+void VulkanTexture::SetName(const std::string &name) {
+    GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+        vk::DebugUtilsObjectNameInfoEXT {
+            vk::ObjectType::eImage,
+            reinterpret_cast<uint64_t>((VkImage)vk_image_),
+            name.c_str()
+        }
+    );
+    GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+        vk::DebugUtilsObjectNameInfoEXT {
+            vk::ObjectType::eImageView,
+            reinterpret_cast<uint64_t>((VkImageView)vk_default_image_view_),
+            name.c_str()
+        }
+    );
+}
+
+
 
 MI_NAMESPACE_END

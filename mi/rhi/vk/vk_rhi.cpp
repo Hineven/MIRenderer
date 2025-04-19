@@ -36,22 +36,22 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                                      VK_API_VERSION_1_3);
         vk::InstanceCreateInfo instance_info({}, &app_info);
 
-        // Enable layers
-#ifndef NDEBUG
+
+#if false
         std::array enabled_layer_names = {
                 "VK_LAYER_KHRONOS_validation"
         };
 #else
-        std::array<const char *, 0> enabled_layers = {};
+        std::array<const char *, 0> enabled_layer_names = {};
 #endif
 
         // Enable extensions
         std::vector enabled_extension_names = {
-                VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+                // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #ifndef NDEBUG
                 VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
-                VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+                // VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
                 VK_KHR_SURFACE_EXTENSION_NAME
         };
         // Append extra instance extensions
@@ -190,26 +190,29 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 // Null descriptor
                 VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
                 // Warp ops
-                VK_EXT_SHADER_SUBGROUP_BALLOT_EXTENSION_NAME,
-                VK_EXT_SHADER_SUBGROUP_VOTE_EXTENSION_NAME,
+                // VK_EXT_SHADER_SUBGROUP_BALLOT_EXTENSION_NAME,
+                // VK_EXT_SHADER_SUBGROUP_VOTE_EXTENSION_NAME,
                 VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
                 // Dynamic pipeline states
-                VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
+                // VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
                 // uint8 indexing
-                VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME,
+                VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME,
                 // Indexing device memory using addresses
                 // Use the KHR version for compatibility with Nsight
-                VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+                // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
                 // Draw lines
                 VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
                 // Mesh shader support
                 VK_EXT_MESH_SHADER_EXTENSION_NAME,
                 // Descriptor indexing (bindless supoort)
-                VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+                // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
                 // Descriptor buffer (bindless support)
                 VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
                 // more dynamic states
                 VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
+#ifndef NDEBUG
+                VK_KHR_RAY_QUERY_EXTENSION_NAME
+#endif
                 // SPV extensions (not supported by NVIDIA)
 //                VK_GOOGLE_USER_TYPE_EXTENSION_NAME,
 //                VK_GOOGLE_HLSL_FUNCTIONALITY1_EXTENSION_NAME,
@@ -234,6 +237,11 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                                 "Current device supports: \n{}",
                                 extension_name, failure_log);
             }
+        }
+        {
+            // TODO validate physical device features
+            auto features = physical_device_.getFeatures();
+            assert(features.fillModeNonSolid);
         }
 
         vk::PhysicalDeviceFeatures enabled_features {};
@@ -265,6 +273,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT,
                 vk::PhysicalDeviceImagelessFramebufferFeatures,
                 vk::PhysicalDeviceDynamicRenderingFeatures,
+                vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
+                vk::PhysicalDeviceRayQueryFeaturesKHR,
                 vk::PhysicalDeviceTimelineSemaphoreFeatures
         > extended_features;
         auto & device_create_info = std::get<0>(extended_features);
@@ -314,8 +324,12 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         imageless.imagelessFramebuffer = VK_TRUE;
         auto & dynrend = std::get<18>(extended_features);
         dynrend.dynamicRendering = VK_TRUE;
+        auto & descb = std::get<19>(extended_features);
+        descb.descriptorBuffer = VK_TRUE;
 #ifndef NDEBUG
-        auto & timesem = std::get<19>(extended_features);
+        auto & rayqry = std::get<20>(extended_features);
+        rayqry.rayQuery = VK_TRUE;
+        auto & timesem = std::get<21>(extended_features);
         timesem.timelineSemaphore = VK_TRUE;
 #endif
 
@@ -488,6 +502,18 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             vk::SemaphoreCreateInfo semaphore_info {};
             vk_swapchain_image_available_semaphores_[i] = device_.createSemaphore(semaphore_info);
             vk_swapchain_render_finished_semaphores_[i] = device_.createSemaphore(semaphore_info);
+            // Set debug names of the semaphores
+            std::string name = "Swapchain image available semaphore " + std::to_string(i);
+            vk::DebugUtilsObjectNameInfoEXT name_info {};
+            name_info.objectType = vk::ObjectType::eSemaphore;
+            name_info.objectHandle = (uint64_t)(VkSemaphore)vk_swapchain_image_available_semaphores_[i];
+            name_info.pObjectName = name.c_str();
+            vk::DebugUtilsObjectNameInfoEXT name_info2 {};
+            name_info2.objectType = vk::ObjectType::eSemaphore;
+            name_info2.objectHandle = (uint64_t)(VkSemaphore)vk_swapchain_render_finished_semaphores_[i];
+            name_info2.pObjectName = name.c_str();
+            device_.setDebugUtilsObjectNameEXT(name_info);
+            device_.setDebugUtilsObjectNameEXT(name_info2);
         }
     }
 
@@ -498,6 +524,7 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
                             RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc
                             | RHITextureUsageFlagBits::kShaderResource, 1, 1
         );
+        tex->SetName("BackBuffer#" + std::to_string(i));
         rhi_backbuffer_textures[i] = tex;
     }
 
@@ -511,17 +538,17 @@ RHITexture *VulkanRHI::GetBackBufferForFrameIndex(size_t index) const {
 
 RHIBufferRef VulkanRHI::CreateBuffer(RHIBufferDesc desc) {
     auto buffer = new VulkanBuffer(desc);
-    return {buffer};
+    return TRef<RHIBuffer>(buffer);
 }
 
 RHITextureRef VulkanRHI::CreateTexture(RHITextureDesc desc) {
     auto texture = new VulkanTexture(desc);
-    return {texture};
+    return TRef<RHITexture>(texture);
 }
 
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
     auto sampler = new VulkanSampler(filter, address_mode);
-    return {sampler};
+    return TRef<RHISampler>(sampler);
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -529,7 +556,7 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
     mi_assert(ir_type == RHIShaderIRType::kSPIRV, "Vulkan only supports SPIR-V shader IR.");
     auto shader = new VulkanShader(frequency, entry_name, ir_type, ir);
     shader->Compile();
-    if(shader->IsValid()) return {shader};
+    if(shader->IsValid()) return TRef<RHIShader>(shader);
     shader->~VulkanShader();
     delete shader;
     return nullptr;
@@ -538,7 +565,7 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
 RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name) {
     auto pipeline = new VulkanGraphicsPipeline(name);
     pipeline->Compile(desc);
-    if(pipeline->IsValid()) return pipeline;
+    if(pipeline->IsValid()) return TRef<RHIGraphicsPipeline>(pipeline);
     pipeline->~VulkanGraphicsPipeline();
     delete pipeline;
     return nullptr;
@@ -547,7 +574,7 @@ RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipeli
 RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const char * name) {
     auto pipeline = new VulkanComputePipeline(name);
     pipeline->Compile(shader);
-    if(pipeline->IsValid()) return pipeline;
+    if(pipeline->IsValid()) return TRef<RHIComputePipeline>(pipeline);
     pipeline->~VulkanComputePipeline();
     delete pipeline;
     return nullptr;
@@ -601,7 +628,7 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
     vk::Image image_handle = {(VkImage)desc->vk_image};
     vk::ImageLayout layout = (vk::ImageLayout)(desc->vk_image_layout);
     texture->ImportFromHandle(image_handle, layout);
-    return texture;
+    return TRef<RHITexture>(texture);
 }
 
 const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
@@ -610,7 +637,7 @@ const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
 
 RHISyncPointRef VulkanRHI::CreateSyncPoint() {
     auto ptr = new VulkanSyncPoint();
-    return {(RHISyncPoint*)ptr};
+    return TRef<RHISyncPoint>(ptr);
 }
 
 void VulkanRHI::PostInitialize() {

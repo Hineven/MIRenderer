@@ -9,6 +9,8 @@
 
 #include <atomic>
 #include "core/refcounted.h"
+#include "core/base.h"
+#include "core/thr.h"
 #include "rhi/rhi_common.h"
 #include "rhi/rhi_types.h"
 
@@ -16,15 +18,17 @@ MI_NAMESPACE_BEGIN
 
 class RHIBindlessSlotKeeperBase;
 
-class RHIResource {
+class RHIResource : public NonMovable, public NonCopyable {
 public:
     virtual ~RHIResource() ;
 
     FORCEINLINE uint32_t IncRef() {
+        VerifyOwnerThread();
         return ++ref_count_;
     }
 
     FORCEINLINE uint32_t DecRef() {
+        VerifyOwnerThread();
         ref_count_--;
         if (ref_count_ == 0) {
             QueueForDeletion();
@@ -46,6 +50,15 @@ public:
 
     virtual void * GetAPIHandle () const = 0;
 
+    // Usually used for debugging
+    virtual void SetName (const std::string & name) ;
+
+    // Reference counts of a RHI resource can only be modified via its owning thread.
+    // The function is a shortcut verifying that the current thread is the owner of the resource.
+    FORCEINLINE void VerifyOwnerThread () const {
+        assert(owner_thread_ == GetCurrentThreadType());
+    }
+
 protected:
     // Can only be allocated by RHI and memory is allocated via infrastructure.
     RHIResource() ;
@@ -54,12 +67,19 @@ protected:
     // their frame ends execution on the device.
     void QueueForDeletion () ;
 
-    // Only the render thread is allowed to operate on RHI resource references
+    // Only a single thread (the render thread, or the RHI thread) is allowed to operate on RHI resource references
+    // for its entire lifetime.
     // so no need for atomic operations
     uint32_t ref_count_ {0};
 
+#ifndef NDEBUG
+    // For validation purposes only
+    ThreadType owner_thread_ {};
+#endif
+
     // If the resource is registered in the bindless manager and should be accessed
     // via bindless handles only.
+    // TODO incomplete bindless functionality currently
     bool bindless_ {};
 
     // Flags

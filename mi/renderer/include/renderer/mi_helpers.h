@@ -1,6 +1,6 @@
 /*
  * Created: 2025/4/14
- * Author:  hineven
+ * Author:  *hineven
  * See LICENSE for licensing.
  */
 
@@ -22,6 +22,8 @@ public:
     static void Upload (RHIBufferSpan buffer, const void * data, size_t size) ;
     // Add a RDG pass to upload data to a buffer.
     static void UploadWithRDG (RenderGraphBuilder & builder, RHIBufferSpan buffer, const void * data, size_t size) ;
+    // Add a RDG pass to upload data to a buffer.
+    static void UploadWithRDG (RenderGraphBuilder & builder, RDGBuffer * buffer, const void * data, size_t size, size_t dst_offset = 0) ;
 };
 
 MI_NAMESPACE_END

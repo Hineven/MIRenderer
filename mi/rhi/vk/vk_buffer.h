@@ -24,6 +24,8 @@ public:
 
     void * GetAPIHandle() const override;
 
+    void SetName(const std::string & name) override;
+
 protected:
     vk::Buffer vk_buffer_;
     vma::Allocation allocation_;

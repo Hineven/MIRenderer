@@ -13,7 +13,6 @@ MI_NAMESPACE_BEGIN
 class NonCopyable {
 public:
     NonCopyable() = default;
-    virtual ~NonCopyable() = default;
 
     NonCopyable(const NonCopyable& Rhs) = delete;
     NonCopyable& operator=(const NonCopyable& Rhs) = delete;
@@ -22,7 +21,6 @@ public:
 class NonMovable {
 public:
     NonMovable() = default;
-    virtual ~NonMovable() = default;
 
     NonMovable(NonMovable&& Rhs) = delete;
     NonMovable& operator=(NonMovable&& Rhs) = delete;

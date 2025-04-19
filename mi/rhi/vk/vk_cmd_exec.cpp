@@ -249,7 +249,6 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
 
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
-    auto index_buffer = static_cast<VulkanBuffer*>(draw_indexed_primitive->index_buffer_.buffer); // NOLINT its safe
     state.BindIndexBuffer(draw_indexed_primitive->index_buffer_, draw_indexed_primitive->index_type_);
     state.cmd.drawIndexed(draw_indexed_primitive->index_count_,
                           draw_indexed_primitive->instance_count_,
@@ -265,7 +264,6 @@ void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
 
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
 
-    auto index_buffer = static_cast<VulkanBuffer*>(draw_indexed_indirect->index_buffer_.buffer); // NOLINT its safe
     state.BindIndexBuffer(draw_indexed_indirect->index_buffer_, draw_indexed_indirect->index_type_);
     auto vk_buffer = static_cast<VulkanBuffer*>(draw_indexed_indirect->indirect_buffer_.buffer); // NOLINT its safe
     state.cmd.drawIndexedIndirect(

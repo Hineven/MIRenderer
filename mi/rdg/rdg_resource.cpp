@@ -24,7 +24,7 @@ RDGBuffer::~RDGBuffer() {
 }
 
 void RDGTexture::RequestRHI(RDGResourcePool * pool) {
-    if (!is_imported_) {
+    if (!IsImported()) {
         if (!rhi_texture_) {
             pool_ = pool;
             pool_->AllocateResource(this);
@@ -34,14 +34,14 @@ void RDGTexture::RequestRHI(RDGResourcePool * pool) {
     }
 }
 void RDGTexture::ReleaseRHI() {
-    if (!is_imported_ && rhi_texture_) {
+    if (!IsImported() && rhi_texture_) {
         pool_->RecycleResource(this);
         rhi_texture_ = nullptr;
         pool_ = nullptr;
     }
 }
 void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
-    if (!is_imported_) {
+    if (!IsImported()) {
         if (!rhi_buffer_span_.buffer) {
             pool_ = pool;
             pool_->AllocateResource(this);
@@ -51,7 +51,7 @@ void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
     }
 }
 void RDGBuffer::ReleaseRHI() {
-    if (!is_imported_ && rhi_buffer_span_.buffer) {
+    if (!IsImported() && rhi_buffer_span_.buffer) {
         pool_->RecycleResource(this);
         rhi_buffer_span_ = {};
         pool_ = nullptr;
@@ -76,7 +76,7 @@ TRef<RDGTexture> RDGTexture::Import([[maybe_unused]] const char * name, RHITextu
     auto texture = TRef<RDGTexture>(texture_raw_ptr);
     texture->rhi_texture_ = resource;
     texture->usage_ = prev_usage;
-    texture->is_imported_ = true;
+    texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
     return texture;
 }
 
@@ -86,7 +86,7 @@ TRef<RDGBuffer> RDGBuffer::Import([[maybe_unused]] const char *name, RHIBuffer *
     auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
     buffer->rhi_buffer_span_ = resource->GetSpan();
     buffer->usage_ = prev_access;
-    buffer->is_imported_ = true;
+    buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
     return buffer;
 }
 

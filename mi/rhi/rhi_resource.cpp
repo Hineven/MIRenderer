@@ -11,18 +11,28 @@
 
 MI_NAMESPACE_BEGIN
 
-RHIResource::RHIResource() {}
+RHIResource::RHIResource() {
+#ifndef NDEBUG
+    owner_thread_ = GetCurrentThreadType();
+#endif
+}
 
 RHIResource::~RHIResource () {
     // Make TRef compile
 }
 
 void RHIResource::QueueForDeletion() {
-    CHECK_THREAD(RENDER);
+    VerifyOwnerThread();
+    CHECK_THREAD(ThreadType::kRenderThread, ThreadType::kRHIThread);
     mi_assert(RHI::HasSingleton(), "Potentially deleting a resource after RHI shutdown.");
     // This function lives in the render thread, so we use the frame index of the render thread.
     // It is always bigger than the frame index of the RHI thread.
     mi_assert(RHI::Get().AddResourcePendingForDeletion(this), "Resource deletion queue overflow.");
 }
+
+void RHIResource::SetName([[maybe_unused]] const std::string & name) {
+    // Do nothing
+}
+
 
 MI_NAMESPACE_END

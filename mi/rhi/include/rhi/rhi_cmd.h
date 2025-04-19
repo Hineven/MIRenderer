@@ -21,14 +21,19 @@ MI_NAMESPACE_BEGIN
 
 class RHICommandBase {
 public:
-    virtual ~RHICommandBase() = default;
+    virtual ~RHICommandBase() ;
     // Only called once per object
-    virtual void ExecuteAndDestruct ([[maybe_unused]] RHICommandQueueBase & cmd) ;
+    virtual void ExecuteAndDestruct ([[maybe_unused]] RHICommandQueueBase & cmd) = 0;
     // Give direct access to the rhi translation thread.
     friend class RHIWorkerThread;
 protected:
     RHICommandBase * next_command_ {};
     friend class RHICommandQueueBase;
+};
+
+class RHIEmptyCommand : public RHICommandBase {
+public:
+    void ExecuteAndDestruct (RHICommandQueueBase & cmd) override ;
 };
 
 template<typename T>
@@ -37,12 +42,14 @@ public:
     TRHILambdaCommand(T func) : func_(std::move(func)) {}
     void ExecuteAndDestruct (RHICommandQueueBase & cmd) override {
         func_(cmd);
-        func_.~T();
+        this->~TRHILambdaCommand();
     }
 private:
     T func_;
 };
 
+template<typename T>
+concept CRHIValidCommand = std::derived_from<T, RHICommandBase>;
 
 // RHICommandQueue is a queue of GPU commands. It keeps states about bound pipeline / parameters / resources...
 // Commands submitted to the queue go through 3 stages:
@@ -59,8 +66,7 @@ protected:
     }
 public:
     RHICommandQueueBase() {
-        // Idle command
-        first_command_ = last_command_ = AllocateCommand<RHICommandBase>();
+        first_command_ = last_command_ = nullptr;
     }
     virtual ~RHICommandQueueBase() = default;
 
@@ -68,8 +74,7 @@ public:
     template<typename T>
     void RHIExecute (T func) {
         auto cmd = AllocateCommand<TRHILambdaCommand<T>>(std::move(func));
-        last_command_->next_command_ = cmd;
-        last_command_ = cmd;
+        AddCommand(cmd);
     }
 
     // Wait for all commands to finish execution and reset the command buffer,
@@ -80,7 +85,7 @@ public:
     // @return a future that will be ready when the translation is completed.
     FORCEINLINE std::future<void> EnqueueTranslation () {
         auto tmp = first_command_;
-        first_command_ = last_command_ = AllocateCommand<RHICommandBase>();
+        first_command_ = last_command_ = nullptr;
         return EnqueueRHICommandTranslationTask(this, tmp);
     }
 
@@ -139,24 +144,25 @@ public:
     FORCEINLINE RHICommandQueueType GetCommandQueueType () const {return queue_type_;}
 
     // Clear and swap allocators. Move on to the next frame.
-    // Called by RHI thread
-    FORCEINLINE void SwapAllocators_RHIThread () {
+    FORCEINLINE void SwapAllocators () {
         allocator_index_ = 1 - allocator_index_;
         buffer_allocator_[allocator_index_].Reset();
         command_allocator_[allocator_index_].Reset();
     }
 
 protected:
-
     // Allocate a segment of memory on the command buffer allocator for temporary use.
     // Manually managed command destruction, used internally.
-    template<typename T>
+    template<CRHIValidCommand T>
     T * AllocateCommand (auto...args) {
         auto ptr = GetCommandAllocator().Allocate(sizeof(T));
         return new(ptr) T(args...);
     }
 
     void AddCommand (RHICommandBase * cmd) {
+        if (!first_command_) {
+            first_command_ = last_command_ = AllocateCommand<RHIEmptyCommand>();
+        }
         last_command_->next_command_ = cmd;
         last_command_ = cmd;
     }

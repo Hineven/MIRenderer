@@ -69,7 +69,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             transforms.push_back(e->transform_.GetToWorldTransformMatrix());
         }
         Helpers::UploadWithRDG(
-            builder, view->world->GetDevice()->renderable_transforms_->GetRHI(),
+            builder, view->world->GetDevice()->renderable_transforms_.Raw(),
             transforms.data(), sizeof(glm::mat4x3) * transforms.size()
         );
     }
@@ -118,8 +118,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         auto size = sizeof(RHIDrawIndexedIndirectCommand) * indirect_commands.size();
         view->static_mesh_draw_commands_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kIndirect, size);
 
-        Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_->GetRHI(), indirect_commands.data(), size);
-
+        Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_.Raw(), indirect_commands.data(), size);
     }
 
     // Rasterize static meshes with batched drawing

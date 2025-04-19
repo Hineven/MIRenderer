@@ -35,6 +35,6 @@
 #define ALIGNAS(x) alignas(x)
 
 // TODO
-#define CHECK_THREAD(thread)
+#define CHECK_THREAD(...)
 
 #endif //MIRENDERER_CORE_COMMON_H

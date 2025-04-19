@@ -64,5 +64,15 @@ void *VulkanBuffer::GetAPIHandle() const {
     return (void*)vk_buffer_;
 }
 
+void VulkanBuffer::SetName(const std::string & name) {
+    GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+        vk::DebugUtilsObjectNameInfoEXT {
+            vk::ObjectType::eBuffer,
+            reinterpret_cast<uint64_t>((VkBuffer)vk_buffer_),
+            name.c_str()
+        }
+    );
+}
+
 
 MI_NAMESPACE_END

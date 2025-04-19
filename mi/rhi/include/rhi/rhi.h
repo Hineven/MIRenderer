@@ -18,6 +18,11 @@
 
 MI_NAMESPACE_BEGIN
 
+// Get the frame index for current thread.
+// If RHI thread, get the counter from RHI thread.
+// Otherwise, returns rhi.GetFrameIndex()
+size_t GetFrameIndexForCurrentThread();
+
 // Interface for the render hardware
 class RHI : public NonMovable, public NonCopyable {
 protected:
@@ -156,8 +161,10 @@ protected:
     // The resource that is not ready to be deleted in the previous frame.
     RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
 
-    inline bool AddResourcePendingForDeletion (RHIResource * resource) {
-        return resources_pending_for_deletion_.Push({resource, frame_index_});
+    // The function can be called from BOTH render thread and RHI thread. frame_index_ counter is retrieved from
+    // either sides.
+    FORCEINLINE bool AddResourcePendingForDeletion (RHIResource * resource) {
+        return resources_pending_for_deletion_.Push({resource, GetFrameIndexForCurrentThread()});
     }
 
     // @param force if true, all pending resources will be recycled even if they are

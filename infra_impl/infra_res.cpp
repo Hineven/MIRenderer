@@ -191,7 +191,7 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
         delete res;
         return nullptr;
     }
-    return res;
+    return TRef<BlobResourceInterface>(res);
 }
 
 bool MyInfra::RIO_Exists(const MIResourcePath &res_path) {

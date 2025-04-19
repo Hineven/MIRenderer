@@ -14,12 +14,24 @@
 MI_NAMESPACE_BEGIN
 
 enum class RDGPassFlagBits : unsigned {
+    kNone = 0,
     // Do not cull this pass when compiling the graph
     kNeverCull = 1 << 0,
     kAll = 0xffffffffu
 };
 
 MAKE_FLAGS(RDGPass);
+
+enum class RDGResourceFlagBits : unsigned {
+    kNone = 0,
+    // The resource may be used among multiple RDGs, making passes writing to it never be culled
+    kPersistent = 1 << 0,
+    // Whether the resource is imported from external RHI resource. (thus should not be related to the pool)
+    // Imported resources are also created with persistent flag.
+    kImported = 1 << 1
+};
+
+MAKE_FLAGS(RDGResource);
 
 // A resource that is imported into / exist only within a render graph
 // Only the render thread can access its references, so no need for thread-safe reference counting.
@@ -35,11 +47,10 @@ public:
     // Request the underlying RHI resource from the pool
     virtual void RequestRHI (RDGResourcePool * pool) = 0;
 
-    FORCEINLINE bool IsImported () const {return is_imported_;}
+    FORCEINLINE bool IsImported () const {return flags_ & RDGResourceFlagBits::kImported;}
 
 protected:
-    // Whether the resource is imported from external RHI resource. (thus should not be related to the pool)
-    bool is_imported_ {false};
+    RDGResourceFlags flags_ {};
     // The pool that allocated RHI resources for this render graph resource
     TRef<RDGResourcePool> pool_;
 };

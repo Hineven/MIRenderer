@@ -35,7 +35,7 @@ RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (R
 
 void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
     // printf("AllocateResource size %llu\n", buffer->GetRequestedSize());
-    assert(!buffer->is_imported_ && "Imported buffer should not be allocated by the pool.");
+    assert(!buffer->IsImported() && "Imported buffer should not be allocated by the pool.");
     // TODO better strategy. Now I'll only implement a simple one
     assert(!buffer->IsAllocated() && "This buffer should not be allocated already.");
     assert(buffer->requested_size_ > 0 && "Buffer size should be greater than 0.");
@@ -90,7 +90,7 @@ void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
 }
 
 void RDGResourcePool::AllocateResource(RDGTexture *texture) {
-    assert(!texture->is_imported_ && "Imported texture should not be allocated by the pool.");
+    assert(!texture->IsImported() && "Imported texture should not be allocated by the pool.");
     assert(!texture->IsAllocated() && "This texture should not be allocated already.");
     auto & RHI = RHI::Get();
     auto hash = texture->GetResourceClassHash();
