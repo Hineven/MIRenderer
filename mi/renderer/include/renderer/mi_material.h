@@ -10,39 +10,36 @@
 // Simple material implementation. Only uber material supported
 #include <glm/vec3.hpp>
 #include "core/common.h"
-#include "mi_renderer_fwd.h"
+#include "core/base.h"
 #include "core/refcounted.h"
-
-namespace mi {
-    class RenderResourceLibrary;
-}
+#include "rhi/rhi_fwd.h"
+#include "renderer/mi_renderer_fwd.h"
 
 MI_NAMESPACE_BEGIN
-    class RHITexture;
-
 
 // Bindless texture the renderer uses.
-class BindlessRendererTexture : RefCounted<> {
+class BindlessRendererTexture : public NonMovable, public RefCounted<> {
 protected:
-    TRef<RHITexture> texture_ {};
     uint32_t index_ {UINT32_MAX};
+    RenderResourceAllocator * allocator_;
 public:
     FORCEINLINE int GetIndex () const {return index_;}
-    FORCEINLINE bool IsValid () const {return texture_ != nullptr && index_ != UINT32_MAX;}
-    void Set (TRef<RHITexture> texture) ;
-    BindlessRendererTexture ();
+    FORCEINLINE bool IsValid () const {return index_ != UINT32_MAX;}
+    void Set (RHITexture * texture) ;
+protected:
+    BindlessRendererTexture (RenderResourceAllocator * allocator) ;
     ~BindlessRendererTexture () ;
 };
 
-class Material {
+class Material : public NonMovable, public RefCounted<> {
 public:
     friend class Renderer;
     FORCEINLINE uint32_t GetIndex () const {return index_;}
 protected:
-    Material (RenderResourceLibrary * library);
+    Material (RenderResourceAllocator * allocator);
     ~Material () ;
 
-    RenderResourceLibrary * library_ {};
+    RenderResourceAllocator * allocator_ {};
 
     // Index of the material (assigned by the renderer)
     uint32_t index_ {UINT32_MAX};

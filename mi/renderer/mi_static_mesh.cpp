@@ -4,6 +4,8 @@
  * See LICENSE for licensing.
  */
 #include "renderer/mi_static_mesh.h"
+#include "renderer/mi_geometry.h"
+#include "renderer/mi_material.h"
 
 MI_NAMESPACE_BEGIN
 

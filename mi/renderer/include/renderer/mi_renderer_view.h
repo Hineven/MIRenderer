@@ -7,27 +7,35 @@
 #ifndef MI_RENDERER_VIEW_H
 #define MI_RENDERER_VIEW_H
 
+#include "rdg/rdg_fwd.h"
 #include "mi_camera.h"
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
-class RDGTexture;
-class RDGBuffer;
-class RDGPool;
+
+
+// The data kept across frames for a view.
+struct RendererViewPersistentData {
+    TRef<RDGTexture> prev_G_depth;
+    TRef<RDGTexture> prev_G_albedo;
+    TRef<RDGTexture> prev_G_normal;
+    TRef<RDGTexture> prev_G_roughness;
+
+    Camera prev_camera;
+    uint32_t view_index {};
+
+    // Imported back buffer
+    TRef<RDGTexture> output;
+};
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
-    RendererView (uint32_t width, uint32_t height, World * world);
-    ~RendererView();
-
 
     uint32_t frame_index_ {};
 
-    Camera camera_, prev_camera_;
+    Camera camera_;
 
     uint32_t film_width_ {};
     uint32_t film_height_ {};
-
-    uint32_t view_index_ {};
 
     World * world_;
 
@@ -38,13 +46,7 @@ struct RendererView {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_roughness_;
 
-    TRef<RDGTexture> prev_G_depth_;
-    TRef<RDGTexture> prev_G_albedo_;
-    TRef<RDGTexture> prev_G_normal_;
-    TRef<RHITexture> prev_G_roughness_;
-
-    // Imported back buffer
-    TRef<RDGTexture> output_;
+    RendererViewPersistentData * persistent_data_;
 };
 
 MI_NAMESPACE_END

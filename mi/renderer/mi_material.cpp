@@ -8,39 +8,33 @@
 #include <renderer/mi_renderer.h>
 
 #include "core/infra.h"
+#include "renderer/mi_resource_allocator.h"
 MI_NAMESPACE_BEGIN
-void BindlessRendererTexture::Set(TRef<RHITexture> texture) {
-    texture_ = texture;
-    if (index_ == UINT32_MAX) {
-        if (auto ptr = Renderer::GetPointer()) index_ = ptr->AllocateTextureIndex();
-        else
-            MI_WARN("Renderer is not initialized!");
-    }
+BindlessRendererTexture::BindlessRendererTexture(RenderResourceAllocator *allocator) {
+    allocator_ = allocator;
+    index_ = allocator->AllocateTextureIndex();
+}
+
+
+void BindlessRendererTexture::Set(RHITexture * texture) {
+    assert(index_ != UINT32_MAX && allocator_);
+    allocator_->SetTexture(index_, texture);
 }
 
 BindlessRendererTexture::~BindlessRendererTexture() {
     if (index_ != UINT32_MAX) {
-        if (auto ptr = Renderer::GetPointer()) ptr->ReleaseTextureIndex(index_);
-        else
-            MI_WARN("Renderer is freed!");
-
+        allocator_->ReleaseTextureIndex(index_);
     }
 }
 
-Material::Material() {
-    if (index_ == UINT32_MAX) {
-        if (auto ptr = Renderer::GetPointer()) index_ = ptr->AllocateMaterialIndex();
-        else
-            MI_WARN("Renderer is not initialized!");
-    }
+Material::Material(RenderResourceAllocator *allocator) {
+    allocator_ = allocator;
 }
 
 Material::~Material() {
-    if (index_ != UINT32_MAX) {
-        if (auto ptr = Renderer::GetPointer()) ptr->ReleaseMaterialIndex(index_);
-        else
-            MI_WARN("Renderer is freed!");
-    }
+    
 }
+
+
 
 MI_NAMESPACE_END

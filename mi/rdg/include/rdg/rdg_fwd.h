@@ -7,6 +7,7 @@
 #ifndef RDG_FWD_H
 #define RDG_FWD_H
 
+#include <functional>
 #include "core/common.h"
 #include "core/refcounted.h"
 #include "core/types.h"

@@ -13,7 +13,7 @@ MI_NAMESPACE_BEGIN
 
 class Renderable;
 class Material;
-class Transform;
+struct Transform;
 class Geometry;
 class StaticMesh;
 

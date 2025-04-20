@@ -65,7 +65,8 @@ protected:
     FORCEINLINE RDGBuffer(size_t req_size, RHIBufferDesc desc, bool dedicated = false, bool no_warning = false) :
         requested_size_(req_size), desc_(desc), dedicated_(dedicated) {
         if (!no_warning && ((desc.usage & RHIBufferUsageFlagBits::kStaging) || (desc.usage & RHIBufferUsageFlagBits::kReadback))) {
-            MI_LOG(MIInfraLogType::kWarning, "We suggest using RHI directly with staging and readback buffers (fire and forgot)."
+            MI_LOG(MIInfraLogType::kWarning, "We suggest using RHI directly with staging and readback buffers (fire and forgot, "
+                                             "RHI will take care of safe recycling)."
                                              "Otherwise you may carefully handle their lifetimes when performing GPU-CPU data-transactions.");
         }
     }

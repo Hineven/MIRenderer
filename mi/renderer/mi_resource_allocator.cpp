@@ -115,4 +115,9 @@ void SimpleGPUBufferHeap::Free (RHIBufferSpan allocation) {
     }
 }
 
+void RenderResourceAllocator::SetTexture(uint32_t index, RHITexture *texture) {
+    textures_[index] = texture;
+}
+
+
 MI_NAMESPACE_END

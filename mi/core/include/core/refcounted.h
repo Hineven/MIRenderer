@@ -18,7 +18,7 @@ MI_NAMESPACE_BEGIN
 /**
  * Base class implementing thread-safe reference counting.
  */
-template<bool bThreadSafe = true>
+template<bool bThreadSafe = true, bool bWeakRef = false>
 class RefCounted
 {
 public:
@@ -55,7 +55,7 @@ private:
 
 // Thread unsafe version
 template<>
-class RefCounted<false>
+class RefCounted<false, false>
 {
 public:
     RefCounted() = default;
@@ -87,6 +87,43 @@ public:
 
 private:
     mutable int ref_count_ {0};
+};
+
+// Allow weak ref
+template<>
+class RefCounted<false, true>
+{
+public:
+    RefCounted() = default;
+    virtual ~RefCounted() = default;
+
+    RefCounted(const RefCounted& Rhs) = delete;
+    RefCounted& operator=(const RefCounted& Rhs) = delete;
+
+    inline uint32_t IncRef() const
+    {
+        return ++ ref_count_;
+    }
+
+    inline uint32_t DecRef() const
+    {
+        -- ref_count_;
+        int ref_count = ref_count_;
+        if (ref_count_ == 0)
+        {
+            delete this;
+        }
+        return (uint32_t)ref_count;
+    }
+
+    uint32_t GetRefCount() const
+    {
+        return (uint32_t)ref_count_;
+    }
+
+private:
+    mutable int ref_count_ {0};
+    int * weak_ref_count {nullptr}; // Ptr to weak ref count
 };
 
 template<typename T>
@@ -353,6 +390,33 @@ public:
         return Raw() == B;
     }
 };
+
+template<typename T>
+concept CWeakReferenceCounted =
+    CReferenceCounted && std::is_base_of_v<RefCounted<false, true>, T>;
+
+/**
+ * A weak reference to an object.
+ */
+// TODO currently unnecessary
+// template<CWeakReferenceCounted ReferencedType>
+// class TWeakRef {
+//     typedef ReferencedType* ReferenceType;
+// public:
+//     FORCEINLINE TRef<ReferencedType> Pin () const
+//     {
+//         if (ptr_ && weak_ref_count_)
+//         {
+//             if (*weak_ref_count_ > 0) {
+//
+//             }
+//         }
+//         return nullptr;
+//     }
+// protected:
+//     ReferencedType* ptr_ {};
+//     int * weak_ref_count_ {};
+// };
 
 MI_NAMESPACE_END
 

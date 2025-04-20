@@ -44,6 +44,8 @@ protected:
     // Draw a texture to back buffer directly.
     void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture);
 
+    TRef<RDGResourcePool> pool_;
+
 };
 
 

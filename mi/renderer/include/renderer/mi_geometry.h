@@ -68,8 +68,8 @@ public:
         std::span<uint32_t> indices = {}
     ) ;
 
-    FORCEINLINE uint32_t GetVertexCount () const {return vertices_.size();}
-    FORCEINLINE uint32_t GetIndexCount () const {return indices_.size();}
+    FORCEINLINE uint32_t GetVertexCount () const {return (uint32_t)vertices_.size();}
+    FORCEINLINE uint32_t GetIndexCount () const {return (uint32_t)indices_.size();}
 
     FORCEINLINE size_t GetVertexBufferSize () const {
         return vertices_.size() * sizeof(DefaultStaticMeshVertex);

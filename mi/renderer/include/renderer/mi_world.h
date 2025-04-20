@@ -12,14 +12,13 @@
 #include <vector>
 #include "core/base.h"
 #include "core/refcounted.h"
-#include <rhi/rhi_texture.h>
+#include <rhi/rhi_fwd.h>
 #include "renderer/mi_renderer_fwd.h"
-#include "rdg/rdg_base.h"
 MI_NAMESPACE_BEGIN
 
 class DeviceWorld : public NonCopyable, public NonMovable {
 public:
-    TRef<RDGBuffer> renderable_transforms_;
+    TRef<RHIBuffer> renderable_transforms_;
 };
 
 // Integrated class managing the world.

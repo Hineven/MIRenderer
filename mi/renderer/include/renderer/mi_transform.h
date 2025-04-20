@@ -24,8 +24,8 @@ struct Transform {
         position += translation;
     }
 
-    FORCEINLINE void Scale (const glm::vec3 & scale) {
-        this->scale += scale;
+    FORCEINLINE void Scale (const glm::vec3 & ext_scale) {
+        this->scale *= ext_scale;
     }
 
     FORCEINLINE glm::mat4x3 GetToWorldTransformMatrix() const {

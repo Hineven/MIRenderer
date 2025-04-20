@@ -86,9 +86,14 @@ public:
     friend class Geometry;
     friend class DeviceGeometry;
     friend class Material;
+    friend class BindlessRendererTexture;
 
 protected:
 
+    void SetTexture (uint32_t index, RHITexture * texture);
+
+    std::vector<TRef<RHITexture>> textures_;
+    std::vector<TRef<Material>> materials_;
 
     uint32_t top_material_slot_ {};
     uint32_t top_texture_slot_ {};
