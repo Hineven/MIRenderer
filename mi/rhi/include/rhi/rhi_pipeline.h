@@ -41,9 +41,10 @@ public:
     bool HasResourceSlot (std::string_view name) const;
     bool HasResourceSlot (uint32_t name_crc) const;
 
+    // If the pipeline has access to bindless resources, this function will return true.
     FORCEINLINE bool HasBindlessResources() const {return has_bindless_resources_;}
 
-    FORCEINLINE const std::string & GetName () const {return name_;}
+FORCEINLINE const std::string & GetName () const {return name_;}
     FORCEINLINE void SetName () {name_ = name_; OnNameChanged();}
 
     RHIPipeline(std::string_view name) : name_(name) {}
@@ -51,19 +52,12 @@ public:
 
     virtual void Reset () ;
 
-    // Return the size of an adequate btb buffer for this pipeline, in number of slots.
-    inline uint32_t GetBindlessTableSize () const {return bindless_table_size_;}
-
 protected:
     // Append reflected shader resources to the pipeline resources and check compatibility
     bool CheckAndRemapShaderResources (RHIShader * shader);
     // Check if all resource names are unique among different types
     bool CheckNoOverlappingNamesAmongDifferentTypes () ;
-    // There should be a special uniform buffer definition within the shaders supporting
-    // bindless resources. The buffer is the bindless table buffer.
-    // Try to locate the bindless table uniform buffer from reflected pipeline resources
-    // , remove it from uniforms_ and set relating attributes.
-    void TryLocateAndStripBindlessTableUniformBuffer () ;
+    void CheckAndSetHasBindlessResources () ;
 
     // Set up pipeline_resource_index_ from resource lists
     void BuildPipelineResourceIndex ();
@@ -90,9 +84,8 @@ protected:
     std::vector<AccelerationStructureDesc> acceleration_structures_;
     std::vector<CommandConstantDesc> command_constant_;
 
+    // This should be set by the derived class implementation upon compilation
     bool has_bindless_resources_ {false};
-    // Number of slots in the btb table
-    uint32_t bindless_table_size_ {};
 
 public:
     FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const {

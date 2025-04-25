@@ -61,32 +61,16 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
     static_assert(std::size(immutable_samplers) == C::kNumDefaultBindlessImmutableSamplers);
     vk::DescriptorSetLayoutBinding layout_bindings[] = {
             {
-                    (uint32_t)RHIBindlessResourceType::kMaxAndImmSampler, {}, stages,
-                    immutable_samplers
-            },
-            {
-                    (uint32_t)RHIBindlessResourceType::kUniformBuffer, vk::DescriptorType::eUniformBuffer,
-                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kUniformBuffer].size), stages
-            },
-            {
-                    (uint32_t)RHIBindlessResourceType::kStorageBuffer, vk::DescriptorType::eStorageBuffer,
-                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kStorageBuffer].size), stages
+                    (uint32_t)RHIBindlessResourceType::kReadOnlyStorageBuffer, vk::DescriptorType::eStorageBuffer,
+                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kReadOnlyStorageBuffer].total_count), stages
             },
             {
                     (uint32_t)RHIBindlessResourceType::kSRV, vk::DescriptorType::eSampledImage,
-                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kSRV].size), stages
-            },
-            {
-                    (uint32_t)RHIBindlessResourceType::kUAV, vk::DescriptorType::eStorageImage,
-                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kUAV].size), stages
+                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kSRV].total_count), stages
             },
             {
                     (uint32_t)RHIBindlessResourceType::kAccelerationStructure, vk::DescriptorType::eAccelerationStructureKHR,
-                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kAccelerationStructure].size), stages
-            },
-            {
-                    (uint32_t)RHIBindlessResourceType::kSampler, vk::DescriptorType::eSampler,
-                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kSampler].size), stages
+                    static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kAccelerationStructure].total_count), stages
             }
     };
     auto layout_create_info = vk::DescriptorSetLayoutCreateInfo {
@@ -98,17 +82,14 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
 
     // Pool
     {
-        vk::DescriptorPoolSize pool_sizes[(int)RHIBindlessResourceType::kMaxAndImmSampler];
-        for(int i = 0; i < (int)RHIBindlessResourceType::kMaxAndImmSampler; i++) {
+        vk::DescriptorPoolSize pool_sizes[(int)RHIBindlessResourceType::kMax];
+        for(int i = 0; i < (int)RHIBindlessResourceType::kMax; i++) {
             auto & pool_size = pool_sizes[i];
             pool_size = {
                     GetVulkanDescriptorType((RHIBindlessResourceType)i),
-                    (uint32_t)bindless_channels_[i].size
+                    (uint32_t)bindless_channels_[i].total_count
             };
         }
-        // Add immutable samplers
-        pool_sizes[(int)RHIBindlessResourceType::kSampler].descriptorCount
-            += C::kNumDefaultBindlessImmutableSamplers;
         // Multipy by the number of sets
         for(auto & pool_size : pool_sizes) {
             pool_size.descriptorCount *= (uint32_t)std::size(bindless_descriptor_sets_);
@@ -166,7 +147,7 @@ void VulkanBindlessManager::FreeResourceSlotRHI(RHIBindlessResourceType type, ui
     // Write null descriptor sets
     auto device = GetVulkanRHI()->GetDevice();
     auto null_descriptor = vk::WriteDescriptorSet {
-        bindless_descriptor_sets_[set_index_],
+        {},
         static_cast<uint32_t>(type),
         slot,
         num_slots,
@@ -174,34 +155,41 @@ void VulkanBindlessManager::FreeResourceSlotRHI(RHIBindlessResourceType type, ui
         nullptr,
         nullptr
     };
-    device.updateDescriptorSets({null_descriptor}, {});
+    auto ptr_sets = bindless_descriptor_sets_;
+    auto ptr_set_index = &set_index_;
+
+    EnqueueRHIThreadTask([null_descriptor, ptr_sets, ptr_set_index]() {
+        auto device = GetVulkanRHI()->GetDevice();
+        auto curr_write = null_descriptor;
+        curr_write.dstSet = ptr_sets[*ptr_set_index];
+        device.updateDescriptorSets({curr_write}, {});
+    });
 }
 
 void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots) {
-    auto device = GetVulkanRHI()->GetDevice();
-    auto descriptor = vk::WriteDescriptorSet {
-        bindless_descriptor_sets_[set_index_],
+    assert(GetCurrentThreadType() == ThreadType::kRenderThread);
+    auto & queue = GetVulkanRHI()->GetGraphicsCommandQueue();
+    auto descriptor_write = vk::WriteDescriptorSet {
+        // Memory read is deferred to RHI thread
+        {},//bindless_descriptor_sets_[set_index_],
         static_cast<uint32_t>(type),
         slot,
         num_slots,
         GetVulkanDescriptorType(type)
     };
-    if(type == RHIBindlessResourceType::kStorageBuffer || type == RHIBindlessResourceType::kUniformBuffer) {
-        int ext_bc = type == RHIBindlessResourceType::kStorageBuffer ? 0 : 1;
-        auto updates = reinterpret_cast<vk::DescriptorBufferInfo *>(update_descriptor_set_buffer);
+    if(type == RHIBindlessResourceType::kReadOnlyStorageBuffer) {
+        auto updates = queue.Allocate<vk::DescriptorBufferInfo[]>(num_slots);
         for(uint32_t i = 0; i < num_slots; i++) {
             auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
             auto buffer = (VulkanBuffer*)(ref.Raw());
             updates[i] = vk::DescriptorBufferInfo {
                 buffer->GetBuffer(),
-                bindless_buffer_channel[ext_bc].offsets[slot + i],
-                ((size_t)-1ll == bindless_buffer_channel[ext_bc].sizes[slot + i])
-                ? VK_WHOLE_SIZE : bindless_buffer_channel[ext_bc].sizes[slot + i]
+                VK_WHOLE_SIZE
             };
         }
-        descriptor.setPBufferInfo(updates);
-    } else if(type == RHIBindlessResourceType::kUAV || type == RHIBindlessResourceType::kSRV) {
-        auto updates = reinterpret_cast<vk::DescriptorImageInfo *>(update_descriptor_set_buffer);
+        descriptor_write.setPBufferInfo(updates);
+    } else if(type == RHIBindlessResourceType::kSRV) {
+        auto updates = queue.Allocate<vk::DescriptorImageInfo[]>(num_slots);
         for(uint32_t i = 0; i < num_slots; i++) {
             auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
             auto texture = (VulkanTexture*)(ref.Raw());
@@ -215,12 +203,10 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
                 ready_layout
             };
         }
-        descriptor.setPImageInfo(updates);
+        descriptor_write.setPImageInfo(updates);
     } else if(type == RHIBindlessResourceType::kAccelerationStructure) {
-        auto updates = reinterpret_cast<vk::WriteDescriptorSetAccelerationStructureKHR *>(update_descriptor_set_buffer);
-        auto as_ptrs = reinterpret_cast<vk::AccelerationStructureKHR *>(
-                update_descriptor_set_buffer
-                + sizeof(vk::WriteDescriptorSetAccelerationStructureKHR));
+        auto updates = queue.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>(1);
+        auto as_ptrs = queue.Allocate<vk::AccelerationStructureKHR[]>(num_slots);
         for(uint32_t i = 0; i < num_slots; i++) {
             auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
             auto as = (VulkanAccelerationStructure*)(ref.Raw());
@@ -228,28 +214,54 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
         }
         updates->setAccelerationStructureCount(num_slots);
         updates->setPAccelerationStructures(as_ptrs);
-        descriptor.setPNext(updates);
-    } else if(type == RHIBindlessResourceType::kSampler) {
-        auto updates = reinterpret_cast<vk::DescriptorImageInfo *>(update_descriptor_set_buffer);
-        for(uint32_t i = 0; i < num_slots; i++) {
-            auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
-            auto sampler = (VulkanSampler*)(ref.Raw());
-            updates[i] = vk::DescriptorImageInfo {
-                sampler->GetSampler()
-            };
-        }
-        descriptor.setPImageInfo(updates);
+        descriptor_write.setPNext(updates);
+    } else {
+        MI_WARN("Unknown bindless resource type");
     }
-    device.updateDescriptorSets({descriptor}, {});
+    auto ptr_set_index = &set_index_;
+    auto ptr_sets = bindless_descriptor_sets_;
+    EnqueueRHIThreadTask([descriptor_write, ptr_set_index, ptr_sets]() {
+        auto device = GetVulkanRHI()->GetDevice();
+        auto curr_write = descriptor_write;
+        curr_write.dstSet = ptr_sets[*ptr_set_index];
+        device.updateDescriptorSets({curr_write}, {});
+    });
 }
 
-void VulkanBindlessManager::SwapSets_RHIThread () {
+void VulkanBindlessManager::SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) {
+    // Free batched slots
+    if (!slots_to_free.empty()) {
+        auto device = GetVulkanRHI()->GetDevice();
+        std::vector<vk::WriteDescriptorSet> null_descriptors;
+        null_descriptors.reserve(slots_to_free.size());
+        for (auto & slot : slots_to_free) {
+            auto type = (RHIBindlessResourceType)slot.type;
+            auto slot_index = slot.slot_index;
+            auto num_slots = bindless_channels_[(int)type].total_count - slot_index;
+            if (num_slots > 0) {
+                auto null_descriptor = vk::WriteDescriptorSet {
+                    bindless_descriptor_sets_[set_index_],
+                    static_cast<uint32_t>(type),
+                    slot_index,
+                    num_slots,
+                    GetVulkanDescriptorType(type),
+                    nullptr,
+                    nullptr
+                };
+                null_descriptors.push_back(null_descriptor);
+            }
+        }
+        device.updateDescriptorSets(null_descriptors, {});
+        // Remember to free the memory allocated by PrepareDelayedSlotsForRHIFree
+        delete [] slots_to_free.data();
+    }
+
     set_index_ = (set_index_ + 1) % 2;
     auto device = GetVulkanRHI()->GetDevice();
     // Copy the previous set to the new set
     std::vector<vk::CopyDescriptorSet> copies;
     for (int i = 0; i < std::size(bindless_channels_); i++) {
-        auto size = bindless_channels_[i].size;
+        auto size = bindless_channels_[i].total_count;
         auto copy = vk::CopyDescriptorSet {
             bindless_descriptor_sets_[set_index_ ^ 1],
             (uint32_t)i,

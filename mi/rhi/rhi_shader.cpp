@@ -47,6 +47,11 @@ struct THasSize : std::false_type {};
 template<typename T>
 struct THasSize <T, std::void_t<decltype(std::declval<T>().size)>> : std::true_type {};
 
+template<typename T, typename = void>
+struct THasArraySize : std::false_type {};
+template<typename T>
+struct THasArraySize <T, std::void_t<decltype(std::declval<T>().array_size)>> : std::true_type {};
+
 bool RHIShader::ReflectShaderResourcesSPIRV() {
     if(ir_size_ % 4 != 0) {
         MI_LOG(MIInfraLogType::kWarning, "SPIRV IR code size must be a multiple of 4");
@@ -63,13 +68,25 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             if constexpr (THasSize<T>::value) {
                 desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
             }
+            if constexpr (THasArraySize<T>::value) {
+                auto type = compiler_hlsl.get_type(resource.type_id);
+                if (type.array.size() > 0) {
+                    if (type.array.size() != 1 || !type.array_size_literal[0]) {
+                        MI_WARN("Shader {}: Resource {} is multi-dimensional array ({} dimensions) or its size is not a literal."
+                                "We only support 1 dimension array.", GetEntryName(), desc.name);
+                        continue ;
+                    }
+                    desc.array_size = type.array[0];
+                    if (!desc.array_size) desc.array_size = UINT32_MAX; // Unknown bound is reflected to 0, in our implementation we use UINT32_MAX
+                }
+            }
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationDescriptorSet, desc.locations.set_offset);
             desc.name_crc = CRC32(desc.name.data(), desc.name.size());
             out_resources.push_back(desc);
         }
     };
-    ReflectResources.operator()<UniformBufferDesc>(shader_resources.uniform_buffers, uniform_buffers_with_bindless_table_);
+    ReflectResources.operator()<UniformBufferDesc>(shader_resources.uniform_buffers, uniform_buffers_);
     // Deep reflection of the uniform buffers. Reveal their underlying structures.
     {
         auto IsBasicType = [](spirv_cross::SPIRType::BaseType t) {
@@ -122,7 +139,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             return RHIBasicParamType::kMax;
         };
         std::function<RHIParamStructInfo*(spirv_cross::TypeID)> RecursiveDeepReflection = [&] (spirv_cross::TypeID reflecting_type_id) {
-            RHIParamStructInfo * ret = new RHIParamStructInfo;
+            auto * ret = new RHIParamStructInfo;
             spirv_cross::SPIRType type = compiler_hlsl.get_type(reflecting_type_id);
             std::vector<RHIParamInfo> reflected_members;
             for (auto const & [i, member] : type.member_types | std::views::enumerate) {
@@ -153,12 +170,22 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             return ret;
         };
         for (const auto& [i, compiler_resource]: std::views::enumerate(shader_resources.uniform_buffers)) {
-            auto& desc = uniform_buffers_with_bindless_table_[i];
-            const auto& type = compiler_hlsl.get_type(compiler_resource.base_type_id);
-            if (type.basetype != spirv_cross::SPIRType::Struct) {
+            auto& desc = uniform_buffers_[i];
+            const auto& base_type = compiler_hlsl.get_type(compiler_resource.base_type_id);
+            if (base_type.basetype != spirv_cross::SPIRType::Struct) {
                 assert(false && "Invalid uniform buffer. Constant buffers should always be structs.");
             }
             desc.struct_reflection = RecursiveDeepReflection(compiler_resource.base_type_id);
+            auto type = compiler_hlsl.get_type(compiler_resource.type_id);
+            if (type.array.size() > 0) {
+                if (type.array.size() != 1 || !type.array_size_literal[0]) {
+                    MI_WARN("Shader {}: UB {} is multi-dimensional array ({} dimensions) or its size is not a literal."
+                            "We only support 1 dimension array.", GetEntryName(), desc.name);
+                    continue ;
+                }
+                desc.array_size = type.array[0];
+                if (!desc.array_size) desc.array_size = UINT32_MAX; // Unknown bound is reflected to 0, in our implementation we use UINT32_MAX
+            }
         }
     }
     // Manually reflect storage buffers to separate RW / R only buffers
@@ -176,14 +203,22 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             if (!read_only) desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kWrite;
             desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kRead;
             desc.name_crc = CRC32(desc.name.data(), desc.name.size());
+            const auto& type = compiler_hlsl.get_type(resource.type_id);
+            if (!type.array.empty()) {
+                if (type.array.size() != 1 || !type.array_size_literal[0]) {
+                    MI_WARN("Shader {}: Storage buffer {} is multi-dimensional array ({} dimensions) or its size is not a literal."
+                            "We only support 1 dimension array.", GetEntryName(), desc.name);
+                    continue ;
+                }
+                desc.array_size = type.array[0];
+                if (!desc.array_size) desc.array_size = UINT32_MAX; // Unknown bound is reflected to 0, in our implementation we use UINT32_MAX
+            }
             storage_buffers_.push_back(desc);
         }
     }
     ReflectResources.operator()<UAVDesc>( shader_resources.storage_images, uavs_);
     ReflectResources.operator()<SRVDesc>( shader_resources.separate_images, srvs_);
     ReflectResources.operator()<SamplerDesc>( shader_resources.separate_samplers, samplers_);
-    // Immutable samplers are not supported for now (and they can not be really reflected from SPIRV)
-//    ReflectResources.operator()<SamplerDesc>( shader_resources.separate_samplers, immutable_samplers_);
     ReflectResources.operator()<AccelerationStructureDesc>( shader_resources.acceleration_structures, acceleration_structures_);
     for (auto & resource : shader_resources.push_constant_buffers) {
         CommandConstantDesc desc;
@@ -191,18 +226,62 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
         desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
         command_constant_.push_back(desc);
     }
-    // Look for bindless table uniform buffer
-    int bindless_table_index = 0;
-    for(auto & uniforms : uniform_buffers_with_bindless_table_) {
-        if(uniforms.name == TO_STR(BINDLESS_TABLE_UNIFORM_BUFFER_NAME)) {
-            break;
+    // Strip bindless resource arrays
+    {
+        auto index = -1;
+        for (auto [i, storage_buffer] : std::views::enumerate(storage_buffers_)) {
+            if (storage_buffer.name == std::string(TO_STR(BINDLESS_RESOURCE_ARRAY_PREFIX)) + "Buffer") {
+                if (storage_buffer.array_size != UINT32_MAX) {
+                    MI_WARN("Shader {}: Bindless resource array {} should be 1D array with unspecified size.",
+                            GetEntryName(), storage_buffer.name);
+                    return false;
+                }
+                has_bindless_resources_ = true;
+                index = (int)i;
+                break;
+            }
         }
-        bindless_table_index ++;
+        if (index != -1) {
+            bindless_.storage_buffer = storage_buffers_[index];
+            storage_buffers_.erase(storage_buffers_.begin() + index);
+        }
+        index = -1;
+        for (auto [i, srv] : std::views::enumerate(srvs_)) {
+            if (srv.name == std::string(TO_STR(BINDLESS_RESOURCE_ARRAY_PREFIX)) + "Texture") {
+                if (srv.array_size != UINT32_MAX) {
+                    MI_WARN("Shader {}: Bindless resource array {} should be 1D array with unspecified size.",
+                            GetEntryName(), srv.name);
+                    return false;
+                }
+                has_bindless_resources_ = true;
+                index = (int)i;
+                break;
+            }
+        }
+        if (index != -1) {
+            bindless_.srv = srvs_[index];
+            srvs_.erase(srvs_.begin() + index);
+        }
+        index = -1;
+        for (auto [i, as] : std::views::enumerate(acceleration_structures_)) {
+            if (as.name == std::string(TO_STR(BINDLESS_RESOURCE_ARRAY_PREFIX)) + "AccelerationStructure") {
+                if (as.array_size != UINT32_MAX) {
+                    MI_WARN("Shader {}: Bindless resource array {} should be 1D array with unspecified size.",
+                            GetEntryName(), as.name);
+                    return false;
+                }
+                has_bindless_resources_ = true;
+                index = (int)i;
+                break;
+            }
+        }
+        if (index != -1) {
+            bindless_.acceleration_structure = acceleration_structures_[index];
+            acceleration_structures_.erase(acceleration_structures_.begin() + index);
+        }
     }
-    has_bindless_resources_ = bindless_table_index != uniform_buffers_with_bindless_table_.size();
-    bindless_table_uniform_index_ = bindless_table_index;
 
-    // Index buffers and dispatch command can not be reflected from SPIRV. They are declared in the cpp-side code
+    // Index buffers and dispatch command cannot be reflected from SPIRV. They are declared in the cpp-side code
     // of RDG shaders.
     // Vertex buffers and render targets are (partially) reflected via the following code:
 
@@ -298,7 +377,7 @@ int RHIShader::ReflectResourceIndex(RHIPipelineResourceType type, uint32_t name_
     };
     switch (type) {
         case RHIPipelineResourceType::kUniformBuffer:
-            return FindResourceIndexImpl.operator()<UniformBufferDesc>(uniform_buffers_with_bindless_table_);
+            return FindResourceIndexImpl.operator()<UniformBufferDesc>(uniform_buffers_);
         case RHIPipelineResourceType::kStorageBuffer:
             return FindResourceIndexImpl.operator()<StorageBufferDesc>(storage_buffers_);
         case RHIPipelineResourceType::kUAV:
@@ -307,11 +386,10 @@ int RHIShader::ReflectResourceIndex(RHIPipelineResourceType type, uint32_t name_
             return FindResourceIndexImpl.operator()<SRVDesc>(srvs_);
         case RHIPipelineResourceType::kSampler:
             return FindResourceIndexImpl.operator()<SamplerDesc>(samplers_);
-        case RHIPipelineResourceType::kImmutableSampler:
-            return FindResourceIndexImpl.operator()<ImmutableSamplerDesc>(immutable_samplers_);
         case RHIPipelineResourceType::kAccelerationStructure:
             return FindResourceIndexImpl.operator()<AccelerationStructureDesc>(acceleration_structures_);
-        default: ;
+        default:
+            assert(false);
     }
     return -1;
 }
@@ -322,16 +400,15 @@ void RHIShader::Reset () {
     ResetRHI();
 
     // Clear reflection data
-    uniform_buffers_with_bindless_table_.clear();
+    uniform_buffers_.clear();
     storage_buffers_.clear();
     uavs_.clear();
     srvs_.clear();
     samplers_.clear();
-    immutable_samplers_.clear();
     command_constant_.clear();
     acceleration_structures_.clear();
+    bindless_ = {};
     has_bindless_resources_ = false;
-    bindless_table_uniform_index_ = 0;
     vertex_inputs_.clear();
     fragment_outputs_.clear();
 

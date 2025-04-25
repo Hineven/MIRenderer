@@ -44,10 +44,6 @@ public:
         return flags_;
     }
 
-    FORCEINLINE bool IsBindless () const {
-        return bindless_;
-    }
-
     virtual void * GetAPIHandle () const = 0;
 
     // Usually used for debugging
@@ -76,11 +72,6 @@ protected:
     // For validation purposes only
     ThreadType owner_thread_ {};
 #endif
-
-    // If the resource is registered in the bindless manager and should be accessed
-    // via bindless handles only.
-    // TODO incomplete bindless functionality currently
-    bool bindless_ {};
 
     // Flags
     RHIResourceFlags flags_ {};

@@ -41,6 +41,10 @@ static void RelocateShaderResourceBindings (
     if(!shader) return ;
     // Duplicate bytecode for compilation
     auto ir = shader->DuplicateShaderIRByteCode();
+    auto Relocate = [&] (ShaderReflection::IRBindingDecorationLocation ir_location, uint32_t set, uint32_t binding) {
+        ((uint32_t*)ir.data())[ir_location.binding_offset] = binding;
+        ((uint32_t*)ir.data())[ir_location.set_offset] = set;
+    };
     auto RelocateResourcesInIR = [&] (RHIPipelineResourceType type, const auto & shader_resources) {
         // Relocate binding numbers in the shader IR
         for (int i = 0; i < (int)shader_resources.size(); i++) {
@@ -50,22 +54,32 @@ static void RelocateShaderResourceBindings (
             auto remap = remappings.GetDestination(
                 type, pipeline_res_slot.slot_index
             );
-            printf("[%d][%s]original binding: %u\n",
-                (int)shader_stages.size(),
-                shader_resource_desc.name.c_str(), ((uint32_t*)ir.data())[shader_resource_desc.locations.binding_offset]);
-            std::flush(std::cout);
             // Modify the bytecode to actually use the remapped binding in the shader
-            ((uint32_t*)ir.data())[shader_resource_desc.locations.binding_offset] = remap.binding;
-            ((uint32_t*)ir.data())[shader_resource_desc.locations.set_offset] = remap.set;
+            Relocate(shader_resource_desc.locations, remap.set, remap.binding);
         }
     };
+
+    // Relocate resources in the shader IR to pipeline binding
     RelocateResourcesInIR(RHIPipelineResourceType::kUniformBuffer, shader->GetUniformBufferDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kStorageBuffer, shader->GetStorageBufferDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kUAV, shader->GetUAVDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kSRV, shader->GetSRVDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kSampler, shader->GetSamplerDesc());
-    RelocateResourcesInIR(RHIPipelineResourceType::kImmutableSampler, shader->GetImmutableSamplerDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kAccelerationStructure, shader->GetAccelerationStructureDesc());
+
+    // Relocate bindless resource arrays ni the shader IR
+    if (shader->HasBindlessResources()) {
+        auto desc = shader->GetBindlessArrayDescs();
+        if (!desc.storage_buffer.name.empty()) {
+            Relocate(desc.storage_buffer.locations, 1, 0);
+        }
+        if (!desc.srv.name.empty()) {
+            Relocate(desc.srv.locations, 1, 1);
+        }
+        if (!desc.acceleration_structure.name.empty()) {
+            Relocate(desc.acceleration_structure.locations, 1, 2);
+        }
+    }
 
     std::vector<uint32_t> optimized_ir;
     // Because we removed '-spirv-reflect' from dxc default parameters, now we do not need to strip reflection info.
@@ -103,16 +117,8 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     // Gather pipeline layout, align descriptor bindings
     {
         std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
-        // If the pipeline contains bindless resources, take set 0 as bindless set.
-        if (HasBindlessResources()) {
-            // Use set 0 for bindless resources.
-            VulkanBindlessManager & bindless_manager = static_cast<mi::VulkanBindlessManager &>(RHI::Get().GetBindlessManager());
-            auto bindless_descriptor_layout = bindless_manager.GetBindlessDescriptorSetLayout();
-            descriptor_set_layouts.push_back(bindless_descriptor_layout);
-            // No remapping required for bindless resources
-        }
         std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
-        // Take the next descriptor set for bindfull resources
+        // Take the first descriptor set for bindfull resources
         {
             int set_index = (int)descriptor_set_layouts.size();
             int current_binding_index = 0;
@@ -154,10 +160,18 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                 vk_private_descriptor_set_layout_ = nullptr;
             }
         }
+        // If the pipeline contains bindless resources, take set 1 as bindless set.
+        if (HasBindlessResources()) {
+            // Use set 1 for bindless resources.
+            VulkanBindlessManager & bindless_manager = static_cast<mi::VulkanBindlessManager &>(RHI::Get().GetBindlessManager());
+            auto bindless_descriptor_layout = bindless_manager.GetBindlessDescriptorSetLayout();
+            descriptor_set_layouts.push_back(bindless_descriptor_layout);
+            // No remapping required for bindless resources
+        }
         // Push constant
         vk::PushConstantRange push_constant_range;
         push_constant_range.setOffset(0);
-        push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
+        push_constant_roundup_size_ = RoundUp(!command_constant_.empty() ? command_constant_[0].size : 0, 128);
         push_constant_range.setSize(push_constant_roundup_size_);
         // TODO track push constant shader stages
         push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
@@ -393,15 +407,8 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     // Gather pipeline layout
     std::vector<BindingRemappingInfo> remapping_infos;
     std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
-    // If the pipeline contains bindless resources, take set 0 as bindless set.
-    if(HasBindlessResources()) {
-        // Use set 0 for bindless resources.
-        auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
-        descriptor_set_layouts.push_back(bindless_descriptor_layout);
-        // No remapping required for bindless resources
-    }
     std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
-    // Take the next descriptor set for bindfull resources
+    // Take the first descriptor set for bindfull resources
     {
         int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
@@ -439,6 +446,13 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
         } else {
             vk_private_descriptor_set_layout_ = nullptr;
         }
+    }
+    // If the pipeline contains bindless resources, take set 1 as bindless set.
+    if(HasBindlessResources()) {
+        // Use set 1 for bindless resources.
+        auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
+        descriptor_set_layouts.push_back(bindless_descriptor_layout);
+        // No remapping required for bindless resources
     }
     // Push constant
     vk::PushConstantRange push_constant_range;

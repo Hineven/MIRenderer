@@ -574,12 +574,6 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
                         dirty = true;
                     }
                 }
-                if constexpr (std::is_same_v<T, RHIPipelineBindlessResourceDesc>) {
-                    if (it->bindless_slot != e.bindless_slot || it->count != e.count || it->type != e.type) {
-                        *it = e;
-                        dirty = true;
-                    }
-                }
             }
         }
         return dirty;
@@ -591,7 +585,6 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
     dirty |= CompareAndInsert(srvs, desc->srvs);
     dirty |= CompareAndInsert(samplers, desc->samplers);
     dirty |= CompareAndInsert(acceleration_structures, desc->acceleration_structures);
-    dirty |= CompareAndInsert(bindless_resources, desc->bindless_resources);
     // Overwrite push constants if any (and it does not affect the dirty flag)
     if(!desc->constants.empty()) {
         push_constants = desc->constants;
@@ -603,7 +596,7 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     VulkanCommandExecutor::CommandQueueState & state, [[maybe_unused]] vk::Device device,
-    vk::DescriptorSet descriptor_set, std::span<std::uint32_t> btb_data,
+    vk::DescriptorSet descriptor_set,
     [[maybe_unused]] vk::CommandBuffer cmdb
 ) {
     assert(IsRHIThread());
@@ -636,7 +629,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     }
 
     // Count all writes that needed to allocate a WriteDescriptorSet array
-    uint32_t write_count = (uint32_t)
+    auto write_count = (uint32_t)
             (parameter_table.uniforms.size() + parameter_table.storages.size() + parameter_table.uavs.size()
                 + parameter_table.srvs.size() + parameter_table.samplers.size() + parameter_table.acceleration_structures.size());
     vk::WriteDescriptorSet * writes = state.Allocate<vk::WriteDescriptorSet[]>(write_count);
@@ -739,20 +732,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     parameter_table.samplers.clear();
     parameter_table.acceleration_structures.clear();
 
-    // Generate btb table data for bindless resources
-    SortUnique(parameter_table.bindless_resources);
-
-    // The user should manage bindless texture layouts manually.
-    for(auto & bindless : parameter_table.bindless_resources) {
-        int bindless_binding_slot = bindless.slot;
-        int bindless_slot    = bindless.bindless_slot;
-        btb_data[bindless_binding_slot] = bindless_slot;
-    }
-
-    // Clear bindless resources
-    parameter_table.bindless_resources.clear();
-
-    return std::span<vk::WriteDescriptorSet>(writes, write_count);
+    return {writes, write_count};
 }
 
 
@@ -787,6 +767,12 @@ void VulkanCommandExecutor::FlushBindPointState(
             vk_point = vk::PipelineBindPoint::eRayTracingKHR;
         }
         state.cmd.bindPipeline(vk_point, vk_pipeline);
+        // Bind the bindless descriptor set upon pipeline binding (at binding 1)
+        if (point.bound_pipeline->HasBindlessResources()) {
+            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 1,
+                                         bindless_set, {});
+        }
     }
 
     // Allocate descriptor set
@@ -801,22 +787,8 @@ void VulkanCommandExecutor::FlushBindPointState(
         point.bound_private_descriptor_set = descriptor_set[0];
     }
 
-    // Assign btb on the fly
-    uint32_t btb_size_raw = point.bound_pipeline->GetBindlessTableSize();
-    std::span<uint32_t> btb_data {};
-    if (btb_size_raw) {
-        uint32_t btb_size = RoundUp(
-            btb_size_raw,
-                RoundUp(GetVulkanRHI()->QueryRHIBindlessSupportInfo().descriptor_buffer_offset_alignment, sizeof(uint32_t))
-        );
-        btb_data = {
-            point.bindless_table_buffer_mapped + point.bindless_table_top,
-            btb_size
-        };
-        point.bindless_table_top += btb_size;
-    }
     auto descriptor_writes = point.InstallShaderDescriptors(
-            state, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set, btb_data,
+            state, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set,
             state.cmd
     );
     if(!descriptor_writes.empty()) {
@@ -889,7 +861,7 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
 
     auto buffers = barrier->buffers_;
     auto vk_barriers = state.Allocate<vk::BufferMemoryBarrier[]>(barrier->num_buffers_);
-    for (auto [i, e] : std::views::enumerate(std::span(buffers, barrier->num_buffers_))) {
+    for (const auto& [i, e] : std::views::enumerate(std::span(buffers, barrier->num_buffers_))) {
         vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
         vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
         vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -965,11 +937,6 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
                             VMA_MEMORY_USAGE_CPU_TO_GPU
                     }
             );
-            point.bindless_table_buffer = alloc.first;
-            point.bindless_table_buffer_allocation = alloc.second;
-            auto res = rhi->GetVmaAllocator().mapMemory(point.bindless_table_buffer_allocation, (void**)&point.bindless_table_buffer_mapped);
-            mi_assert(res == vk::Result::eSuccess, "Failed to map bindless table buffer memory");
-            point.bindless_table_top = 0;
             point.bound_private_descriptor_set = nullptr;
             point.bound_pipeline = nullptr;
             point.parameter_table = {};
@@ -1016,13 +983,7 @@ void VulkanCommandExecutor::CommandQueueState::Destroy() {
     assert(IsRHIThread());
     auto rhi = GetVulkanRHI();
     for(auto & point : points) {
-        if(point.bindless_table_buffer) {
-            rhi->GetVmaAllocator().unmapMemory(point.bindless_table_buffer_allocation);
-            rhi->GetVmaAllocator().destroyBuffer(point.bindless_table_buffer, point.bindless_table_buffer_allocation);
-            point.bindless_table_buffer = nullptr;
-            point.bindless_table_buffer_allocation = nullptr;
-            point.bindless_table_buffer_mapped = nullptr;
-        }
+        // ...
     }
     CloseCmd();
     rhi->GetDevice().destroyDescriptorPool(descriptor_pool);
@@ -1107,7 +1068,7 @@ bool VulkanCommandExecutor::CommandQueueState::CloseCmd () {
     return false;
 }
 
-void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() {
+void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() const {
     // TODO provide a way to dynamically set these values
     cmd.setCullMode(vk::CullModeFlagBits::eNone);
     cmd.setDepthBiasEnable(false);

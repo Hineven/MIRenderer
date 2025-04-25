@@ -40,13 +40,12 @@ public:
 
     // The returned vector contains information about the bindless table,
     // which is different from pipelines that striped the bindless table from uniform descriptions.
-    FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const { return uniform_buffers_with_bindless_table_; }
+    FORCEINLINE const std::vector<UniformBufferDesc> & GetUniformBufferDesc() const { return uniform_buffers_; }
 
     FORCEINLINE const std::vector<StorageBufferDesc> & GetStorageBufferDesc() const { return storage_buffers_; }
     FORCEINLINE const std::vector<UAVDesc> & GetUAVDesc() const { return uavs_; }
     FORCEINLINE const std::vector<SRVDesc> & GetSRVDesc() const { return srvs_; }
     FORCEINLINE const std::vector<SamplerDesc> & GetSamplerDesc() const { return samplers_; }
-    FORCEINLINE const std::vector<ImmutableSamplerDesc> & GetImmutableSamplerDesc() const { return immutable_samplers_; }
     FORCEINLINE const std::vector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const { return acceleration_structures_; }
     FORCEINLINE const CommandConstantDesc & GetCommandConstantDesc() const { return command_constant_[0]; }
     FORCEINLINE bool  HasCommandConstant() const { return !command_constant_.empty(); }
@@ -85,25 +84,31 @@ protected:
     uint32_t ir_size_; // Byte size of the bytecode
     RHIShaderIRType ir_type_;
 
-    std::vector<UniformBufferDesc> uniform_buffers_with_bindless_table_;
+    std::vector<UniformBufferDesc> uniform_buffers_;
     std::vector<StorageBufferDesc> storage_buffers_;
     std::vector<UAVDesc> uavs_;
     std::vector<SRVDesc> srvs_;
     std::vector<SamplerDesc> samplers_;
-    std::vector<ImmutableSamplerDesc> immutable_samplers_;
     std::vector<AccelerationStructureDesc> acceleration_structures_;
     // The vector should be of length 1.
     std::vector<CommandConstantDesc> command_constant_;
 
+    struct BindlessArrayDescs {
+        StorageBufferDesc storage_buffer;
+        SRVDesc srv;
+        AccelerationStructureDesc acceleration_structure;
+    } bindless_;
     // Only makes sense for vertex shaders
     std::vector<ShaderVertexInputDesc> vertex_inputs_;
     // Only makes sense for fragment shaders
     std::vector<ShaderFragmentOutputDesc> fragment_outputs_;
 
     bool has_bindless_resources_ {};
-    int  bindless_table_uniform_index_ {};
 
     bool is_valid_ {};
+
+public:
+    FORCEINLINE BindlessArrayDescs GetBindlessArrayDescs () { return bindless_; }
 };
 
 

@@ -370,7 +370,7 @@ public:
 class RHICommandDrawIndexedPrimitive : public TRHICommand<RHICommandDrawIndexedPrimitive> {
 public:
     RHICommandDrawIndexedPrimitive(RHIBufferSpan index_buffer, uint32_t index_count_,
-                                     uint32_t instance_count, uint32_t first_index, uint32_t base_vertex_index,
+                                     uint32_t instance_count, uint32_t first_index, int base_vertex_index,
                                       uint32_t first_instance_index, RHIIndexType index_type)
           : index_buffer_(index_buffer), index_count_(index_count_),
              instance_count_(instance_count), first_index_(first_index),
@@ -382,7 +382,7 @@ public:
     uint32_t index_count_;
     uint32_t instance_count_;
     uint32_t first_index_;
-    uint32_t base_vertex_index_;
+    int      base_vertex_index_;
     uint32_t first_instance_index_;
     RHIIndexType index_type_;
 };
@@ -556,7 +556,7 @@ public:
         AddCommand(AllocateCommand<RHICommandDrawPrimitive>(vertex_count, instance_count, first_vertex, first_instance));
     }
     FORCEINLINE void DrawIndexedPrimitive (RHIBufferSpan index_buffer, uint32_t index_count,
-                                          uint32_t instance_count, uint32_t first_index, uint32_t base_vertex_index,
+                                          uint32_t instance_count, uint32_t first_index, int base_vertex_index,
                                           uint32_t first_instance_index, RHIIndexType index_type) {
         AddCommand(AllocateCommand<RHICommandDrawIndexedPrimitive>(index_buffer, index_count, instance_count, first_index, base_vertex_index, first_instance_index, index_type));
     }

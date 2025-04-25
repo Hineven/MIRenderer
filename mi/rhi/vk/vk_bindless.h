@@ -20,7 +20,7 @@ public:
 
     vk::DescriptorSet       GetBindlessDescriptorSet();
 
-    void SwapSets_RHIThread () override;
+    void SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) override;
 
     ~VulkanBindlessManager() ;
 
@@ -35,14 +35,10 @@ protected:
 
 
     vk::DescriptorSetLayout bindless_descriptor_set_layout_;
+    // Read / updated in RHI thread only
     int set_index_ = 0;
     vk::DescriptorSet       bindless_descriptor_sets_[2];
     vk::DescriptorPool      bindless_descriptor_pool_;
-
-    enum BindlessResourceFlagBits {
-        kReadOnly = 1u<<0,
-        kReadWrite = 1u<<1,
-    };
 
     struct {
         vk::Sampler linear_wrap;        // 0
@@ -50,11 +46,6 @@ protected:
         vk::Sampler nearest_wrap;       // 2
         vk::Sampler nearest_clamp_edge; // 3
     } immutable_samplers_;
-
-    std::byte update_descriptor_set_buffer[
-            C::kMaxNumBindlessResourceSlotsPerChannel
-            * std::max(sizeof(vk::DescriptorImageInfo), sizeof(vk::DescriptorBufferInfo))
-    ];
 
 };
 

@@ -39,8 +39,8 @@ struct RHIBufferSpan {
 
 struct RHIBindlessSupportInfo {
     uint32_t max_num_resource_slots;
-    uint32_t max_num_sampler_slots;
-    uint32_t max_num_immutable_sampler_slots;
+    // uint32_t max_num_sampler_slots;
+    // uint32_t max_num_immutable_sampler_slots;
     // Alignment for btb table
     uint32_t descriptor_buffer_offset_alignment;
 };
@@ -154,19 +154,6 @@ struct RHIPipelineParameterResourceDesc {
     // On which resource slot to bind the resource
     uint32_t slot;
 };
-struct RHIPipelineBindlessResourceDesc {
-    // The type of the set bindless resource.
-    RHIBindlessResourceType type;
-    // Used to reference the bindless resource. Each bindless resource is allocated a
-    // unique bindless slot (within its type) for identification.
-    uint32_t bindless_slot;
-    // Binding number to bind on the pipeline. bindless_slot is stored on the binding
-    // number entry of the btb table for shaders to query.
-    // btb[binding] = bindless_slot
-    uint32_t slot;
-    // Number of consecutive slots that the shader uses. Potentially an atlas.
-    uint32_t count;
-};
 
 struct RHIBindPipelineParametersDesc {
     // Points to a segment of temporary memory allocated through the command buffer.
@@ -176,8 +163,6 @@ struct RHIBindPipelineParametersDesc {
     std::span<RHIPipelineParameterTextureDesc> srvs {};
     std::span<RHIPipelineParameterResourceDesc> samplers {};
     std::span<RHIPipelineParameterResourceDesc> acceleration_structures {};
-    // Points to a segment of temporary memory allocated through the command buffer.
-    std::span<RHIPipelineBindlessResourceDesc> bindless_resources {};
     // Constants, null for do-not-set. Allocate this memory through the command buffer.
     std::span<std::byte> constants {};
 };
@@ -205,6 +190,8 @@ namespace PipelineReflection {
         std::string name;
         // Deep reflection into constant buffer structs in the shader
         RHIParamStructInfo * struct_reflection;
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        uint32_t array_size;
     };
     struct StorageBufferDesc {
         uint32_t name_crc;
@@ -212,18 +199,24 @@ namespace PipelineReflection {
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
         RHIGPUAccessFlags access_flags;
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        uint32_t array_size;
     };
     struct UAVDesc {
         uint32_t name_crc;
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        uint32_t array_size;
     };
     struct SRVDesc {
         uint32_t name_crc;
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        uint32_t array_size;
     };
     struct SamplerDesc {
         uint32_t name_crc;
@@ -237,6 +230,8 @@ namespace PipelineReflection {
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        uint32_t array_size;
     };
     struct CommandConstantDesc {
         uint32_t size;
@@ -260,12 +255,16 @@ namespace ShaderReflection {
         std::string name;
         // Deep reflection into constant buffer structs in the shader
         RHIParamStructInfo * struct_reflection;
+        uint32_t array_size;
         FORCEINLINE PipelineReflection::UniformBufferDesc ToPipelineDesc() const {
-            return {size, name_crc, 0, name,
+            return {
+                size, name_crc, 0, name,
                 // FIXME Here we directly shares the memory among RHIShader's reflection and RHIPipeline's reflection.
                 // The current implementation simply leaks all memory for shader struct reflection.
                 // If we further implemented proper memory recycling, this may cause a floating pointer error.
-                struct_reflection};
+                struct_reflection,
+                array_size
+            };
         }
     };
     struct StorageBufferDesc {
@@ -273,24 +272,27 @@ namespace ShaderReflection {
         uint32_t name_crc;
         std::string name;
         RHIGPUAccessFlags access_flags;
+        uint32_t array_size;
         FORCEINLINE PipelineReflection::StorageBufferDesc ToPipelineDesc() const {
-            return {name_crc, 0, name, access_flags};
+            return {name_crc, 0, name, access_flags, array_size};
         }
     };
     struct UAVDesc {
         IRBindingDecorationLocation locations;
         uint32_t name_crc;
         std::string name;
+        uint32_t array_size;
         FORCEINLINE PipelineReflection::UAVDesc ToPipelineDesc() const {
-            return {name_crc, 0, name};
+            return {name_crc, 0, name, array_size};
         }
     };
     struct SRVDesc {
         IRBindingDecorationLocation locations;
         uint32_t name_crc;
         std::string name;
+        uint32_t array_size;
         FORCEINLINE PipelineReflection::SRVDesc ToPipelineDesc() const {
-            return {name_crc, 0, name};
+            return {name_crc, 0, name, array_size};
         }
     };
     struct SamplerDesc {
@@ -306,8 +308,9 @@ namespace ShaderReflection {
         IRBindingDecorationLocation locations;
         uint32_t name_crc;
         std::string name;
+        uint32_t array_size;
         FORCEINLINE PipelineReflection::AccelerationStructureDesc ToPipelineDesc() const {
-            return {name_crc, 0, name};
+            return {name_crc, 0, name, array_size};
         }
     };
     struct CommandConstantDesc {

@@ -159,6 +159,7 @@ FORCEINLINE uint32_t RHIGetBasicParamAlignment (RHIBasicParamType type) {
 
 struct RHIParamStructInfo ;
 
+// TODO support arrays
 struct RHIParamInfo {
     std::string name;
     RHIParamType type;

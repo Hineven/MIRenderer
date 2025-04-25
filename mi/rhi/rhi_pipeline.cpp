@@ -77,9 +77,6 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
     if (!GatherShaderSlots.operator()<RHIPipelineResourceType::kUAV>(shader->GetUAVDesc(), uavs_)) return false;
     if (!GatherShaderSlots.operator()<RHIPipelineResourceType::kSRV>(shader->GetSRVDesc(), srvs_)) return false;
     if (!GatherShaderSlots.operator()<RHIPipelineResourceType::kSampler>(shader->GetSamplerDesc(), samplers_)) return false;
-    if (!GatherShaderSlots.operator()<RHIPipelineResourceType::kImmutableSampler>(
-            shader->GetImmutableSamplerDesc(), immutable_samplers_))
-        return false;
     if(!GatherShaderSlots.operator()<RHIPipelineResourceType::kAccelerationStructure>(
             shader->GetAccelerationStructureDesc(), acceleration_structures_))
         return false;
@@ -123,22 +120,8 @@ bool RHIPipeline::CheckNoOverlappingNamesAmongDifferentTypes() {
     return true;
 }
 
-void RHIPipeline::TryLocateAndStripBindlessTableUniformBuffer() {
-#define TO_STR_IMPL(x) #x
-#define STR(x) TO_STR_IMPL(x)
-    static auto bindless_table_name = STR(BINDLESS_TABLE_UNIFORM_BUFFER_NAME);
-    uint32_t bindless_table_name_crc = CRC32(bindless_table_name, strlen(bindless_table_name));
-    has_bindless_resources_ = false;
-    for(int i = 0; i < uniform_buffers_.size(); ++i) {
-        if(uniform_buffers_[i].name_crc == bindless_table_name_crc) {
-            has_bindless_resources_ = true;
-            mi_assert(uniform_buffers_[i].size % 4 == 0, "Bindless table size must be multiple of 4");
-            bindless_table_size_ = uniform_buffers_[i].size / 4;
-            // Strip the bindless table uniform buffer from the pipeline resources
-            uniform_buffers_.erase(uniform_buffers_.begin() + i);
-            return;
-        }
-    }
+void RHIPipeline::CheckAndSetHasBindlessResources() {
+
 
 }
 
@@ -152,7 +135,6 @@ void RHIPipeline::Reset() {
     acceleration_structures_.clear();
     command_constant_.clear();
     has_bindless_resources_ = false;
-    bindless_table_size_ = 0;
     is_valid_ = false;
     ResetRHI();
 }
@@ -185,9 +167,15 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     if(!CheckAndRemapShaderResources(desc.stages.task_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
 
+    has_bindless_resources_ = (desc.stages.vertex_shader && desc.stages.vertex_shader->HasBindlessResources())
+                            ||(desc.stages.fragment_shader && desc.stages.fragment_shader->HasBindlessResources())
+                            ||(desc.stages.geometry_shader && desc.stages.geometry_shader->HasBindlessResources())
+                            ||(desc.stages.mesh_shader && desc.stages.mesh_shader->HasBindlessResources())
+                            ||(desc.stages.task_shader && desc.stages.task_shader->HasBindlessResources());
+
     BuildPipelineResourceIndex();
 
-    TryLocateAndStripBindlessTableUniformBuffer();
+    // TryLocateAndStripBindlessTableUniformBuffer();
     depth_test_enable_ = desc.depth_stencil.depth_test_enable;
     vertex_inputs_    = desc.stages.vertex_shader->GetVertexInputDesc();
     fragment_outputs_ = desc.stages.fragment_shader->GetFragmentOutputDesc();
@@ -240,7 +228,7 @@ void RHIComputePipeline::Compile(mi::RHIShader *compute_shader) {
     if(!CheckAndRemapShaderResources(compute_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
     BuildPipelineResourceIndex();
-    TryLocateAndStripBindlessTableUniformBuffer();
+    has_bindless_resources_ = compute_shader->HasBindlessResources();
     if(!CompileRHI(compute_shader)) return;
     is_valid_ = true;
 }

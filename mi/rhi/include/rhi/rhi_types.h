@@ -170,30 +170,19 @@ enum class RHIPipelineResourceType {
 };
 
 // Resource types compatible with bindless design
-enum class RHIBindlessResourceType {
-    kUniformBuffer,
-    kStorageBuffer,
+enum class RHIBindlessResourceType : unsigned {
+    kReadOnlyStorageBuffer = 0,
     kSRV,
-    kUAV,
     kAccelerationStructure,
-    // TODO remove support for sampler
-    kSampler,
-    // Max, also the real binding number for immutable samplers.
-    kMaxAndImmSampler
+    kMax
 };
 
 FORCEINLINE RHIPipelineResourceType ToPipelineResourceType (RHIBindlessResourceType usage) {
     switch(usage) {
-        case RHIBindlessResourceType::kUniformBuffer:
-            return RHIPipelineResourceType::kUniformBuffer;
-        case RHIBindlessResourceType::kStorageBuffer:
+        case RHIBindlessResourceType::kReadOnlyStorageBuffer:
             return RHIPipelineResourceType::kStorageBuffer;
-        case RHIBindlessResourceType::kUAV:
-            return RHIPipelineResourceType::kUAV;
         case RHIBindlessResourceType::kSRV:
             return RHIPipelineResourceType::kSRV;
-        case RHIBindlessResourceType::kSampler:
-            return RHIPipelineResourceType::kSampler;
         case RHIBindlessResourceType::kAccelerationStructure:
             return RHIPipelineResourceType::kAccelerationStructure;
         default:
@@ -203,22 +192,14 @@ FORCEINLINE RHIPipelineResourceType ToPipelineResourceType (RHIBindlessResourceT
 
 FORCEINLINE RHIBindlessResourceType ToBindlessResourceType (RHIPipelineResourceType usage) {
     switch(usage) {
-        case RHIPipelineResourceType::kUniformBuffer:
-            return RHIBindlessResourceType::kUniformBuffer;
         case RHIPipelineResourceType::kStorageBuffer:
-            return RHIBindlessResourceType::kStorageBuffer;
-        case RHIPipelineResourceType::kUAV:
-            return RHIBindlessResourceType::kUAV;
+            return RHIBindlessResourceType::kReadOnlyStorageBuffer;
         case RHIPipelineResourceType::kSRV:
             return RHIBindlessResourceType::kSRV;
-        case RHIPipelineResourceType::kSampler:
-            return RHIBindlessResourceType::kSampler;
-        case RHIPipelineResourceType::kImmutableSampler:
-            return RHIBindlessResourceType::kSampler;
         case RHIPipelineResourceType::kAccelerationStructure:
             return RHIBindlessResourceType::kAccelerationStructure;
         default:
-            return RHIBindlessResourceType::kMaxAndImmSampler;
+            return RHIBindlessResourceType::kMax;
     }
 }
 

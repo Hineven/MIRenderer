@@ -37,17 +37,19 @@ public:
         return ref_count_;
     }
 
-    FORCEINLINE void CommitChanges (uint32_t offset = 0, int size = -1) const ;
+    // Update the slot with current set resource
+    // This is costly. Better batch commits and call the bindless manager manually if you
+    // have many slots to update.
+    FORCEINLINE void Commit () const ;
 protected:
     friend class RHIBindlessManager;
 
-    RHIResource * Get_Impl (uint32_t offset) ;
-    void Set_Impl (RHIResource * resource, uint32_t offset) ;
-    void Commit_Impl (uint32_t offset) ;
+    RHIResource * Get_Impl () ;
+    void Set_Impl (RHIResource * resource) ;
+    void Commit_Impl () ;
 
     RHIBindlessResourceType type_;
     uint32_t slot_;
-    uint32_t num_slots_;
 
     int ref_count_;
 };
@@ -64,17 +66,15 @@ class RHIBindlessSlotKeeper : public RHIBindlessSlotKeeperBase {
 public:
     // Get the resource handle from the slot(s)
     // @param offset (slot + offset) = real_slot. Can not access slots that are not claimed.
-    T * Get (uint32_t offset = 0) {
-        mi_assert(offset < num_slots_, "Offset exceeds the number of slots");
-        return (T*) Get_Impl(offset);
+    T * Get () {
+        return (T*) Get_Impl();
     }
-    void Set (T * resource, uint32_t offset = 0) {
-        mi_assert(offset < num_slots_, "Offset exceeds the number of slots");
-        Set_Impl((RHIResource*)resource, offset);
+    void Set (T * resource) {
+        Set_Impl((RHIResource*)resource);
     }
-    void SetAndCommit (T * resource, uint32_t offset = 0) {
-        Set(resource, offset);
-        Commit_Impl(offset);
+    void SetAndCommit (T * resource) {
+        Set(resource);
+        Commit_Impl();
     }
 };
 
@@ -83,23 +83,11 @@ class RHIBindlessSlotKeeper<RHIBuffer> : public RHIBindlessSlotKeeperBase {
 public:
     // Get the resource handle from the slot(s)
     // @param offset (slot + offset) = real_slot. Can not access slots that are not claimed.
-    RHIBuffer * Get (uint32_t offset = 0) {
-        mi_assert(offset < (int)num_slots_, "Offset exceeds the number of slots");
-        return (RHIBuffer*) Get_Impl(offset);
+    RHIBuffer * Get () {
+        return (RHIBuffer*) Get_Impl();
     }
-    void Set (RHIBuffer * resource, uint32_t offset = 0) ;
-    void SetAndCommit (RHIBuffer * resource, uint32_t offset = 0) ;
+    void Set (RHIBuffer * resource) ;
+    void SetAndCommit (RHIBuffer * resource) ;
 };
-
-template<>
-class RHIBindlessSlotKeeper<RHIBufferSpan> : public RHIBindlessSlotKeeperBase {
-public:
-    // Get the resource handle from the slot(s)
-    // @param offset (slot + offset) = real_slot.
-    RHIBufferSpan Get (uint32_t offset = 0) ;
-    void Set (RHIBufferSpan resource, uint32_t offset = 0) ;
-    void SetAndCommit (RHIBufferSpan resource, uint32_t offset = 0) ;
-};
-
 MI_NAMESPACE_END
 #endif //MI_RHI_BINDLESSKEEPER_H
