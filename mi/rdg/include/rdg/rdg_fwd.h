@@ -53,7 +53,7 @@ enum class RDGPassType {
 
 enum class RDGTextureUsageType : uint32_t {
     kNone = 0,
-    // No usage specified, barrier all operations and discard the contents
+    // No usage specified, barrier all previous operations and discard the contents
     kDontCare,
     kTransferDst,
     kTransferSrc,

@@ -58,6 +58,8 @@ class RHIAccelerationStructure;
 
 class RHICommandQueueGraphics;
 class RHIBindlessManager;
+template<typename T>
+class RHIBindlessSlotKeeper;
 
 MI_NAMESPACE_END
 

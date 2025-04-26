@@ -60,18 +60,38 @@ struct RHIPackedBindlessSlot {
     }
 };
 
+template<typename T>
+struct TGetBindlessResourceType {
+    static constexpr RHIBindlessResourceType value = RHIBindlessResourceType::kMax;
+};
+template<>
+struct TGetBindlessResourceType<RHIBuffer> {
+    static constexpr RHIBindlessResourceType value = RHIBindlessResourceType::kReadOnlyStorageBuffer;
+};
+template<>
+struct TGetBindlessResourceType<RHITexture> {
+    static constexpr RHIBindlessResourceType value = RHIBindlessResourceType::kSRV;
+};
+template<>
+struct TGetBindlessResourceType<RHIAccelerationStructure> {
+    static constexpr RHIBindlessResourceType value = RHIBindlessResourceType::kAccelerationStructure;
+};
+
 // A manager allocating indices for each kind of resource every frame
 class RHIBindlessManager {
 protected:
     RHIBindlessManager() ;
 public:
+    friend class RHI;
 
     virtual ~RHIBindlessManager() = default;
 
     template<typename T>
-    RHIBindlessSlotRef<T> AllocateResourceSlot(const RHIBindlessResourceDesc &desc) {
+    RHIBindlessSlotRef<T> AllocateResourceSlot() {
         auto slot = (RHIBindlessSlotKeeperBase*)new RHIBindlessSlotKeeper<T>();
-        AllocateResourceSlot(desc, slot);
+        auto type = TGetBindlessResourceType<T>::value;
+        static_assert(type != RHIBindlessResourceType::kMax, "Invalid bindless resource type");
+        AllocateResourceSlot(RHIBindlessResourceDesc{type}, slot);
         auto ptr = (RHIBindlessSlotKeeper<T>*)slot;
         return RHIBindlessSlotRef<T>(ptr);
     }
@@ -89,6 +109,9 @@ public:
     // This is not performant. For convenience only.
     void CommitResourceSlotUpdate (RHIBindlessResourceType type, std::span<const uint32_t> slot_indices) ;
 
+    // Called on RHI frame swapping. It's just the time for bindless descriptor set swapping.
+    virtual void SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) = 0;
+
 protected:
     friend class RHIBindlessSlotKeeperBase;
     template<typename T>
@@ -99,8 +122,6 @@ protected:
     void FreeResourceSlot (RHIBindlessSlotKeeperBase * slot) ;
     void FreeResourceSlot_Delayed (RHIBindlessSlotKeeperBase * slot) ;
 
-    // Called on RHI frame swapping. It's just the time for bindless descriptor set swapping.
-    virtual void SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) = 0;
     // Implemented by the RHI backend
     virtual void CommitResourceSlotUpdateRHI (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots) = 0;
     virtual void FreeResourceSlotRHI (RHIBindlessResourceType type, uint32_t slot, uint32_t num_slots) = 0;

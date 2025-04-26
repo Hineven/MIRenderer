@@ -7,18 +7,24 @@
 
 #include <renderer/mi_renderer.h>
 
-#include "core/infra.h"
+#include <rhi/rhi_bindless.h>
 #include "renderer/mi_resource_allocator.h"
+#include "rhi/rhi.h"
+#include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 BindlessRendererTexture::BindlessRendererTexture(RenderResourceAllocator *allocator) {
     allocator_ = allocator;
     index_ = allocator->AllocateTextureIndex();
+    keeper_ = RHI::Get().GetBindlessManager().AllocateResourceSlot<RHITexture>();
 }
 
 
 void BindlessRendererTexture::Set(RHITexture * texture) {
     assert(index_ != UINT32_MAX && allocator_);
-    allocator_->SetTexture(index_, texture);
+    allocator_->OnTextureChange(index_, texture);
+    keeper_->Set(texture);
+    // TODO support batched commit?
+    keeper_->Commit();
 }
 
 BindlessRendererTexture::~BindlessRendererTexture() {

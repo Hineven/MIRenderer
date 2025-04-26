@@ -44,7 +44,26 @@ void Renderer::Init() {
 }
 
 void Renderer::UpdateView(RendererView *view) {
-    view->output_ = RDGTexture::Import(view->output_->GetRHI());
+    bool should_initialize = false;
+    if (!view->persistent_data_->initialized) {
+        should_initialize = true;
+    }
+
+    view->output = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
+
+    if (should_initialize) {
+        view->persistent_data_->initialized = true;
+    }
+}
+
+void Renderer::PostUpdateView (RendererView *view) {
+    view->persistent_data_->prev_camera = view->camera_;
+    view->persistent_data_->prev_G_albedo = view->G_albedo_;
+    view->persistent_data_->prev_G_normal = view->G_normal_;
+    view->persistent_data_->prev_G_roughness = view->G_roughness_;
+    view->persistent_data_->prev_G_depth = view->G_depth_;
+
+    view->persistent_data_->frame_index_ ++;
 }
 
 

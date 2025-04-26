@@ -3,6 +3,7 @@ set(SOURCES
         mi_geometry.cpp
         mi_renderer.cpp
         mi_static_mesh.cpp
+        mi_texture.cpp
         mi_material.cpp
         mi_renderable.cpp
         mi_world.cpp

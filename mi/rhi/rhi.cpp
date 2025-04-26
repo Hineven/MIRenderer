@@ -7,7 +7,7 @@
 #include "rhi/rhi.h"
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi_cmd.h"
-#include "rhi_bindless.h"
+#include "include/rhi/rhi_bindless.h"
 #include "rhi/rhi_texture.h"
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_thread.h"
@@ -50,9 +50,10 @@ std::future<void> RHI::AdvanceFrame(RHISyncPoint * sync_point) {
     // Swap allocators after the termination of this frame. No new commands shall be allocated with the old allocators.
     // The swapped out memory will last for about 1 frame more and silently be recycled
     queue.SwapAllocators();
-    auto lambda = []() {
+    auto slots_to_free = RHI::Get().GetBindlessManager().PrepareDelayedSlotsForRHIFree();
+    auto lambda = [slots_to_free]() {
         // Swap the bindless descriptor set after the command buffer is submitted
-        RHI::Get().GetBindlessManager().SwapSets_RHIThread();
+        RHI::Get().GetBindlessManager().SwapSets_RHIThread(slots_to_free);
         // Recycle resources that are pending for deletion
         RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread();
         // Increment the frame index kept by RHI thread.

@@ -5,7 +5,7 @@
  */
 #include <span>
 #include <ranges>
-#include "rhi_bindless.h"
+#include "include/rhi/rhi_bindless.h"
 #include "core/infra.h"
 #include "core/constants.h"
 #include "rhi/rhi.h"

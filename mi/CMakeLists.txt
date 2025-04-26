@@ -6,3 +6,5 @@ add_subdirectory(rhi)
 add_subdirectory(rdg)
 # renderer itself
 add_subdirectory(renderer)
+# utils
+add_subdirectory(util)

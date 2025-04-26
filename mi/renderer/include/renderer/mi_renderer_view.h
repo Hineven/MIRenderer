@@ -15,6 +15,10 @@ MI_NAMESPACE_BEGIN
 
 // The data kept across frames for a view.
 struct RendererViewPersistentData {
+    // If the view is initialized. If not, initialization will be done
+    // upon Renderer::UpdateView()
+    bool initialized;
+
     TRef<RDGTexture> prev_G_depth;
     TRef<RDGTexture> prev_G_albedo;
     TRef<RDGTexture> prev_G_normal;
@@ -22,15 +26,13 @@ struct RendererViewPersistentData {
 
     Camera prev_camera;
     uint32_t view_index {};
-
-    // Imported back buffer
-    TRef<RDGTexture> output;
+    uint32_t frame_index_ {};
 };
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
 
-    uint32_t frame_index_ {};
+
 
     Camera camera_;
 
@@ -45,6 +47,9 @@ struct RendererView {
     TRef<RDGTexture> G_albedo_;
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_roughness_;
+
+    // Imported back buffer for current frame
+    TRef<RDGTexture> output;
 
     RendererViewPersistentData * persistent_data_;
 };

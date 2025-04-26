@@ -8,7 +8,7 @@
 #define MIRENDERERDEV_VK_BINDLESS_H
 
 #include "vk_rhi.h"
-#include "../rhi_bindless.h"
+#include "../include/rhi/rhi_bindless.h"
 
 MI_NAMESPACE_BEGIN
 

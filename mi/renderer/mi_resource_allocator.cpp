@@ -7,10 +7,11 @@
 
 #include <rhi/rhi.h>
 
+#include "../rhi/include/rhi/rhi_bindless.h"
 #include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
-    GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
+GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
     heap->Free(buffer);
 }
 
@@ -115,7 +116,7 @@ void SimpleGPUBufferHeap::Free (RHIBufferSpan allocation) {
     }
 }
 
-void RenderResourceAllocator::SetTexture(uint32_t index, RHITexture *texture) {
+void RenderResourceAllocator::OnTextureChange(uint32_t index, RHITexture *texture) {
     textures_[index] = texture;
 }
 

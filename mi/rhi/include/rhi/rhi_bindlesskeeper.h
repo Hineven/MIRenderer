@@ -11,7 +11,7 @@
 #include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
 
-class RHIBindlessSlotKeeperBase : public NonCopyable, public NonMovable {
+class RHIBindlessSlotKeeperBase : public RefCounted<false>, public NonMovable {
 protected:
     RHIBindlessSlotKeeperBase ();
 public:
@@ -19,23 +19,6 @@ public:
 
     FORCEINLINE RHIBindlessResourceType GetType () const { return type_; }
     FORCEINLINE uint32_t GetSlot () const { return slot_; }
-
-    FORCEINLINE uint32_t IncRef() {
-        return ++ref_count_;
-    }
-
-    FORCEINLINE uint32_t DecRef() {
-        ref_count_--;
-        if (ref_count_ == 0) {
-            // Self destruct
-            delete this;
-        }
-        return ref_count_;
-    }
-
-    FORCEINLINE uint32_t GetRefCount() const {
-        return ref_count_;
-    }
 
     // Update the slot with current set resource
     // This is costly. Better batch commits and call the bindless manager manually if you
@@ -50,8 +33,6 @@ protected:
 
     RHIBindlessResourceType type_;
     uint32_t slot_;
-
-    int ref_count_;
 };
 
 template<typename T>

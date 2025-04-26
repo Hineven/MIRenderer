@@ -7,7 +7,7 @@
 #include "rhi/rhi.h"
 #include "rhi/rhi_resource.h"
 #include "core/util/lockfree.h"
-#include "rhi_bindless.h"
+#include "include/rhi/rhi_bindless.h"
 
 MI_NAMESPACE_BEGIN
 

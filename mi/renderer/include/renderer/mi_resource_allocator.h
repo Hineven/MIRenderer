@@ -14,6 +14,7 @@
 
 #include "core/base.h"
 #include "renderer/mi_renderer_fwd.h"
+#include "rhi/rhi_bindlesskeeper.h"
 #include "rhi/rhi_desc.h"
 
 MI_NAMESPACE_BEGIN
@@ -90,7 +91,8 @@ public:
 
 protected:
 
-    void SetTexture (uint32_t index, RHITexture * texture);
+    // Called by BindlessRendererTexture only to notify the allocator that a texture is changed
+    void OnTextureChange (uint32_t index, RHITexture * texture);
 
     std::vector<TRef<RHITexture>> textures_;
     std::vector<TRef<Material>> materials_;
@@ -118,12 +120,12 @@ protected:
         }
     }
     FORCEINLINE uint32_t AllocateTextureIndex () {
+        int index = UINT32_MAX;
         if(free_texture_slots_.empty()) {
-            return top_texture_slot_++;
+            index = top_texture_slot_++;
         } else {
-            int index = free_texture_slots_.top();
+            index = free_texture_slots_.top();
             free_texture_slots_.pop();
-            return index;
         }
     }
 

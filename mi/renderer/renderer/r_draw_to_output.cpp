@@ -8,6 +8,7 @@
 #include <rdg/rdg_shader.h>
 
 #include "renderer/mi_renderer.h"
+#include "renderer/mi_renderer_view.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -35,7 +36,7 @@ void Renderer::Render_DrawToOutput(RendererView * view, RenderGraphBuilder & bui
     auto pass = builder.Allocate<DrawToOutputPass>();
     auto params = builder.Allocate<DrawToOutputShader::ShaderParameters>();
     {
-        pass->Output = view->output_.Raw();
+        pass->Output = view->output.Raw();
         params->Pass = pass;
         params->InTexture = texture;
         params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
