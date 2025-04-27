@@ -207,7 +207,7 @@ TEST(RHITest, RHITriangle) {
                                     false,
                                     RHIBlendFactorType::kSrcAlpha,
                                     RHIBlendFactorType::kOneMinusSrcAlpha,
-                                    RHIBlendFactorType::kOne,
+                                    RHIBlendFactorType ::kOne,
                                     RHIBlendFactorType::kOne,
                                     static_cast<RHIBlendOpType>(RHIBlendOpType::kBlendAdd),
                                     static_cast<RHIBlendOpType>(RHIBlendOpType::kBlendAdd)

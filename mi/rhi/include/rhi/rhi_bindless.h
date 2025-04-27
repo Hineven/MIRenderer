@@ -139,6 +139,9 @@ protected:
     std::set<RHIPackedBindlessSlot> delayed_free_slots_;
     // Execute on render thread.
     std::span<RHIPackedBindlessSlot> PrepareDelayedSlotsForRHIFree();
+
+    // Called before the destruction of RHI. Release all handles we hold.
+    void PreDestruction ();
 };
 MI_NAMESPACE_END
 

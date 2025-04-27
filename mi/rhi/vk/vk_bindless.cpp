@@ -183,7 +183,8 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
             auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
             auto buffer = (VulkanBuffer*)(ref.Raw());
             updates[i] = vk::DescriptorBufferInfo {
-                buffer->GetBuffer(),
+                buffer ? buffer->GetBuffer() : nullptr,
+                0,
                 VK_WHOLE_SIZE
             };
         }
@@ -198,7 +199,7 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
             vk::ImageLayout ready_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
             updates[i] = vk::DescriptorImageInfo {
                 nullptr,
-                texture->GetImageView(),
+                texture ? texture->GetImageView() : nullptr,
                 ready_layout
             };
         }
@@ -209,7 +210,7 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
         for(uint32_t i = 0; i < num_slots; i++) {
             auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
             auto as = (VulkanAccelerationStructure*)(ref.Raw());
-            as_ptrs[i] = as->GetAccelerationStructure();
+            as_ptrs[i] = as ? as->GetAccelerationStructure() : nullptr;
         }
         updates->setAccelerationStructureCount(num_slots);
         updates->setPAccelerationStructures(as_ptrs);

@@ -157,6 +157,17 @@ std::span<RHIPackedBindlessSlot> RHIBindlessManager::PrepareDelayedSlotsForRHIFr
     return dst_span; // NOLINT
 }
 
+void RHIBindlessManager::PreDestruction() {
+    for (auto & chan : bindless_channels_) {
+        for (auto & e : chan.resource_refs) {
+            if (e && e->GetRefCount() != 1) {
+                MI_WARN("BindlessManager: Resource {} is not released outside of the bindless manager "
+                        "before RHI destruction", (void*)e.Raw());
+            }
+            e.SafeRelease();
+        }
+    }
+}
 
 
 

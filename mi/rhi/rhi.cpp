@@ -150,6 +150,8 @@ void RHI::PreDestruction () {
     global_samplers_.linear_wrap->DecRef();
     // Release command queues
     graphics_command_queue_.PreDestruction();
+    // Tell the bindless manager to release all resource handles it holds
+    bindless_manager_->PreDestruction();
 }
 
 RHI::RHI() {
