@@ -926,17 +926,6 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
             buf = RHIBufferSpan{};
         // Initialize all bind point states
         for(auto [i, point] : std::views::enumerate(points)) {
-            auto alloc = rhi->GetVmaAllocator().createBuffer(
-                    vk::BufferCreateInfo{
-                            {},
-                            C::kRHIMaxBindlessTableSize,
-                            vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT,
-                            vk::SharingMode::eExclusive
-                    }, VmaAllocationCreateInfo{
-                            VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                            VMA_MEMORY_USAGE_CPU_TO_GPU
-                    }
-            );
             point.bound_private_descriptor_set = nullptr;
             point.bound_pipeline = nullptr;
             point.parameter_table = {};
