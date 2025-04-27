@@ -28,6 +28,13 @@ public:
 
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
+
+    FORCEINLINE static TRef<StaticMesh> Create (Transform transform = {}) {
+        auto mesh = TRef(new StaticMesh());
+        mesh->SetTransform(transform);
+        return std::move(mesh);
+    }
+
 protected:
 
     bool dirty_ {true};

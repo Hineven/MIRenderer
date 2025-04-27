@@ -37,18 +37,8 @@ public:
 
     FORCEINLINE RHIBufferDesc GetDesc () const {return desc_;}
 
-    // View it as a storage buffer or uniform buffer.
-    void ConvertToBindless (bool read_only) ;
-
-    FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadonly() { return bindless_slot_readonly_; }
-    FORCEINLINE RHIBindlessSlotRef<RHIBuffer> GetBindlessSlotReadwrite() { return bindless_slot_readwrite_; }
-
 protected:
     RHIBufferDesc desc_;
-
-    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readonly_ {};
-
-    RHIBindlessSlotRef<RHIBuffer> bindless_slot_readwrite_ {};
     bool is_mapped_ {false};
 };
 

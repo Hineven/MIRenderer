@@ -57,6 +57,8 @@ public:
     }
     void *GetAPIHandle() const override;
 
+    void SetName(const std::string &name) override;
+
     friend class VulkanRHI;
 protected:
     std::binary_semaphore submission_sem_ {0};

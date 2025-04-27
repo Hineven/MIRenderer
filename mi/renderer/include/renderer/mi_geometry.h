@@ -64,10 +64,13 @@ protected:
 public:
     friend class StaticMesh;
     static TRef<Geometry> CreateFromVertices (
-        std::span<DefaultStaticMeshVertex> vertices,
+        std::span<DefaultStaticMeshVertex> vertices = {},
         std::span<uint32_t> indices = {}
     ) ;
+    FORCEINLINE static TRef<Geometry> Create () {return CreateFromVertices();}
 
+    FORCEINLINE bool Empty () const {return vertices_.empty();}
+    
     FORCEINLINE uint32_t GetVertexCount () const {return (uint32_t)vertices_.size();}
     FORCEINLINE uint32_t GetIndexCount () const {return (uint32_t)indices_.size();}
 
@@ -85,6 +88,8 @@ public:
     FORCEINLINE bool IsDirty () const {
         return dirty_;
     }
+
+    void SetName (std::string_view name);
 
     void CreateOnDevice (RenderResourceAllocator * alloc);
     // Update on device. This function synchronizes with RHI thread directly.

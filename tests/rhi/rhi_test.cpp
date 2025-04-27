@@ -425,6 +425,85 @@ TEST(RHITest, RHITriangle) {
     }
 }
 
+TEST(PixelFormatTest, FormatFunctions) {
+    using namespace mi;
+    
+    // 测试正常输入的情况
+    // GetPixelFormatDataType
+    EXPECT_EQ(PixelFormatDataType::kUNORM, GetPixelFormatDataType(PixelFormatType::kR8_UNORM));
+    EXPECT_EQ(PixelFormatDataType::kSRGB, GetPixelFormatDataType(PixelFormatType::kR8G8B8A8_SRGB));
+    EXPECT_EQ(PixelFormatDataType::kFLOAT, GetPixelFormatDataType(PixelFormatType::kR32_FLOAT));
+    EXPECT_EQ(PixelFormatDataType::kUINT, GetPixelFormatDataType(PixelFormatType::kR32_UINT));
+    
+    // GetPixelFormatNumBytesPerChannel
+    EXPECT_EQ(1u, GetPixelFormatNumBytesPerChannel(PixelFormatType::kR8_UNORM));
+    EXPECT_EQ(2u, GetPixelFormatNumBytesPerChannel(PixelFormatType::kR16G16_FLOAT));
+    EXPECT_EQ(4u, GetPixelFormatNumBytesPerChannel(PixelFormatType::kR32_FLOAT));
+    
+    // GetPixelFormatNumChannels
+    EXPECT_EQ(1u, GetPixelFormatNumChannels(PixelFormatType::kR8_UNORM));
+    EXPECT_EQ(2u, GetPixelFormatNumChannels(PixelFormatType::kR8G8_UNORM));
+    EXPECT_EQ(3u, GetPixelFormatNumChannels(PixelFormatType::kR32G32B32_FLOAT));
+    EXPECT_EQ(4u, GetPixelFormatNumChannels(PixelFormatType::kR8G8B8A8_UNORM));
+    
+    // IsDepthStencilPixelFormat
+    EXPECT_TRUE(IsDepthStencilPixelFormat(PixelFormatType::kD32_FLOAT));
+    EXPECT_FALSE(IsDepthStencilPixelFormat(PixelFormatType::kR8G8B8A8_UNORM));
+    
+    // GetPixelFormatName
+    EXPECT_STREQ("R8_UNORM", GetPixelFormatName(PixelFormatType::kR8_UNORM));
+    EXPECT_STREQ("R32G32B32A32_FLOAT", GetPixelFormatName(PixelFormatType::kR32G32B32A32_FLOAT));
+    
+    // ToString
+    EXPECT_EQ(std::string("R16G16B16A16_FLOAT"), ToString(PixelFormatType::kR16G16B16A16_FLOAT));
+    
+    // IsFloatPixelFormat
+    EXPECT_TRUE(IsFloatPixelFormat(PixelFormatType::kR32_FLOAT));
+    EXPECT_TRUE(IsFloatPixelFormat(PixelFormatType::kR8G8B8A8_UNORM)); // UNORM也被视为float
+    EXPECT_FALSE(IsFloatPixelFormat(PixelFormatType::kR32_UINT));
+    
+    // IsUIntPixelFormat
+    EXPECT_TRUE(IsUIntPixelFormat(PixelFormatType::kR32_UINT));
+    EXPECT_FALSE(IsUIntPixelFormat(PixelFormatType::kR32_FLOAT));
+    
+    // IsPixelFormat4ComponentFloat
+    EXPECT_TRUE(IsPixelFormat4ComponentFloat(PixelFormatType::kR32G32B32A32_FLOAT));
+    EXPECT_TRUE(IsPixelFormat4ComponentFloat(PixelFormatType::kR8G8B8A8_UNORM));
+    EXPECT_FALSE(IsPixelFormat4ComponentFloat(PixelFormatType::kR8G8_UNORM)); // 只有2个组件
+    EXPECT_FALSE(IsPixelFormat4ComponentFloat(PixelFormatType::kR32G32B32A32_UINT)); // 不是float类型
+    
+    // GetPixelFormatBytesPerPixel
+    EXPECT_EQ(1u, GetPixelFormatBytesPerPixel(PixelFormatType::kR8_UNORM)); // 1通道 × 1字节
+    EXPECT_EQ(4u, GetPixelFormatBytesPerPixel(PixelFormatType::kR8G8B8A8_UNORM)); // 4通道 × 1字节
+    EXPECT_EQ(8u, GetPixelFormatBytesPerPixel(PixelFormatType::kR16G16B16A16_FLOAT)); // 4通道 × 2字节
+    EXPECT_EQ(16u, GetPixelFormatBytesPerPixel(PixelFormatType::kR32G32B32A32_FLOAT)); // 4通道 × 4字节
+    
+    // 测试异常情况下的断言（这些测试会触发断言，仅在调试模式下有效）
+#ifndef NDEBUG
+    // 如果在调试模式下，可以测试断言是否会触发
+    // 注意：这些测试会导致程序终止，所以需要在条件编译下执行
+    
+    // 以下代码仅作示例，实际上会导致程序崩溃，因此被注释掉
+    // 要测试断言，可以使用Google Test的EXPECT_DEATH或类似宏
+    
+    // 测试无效的PixelFormatType输入
+    EXPECT_DEATH({
+        GetPixelFormatDataType(static_cast<PixelFormatType>(999));
+    }, "");
+    
+    EXPECT_DEATH({
+        GetPixelFormatNumBytesPerChannel(static_cast<PixelFormatType>(999));
+    }, "");
+    
+    EXPECT_DEATH({
+        GetPixelFormatNumChannels(static_cast<PixelFormatType>(999));
+    }, "");
+    
+    EXPECT_DEATH({
+        GetPixelFormatName(static_cast<PixelFormatType>(999));
+    }, "");
+#endif
+}
 
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);

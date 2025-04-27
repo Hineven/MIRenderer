@@ -111,8 +111,10 @@ void RHI::InitializeSingleton (RHIType type, const void * extra) {
             mi_assert(false, "Unknown RHI type");
     }
     // Wait for the RHI thread to start
-    // TODO this sucks
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    auto fut = EnqueueRHIThreadTask([] {
+        MI_INFO("First task from the RHI thread.");
+    });
+    fut.wait();
     GDynamicRHI->PostInitialize();
 }
 
@@ -146,6 +148,8 @@ bool RHI::HasSingleton() {
 void RHI::PreDestruction () {
     // Release samplers
     global_samplers_.linear_wrap->DecRef();
+    // Release command queues
+    graphics_command_queue_.PreDestruction();
 }
 
 RHI::RHI() {

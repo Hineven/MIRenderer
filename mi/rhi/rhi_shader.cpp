@@ -73,7 +73,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
                 if (type.array.size() > 0) {
                     if (type.array.size() != 1 || !type.array_size_literal[0]) {
                         MI_WARN("Shader {}: Resource {} is multi-dimensional array ({} dimensions) or its size is not a literal."
-                                "We only support 1 dimension array.", GetEntryName(), desc.name);
+                                "We only support 1 dimension array.", GetEntryName(), desc.name, type.array.size());
                         continue ;
                     }
                     desc.array_size = type.array[0];
@@ -180,7 +180,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             if (type.array.size() > 0) {
                 if (type.array.size() != 1 || !type.array_size_literal[0]) {
                     MI_WARN("Shader {}: UB {} is multi-dimensional array ({} dimensions) or its size is not a literal."
-                            "We only support 1 dimension array.", GetEntryName(), desc.name);
+                            "We only support 1 dimension array.", GetEntryName(), desc.name, type.array.size());
                     continue ;
                 }
                 desc.array_size = type.array[0];
@@ -207,7 +207,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             if (!type.array.empty()) {
                 if (type.array.size() != 1 || !type.array_size_literal[0]) {
                     MI_WARN("Shader {}: Storage buffer {} is multi-dimensional array ({} dimensions) or its size is not a literal."
-                            "We only support 1 dimension array.", GetEntryName(), desc.name);
+                            "We only support 1 dimension array.", GetEntryName(), desc.name, type.array.size());
                     continue ;
                 }
                 desc.array_size = type.array[0];

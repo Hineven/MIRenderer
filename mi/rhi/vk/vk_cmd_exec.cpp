@@ -387,7 +387,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         vk::ImageMemoryBarrier image_barrier_x {
             vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
             vk::AccessFlagBits::eTransferRead,
-            GetVulkanImageLayout(backbuffer->GetLayout()),
+            GetVulkanImageLayout(backbuffer->GetLayout_RHIThread()),
             vk::ImageLayout::eTransferSrcOptimal,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             ((VulkanTexture*)backbuffer)->GetImage(),
@@ -979,11 +979,16 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
     }
 }
 
+void VulkanCommandExecutor::CommandQueueState::BindPoint::Destroy() {
+    // ...
+}
+
+
 void VulkanCommandExecutor::CommandQueueState::Destroy() {
     assert(IsRHIThread());
     auto rhi = GetVulkanRHI();
     for(auto & point : points) {
-        // ...
+        point.Destroy();
     }
     CloseCmd();
     rhi->GetDevice().destroyDescriptorPool(descriptor_pool);

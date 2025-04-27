@@ -491,21 +491,15 @@ FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIPipelineResourceType 
 
 FORCEINLINE RHIBindlessResourceType FromVulkanDescriptorType (vk::DescriptorType type) {
     switch (type) {
-        case vk::DescriptorType::eUniformBuffer:
-            return RHIBindlessResourceType::kUniformBuffer;
         case vk::DescriptorType::eStorageBuffer:
-            return RHIBindlessResourceType::kStorageBuffer;
-        case vk::DescriptorType::eStorageImage:
-            return RHIBindlessResourceType::kUAV;
+            return RHIBindlessResourceType::kReadOnlyStorageBuffer;
         case vk::DescriptorType::eSampledImage:
             return RHIBindlessResourceType::kSRV;
-        case vk::DescriptorType::eSampler:
-            return RHIBindlessResourceType::kSampler;
         case vk::DescriptorType::eAccelerationStructureKHR:
             return RHIBindlessResourceType::kAccelerationStructure;
         default:
             mi_assert(false, "Invalid pipeline resource type");
-            return RHIBindlessResourceType::kMaxAndImmSampler;
+            return RHIBindlessResourceType::kMax;
     }
 }
 
@@ -593,21 +587,15 @@ FORCEINLINE vk::PipelineStageFlags GetVulkanPipelineStageFlags (RHIPipelineStage
 
 FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIBindlessResourceType type) {
     switch (type) {
-        case RHIBindlessResourceType::kUniformBuffer:
-            return vk::DescriptorType::eUniformBuffer;
-        case RHIBindlessResourceType::kStorageBuffer:
+        case RHIBindlessResourceType::kReadOnlyStorageBuffer:
             return vk::DescriptorType::eStorageBuffer;
-        case RHIBindlessResourceType::kUAV:
-            return vk::DescriptorType::eStorageImage;
         case RHIBindlessResourceType::kSRV:
             return vk::DescriptorType::eSampledImage;
-        case RHIBindlessResourceType::kSampler:
-            return vk::DescriptorType::eSampler;
         case RHIBindlessResourceType::kAccelerationStructure:
             return vk::DescriptorType::eAccelerationStructureKHR;
         default:
             mi_assert(false, "Invalid pipeline resource type");
-            return vk::DescriptorType::eUniformBuffer;
+            return {};
     }
 }
 

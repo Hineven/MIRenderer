@@ -1,14 +1,15 @@
 set(SOURCES
         mi_resource_allocator.cpp
-        mi_geometry.cpp
-        mi_renderer.cpp
-        mi_static_mesh.cpp
         mi_texture.cpp
         mi_material.cpp
+        mi_transform.cpp
+        mi_geometry.cpp
+        mi_static_mesh.cpp
         mi_renderable.cpp
         mi_world.cpp
-        mi_helpers.cpp
         mi_renderer_view.cpp
+        mi_renderer.cpp
+        mi_helpers.cpp
         # Implementing the renderer
         renderer/r_draw_to_output.cpp
 )

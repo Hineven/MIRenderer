@@ -1,5 +1,6 @@
 set(SOURCES
         gltf_loader.cpp
+        gltf_loader_image.cpp
 )
 
 add_library(util ${SOURCES})

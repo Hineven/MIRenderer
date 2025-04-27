@@ -285,20 +285,6 @@ public:
         return *this;
     }
 
-//    template<CReferenceCounted MoveReferencedType>
-//    TRef& operator=(TRef<MoveReferencedType>&& InPtr)
-//    {
-//        // InPtr is a different type (or we would have called the other operator), so we need not test &InPtr != this
-//        ReferencedType* OldReference = ptr_;
-//        ptr_ = InPtr.ptr_;
-//        InPtr.ptr_ = nullptr;
-//        if (OldReference)
-//        {
-//            OldReference->DecRef();
-//        }
-//        return *this;
-//    }
-
     FORCEINLINE ReferencedType* operator->() const
     {
         return ptr_;
@@ -316,6 +302,12 @@ public:
 //        *this = nullptr;
 //        return &ptr_;
 //    }
+
+    FORCEINLINE ReferencedType & operator*() const
+    {
+        assert(ptr_ != nullptr && "Dereferencing a null pointer");
+        return *ptr_; // NOLINT
+    }
 
     FORCEINLINE ReferencedType* Raw () const
     {

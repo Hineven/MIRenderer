@@ -37,35 +37,18 @@ public:
     FORCEINLINE uint32_t GetWidth() const { return desc_.dimensions.width; }
     FORCEINLINE uint32_t GetHeight() const { return desc_.dimensions.height; }
     FORCEINLINE uint32_t GetDepth() const { return desc_.dimensions.depth; }
-    FORCEINLINE RHITextureLayoutType const GetLayout() const { return layout_; }
+    FORCEINLINE RHITextureLayoutType const GetLayout_RHIThread () const { return layout_; }
 
     FORCEINLINE RHITextureDesc GetDesc() const { return desc_; }
     FORCEINLINE size_t GetSize () const { return size_; }
 
-    // Convert this texture to a bindless texture
-    // If optimal_access is true, the texture will always be in optimal layout when accessed.
-    void ConvertToBindless (bool optimal_access) ;
-
-    // Returns true if the texture is bindless and should always be in optimal
-    // layout when accessed. (And you should manually take care of layout transitions.)
-    // Usually read-only atlas textures should enable this and transit to shader
-    // readonly optimal.
-    FORCEINLINE bool IsBindlessUseOptimalAccess () {return is_bindless_optimal_accessed_;}
-
-    FORCEINLINE RHIBindlessSlotRef<RHITexture> GetBindlessSlotReadonly() { return bindless_slot_readonly_; }
-    FORCEINLINE RHIBindlessSlotRef<RHITexture> GetBindlessSlotReadwrite() { return bindless_slot_readwrite_; }
-
 protected:
-
-    RHIBindlessSlotRef<RHITexture> bindless_slot_readonly_;
-    RHIBindlessSlotRef<RHITexture> bindless_slot_readwrite_;
-
+    // Actual layout. Mainly accessible to the RHI thread.
     RHITextureLayoutType layout_ {RHITextureLayoutType::kUndefined};
     RHITextureDesc desc_;
 
     size_t size_ {};
 
-    bool is_bindless_optimal_accessed_ {false};
 };
 
 MI_NAMESPACE_END

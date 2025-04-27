@@ -22,6 +22,21 @@ set(SOURCE_FILES
         vk/vk_dispatcher.cpp
 )
 
+set(HEADER_FILES
+        include/rhi/rhi.h
+        include/rhi/rhi_thread.h
+        include/rhi/rhi_shader.h
+        include/rhi/rhi_pipeline.h
+        include/rhi/rhi_bindless.h
+        include/rhi/rhi_resource.h
+        include/rhi/rhi_types.h
+        include/rhi/rhi_types_string.h
+        include/rhi/rhi_cmd.h
+        include/rhi/rhi_texture.h
+        include/rhi/rhi_buffer.h
+        include/rhi/rhi_param.h
+)
+
 add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})
 target_include_directories(rhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

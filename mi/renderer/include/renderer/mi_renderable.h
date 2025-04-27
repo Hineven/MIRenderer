@@ -29,12 +29,22 @@ public:
     FORCEINLINE RenderableType GetType() const { return type_; }
     virtual void Update (RenderGraphBuilder& builder) = 0;
 
+    FORCEINLINE void SetTransform (const Transform& transform) {
+        transform_ = transform;
+        dirty_ = true;
+    }
+    FORCEINLINE const Transform& GetTransform () const {
+        return transform_;
+    }
+
     template<typename T>
     FORCEINLINE T* As () {return static_cast<T>(this);}
 
-    Transform transform_;
 protected:
-    Renderable();
+
+    Transform transform_;
+
+    Renderable(RenderableType type);
     // Invisible renderables wont be rendered.
     bool visible_ {true};
     bool dirty_ {false};

@@ -116,6 +116,8 @@ protected:
                     vk::DescriptorSet descriptor_set,
                     vk::CommandBuffer cmdb
             );
+
+            void Destroy ();
         } points[(uint32_t)RHIBindPointType::kMax];
 
 

@@ -6,6 +6,6 @@
 #include "renderer/mi_renderable.h"
 MI_NAMESPACE_BEGIN
 
-Renderable::Renderable() {}
+Renderable::Renderable(RenderableType type): type_(type) {}
 
 MI_NAMESPACE_END

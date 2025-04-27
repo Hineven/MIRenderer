@@ -22,13 +22,13 @@ public:
     static bool LoadGLTF (
         std::filesystem::path path, RenderResourceAllocator & allocator,
         World & world,
-        std::vector<TRef<Geometry>> & geometries,
-        std::vector<TRef<Material>> & materials,
-        std::vector<TRef<StaticMesh>> & meshes
+        std::vector<TRef<Geometry>> & out_geometries,
+        std::vector<TRef<Material>> & out_materials,
+        std::vector<TRef<StaticMesh>> & out_meshes
     );
     // Load SRV image
     static TRef<Texture> LoadImage (std::string name, std::filesystem::path path);
-    static TRef<Texture> LoadImageFromBuffer (std::string name, const void * ptr, size_t size);
+    static TRef<Texture> LoadImageFromBuffer (const std::string& name, const std::string & mime_type, const void * ptr, size_t size);
 };
 
 MI_NAMESPACE_END

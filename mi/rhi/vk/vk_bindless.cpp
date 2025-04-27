@@ -193,10 +193,9 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
         for(uint32_t i = 0; i < num_slots; i++) {
             auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
             auto texture = (VulkanTexture*)(ref.Raw());
-            vk::ImageLayout ready_layout =
-                    type == RHIBindlessResourceType::kSRV
-                    ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eGeneral;
-            if(!texture->IsBindlessUseOptimalAccess()) ready_layout = vk::ImageLayout::eGeneral;
+            // mi_assert(texture->GetLayout() == RHITextureLayoutType::kShaderReadOnlyOptimal,
+            //           "Bindless SRV texture layout must be shader read only optimal");
+            vk::ImageLayout ready_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
             updates[i] = vk::DescriptorImageInfo {
                 nullptr,
                 texture->GetImageView(),

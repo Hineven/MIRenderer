@@ -85,7 +85,7 @@ void RHIBindlessManager::CommitResourceSlotUpdate(RHIBindlessResourceType type, 
                 uint32_t diff = v[i] - v[i - 1];
                 if (diff > max_whitespace_size) {
                     CommitResourceSlotUpdateRHI(type, v[first_index], v[i - 1] - v[first_index] + 1);
-                    first_index = i;
+                    first_index = (uint32_t)i;
                 }
             }
             CommitResourceSlotUpdateRHI(type, v[first_index], v.back() - v.front() + 1);
@@ -104,7 +104,7 @@ RHIBindlessManager::RHIBindlessManager() {
         limit = std::min(limit, C::kMaxNumBindlessResourceSlotsPerChannel);
         channel.total_count  = limit;
         channel.unused_count = limit;
-        for(int i = 0; i < channel.unused_count; i++)
+        for(uint32_t i = 0; i < channel.unused_count; i++)
             channel.unused[i] = channel.unused_count - i - 1;
     };
     for(int i = 0; i < (int)RHIBindlessResourceType::kMax; i++) {

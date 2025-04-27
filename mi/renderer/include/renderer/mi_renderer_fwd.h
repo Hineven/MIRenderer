@@ -18,6 +18,7 @@ struct Transform;
 class Geometry;
 class StaticMesh;
 class Texture;
+class BindlessRendererTexture;
 
 class World;
 

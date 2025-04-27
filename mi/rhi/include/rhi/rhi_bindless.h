@@ -89,7 +89,7 @@ public:
     template<typename T>
     RHIBindlessSlotRef<T> AllocateResourceSlot() {
         auto slot = (RHIBindlessSlotKeeperBase*)new RHIBindlessSlotKeeper<T>();
-        auto type = TGetBindlessResourceType<T>::value;
+        constexpr auto type = TGetBindlessResourceType<T>::value;
         static_assert(type != RHIBindlessResourceType::kMax, "Invalid bindless resource type");
         AllocateResourceSlot(RHIBindlessResourceDesc{type}, slot);
         auto ptr = (RHIBindlessSlotKeeper<T>*)slot;

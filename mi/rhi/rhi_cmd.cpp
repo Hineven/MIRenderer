@@ -7,12 +7,39 @@
 #include "rhi/rhi.h"
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi_texture.h"
+#include "rhi/rhi_types_string.h"
 MI_NAMESPACE_BEGIN
+
+RHICommandQueueBase::RHICommandQueueBase() {
+    first_command_ = last_command_ = nullptr;
+}
+
+RHICommandQueueBase::~RHICommandQueueBase() {
+
+}
+
+void RHICommandQueueBase::PreDestruction() {
+    sync_point_.SafeRelease();
+}
+
+
+void RHICommandQueueBase::WaitForIdle () {
+    auto guard = std::lock_guard(sync_point_mutex_);
+    if (!sync_point_) {
+        sync_point_ = RHI::Get().CreateSyncPoint();
+        sync_point_->SetName(
+            std::format("SyncPoint for RHICommandQueueBase (Type: {})", ToString(GetCommandQueueType()))
+        );
+    }
+    EnqueueTranslateAndSubmit(sync_point_.Raw());
+    sync_point_->Wait();
+    sync_point_->Reset();
+}
+
 
 RHICommandBase::~RHICommandBase() {
     // Do nothing
 }
-
 
 void RHIEmptyCommand::ExecuteAndDestruct(RHICommandQueueBase &cmd) {
     // Do nothing

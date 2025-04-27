@@ -105,4 +105,13 @@ void *VulkanSyncPoint::GetAPIHandle() const {
     return (void*)vk_fence_;
 }
 
+void VulkanSyncPoint::SetName(const std::string& name) {
+    GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+        vk::DebugUtilsObjectNameInfoEXT()
+        .setObjectType(vk::ObjectType::eFence)
+        .setObjectHandle(reinterpret_cast<uint64_t>(static_cast<VkFence>(vk_fence_)))
+        .setPObjectName(name.c_str())
+    );
+}
+
 MI_NAMESPACE_END

@@ -25,6 +25,7 @@ enum class RHIBindPointType : uint32_t {
 };
 
 enum class RHIShaderFrequencyFlagBits : uint32_t {
+    kNone = 0,
     kVertex = 1u<<0,
     kFragment = 1u<<1,
     kGeometry = 1u<<2,
@@ -61,6 +62,7 @@ enum class RHIPipelineStageFlagBits : uint32_t {
 MAKE_FLAGS(RHIPipelineStage);
 
 enum class RHIBufferUsageFlagBits : uint32_t {
+    kNone = 0,
     // Used in draw calls
     kVertex = 1u<<0,
     // Used in draw calls
@@ -147,6 +149,7 @@ enum class RHITextureType {
 };
 
 enum class RHITextureUsageFlagBits : uint32_t {
+    kNone = 0,
     kRenderTarget = 1 << 0,
     kDepthStencil = 1 << 1,
     kShaderResource = 1 << 2,
@@ -391,6 +394,7 @@ enum class RHIFlushFrameBlockingType {
 };
 
 enum class RHIResourceFlagBits {
+    kNone = 0,
     // This resource is imported from an external handle not manager by RHI.
     // Imported resource won't be actually released on the device by RHI if
     // their reference counter drops to 0. And sometimes they have harder

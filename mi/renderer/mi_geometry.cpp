@@ -71,4 +71,9 @@ void Geometry::ReleaseDevice() {
     device_geometry_.SafeRelease();
 }
 
+void Geometry::SetName(std::string_view name) {
+    // TODO
+}
+
+
 MI_NAMESPACE_END

@@ -65,10 +65,8 @@ protected:
         return command_allocator_[allocator_index_];
     }
 public:
-    RHICommandQueueBase() {
-        first_command_ = last_command_ = nullptr;
-    }
-    virtual ~RHICommandQueueBase() = default;
+    RHICommandQueueBase() ;
+    virtual ~RHICommandQueueBase() ;
 
     // Queue a lambda function to be executed on the RHI thread
     template<typename T>
@@ -76,10 +74,6 @@ public:
         auto cmd = AllocateCommand<TRHILambdaCommand<T>>(std::move(func));
         AddCommand(cmd);
     }
-
-    // Wait for all commands to finish execution and reset the command buffer,
-    // free all temporary memory allocated on the command buffer.
-    void Reset () ;
 
     // Flush existing commands, and send to RHI thread for translation
     // @return a future that will be ready when the translation is completed.
@@ -110,6 +104,10 @@ public:
         EnqueueTranslation();
         return SubmitTranslatedCommands(in_sync_point, recycle_resources);
     }
+
+    // Shortcut.
+    // Flush the queue and wait for all commands to finish execution on the device.
+    void WaitForIdle () ;
 
     // End the frame, enqueue a present command, and return resources to the system if requested.
     // The command is special, it does not require submission to execute. Translation will be enough.
@@ -151,6 +149,10 @@ public:
     }
 
 protected:
+
+    // Called before the destruction of RHI.
+    void PreDestruction ();
+
     // Allocate a segment of memory on the command buffer allocator for temporary use.
     // Manually managed command destruction, used internally.
     template<CRHIValidCommand T>
@@ -178,6 +180,10 @@ protected:
     RHICommandBase * last_command_ {};
 
     RHICommandQueueType queue_type_ {RHICommandQueueType::kGraphics};
+
+    // Resources used by WaitForIdle().
+    std::mutex sync_point_mutex_;
+    TRef<RHISyncPoint> sync_point_;
 };
 
 template<typename TCmd>

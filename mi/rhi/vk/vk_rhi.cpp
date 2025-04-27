@@ -599,8 +599,8 @@ RHIBindlessSupportInfo VulkanRHI::QueryRHIBindlessSupportInfo() {
     auto descriptor_props = physical_device_properties_.descriptor_buffer;
     RHIBindlessSupportInfo info {};
     info.max_num_resource_slots = descriptor_props.maxResourceDescriptorBufferBindings;
-    info.max_num_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
-    info.max_num_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
+    // info.max_num_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
+    // info.max_num_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
     info.descriptor_buffer_offset_alignment   = (uint32_t)descriptor_props.descriptorBufferOffsetAlignment;
     return info;
 }

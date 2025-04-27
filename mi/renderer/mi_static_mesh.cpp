@@ -9,9 +9,7 @@
 
 MI_NAMESPACE_BEGIN
 
-StaticMesh::StaticMesh() {
-    type_ = RenderableType::kStaticMesh;
-}
+StaticMesh::StaticMesh(): Renderable(RenderableType::kStaticMesh) {}
 
 StaticMesh::~StaticMesh() {}
 

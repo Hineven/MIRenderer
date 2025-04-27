@@ -38,6 +38,8 @@ struct Transform {
         glm::mat4 transform = translationMatrix * rotationMatrix * scaleMatrix;
         return glm::mat4x3(transform);
     }
+
+    static Transform FromMatrix (glm::mat4) ;
 };
 
 MI_NAMESPACE_END
