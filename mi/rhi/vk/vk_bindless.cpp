@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <ranges>
 #include "core/constants.h"
 #include "core/infra.h"
 #include "vk_bindless.h"
@@ -228,27 +229,66 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
     });
 }
 
-void VulkanBindlessManager::SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) {
+void VulkanBindlessManager::AdvanceFrame_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) {
     // Free batched slots
     if (!slots_to_free.empty()) {
         auto device = GetVulkanRHI()->GetDevice();
         std::vector<vk::WriteDescriptorSet> null_descriptors;
+        std::vector<vk::DescriptorBufferInfo> null_buffers;
+        std::vector<vk::DescriptorImageInfo> null_images;
+        std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> null_acceleration_structures;
         null_descriptors.reserve(slots_to_free.size());
+        int num_null_buffers = 0, num_null_images = 0, num_null_acceleration_structures = 0;
         for (auto & slot : slots_to_free) {
             auto type = (RHIBindlessResourceType)slot.type;
             auto slot_index = slot.slot_index;
-            auto num_slots = bindless_channels_[(int)type].total_count - slot_index;
-            if (num_slots > 0) {
+            {
+                auto vk_type = GetVulkanDescriptorType(type);
                 auto null_descriptor = vk::WriteDescriptorSet {
                     bindless_descriptor_sets_[set_index_],
                     static_cast<uint32_t>(type),
                     slot_index,
-                    num_slots,
-                    GetVulkanDescriptorType(type),
+                    1,
+                    vk_type
+                };
+                if (type == RHIBindlessResourceType::kReadOnlyStorageBuffer) {
+                    num_null_buffers ++;
+                } else if (type == RHIBindlessResourceType::kSRV) {
+                    num_null_images ++;
+                } else if (type == RHIBindlessResourceType::kAccelerationStructure) {
+                    num_null_acceleration_structures ++;
+                }
+                null_descriptors.push_back(null_descriptor);
+            }
+        }
+        null_buffers.reserve(num_null_buffers);
+        null_images.reserve(num_null_images);
+        null_acceleration_structures.reserve(num_null_acceleration_structures);
+        for (auto [slot, desc] : std::views::zip(slots_to_free, null_descriptors)) {
+            auto type = slot.type;
+            if (type == RHIBindlessResourceType::kReadOnlyStorageBuffer) {
+                auto null_buffer = vk::DescriptorBufferInfo {
                     nullptr,
+                    0,
+                    VK_WHOLE_SIZE
+                };
+                null_buffers.push_back(null_buffer);
+                desc.setPBufferInfo(null_buffers.data());
+            } else if (type == RHIBindlessResourceType::kSRV) {
+                auto null_image = vk::DescriptorImageInfo {
+                    nullptr,
+                    nullptr,
+                    vk::ImageLayout::eUndefined
+                };
+                null_images.push_back(null_image);
+                desc.setPImageInfo(null_images.data());
+            } else if (type == RHIBindlessResourceType::kAccelerationStructure) {
+                auto null_acceleration_structure = vk::WriteDescriptorSetAccelerationStructureKHR {
+                    1,
                     nullptr
                 };
-                null_descriptors.push_back(null_descriptor);
+                null_acceleration_structures.push_back(null_acceleration_structure);
+                desc.setPNext(&null_acceleration_structures.back());
             }
         }
         device.updateDescriptorSets(null_descriptors, {});

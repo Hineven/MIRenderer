@@ -109,8 +109,8 @@ public:
     // This is not performant. For convenience only.
     void CommitResourceSlotUpdate (RHIBindlessResourceType type, std::span<const uint32_t> slot_indices) ;
 
-    // Called on RHI frame swapping. It's just the time for bindless descriptor set swapping.
-    virtual void SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) = 0;
+    // Called on RHI frame swapping. Given the delayed bindless slots to free on frame end.
+    virtual void AdvanceFrame_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) = 0;
 
 protected:
     friend class RHIBindlessSlotKeeperBase;

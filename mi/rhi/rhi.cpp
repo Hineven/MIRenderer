@@ -53,7 +53,7 @@ std::future<void> RHI::AdvanceFrame(RHISyncPoint * sync_point) {
     auto slots_to_free = RHI::Get().GetBindlessManager().PrepareDelayedSlotsForRHIFree();
     auto lambda = [slots_to_free]() {
         // Swap the bindless descriptor set after the command buffer is submitted
-        RHI::Get().GetBindlessManager().SwapSets_RHIThread(slots_to_free);
+        RHI::Get().GetBindlessManager().AdvanceFrame_RHIThread(slots_to_free);
         // Recycle resources that are pending for deletion
         RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread();
         // Increment the frame index kept by RHI thread.

@@ -84,6 +84,8 @@ TEST(RHITest, RHIBindlessBasics) {
             // 推进一帧，测试资源的持久性
             RHI::Get().AdvanceFrame();
 
+            RHI::Get().WaitForIdle();
+
             // 重新检查资源是否仍然存在
             EXPECT_EQ(buffer_slot->Get(), buffer.Raw());
             EXPECT_EQ(texture_slot->Get(), texture.Raw());
@@ -122,8 +124,6 @@ TEST(RHITest, RHIBindlessBasics) {
         RHI::DestroySingleton();
         GetInfra().Shutdown();
         DestroyInfra();
-        
-        MI_LOG(MIInfraLogType::kInfo, "Bindless 测试完成");
     } CPPTRACE_CATCH (const std::exception &e) {
         cpptrace::from_current_exception().print();
         FAIL() << e.what();

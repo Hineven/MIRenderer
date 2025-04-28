@@ -20,7 +20,7 @@ public:
 
     vk::DescriptorSet       GetBindlessDescriptorSet();
 
-    void SwapSets_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) override;
+    void AdvanceFrame_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) override;
 
     ~VulkanBindlessManager() ;
 
