@@ -27,15 +27,15 @@ public:
     FORCEINLINE uint32_t GetHeight () const { return height_; }
     FORCEINLINE PixelFormatType GetFormat () const { return format_; }
 
-    FORCEINLINE BindlessRendererTexture * GetDeviceBindlessTexture () const {
-        return device_texture_bindless_.Raw();
+    FORCEINLINE RHIBindlessSlotKeeper<RHITexture> * GetBindlessSlot () const {
+        return device_bindless_slot.Raw();
     }
     FORCEINLINE RHITexture * GetDeviceTexture () const {
         return device_texture_.Raw();
     }
 
-    bool IsBindless () const {
-        return device_texture_bindless_ != nullptr;
+    FORCEINLINE bool IsBindless () const {
+        return device_bindless_slot != nullptr;
     }
 
     FORCEINLINE bool IsDirty () const {
@@ -51,7 +51,7 @@ public:
     // to become available.
     void CreateOnDevice_Async (RHICommandQueueGraphics & queue);
 
-    void ConvertToBindless (RenderResourceAllocator * alloc);
+    void ConvertToBindless (GroupedRenderResourceAllocator * alloc);
     void ReleaseBindlessSlot ();
 
     FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height) {
@@ -69,12 +69,11 @@ protected:
 
     bool dirty_ {};
 
-    // Device handle of the texture ( if created )
+    // Device handle of the texture (if created)
     TRef<RHITexture> device_texture_;
 
-    // Bindless texture handle, if the texture is uploaded to device and converted to bindless
-    // (assigned to a bindless slot).
-    TRef<BindlessRendererTexture> device_texture_bindless_;
+    // Bindless slot (if created)
+    TRef<RHIBindlessSlotKeeper<RHITexture>> device_bindless_slot;
 };
 
 MI_NAMESPACE_END

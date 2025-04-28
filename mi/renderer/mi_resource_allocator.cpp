@@ -116,9 +116,16 @@ void SimpleGPUBufferHeap::Free (RHIBufferSpan allocation) {
     }
 }
 
-void RenderResourceAllocator::OnTextureChange(uint32_t index, RHITexture *texture) {
-    textures_[index] = texture;
+GroupedRenderResourceAllocator::GroupedRenderResourceAllocator(GPUBufferHeapInterface *vertex_buffer_heap, GPUBufferHeapInterface *index_buffer_heap) {
+    vertex_buffer_heap_ = vertex_buffer_heap;
+    index_buffer_heap_ = index_buffer_heap;
+
+    for (uint32_t i = kMaxNumMaterials; i > 0; i--) {
+        free_material_slots_.push(i - 1);
+    }
+    material_buffer_ = RHI::Get().CreateBuffer(sizeof(MinimumMaterial) * );
 }
+
 
 
 MI_NAMESPACE_END

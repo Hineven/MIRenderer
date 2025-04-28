@@ -77,57 +77,30 @@ protected:
     std::mutex mutex_;
 };
 
-// Allocate GPU resources used for rendering (geometries, meshes, materials, etc)
-class RenderResourceAllocator : public NonCopyable, public NonMovable {
+// Allocate grouped GPU resources used for rendering (geometry buffers, materials, etc)
+// Resources that does not need to be grouped (textures, etc) should be allocated separately.
+class GroupedRenderResourceAllocator : public NonCopyable, public NonMovable {
 public:
-    RenderResourceAllocator (
+    GroupedRenderResourceAllocator (
         GPUBufferHeapInterface * vertex_buffer_heap,
         GPUBufferHeapInterface * index_buffer_heap
     );
     friend class Geometry;
     friend class DeviceGeometry;
-    friend class Material;
-    friend class BindlessRendererTexture;
+    friend class DeviceMaterial;
+    friend class BindlessDeviceTexture;
+
+    constexpr uint32_t kMaxNumMaterials = 1024;
 
 protected:
 
-    // Called by BindlessRendererTexture only to notify the allocator that a texture is changed
-    void OnTextureChange (uint32_t index, RHITexture * texture);
-
-    std::vector<TRef<RHITexture>> textures_;
-    std::vector<TRef<Material>> materials_;
-
-    uint32_t top_material_slot_ {};
-    uint32_t top_texture_slot_ {};
-    std::stack<uint32_t> free_texture_slots_;
+    // All device materials allocated
+    std::vector<TRef<DeviceMaterial>> materials_;
+    // Underlying buffer holding the material headers. This is updated on a per-frame basis.
+    // Allocated a proper size upon construction.
+    TRef<RHIBuffer> material_buffer_;
+    // Slots (indices) for unused materials. Initialized to kMaxNumMaterials elements upon construction.
     std::stack<uint32_t> free_material_slots_;
-
-    // Called by material / bindless texture destructor
-    FORCEINLINE void ReleaseMaterialIndex (int index) {
-        free_material_slots_.push(index);
-    }
-    FORCEINLINE void ReleaseTextureIndex (int index) {
-        free_texture_slots_.push(index);
-    }
-    // Called by material / bindless texture constructor
-    FORCEINLINE uint32_t AllocateMaterialIndex () {
-        if(free_material_slots_.empty()) {
-            return top_material_slot_++;
-        } else {
-            int index = free_material_slots_.top();
-            free_material_slots_.pop();
-            return index;
-        }
-    }
-    FORCEINLINE uint32_t AllocateTextureIndex () {
-        int index = UINT32_MAX;
-        if(free_texture_slots_.empty()) {
-            index = top_texture_slot_++;
-        } else {
-            index = free_texture_slots_.top();
-            free_texture_slots_.pop();
-        }
-    }
 
     // Heaps for consistent geometry
     TRef<GPUBufferHeapInterface> vertex_buffer_heap_;
@@ -146,6 +119,16 @@ protected:
     FORCEINLINE void FreeIndexBuffer (RHIBufferSpan buffer) {
         index_buffer_heap_->Free(buffer);
     }
+
+    FORCEINLINE uint32_t AllocateMaterialSlot () {
+        if (!free_material_slots_.empty ()) {
+            auto idx = free_material_slots_.top();
+            free_material_slots_.pop();
+            return idx;
+        }
+        return UINT32_MAX;
+    }
+
 };
 
 MI_NAMESPACE_END

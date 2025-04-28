@@ -65,7 +65,7 @@ void Texture::CreateOnDevice_Async(RHICommandQueueGraphics& queue)
     dirty_ = false;
 }
 
-void Texture::ConvertToBindless(RenderResourceAllocator* alloc)
+void Texture::ConvertToBindless(GroupedRenderResourceAllocator* alloc)
 {
     if (IsBindless()) {
         return;

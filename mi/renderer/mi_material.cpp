@@ -12,33 +12,14 @@
 #include "rhi/rhi.h"
 #include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
-BindlessRendererTexture::BindlessRendererTexture(RenderResourceAllocator *allocator) {
-    allocator_ = allocator;
-    index_ = allocator->AllocateTextureIndex();
-    keeper_ = RHI::Get().GetBindlessManager().AllocateResourceSlot<RHITexture>();
-}
 
 
-void BindlessRendererTexture::Set(RHITexture * texture) {
-    assert(index_ != UINT32_MAX && allocator_);
-    allocator_->OnTextureChange(index_, texture);
-    keeper_->Set(texture);
-    // TODO support batched commit?
-    keeper_->Commit();
-}
+Material::Material() {
 
-BindlessRendererTexture::~BindlessRendererTexture() {
-    if (index_ != UINT32_MAX) {
-        allocator_->ReleaseTextureIndex(index_);
-    }
-}
-
-Material::Material(RenderResourceAllocator *allocator) {
-    allocator_ = allocator;
 }
 
 Material::~Material() {
-    
+
 }
 
 

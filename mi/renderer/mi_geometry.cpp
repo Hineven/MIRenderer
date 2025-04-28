@@ -13,7 +13,7 @@
 #include "renderer/mi_world.h"
 MI_NAMESPACE_BEGIN
 
-DeviceGeometry::DeviceGeometry(RenderResourceAllocator * allocator) {
+DeviceGeometry::DeviceGeometry(GroupedRenderResourceAllocator * allocator) {
     allocator_ = allocator;
 }
 
@@ -38,7 +38,7 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     return geom;
 }
 
-void Geometry::CreateOnDevice(RenderResourceAllocator *alloc) {
+void Geometry::CreateOnDevice(GroupedRenderResourceAllocator *alloc) {
     mi_assert(!device_geometry_, "Device geometry already created.");
     auto device = TRef(new DeviceGeometry(alloc));
     auto vbuf = alloc->AllocateVertexBuffer(GetVertexBufferSize());
