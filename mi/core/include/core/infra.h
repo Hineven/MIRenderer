@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <span>
 #include <format>
+#include <vector>
+#include <stdexcept>
 #include "core/common.h"
 #include "types.h"
 #include "blobres.h"
@@ -159,7 +161,7 @@ void DestroyInfra () ;
 #define MI_WARN(fmt, ...) MI_LOG(MIInfraLogType::kWarning, fmt, ##__VA_ARGS__)
 
 #ifndef NDEBUG
-#define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::exception("assertion failure.");}}while(false)
+#define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::logic_error("assertion failure.");}}while(false)
 // TODO rename this macro to mi_assert_warning
 #define mi_warning(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kWarning, fmt, ##__VA_ARGS__); }}while(false)
 #else

@@ -385,7 +385,7 @@ public:
 
 template<typename T>
 concept CWeakReferenceCounted =
-    CReferenceCounted && std::is_base_of_v<RefCounted<false, true>, T>;
+    CReferenceCounted<T> && std::is_base_of_v<RefCounted<false, true>, T>;
 
 /**
  * A weak reference to an object.

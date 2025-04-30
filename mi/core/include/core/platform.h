@@ -19,6 +19,10 @@
 #endif
 #endif
 
+#ifdef MI_COMPILER_GCC
+#define FORCEINLINE inline __attribute__ ((always_inline))
+#endif
+
 #ifndef FORCEINLINE
 #define FORCEINLINE inline
 #warning "FORCEINLINE is not defined for this compiler"

@@ -12,16 +12,25 @@ message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     # Warning as error
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
-else ()
-    message(FATAL_ERROR "Unsupported compiler, only MSVC is supported (for now).")
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    # ...
+else()
+    message(FATAL_ERROR "Only MSVC and GNU compilers are supported.")
 endif()
 
-# Platform macros
+# Platform macros & checks
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     add_definitions(-DMI_COMPILER_MSVC)
 endif()
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    add_definitions(-DMI_COMPILER_GCC)
+    add_definitions(-DMI_COMPILER_GNU)
+    # Version > 13
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14)
+        message(FATAL_ERROR
+                "GCC version < 14 is not supported."
+                "Current version: ${CMAKE_CXX_COMPILER_VERSION}"
+        )
+    endif()
 endif()
 
 # VMA-HPP from vcpkg
@@ -29,7 +38,7 @@ find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
 find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)
 find_package(glm REQUIRED GLOBAL)
 
-find_package(Vulkan REQUIRED COMPONENTS dxc GLOBAL)
+find_package(Vulkan REQUIRED GLOBAL COMPONENTS dxc GLOBAL)
 find_package(spirv_cross_core REQUIRED GLOBAL)
 # spirv_cross_glsl is required for spirv_cross_hlsl
 find_package(spirv_cross_glsl REQUIRED GLOBAL)
@@ -47,8 +56,10 @@ find_package(glfw3 CONFIG REQUIRED GLOBAL)
 if(NOT Vulkan_dxc_lib_FOUND OR NOT Vulkan_dxc_DEBUG_LIBRARY)
     # Fallback to standalone DXC
     message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")
-    if(NOT ${Vulkan_dxc_DEBUG_LIBRARY})
-        message(STATUS "Reason: dxc debug library not found")
+    if(NOT Vulkan_dxc_lib_FOUND)
+        message(STATUS "Reason: dxc library not found")
+    else()
+        message(STATUS "Reason: dxc library found, but no debug library found.")
     endif()
     # Standalone DXC
     find_package(directx-dxc CONFIG REQUIRED GLOBAL)

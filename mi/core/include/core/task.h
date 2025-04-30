@@ -10,6 +10,7 @@
 #include <semaphore>
 #include "core/common.h"
 #include "core/thr.h"
+#include "core/fwd.h"
 #include "util/alloc.h"
 #include "constants.h"
 

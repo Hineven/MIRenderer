@@ -548,20 +548,6 @@ FORCEINLINE std::string ToString(RHIStoreOpType type) {
     }
 }
 
-// RHIFlushFrameBlockingType
-FORCEINLINE std::string ToString(RHIFlushFrameBlockingType type) {
-    switch (type) {
-        case RHIFlushFrameBlockingType::kNonBlocking:
-            return "NonBlocking";
-        case RHIFlushFrameBlockingType::kWaitForTranslation:
-            return "WaitForTranslation";
-        case RHIFlushFrameBlockingType::kWaitForExecution:
-            return "WaitForExecution";
-        default:
-            return "Unknown";
-    }
-}
-
 // RHIResourceFlagBits
 FORCEINLINE std::string ToString(RHIResourceFlagBits bit) {
     switch (bit) {

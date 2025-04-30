@@ -4,7 +4,7 @@ A set of CG libraries.
 * `Vulkan SDK`: https://vulkan.lunarg.com/
 ### Vcpkg Dependencies
 * `glm`
-* `imgui[with glfw backend]`
+* `imgui[glfw-binding]`
 * `spirv-cross`
 * `spirv-reflect`
 * `spirv-headers`

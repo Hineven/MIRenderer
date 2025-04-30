@@ -84,30 +84,30 @@ enum class BlobResourceAccessFlagBits : uint32_t {
 // The following is the same as MAKE_FLAGS(BlobResourceAccess), just do so manually to avoid linting errors in CLion.
 struct BlobResourceAccessFlags {
     uint32_t flags;
-    __forceinline BlobResourceAccessFlags() : flags(0) {}
-    __forceinline BlobResourceAccessFlags(BlobResourceAccessFlagBits flag) : flags(static_cast<uint32_t>(flag)) {}
-    __forceinline BlobResourceAccessFlags(uint32_t flags) : flags(flags) {}
-    __forceinline operator bool() const { return flags != 0; }
-    __forceinline explicit operator unsigned() const { return flags; }
-    __forceinline bool operator==(BlobResourceAccessFlags other) const { return flags == other. flags; }
-    __forceinline bool operator!=(BlobResourceAccessFlags other) const { return flags != other. flags; }
+    FORCEINLINE BlobResourceAccessFlags() : flags(0) {}
+    FORCEINLINE BlobResourceAccessFlags(BlobResourceAccessFlagBits flag) : flags(static_cast<uint32_t>(flag)) {}
+    FORCEINLINE BlobResourceAccessFlags(uint32_t flags) : flags(flags) {}
+    FORCEINLINE operator bool() const { return flags != 0; }
+    FORCEINLINE explicit operator unsigned() const { return flags; }
+    FORCEINLINE bool operator==(BlobResourceAccessFlags other) const { return flags == other. flags; }
+    FORCEINLINE bool operator!=(BlobResourceAccessFlags other) const { return flags != other. flags; }
 };
-__forceinline BlobResourceAccessFlags operator|(BlobResourceAccessFlagBits a, BlobResourceAccessFlagBits b) {
+FORCEINLINE BlobResourceAccessFlags operator|(BlobResourceAccessFlagBits a, BlobResourceAccessFlagBits b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
-__forceinline BlobResourceAccessFlags operator&(BlobResourceAccessFlagBits a, BlobResourceAccessFlagBits b) {
+FORCEINLINE BlobResourceAccessFlags operator&(BlobResourceAccessFlagBits a, BlobResourceAccessFlagBits b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
 }
-__forceinline BlobResourceAccessFlags operator|(BlobResourceAccessFlags a, BlobResourceAccessFlagBits b) {
+FORCEINLINE BlobResourceAccessFlags operator|(BlobResourceAccessFlags a, BlobResourceAccessFlagBits b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
-__forceinline BlobResourceAccessFlags operator&(BlobResourceAccessFlags a, BlobResourceAccessFlagBits b) {
+FORCEINLINE BlobResourceAccessFlags operator&(BlobResourceAccessFlags a, BlobResourceAccessFlagBits b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
 }
-__forceinline BlobResourceAccessFlags operator|(BlobResourceAccessFlagBits a, BlobResourceAccessFlags b) {
+FORCEINLINE BlobResourceAccessFlags operator|(BlobResourceAccessFlagBits a, BlobResourceAccessFlags b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
-__forceinline BlobResourceAccessFlags operator&(BlobResourceAccessFlagBits a, BlobResourceAccessFlags b) {
+FORCEINLINE BlobResourceAccessFlags operator&(BlobResourceAccessFlagBits a, BlobResourceAccessFlags b) {
     return static_cast<BlobResourceAccessFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
 }
 

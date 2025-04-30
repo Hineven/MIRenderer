@@ -12,6 +12,7 @@
 #include <atomic>
 #include <cassert>
 #include <mutex>
+#include <thread>
 #include "core/common.h"
 
 MI_NAMESPACE_BEGIN

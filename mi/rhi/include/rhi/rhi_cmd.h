@@ -9,6 +9,7 @@
 
 #include <format>
 #include <array>
+#include <cstring>
 
 #include "rhi_desc.h"
 #include "core/base.h"
@@ -502,6 +503,32 @@ public:
     RHIGPUAccessFlags * dst_accesses_;
 };
 
+class RHICommandDebugMarkerBegin : public TRHICommand<RHICommandDebugMarkerBegin> {
+public:
+    RHICommandDebugMarkerBegin(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f})
+            : marker_name_(marker_name), color_(color) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    const char* marker_name_;
+    std::array<float, 4> color_;
+};
+
+class RHICommandDebugMarkerEnd : public TRHICommand<RHICommandDebugMarkerEnd> {
+public:
+    RHICommandDebugMarkerEnd() = default;
+    void Execute(RHICommandQueueBase & cmd) override;
+};
+
+class RHICommandDebugMarkerInsert : public TRHICommand<RHICommandDebugMarkerInsert> {
+public:
+    RHICommandDebugMarkerInsert(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f})
+            : marker_name_(marker_name), color_(color) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    const char* marker_name_;
+    std::array<float, 4> color_;
+};
+
 // The first command queue takes care of graphics commands.
 class RHICommandQueueGraphics : public RHICommandQueueBase {
 protected:
@@ -652,15 +679,59 @@ public:
         AddCommand(AllocateCommand<RHICommandBindComputePipeline>(pipeline));
     }
 
+    FORCEINLINE void BeginDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
+        auto name_copy = Allocate<char[]>(strlen(marker_name) + 1);
+        strcpy(name_copy, marker_name);
+        AddCommand(AllocateCommand<RHICommandDebugMarkerBegin>(name_copy, color));
+    }
+
+    FORCEINLINE void EndDebugMarker() {
+        AddCommand(AllocateCommand<RHICommandDebugMarkerEnd>());
+    }
+
+    FORCEINLINE void InsertDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
+        auto name_copy = Allocate<char[]>(strlen(marker_name) + 1);
+        strcpy(name_copy, marker_name);
+        AddCommand(AllocateCommand<RHICommandDebugMarkerInsert>(name_copy, color));
+    }
+
 };
 
 // No other kinds of command queues are needed for now.
 
+class RHIScopedDebugMarker {
+public:
+    RHIScopedDebugMarker(RHICommandQueueGraphics& queue, const char* marker_name,
+                         const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f})
+            : queue_(queue) {
+        queue_.BeginDebugMarker(marker_name, color);
+    }
 
-// Mark the resources ready for destruction (unused outside RHI threads), translate & Submit all command queues,
-// and after their completion, free resources pending for destruction.
-// The future will be ready when all commands are translated, submitted, executed and pending resources are freed.
-std::future<void> RHIFlushFrame (RHIFlushFrameBlockingType blocking_type = RHIFlushFrameBlockingType::kNonBlocking) ;
+    ~RHIScopedDebugMarker() {
+        queue_.EndDebugMarker();
+    }
+
+private:
+    RHICommandQueueGraphics& queue_;
+};
+
+#ifdef RHI_ENABLE_DEBUG_MARKERS
+
+#define RHI_BEGIN_DEBUG_MARKER(queue, name) queue.BeginDebugMarker(name)
+#define RHI_END_DEBUG_MARKER(queue) queue.EndDebugMarker()
+#define RHI_INSERT_DEBUG_MARKER(queue, name) queue.InsertDebugMarker(name)
+#define RHI_SCOPED_DEBUG_MARKER(queue, name) RHIScopedDebugMarker _scoped_marker_##__LINE__(queue, name)
+#define RHI_SCOPED_DEBUG_MARKER_COLOR(queue, name, color) RHIScopedDebugMarker _scoped_marker_##__LINE__(queue, name, color)
+
+#else
+
+#define RHI_BEGIN_DEBUG_MARKER(queue, name)
+#define RHI_END_DEBUG_MARKER(queue)
+#define RHI_INSERT_DEBUG_MARKER(queue, name)
+#define RHI_SCOPED_DEBUG_MARKER(queue, name)
+#define RHI_SCOPED_DEBUG_MARKER_COLOR(queue, name, color)
+
+#endif
 
 MI_NAMESPACE_END
 

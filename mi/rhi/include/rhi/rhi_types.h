@@ -385,14 +385,6 @@ enum class RHICommandQueueType {
     kMax
 };
 
-enum class RHIFlushFrameBlockingType {
-    kNonBlocking,
-    // Return after all command queues completed translation
-    kWaitForTranslation,
-    // Return after all command queues completed execution (but resources may not be freed)
-    kWaitForExecution
-};
-
 enum class RHIResourceFlagBits {
     kNone = 0,
     // This resource is imported from an external handle not manager by RHI.

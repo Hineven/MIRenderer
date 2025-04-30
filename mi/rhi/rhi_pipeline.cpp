@@ -3,6 +3,8 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <algorithm>
+
 #include "rhi/rhi_pipeline.h"
 #include "core/crc.h"
 #include "core/infra.h"

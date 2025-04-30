@@ -4,7 +4,7 @@
  * See LICENSE for licensing.
  */
 #include <ranges>
-#include <corecrt_io.h>
+//#include <corecrt_io.h>
 #include <map>
 #include <queue>
 #include "rdg/rdg.h"
