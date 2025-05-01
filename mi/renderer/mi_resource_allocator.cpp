@@ -4,11 +4,14 @@
  * See LICENSE for licensing.
  */
 #include "renderer/mi_resource_allocator.h"
-
-#include <rhi/rhi.h>
-
-#include "../rhi/include/rhi/rhi_bindless.h"
 #include "core/infra.h"
+
+#include <renderer/mi_material.h>
+#include <rhi/rhi.h>
+#include "rhi/rhi_buffer.h"
+#include "rhi/rhi_bindless.h"
+#include "shaders/SharedMaterial.hlsl"
+
 
 MI_NAMESPACE_BEGIN
 GPUBufferHeapBuffer::~GPUBufferHeapBuffer() {
@@ -23,6 +26,17 @@ TRef<GPUBufferHeapBuffer> GPUBufferHeapInterface::AllocateRefCounted(uint32_t si
     return std::move(ref);
 }
 
+
+SimpleGPUBufferHeap::BufferBlock::BufferBlock() {
+
+}
+
+SimpleGPUBufferHeap::BufferBlock::~BufferBlock() {
+
+}
+
+
+
 SimpleGPUBufferHeap::SimpleGPUBufferHeap (RHIBufferUsageFlags usage, uint32_t alignment, uint32_t buffer_block_size) :
 GPUBufferHeapInterface(usage, alignment) {
     buffer_block_size_ = buffer_block_size;
@@ -32,7 +46,7 @@ GPUBufferHeapInterface(usage, alignment) {
 SimpleGPUBufferHeap::~SimpleGPUBufferHeap() {
     for (auto& buffer_block : buffer_blocks_) {
         if (buffer_block.buffer) {
-            mi_assert(buffer_block.free_segments_.size() == 1 && buffer_block.free_segments_.begin()->size == buffer_block_size_,
+            mi_assert_nothrow(buffer_block.free_segments_.size() == 1 && buffer_block.free_segments_.begin()->size == buffer_block_size_,
                 "GPUHeapBuffers not fully freed.");
         }
     }
@@ -123,7 +137,7 @@ GroupedRenderResourceAllocator::GroupedRenderResourceAllocator(GPUBufferHeapInte
     for (uint32_t i = kMaxNumMaterials; i > 0; i--) {
         free_material_slots_.push(i - 1);
     }
-    material_buffer_ = RHI::Get().CreateBuffer(sizeof(MinimumMaterial) * );
+    material_header_buffer_ = RHI::Get().CreateBuffer({sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kUniform});
 }
 
 

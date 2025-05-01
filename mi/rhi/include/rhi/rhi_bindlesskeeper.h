@@ -23,7 +23,7 @@ public:
     // Update the slot with current set resource
     // This is costly. Better batch commits and call the bindless manager manually if you
     // have many slots to update.
-    FORCEINLINE void Commit () const ;
+    void Commit () const ;
 protected:
     friend class RHIBindlessManager;
 
@@ -47,13 +47,13 @@ class RHIBindlessSlotKeeper : public RHIBindlessSlotKeeperBase {
 public:
     // Get the resource handle from the slot(s)
     // @param offset (slot + offset) = real_slot. Can not access slots that are not claimed.
-    T * Get () {
+    FORCEINLINE T * Get () {
         return (T*) Get_Impl();
     }
-    void Set (T * resource) {
+    FORCEINLINE void Set (T * resource) {
         Set_Impl((RHIResource*)resource);
     }
-    void SetAndCommit (T * resource) {
+    FORCEINLINE void SetAndCommit (T * resource) {
         Set(resource);
         Commit_Impl();
     }
@@ -70,5 +70,6 @@ public:
     void Set (RHIBuffer * resource) ;
     void SetAndCommit (RHIBuffer * resource) ;
 };
+
 MI_NAMESPACE_END
 #endif //MI_RHI_BINDLESSKEEPER_H

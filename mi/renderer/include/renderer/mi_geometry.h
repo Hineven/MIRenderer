@@ -13,6 +13,7 @@
 #include "core/refcounted.h"
 #include "rhi/rhi_desc.h"
 #include "renderer/mi_renderer_fwd.h"
+#include "shaders/SharedVertex.hlsl"
 MI_NAMESPACE_BEGIN
 
 class DeviceGeometry : public RefCounted<>, public NonMovable {
@@ -44,7 +45,7 @@ public:
         return index_buffer_;
     }
 
-    FORCEINLINE size_t GetDeviceFirstIndex () const {
+    FORCEINLINE uint32_t GetDeviceFirstIndex () const {
         return first_index_;
     }
 };

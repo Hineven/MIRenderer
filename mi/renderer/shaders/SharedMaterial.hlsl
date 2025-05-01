@@ -1,5 +1,6 @@
 // This file is shared between shaders and C++ code.
 #ifndef MI_RENDERER_SHADERS_SHARED_MATERIAL_HLSL
+#define MI_RENDERER_SHADERS_SHARED_MATERIAL_HLSL
 #include "SharedCommon.hlsl"
 
 MI_SHARED_HLSL_BEGIN
@@ -19,13 +20,6 @@ struct MaterialHeader {
     uint32_t emissive_map_ CPPONLY({UINT32_MAX});
     uint32_t roughness_map_ CPPONLY({UINT32_MAX});
     // TODO complex material support
-};
-
-// Default vertex format
-struct DefaultStaticMeshVertex {
-    glm::vec3 position SEMANTICS(position);
-    glm::vec3 normal SEMANTICS(normal);
-    glm::vec2 uv SEMANTICS(uv);
 };
 
 MI_SHARED_HLSL_END

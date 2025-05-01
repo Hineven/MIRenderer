@@ -31,8 +31,18 @@ struct HLSLCompilerContext {
 
 // 辅助函数：UTF-8字符串转宽字符串
 std::wstring Utf8ToWide(const std::string& str) {
+#ifdef _WIN32
+    if (str.empty()) return L"";
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.data(), (int)str.size(), nullptr, 0);
+    std::wstring result(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.data(), (int)str.size(), &result[0], size_needed);
+    return result;
+#else
+    // Linux上没有MultiByteToWideChar，继续使用std::wstring_convert
+    // 虽然被弃用，但仍然可用
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
     return converter.from_bytes(str);
+#endif
 }
 
 HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id thread_id) {

@@ -51,7 +51,7 @@ public:
     // to become available.
     void CreateOnDevice_Async (RHICommandQueueGraphics & queue);
 
-    void ConvertToBindless (GroupedRenderResourceAllocator * alloc);
+    void ConvertToBindless (bool update_slot_immediately = true);
     void ReleaseBindlessSlot ();
 
     FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height) {

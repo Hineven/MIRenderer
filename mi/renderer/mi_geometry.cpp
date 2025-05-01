@@ -41,8 +41,10 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
 void Geometry::CreateOnDevice(GroupedRenderResourceAllocator *alloc) {
     mi_assert(!device_geometry_, "Device geometry already created.");
     auto device = TRef(new DeviceGeometry(alloc));
-    auto vbuf = alloc->AllocateVertexBuffer(GetVertexBufferSize());
-    auto ibuf = alloc->AllocateIndexBuffer(GetIndexBufferSize());
+    mi_check(GetVertexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for vertex buffer.");
+    mi_check(GetIndexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for index buffer.");
+    auto vbuf = alloc->AllocateVertexBuffer((uint32_t)GetVertexBufferSize());
+    auto ibuf = alloc->AllocateIndexBuffer((uint32_t)GetIndexBufferSize());
     device->vertex_buffer_ = vbuf;
     device->index_buffer_ = ibuf;
     device->first_index_ = 0;
@@ -71,7 +73,7 @@ void Geometry::ReleaseDevice() {
     device_geometry_.SafeRelease();
 }
 
-void Geometry::SetName(std::string_view name) {
+void Geometry::SetName([[maybe_unused]] std::string_view name) {
     // TODO
 }
 

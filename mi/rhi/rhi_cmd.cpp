@@ -41,7 +41,7 @@ RHICommandBase::~RHICommandBase() {
     // Do nothing
 }
 
-void RHIEmptyCommand::ExecuteAndDestruct(RHICommandQueueBase &cmd) {
+void RHIEmptyCommand::ExecuteAndDestruct([[maybe_unused]] RHICommandQueueBase &cmd) {
     // Do nothing
 }
 

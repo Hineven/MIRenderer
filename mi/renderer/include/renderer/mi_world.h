@@ -18,7 +18,11 @@ MI_NAMESPACE_BEGIN
 
 class DeviceWorld : public NonCopyable, public NonMovable {
 public:
+    // Index with renderable index.
     TRef<RHIBuffer> renderable_transforms_;
+
+    // Record the index of the material of each geometry.
+    TRef<RHIBuffer> renderable_geometry_material_indices_;
 };
 
 // Integrated class managing the world.

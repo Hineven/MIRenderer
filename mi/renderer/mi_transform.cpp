@@ -5,12 +5,13 @@
  */
 #include "renderer/mi_transform.h"
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 
 #include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
-    Transform Transform::FromMatrix(glm::mat4 to_world) {
+Transform Transform::FromMatrix(glm::mat4 to_world) {
     glm::vec3 scale;
     glm::quat orientation;
     glm::vec3 translation;

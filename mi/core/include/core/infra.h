@@ -157,17 +157,27 @@ void DestroyInfra () ;
 
 #define MI_LOG(level, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
 
+// Logging shortcuts
 #define MI_INFO(fmt, ...) MI_LOG(MIInfraLogType::kInfo, fmt, ##__VA_ARGS__)
 #define MI_WARN(fmt, ...) MI_LOG(MIInfraLogType::kWarning, fmt, ##__VA_ARGS__)
 
 #ifndef NDEBUG
+// Only active in debug builds. For debugging purposes.
 #define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::logic_error("assertion failure.");}}while(false)
+// Only active in debug builds. For debugging purposes.
+#define mi_assert_nothrow(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__);}}while(false)
+// Only active in debug builds. For debugging purposes.
 // TODO rename this macro to mi_assert_warning
 #define mi_warning(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kWarning, fmt, ##__VA_ARGS__); }}while(false)
 #else
 #define mi_assert(cond, msg, ...)
+#define mi_assert_nothrow(cond, msg, ...)
 #define mi_warning(cond, msg, ...)
 #endif
+
+// Different from assertions, checks are always active (also in release builds).
+// TODO implement
+#define mi_check(cond, fmt, ...)
 
 MI_NAMESPACE_END
 

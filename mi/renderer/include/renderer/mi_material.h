@@ -38,24 +38,10 @@ class Material : public NonMovable, public RefCounted<> {
 public:
     friend class DeviceMaterial;
 
-    FORCEINLINE void SetAlbedoTexture (Texture * texture) {
-        albedo_texture_ = texture;
-        dirty_ = true;
-    }
-    FORCEINLINE void SetNormalTexture (Texture * texture) {
-        normal_texture_ = texture;
-        dirty_ = true;
-    }
-
-    FORCEINLINE void SetMetallicRoughnessTexture (Texture * texture) {
-        metallic_roughness_texture_ = texture;
-        dirty_ = true;
-    }
-
-    FORCEINLINE void SetEmissiveTexture (Texture * texture) {
-        emissive_texture_ = texture;
-        dirty_ = true;
-    }
+    void SetAlbedoTexture(Texture * texture);
+    void SetNormalTexture(Texture * texture);
+    void SetMetallicRoughnessTexture(Texture * texture);
+    void SetEmissiveTexture(Texture * texture);
 
     FORCEINLINE void SetAlbedo (glm::vec4 albedo) {
         albedo_ = albedo;
@@ -130,3 +116,4 @@ protected:
 
 MI_NAMESPACE_END
 #endif //MI_MATERIAL_H
+

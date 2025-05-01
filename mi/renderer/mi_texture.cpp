@@ -8,6 +8,8 @@
 #include "renderer/mi_helpers.h"
 #include "renderer/mi_resource_allocator.h"
 #include "rhi/rhi.h"
+#include "rhi/rhi_bindless.h"
+#include "rhi/rhi_bindlesskeeper.h"
 #include "rhi/rhi_texture.h"
 
 MI_NAMESPACE_BEGIN
@@ -22,7 +24,7 @@ Texture::Texture(PixelFormatType format, uint32_t width, uint32_t height)
 
 void Texture::InitializeFromBinary(std::span<uint8_t> data)
 {
-    size_t needed_size = width_ * height_ * GetPixelFormat(format_);
+    size_t needed_size = width_ * height_ * GetPixelFormatBytesPerPixel(format_);
     if (data.size() != needed_size) {
         MI_WARN("Texture::InitializeFromBinary(): Incorrect data size. Expected{}, got {}.", needed_size, data.size());
         return;
@@ -65,7 +67,7 @@ void Texture::CreateOnDevice_Async(RHICommandQueueGraphics& queue)
     dirty_ = false;
 }
 
-void Texture::ConvertToBindless(GroupedRenderResourceAllocator* alloc)
+void Texture::ConvertToBindless(bool update_immediately)
 {
     if (IsBindless()) {
         return;
@@ -77,16 +79,16 @@ void Texture::ConvertToBindless(GroupedRenderResourceAllocator* alloc)
     }
     
     // 创建无绑定槽纹理
-    device_texture_bindless_ = TRef<BindlessRendererTexture>(new BindlessRendererTexture(alloc));
-    device_texture_bindless_->Set(device_texture_.Raw());
+    device_bindless_slot = RHI::Get().GetBindlessManager().AllocateResourceSlot<RHITexture>();
+    device_bindless_slot->Set(device_texture_.Raw());
+    if (update_immediately) {
+        device_bindless_slot->Commit();
+    }
+
 }
 
-void Texture::ReleaseBindlessSlot()
-{
-    if (device_texture_bindless_) {
-        device_texture_bindless_->Set(nullptr);
-        device_texture_bindless_ = nullptr;
-    }
+void Texture::ReleaseBindlessSlot() {
+    device_bindless_slot.SafeRelease();
 }
 
 MI_NAMESPACE_END

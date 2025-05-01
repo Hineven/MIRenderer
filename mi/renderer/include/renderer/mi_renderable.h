@@ -9,6 +9,7 @@
 
 #include "core/base.h"
 #include "core/common.h"
+#include "core/infra.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderer_types.h"
 #include "renderer/mi_transform.h"
@@ -37,6 +38,12 @@ public:
         return transform_;
     }
 
+    // Index of the renderable within its world
+    FORCEINLINE uint32_t GetIndex () const {
+        mi_assert(index_ != UINT32_MAX, "Index is not set.");
+        return index_;
+    }
+
     template<typename T>
     FORCEINLINE T* As () {return static_cast<T>(this);}
 
@@ -44,11 +51,13 @@ protected:
 
     Transform transform_;
 
-    Renderable(RenderableType type);
+    Renderable(RenderableType type, uint32_t index);
     // Invisible renderables wont be rendered.
     bool visible_ {true};
     bool dirty_ {false};
     RenderableType type_ {RenderableType::kStaticMesh};
+
+    uint32_t index_ {UINT32_MAX};
 };
 
 

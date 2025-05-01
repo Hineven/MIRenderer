@@ -16,7 +16,6 @@
 #include <renderer/mi_helpers.h>
 #include <renderer/mi_material.h>
 #include <rhi/rhi_buffer.h>
-#include <vulkan/vulkan_structs.hpp>
 
 MI_NAMESPACE_BEGIN
 
@@ -39,8 +38,8 @@ void Renderer::DestroySingleton() {
     }
 }
 
-void Renderer::Init() {
-
+void Renderer::Init(RDGResourcePool * pool) {
+    pool_ = pool;
 }
 
 void Renderer::UpdateView(RendererView *view) {
@@ -71,24 +70,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     UpdateView(view);
 
-    if (!view->world) {
+    if (!view->world_) {
         MI_WARN("World is not present in the view.");
         return ;
     }
-    mi_assert(view->view_index_ == 0, "Only one view is supported for now");
+    mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
     // Remove renderables with ref count approaching 1
     std::vector<TRef<Renderable>> active_renderables;
-    auto all_renderables = view->world->GetRenderables();
+    auto all_renderables = view->world_->GetRenderables();
     active_renderables.reserve(all_renderables.size());
     // Update renderable transforms
     {
         std::vector<glm::mat4x3> transforms;
         transforms.reserve(all_renderables.size());
         for (auto & e : all_renderables) {
-            transforms.push_back(e->transform_.GetToWorldTransformMatrix());
+            transforms.push_back(e->GetTransform().GetToWorldTransformMatrix());
         }
         Helpers::UploadWithRDG(
-            builder, view->world->GetDevice()->renderable_transforms_.Raw(),
+            builder, view->world_->GetDevice()->renderable_transforms_->GetSpan(),
             transforms.data(), sizeof(glm::mat4x3) * transforms.size()
         );
     }
@@ -105,14 +104,16 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         if (e->IsVisible()) active_renderables.push_back(e);
     }
 
-    // Generate indirect draw commands
-    std::vector<RHIDrawIndexedIndirectCommand> indirect_commands;
-    struct DrawHeader {
-        int material_index;
+    // Generate draw commands
+
+    struct DrawInvocationSortingHeader {
+        uint32_t world_geometry_handle;
+        uint32_t world_renderable_handle;
         RHIBufferSpan vertex_buffer;
         RHIBufferSpan index_buffer;
+        RHIDrawIndexedIndirectCommand indirect_command;
     };
-    std::vector<DrawHeader> draw_headers;
+    std::vector<DrawInvocationSortingHeader> draw_invocation_sorting_headers;
     {
         for (auto & e : active_renderables) {
             if (auto mesh = e->As<StaticMesh>()) {
@@ -123,21 +124,40 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                     cmd.first_index = dev->GetDeviceFirstIndex();
                     cmd.instance_count = 1;
                     cmd.index_count = geom->GetIndexCount();
-                    // Padding 0 is used for material index
-                    cmd.padding0 = mat->GetIndex();
-                    indirect_commands.push_back(cmd);
-                    DrawHeader header {};
-                    header.material_index = mat->GetIndex();
+
+                    DrawInvocationSortingHeader header {};
+
+                    header.world_geometry_handle = geom->GetDeviceGeometry()->GetIndex();
+                    header.world_renderable_handle = e->GetIndex();
+
                     header.vertex_buffer = dev->GetDeviceVertexBuffer();
                     header.index_buffer = dev->GetDeviceIndexBuffer();
-                    draw_headers.push_back(header);
+                    header.indirect_command = cmd;
+
+                    draw_invocation_sorting_headers.push_back(header);
                 }
             }
         }
-        auto size = sizeof(RHIDrawIndexedIndirectCommand) * indirect_commands.size();
-        view->static_mesh_draw_commands_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kIndirect, size);
+        // Sort the headers, batch draw calls with the same vertex & index buffer
+        std::sort(draw_invocation_sorting_headers.begin(), draw_invocation_sorting_headers.end(),
+            [](const DrawInvocationSortingHeader & a, const DrawInvocationSortingHeader & b) {
+                if (a.vertex_buffer.buffer != b.vertex_buffer.buffer) return a.vertex_buffer.buffer < b.vertex_buffer.buffer;
+                return a.index_buffer.buffer < b.index_buffer.buffer;
+            }
+        );
+        // Generate and upload indirect commands
+        {
+            std::vector<RHIDrawIndexedIndirectCommand> indirect_commands;
+            indirect_commands.reserve(draw_invocation_sorting_headers.size());
+            for (auto e : draw_invocation_sorting_headers) {
+                indirect_commands.push_back(e.indirect_command);
+            }
 
-        Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_.Raw(), indirect_commands.data(), size);
+            auto size = sizeof(RHIDrawIndexedIndirectCommand) * indirect_commands.size();
+            view->static_mesh_draw_commands_ = RDGBuffer::Create(RHIBufferUsageFlagBits::kIndirect, size);
+
+            Helpers::UploadWithRDG(builder, view->static_mesh_draw_commands_.Raw(), indirect_commands.data(), size);
+        }
     }
 
     // Rasterize static meshes with batched drawing
@@ -154,7 +174,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
                     if (i > 0) {
                         // Batch submit previous commands sharing the same vertex & index buffer settings.
-                        auto first_cmd = cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand);
+                        auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
                         queue.DrawIndexedIndirect(hdr.index_buffer, cmd_span,  i - first_cmd);
                         cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                     }
@@ -168,7 +188,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Place barriers manually
     {
-        // TODO make vertex / index buffers allocated from a pool. So that we can control the number of barriers
+        // TODO utilize GroupedResourceAllocator, place less barriers.
         std::set<RHIBuffer*> barrier_buffers;
         for (auto & e : active_renderables) {
             if (!e->IsDirty()) continue ;

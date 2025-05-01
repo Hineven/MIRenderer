@@ -55,6 +55,8 @@ class SimpleGPUBufferHeap : public GPUBufferHeapInterface {
 protected:
     uint32_t buffer_block_size_ {};
     struct BufferBlock {
+        BufferBlock();
+        ~BufferBlock();
         TRef<RHIBuffer> buffer;
         struct Segment {
             uint32_t start_offset {};
@@ -90,7 +92,7 @@ public:
     friend class DeviceMaterial;
     friend class BindlessDeviceTexture;
 
-    constexpr uint32_t kMaxNumMaterials = 1024;
+    static constexpr uint32_t kMaxNumMaterials = 1024;
 
 protected:
 
@@ -98,7 +100,7 @@ protected:
     std::vector<TRef<DeviceMaterial>> materials_;
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
-    TRef<RHIBuffer> material_buffer_;
+    TRef<RHIBuffer> material_header_buffer_;
     // Slots (indices) for unused materials. Initialized to kMaxNumMaterials elements upon construction.
     std::stack<uint32_t> free_material_slots_;
 
@@ -128,7 +130,6 @@ protected:
         }
         return UINT32_MAX;
     }
-
 };
 
 MI_NAMESPACE_END
