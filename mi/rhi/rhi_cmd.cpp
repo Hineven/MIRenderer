@@ -144,6 +144,18 @@ void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBufferBarriers(&cmd, this);
 }
 
+void RHICommandDebugMarkerBegin::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDebugMarkerBegin(&cmd, this);
+}
+
+void RHICommandDebugMarkerEnd::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDebugMarkerEnd(&cmd, this);
+}
+
+void RHICommandDebugMarkerInsert::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDebugMarkerInsert(&cmd, this);
+}
+
 MI_NAMESPACE_END
 
 

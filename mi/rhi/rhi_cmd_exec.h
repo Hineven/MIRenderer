@@ -40,6 +40,9 @@ public:
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
     virtual void RHIBufferBarriers (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
+    virtual void RHIDebugMarkerBegin (RHICommandQueueBase * buffer, RHICommandDebugMarkerBegin * cmd) = 0;
+    virtual void RHIDebugMarkerEnd (RHICommandQueueBase * buffer, RHICommandDebugMarkerEnd * cmd) = 0;
+    virtual void RHIDebugMarkerInsert (RHICommandQueueBase * buffer, RHICommandDebugMarkerInsert * cmd) = 0;
 
     // Submit all translated command stored within the command buffer and clear them.
     virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point, bool recycle_resources) = 0;

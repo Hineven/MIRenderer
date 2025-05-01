@@ -878,6 +878,38 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     );
 }
 
+void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHICommandDebugMarkerBegin *cmd) {
+    // Insert debug marker
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    state.BeginCmd();
+    state.cmd.debugMarkerBeginEXT(
+        vk::DebugMarkerMarkerInfoEXT()
+            .setPMarkerName(cmd->marker_name_)
+            .setColor(cmd->color_)
+    );
+}
+
+void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) {
+    // Insert debug marker
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    state.BeginCmd();
+    state.cmd.debugMarkerEndEXT();
+}
+
+void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) {
+    // Insert debug marker
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    state.BeginCmd();
+    state.cmd.debugMarkerInsertEXT(
+        vk::DebugMarkerMarkerInfoEXT()
+            .setPMarkerName(cmd->marker_name_)
+            .setColor(cmd->color_)
+    );
+}
+
 void
 VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
 // TODO make this useful (or completely remove it)
