@@ -193,6 +193,11 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         for (auto buffer_use : pass->compiled_.used_buffers) {
             buffer_use.buffer->RequestRHI(pool);
         }
+        // Add debug marker
+        if (!pass->name_.empty()) {
+            cmd.BeginDebugMarker(pass->name_.c_str());
+        }
+
         // Place resource barriers.
         RHIPipelineStageFlags new_stages = pass->GetStageFlags();
         {
@@ -232,6 +237,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 // All predecessors are executed, queue it up for execution.
                 ready_passes.push(edge.dst_pass_index);
             }
+        }
+        // End debug marker
+        if (!pass->name_.empty()) {
+            cmd.EndDebugMarker();
         }
         // Release the pass (and decrement the reference count of the resources its holding)
         pass.reset();

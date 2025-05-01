@@ -9,17 +9,17 @@
 #include <rdg/rdg_shader.h>
 
 MI_NAMESPACE_BEGIN
-    RDGPass::RDGPass(
-        std::string name,
-        int index,
-        RDGPassType pass_type,
-        RDGPassFlags flags,
-        RDGPassLambda && pass
-    ) : name_(name),
-        index_(index),
-        type_(pass_type),
-        flags_(flags),
-        pass_(std::move(pass)) {
+RDGPass::RDGPass(
+    std::string name,
+    int index,
+    RDGPassType pass_type,
+    RDGPassFlags flags,
+    RDGPassLambda && pass
+) : name_(name),
+    index_(index),
+    type_(pass_type),
+    flags_(flags),
+    pass_(std::move(pass)) {
 }
 
 RDGPass::~RDGPass() {

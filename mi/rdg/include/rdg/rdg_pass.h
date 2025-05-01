@@ -40,6 +40,13 @@ public:
     RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsageType usage) ;
     RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
 
+    FORCEINLINE void SetName (std::string name) {
+        name_ = std::move(name);
+    }
+
+    FORCEINLINE const std::string & GetName () const {
+        return name_;
+    }
 
     ~RDGPass() ;
     friend class RenderGraphBuilder;
