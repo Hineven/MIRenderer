@@ -245,93 +245,126 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         }
 
         vk::PhysicalDeviceFeatures enabled_features {};
-        enabled_features.samplerAnisotropy = VK_TRUE; // Anisotropic filtering
-        enabled_features.independentBlend = VK_TRUE; // Blend mode being identical for each color attachment
-        enabled_features.robustBufferAccess = VK_TRUE; // Robust buffer access (fill missing vertex data)
-        enabled_features.fillModeNonSolid = VK_TRUE; // Draw lines
-        enabled_features.fragmentStoresAndAtomics = VK_TRUE; // Used by some algorithms
-        enabled_features.geometryShader = VK_TRUE;
-        enabled_features.shaderInt64 = VK_TRUE; // Required by acceleration structure & buffer reference
-        enabled_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+        enabled_features.samplerAnisotropy = VK_TRUE;
+        enabled_features.independentBlend = VK_TRUE;
+        enabled_features.robustBufferAccess = VK_TRUE;
+        enabled_features.fillModeNonSolid = VK_TRUE;
         enabled_features.fragmentStoresAndAtomics = VK_TRUE;
+        enabled_features.geometryShader = VK_TRUE;
+        enabled_features.shaderInt64 = VK_TRUE;
+        enabled_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+
+        // 25.5.1: DO NOT use vk::PhysicalDeviceVulkan1xFeatures to replace the structs,
+        // they trigger false positives in validation layers, potentially due to Vulkan SDK bugs.
         vk::StructureChain<vk::DeviceCreateInfo,
                 vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
                 vk::PhysicalDeviceMeshShaderFeaturesEXT,
                 vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
                 vk::PhysicalDeviceRobustness2FeaturesEXT,
                 vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT,
-                vk::PhysicalDeviceDescriptorIndexingFeatures,
-                vk::PhysicalDeviceBufferDeviceAddressFeatures,
-                vk::PhysicalDevice16BitStorageFeatures,
-                vk::PhysicalDevice8BitStorageFeatures,
                 vk::PhysicalDeviceIndexTypeUint8FeaturesEXT,
-                vk::PhysicalDeviceMaintenance4Features,
-                vk::PhysicalDeviceShaderFloat16Int8Features,
-                vk::PhysicalDeviceSynchronization2Features,
-                vk::PhysicalDeviceScalarBlockLayoutFeatures,
-                vk::PhysicalDeviceHostQueryResetFeatures,
                 vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT,
-                vk::PhysicalDeviceImagelessFramebufferFeatures,
-                vk::PhysicalDeviceDynamicRenderingFeatures,
                 vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
-                vk::PhysicalDeviceRayQueryFeaturesKHR,
-                vk::PhysicalDeviceTimelineSemaphoreFeatures
+                vk::PhysicalDeviceDynamicRenderingFeatures,
+                vk::PhysicalDeviceMaintenance4Features,
+                vk::PhysicalDeviceSynchronization2Features,
+                vk::PhysicalDeviceShaderDrawParametersFeatures,
+                vk::PhysicalDeviceMultiviewFeatures,
+                vk::PhysicalDevice16BitStorageFeatures,
+                vk::PhysicalDeviceBufferDeviceAddressFeatures,
+                vk::PhysicalDeviceDescriptorIndexingFeatures,
+                vk::PhysicalDeviceScalarBlockLayoutFeatures,
+                vk::PhysicalDeviceImagelessFramebufferFeatures,
+                vk::PhysicalDeviceTimelineSemaphoreFeatures,
+                vk::PhysicalDeviceFloat16Int8FeaturesKHR,
+                vk::PhysicalDevice8BitStorageFeaturesKHR,
+                vk::PhysicalDeviceHostQueryResetFeatures,
+                vk::PhysicalDeviceRayQueryFeaturesKHR
         > extended_features;
+
         auto & device_create_info = std::get<0>(extended_features);
         device_create_info.setQueueCreateInfos(queue_info);
         device_create_info.setPEnabledExtensionNames(enabled_extension_names);
         device_create_info.setPEnabledFeatures(&enabled_features);
+
+        auto & shader_draw_parameters = std::get<12>(extended_features);
+        shader_draw_parameters.shaderDrawParameters = VK_TRUE;
+
+        auto & multiview_features = std::get<13>(extended_features);
+        multiview_features.multiview = VK_TRUE;
+
+        auto & storage_16bit = std::get<14>(extended_features);
+        storage_16bit.storageBuffer16BitAccess = VK_TRUE;
+        storage_16bit.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+
+        auto & buffer_device_address = std::get<15>(extended_features);
+        buffer_device_address.bufferDeviceAddress = VK_TRUE;
+
+        auto & descriptor_indexing = std::get<16>(extended_features);
+        descriptor_indexing.descriptorBindingPartiallyBound = VK_TRUE;
+        descriptor_indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        descriptor_indexing.runtimeDescriptorArray = VK_TRUE;
+
+        auto & scalar_block_layout = std::get<17>(extended_features);
+        scalar_block_layout.scalarBlockLayout = VK_TRUE;
+
+        auto & imageless_framebuffer = std::get<18>(extended_features);
+        imageless_framebuffer.imagelessFramebuffer = VK_TRUE;
+
+        auto & timeline_semaphore = std::get<19>(extended_features);
+        timeline_semaphore.timelineSemaphore = VK_TRUE;
+
+        auto & float16_int8 = std::get<20>(extended_features);
+        float16_int8.shaderFloat16 = VK_TRUE;
+        float16_int8.shaderInt8 = VK_TRUE;
+
+        auto & storage_8bit = std::get<21>(extended_features);
+        storage_8bit.storageBuffer8BitAccess = VK_TRUE;
+        storage_8bit.uniformAndStorageBuffer8BitAccess = VK_TRUE;
+
+        auto & host_query_reset = std::get<22>(extended_features);
+        host_query_reset.hostQueryReset = VK_TRUE;
+
         auto & RT_features = std::get<1>(extended_features);
         RT_features.rayTracingPipeline = VK_TRUE;
+
         auto & mesh_shader_features = std::get<2>(extended_features);
         mesh_shader_features.taskShader = VK_TRUE;
         mesh_shader_features.meshShader = VK_TRUE;
+
         auto & accel_features = std::get<3>(extended_features);
         accel_features.accelerationStructure = VK_TRUE;
+
         auto & robustness_features = std::get<4>(extended_features);
         robustness_features.nullDescriptor = VK_TRUE;
         robustness_features.robustBufferAccess2 = VK_TRUE;
+
         auto & dynamic_state_features = std::get<5>(extended_features);
         dynamic_state_features.extendedDynamicState3DepthClampEnable = VK_TRUE;
         dynamic_state_features.extendedDynamicState3PolygonMode = VK_TRUE;
-        auto & descriptor_set_indexing = std::get<6>(extended_features);
-        // Allow descriptors to be partially bound
-        descriptor_set_indexing.descriptorBindingPartiallyBound = VK_TRUE;
-        auto & buffer_device_addr = std::get<7>(extended_features);
-        buffer_device_addr.bufferDeviceAddress = VK_TRUE;
-        auto & storage16 = std::get<8>(extended_features);
-        storage16.storageBuffer16BitAccess = VK_TRUE;
-        storage16.uniformAndStorageBuffer16BitAccess = VK_TRUE;
-        auto & storage8 = std::get<9>(extended_features);
-        storage8.storageBuffer8BitAccess = VK_TRUE;
-        storage8.uniformAndStorageBuffer8BitAccess = VK_TRUE;
-        auto & index8 = std::get<10>(extended_features);
+
+        auto & index8 = std::get<6>(extended_features);
         index8.indexTypeUint8 = VK_TRUE;
-        auto & maintenance4 = std::get<11>(extended_features);
-        maintenance4.maintenance4 = VK_TRUE;
-        auto & f16i8 = std::get<12>(extended_features);
-        f16i8.shaderInt8 = VK_TRUE;
-        f16i8.shaderFloat16 = VK_TRUE;
-        auto & sync2 = std::get<13>(extended_features);
-        sync2.synchronization2 = VK_TRUE;
-        auto & scalar = std::get<14>(extended_features);
-        scalar.scalarBlockLayout = VK_TRUE;
-        auto & hostq = std::get<15>(extended_features);
-        hostq.hostQueryReset = VK_TRUE;
-        auto & fpatomic = std::get<16>(extended_features);
+
+        auto & fpatomic = std::get<7>(extended_features);
         fpatomic.shaderBufferFloat32AtomicAdd = VK_TRUE;
-        auto & imageless = std::get<17>(extended_features);
-        imageless.imagelessFramebuffer = VK_TRUE;
-        auto & dynrend = std::get<18>(extended_features);
-        dynrend.dynamicRendering = VK_TRUE;
-        auto & descb = std::get<19>(extended_features);
+
+        auto & descb = std::get<8>(extended_features);
         descb.descriptorBuffer = VK_TRUE;
-#ifndef NDEBUG
-        auto & rayqry = std::get<20>(extended_features);
+
+        auto & dyrend = std::get<9>(extended_features);
+        dyrend.dynamicRendering = VK_TRUE;
+
+        auto & maint4 = std::get<10>(extended_features);
+        maint4.maintenance4 = VK_TRUE;
+
+        auto & sync2 = std::get<11>(extended_features);
+        sync2.synchronization2 = VK_TRUE;
+
+        #ifndef NDEBUG
+        auto & rayqry = std::get<23>(extended_features);
         rayqry.rayQuery = VK_TRUE;
-        auto & timesem = std::get<21>(extended_features);
-        timesem.timelineSemaphore = VK_TRUE;
-#endif
+        #endif
 
         device_ = physical_device_.createDevice(extended_features.get());
         // Initialize the Vulkan-HPP dispatcher
