@@ -20,27 +20,28 @@ MI_NAMESPACE_BEGIN
 
 class StaticMesh : public Renderable {
 public:
-    StaticMesh() ;
-    ~StaticMesh() override;
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
-    void Update (RenderGraphBuilder & builder);
+    void Update (RendererView * view, RenderGraphBuilder & builder);
     FORCEINLINE bool IsDirty () const {return dirty_;}
 
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 
-    FORCEINLINE static TRef<StaticMesh> Create (Transform transform = {}) {
-        auto mesh = TRef(new StaticMesh());
-        mesh->SetTransform(transform);
-        return std::move(mesh);
-    }
+    static TRef<StaticMesh> Create (World * world, Transform transform = {}) ;
+
+    RenderableHeader GetDeviceRenderableHeader() const override;
 
 protected:
+
+    StaticMesh(uint32_t index, World * world) ;
+    ~StaticMesh() override;
 
     bool dirty_ {true};
 
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
+
+    StaticMeshRenderableHeader renderable_header_;
 };
 
 

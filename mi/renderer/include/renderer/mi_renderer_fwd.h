@@ -21,14 +21,19 @@ class Texture;
 
 class World;
 
+class RendererView;
+
 class GroupedRenderResourceAllocator;
-class GPUBufferHeapInterface;
-class GPUBufferHeapBuffer;
+class DeviceBufferHeapInterface;
+class DeviceBufferHeapBuffer;
 
 enum class MinimumMaterialFlagBits : unsigned {
     kNone = 0,
     kDoubleSided = 1 << 0
 };
+
+template<typename T>
+concept CRenderable = std::derived_from<T, Renderable>;
 
 MI_NAMESPACE_END
 #endif //MI_RENDERER_FWD_H

@@ -6,6 +6,7 @@
 
 #include <ranges>
 
+#include "shaders/SharedRenderable.hlsl"
 #include "renderer/mi_renderer.h"
 
 #include <barrier>
@@ -75,22 +76,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         return ;
     }
     mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
-    // Remove renderables with ref count approaching 1
-    std::vector<TRef<Renderable>> active_renderables;
     auto all_renderables = view->world_->GetRenderables();
-    active_renderables.reserve(all_renderables.size());
-    // Update renderable transforms
-    {
-        std::vector<glm::mat4x3> transforms;
-        transforms.reserve(all_renderables.size());
-        for (auto & e : all_renderables) {
-            transforms.push_back(e->GetTransform().GetToWorldTransformMatrix());
-        }
-        Helpers::UploadWithRDG(
-            builder, view->world_->GetDevice()->renderable_transforms_->GetSpan(),
-            transforms.data(), sizeof(glm::mat4x3) * transforms.size()
-        );
-    }
+
     // Update dirty renderables with custom logic
     for (auto & e : all_renderables) {
         if (e->IsDirty()) {
@@ -99,9 +86,23 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         }
     }
 
+    // Gather renderable common data for upload
+    std::vector<glm::mat4x3> renderable_transforms;
+    std::vector<RenderableHeader> renderable_headers;
+    {
+        renderable_transforms.reserve(all_renderables.size());
+        renderable_headers.reserve(all_renderables.size());
+        for (auto & e : all_renderables) {
+            renderable_transforms.push_back(e->GetTransform().GetToWorldTransformMatrix());
+            renderable_headers.push_back(e->GetDeviceRenderableHeader());
+        }
+    }
+
+    std::vector<TRef<Renderable>> visible_renderables;
+    visible_renderables.reserve(all_renderables.size());
     // Filter visible rendeables
     for (auto & e : all_renderables) {
-        if (e->IsVisible()) active_renderables.push_back(e);
+        if (e->IsVisible()) visible_renderables.push_back(e);
     }
 
     // Generate draw commands
@@ -115,7 +116,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     };
     std::vector<DrawInvocationSortingHeader> draw_invocation_sorting_headers;
     {
-        for (auto & e : active_renderables) {
+        for (auto & e : visible_renderables) {
             if (auto mesh = e->As<StaticMesh>()) {
                 for (auto [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
                     auto dev = geom->GetDeviceGeometry();
@@ -190,7 +191,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     {
         // TODO utilize GroupedResourceAllocator, place less barriers.
         std::set<RHIBuffer*> barrier_buffers;
-        for (auto & e : active_renderables) {
+        for (auto & e : visible_renderables) {
             if (!e->IsDirty()) continue ;
             if (auto mesh = e->As<StaticMesh>()) {
                 for (auto geom : mesh->GetGeometries()) {

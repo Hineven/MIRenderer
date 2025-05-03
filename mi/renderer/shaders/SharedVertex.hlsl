@@ -7,9 +7,9 @@ MI_SHARED_HLSL_BEGIN
 
 // Default vertex format
 struct DefaultStaticMeshVertex {
-    glm::vec3 position SEMANTICS(position);
-    glm::vec3 normal SEMANTICS(normal);
-    glm::vec2 uv SEMANTICS(uv);
+    float3 position SEMANTICS(position);
+    float3 normal SEMANTICS(normal);
+    float2 uv SEMANTICS(uv);
 };
 
 MI_SHARED_HLSL_END

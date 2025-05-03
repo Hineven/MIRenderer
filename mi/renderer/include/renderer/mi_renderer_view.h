@@ -10,6 +10,7 @@
 #include "rdg/rdg_fwd.h"
 #include "mi_camera.h"
 #include "renderer/mi_renderer_fwd.h"
+#include "rhi/rhi_fwd.h"
 MI_NAMESPACE_BEGIN
 
 
@@ -32,8 +33,6 @@ struct RendererViewPersistentData {
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
 
-
-
     Camera camera_;
 
     uint32_t film_width_ {};
@@ -43,6 +42,11 @@ struct RendererView {
 
     TRef<RDGBuffer> static_mesh_draw_commands_;
 
+    // Used to index the material indices buffer for geometries within the renderable using renderable index.
+    TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
+    uint32_t static_mesh_geometry_material_index_top {};
+    TRef<RDGBuffer> static_mesh_geometry_material_indices_;
+
     TRef<RDGTexture> G_depth_;
     TRef<RDGTexture> G_albedo_;
     TRef<RDGTexture> G_normal_;
@@ -50,6 +54,18 @@ struct RendererView {
 
     // Imported back buffer for current frame
     TRef<RDGTexture> output;
+
+    TRef<RDGBuffer> renderer_view;
+
+    // Current staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
+    // A new one will be allocated if the current one ran out. Allocation may also not be necessarily
+    // on the current buffer.
+    TRef<RHIBuffer> staging_buffer_;
+    uint32_t staging_buffer_top_;
+    constexpr static uint32_t kStagingBufferDefaultSize = 1024 * 1024 * 64; // 64MB
+    // Keep track of the total size of the staging buffer allocated
+    uint32_t staging_memory_footprint_ {};
+    RHIBufferSpan AllocateStagingBuffer(size_t size) ;
 
     RendererViewPersistentData * persistent_data_;
 };

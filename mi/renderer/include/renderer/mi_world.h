@@ -13,24 +13,32 @@
 #include "core/base.h"
 #include "core/refcounted.h"
 #include <rhi/rhi_fwd.h>
+
+#include "mi_renderable.h"
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
 class DeviceWorld : public NonCopyable, public NonMovable {
 public:
-    // Index with renderable index.
-    TRef<RHIBuffer> renderable_transforms_;
+    friend class World;
 
-    // Record the index of the material of each geometry.
-    TRef<RHIBuffer> renderable_geometry_material_indices_;
+    // Indexed with renderable index.
+    TRef<RHIBuffer> renderable_transforms_;
+    TRef<RHIBuffer> renderable_headers_;
+
+protected:
+    DeviceWorld();
+    ~DeviceWorld();
 };
 
 // Integrated class managing the world.
 class World : public NonCopyable, public NonMovable {
 public:
-    // Create a static mesh renderable and add it to the world.
-    // Releasing the reference yourself will remove it from the renderer.
-    StaticMesh * CreateStaticMeshRenderable () ;
+
+    friend class Renderable;
+
+    constexpr static uint32_t kMaxNumRenderables = 4096;
+    constexpr static uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 4096 * 16;
 
     void RemoveRenderable (Renderable * renderable) ;
 
@@ -43,7 +51,29 @@ public:
     }
 
 protected:
+
+    FORCEINLINE uint32_t AllocateRenderableIndex () {
+        if (free_renderables_.empty()) {
+            if (renderables_.size() < kMaxNumRenderables) {
+                renderables_.emplace_back(nullptr);
+                return (uint32_t)(renderables_.size() - 1);
+            }
+            return UINT32_MAX;
+        }
+        uint32_t index = free_renderables_.top();
+        free_renderables_.pop();
+        return index;
+
+    }
+
+    FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
+        free_renderables_.push(index);
+    }
+
     std::vector<TRef<Renderable>> renderables_;
+    // Keep track of free renderable indices, so we can reallocate them.
+    std::stack<uint32_t> free_renderables_;
+
     std::unique_ptr<DeviceWorld> device_world_;
 };
 

@@ -176,8 +176,8 @@ void DestroyInfra () ;
 #endif
 
 // Different from assertions, checks are always active (also in release builds).
-// TODO implement
-#define mi_check(cond, fmt, ...)
+#define mi_check(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::logic_error("assertion failure.");}}while(false)
+#define mi_check_nothrow(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); }}while(false)
 
 MI_NAMESPACE_END
 

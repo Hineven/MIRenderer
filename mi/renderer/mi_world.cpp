@@ -5,16 +5,21 @@
  */
 #include "renderer/mi_world.h"
 
+#include "shaders/SharedRenderable.hlsl"
+
 #include <rhi/rhi.h>
 #include <renderer/mi_helpers.h>
 #include <renderer/mi_static_mesh.h>
+#include <rhi/rhi_buffer.h>
+#include <renderer/mi_buffer_heap.h>
 
 MI_NAMESPACE_BEGIN
 
-StaticMesh * World::CreateStaticMeshRenderable () {
-    auto static_mesh = new StaticMesh();
-    renderables_.emplace_back(static_mesh);
-    return static_mesh;
+DeviceWorld::DeviceWorld () {
+    auto & rhi = RHI::Get();
+    renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * World::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * World::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    static_mesh_renderable_materials_ = rhi.CreateBuffer(sizeof(uint32_t) * World::kMaxNumStaticMeshGeometryMaterialPairs, RHIBufferUsageFlagBits::kStorage);
 }
 
 void World::RemoveRenderable (Renderable * renderable) {
