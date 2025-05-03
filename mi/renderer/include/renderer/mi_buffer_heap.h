@@ -32,6 +32,8 @@ public:
     FORCEINLINE uint32_t GetAllocationAlignment () const {
         return allocation_alignment;
     }
+    // Return a block buffer allocated for the buffer heap
+    RHIBufferSpan GetHeapBuffer (uint32_t block_index) const = 0;
     virtual ~DeviceBufferHeapInterface () = default;
 protected:
 
@@ -79,6 +81,8 @@ public:
         mi_check(buffer_blocks_.size() <= num, "Buffer block limit is less than the current number of buffer blocks.");
         max_num_buffer_blocks_ = num;
     }
+
+    RHIBufferSpan GetHeapBuffer (uint32_t block_index) const ;
 
     FORCEINLINE uint32_t GetNumBufferBlockLimit () const {return max_num_buffer_blocks_;}
 

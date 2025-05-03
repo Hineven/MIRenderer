@@ -69,6 +69,8 @@ class RDGPass;
 class RHICommandQueueGraphics;
 typedef std::function<void(RDGPass*, RHICommandQueueGraphics&)> RDGPassLambda;
 
+class RenderGraphBuilder;
+
 // Some pointer-based shader parameters that can be set to null are initialized to this value
 // to indicate that they are not set by the user.
 // This is used to check if the user has set the parameter (setting to nullptr also counts).

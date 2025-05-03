@@ -41,6 +41,8 @@ protected:
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
 
+    // Store a list of material indices on the device
+    TRef<DeviceBufferHeapBuffer> geometry_material_indices_;
     StaticMeshRenderableHeader renderable_header_;
 };
 

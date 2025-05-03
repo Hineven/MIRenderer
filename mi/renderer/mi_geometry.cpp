@@ -13,7 +13,7 @@
 #include "renderer/mi_world.h"
 MI_NAMESPACE_BEGIN
 
-DeviceGeometry::DeviceGeometry(GroupedRenderResourceAllocator * allocator) {
+DeviceGeometry::DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator) {
     allocator_ = allocator;
 }
 
@@ -38,7 +38,7 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     return geom;
 }
 
-void Geometry::CreateOnDevice(GroupedRenderResourceAllocator *alloc) {
+void Geometry::CreateOnDevice(CommonGroupedDeviceResourceAllocator *alloc) {
     mi_assert(!device_geometry_, "Device geometry already created.");
     auto device = TRef(new DeviceGeometry(alloc));
     mi_check(GetVertexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for vertex buffer.");

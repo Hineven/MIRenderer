@@ -21,9 +21,10 @@ class Texture;
 
 class World;
 
-class RendererView;
+class BatchedUploadContext;
+struct RendererView;
 
-class GroupedRenderResourceAllocator;
+class CommonGroupedDeviceResourceAllocator;
 class DeviceBufferHeapInterface;
 class DeviceBufferHeapBuffer;
 

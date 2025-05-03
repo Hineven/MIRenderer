@@ -15,7 +15,7 @@
 
 MI_NAMESPACE_BEGIN
 
-GroupedRenderResourceAllocator::GroupedRenderResourceAllocator(DeviceBufferHeapInterface *vertex_buffer_heap, DeviceBufferHeapInterface *index_buffer_heap) {
+CommonGroupedDeviceResourceAllocator::CommonGroupedDeviceResourceAllocator(DeviceBufferHeapInterface *vertex_buffer_heap, DeviceBufferHeapInterface *index_buffer_heap) {
     vertex_buffer_heap_ = vertex_buffer_heap;
     index_buffer_heap_ = index_buffer_heap;
 

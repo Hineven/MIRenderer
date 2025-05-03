@@ -25,7 +25,7 @@
 MI_NAMESPACE_BEGIN
 
 bool GLTFLoader::LoadGLTF(
-    std::filesystem::path path, GroupedRenderResourceAllocator &allocator,
+    std::filesystem::path path, CommonGroupedDeviceResourceAllocator &allocator,
     World &world,
     std::vector<TRef<Geometry> > &out_geometries, std::vector<TRef<Material> > &out_materials, std::vector<TRef<StaticMesh> > &out_meshes
 ) {

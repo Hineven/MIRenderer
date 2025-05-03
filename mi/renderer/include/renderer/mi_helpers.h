@@ -8,11 +8,11 @@
 #define MI_HELPERS_H
 
 #include "core/common.h"
+#include <renderer/mi_renderer_fwd.h>
 #include <rhi/rhi_desc.h>
 
 MI_NAMESPACE_BEGIN
-
-class RHIBuffer;
+    class RHIBuffer;
 class RDGBuffer;
 class RenderGraphBuilder;
 class Helpers {
@@ -28,6 +28,8 @@ public:
     static void UploadWithRDG (RenderGraphBuilder & builder, RHIBufferSpan buffer, const void * data, size_t size) ;
     // Add a RDG pass to upload data to a buffer.
     static void UploadWithRDG (RenderGraphBuilder & builder, RDGBuffer * buffer, const void * data, size_t size, size_t dst_offset = 0) ;
+    // Add a RDG pass to upload data to a buffer.
+    static void UploadWithRDGUsingStagingBuffer (RenderGraphBuilder & builder, RHIBufferSpan buffer, RHIBufferSpan staging_buffer, const void * data, size_t size) ;
 };
 
 MI_NAMESPACE_END

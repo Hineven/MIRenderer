@@ -44,16 +44,20 @@ void Renderer::Init(RDGResourcePool * pool) {
 }
 
 void Renderer::UpdateView(RendererView *view) {
-    bool should_initialize = false;
-    if (!view->persistent_data_->initialized) {
-        should_initialize = true;
+    if (view->persistent_data_ == nullptr) {
+        // Create persistent data and initialize it.
+        auto persistent = new RendererViewPersistentData();
+        view->persistent_data_ = persistent;
+        persistent->Init();
+    } else {
+        view->persistent_data_->Update(view);
     }
 
-    view->output = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
+    // Initialize the view state for the current frame
+    view->InitFrame();
 
-    if (should_initialize) {
-        view->persistent_data_->initialized = true;
-    }
+    // Finally, import external resources to RDG that changes across frames
+    view->output_ = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
 }
 
 void Renderer::PostUpdateView (RendererView *view) {

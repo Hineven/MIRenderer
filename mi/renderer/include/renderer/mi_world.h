@@ -26,12 +26,16 @@ public:
     TRef<RHIBuffer> renderable_transforms_;
     TRef<RHIBuffer> renderable_headers_;
 
+    // Record the index of the material of each geometry from all static mesh renderables.
+    TRef<DeviceBufferHeapInterface> static_mesh_renderable_materials_;
+
 protected:
     DeviceWorld();
     ~DeviceWorld();
 };
 
 // Integrated class managing the world.
+// It is responsible for holding renderables and rendering resources of a "3d world“。
 class World : public NonCopyable, public NonMovable {
 public:
 

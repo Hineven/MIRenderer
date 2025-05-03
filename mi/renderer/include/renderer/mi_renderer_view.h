@@ -9,16 +9,66 @@
 
 #include "rdg/rdg_fwd.h"
 #include "mi_camera.h"
+#include "core/util/alloc.h"
 #include "renderer/mi_renderer_fwd.h"
+#include <rdg/rdg_fwd.h>
 #include "rhi/rhi_fwd.h"
+#include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
 
+class BatchedUploadContext {
+protected:
+    BatchedUploadContext() = default;
+    // Current manual staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
+    // A new one will be allocated if the current one ran out. Allocation may also not be necessarily
+    // on the current buffer.
+    TRef<RHIBuffer> manual_staging_buffer_;
+    uint32_t manual_staging_buffer_top_;
+    // Keep track of the total size of the staging buffer allocated
+    uint32_t manual_staging_memory_footprint_ {};
+
+    // Whether the batched uploads are fired or not.
+    bool fired_ {};
+
+    struct PendingUpload {
+        std::span<const uint8_t> data;
+        RHIBufferSpan dst_buffer;
+    };
+
+    struct PendingRDGUpload {
+        std::span<const uint8_t> data;
+        TRef<RDGBuffer> dst_buffer;
+        size_t dst_offset {};
+    };
+
+    std::vector<PendingUpload> pending_uploads_;
+    std::vector<PendingRDGUpload> pending_rdg_uploads_;
+
+public:
+    friend struct RendererView;
+
+    constexpr static uint32_t kStagingBufferDefaultSize = 1024 * 1024 * 64; // 64MB
+
+    // Allocate a staging buffer from the context for manual use
+    RHIBufferSpan AllocateManualStagingBuffer(size_t size) ;
+
+    // Add an upload to the context. The upload will be batched and fired at the late beginning of the frame
+    // You should manually place barriers.
+    void AddUnsafe (RHIBufferSpan buffer, const void * data, size_t size);
+    // Add an upload to the context. The upload will be batched and fired at the late beginning of the frame
+    void Add(RDGBuffer *buffer, const void * data, size_t size, size_t dst_offset = 0);
+
+    // Add an RDG upload pass. Close the context.
+    void Fire (RenderGraphBuilder & builder);
+    void Init ();
+
+};
 
 // The data kept across frames for a view.
 struct RendererViewPersistentData {
-    // If the view is initialized. If not, initialization will be done
-    // upon Renderer::UpdateView()
-    bool initialized;
+
+    void Init ();
+    void Update (RendererView * view);
 
     TRef<RDGTexture> prev_G_depth;
     TRef<RDGTexture> prev_G_albedo;
@@ -33,6 +83,9 @@ struct RendererViewPersistentData {
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
 
+    // Called once per frame to initialize the view.
+    void InitFrame ();
+
     Camera camera_;
 
     uint32_t film_width_ {};
@@ -40,12 +93,11 @@ struct RendererView {
 
     World * world_;
 
+    // Draw commands for static meshes
     TRef<RDGBuffer> static_mesh_draw_commands_;
 
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
-    uint32_t static_mesh_geometry_material_index_top {};
-    TRef<RDGBuffer> static_mesh_geometry_material_indices_;
 
     TRef<RDGTexture> G_depth_;
     TRef<RDGTexture> G_albedo_;
@@ -53,19 +105,15 @@ struct RendererView {
     TRef<RDGTexture> G_roughness_;
 
     // Imported back buffer for current frame
-    TRef<RDGTexture> output;
+    TRef<RDGTexture> output_;
+    // Imported buffer from the device world buffer heap
+    TRef<RDGBuffer> static_mesh_geometry_material_indices;
 
-    TRef<RDGBuffer> renderer_view;
+    // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
+    BatchedUploadContext upload_context_;
 
-    // Current staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
-    // A new one will be allocated if the current one ran out. Allocation may also not be necessarily
-    // on the current buffer.
-    TRef<RHIBuffer> staging_buffer_;
-    uint32_t staging_buffer_top_;
-    constexpr static uint32_t kStagingBufferDefaultSize = 1024 * 1024 * 64; // 64MB
-    // Keep track of the total size of the staging buffer allocated
-    uint32_t staging_memory_footprint_ {};
-    RHIBufferSpan AllocateStagingBuffer(size_t size) ;
+    // Temporaries allocated for the frame
+    TOneTimeLinearAllocator<> temp_allocator_;
 
     RendererViewPersistentData * persistent_data_;
 };

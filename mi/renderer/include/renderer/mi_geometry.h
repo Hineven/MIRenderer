@@ -18,10 +18,10 @@ MI_NAMESPACE_BEGIN
 
 class DeviceGeometry : public RefCounted<>, public NonMovable {
 protected:
-    DeviceGeometry(GroupedRenderResourceAllocator * allocator);
+    DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator);
     ~DeviceGeometry() override;
 
-    GroupedRenderResourceAllocator * allocator_ {};
+    CommonGroupedDeviceResourceAllocator * allocator_ {};
 
     // Device related data (manually released to the allocator)
     RHIBufferSpan vertex_buffer_;
@@ -92,7 +92,7 @@ public:
 
     void SetName (std::string_view name);
 
-    void CreateOnDevice (GroupedRenderResourceAllocator * alloc);
+    void CreateOnDevice (CommonGroupedDeviceResourceAllocator * alloc);
     // Update on device. This function synchronizes with RHI thread directly.
     void SyncAndUpdateOnDevice ();
     void ReleaseHost ();

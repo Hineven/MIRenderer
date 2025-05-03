@@ -24,10 +24,10 @@ public:
     friend class Renderer;
     FORCEINLINE uint32_t GetIndex () const {return index_;}
 protected:
-    DeviceMaterial (GroupedRenderResourceAllocator * allocator);
+    DeviceMaterial (CommonGroupedDeviceResourceAllocator * allocator);
     ~DeviceMaterial () ;
 
-    GroupedRenderResourceAllocator * allocator_ {};
+    CommonGroupedDeviceResourceAllocator * allocator_ {};
 
     // Index of the material (assigned by the renderer)
     uint32_t index_ {UINT32_MAX};
@@ -71,7 +71,7 @@ public:
         return double_sided_;
     }
 
-    void CreateOnDevice (GroupedRenderResourceAllocator * allocator) ;
+    void CreateOnDevice (CommonGroupedDeviceResourceAllocator * allocator) ;
 
     DeviceMaterial * GetDeviceMaterial () {return device_material_.Raw();}
 

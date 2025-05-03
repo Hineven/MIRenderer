@@ -4,7 +4,11 @@
  * See LICENSE for licensing.
  */
 #include "renderer/mi_static_mesh.h"
+
+#include "rdg/rdg_builder.h"
+#include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_geometry.h"
+#include "renderer/mi_helpers.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_view.h"
 
@@ -34,12 +38,20 @@ void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
 
 void StaticMesh::Update (RendererView * view, RenderGraphBuilder & builder) {
     if (!dirty_) return;
-
+    if (geometries_.empty()) return ;
+    uint32_t current_count = geometry_material_indices_ ? 0 : geometry_material_indices_->GetRHI().size;
     auto device_world = view->world_->GetDevice();
-    // Used to index the material indices buffer for geometries within the renderable.
-    auto offset = view->static_mesh_geometry_material_index_top;
-    view->static_mesh_geometry_material_index_top += uint32_t(geometries_.size());
-    renderable_header_.NumGeometries = uint32_t(geometries_.size());asdasdas
+    if (geometries_.size() > current_count) {
+        current_count = std::max(current_count * 2u, 4u);
+        geometry_material_indices_.SafeRelease();
+        geometry_material_indices_ = device_world->static_mesh_renderable_materials_->AllocateRefCounted(current_count * sizeof(uint32_t));
+    }
+    auto mem = (uint32_t*)view->temp_allocator_.Allocate(geometries_.size() * sizeof(uint32_t));
+    for (int i = 0; i < (int)geometries_.size(); i++) {
+        mem[i] = materials_[i]->GetDeviceMaterial()->GetIndex();
+    }
+    view->upload_context_.AddUnsafe(geometry_material_indices_->GetRHI(), mem, geometries_.size() * sizeof(uint32_t));
+    view->upload_context_.AddBarrier(view->static_mesh_geometry_material_indices_);
 }
 
 RenderableHeader StaticMesh::GetDeviceRenderableHeader() const {

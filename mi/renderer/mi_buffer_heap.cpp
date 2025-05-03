@@ -7,6 +7,7 @@
 #include "renderer/mi_buffer_heap.h"
 
 #include "rhi/rhi.h"
+#include "rhi/rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
     DeviceBufferHeapBuffer::~DeviceBufferHeapBuffer() {
@@ -128,5 +129,11 @@ void SimpleDeviceBufferHeap::Free (RHIBufferSpan allocation) {
         }
     }
 }
+
+RHIBufferSpan SimpleDeviceBufferHeap::GetHeapBuffer(uint32_t block_index) const {
+    mi_assert(block_index < buffer_blocks_.size(), "Buffer block index out of range.");
+    return buffer_blocks_[block_index].buffer->GetSpan();
+}
+
 
 MI_NAMESPACE_END
