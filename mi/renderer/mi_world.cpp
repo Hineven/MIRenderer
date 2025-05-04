@@ -19,7 +19,8 @@ DeviceWorld::DeviceWorld () {
     auto & rhi = RHI::Get();
     renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * World::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * World::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
-    static_mesh_renderable_materials_ = rhi.CreateBuffer(sizeof(uint32_t) * World::kMaxNumStaticMeshGeometryMaterialPairs, RHIBufferUsageFlagBits::kStorage);
+    static_mesh_renderable_materials_ = DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 1, sizeof(uint32_t) * World::kMaxNumStaticMeshGeometryMaterialPairs);
+    static_mesh_renderable_materials_->SetNumBufferBlockLimit(1);
 }
 
 void World::RemoveRenderable (Renderable * renderable) {

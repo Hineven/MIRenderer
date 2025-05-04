@@ -39,11 +39,6 @@ public:
 
 protected:
 
-    // Update the view state before rendering
-    void UpdateView (RendererView * view) ;
-    // Update the view after rendering, including rolling persistent data
-    void PostUpdateView (RendererView * view) ;
-
     // Draw a texture to back buffer directly.
     void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture);
 

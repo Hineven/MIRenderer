@@ -163,10 +163,11 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
     rhi.InitializeSwapChain(&surface_tmp, cfg.window_width, cfg.window_height);
 
-    // Renderer
-    Renderer::Get().Init();
 
     auto pool = RDGResourcePool::Create();
+
+    // Renderer
+    Renderer::Get().Init(pool.Raw());
 
     {
         std::future<void> previous_frame_future;

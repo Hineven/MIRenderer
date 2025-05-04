@@ -16,16 +16,16 @@
 #include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
 
-class BatchedUploadContext {
+class BatchedUploadContext : public NonCopyable, public NonMovable {
 protected:
     BatchedUploadContext() = default;
     // Current manual staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
     // A new one will be allocated if the current one ran out. Allocation may also not be necessarily
     // on the current buffer.
     TRef<RHIBuffer> manual_staging_buffer_;
-    uint32_t manual_staging_buffer_top_;
+    uint32_t manual_staging_buffer_top_ {};
     // Keep track of the total size of the staging buffer allocated
-    uint32_t manual_staging_memory_footprint_ {};
+    size_t manual_staging_memory_footprint_ {};
 
     // Whether the batched uploads are fired or not.
     bool fired_ {};
@@ -43,6 +43,7 @@ protected:
 
     std::vector<PendingUpload> pending_uploads_;
     std::vector<PendingRDGUpload> pending_rdg_uploads_;
+    std::vector<RDGBuffer * > extra_barriers_;
 
 public:
     friend struct RendererView;
@@ -57,6 +58,8 @@ public:
     void AddUnsafe (RHIBufferSpan buffer, const void * data, size_t size);
     // Add an upload to the context. The upload will be batched and fired at the late beginning of the frame
     void Add(RDGBuffer *buffer, const void * data, size_t size, size_t dst_offset = 0);
+    // Add an extra pass write usage to the context. The usage will be added to the upload pass.
+    void AddExtraBarrier(RDGBuffer * buffer);
 
     // Add an RDG upload pass. Close the context.
     void Fire (RenderGraphBuilder & builder);
@@ -78,6 +81,9 @@ struct RendererViewPersistentData {
     Camera prev_camera;
     uint32_t view_index {};
     uint32_t frame_index_ {};
+
+
+    World * prev_world_;
 };
 
 // Holds all the states that a renderer uses to render a view of a frame.
@@ -93,9 +99,6 @@ struct RendererView {
 
     World * world_;
 
-    // Draw commands for static meshes
-    TRef<RDGBuffer> static_mesh_draw_commands_;
-
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
 
@@ -104,10 +107,12 @@ struct RendererView {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_roughness_;
 
-    // Imported back buffer for current frame
-    TRef<RDGTexture> output_;
-    // Imported buffer from the device world buffer heap
-    TRef<RDGBuffer> static_mesh_geometry_material_indices;
+    struct {
+        // Imported back buffer for current frame
+        TRef<RDGTexture> output_;
+        // Imported buffer from the device world buffer heap
+        TRef<RDGBuffer> static_mesh_geometry_material_indices;
+    } imported;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
     BatchedUploadContext upload_context_;

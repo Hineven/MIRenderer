@@ -50,7 +50,7 @@ public:
     }
 
     template<typename T>
-    FORCEINLINE T* As () {return static_cast<T>(this);}
+    FORCEINLINE T* As () {return static_cast<T*>(this);}
 
     virtual RenderableHeader GetDeviceRenderableHeader () const ;
 

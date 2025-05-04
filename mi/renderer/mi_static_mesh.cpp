@@ -27,6 +27,7 @@ TRef<StaticMesh> StaticMesh::Create(World *world, Transform transform) {
     mesh->SetTransform(transform);
     mesh->index_ = index;
     mesh->world_ = world;
+    return std::move(mesh);
 }
 
 
@@ -36,10 +37,10 @@ void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     dirty_ = true;
 }
 
-void StaticMesh::Update (RendererView * view, RenderGraphBuilder & builder) {
+void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
     if (!dirty_) return;
     if (geometries_.empty()) return ;
-    uint32_t current_count = geometry_material_indices_ ? 0 : geometry_material_indices_->GetRHI().size;
+    uint32_t current_count = (uint32_t)(geometry_material_indices_ ? 0 : geometry_material_indices_->GetRHI().size);
     auto device_world = view->world_->GetDevice();
     if (geometries_.size() > current_count) {
         current_count = std::max(current_count * 2u, 4u);
@@ -51,7 +52,7 @@ void StaticMesh::Update (RendererView * view, RenderGraphBuilder & builder) {
         mem[i] = materials_[i]->GetDeviceMaterial()->GetIndex();
     }
     view->upload_context_.AddUnsafe(geometry_material_indices_->GetRHI(), mem, geometries_.size() * sizeof(uint32_t));
-    view->upload_context_.AddBarrier(view->static_mesh_geometry_material_indices_);
+    view->upload_context_.AddExtraBarrier(view->imported.static_mesh_geometry_material_indices.Raw());
 }
 
 RenderableHeader StaticMesh::GetDeviceRenderableHeader() const {

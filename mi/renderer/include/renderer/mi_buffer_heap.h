@@ -33,7 +33,9 @@ public:
         return allocation_alignment;
     }
     // Return a block buffer allocated for the buffer heap
-    RHIBufferSpan GetHeapBuffer (uint32_t block_index) const = 0;
+    virtual RHIBuffer * GetHeapBufferBlock (uint32_t block_index) const = 0;
+    virtual uint32_t GetNumHeapBufferBlocks () const = 0;
+    virtual void SetNumBufferBlockLimit (uint32_t num) = 0;
     virtual ~DeviceBufferHeapInterface () = default;
 protected:
 
@@ -77,12 +79,10 @@ public:
     SimpleDeviceBufferHeap (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024);
     ~SimpleDeviceBufferHeap();
 
-    FORCEINLINE void SetNumBufferBlockLimit (uint32_t num) {
-        mi_check(buffer_blocks_.size() <= num, "Buffer block limit is less than the current number of buffer blocks.");
-        max_num_buffer_blocks_ = num;
-    }
+    void SetNumBufferBlockLimit (uint32_t num) override ;
 
-    RHIBufferSpan GetHeapBuffer (uint32_t block_index) const ;
+    RHIBuffer * GetHeapBufferBlock (uint32_t block_index) const override;
+    uint32_t GetNumHeapBufferBlocks () const override ;
 
     FORCEINLINE uint32_t GetNumBufferBlockLimit () const {return max_num_buffer_blocks_;}
 

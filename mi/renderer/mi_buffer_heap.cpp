@@ -130,10 +130,20 @@ void SimpleDeviceBufferHeap::Free (RHIBufferSpan allocation) {
     }
 }
 
-RHIBufferSpan SimpleDeviceBufferHeap::GetHeapBuffer(uint32_t block_index) const {
+RHIBuffer * SimpleDeviceBufferHeap::GetHeapBufferBlock (uint32_t block_index) const {
     mi_assert(block_index < buffer_blocks_.size(), "Buffer block index out of range.");
-    return buffer_blocks_[block_index].buffer->GetSpan();
+    return buffer_blocks_[block_index].buffer.Raw();
 }
+
+uint32_t SimpleDeviceBufferHeap::GetNumHeapBufferBlocks () const {
+    return (uint32_t)buffer_blocks_.size();
+}
+
+void SimpleDeviceBufferHeap::SetNumBufferBlockLimit(uint32_t num) {
+    mi_check(buffer_blocks_.size() <= num, "Buffer block limit is less than the current number of buffer blocks.");
+    max_num_buffer_blocks_ = num;
+}
+
 
 
 MI_NAMESPACE_END

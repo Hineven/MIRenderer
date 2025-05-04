@@ -8,6 +8,7 @@
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_pool.h"
 #include "rdg/rdg_resource.h"
+#include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_world.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_buffer.h"
@@ -32,7 +33,7 @@ RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {
     } else {
         auto buffer = manual_staging_buffer_;
         auto offset = manual_staging_buffer_top_;
-        manual_staging_buffer_top_ += size;
+        manual_staging_buffer_top_ += (uint32_t)size;
         return {buffer.Raw(), offset};
     }
 }
@@ -41,6 +42,11 @@ void BatchedUploadContext::Init() {
     manual_staging_buffer_ = {};
     manual_staging_buffer_top_ = {};
     manual_staging_memory_footprint_ = 0;
+
+    pending_uploads_.clear();
+    pending_rdg_uploads_.clear();
+    extra_barriers_.clear();
+
     fired_ = false;
 }
 
@@ -62,10 +68,18 @@ void BatchedUploadContext::Add(RDGBuffer *buffer, const void *data, size_t size,
     pending_rdg_uploads_.emplace_back(upload);
 }
 
+void BatchedUploadContext::AddExtraBarrier(RDGBuffer *buffer) {
+    // Filter naive duplicates
+    if (!extra_barriers_.empty() && buffer == extra_barriers_.back()) return;
+    extra_barriers_.push_back(buffer);
+}
+
+
 void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     mi_assert(!fired_, "Batched double fire.");
     fired_ = true;
-    std::sort(pending_rdg_uploads_.begin(), pending_rdg_uploads_.end(), [](const PendingRDGUpload a, const PendingUpload & b) {
+    std::sort(pending_rdg_uploads_.begin(), pending_rdg_uploads_.end(),
+        [](const PendingRDGUpload & a, const PendingRDGUpload & b) {
         return a.dst_buffer < b.dst_buffer;
     });
     std::vector<RDGBuffer*> rdg_upload_buffers;
@@ -103,7 +117,7 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
 
     auto pass = builder.AddPass("BatchedUploadBuffers", RDGPassType::kGeneric, {}, nullptr, nullptr,
         [staging = staging_buffer.Raw(), pending_rhi = std::move(pending_uploads_), pending_rdg = std::move(pending_rdg_uploads_)](
-            RDGPass *pass, RHICommandQueueGraphics & queue
+            [[maybe_unused]] RDGPass *pass, RHICommandQueueGraphics & queue
         ) {
             size_t offset = 0;
             for (const auto & e : pending_rhi) {
@@ -128,6 +142,12 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     for (auto e : rdg_upload_buffers) {
         pass->AddBuffer(e, RHIGPUAccessFlagBits::kWrite);
     }
+    // Add extra barriers
+    std::sort(extra_barriers_.begin(), extra_barriers_.end());
+    extra_barriers_.erase(std::unique(extra_barriers_.begin(), extra_barriers_.end()), extra_barriers_.end());
+    for (auto e : extra_barriers_) {
+        pass->AddBuffer(e, RHIGPUAccessFlagBits::kWrite);
+    }
 }
 
 void RendererViewPersistentData::Init() {
@@ -142,11 +162,26 @@ void RendererViewPersistentData::Update(RendererView *view) {
     prev_G_albedo = view->G_albedo_;
     prev_G_roughness = view->G_roughness_;
 
+    prev_world_ = view->world_;
+
+    frame_index_ ++;
 }
 
 void RendererView::InitFrame() {
 
-    static_mesh_draw_commands_ = {};
+    // Update persistent data first
+    if (persistent_data_ == nullptr) {
+        // Create persistent data and initialize it.
+        auto persistent = new RendererViewPersistentData();
+        persistent_data_ = persistent;
+        persistent->Init();
+    } else {
+        // Roll states for the next frame
+        persistent_data_->Update(this);
+    }
+
+    bool world_changed = world_ != persistent_data_->prev_world_;
+
     static_mesh_geometry_material_indices_start_index = {};
 
     G_depth_ = RDGTexture::CreateTexture2D(
@@ -166,13 +201,22 @@ void RendererView::InitFrame() {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
-    // Import output backbuffer as RDG resource. We dont care about its previous usage.
-    output_ = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
+    {
+        // Import output backbuffer as RDG resource. We dont care about its previous usage.
+        imported.output_ = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
 
-    if (world_) {
-        mi_assert(world_->GetDevice(), "Device world is not initialized upon rendering.");
-        auto device_world = world_->GetDevice();
-        static_mesh_geometry_material_indices = RDGBuffer::Import(device_world->static_mesh_renderable_materials_.GetHeapBuffer(0));
+        if (world_changed) {
+            if (world_) {
+                mi_assert(world_->GetDevice(), "Device world is not initialized upon rendering.");
+                auto device_world = world_->GetDevice();
+                imported.static_mesh_geometry_material_indices = RDGBuffer::Import(
+                    device_world->static_mesh_renderable_materials_->GetHeapBufferBlock(0),
+                    RHIGPUAccessFlagBits::kRead | RHIGPUAccessFlagBits::kWrite
+                );
+            } else {
+                imported.static_mesh_geometry_material_indices = nullptr;
+            }
+        }
     }
 
     // Initialize the upload context used for batching uploads

@@ -7,6 +7,7 @@
 #ifndef MI_RENDERER_FWD_H
 #define MI_RENDERER_FWD_H
 
+#include <concepts>
 #include <glm/glm.hpp>
 #include "core/common.h"
 MI_NAMESPACE_BEGIN
