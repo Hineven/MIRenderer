@@ -86,18 +86,23 @@ struct RendererViewPersistentData {
     World * prev_world_;
 };
 
+struct ViewCommonShaderParameters;
+
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
+
+    RendererView ();
+    ~RendererView ();
 
     // Called once per frame to initialize the view.
     void InitFrame ();
 
-    Camera camera_;
+    Camera camera_ {};
 
     uint32_t film_width_ {};
     uint32_t film_height_ {};
 
-    World * world_;
+    World * world_ {};
 
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
@@ -112,6 +117,7 @@ struct RendererView {
         TRef<RDGTexture> output_;
         // Imported buffer from the device world buffer heap
         TRef<RDGBuffer> static_mesh_geometry_material_indices;
+        TRef<RDGTexture> sky_texture;
     } imported;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
@@ -120,7 +126,11 @@ struct RendererView {
     // Temporaries allocated for the frame
     TOneTimeLinearAllocator<> temp_allocator_;
 
-    RendererViewPersistentData * persistent_data_;
+    // Generated view common parameters (for this frame)
+    ViewCommonShaderParameters * view_common_params_;
+
+    // Persistent data
+    RendererViewPersistentData * persistent_data_ {};
 };
 
 MI_NAMESPACE_END

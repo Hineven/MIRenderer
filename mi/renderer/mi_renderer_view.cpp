@@ -150,6 +150,15 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     }
 }
 
+RendererView::RendererView() {
+
+}
+
+RendererView::~RendererView() {
+
+}
+
+
 void RendererViewPersistentData::Init() {
     *this = {};
 }
@@ -218,6 +227,8 @@ void RendererView::InitFrame() {
             }
         }
     }
+
+    view_common_params_ = ...;
 
     // Initialize the upload context used for batching uploads
     upload_context_.Init();

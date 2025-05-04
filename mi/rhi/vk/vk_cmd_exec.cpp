@@ -883,9 +883,9 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
-    state.cmd.debugMarkerBeginEXT(
-        vk::DebugMarkerMarkerInfoEXT()
-            .setPMarkerName(cmd->marker_name_)
+    state.cmd.beginDebugUtilsLabelEXT(
+        vk::DebugUtilsLabelEXT()
+            .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
 }
@@ -895,7 +895,7 @@ void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICo
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
-    state.cmd.debugMarkerEndEXT();
+    state.cmd.endDebugUtilsLabelEXT();
 }
 
 void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) {
@@ -903,9 +903,9 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
-    state.cmd.debugMarkerInsertEXT(
-        vk::DebugMarkerMarkerInfoEXT()
-            .setPMarkerName(cmd->marker_name_)
+    state.cmd.insertDebugUtilsLabelEXT(
+        vk::DebugUtilsLabelEXT()
+            .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
 }

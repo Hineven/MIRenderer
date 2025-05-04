@@ -42,6 +42,9 @@ protected:
     // Draw a texture to back buffer directly.
     void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture);
 
+    // Render the sky to the view output (back buffer)
+    void Render_Sky (RendererView * view, RenderGraphBuilder & builder) ;
+
     TRef<RDGResourcePool> pool_;
 
 };

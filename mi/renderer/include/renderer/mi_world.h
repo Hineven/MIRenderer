@@ -18,7 +18,7 @@
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
-class DeviceWorld : public NonCopyable, public NonMovable {
+class WorldDeviceData : public NonCopyable, public NonMovable {
 public:
     friend class World;
 
@@ -30,9 +30,11 @@ public:
     // This buffer heap is limited to 1 buffer block.
     TRef<DeviceBufferHeapInterface> static_mesh_renderable_materials_;
 
+    // TRef<RHIBindlessSlotKeeper<RHITexture>> sky_texture_;
+
 protected:
-    DeviceWorld();
-    ~DeviceWorld();
+    WorldDeviceData();
+    ~WorldDeviceData();
 };
 
 // Integrated class managing the world.
@@ -51,8 +53,17 @@ public:
         return renderables_;
     }
 
-    FORCEINLINE DeviceWorld * GetDevice () const {
+    FORCEINLINE WorldDeviceData * GetDevice () const {
         return device_world_.get();
+    }
+
+    void SetSkyTexture (Texture * texture) ;
+    FORCEINLINE TRef<Texture> GetSkyTexture () const {
+        return sky_texture_;
+    }
+
+    FORCEINLINE bool IsDevicePresent () const {
+        return device_world_ != nullptr;
     }
 
 protected:
@@ -79,7 +90,9 @@ protected:
     // Keep track of free renderable indices, so we can reallocate them.
     std::stack<uint32_t> free_renderables_;
 
-    std::unique_ptr<DeviceWorld> device_world_;
+    TRef<Texture> sky_texture_;
+
+    std::unique_ptr<WorldDeviceData> device_world_;
 };
 
 MI_NAMESPACE_END

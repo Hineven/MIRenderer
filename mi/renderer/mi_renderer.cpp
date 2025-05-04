@@ -157,6 +157,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
         // Ready for rendering
 
+        // Draw the sky first
+        Render_Sky(view, builder);
+
         // Rasterize static meshes with batched drawing
         // manual barrier placement
         auto raster_pass = builder.AddPass("RasterizeStaticMeshCommands", RDGPassType::kGraphics, {}, nullptr, nullptr,

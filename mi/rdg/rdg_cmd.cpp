@@ -11,9 +11,10 @@
 #include <rdg/rdg_resource.h>
 #include <rdg/rdg_shader.h>
 #include <rhi/rhi_buffer.h>
+#include <rhi/rhi_as.h>
 
 MI_NAMESPACE_BEGIN
-    std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParams(
+std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParams(
     RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
     const RDGShaderParamStructAndSizeInfo * base_info, const void * params) {
     RHIBindPipelineParametersDesc ret = {};
@@ -77,7 +78,7 @@ MI_NAMESPACE_BEGIN
     // Bind SRVs
     {
         ret.srvs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->srvs_.size()), base_info->srvs_.size());
-        for (auto [i, e] : std::views::enumerate(base_info->srvs_)) {
+        for (const auto& [i, e] : std::views::enumerate(base_info->srvs_)) {
             auto texture_ptr = *static_cast<RDGTexture**>((void*)((uint8_t*)params + e.cpp_offset));
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced SRV texture pointer {} is unset, which should not happen.", e.info->name);
@@ -90,7 +91,7 @@ MI_NAMESPACE_BEGIN
     // Bind samplers
     {
         ret.samplers = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(base_info->samplers_.size()), base_info->samplers_.size());
-        for (auto [i, e] : std::views::enumerate(base_info->samplers_)) {
+        for (const auto& [i, e] : std::views::enumerate(base_info->samplers_)) {
             auto sampler_ptr = *static_cast<RHISampler**>((void*)((uint8_t*)params + e.cpp_offset));
             if (!sampler_ptr || RDGParameter_IsUnsetPointer(sampler_ptr)) {
                 MI_WARN("Referenced sampler pointer {} is null/unset, which should not happen.", e.info->name);
@@ -100,7 +101,18 @@ MI_NAMESPACE_BEGIN
             ret.samplers[i] = {sampler_ptr, slot};
         }
     }
-    // TODO bind as, etc...
+    {
+        ret.acceleration_structures = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(base_info->acceleration_structures_.size()), base_info->acceleration_structures_.size());
+        for (const auto& [i, e] : std::views::enumerate(base_info->acceleration_structures_)) {
+            auto as_ptr = *static_cast<RHIAccelerationStructure**>((void*)((uint8_t*)params + e.cpp_offset));
+            if (!as_ptr || RDGParameter_IsUnsetPointer(as_ptr)) {
+                MI_WARN("Referenced AS pointer {} is null/unset, which should not happen.", e.info->name);
+                return std::nullopt;
+            }
+            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kAccelerationStructure>((int)i);
+            ret.acceleration_structures[i] = {as_ptr, slot};
+        }
+    }
     return ret;
 }
 

@@ -3,18 +3,9 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include <rdg/rdg_builder.h>
-#include <rdg/rdg_cmd.h>
-#include <rdg/rdg_shader.h>
-
-#include "renderer/mi_renderer.h"
-#include "renderer/mi_renderer_view.h"
+#include "r_draw_to_output.h"
 
 MI_NAMESPACE_BEGIN
-
-BEGIN_SHADER_PARAMETERS(DrawToOutputPass)
-    SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Output)
-END_SHADER_PARAMETERS()
 
 class DrawToOutputShader : public RDGShader {
     BEGIN_SHADER_PARAMETERS(Parameters)

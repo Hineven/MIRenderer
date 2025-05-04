@@ -169,6 +169,11 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     // Renderer
     Renderer::Get().Init(pool.Raw());
 
+    // View
+    auto view = std::make_unique<RendererView>();
+    view->film_width_ = cfg.window_width;
+    view->film_height_ = cfg.window_height;
+
     {
         std::future<void> previous_frame_future;
         TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
@@ -185,8 +190,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             // Render
             {
-                // PROFILE_SECTION(Rendering);
-                RenderFrame(pool.Raw());
+                RenderFrame(view.get(), pool.Raw());
             }
             if (rhi.GetFrameIndex() % 1000 == 0) {
                 printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
@@ -214,8 +218,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 // Submit commands recorded for this frame, and switch to next frame
                 previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
             }
-            // We're using Vulkan, so we don't need to swap buffers
-            // glfwSwapBuffers(window);
         }
     }
 
