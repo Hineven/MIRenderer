@@ -224,7 +224,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     RHI::Get().WaitForIdle();
 
+    view.reset();
+
+    Renderer::DestroySingleton();
+
     pool.SafeRelease();
+
 
     // TaskGraph::DestroySingleton();
     RDGShaderLibrary::DestroySingleton();

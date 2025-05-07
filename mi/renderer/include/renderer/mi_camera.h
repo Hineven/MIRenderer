@@ -17,6 +17,10 @@ struct Camera {
     float fov_Y;
     float near_plane;
     float far_plane;
+
+    glm::vec3 GetRight () const {
+        return glm::normalize(glm::cross(direction, up));
+    }
 };
 
 MI_NAMESPACE_END

@@ -10,7 +10,7 @@
 #include <renderer/mi_helpers.h>
 #include <rhi/rhi.h>
 
-#include "renderer/mi_world.h"
+#include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
 
 DeviceGeometry::DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator) {

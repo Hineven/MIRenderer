@@ -21,7 +21,7 @@ class GLTFLoader {
 public:
     static bool LoadGLTF (
         std::filesystem::path path, CommonGroupedDeviceResourceAllocator & allocator,
-        World & world,
+        RendererScene & world,
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,
         std::vector<TRef<StaticMesh>> & out_meshes

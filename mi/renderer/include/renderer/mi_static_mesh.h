@@ -11,7 +11,7 @@
 #include <span>
 #include <vector>
 
-#include "mi_world.h"
+#include "mi_scene.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_geometry.h"
@@ -27,13 +27,13 @@ public:
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 
-    static TRef<StaticMesh> Create (World * world, Transform transform = {}) ;
+    static TRef<StaticMesh> Create (RendererScene * world, Transform transform = {}) ;
 
     RenderableHeader GetDeviceRenderableHeader() const override;
 
 protected:
 
-    StaticMesh(uint32_t index, World * world) ;
+    StaticMesh(uint32_t index, RendererScene * world) ;
     ~StaticMesh() override;
 
     bool dirty_ {true};

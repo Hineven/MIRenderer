@@ -10,7 +10,7 @@
 #include <rhi/rhi.h>
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_bindless.h"
-#include "shaders/SharedMaterial.hlsl"
+#include "shaders/shared/SharedMaterial.hlsl"
 
 
 MI_NAMESPACE_BEGIN

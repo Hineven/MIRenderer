@@ -3,9 +3,9 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "renderer/mi_world.h"
+#include "renderer/mi_scene.h"
 
-#include "shaders/SharedRenderable.hlsl"
+#include "shaders/shared/SharedRenderable.hlsl"
 
 #include <rhi/rhi.h>
 #include <renderer/mi_helpers.h>
@@ -16,21 +16,21 @@
 #include <rhi/rhi_bindlesskeeper.h>
 
 MI_NAMESPACE_BEGIN
-    WorldDeviceData::WorldDeviceData () {
+
+RendererScene::RendererScene () {
     auto & rhi = RHI::Get();
-    renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * World::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
-    renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * World::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
-    static_mesh_renderable_materials_ = DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 1, sizeof(uint32_t) * World::kMaxNumStaticMeshGeometryMaterialPairs);
-    static_mesh_renderable_materials_->SetNumBufferBlockLimit(1);
+    d_renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_static_mesh_renderable_materials_ = DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 1, sizeof(uint32_t) * RendererScene::kMaxNumStaticMeshGeometryMaterialPairs);
+    d_static_mesh_renderable_materials_->SetNumBufferBlockLimit(1);
+}
+
+RendererScene::~RendererScene() {
 
 }
 
-WorldDeviceData::~WorldDeviceData () {
 
-}
-
-
-void World::SetSkyTexture(Texture *texture) {
+void RendererScene::SetSkyTexture(Texture *texture) {
     if (!texture) {
         sky_texture_ = nullptr;
         return ;
@@ -43,7 +43,7 @@ void World::SetSkyTexture(Texture *texture) {
 }
 
 
-void World::RemoveRenderable (Renderable * renderable) {
+void RendererScene::RemoveRenderable (Renderable * renderable) {
     auto it = std::find_if(renderables_.begin(), renderables_.end(),
         [renderable](const TRef<Renderable> & r) { return r.Raw() == renderable; });
     if (it != renderables_.end()) {

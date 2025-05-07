@@ -5,13 +5,13 @@
  */
 #include "renderer/mi_renderable.h"
 
-#include "renderer/mi_world.h"
+#include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
-Renderable::Renderable(RenderableType type, uint32_t index, World * world): type_(type), index_(index), world_(world) {
+Renderable::Renderable(RenderableType type, uint32_t index, RendererScene * world): type_(type), index_(index), world_(world) {
 
 }
 
-uint32_t Renderable::AllocateRenderableIndexFromWorld (World * world) {
+uint32_t Renderable::AllocateRenderableIndexFromWorld (RendererScene * world) {
     return world->AllocateRenderableIndex();
 }
 

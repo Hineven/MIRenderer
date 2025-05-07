@@ -18,34 +18,21 @@
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
-class WorldDeviceData : public NonCopyable, public NonMovable {
+// Integrated class managing the rendering world. This class is not for general use and should only be used
+// for rendering. Scene management is not its responsibility.
+// It is responsible for holding renderables and rendering resources of a scene.
+class RendererScene : public NonCopyable, public NonMovable {
 public:
-    friend class World;
-
-    // Indexed with renderable index.
-    TRef<RHIBuffer> renderable_transforms_;
-    TRef<RHIBuffer> renderable_headers_;
-
-    // Record the index of the material of each geometry from all static mesh renderables.
-    // This buffer heap is limited to 1 buffer block.
-    TRef<DeviceBufferHeapInterface> static_mesh_renderable_materials_;
-
-    // TRef<RHIBindlessSlotKeeper<RHITexture>> sky_texture_;
-
-protected:
-    WorldDeviceData();
-    ~WorldDeviceData();
-};
-
-// Integrated class managing the world.
-// It is responsible for holding renderables and rendering resources of a "3d world“。
-class World : public NonCopyable, public NonMovable {
-public:
-
     friend class Renderable;
+    friend struct RendererView;
+    // TODO remove this
+    friend class StaticMesh;
 
     constexpr static uint32_t kMaxNumRenderables = 4096;
     constexpr static uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 4096 * 16;
+
+    RendererScene();
+    ~RendererScene();
 
     void RemoveRenderable (Renderable * renderable) ;
 
@@ -53,17 +40,9 @@ public:
         return renderables_;
     }
 
-    FORCEINLINE WorldDeviceData * GetDevice () const {
-        return device_world_.get();
-    }
-
     void SetSkyTexture (Texture * texture) ;
-    FORCEINLINE TRef<Texture> GetSkyTexture () const {
-        return sky_texture_;
-    }
-
-    FORCEINLINE bool IsDevicePresent () const {
-        return device_world_ != nullptr;
+    FORCEINLINE Texture * GetSkyTexture () const {
+        return sky_texture_.Raw();
     }
 
 protected:
@@ -92,7 +71,14 @@ protected:
 
     TRef<Texture> sky_texture_;
 
-    std::unique_ptr<WorldDeviceData> device_world_;
+
+    // Indexed with renderable index.
+    TRef<RHIBuffer> d_renderable_transforms_;
+    TRef<RHIBuffer> d_renderable_headers_;
+
+    // Record the index of the material of each geometry from all static mesh renderables.
+    // This buffer heap is limited to 1 buffer block.
+    TRef<DeviceBufferHeapInterface> d_static_mesh_renderable_materials_;
 };
 
 MI_NAMESPACE_END

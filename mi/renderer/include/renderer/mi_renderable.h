@@ -7,9 +7,9 @@
 #ifndef MI_RENDERABLE_H
 #define MI_RENDERABLE_H
 
-#include "shaders/SharedRenderable.hlsl"
+#include "../../shaders/shared/SharedRenderable.hlsl"
 
-#include "mi_world.h"
+#include "mi_scene.h"
 #include "core/base.h"
 #include "core/common.h"
 #include "core/infra.h"
@@ -25,7 +25,7 @@ class StaticMesh;
 class RenderGraphBuilder;
 class Renderable : public NonMovable, public RefCounted<> {
 public:
-    friend class World;
+    friend class RendererScene;
     virtual ~Renderable();
     FORCEINLINE bool IsVisible() const { return visible_; }
     FORCEINLINE void SetVisible(bool visible) { visible_ = visible; }
@@ -57,12 +57,12 @@ public:
 protected:
 
     // Proxy for World::AllocateRenderableIndex();
-    static uint32_t AllocateRenderableIndexFromWorld (World * world) ;
+    static uint32_t AllocateRenderableIndexFromWorld (RendererScene * world) ;
 
-    Renderable(RenderableType type, uint32_t index, World * world);
+    Renderable(RenderableType type, uint32_t index, RendererScene * world);
 
     Transform transform_;
-    World * world_;
+    RendererScene * world_;
     uint32_t index_ {UINT32_MAX};
 
     // Invisible renderables wont be rendered.

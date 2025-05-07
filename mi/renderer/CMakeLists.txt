@@ -6,17 +6,19 @@ set(SOURCES
         mi_geometry.cpp
         mi_static_mesh.cpp
         mi_renderable.cpp
-        mi_world.cpp
+        mi_scene.cpp
         mi_renderer_view.cpp
         mi_renderer.cpp
         mi_helpers.cpp
         # Implementing the renderer
         renderer/r_draw_to_output.cpp
+        renderer/r_sky.cpp
 )
 
 add_library(renderer ${SOURCES})
 
 file(GLOB SHADER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.hlsl")
+
 set(SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/resources/shaders)
 
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})

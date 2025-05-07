@@ -22,7 +22,7 @@ BEGIN_SHADER_PARAMETERS(ViewCommonShaderParameters)
     SHADER_PARAMETER(float,  CameraFoVY)
 
     SHADER_PARAMETER(uint2,  FilmDimensions)
-    SHADER_PARAMETER(uint2,  FilmAspectRatio)
+    SHADER_PARAMETER(float2,  FilmAspectRatioAndInvAspectRatio)
 END_SHADER_PARAMETERS()
 
 MI_NAMESPACE_END

@@ -51,6 +51,11 @@ public:
     FORCEINLINE RDGTextureUsageType GetLastUsage () const { return usage_; }
     FORCEINLINE void Use (RDGTextureUsageType usage) { usage_ = usage; }
 
+    FORCEINLINE bool IsImportedFrom (RHITexture * texture) {
+        mi_assert(IsImported(), "This should be an imported texture to call RDGTexture::IsImportedFrom().");
+        return rhi_texture_ == texture;
+    }
+
 protected:
     RHITextureDesc desc_ {};
     // Underlying RHI texture, can be null if not allocated.
@@ -119,6 +124,11 @@ public:
 
     FORCEINLINE RHIGPUAccessFlags GetLastUsage () const { return usage_; }
     FORCEINLINE void Use (RHIGPUAccessFlags usage) { usage_ = usage; }
+
+    FORCEINLINE bool IsImportedFrom (RHIBufferSpan buffer) {
+        mi_assert(IsImported(), "This should be an imported buffer to call RDGBuffer::IsImportedFrom().");
+        return rhi_buffer_span_ == buffer;
+    }
 
     // Short hand for (std::byte*)GetRHI().buffer->Map() + GetRHI().offset
     void * Map () const ;

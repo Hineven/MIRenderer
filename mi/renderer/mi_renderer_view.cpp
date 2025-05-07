@@ -9,10 +9,11 @@
 #include "rdg/rdg_pool.h"
 #include "rdg/rdg_resource.h"
 #include "renderer/mi_buffer_heap.h"
-#include "renderer/mi_world.h"
+#include "renderer/mi_scene.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_desc.h"
+#include "renderer/r_view_common.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -176,7 +177,15 @@ void RendererViewPersistentData::Update(RendererView *view) {
     frame_index_ ++;
 }
 
-void RendererView::InitFrame() {
+void RendererView::ImportedRDGResources::InvalidateBuffersFromWorld() {
+    static_mesh_geometry_material_indices = {};
+    renderable_transforms = {};
+    renderable_headers = {};
+    sky_texture = {};
+}
+
+
+void RendererView::InitFrame () {
 
     // Update persistent data first
     if (persistent_data_ == nullptr) {
@@ -213,28 +222,46 @@ void RendererView::InitFrame() {
     {
         // Import output backbuffer as RDG resource. We dont care about its previous usage.
         imported.output_ = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
-
         if (world_changed) {
+            imported.InvalidateBuffersFromWorld();
             if (world_) {
-                mi_assert(world_->GetDevice(), "Device world is not initialized upon rendering.");
-                auto device_world = world_->GetDevice();
                 imported.static_mesh_geometry_material_indices = RDGBuffer::Import(
-                    device_world->static_mesh_renderable_materials_->GetHeapBufferBlock(0),
-                    RHIGPUAccessFlagBits::kRead | RHIGPUAccessFlagBits::kWrite
+                    world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0),
+                    RHIGPUAccessFlagBits::kRW
                 );
-            } else {
-                imported.static_mesh_geometry_material_indices = nullptr;
+                imported.renderable_transforms = RDGBuffer::Import(
+                    world_->d_renderable_transforms_.Raw(),
+                    RHIGPUAccessFlagBits::kRW
+                );
+                imported.renderable_headers = RDGBuffer::Import(
+                    world_->d_renderable_headers_.Raw(),
+                    RHIGPUAccessFlagBits::kRW
+                );
             }
         }
     }
-
-    view_common_params_ = ...;
 
     // Initialize the upload context used for batching uploads
     upload_context_.Init();
 
     temp_allocator_.Reset();
 }
+void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
+    view_common_params_ = builder.Allocate<ViewCommonShaderParameters>();
+
+    view_common_params_->CameraDirection = glm::normalize(camera_.direction);
+    view_common_params_->CameraPosition = camera_.position;
+    glm::vec3 camera_right = camera_.GetRight();
+    glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_.direction));
+    view_common_params_->CameraUp = camera_up;
+    view_common_params_->CameraNearPlane = camera_.near_plane;
+    view_common_params_->CameraFarPlane = camera_.far_plane;
+    view_common_params_->CameraFoVY = camera_.fov_Y;
+    view_common_params_->FilmDimensions = {film_width_, film_height_};
+    float aspect_ratio = float(film_width_) / float(film_height_);
+    view_common_params_->FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
+}
+
 
 
 

@@ -210,12 +210,12 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             }
         }
     }
-    // Check the 'type.$Globals' uniform buffer
+    // Check the '$Globals' uniform buffer
     {
         // find corresponding uniform buffer in shader reflection
         int shader_ub_idx = -1;
         for (int j = 0; j < (int)shader_reflected_uniform_buffers.size(); ++j) {
-            if (shader_reflected_uniform_buffers[j].name == "type.$Globals") {
+            if (shader_reflected_uniform_buffers[j].name == "$Globals") {
                 shader_ub_idx = j;
                 break;
             }
@@ -500,7 +500,7 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
     // Remap global uniform buffer
     if (cpp_has_globals) {
         auto & ub = pipeline->GetUniformBufferDesc();
-        auto index = FindSlotIndex("type.$Globals", ub);
+        auto index = FindSlotIndex("$Globals", ub);
         if (index != -1) {
             // The global uniform buffer is always the last one
             cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][info.uniform_buffers_.size()] = index;

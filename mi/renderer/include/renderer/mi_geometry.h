@@ -13,7 +13,7 @@
 #include "core/refcounted.h"
 #include "rhi/rhi_desc.h"
 #include "renderer/mi_renderer_fwd.h"
-#include "shaders/SharedVertex.hlsl"
+#include "../../shaders/shared/SharedVertex.hlsl"
 MI_NAMESPACE_BEGIN
 
 class DeviceGeometry : public RefCounted<>, public NonMovable {

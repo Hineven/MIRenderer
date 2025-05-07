@@ -27,6 +27,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
         for (int i = 0; i < num_ref_uniform_buffers; i++) {
             auto struct_ptr = *(void**)((uint8_t*)params + base_info->uniform_buffers_[i].cpp_offset);
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>((int)i);
+            mi_assert(slot != UINT32_MAX, "Failed to convert uniform buffer index to slot.");
             if (!struct_ptr) {
                 MI_WARN("Referenced uniform buffer pointer {} is null, which should not happen.", base_info->uniform_buffers_[i].info->name);
                 return std::nullopt;
@@ -43,6 +44,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
         }
         if (has_globals) {
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>(num_ref_uniform_buffers);
+            mi_assert(slot != UINT32_MAX, "Failed to convert global uniform buffer index to slot.");
             auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(params);
             auto span = buffer_ptr.buffer->GetRHI();
             span.offset += buffer_ptr.offset;
@@ -59,6 +61,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kStorageBuffer>((int)i);
+            mi_assert(slot != UINT32_MAX, "Failed to convert storage buffer index to slot.");
             ret.storages[i] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
         }
     }
@@ -72,6 +75,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
+            mi_assert(slot != UINT32_MAX, "Failed to convert UAV texture index to slot.");
             ret.uavs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot};
         }
     }
@@ -85,6 +89,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
+            mi_assert(slot != UINT32_MAX, "Failed to convert SRV texture index to slot.");
             ret.srvs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot};
         }
     }
@@ -98,6 +103,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>((int)i);
+            mi_assert(slot != UINT32_MAX, "Failed to convert sampler index to slot.");
             ret.samplers[i] = {sampler_ptr, slot};
         }
     }
@@ -110,6 +116,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kAccelerationStructure>((int)i);
+            mi_assert(slot != UINT32_MAX, "Failed to convert AS index to slot.");
             ret.acceleration_structures[i] = {as_ptr, slot};
         }
     }

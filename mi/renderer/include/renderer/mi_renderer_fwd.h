@@ -20,7 +20,7 @@ class Geometry;
 class StaticMesh;
 class Texture;
 
-class World;
+class RendererScene;
 
 class BatchedUploadContext;
 struct RendererView;
@@ -28,6 +28,8 @@ struct RendererView;
 class CommonGroupedDeviceResourceAllocator;
 class DeviceBufferHeapInterface;
 class DeviceBufferHeapBuffer;
+
+class ViewCommonShaderParameters;
 
 enum class MinimumMaterialFlagBits : unsigned {
     kNone = 0,

@@ -11,7 +11,6 @@
 #include "mi_camera.h"
 #include "core/util/alloc.h"
 #include "renderer/mi_renderer_fwd.h"
-#include <rdg/rdg_fwd.h>
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
@@ -83,10 +82,9 @@ struct RendererViewPersistentData {
     uint32_t frame_index_ {};
 
 
-    World * prev_world_;
+    RendererScene * prev_world_;
 };
 
-struct ViewCommonShaderParameters;
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
@@ -97,12 +95,15 @@ struct RendererView {
     // Called once per frame to initialize the view.
     void InitFrame ();
 
+    // Update view common shader parameters
+    void SetViewCommonShaderParameters (RenderGraphBuilder & builder);
+
     Camera camera_ {};
 
     uint32_t film_width_ {};
     uint32_t film_height_ {};
 
-    World * world_ {};
+    RendererScene * world_ {};
 
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
@@ -112,11 +113,15 @@ struct RendererView {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_roughness_;
 
-    struct {
+    struct ImportedRDGResources {
         // Imported back buffer for current frame
         TRef<RDGTexture> output_;
-        // Imported buffer from the device world buffer heap
+
+        void InvalidateBuffersFromWorld ();
+        // Imported buffer from the renderer scene
         TRef<RDGBuffer> static_mesh_geometry_material_indices;
+        TRef<RDGBuffer> renderable_transforms;
+        TRef<RDGBuffer> renderable_headers;
         TRef<RDGTexture> sky_texture;
     } imported;
 

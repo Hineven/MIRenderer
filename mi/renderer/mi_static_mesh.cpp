@@ -13,11 +13,11 @@
 #include "renderer/mi_renderer_view.h"
 
 MI_NAMESPACE_BEGIN
-    StaticMesh::StaticMesh(uint32_t index, World * world): Renderable(RenderableType::kStaticMesh, index, world) {}
+    StaticMesh::StaticMesh(uint32_t index, RendererScene * world): Renderable(RenderableType::kStaticMesh, index, world) {}
 
 StaticMesh::~StaticMesh() {}
 
-TRef<StaticMesh> StaticMesh::Create(World *world, Transform transform) {
+TRef<StaticMesh> StaticMesh::Create(RendererScene *world, Transform transform) {
     auto index = AllocateRenderableIndexFromWorld(world);
     if (index == UINT32_MAX) {
         MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
@@ -41,11 +41,10 @@ void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilde
     if (!dirty_) return;
     if (geometries_.empty()) return ;
     uint32_t current_count = (uint32_t)(geometry_material_indices_ ? 0 : geometry_material_indices_->GetRHI().size);
-    auto device_world = view->world_->GetDevice();
     if (geometries_.size() > current_count) {
         current_count = std::max(current_count * 2u, 4u);
         geometry_material_indices_.SafeRelease();
-        geometry_material_indices_ = device_world->static_mesh_renderable_materials_->AllocateRefCounted(current_count * sizeof(uint32_t));
+        geometry_material_indices_ = world_->d_static_mesh_renderable_materials_->AllocateRefCounted(current_count * sizeof(uint32_t));
     }
     auto mem = (uint32_t*)view->temp_allocator_.Allocate(geometries_.size() * sizeof(uint32_t));
     for (int i = 0; i < (int)geometries_.size(); i++) {

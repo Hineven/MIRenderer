@@ -6,7 +6,7 @@
 
 #include <ranges>
 
-#include "shaders/SharedRenderable.hlsl"
+#include "shaders/shared/SharedRenderable.hlsl"
 #include "renderer/mi_renderer.h"
 
 #include <barrier>
@@ -168,7 +168,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 RHIBufferSpan last_vertex_buffer {};
                 RHIBufferSpan last_index_buffer {};
                 RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
-                // TODO sort commands first to minimize draw calls
                 for (int i = 0; i < (int)draw_indirect_commands.size(); i++) {
                     // auto & cmd = indirect_commands[i];
                     auto & hdr = draw_invocation_sorting_headers[i];

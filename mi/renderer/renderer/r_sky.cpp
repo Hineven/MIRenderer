@@ -3,7 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include <renderer/mi_world.h>
+#include <renderer/mi_scene.h>
 
 #include "r_internal_common.h"
 #include "r_view_common.h"

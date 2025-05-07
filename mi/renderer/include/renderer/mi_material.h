@@ -13,7 +13,7 @@
 #include "core/base.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderer_fwd.h"
-#include "shaders/SharedMaterial.hlsl"
+#include "../../shaders/shared/SharedMaterial.hlsl"
 
 // Simple material implementation. Only uber material supported
 MI_NAMESPACE_BEGIN
