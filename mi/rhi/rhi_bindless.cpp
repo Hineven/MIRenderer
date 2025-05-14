@@ -161,8 +161,9 @@ void RHIBindlessManager::PreDestruction() {
     for (auto & chan : bindless_channels_) {
         for (auto & e : chan.resource_refs) {
             if (e && e->GetRefCount() != 1) {
-                MI_WARN("BindlessManager: Resource {} is not released outside of the bindless manager "
-                        "before RHI destruction", (void*)e.Raw());
+                MI_WARN("BindlessManager: Resource {} ({}) is not released outside of the bindless manager "
+                        "before RHI destruction", e->GetName(), (void*)e.Raw());
+                MI_WARN("Make sure that all bindless resource handles you created are released prior to RHI destruction.");
             }
             e.SafeRelease();
         }

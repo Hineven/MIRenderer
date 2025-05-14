@@ -138,6 +138,11 @@ void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass,
 
 bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) {
+    if (!graphics_shader->IsValid()) {
+        MI_WARN("Shader {}: Invalid shader. Draw cancelled.",
+            graphics_shader->class_registry_->name);
+        return false;
+    }
     auto desc = UploadShaderParams(pass, graphics_shader, queue, info, params);
     if (!desc.has_value()) {
         MI_WARN("Shader {}: Failed to upload shader parameters. Draw cancelled.",

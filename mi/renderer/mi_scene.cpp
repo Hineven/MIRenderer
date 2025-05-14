@@ -35,7 +35,7 @@ void RendererScene::SetSkyTexture(Texture *texture) {
         sky_texture_ = nullptr;
         return ;
     }
-    if (!sky_texture_->IsBindless()) {
+    if (!texture->IsBindless()) {
         MI_WARN("Setting sky texture to a non-bindless texture will not take any effect.");
         return ;
     }

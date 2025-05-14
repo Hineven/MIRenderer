@@ -44,10 +44,6 @@ public:
     // If the pipeline has access to bindless resources, this function will return true.
     FORCEINLINE bool HasBindlessResources() const {return has_bindless_resources_;}
 
-FORCEINLINE const std::string & GetName () const {return name_;}
-    FORCEINLINE void SetName () {name_ = name_; OnNameChanged();}
-
-    RHIPipeline(std::string_view name) : name_(name) {}
     inline virtual ~RHIPipeline() {Reset();}
 
     virtual void Reset () ;
@@ -65,9 +61,7 @@ protected:
     // We're calling this function inside the base class destructor, so
     // it can not be pure virtual.
     virtual void ResetRHI () {};
-    virtual void OnNameChanged () = 0;
 
-    std::string name_;
     bool is_valid_ {false};
 
     // Aggregated by the pipeline

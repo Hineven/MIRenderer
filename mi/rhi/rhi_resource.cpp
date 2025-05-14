@@ -31,6 +31,7 @@ void RHIResource::QueueForDeletion() {
 }
 
 void RHIResource::SetName([[maybe_unused]] const std::string & name) {
+    name_ = name;
     // Do nothing
 }
 

@@ -159,7 +159,32 @@ protected:
 
         void SetupDefaultDynamicStates () const;
 
+        // For debugging purposes only
+#ifndef NDEBUG
+        std::stack<std::string> debug_marker_stack;
+#endif
+        FORCEINLINE void PushDebugMarker (const std::string & name) {
+#ifndef NDEBUG
+            debug_marker_stack.push(name);
+#endif
+        }
+        FORCEINLINE void PopDebugMarker () {
+#ifndef NDEBUG
+            if (!debug_marker_stack.empty()) {
+                debug_marker_stack.pop();
+            } else {
+                mi_assert(false, "Potential mismatch between PushDebugMarker and PopDebugMarker.");
+            }
+#endif
+        }
 
+        FORCEINLINE void CheckDebugMarkerStack () {
+#ifndef NDEBUG
+            if (!debug_marker_stack.empty()) {
+                mi_assert(false, "Potential mismatch between PushDebugMarker and PopDebugMarker.");
+            }
+#endif
+        }
     };
 
     struct {

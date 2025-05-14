@@ -45,6 +45,7 @@ public:
 
     FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
+    void SetName(const std::string &name) override;
     ~VulkanGraphicsPipeline();
 
     void *GetAPIHandle() const override;
@@ -53,7 +54,6 @@ protected:
 
     bool CompileRHI (const RHIGraphicsPipelineDesc &) override;
     void ResetRHI () override;
-    void OnNameChanged () override;
 
     vk::Pipeline vk_pipeline_;
     vk::PipelineLayout vk_pipeline_layout_;
@@ -80,6 +80,7 @@ public:
 
     FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
+    void SetName (const std::string & name) override;
     ~VulkanComputePipeline();
 
     void *GetAPIHandle() const override;
@@ -88,7 +89,6 @@ protected:
 
     bool CompileRHI (RHIShader * ) override;
     void ResetRHI () override;
-    void OnNameChanged () override;
 
     struct BindingRemappingInfo {
         uint32_t dst_set;

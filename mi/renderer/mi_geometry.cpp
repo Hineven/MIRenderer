@@ -56,8 +56,8 @@ void Geometry::CreateOnDevice(CommonGroupedDeviceResourceAllocator *alloc) {
 
 void Geometry::SyncAndUpdateOnDevice () {
     mi_assert(device_geometry_, "Device geometry not created.");
-    Helpers::Upload(device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
-    Helpers::Upload(device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
+    Helpers::Upload_Async(device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
+    Helpers::Upload_Async(device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
     RHI::Get().GetGraphicsCommandQueue().EnqueueTranslateAndSubmit();
     RHI::Get().WaitForIdle();
     device_geometry_->first_index_ = 0;

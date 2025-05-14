@@ -357,6 +357,9 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
     assert(IsRHIThread());
     auto & chain = state_chains_[(uint32_t)cmd->GetCommandQueueType()];
     auto & state = chain.Current();
+
+    state.CheckDebugMarkerStack();
+
     auto vk_rhi = GetVulkanRHI();
     if (!vk_rhi->IsSwapChainInitialized()) {
         // Offscreen rendering, no need for presenting, simply do a submission
@@ -888,6 +891,7 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
+    state.debug_marker_stack.push(cmd->marker_name_);
 }
 
 void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) {
@@ -896,6 +900,8 @@ void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICo
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
     state.cmd.endDebugUtilsLabelEXT();
+    mi_assert(!state.debug_marker_stack.empty(), "Potential mismatch between begin and end debug markers");
+    state.debug_marker_stack.pop();
 }
 
 void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) {

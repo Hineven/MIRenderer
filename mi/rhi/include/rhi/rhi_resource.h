@@ -49,6 +49,14 @@ public:
     // Usually used for debugging
     virtual void SetName (const std::string & name) ;
 
+    FORCEINLINE const char * GetName () const {
+#ifndef NDEBUG
+        return name_.c_str();
+#else
+        return nullptr;
+#endif
+    }
+
     // Reference counts of a RHI resource can only be modified via its owning thread.
     // The function is a shortcut verifying that the current thread is the owner of the resource.
     FORCEINLINE void VerifyOwnerThread () const {
@@ -56,6 +64,7 @@ public:
     }
 
 protected:
+
     // Can only be allocated by RHI and memory is allocated via infrastructure.
     RHIResource() ;
     // Queue up in a global list for deletion.
@@ -75,6 +84,11 @@ protected:
 
     // Flags
     RHIResourceFlags flags_ {};
+
+private:
+#ifndef NDEBUG
+    std::string name_ {};
+#endif
 };
 
 // Called within RHI thread. Resources that are at least 1 frame older than

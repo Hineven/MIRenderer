@@ -83,7 +83,7 @@ public:
         return device_;
     }
 
-    FORCEINLINE vma::Allocator GetVmaAllocator () const {
+    FORCEINLINE const vma::Allocator & GetVmaAllocator () const {
         return vma_;
     }
 

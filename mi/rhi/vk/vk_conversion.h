@@ -14,6 +14,8 @@ MI_NAMESPACE_BEGIN
 
 FORCEINLINE vk::Format GetVulkanPixelFormat (PixelFormatType format) {
     switch(format) {
+        case PixelFormatType::kR8_UNORM:
+            return vk::Format::eR8Unorm;
         case PixelFormatType::kB8G8R8A8_UNORM:
             return vk::Format::eB8G8R8A8Unorm;
         case PixelFormatType::kB8G8R8A8_SRGB:

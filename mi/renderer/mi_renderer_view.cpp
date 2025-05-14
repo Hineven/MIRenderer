@@ -62,6 +62,10 @@ void BatchedUploadContext::AddUnsafe(RHIBufferSpan buffer, const void *data, siz
 
 void BatchedUploadContext::Add(RDGBuffer *buffer, const void *data, size_t size, size_t dst_offset) {
     mi_assert(!fired_, "Adding uploads after upload.");
+    if (!size) return ;
+    if (!buffer || !data) {
+        mi_assert(false, "Buffer / data is null.");
+    }
     PendingRDGUpload upload = {};
     upload.dst_buffer = buffer;
     upload.data = std::span((const uint8_t*)data, size);
@@ -99,10 +103,11 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
         auto rounded_size = RoundUp(upload.data.size(), 16);
         sum_upload_size += rounded_size;
     }
-    auto staging_buffer = RHI::Get().CreateBuffer(sum_upload_size, RHIBufferUsageFlagBits::kStaging);
-    auto staging_ptr = staging_buffer->Map();
 
-    {
+    auto staging_buffer = sum_upload_size ? RHI::Get().CreateBuffer(sum_upload_size, RHIBufferUsageFlagBits::kStaging) : nullptr;
+    auto staging_ptr = staging_buffer ? staging_buffer->Map() : nullptr;
+
+    if (staging_ptr) {
         size_t offset = 0;
         for (auto & upload : pending_uploads_) {
             auto rounded_size = RoundUp(upload.data.size(), 16);
@@ -151,6 +156,16 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     }
 }
 
+RendererViewPersistentData::RendererViewPersistentData() {
+
+}
+
+RendererViewPersistentData::~RendererViewPersistentData() {
+
+}
+
+
+
 RendererView::RendererView() {
 
 }
@@ -191,7 +206,7 @@ void RendererView::InitFrame () {
     if (persistent_data_ == nullptr) {
         // Create persistent data and initialize it.
         auto persistent = new RendererViewPersistentData();
-        persistent_data_ = persistent;
+        persistent_data_.reset(persistent);
         persistent->Init();
     } else {
         // Roll states for the next frame
@@ -225,10 +240,14 @@ void RendererView::InitFrame () {
         if (world_changed) {
             imported.InvalidateBuffersFromWorld();
             if (world_) {
-                imported.static_mesh_geometry_material_indices = RDGBuffer::Import(
-                    world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0),
-                    RHIGPUAccessFlagBits::kRW
-                );
+                if (world_->d_static_mesh_renderable_materials_->GetNumHeapBufferBlocks()) {
+                    imported.static_mesh_geometry_material_indices = RDGBuffer::Import(
+                        world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0),
+                        RHIGPUAccessFlagBits::kRW
+                    );
+                } else {
+                    imported.static_mesh_geometry_material_indices = nullptr;
+                }
                 imported.renderable_transforms = RDGBuffer::Import(
                     world_->d_renderable_transforms_.Raw(),
                     RHIGPUAccessFlagBits::kRW

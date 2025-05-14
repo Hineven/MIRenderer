@@ -80,9 +80,9 @@ public:
         return allocator_->Allocate(size);
     }
     template<CMemTrivial T>
-    FORCEINLINE T * Allocate (bool zero = true) {
+    FORCEINLINE T * Allocate (bool zero_before_construction = true) {
         auto ptr = static_cast<T*>(Allocate(sizeof(T)));
-        if (zero) {
+        if (zero_before_construction) {
             memset(ptr, 0, sizeof(T));
         }
         new (ptr) T();

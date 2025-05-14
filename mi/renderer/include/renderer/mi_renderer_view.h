@@ -69,6 +69,9 @@ public:
 // The data kept across frames for a view.
 struct RendererViewPersistentData {
 
+    RendererViewPersistentData() ;
+    ~RendererViewPersistentData() ;
+
     void Init ();
     void Update (RendererView * view);
 
@@ -135,7 +138,7 @@ struct RendererView {
     ViewCommonShaderParameters * view_common_params_;
 
     // Persistent data
-    RendererViewPersistentData * persistent_data_ {};
+    std::unique_ptr<RendererViewPersistentData> persistent_data_ {};
 };
 
 MI_NAMESPACE_END

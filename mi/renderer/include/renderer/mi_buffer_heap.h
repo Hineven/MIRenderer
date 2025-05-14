@@ -28,7 +28,7 @@ public:
     virtual RHIBufferSpan Allocate (uint32_t size) = 0;
     // Allocate a reference counted buffer.
     TRef<DeviceBufferHeapBuffer> AllocateRefCounted (uint32_t size) ;
-    virtual void Free (RHIBufferSpan allocation) ;
+    virtual void Free (RHIBufferSpan allocation) = 0;
     FORCEINLINE uint32_t GetAllocationAlignment () const {
         return allocation_alignment;
     }
@@ -64,9 +64,9 @@ protected:
         ~BufferBlock();
         TRef<RHIBuffer> buffer;
         struct Segment {
-            uint32_t start_offset {};
+            size_t start_offset {};
             // This does not affect orders so mutable.
-            mutable uint32_t size {};
+            mutable size_t size {};
             FORCEINLINE bool operator < (const Segment & rhs) const {
                 return start_offset < rhs.start_offset;
             }
@@ -90,7 +90,7 @@ public:
     void Free (RHIBufferSpan allocation) override;
 
     FORCEINLINE static TRef<SimpleDeviceBufferHeap> Create (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024) {
-        return TRef<SimpleDeviceBufferHeap>(new SimpleDeviceBufferHeap(usage, allocation_alignment, buffer_block_size));
+        return {new SimpleDeviceBufferHeap(usage, allocation_alignment, buffer_block_size)};
     }
 
 protected:

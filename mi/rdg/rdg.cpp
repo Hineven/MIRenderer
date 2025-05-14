@@ -202,31 +202,39 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         RHIPipelineStageFlags new_stages = pass->GetStageFlags();
         {
             auto num_barriers = pass->compiled_.used_textures.size();
+            uint32_t num_barriers_used = 0;
             auto textures = cmd.Allocate<RHITexture*[]>(num_barriers);
             auto layouts = cmd.Allocate<RHITextureLayoutType[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            for (const auto & [i, texture_use] : std::views::enumerate(pass->compiled_.used_textures)) {
-                textures[i] = texture_use.texture->GetRHI();
-                src_accesses[i] = GetTextureUsageAccess(texture_use.texture->GetLastUsage());
-                layouts[i] = GetTextureLayout(texture_use.usage);
-                dst_accesses[i] = GetTextureUsageAccess(texture_use.usage);
-                texture_use.texture->Use(texture_use.usage);
+            for (const auto & texture_use : pass->compiled_.used_textures) {
+                if (texture_use.texture->GetRHI()) {
+                    textures[num_barriers_used] = texture_use.texture->GetRHI();
+                    src_accesses[num_barriers_used] = GetTextureUsageAccess(texture_use.texture->GetLastUsage());
+                    layouts[num_barriers_used] = GetTextureLayout(texture_use.usage);
+                    dst_accesses[num_barriers_used] = GetTextureUsageAccess(texture_use.usage);
+                    texture_use.texture->Use(texture_use.usage);
+                    num_barriers_used ++;
+                }
             }
-            cmd.TextureBarriers((uint32_t)num_barriers, textures, layouts, new_stages, src_accesses, dst_accesses);
+            cmd.TextureBarriers(num_barriers_used, textures, layouts, new_stages, src_accesses, dst_accesses);
         }
         {
             auto num_barriers = pass->compiled_.used_buffers.size();
+            auto num_barriers_used = 0;
             auto buffers = cmd.Allocate<RHIBufferSpan[]>(num_barriers);
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            for (const auto & [i, buffer_use] : std::views::enumerate(pass->compiled_.used_buffers)) {
-                buffers[i] = buffer_use.buffer->GetRHI();
-                src_accesses[i] = buffer_use.buffer->GetLastUsage();
-                dst_accesses[i] = buffer_use.access;
-                buffer_use.buffer->Use(buffer_use.access);
+            for (const auto & buffer_use: pass->compiled_.used_buffers) {
+                if (buffer_use.buffer->GetRHI()) {
+                    buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
+                    src_accesses[num_barriers_used] = buffer_use.buffer->GetLastUsage();
+                    dst_accesses[num_barriers_used] = buffer_use.access;
+                    buffer_use.buffer->Use(buffer_use.access);
+                    num_barriers_used ++;
+                }
             }
-            cmd.BufferBarriers((uint32_t)num_barriers, buffers, new_stages, src_accesses, dst_accesses);
+            cmd.BufferBarriers(num_barriers_used, buffers, new_stages, src_accesses, dst_accesses);
         }
         // Execute the pass
         pass->pass_(pass.get(), cmd);

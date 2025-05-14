@@ -11,9 +11,8 @@
 #include <rhi/rhi_buffer.h>
 MI_NAMESPACE_BEGIN
 
-void Helpers::Upload(RHIBufferSpan buffer, const void *data, size_t size) {
+void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHIBufferSpan buffer, const void *data, size_t size) {
     auto & rhi = RHI::Get();
-    auto & queue = rhi.GetGraphicsCommandQueue();
     auto staging_buffer = rhi.CreateBuffer(size, RHIBufferUsageFlagBits::kStaging);
     auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
     memcpy(staging_buffer_ptr, data, size);
@@ -24,6 +23,25 @@ void Helpers::Upload(RHIBufferSpan buffer, const void *data, size_t size) {
     queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer,
         RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
 }
+
+void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHITexture *texture, const void *data, size_t size, RHITextureLayoutType dst_layout, RHIGPUAccessFlags dst_access) {
+    auto & rhi = RHI::Get();
+    auto staging_buffer = rhi.CreateBuffer(size, RHIBufferUsageFlagBits::kStaging);
+    auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
+    memcpy(staging_buffer_ptr, data, size);
+    staging_buffer->Unmap();
+    queue.TextureBarrier(texture, RHITextureLayoutType::kTransferDstOptimal,
+        RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+    queue.CopyBufferToTexture(staging_buffer->GetSpan(), texture);
+    queue.TextureBarrier(texture, dst_layout, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kWrite, dst_access);
+}
+
+
+void Helpers::Upload_Async(RHIBufferSpan buffer, const void *data, size_t size) {
+    Upload_Async(RHI::Get().GetGraphicsCommandQueue(), buffer, data, size);
+}
+
 
 void Helpers::UploadWithRDG(RenderGraphBuilder & builder, RHIBufferSpan buffer, const void * data, size_t size) {
     auto & rhi = RHI::Get();

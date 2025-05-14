@@ -363,6 +363,9 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         return false;
     }
     vk_pipeline_ = result.value;
+
+    SetName(GetName());
+
     return true;
 }
 
@@ -380,13 +383,16 @@ void VulkanGraphicsPipeline::ResetRHI() {
     push_constant_roundup_size_ = 0;
 }
 
-void VulkanGraphicsPipeline::OnNameChanged() {
+void VulkanGraphicsPipeline::SetName(const std::string& name) {
+    RHIGraphicsPipeline::SetName(name);
 #ifndef NDEBUG
-    GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
-        vk::ObjectType::ePipeline,
-        (uint64_t)(VkPipeline)vk_pipeline_,
-        name_.c_str()
-    });
+    if (vk_pipeline_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::ePipeline,
+            (uint64_t)(VkPipeline)vk_pipeline_,
+            GetName()
+        });
+    }
 #endif
 }
 
@@ -490,6 +496,8 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     }
     vk_pipeline_ = result.value;
 
+    SetName(GetName());
+
     return true;
 }
 
@@ -505,13 +513,16 @@ void VulkanComputePipeline::ResetRHI() {
     push_constant_roundup_size_ = 0;
 }
 
-void VulkanComputePipeline::OnNameChanged() {
+void VulkanComputePipeline::SetName(const std::string& name) {
+    RHIComputePipeline::SetName(name);
 #ifndef NDEBUG
-    GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
-        vk::ObjectType::ePipeline,
-        (uint64_t)(VkPipeline)vk_pipeline_,
-        name_.c_str()
-    });
+    if (vk_pipeline_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::ePipeline,
+            (uint64_t)(VkPipeline)vk_pipeline_,
+            GetName()
+        });
+    }
 #endif
 }
 

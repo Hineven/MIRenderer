@@ -12,7 +12,7 @@
 
 MI_NAMESPACE_BEGIN
 
-class VulkanBuffer : public RHIBuffer {
+class VulkanBuffer final : public RHIBuffer {
 public:
     VulkanBuffer(RHIBufferDesc desc);
     virtual ~VulkanBuffer() override;

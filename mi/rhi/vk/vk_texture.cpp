@@ -54,6 +54,10 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
     // Set the size of the image
     size_ = vma.getAllocationInfo(result.second).size;
 
+    if (GetName() && result.second) {
+        vma.setAllocationName(result.second, GetName());
+    }
+
     vk_image_layout_ = vk::ImageLayout::eUndefined;
 
     vk_image_ = result.first;
@@ -109,6 +113,7 @@ void *VulkanTexture::GetAPIHandle() const {
 }
 
 void VulkanTexture::SetName(const std::string &name) {
+    RHITexture::SetName(name);
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eImage,
@@ -123,6 +128,10 @@ void VulkanTexture::SetName(const std::string &name) {
             name.c_str()
         }
     );
+    if (allocation_) {
+        auto & vma = GetVulkanRHI()->GetVmaAllocator();
+        vma.setAllocationName(allocation_, GetName());
+    }
 }
 
 

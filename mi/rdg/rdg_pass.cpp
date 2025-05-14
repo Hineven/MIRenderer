@@ -100,8 +100,7 @@ void RDGPass::Compile() {
                 auto usage = RDGBufferUsage{{}, buffer};
                 AddBuffer(buffer, field.access_flags);
             }
-            else if (field.type == RHIParamType::kUniformBuffer
-                || field.type == RHIParamType::kVertexBuffer
+            else if (field.type == RHIParamType::kVertexBuffer
                 || field.type == RHIParamType::kIndexBuffer
                 || field.type == RHIParamType::kDispatchCommand) { // Vertex / index/ dispatch command
                 RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
@@ -140,6 +139,10 @@ void RDGPass::Compile() {
                 // Do nothing
             } else if (field.type == RHIParamType::kSampler) {
                 // Do nothing
+            } else if (field.type == RHIParamType::kUniformBuffer) {
+                // The fieldv value is actually a pointer to a shader parameter struct.
+                // Device ub is allocated when the graph is executed. And dependencies is
+                // generated at that time. So, do nothing here.
             } else {
                 assert(false && "Unsupported parameter type.");
             }

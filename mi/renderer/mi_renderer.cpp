@@ -47,6 +47,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     view->InitFrame();
 
+    // Allocate and set view->view_common_params_
+    view->SetViewCommonShaderParameters(builder);
+
     if (!view->world_) {
         MI_WARN("World is not present in the view.");
         return ;

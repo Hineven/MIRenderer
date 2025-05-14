@@ -42,8 +42,8 @@ void RDGTexture::ReleaseRHI() {
 }
 void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
     if (!IsImported()) {
-        if (!rhi_buffer_span_.buffer) {
-            pool_ = pool;
+        pool_ = pool;
+        if (!rhi_buffer_span_.buffer && requested_size_ > 0) {
             pool_->AllocateResource(this);
         } else {
             assert(pool == pool_ && "Re-allocating RDG resources from different pools is not allowed.");
@@ -54,8 +54,8 @@ void RDGBuffer::ReleaseRHI() {
     if (!IsImported() && rhi_buffer_span_.buffer) {
         pool_->RecycleResource(this);
         rhi_buffer_span_ = {};
-        pool_ = nullptr;
     }
+    pool_ = nullptr;
 }
 
 void *RDGBuffer::Map() const {

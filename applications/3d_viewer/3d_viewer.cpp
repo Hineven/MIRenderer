@@ -27,6 +27,8 @@
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
 #include "../../mi/renderer/include/renderer/mi_renderer.h"
+#include "renderer/mi_scene.h"
+#include "renderer/mi_texture.h"
 
 MI_NAMESPACE_BEGIN
     struct MainLoopStartConfig {
@@ -163,16 +165,26 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
     rhi.InitializeSwapChain(&surface_tmp, cfg.window_width, cfg.window_height);
 
-
     auto pool = RDGResourcePool::Create();
 
     // Renderer
     Renderer::Get().Init(pool.Raw());
 
+    auto world = std::make_unique<RendererScene>();
+    auto sky_tex = Texture::Create(PixelFormatType::kB8G8R8A8_SRGB, 2048, 2048);
+
+
+    // Get ready for device rendering
+    sky_tex->CreateOnDevice();
+    sky_tex->ConvertToBindless();
+
+    world->SetSkyTexture(sky_tex.Raw());
+
     // View
     auto view = std::make_unique<RendererView>();
     view->film_width_ = cfg.window_width;
     view->film_height_ = cfg.window_height;
+    view->world_ = world.get();
 
     {
         std::future<void> previous_frame_future;
@@ -226,10 +238,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     view.reset();
 
+    world.reset();
+
+    sky_tex.SafeRelease();
+
     Renderer::DestroySingleton();
 
+    assert(pool.GetRefCount() == 1);
     pool.SafeRelease();
-
 
     // TaskGraph::DestroySingleton();
     RDGShaderLibrary::DestroySingleton();

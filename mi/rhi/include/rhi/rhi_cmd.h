@@ -10,6 +10,7 @@
 #include <format>
 #include <array>
 #include <cstring>
+#include <stack>
 
 #include "rhi_desc.h"
 #include "core/base.h"
@@ -150,7 +151,6 @@ public:
     }
 
 protected:
-
     // Called before the destruction of RHI.
     void PreDestruction ();
 

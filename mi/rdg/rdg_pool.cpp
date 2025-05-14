@@ -19,7 +19,7 @@ RDGResourcePool::~RDGResourcePool() {
 }
 
 TRef<RDGResourcePool> RDGResourcePool::Create() {
-    return TRef<RDGResourcePool>(new RDGResourcePool());
+    return {new RDGResourcePool()};
 }
 
 RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (RHIBufferDesc for_buffer_desc) {

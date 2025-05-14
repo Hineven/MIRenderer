@@ -10,7 +10,7 @@
 #include "rhi/rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
-    DeviceBufferHeapBuffer::~DeviceBufferHeapBuffer() {
+DeviceBufferHeapBuffer::~DeviceBufferHeapBuffer() {
     heap->Free(buffer);
 }
 
@@ -65,7 +65,7 @@ RHIBufferSpan SimpleDeviceBufferHeap::Allocate(uint32_t size) {
         for (auto it = buffer_block.free_segments_.begin(); it != buffer_block.free_segments_.end(); ++it) {
             if (it->size >= aligned_size) {
                 uint32_t start_offset = it->start_offset;
-                uint32_t remaining_size = it->size - aligned_size;
+                size_t remaining_size = it->size - aligned_size;
 
                 buffer_block.free_segments_.erase(it);
 

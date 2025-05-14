@@ -26,7 +26,9 @@ VulkanBuffer::VulkanBuffer(RHIBufferDesc desc)
             alloc_flags,
             vma::MemoryUsage::eAuto
     };
-    auto result = GetVulkanRHI()->GetVmaAllocator().createBuffer(buffer_info, alloc_info);
+    auto & vma = GetVulkanRHI()->GetVmaAllocator();
+    auto result = vma.createBuffer(buffer_info, alloc_info);
+    if (GetName() && result.second) vma.setAllocationName(result.second, GetName());
     vk_buffer_ = result.first;
     allocation_ = result.second;
     mi_assert(vk_buffer_ && allocation_, "Failed to allocate buffer!");
@@ -55,7 +57,7 @@ void VulkanBuffer::Unmap() {
 
 VulkanBuffer::~VulkanBuffer() {
     if(is_mapped_) {
-        Unmap();
+        VulkanBuffer::Unmap();
     }
     GetVulkanRHI()->GetVmaAllocator().destroyBuffer(vk_buffer_, allocation_);
 }
@@ -65,6 +67,7 @@ void *VulkanBuffer::GetAPIHandle() const {
 }
 
 void VulkanBuffer::SetName(const std::string & name) {
+    RHIBuffer::SetName(name);
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eBuffer,
@@ -72,6 +75,9 @@ void VulkanBuffer::SetName(const std::string & name) {
             name.c_str()
         }
     );
+    if (allocation_) {
+        GetVulkanRHI()->GetVmaAllocator().setAllocationName(allocation_, GetName());
+    }
 }
 
 

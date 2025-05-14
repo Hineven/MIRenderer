@@ -61,7 +61,8 @@ void Texture::CreateOnDevice_Async(RHICommandQueueGraphics& queue)
     device_texture_ = RHI::Get().CreateTexture(desc);
 
     if (!data_.empty()) {
-        Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size());
+        Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size(),
+            RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kRead);
     }
     
     dirty_ = false;

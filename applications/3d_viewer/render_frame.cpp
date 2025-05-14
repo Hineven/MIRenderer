@@ -38,7 +38,7 @@ class ImGuiRenderShader : public RDGShader {
 IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "imgui.hlsl", "ImGuiVS", "ImGuiPS");
 
 
-void RenderImGui (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder, RDGTexture * backbuffer) {
+void RenderImGui (RDGResourcePool * pool, RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     ImGui::Render();
     ImDrawData * draw_data = ImGui::GetDrawData();
     if (draw_data->TotalVtxCount == 0 || draw_data->TotalIdxCount == 0) {

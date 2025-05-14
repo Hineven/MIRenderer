@@ -13,7 +13,7 @@
 
 MI_NAMESPACE_BEGIN
 
-class VulkanTexture : public RHITexture {
+class VulkanTexture final : public RHITexture {
 public:
     friend class VulkanCommandExecutor;
 
@@ -117,7 +117,10 @@ protected:
     void CreateDefaultImageView () ;
 
     vk::Image vk_image_ {};
+
+    // This is essentially handled by the VulkanRHI (only)
     vk::ImageLayout vk_image_layout_ {};
+
     vk::ImageView vk_default_image_view_;
     vk::ImageAspectFlags vk_aspect_ {};
     vma::Allocation allocation_ {};
