@@ -1,4 +1,5 @@
 // This file is shared between shaders and C++ code.
+// It defines macros that allow the same code to be used in both contexts.
 #ifndef MI_RENDERER_SHADERS_SHARED_COMMON_HLSL
 #define MI_RENDERER_SHADERS_SHARED_COMMON_HLSL
 
@@ -14,7 +15,7 @@ typedef glm::mat2 float2x2;
 typedef glm::mat3 float3x3;
 typedef glm::mat4 float4x4;
 // Orders of the matrix are different in glm and HLSL. (col major vs row major)
-// (However the memory order of the matrix declared in HLSL constant blocks are defaulted to col major.
+// (However, the memory order of the matrix declared in HLSL constant blocks are defaulted to col major.
 // So we do not need to explicit transit that when uploading uniform buffers.)
 typedef glm::mat3x4 float4x3;
 
@@ -32,12 +33,21 @@ typedef glm::ivec4 int4;
 
 #define SEMANTICS(name)
 #define CPPONLY(name) name
+#define SHADERONLY(name)
 
 #else
+
 #define MI_SHARED_HLSL_BEGIN
 #define MI_SHARED_HLSL_END
 #define SEMANTICS(name) : name
 #define CPPONLY(name)
+#define SHADERONLY(name) name
+
+#define BEGIN_SHADER_PARAMETERS(name) struct name {
+#define END_SHADER_PARAMETERS() };
+#define SHADER_PARAMETER(type, name) type name;
+#define SHADER_PARAMETER_NESTED(type, name) type name;
+
 #endif
 
 #ifdef __cplusplus

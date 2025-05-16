@@ -15,7 +15,7 @@ class SkyShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(SkyShaderParameters)
         SHADER_PARAMETER_STRUCT_REF(ViewCommonShaderParameters, View)
-        SHADER_PARAMETER(Texture2D, SkyTexture)
+        SHADER_PARAMETER(TextureCube, SkyTexture)
         SHADER_PARAMETER(SamplerState, Sampler)
         SHADER_USE_RENDERPASS(DrawToOutputPass, Pass)
     END_SHADER_PARAMETERS()

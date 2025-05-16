@@ -180,6 +180,12 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {
     typedef RDGTexture * value;
     FORCEINLINE static RDGTexture * default_value() {return reinterpret_cast<RDGTexture*>(RDGParameter_UnsetPointer);}
 };
+
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("TextureCube")> {
+    typedef RDGTexture * value;
+    FORCEINLINE static RDGTexture * default_value() {return reinterpret_cast<RDGTexture*>(RDGParameter_UnsetPointer);}
+};
+
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWTexture2D")>
 : public TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {};
 

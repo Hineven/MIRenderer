@@ -11,19 +11,8 @@
 
 MI_NAMESPACE_BEGIN
 
-BEGIN_SHADER_PARAMETERS(ViewCommonShaderParameters)
-    SHADER_PARAMETER(float3, CameraPosition)
-    SHADER_PARAMETER(float,  CameraNearPlane)
-
-    SHADER_PARAMETER(float3, CameraDirection)
-    SHADER_PARAMETER(float,  CameraFarPlane)
-
-    SHADER_PARAMETER(float3, CameraUp)
-    SHADER_PARAMETER(float,  CameraFoVY)
-
-    SHADER_PARAMETER(uint2,  FilmDimensions)
-    SHADER_PARAMETER(float2,  FilmAspectRatioAndInvAspectRatio)
-END_SHADER_PARAMETERS()
+// Reroute to the shared view shader header
+#include "../shaders/shared/SharedView.hlsl"
 
 MI_NAMESPACE_END
 

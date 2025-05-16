@@ -1,3 +1,4 @@
+#include "headers/CommonSamplers.hlsl"
 
 Texture2D<float4> InTexture;
 
@@ -11,6 +12,6 @@ float4 VS_DrawToOutput (uint VertexIndex : SV_VERTEXID) : SV_POSITION {
 }
 
 float4 PS_DrawToOutput (float4 Position : SV_POSITION) : SV_TARGET {
-    return InTexture.;
+    return InTexture.SampleLevel(LinearWrapSampler, Position.xy, 0);
 }
 

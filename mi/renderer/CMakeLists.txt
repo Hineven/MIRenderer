@@ -18,7 +18,7 @@ set(SOURCES
 
 add_library(renderer ${SOURCES})
 
-file(GLOB SHADER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.hlsl")
+file(GLOB_RECURSE SHADER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/**/*.hlsl")
 
 set(SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/resources/shaders)
 
