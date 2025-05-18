@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD 23)
 # Our findvulkan fix
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+# Helper utilities
+include(cmake/AddShaders.cmake)
+
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     # Warning as error
