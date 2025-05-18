@@ -10,7 +10,7 @@ MI_NAMESPACE_BEGIN
 class DrawToOutputShader : public RDGShader {
     BEGIN_SHADER_PARAMETERS(Parameters)
         SHADER_PARAMETER(Texture2D, InTexture)
-        SHADER_PARAMETER(SamplerState, Sampler)
+        SHADER_PARAMETER(SamplerState, LinearWrapSampler)
         SHADER_USE_RENDERPASS(DrawToOutputPass, Pass)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Parameters)
@@ -19,7 +19,7 @@ public:
 
 };
 
-IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "shaders/DrawToOutput.hlsl", "VS_Main", "PS_Main");
+IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "shaders/renderer/DrawToOutput.hlsl", "VS_Main", "PS_Main");
 
 void Renderer::Render_DrawToOutput(RendererView * view, RenderGraphBuilder & builder, RDGTexture *texture) {
     auto & lib = RDGShaderLibrary::Get();
@@ -30,7 +30,7 @@ void Renderer::Render_DrawToOutput(RendererView * view, RenderGraphBuilder & bui
         pass->Output = view->imported.output_.Raw();
         params->Pass = pass;
         params->InTexture = texture;
-        params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+        params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }
     builder.AddPass<DrawToOutputShader>(
         RDGPassFlagBits::kNeverCull, params,

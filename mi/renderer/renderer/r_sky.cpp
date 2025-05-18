@@ -16,13 +16,13 @@ public:
     BEGIN_SHADER_PARAMETERS(SkyShaderParameters)
         SHADER_PARAMETER_STRUCT_REF(ViewCommonShaderParameters, View)
         SHADER_PARAMETER(TextureCube, SkyTexture)
-        SHADER_PARAMETER(SamplerState, Sampler)
+        SHADER_PARAMETER(SamplerState, LinearWrapSampler)
         SHADER_USE_RENDERPASS(DrawToOutputPass, Pass)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(SkyShaderParameters)
     DECLARE_SHADER()
 };
-IMPLEMENT_RDG_GRAPHICS_SHADER(SkyShader, "shaders/Sky.hlsl", "VS_Main", "PS_Main");
+IMPLEMENT_RDG_GRAPHICS_SHADER(SkyShader, "shaders/renderer/Sky.hlsl", "VS_Main", "PS_Main");
 
 void Renderer::Render_Sky(RendererView *view, RenderGraphBuilder &builder) {
     auto &lib = RDGShaderLibrary::Get();
@@ -34,7 +34,7 @@ void Renderer::Render_Sky(RendererView *view, RenderGraphBuilder &builder) {
         params->Pass = pass;
         params->View = view->view_common_params_;
         params->SkyTexture = view->imported.sky_texture.Raw();
-        params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+        params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }
     builder.AddPass<SkyShader>(
         {}, params,

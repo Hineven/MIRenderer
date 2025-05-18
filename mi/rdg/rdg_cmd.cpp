@@ -69,28 +69,32 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
     {
         ret.uavs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->uavs_.size()), base_info->uavs_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->uavs_)) {
-            auto texture_ptr = *static_cast<RDGTexture**>((void*)((uint8_t*)params + e.cpp_offset));
+            auto texture_desc = *static_cast<RDGShaderTextureParameter**>((void*)((uint8_t*)params + e.cpp_offset));
+            auto texture_ptr = texture_desc->texture;
+            auto base_array_layer = texture_desc->array_layer;
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced UAV texture pointer {} is unset, which should not happen.", e.info->name);
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
             mi_assert(slot != UINT32_MAX, "Failed to convert UAV texture index to slot.");
-            ret.uavs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot};
+            ret.uavs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
         }
     }
     // Bind SRVs
     {
         ret.srvs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->srvs_.size()), base_info->srvs_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->srvs_)) {
-            auto texture_ptr = *static_cast<RDGTexture**>((void*)((uint8_t*)params + e.cpp_offset));
+            auto texture_desc = *static_cast<RDGShaderTextureParameter**>((void*)((uint8_t*)params + e.cpp_offset));
+            auto texture_ptr = texture_desc->texture;
+            auto base_array_layer = texture_desc->array_layer;
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced SRV texture pointer {} is unset, which should not happen.", e.info->name);
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
             mi_assert(slot != UINT32_MAX, "Failed to convert SRV texture index to slot.");
-            ret.srvs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot};
+            ret.srvs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
         }
     }
     // Bind samplers

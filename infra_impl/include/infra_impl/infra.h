@@ -84,7 +84,7 @@ struct HLSLCompilerContext;
 // Windows, Vulkan 1.3, NVIDIA
 class MyInfra : public MIInfraInterface {
 public:
-    MyInfra(std::string resource_directory = "") ;
+    MyInfra(bool find_resource_directory = false, std::string resource_directory = "") ;
 
     std::filesystem::path GetResourceDirectory() override;
 
@@ -122,7 +122,8 @@ public:
             std::string target_profile,
             std::span<const char> hlsl_code,
             std::vector<std::string> options,
-            std::string & error
+            std::string & error,
+            std::wstring * out_compile_command = nullptr
     ) override;
 
     void LogMessage(MIInfraLogType level, const std::string &message) override;

@@ -24,6 +24,7 @@ MI_NAMESPACE_BEGIN
 struct HLSLCompilerContext {
     IDxcLibrary *dxc_lib;
     IDxcCompiler *dxc_compiler;
+    IDxcIncludeHandler *include_handler;
 #ifndef _WIN32
     void* dxc_library_handle; // Linux上的动态库句柄
 #endif
@@ -54,6 +55,7 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
         // Windows实现
         DxcCreateInstance(CLSID_DxcLibrary, __uuidof(IDxcLibrary), (void **)&ctx->dxc_lib);
         DxcCreateInstance(CLSID_DxcCompiler, __uuidof(IDxcCompiler), (void **)&ctx->dxc_compiler);
+        ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
 #else
         // Linux实现
         ctx->dxc_library_handle = dlopen("libdxcompiler.so", RTLD_LAZY);
@@ -89,6 +91,7 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             delete ctx;
             return nullptr;
         }
+        hr = ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
 #endif
 
         hlsl_compiler_contexts_[thread_id] = ctx;
@@ -100,6 +103,7 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
 
 void MyInfra::DestroyHLSLCompilerContexts() {
     for(auto & [thread_id, ctx] : hlsl_compiler_contexts_) {
+        ctx->include_handler->Release();
         ctx->dxc_lib->Release();
         ctx->dxc_compiler->Release();
 #ifndef _WIN32
@@ -119,8 +123,8 @@ MyInfra::CompileHLSLToSPIRV(
         std::string target_profile,
         std::span<const char> hlsl_code,
         std::vector<std::string> options,
-        std::string & error) {
-    // 初始化DXC (如果尚未初始化)
+        std::string & error, std::wstring * out_compile_command) {
+
     auto ctx = GetHLSLCompilerContextForThread(std::this_thread::get_id());
     if (!ctx) {
         error = "Failed to initialize DXC compiler";
@@ -130,15 +134,12 @@ MyInfra::CompileHLSLToSPIRV(
     IDxcLibrary *dxc_lib = ctx->dxc_lib;
     IDxcCompiler *dxc_compiler = ctx->dxc_compiler;
 
-    // 从HLSL代码创建blob
     IDxcBlobEncoding *hlsl_blob;
     dxc_lib->CreateBlobWithEncodingFromPinned(hlsl_code.data(), (uint32_t)hlsl_code.size(), CP_UTF8, &hlsl_blob);
 
-    // 转换参数
     std::wstring entry_point_w = Utf8ToWide(entry_point);
     std::wstring target_profile_w = Utf8ToWide(target_profile);
 
-    // 转换编译选项
     auto w_options = std::vector<std::wstring>(options.size());
     for (size_t i = 0; i < options.size(); i++) {
         w_options[i] = Utf8ToWide(options[i]);
@@ -158,19 +159,33 @@ MyInfra::CompileHLSLToSPIRV(
     add_option(L"-Ges");
     add_option(L"-fspv-reflect");
     add_option(L"-fspv-debug=vulkan-with-source");
+    // Add a default include path (same as the shader parent directory)
+    std::filesystem::path shader_path_fs = shader_path;
+    std::filesystem::path shader_dir = shader_path_fs.parent_path();
+    std::wstring shader_dir_w = Utf8ToWide("\"" + shader_dir.string() + "\"");
+    add_option(L"-I");
+    add_option(shader_dir_w);
 
     auto w_options_cstr = std::vector<const wchar_t *>(w_options.size());
     for (size_t i = 0; i < w_options.size(); i++) {
         w_options_cstr[i] = w_options[i].c_str();
     }
-    
-    // 编译
+
+    if (out_compile_command) {
+        std::wstring compile_command = L"dxc -E " + entry_point_w + L" -T " + target_profile_w;
+        for (auto & opt : w_options) {
+            compile_command += L" " + opt;
+        }
+        std::wstring shader_path_ws = Utf8ToWide(shader_path_fs.string());
+        compile_command += L" \"" + shader_path_ws + L"\"";
+        *out_compile_command = compile_command;
+    }
+
     IDxcOperationResult *compile_result;
     dxc_compiler->Compile(hlsl_blob, shader_path, entry_point_w.c_str(), target_profile_w.c_str(),
                           w_options_cstr.data(), (uint32_t)w_options_cstr.size(),
-                          nullptr, 0, nullptr, &compile_result);
+                          nullptr, 0, ctx->include_handler, &compile_result);
 
-    // 检查编译结果
     HRESULT hr;
     compile_result->GetStatus(&hr);
     if (FAILED(hr)) {
@@ -184,13 +199,11 @@ MyInfra::CompileHLSLToSPIRV(
         return {};
     }
 
-    // 获取SPIRV blob
     IDxcBlob *spirv_blob;
     compile_result->GetResult(&spirv_blob);
     std::vector<uint32_t> spirv(spirv_blob->GetBufferSize() / sizeof(uint32_t));
     memcpy(spirv.data(), spirv_blob->GetBufferPointer(), spirv_blob->GetBufferSize());
-    
-    // 释放资源
+
     spirv_blob->Release();
     compile_result->Release();
     hlsl_blob->Release();

@@ -46,7 +46,7 @@ typedef glm::ivec4 int4;
 #define BEGIN_SHADER_PARAMETERS(name) struct name {
 #define END_SHADER_PARAMETERS() };
 #define SHADER_PARAMETER(type, name) type name;
-#define SHADER_PARAMETER_NESTED(type, name) type name;
+#define SHADER_PARAMETER_STRUCT_NESTED(type, name) type name;
 
 #endif
 

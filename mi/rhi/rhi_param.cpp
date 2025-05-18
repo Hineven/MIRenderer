@@ -21,6 +21,7 @@ void RHIParamStructInfo::InitializeUniformsLayoutHash () {
     for (auto & e : members) {
         if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
             hash = CRC32(e.name.c_str(), e.name.size(), hash);
+            hash = CRC32(&e.array_size, sizeof(e.array_size), hash);
             hash = CRC32(&e.size, sizeof(e.size), hash);
             hash = CRC32(&e.offset, sizeof(e.offset), hash);
             hash = CRC32(&e.type, sizeof(e.type), hash);

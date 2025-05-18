@@ -20,6 +20,7 @@
 #include "renderer/mi_material.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_texture.h"
+#include "util/texture_loader.h"
 #pragma warning(pop)
 
 MI_NAMESPACE_BEGIN
@@ -127,7 +128,7 @@ bool GLTFLoader::LoadGLTF(
         {
             auto folder = path.parent_path();
             auto image_file = folder / gltf_image->uri;
-            image_ref = LoadImage(gltf_image->name, image_file);
+            image_ref = TextureLoader::LoadFromFile(gltf_image->name, image_file);
         }
         else if(gltf_image->buffer_view != nullptr)
         {
@@ -138,7 +139,7 @@ bool GLTFLoader::LoadGLTF(
                 continue;
             }
             void *ptr = (uint8_t*)gltf_image->buffer_view->buffer->data + gltf_image->buffer_view->offset;
-            image_ref = LoadImageFromBuffer(gltf_image->name, gltf_image->mime_type, ptr, gltf_image->buffer_view->size);
+            image_ref = TextureLoader::LoadFromBuffer(gltf_image->name, gltf_image->mime_type, ptr, gltf_image->buffer_view->size);
         }
         images[gltf_image] = image_ref;
     }

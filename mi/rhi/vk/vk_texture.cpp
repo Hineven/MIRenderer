@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <ranges>
 #include "vk_texture.h"
 #include "vk_conversion.h"
 
@@ -65,10 +66,10 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
 
     mi_assert(vk_image_ && allocation_, "Failed to allocate texture!");
 
-    CreateDefaultImageView();
+    CreateDefaultImageViews();
 }
 
-void VulkanTexture::CreateDefaultImageView () {
+void VulkanTexture::CreateDefaultImageViews () {
     auto device = GetVulkanRHI()->GetDevice();
     // Create a default image view
     vk_default_image_view_ = device.createImageView(vk::ImageViewCreateInfo{
@@ -80,16 +81,41 @@ void VulkanTexture::CreateDefaultImageView () {
             vk::ImageSubresourceRange{
                     GetVulkanImageAspectFlags(GetUsage()),
                     0,
-                    static_cast<uint32_t>(GetMipLevels()),
+                    GetMipLevels(),
                     0,
-                    static_cast<uint32_t>(GetArrayLayers())
+                    GetArrayLayers()
             }
     });
+    // If the image is layered, create a view for each layer
+    if (GetArrayLayers() > 1) {
+        assert(vk_layer_image_views_.empty());
+        for (int i = 0; i < (int)GetArrayLayers(); i++) {
+            vk_layer_image_views_.push_back(
+                device.createImageView(vk::ImageViewCreateInfo{
+                vk::ImageViewCreateFlags{},
+                vk_image_,
+                GetVulkanImageViewType(GetType()),
+                GetVulkanPixelFormat(GetFormat()),
+                vk::ComponentMapping{}, // identity swizzle by default
+                vk::ImageSubresourceRange{
+                        GetVulkanImageAspectFlags(GetUsage()),
+                        (uint32_t) i,
+                        1,
+                        0,
+                        GetArrayLayers()
+                    }
+                }
+            ));
+        }
+    }
 }
 
 VulkanTexture::~VulkanTexture () {
     auto device = GetVulkanRHI()->GetDevice();
     device.destroyImageView(vk_default_image_view_);
+    for (auto e : vk_layer_image_views_) {
+        device.destroyImageView(e);
+    }
     // Imported textures should not be destroyed because they are allocated externally by the user
     if(!(GetFlags() & RHIResourceFlagBits::kImported)) {
         auto vma = GetVulkanRHI()->GetVmaAllocator();
@@ -105,7 +131,7 @@ void VulkanTexture::ImportFromHandle(vk::Image image_handle, vk::ImageLayout imp
     vk_image_layout_ = imported_layout;
     vk_aspect_ = GetVulkanImageAspectFlags(GetUsage());
     allocation_ = nullptr;
-    CreateDefaultImageView();
+    CreateDefaultImageViews();
 }
 
 void *VulkanTexture::GetAPIHandle() const {
@@ -128,6 +154,16 @@ void VulkanTexture::SetName(const std::string &name) {
             name.c_str()
         }
     );
+    for (const auto& [i, e] : std::views::enumerate(vk_layer_image_views_)) {
+        std::string layer_name = name + "_layer_" + std::to_string(i);
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+            vk::DebugUtilsObjectNameInfoEXT {
+                vk::ObjectType::eImageView,
+                reinterpret_cast<uint64_t>((VkImageView)e),
+                layer_name.c_str()
+            }
+        );
+    }
     if (allocation_) {
         auto & vma = GetVulkanRHI()->GetVmaAllocator();
         vma.setAllocationName(allocation_, GetName());

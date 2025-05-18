@@ -5,8 +5,13 @@
  */
 #include <ranges>
 #include <utility>
+#include <locale>
+
 #include <xxhash.h>
 #include "rdg/rdg_shader.h"
+
+#include <codecvt>
+
 #include "rhi/rhi.h"
 #include "rhi/rhi_pipeline.h"
 #include "core/infra.h"
@@ -193,10 +198,11 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             }
         }
         if (shader_ub_idx == -1) {
-            MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' - Uniform buffer '{}' is defined in C++ but not found in shader",
-                   class_registry_->source_location, e.info->name);
-            passed_checking = false;
+            // No need to pop up warnings. There may be culled unused UBs in shader reflection.
+            // MI_LOG(MIInfraLogType::kWarning,
+            //        "Shader '{}' - Uniform buffer '{}' is defined in C++ but not found in shader",
+            //        class_registry_->source_location, e.info->name);
+            // passed_checking = false;
         } else {
             // Check if the hash values match
             if (shader_reflected_uniform_buffers[shader_ub_idx].struct_reflection->uniforms_layout_hash
@@ -419,7 +425,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     // (Names can be different, but the location and format must match)
     if (shader->GetFragmentOutputDesc().size()) {
         if (!info.renderpass_.info) {
-            MI_LOG(MIInfraLogType::kWarning, "Shader {} defines fragment outputs but no renderpass is defined.", class_registry_->source_location);
+            MI_LOG(MIInfraLogType::kWarning, "RDGShader {} defines fragment outputs but no renderpass is defined.", class_registry_->source_location);
             passed_checking = false;
         } else {
             auto ptr = info.renderpass_.info->cpp_imported_struct_info.cpp_struct_info;
@@ -571,7 +577,20 @@ std::string RDGShader::LoadSource () const {
     return source_code;
 }
 
-bool RDGShader::RecompileShaders(const std::string & source_code) {
+// Localization support from C++ standard is incomplete. Resorting to codecvt
+#pragma warning(push)
+#pragma warning(disable : 4996)
+static std::string wstring_to_utf8(std::wstring const& str)
+{
+    std::wstring_convert<std::conditional_t<
+          sizeof(wchar_t) == 4,
+          std::codecvt_utf8<wchar_t>,
+          std::codecvt_utf8_utf16<wchar_t>>> converter;
+    return converter.to_bytes(str);
+}
+#pragma warning(pop)
+
+bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShaderInitializationInfo & ini) {
     // Re-compile the shader
     shaders_ = {};
     if (source_code.empty()) {
@@ -583,7 +602,10 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
 
     // Compile the shader and create RHI shaders
     std::string errmsg;
-    std::wstring source_location_wstr(class_registry_->source_location.begin(), class_registry_->source_location.end());
+    auto absolute_path = GetInfra().GetResourceDirectory() / class_registry_->source_location;
+    auto absolute_path_string = absolute_path.string();
+    std::wstring source_location_wstr(absolute_path_string.begin(), absolute_path_string.end());
+
 
     // Stack macros
     std::vector<std::string> extra_options;
@@ -591,20 +613,19 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
     for (const auto & macro : macros) {
         extra_options.emplace_back("-D" + macro);
     }
+    for (const auto & extra_macro : ini.macros) {
+        extra_options.emplace_back("-D" + extra_macro);
+    }
 
     if(class_registry_->type == RHIPipelineType::kCompute) {
-        // extra_options.emplace_back("-Fd");
-        // auto random_string = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-        // extra_options.emplace_back(
-        //     (GetInfra().GetTempDirectory() / "shader_pdb" / std::filesystem::path(class_registry_->name + random_string)).string()
-        // );
+        std::wstring out_command;
         auto result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command
         );
-        // extra_options.pop_back(); extra_options.pop_back();
         if (result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
+            MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
             return false;
         }
         // Create the compute shader
@@ -614,47 +635,42 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
                 RHIShaderIRType::kSPIRV, bytecode_span
         );
         if (!shader) {
-            MI_LOG(MIInfraLogType::kError, "Failed to create shader");
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create shader", class_registry_->source_location);
+            return false;
+        }
+        if (!CheckShaderReflection(shader.Raw(), param_info)) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Compute shader reflection check failed", class_registry_->source_location);
             return false;
         }
         shaders_.compute = shader;
-        CheckShaderReflection(shader.Raw(), param_info);
     }
     if(class_registry_->type == RHIPipelineType::kGraphics) {
         std::vector<uint32_t> vs_result, fs_result;
         // For graphics pipeline, we need to compile vertex and fragment shaders
         // First compile vertex shader
         {
-            // extra_options.emplace_back("-Fd");
-            // auto random_string = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-           //  extra_options.emplace_back(
-           //     (GetInfra().GetTempDirectory() / "shader_pdb" / std::filesystem::path(class_registry_->name + random_string)).string()
-           // );
+            std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
                     source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_3",
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command
             );
-            // extra_options.pop_back(); extra_options.pop_back();
             if (vs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
         }
 
         {
-            // extra_options.emplace_back("-Fd");
-            // auto random_string = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-            // extra_options.emplace_back(
-            //     (GetInfra().GetTempDirectory() / "shader_pdb" / std::filesystem::path(class_registry_->name + random_string)).string()
-            // );
+            std::wstring out_command;
             // Then compile fragment shader
             fs_result = GetInfra().CompileHLSLToSPIRV(
                     source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_3",
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command
             );
-            // extra_options.pop_back(); extra_options.pop_back();
             if (fs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
         }
@@ -666,10 +682,13 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
                 RHIShaderIRType::kSPIRV, vs_bytecode_span
         );
         if (!vertex_shader) {
-            MI_LOG(MIInfraLogType::kError, "Failed to create vertex shader");
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create vertex shader", class_registry_->source_location);
             return false;
         }
-        CheckShaderReflection(vertex_shader.Raw(), param_info);
+        if (!CheckShaderReflection(vertex_shader.Raw(), param_info)) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Vertex shader reflection check failed", class_registry_->source_location);
+            return false;
+        }
         shaders_.vertex = vertex_shader;
 
         // Create the fragment shader
@@ -679,10 +698,13 @@ bool RDGShader::RecompileShaders(const std::string & source_code) {
                 RHIShaderIRType::kSPIRV, fs_bytecode_span
         );
         if (!fragment_shader) {
-            MI_LOG(MIInfraLogType::kError, "Failed to create fragment shader");
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create fragment shader", class_registry_->source_location);
             return false;
         }
-        CheckShaderReflection(fragment_shader.Raw(), param_info);
+        if (!CheckShaderReflection(fragment_shader.Raw(), param_info)) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Fragment shader reflection check failed", class_registry_->source_location);
+            return false;
+        }
         shaders_.fragment = fragment_shader;
     }
     return true;
@@ -703,7 +725,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", class_registry_->source_location);
         return false;
     }
-    if (!RecompileShaders(source_code)) return false;
+    if (!RecompileShaders(source_code, ini)) return false;
 
     auto pipeline_config = class_registry_->GetShaderPipelineConfig();
 

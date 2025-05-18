@@ -566,7 +566,7 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
                     }
                 }
                 if constexpr (std::is_same_v<T, RHIPipelineParameterTextureDesc>) {
-                    if (it->texture != e.texture) {
+                    if (it->texture != e.texture || it->array_layer != e.array_layer) {
                         *it = e;
                         dirty = true;
                     }
@@ -598,7 +598,7 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
 // TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
-    VulkanCommandExecutor::CommandQueueState & state, [[maybe_unused]] vk::Device device,
+    CommandQueueState & state, [[maybe_unused]] vk::Device device,
     vk::DescriptorSet descriptor_set,
     [[maybe_unused]] vk::CommandBuffer cmdb
 ) {
@@ -639,11 +639,10 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     int write_index = 0;
     for(auto ubo : parameter_table.uniforms) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
+        assert(ubo.buffer.buffer && "Uniform buffer must not be null.");
         buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer(); // NOLINT its safe
         buffer_info.offset = ubo.buffer.offset;
         buffer_info.range = ubo.buffer.size;
-//        auto * buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer); // NOLINT its safe
-//        buffer->Use(cmdb, use_stages, vk::AccessFlagBits::eUniformRead);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot).binding)
@@ -656,10 +655,9 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     for(auto storage : parameter_table.storages) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
         auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer); // NOLINT its safe
-        buffer_info.buffer = buffer->GetBuffer(); // NOLINT its safe
+        buffer_info.buffer = buffer ? buffer->GetBuffer() : nullptr;
         buffer_info.offset = storage.buffer.offset;
         buffer_info.range = storage.buffer.size;
-//        buffer->Use(cmdb, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot).binding)
@@ -672,9 +670,10 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     for(auto uav : parameter_table.uavs) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(uav.texture);
-        image_info.imageView = image->GetImageView(); // NOLINT its safe
+        if (uav.array_layer == UINT_MAX)
+            image_info.imageView = image ? image->GetImageView() : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(uav.array_layer) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eGeneral;
-//        image->Use(cmdb, vk::ImageLayout::eGeneral, use_stages, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot).binding)
@@ -687,9 +686,10 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     for(auto srv : parameter_table.srvs) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(srv.texture);
-        image_info.imageView = image->GetImageView(); // NOLINT its safe
+        if (srv.array_layer == UINT_MAX)
+            image_info.imageView = image ? image->GetImageView() : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-//        image->Use(cmdb, vk::ImageLayout::eShaderReadOnlyOptimal, use_stages, vk::AccessFlagBits::eShaderRead);
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
                 .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
@@ -701,6 +701,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     }
     for(auto sampler : parameter_table.samplers) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
+        assert(sampler.resource && "Sampler must not be null.");
         image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
         auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
@@ -722,8 +723,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
                 .setPNext(&write_khr);
         write_khr.accelerationStructureCount = 1;
         auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
-//        rhi_acc->Use(cmdb, use_stages, vk::AccessFlagBits::eAccelerationStructureReadKHR);
-        *(vk::AccelerationStructureKHR*)p_ac = (rhi_acc->GetAccelerationStructure()); // NOLINT its safe
+        *p_ac = rhi_acc ? rhi_acc->GetAccelerationStructure() : nullptr;
         write_khr.pAccelerationStructures = p_ac;
         writes[write_index++] = write;
     }

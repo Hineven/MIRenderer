@@ -27,8 +27,8 @@ public:
         std::vector<TRef<StaticMesh>> & out_meshes
     );
     // Load SRV image
-    static TRef<Texture> LoadImage (std::string name, std::filesystem::path path);
-    static TRef<Texture> LoadImageFromBuffer (const std::string& name, const std::string & mime_type, const void * ptr, size_t size);
+    // static TRef<Texture> LoadImage (std::string name, std::filesystem::path path);
+    // static TRef<Texture> LoadImageFromBuffer (const std::string& name, const std::string & mime_type, const void * ptr, size_t size);
 };
 
 MI_NAMESPACE_END

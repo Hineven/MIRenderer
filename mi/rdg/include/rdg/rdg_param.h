@@ -176,15 +176,35 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float4")> {
     FORCEINLINE static glm::vec4 default_value() {return {0.0f, 0.0f, 0.0f, 0.0f};}
 };
 
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float4x4")> {
+    typedef glm::mat4 value;
+    FORCEINLINE static glm::mat4 default_value() {return {0.0f};}
+};
+
+struct RDGShaderTextureParameter {
+    // Keep this as the first member because somewhere in my code may use *(RDGTexture**)(ptr+offset)
+    // as a way to access the texture pointer (for legacy reasons).
+    RDGTexture * texture {};
+    // The layer of the texture to bind to. This is used for 3D textures and cube maps.
+    // Leave UINT_MAX for whole texture arrays / defaults. And for Texture2DArray and TextureCube, this has to be UINT_MAX.
+    uint32_t array_layer {UINT_MAX};
+    FORCEINLINE operator RDGTexture * () const { return texture; }
+    FORCEINLINE RDGShaderTextureParameter & operator = (RDGTexture * tex) {
+        texture = tex;
+        return *this;
+    }
+};
+
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {
-    typedef RDGTexture * value;
+    typedef RDGShaderTextureParameter value;
     FORCEINLINE static RDGTexture * default_value() {return reinterpret_cast<RDGTexture*>(RDGParameter_UnsetPointer);}
 };
 
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("TextureCube")> {
-    typedef RDGTexture * value;
-    FORCEINLINE static RDGTexture * default_value() {return reinterpret_cast<RDGTexture*>(RDGParameter_UnsetPointer);}
-};
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("TextureCube")>
+    : public TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {};
+
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2DArray")>
+: public TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {};
 
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWTexture2D")>
 : public TRDGShaderParamPlaceHolderType<ConstStrHash32("Texture2D")> {};

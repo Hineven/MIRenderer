@@ -35,6 +35,7 @@ struct RDGShaderInitializationInfo {
 struct RDGShaderClassRegistry {
     std::string name;
     RHIPipelineType type;
+    // Relative source location to the resource directory
     std::string source_location;
     std::string compute_entry_;
     std::string vertex_entry_;
@@ -97,7 +98,7 @@ protected:
 
     std::string LoadSource () const ;
     // Helper function, re-compile shaders only.
-    bool RecompileShaders (const std::string & source_code) ;
+    bool RecompileShaders (const std::string & source_code, const RDGShaderInitializationInfo & ini) ;
 
     // Check if all parameters declared & used in the shader are defined in the shader parameter struct
     bool CheckShaderReflection (RHIShader * shader, const RDGShaderParamStructAndSizeInfo & info) ;

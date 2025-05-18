@@ -129,7 +129,8 @@ public:
             std::string target_profile,
             std::span<const char> hlsl_code,
             std::vector<std::string> options,
-            std::string & error
+            std::string & error,
+            std::wstring * out_compile_command = nullptr
     ) = 0;
 
 

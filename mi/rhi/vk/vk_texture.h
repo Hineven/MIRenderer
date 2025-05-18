@@ -102,9 +102,16 @@ public:
         return vk_default_image_view_;
     }
 
+    FORCEINLINE vk::ImageView GetImageViewForLayer (uint32_t layer) {
+        assert(layer < GetArrayLayers());
+        if (GetArrayLayers() == 1) return vk_default_image_view_;
+        return vk_layer_image_views_[layer];
+    }
+
     FORCEINLINE vk::ImageAspectFlags GetImageAspect () {
         return vk_aspect_;
     }
+
     void * GetAPIHandle() const override ;
     
     void ImportFromHandle (vk::Image image_handle, vk::ImageLayout imported_layout) ;
@@ -114,7 +121,7 @@ public:
     friend class VulkanRHI;
 protected:
 
-    void CreateDefaultImageView () ;
+    void CreateDefaultImageViews () ;
 
     vk::Image vk_image_ {};
 
@@ -122,6 +129,7 @@ protected:
     vk::ImageLayout vk_image_layout_ {};
 
     vk::ImageView vk_default_image_view_;
+    std::vector<vk::ImageView> vk_layer_image_views_ {};
     vk::ImageAspectFlags vk_aspect_ {};
     vma::Allocation allocation_ {};
 

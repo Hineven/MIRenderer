@@ -35,7 +35,7 @@ namespace details {
                 curr_position += e.size;
                 auto it = name_to_offset.find(e.name);
                 if (it != name_to_offset.end()) {
-                    // FIXME compile error, why?
+                    // FIXME there will be a compile error if i uncomment the LOG line. Why?
                     assert(false);
                     // MI_LOG(MIInfraLogType::kError, "Duplicate param name: {}", e.name);
                     return false;

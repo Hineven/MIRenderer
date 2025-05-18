@@ -148,6 +148,9 @@ struct RHIPipelineParameterTextureDesc {
     RHITexture * texture;
     // On which resource slot to bind the resource
     uint32_t slot;
+    // Array layer (if the texture is layered)
+    // UINT_MAX for all layers
+    uint32_t array_layer {UINT_MAX};
 };
 struct RHIPipelineParameterResourceDesc {
     RHIResource * resource;

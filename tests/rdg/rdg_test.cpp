@@ -161,7 +161,7 @@ TEST(RDGTest, RDGShaderLibrary) {
     CPPTRACE_TRY {
         auto pwd = std::filesystem::current_path();
         auto resource_dir = pwd / "rdg" / "resources";
-        TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
+        TransferInfra(std::make_unique<MyInfra>(false, resource_dir.string()));
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
@@ -187,7 +187,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
     CPPTRACE_TRY {
         auto pwd = std::filesystem::current_path();
         auto resource_dir = pwd / "rdg" / "resources";
-        TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
+        TransferInfra(std::make_unique<MyInfra>(false, resource_dir.string()));
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
@@ -298,7 +298,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
     CPPTRACE_TRY {
         auto pwd = std::filesystem::current_path();
         auto resource_dir = pwd / "rdg" / "resources";
-        TransferInfra(std::make_unique<MyInfra>(resource_dir.string()));
+        TransferInfra(std::make_unique<MyInfra>(false, resource_dir.string()));
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);

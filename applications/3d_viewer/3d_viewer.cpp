@@ -26,12 +26,14 @@
 #include "rdg/rdg_shader.h"
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
-#include "../../mi/renderer/include/renderer/mi_renderer.h"
+#include "renderer/mi_renderer.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
+#include "util/texture_loader.h"
 
 MI_NAMESPACE_BEGIN
-    struct MainLoopStartConfig {
+
+struct MainLoopStartConfig {
     std::string window_name;
     uint32_t window_width;
     uint32_t window_height;
@@ -171,8 +173,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     Renderer::Get().Init(pool.Raw());
 
     auto world = std::make_unique<RendererScene>();
-    auto sky_tex = Texture::Create(PixelFormatType::kB8G8R8A8_SRGB, 2048, 2048);
+    TRef<Texture> sky_tex;
 
+    // Upload sky texture
+    {
+        sky_tex = TextureLoader::LoadFromFile("SkyTexture", GetInfra().GetResourceDirectory() / "assets/3d_viewer/sky_texture.png");
+    }
 
     // Get ready for device rendering
     sky_tex->CreateOnDevice();
@@ -270,6 +276,6 @@ int main () {
     cfg.window_width = 800;
     cfg.window_height = 600;
 
-    auto infra = std::make_unique<mi::MyInfra>();
+    auto infra = std::make_unique<mi::MyInfra>(true);
     mi::Start(std::move(infra), cfg);
 }

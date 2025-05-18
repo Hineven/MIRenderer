@@ -30,9 +30,9 @@ enum class RHIParamType : uint32_t {
     kStruct,
     kBasic,
     kAccelerationStructure,
-    // The following 6 types have no mapping in hlsl, just corporate with RDG shader reflection.
-    kRenderTarget,
     kVertexAttribute,
+    // The following 5 types have no mapping in hlsl, just corporate with RDG shader reflection.
+    kRenderTarget,
     kVertexBuffer,
     kIndexBuffer,
     kDispatchCommand,
@@ -73,6 +73,7 @@ enum class RHIBasicParamType {
     kUInt2,
     kUInt3,
     kUInt4,
+    kFloat4x4,
     kMax
 };
 
@@ -89,12 +90,13 @@ FORCEINLINE RHIBasicParamType RHITypeNameStringToBasicParamType (std::string_vie
     if(type == "uint2") return RHIBasicParamType::kUInt2;
     if(type == "uint3") return RHIBasicParamType::kUInt3;
     if(type == "uint4") return RHIBasicParamType::kUInt4;
+    assert(false);
     return RHIBasicParamType::kMax;
 }
 
 FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "Texture2D") return RHIParamType::kSRVTexture;
-    if(type == "TextureCube") return RHIParamType::kSRVTexture;
+    if(type == "TextureCube" || type == "Texture2DArray") return RHIParamType::kSRVTexture;
     if(type == "RWTexture2D") return RHIParamType::kUAVTexture;
     if(type == "SamplerState") return RHIParamType::kSampler;
     if(type == "Buffer") return RHIParamType::kStorageBuffer;
@@ -110,6 +112,7 @@ FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "IndexBuffer") return RHIParamType::kIndexBuffer;
     if(type == "DispatchCommand") return RHIParamType::kDispatchCommand;
     if(RHITypeNameStringToBasicParamType(type) != RHIBasicParamType::kMax) return RHIParamType::kBasic;
+    // FIXME some unsupported types may be identified as kStruct
     return RHIParamType::kStruct;
 }
 
@@ -134,7 +137,8 @@ FORCEINLINE uint32_t RHIGetBasicParamSize (RHIBasicParamType type) {
         case RHIBasicParamType::kUInt2: return sizeof(glm::uvec2);
         case RHIBasicParamType::kUInt3: return sizeof(glm::uvec3);
         case RHIBasicParamType::kUInt4: return sizeof(glm::uvec4);
-        default: return 0;
+        case RHIBasicParamType::kFloat4x4: return sizeof(glm::mat4);
+        default: assert(false); return 0;
     }
 }
 
@@ -154,7 +158,8 @@ FORCEINLINE uint32_t RHIGetBasicParamAlignment (RHIBasicParamType type) {
         case RHIBasicParamType::kUInt2: return sizeof(uint32_t);
         case RHIBasicParamType::kUInt3: return sizeof(uint32_t);
         case RHIBasicParamType::kUInt4: return sizeof(glm::uvec4);
-        default: return 0;
+        case RHIBasicParamType::kFloat4x4: return sizeof(glm::uvec4); // aligned to 16 (buffer-row rule)
+        default: assert(false); return 0;
     }
 }
 
@@ -165,13 +170,16 @@ struct RHIParamInfo {
     std::string name;
     RHIParamType type;
     RHIBasicParamType basic_type;
+    // Array size of 1 dimensional array. 0 if not an array.
+    uint32_t array_size;
     // Reflection valid for StructuredBuffer, RWStructuredBuffer, ConstantBuffer
     const RHIParamStructInfo * struct_info;
     // Currently only meaningful for storage buffers. Otherwise, it can be any value.
     RHIGPUAccessFlags access_flags;
     // Device side (shader) memory offset within the parent struct.
     uint32_t offset; // Only makes sense for members inside a struct
-    uint32_t size;
+    // Size of 1 element in the array. It simply equals to the size of the type if not an array.
+    uint32_t element_size;
     // uint32_t array_size; // Arrays not supported currently
     uint32_t GetAlignment () const ;
 };

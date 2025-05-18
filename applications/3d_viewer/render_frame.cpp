@@ -35,7 +35,7 @@ class ImGuiRenderShader : public RDGShader {
     RDG_SHADER_USE_PARAMETERS(Parameters)
 };
 
-IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "imgui.hlsl", "ImGuiVS", "ImGuiPS");
+IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "shaders/3d_viewer/imgui.hlsl", "ImGuiVS", "ImGuiPS");
 
 
 void RenderImGui (RDGResourcePool * pool, RenderGraphBuilder & builder, RDGTexture * backbuffer) {

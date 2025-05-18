@@ -9,8 +9,13 @@
 
 MI_NAMESPACE_BEGIN
 
-MyInfra::MyInfra(std::string resource_directory) {
-    resource_directory_ = std::filesystem::path(resource_directory);
+MyInfra::MyInfra(bool find_resource_directory, std::string resource_directory) {
+    if (!find_resource_directory) {
+        resource_directory_ = std::filesystem::path(resource_directory);
+        if (resource_directory_.empty()) {
+            resource_directory_ = std::filesystem::current_path() / "resources";
+        }
+    }
 }
 
 std::filesystem::path MyInfra::GetResourceDirectory() {
@@ -27,9 +32,21 @@ void MyInfra::Init() {
     start_time_ = std::chrono::high_resolution_clock::now();
 
     if (resource_directory_ == "") {
-        // Create / Get directories
-        resource_directory_ =
-                std::filesystem::current_path() / "resources";
+        // Try to find the resource directory via mi_renderer_identity file.
+        auto directory = std::filesystem::current_path();
+        while (true) {
+            if (std::filesystem::exists(directory / "mi_renderer_identity")) {
+                resource_directory_ = directory / "resources";
+                LogMessage(MIInfraLogType::kInfo, "Found resource directory: " + resource_directory_.string());
+                break;
+            }
+            if (directory == directory.parent_path()) {
+                LogMessage(MIInfraLogType::kError, "Failed to find resource directory. Defaulting to current path.");
+                resource_directory_ = std::filesystem::current_path() / "resources";
+                break;
+            }
+            directory = directory.parent_path();
+        }
     }
     if (!std::filesystem::exists(resource_directory_)) {
         LogMessage(MIInfraLogType::kInfo, "Creating resource directory: " + resource_directory_.string());
@@ -45,7 +62,7 @@ void MyInfra::Init() {
         LogMessage(MIInfraLogType::kInfo, "Creating temp directory: " + temp_directory_.string());
         std::filesystem::create_directory(temp_directory_);
     } else {
-        LogMessage(MIInfraLogType::kInfo, "Resource directory: " + temp_directory_.string());
+        LogMessage(MIInfraLogType::kInfo, "Temp directory: " + temp_directory_.string());
     }
 
     // Query for the number of logical cores

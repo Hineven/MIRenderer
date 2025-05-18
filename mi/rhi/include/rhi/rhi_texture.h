@@ -28,8 +28,8 @@ protected:
     ~RHITexture() override;
 public:
 
-    FORCEINLINE int GetMipLevels() const { return desc_.mip_levels; }
-    FORCEINLINE int GetArrayLayers() const { return desc_.array_layers; }
+    FORCEINLINE uint32_t GetMipLevels() const { return desc_.mip_levels; }
+    FORCEINLINE uint32_t GetArrayLayers() const { return desc_.array_layers; }
     FORCEINLINE RHITextureType GetType() const { return desc_.type; }
     FORCEINLINE RHITextureDimensions GetDimensions() const { return desc_.dimensions; }
     FORCEINLINE PixelFormatType GetFormat() const { return desc_.format; }
