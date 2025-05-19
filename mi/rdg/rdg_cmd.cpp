@@ -19,9 +19,8 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
     const RDGShaderParamStructAndSizeInfo * base_info, const void * params) {
     RHIBindPipelineParametersDesc ret = {};
     // Bind uniform buffers
-    bool has_globals = base_info->global_uniforms_.size() > 0;
     int num_ref_uniform_buffers = (int)base_info->uniform_buffers_.size();
-    int num_uniform_buffers = num_ref_uniform_buffers + has_globals;
+    int num_uniform_buffers = num_ref_uniform_buffers;
     if (num_uniform_buffers) {
         ret.uniforms = std::span(queue.Allocate<RHIPipelineParameterBufferDesc[]>(num_uniform_buffers), num_uniform_buffers);
         for (int i = 0; i < num_ref_uniform_buffers; i++) {
@@ -42,14 +41,6 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 ret.uniforms[i] = {span, slot};
             }
         }
-        if (has_globals) {
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>(num_ref_uniform_buffers);
-            mi_assert(slot != UINT32_MAX, "Failed to convert global uniform buffer index to slot.");
-            auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(params);
-            auto span = buffer_ptr.buffer->GetRHI();
-            span.offset += buffer_ptr.offset;
-            ret.uniforms[num_ref_uniform_buffers] = {span, slot};
-        }
     }
     // Bind storage buffers
     {
@@ -69,9 +60,9 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
     {
         ret.uavs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->uavs_.size()), base_info->uavs_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->uavs_)) {
-            auto texture_desc = *static_cast<RDGShaderTextureParameter**>((void*)((uint8_t*)params + e.cpp_offset));
-            auto texture_ptr = texture_desc->texture;
-            auto base_array_layer = texture_desc->array_layer;
+            auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
+            auto texture_ptr = texture_desc.texture;
+            auto base_array_layer = texture_desc.array_layer;
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced UAV texture pointer {} is unset, which should not happen.", e.info->name);
                 return std::nullopt;
@@ -85,9 +76,9 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
     {
         ret.srvs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->srvs_.size()), base_info->srvs_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->srvs_)) {
-            auto texture_desc = *static_cast<RDGShaderTextureParameter**>((void*)((uint8_t*)params + e.cpp_offset));
-            auto texture_ptr = texture_desc->texture;
-            auto base_array_layer = texture_desc->array_layer;
+            auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
+            auto texture_ptr = texture_desc.texture;
+            auto base_array_layer = texture_desc.array_layer;
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced SRV texture pointer {} is unset, which should not happen.", e.info->name);
                 return std::nullopt;
@@ -172,11 +163,9 @@ bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
         }
     }
     RHIDrawDesc ds {};
-    if (info->renderpass_.info) {
-        auto pass_params = *(void**)((std::byte*)params + info->renderpass_.cpp_offset);
-        auto pass_info = info->renderpass_.info->cpp_imported_struct_info.cpp_struct_info;
-        for (const auto& [i, e] : std::views::enumerate(pass_info->render_targets_)) {
-            auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)pass_params + e.cpp_offset);
+    if (!info->render_targets_.empty()) {
+        for (const auto& [i, e] : std::views::enumerate(info->render_targets_)) {
+            auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)params + e.cpp_offset);
             RHITexture * to_bound = nullptr;
             if (param.texture == nullptr) {
                 MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null render target for paramter '{}'. It will not be drawn.",

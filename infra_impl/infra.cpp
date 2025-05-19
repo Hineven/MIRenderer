@@ -4,6 +4,11 @@
  * See LICENSE for licensing.
  */
 #include <iostream>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "infra_impl/infra.h"
 #include "core/infra.h"
 
@@ -114,18 +119,38 @@ void MyInfra::AddProfileTime([[maybe_unused]] const std::string &name, [[maybe_u
 void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
     // Just print to console
     std::string level_str;
+    std::string color_start; // Color code at start
+    std::string color_reset = "\033[0m"; // Reset color
+
     switch(level) {
         case MIInfraLogType::kInfo:
             level_str = "Info";
+            color_start = "\033[0m"; // Default color
             break;
         case MIInfraLogType::kWarning:
             level_str = "Warning";
+            color_start = "\033[33m"; // Yellow
             break;
         case MIInfraLogType::kError:
             level_str = "Error";
+            color_start = "\033[31m"; // Red
             break;
     }
-    std::cout << "[" << level_str << "] " << message << std::endl;
+
+#ifdef _WIN32
+    // 在Windows上启用ANSI支持
+    static bool initialized = false;
+    if (!initialized) {
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD dwMode = 0;
+        GetConsoleMode(hOut, &dwMode);
+        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        SetConsoleMode(hOut, dwMode);
+        initialized = true;
+    }
+#endif
+
+    std::cout << color_start << "[" << level_str << "] " << message << color_reset << std::endl;
 }
 
 void MyInfra::OnFrameBegin() {

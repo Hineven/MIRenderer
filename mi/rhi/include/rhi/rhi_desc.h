@@ -191,8 +191,6 @@ namespace PipelineReflection {
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
-        // Deep reflection into constant buffer structs in the shader
-        RHIParamStructInfo * struct_reflection;
         // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
         uint32_t array_size;
     };
@@ -254,19 +252,11 @@ namespace ShaderReflection {
         IRBindingDecorationLocation locations;
         uint32_t size;
         uint32_t name_crc;
-        // TODO reflection into uniform buffer structs
         std::string name;
-        // Deep reflection into constant buffer structs in the shader
-        RHIParamStructInfo * struct_reflection;
         uint32_t array_size;
         FORCEINLINE PipelineReflection::UniformBufferDesc ToPipelineDesc() const {
             return {
-                size, name_crc, 0, name,
-                // FIXME Here we directly shares the memory among RHIShader's reflection and RHIPipeline's reflection.
-                // The current implementation simply leaks all memory for shader struct reflection.
-                // If we further implemented proper memory recycling, this may cause a floating pointer error.
-                struct_reflection,
-                array_size
+                size, name_crc, 0, name, array_size
             };
         }
     };

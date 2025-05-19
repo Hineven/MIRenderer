@@ -93,6 +93,10 @@ protected:
 
     std::unique_ptr<TOneTimeLinearAllocator<>> allocator_;
 
+#ifndef NDEBUG
+    std::map<const void *, uint32_t> param_struct_ptr_to_data_crc;
+#endif
+
     std::vector<std::unique_ptr<RDGPass>> passes_;
     std::set<RDGResource*> exporting_resources_;
     int current_pass_index_ {};

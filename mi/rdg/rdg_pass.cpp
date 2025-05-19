@@ -62,27 +62,26 @@ void RDGPass::Compile() {
         // Iterate through all shader parameters using reflection
         for (const auto & field : shader_param_struct_info_->cpp_members) {
             const void* field_data = static_cast<const char*>(shader_param_data_) + field.cpp_offset;
-
             // Check resource type
-            if (field.type == RHIParamType::kSRVTexture) { // SRV
+            if (field.type == RHIParamType::kSRVTexture || field.type == RHIParamType::kSRVTextureArray) { // SRV
                 RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
                 if (!texture) continue ;
                 if (RDGParameter_IsUnsetPointer(texture)) {
                     MI_WARN("Pass {}: Unset parameter pointer {}."
-                            "If you want manually set it in the pass, "
-                            "use RDGParameter_UnsetPointer as initial value to disable this warning.",
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
                             name_, field.name);
                     continue;
                 }
                 AddTexture(texture, RDGTextureUsageType::kShaderRead);
             }
-            else if (field.type == RHIParamType::kUAVTexture) { // UAV
+            else if (field.type == RHIParamType::kUAVTexture || field.type == RHIParamType::kUAVTextureArray) { // UAV
                 RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
                 if (!texture) continue;
                 if (RDGParameter_IsUnsetPointer(texture)) {
                     MI_WARN("Pass {}: Unset parameter pointer {}."
-                            "If you want manually set it in the pass, "
-                            "use RDGParameter_UnsetPointer as initial value to disable this warning.",
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
                             name_, field.name);
                     continue;
                 }
@@ -92,8 +91,8 @@ void RDGPass::Compile() {
                 if (!buffer) continue;
                 if (RDGParameter_IsUnsetPointer(buffer)) {
                     MI_WARN("Pass {}: Unset parameter pointer {}."
-                            "If you want manually set it in the pass, "
-                            "use RDGParameter_UnsetPointer as initial value to disable this warning.",
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
                             name_, field.name);
                     continue;
                 }
@@ -107,42 +106,32 @@ void RDGPass::Compile() {
                 if (!buffer) continue;
                 if (RDGParameter_IsUnsetPointer(buffer)) {
                     MI_WARN("Pass {}: Unset parameter pointer {}."
-                            "If you want manually set it in the pass, "
-                            "use RDGParameter_UnsetPointer as initial value to disable this warning.",
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
                             name_, field.name);
                     continue;
                 }
                 AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
-            } else if (field.type == RHIParamType::kRenderPass) {
-                // Render pass
-                auto ptr = *static_cast<void* const*>(field_data);
-                auto pass_info = field.cpp_imported_struct_info.cpp_struct_info;
-                for (auto e : pass_info->render_targets_) {
-                    RDGTexture * texture = *(RDGTexture**)((std::byte*)ptr + e.cpp_offset);
-                    if (!texture) continue;
-                    if (RDGParameter_IsUnsetPointer(texture)) {
-                        MI_WARN("Pass {}: Unset parameter pointer {}."
-                                "If you want manually set it in the pass, "
-                                "use RDGParameter_UnsetPointer as initial value to disable this warning.",
-                                name_, e.info->name);
-                        continue;
-                    }
-                    auto usage = RDGTextureUsageType::kOutputAttachment;
-                    if (UINT32_MAX == e.info->cpp_extra.render_targets_info->target_index) {
-                        usage = RDGTextureUsageType::kDepthStencilAttachment;
-                    }
-                    AddTexture(texture, usage);
-                }
             } else if (field.type == RHIParamType::kVertexAttribute) {
-                // Do nothing
-            } else if (field.type == RHIParamType::kBasic || field.type == RHIParamType::kStruct) {
                 // Do nothing
             } else if (field.type == RHIParamType::kSampler) {
                 // Do nothing
             } else if (field.type == RHIParamType::kUniformBuffer) {
-                // The fieldv value is actually a pointer to a shader parameter struct.
+                // The field value is actually a pointer to a UB struct.
                 // Device ub is allocated when the graph is executed. And dependencies is
-                // generated at that time. So, do nothing here.
+                // generated at runtime. So, do nothing here.
+            } else if (field.type == RHIParamType::kRenderTarget) {
+                const RDGShaderRenderTargetParameter & render_target = *static_cast<RDGShaderRenderTargetParameter const*>(field_data);
+                if (!render_target.texture) continue ;
+                if (RDGParameter_IsUnsetPointer(render_target.texture)) {
+                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
+                            name_, field.name);
+                    continue;
+                }
+                // TODO support depth stencil
+                AddTexture(render_target.texture, RDGTextureUsageType::kOutputAttachment);
             } else {
                 assert(false && "Unsupported parameter type.");
             }

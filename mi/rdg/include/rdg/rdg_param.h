@@ -59,8 +59,6 @@ struct RDGShaderIndexBufferInfo {
 struct RDGShaderParamInfo : public RHIParamInfo {
     // (cpp side) Specify how the parameter lives in the shader parameter struct.
     uint32_t cpp_offset {UINT32_MAX};
-    // (cpp side) The struct info of the parameter if it is a struct.
-    RDGImportedShaderParamStructInfo cpp_imported_struct_info {};
     // Extra info about render target / vertex buffer / vertex attribute / index buffer
     union {
         RDGShaderRenderTargetInfo * render_targets_info;
@@ -73,9 +71,6 @@ struct RDGShaderParamInfo : public RHIParamInfo {
 // C++ side shader parameter struct + shader side shader parameter struct pair
 struct RDGShaderParamStructInfo : public RHIParamStructInfo {
     std::span<RDGShaderParamInfo> cpp_members {};
-    // Whether this struct can be imported to another RDGShaderParamStructInfo and wrapped by a RDGImportedShaderParamStructInfo
-    // If this struct does not contain any references and shader resources, it can be imported.
-    bool CanBeImported () const ;
     // Whether this struct describes a renderpass. A renderpass should only be described via a series of render targets.
     bool CanBeRenderpass () const;
     std::map<uint32_t /*CRC*/, int> cpp_member_index_map;
@@ -98,16 +93,11 @@ struct RDGShaderParamStructInfo : public RHIParamStructInfo {
 struct RDGShaderParameterLocation {
     const RDGShaderParamInfo * info;
     uint32_t cpp_offset;
-    uint32_t shader_offset;
     uint32_t size;
 };
 
-// TODO rename this
 struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
-    // Cache the device size of the parameter struct at the outer most level
-    uint32_t size;
     // Some other data to support fast reflection checking and parameter filling
-    std::span<RDGShaderParameterLocation> global_uniforms_;
     std::span<RDGShaderParameterLocation> storage_buffers_;
     std::span<RDGShaderParameterLocation> uniform_buffers_;
     std::span<RDGShaderParameterLocation> uavs_;
@@ -120,66 +110,10 @@ struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
     RDGShaderParameterLocation index_buffer_;
     std::span<RDGShaderParameterLocation> render_targets_;
     RDGShaderParameterLocation dispatch_command_;
-    RDGShaderParameterLocation renderpass_;
 };
 
-// Map hlsl type strings to C++ metadata and types
+// Map type strings to C++ metadata and types
 template<uint32_t CRC> struct TRDGShaderParamPlaceHolderType;
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int")> {
-    typedef int value;
-    FORCEINLINE static int default_value() {return 0;}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int2")> {
-    typedef glm::ivec2 value;
-    FORCEINLINE static glm::ivec2 default_value() {return {0, 0};}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int3")> {
-    typedef glm::ivec3 value;
-    FORCEINLINE static glm::ivec3 default_value() {return {0, 0, 0};}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("int4")> {
-    typedef glm::ivec4 value;
-    FORCEINLINE static glm::ivec4 default_value() {return {0, 0, 0, 0};}
-};
-
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint")> {
-    typedef uint32_t value;
-    FORCEINLINE static uint32_t default_value() {return 0;}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint2")> {
-    typedef glm::uvec2 value;
-    FORCEINLINE static glm::uvec2 default_value() {return {0, 0};}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint3")> {
-    typedef glm::uvec3 value;
-    FORCEINLINE static glm::uvec3 default_value() {return {0, 0, 0};}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("uint4")> {
-    typedef glm::uvec4 value;
-    FORCEINLINE static glm::uvec4 default_value() {return {0, 0, 0, 0};}
-};
-
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float")> {
-    typedef float value;
-    FORCEINLINE static float default_value() {return 0.0f;}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float2")> {
-    typedef glm::vec2 value;
-    FORCEINLINE static glm::vec2 default_value() {return {0.0f, 0.0f};}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float3")> {
-    typedef glm::vec3 value;
-    FORCEINLINE static glm::vec3 default_value() {return {0.0f, 0.0f, 0.0f};}
-};
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float4")> {
-    typedef glm::vec4 value;
-    FORCEINLINE static glm::vec4 default_value() {return {0.0f, 0.0f, 0.0f, 0.0f};}
-};
-
-template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("float4x4")> {
-    typedef glm::mat4 value;
-    FORCEINLINE static glm::mat4 default_value() {return {0.0f};}
-};
 
 struct RDGShaderTextureParameter {
     // Keep this as the first member because somewhere in my code may use *(RDGTexture**)(ptr+offset)
@@ -188,6 +122,9 @@ struct RDGShaderTextureParameter {
     // The layer of the texture to bind to. This is used for 3D textures and cube maps.
     // Leave UINT_MAX for whole texture arrays / defaults. And for Texture2DArray and TextureCube, this has to be UINT_MAX.
     uint32_t array_layer {UINT_MAX};
+
+    FORCEINLINE RDGShaderTextureParameter(RDGTexture * tex) : texture(tex) {}
+
     FORCEINLINE operator RDGTexture * () const { return texture; }
     FORCEINLINE RDGShaderTextureParameter & operator = (RDGTexture * tex) {
         texture = tex;
@@ -225,36 +162,16 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWStructuredBuf
 : public TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {};
 
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
-    const std::string& type_name, std::string param_name, uint32_t cpp_offset,
-    const RDGShaderParamStructAndSizeInfo * cpp_struct_info = nullptr, bool ub_reference = false, bool renderpass = false) {
+    const std::string& type_name, std::string param_name, uint32_t size, uint32_t cpp_offset
+) {
     RDGShaderParamInfo info {};
     info.name = std::move(param_name);
     info.type = RHITypeNameStringToParamType(type_name);
-    if (cpp_struct_info) {
-        // In this case, modify the type to UniformBuffer for uniform buffer reference.
-        if (ub_reference) info.type = RHIParamType::kUniformBuffer;
-        // This is a render pass parameter
-        if (renderpass) info.type = RHIParamType::kRenderPass;
-    }
-    if (renderpass) info.access_flags = RHIGPUAccessFlagBits::kRW;
-    else info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
-
-    if(info.type == RHIParamType::kBasic) {
-        info.basic_type = RHITypeNameStringToBasicParamType(type_name);
-    }
-    if (info.type == RHIParamType::kStruct
-    || info.type == RHIParamType::kUniformBuffer
-    || info.type == RHIParamType::kRenderPass) {
-        info.struct_info = cpp_struct_info;
-        info.cpp_imported_struct_info.cpp_struct_info = cpp_struct_info;
-    }
-    // info.offset = offset; // Offsets will be assigned when finalizing
+    info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
+    if (info.type == RHIParamType::kUniformBuffer) {
+        info.size = size;
+    } else info.size = 0;
     info.cpp_offset = cpp_offset;
-    if (info.struct_info) {
-        info.size = cpp_struct_info->size;
-    } else if (info.type == RHIParamType::kBasic) {
-        info.size = RHIGetBasicParamSize(info.basic_type);
-    }
     return info;
 }
 
@@ -281,8 +198,12 @@ private: \
     } \
     typedef zzzFirstParam_TypeID
 
-// Declare uniforms, buffers, textures, etc.
-#define SHADER_PARAMETER(Type, Name) \
+// Declare buffers, textures, etc.
+// Example: SHADER_RESOURCE_PARAMETER(RWTexture2D, TextureName) -> UAV 2D texture declared as TextureName
+// Example: SHADER_RESOURCE_PARAMETER(Texture2DArray, TextureName) -> 2D texture array declared as TextureName
+// Example: SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, BufferName)
+// Example: SHADER_RESOURCE_PARAMETER(AccelerationStructure, ASName)
+#define SHADER_RESOURCE_PARAMETER(Type, Name) \
     zz##Name##_PrevTypeID; \
 public: \
     TRDGShaderParamPlaceHolderType<ConstStrHash32(#Type)>::value Name \
@@ -295,14 +216,13 @@ private: \
     static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset)); \
+        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, 0, cpp_offset)); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
     } \
     typedef zz##Name##_TypeID
 
 // TODO support more blending operations
-
 struct RDGShaderRenderTargetParameter {
     // Keep this as the first member because somewhere in my code may use *(RDGTexture**)(ptr+offset)
     // as a way to access the texture pointer (for legacy reasons).
@@ -331,31 +251,9 @@ private: \
     static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, cpp_offset); \
+        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
         param_info.cpp_extra.render_targets_info = new RDGShaderRenderTargetInfo {0xffffffffu, Format}; \
         params->emplace_back(param_info); \
-        PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
-        return (zzFuncPtr)PrevFunc; \
-    } \
-    typedef zz##Name##_TypeID
-
-// Specify the renderpass the shader uses.
-// Usage: SHADER_USE_RENDERPASS(SomeRenderPassParamStructClass, Name)
-#define SHADER_USE_RENDERPASS(PassType, Name) \
-    zz##Name##_PrevTypeID; \
-public: \
-    PassType * Name {}; \
-private: \
-    struct zz##Name##_TypeID { \
-        static constexpr const char * name = #Name; \
-        static constexpr const char * type_name = "RenderPass"; \
-    }; \
-    static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
-        zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
-        auto struct_info = PassType::GetParamStructInfo(); \
-        uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        assert(struct_info->CanBeRenderpass() && "Renderpass parameter structs should only contain render targets."); \
-        params->emplace_back(RDGMakeShaderParamInfo(#PassType, #Name, cpp_offset, struct_info, false, true)); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
     } \
@@ -375,7 +273,7 @@ private: \
     static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, cpp_offset); \
+        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
         param_info.cpp_extra.vertex_buffer_info = new RDGShaderVertexBufferInfo {0xffffffffu, Stride}; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
@@ -397,7 +295,7 @@ private: \
     static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, zzVertexAttributePlaceHolder_##Name); \
-        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, cpp_offset); \
+        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
         param_info.cpp_extra.vertex_attribute_info = new RDGShaderVertexAttributeInfo {BufferIndex, Offset, 0xffffffffu, Format}; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
@@ -419,40 +317,17 @@ private: \
     static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, cpp_offset); \
+        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
     } \
     typedef zz##Name##_TypeID
 
-
-// Create a nested struct inside the struct.
-// The nested struct should not own any shader resources.
-#define SHADER_PARAMETER_STRUCT_NESTED(Type, Name) \
+// Add a uniform buffer. Corresponding HLSL: ConstantBuffer<Type> Name;
+#define SHADER_UNIFORM_BUFFER(Type, Name) \
     zz##Name##_PrevTypeID; \
-public: \
-    Type Name; \
-private: \
-    struct zz##Name##_TypeID { \
-        static constexpr const char * name = #Name; \
-        static constexpr const char * type_name = #Type; \
-    }; \
-    static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
-        zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
-        auto struct_info = Type::GetParamStructInfo(); \
-        uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        assert(struct_info->CanBeImported() && "Parameter structs containing shader resources or other non-nested parameter structs can not be nested."); \
-        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset, struct_info)); \
-        PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
-        return (zzFuncPtr)PrevFunc; \
-    } \
-    typedef zz##Name##_TypeID
-
-// Externally reference a struct. In RHI layer, this will be a unique buffer binding.
-// The referenced struct should not own any shader resources.
-#define SHADER_PARAMETER_STRUCT_REF(Type, Name) \
-    zz##Name##_PrevTypeID; \
+    static_assert(CMemTrivial<Type>, "Uniform struct type must be CMemTrivial"); \
 public: \
     Type * Name = reinterpret_cast<Type*>(RDGParameter_UnsetPointer); \
 private: \
@@ -462,33 +337,8 @@ private: \
     }; \
     static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
-        auto struct_info = Type::GetParamStructInfo(); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        assert(struct_info->CanBeImported() && "Parameter structs containing shader resources or other non-nested parameter structs can not be referenced."); \
-        params->emplace_back(RDGMakeShaderParamInfo(#Type, #Name, cpp_offset, struct_info, true)); \
-        PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
-        return (zzFuncPtr)PrevFunc; \
-    } \
-    typedef zz##Name##_TypeID
-
-// Include parameters from another struct, and check for name conflicts.
-#define SHADER_PARAMETER_STRUCT_INCLUDE(Type, Name) \
-    zz##Name##_PrevTypeID; \
-public: \
-    Type Name; \
-private: \
-    struct zz##Name##_TypeID { \
-    static constexpr const char * name = #Name; \
-    static constexpr const char * type_name = #Type; \
-    }; \
-    static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
-        zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
-        auto struct_info = Type::GetParamStructInfo(); \
-        for(auto & e : struct_info->cpp_members) { \
-            params->emplace_back(e); \
-            params->back().cpp_offset += offsetof(ThisClass, Name); \
-        } \
-        std::reverse(params->end() - struct_info->cpp_members.size(), params->end()); \
+        params->emplace_back(RDGMakeShaderParamInfo("ConstantBuffer", #Name, (uint32_t)sizeof(Type), cpp_offset)); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
     } \
@@ -527,8 +377,6 @@ public: \
         params_struct_info_->members = params_span; \
         params_struct_info_->cpp_members = cpp_params_span; \
         params_struct_info_->cpp_member_index_map = cpp_member_index_map; \
-        params_struct_info_->InitializeUniformsLayoutHash(); \
-        params_struct_info_->size = params_struct_info_->ComputeSize(); \
         details::zzFinalizeTopLevelParamsStructInfo(params_struct_info_); \
         return params_struct_info_; \
 	} \

@@ -92,7 +92,7 @@ protected:
     // (the last element in the vector)
     std::vector<uint32_t> cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kMax];
     // Clear and rebuild the mapping between cpp resource indices and pipeline slots
-    void RemapResourceIndexToResourceSlots ();
+    void RemapResourceIndexToRHIResourceSlots ();
 
 
 

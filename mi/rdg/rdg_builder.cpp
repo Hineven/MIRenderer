@@ -38,6 +38,30 @@ RDGPass * RenderGraphBuilder::AddPass(
     );
     ptr->shader_param_struct_info_ = shader_param_struct_info;
     ptr->shader_param_data_ = parameter_struct;
+#ifndef NDEBUG
+    if (shader_param_struct_info && parameter_struct) {
+        for (auto e : shader_param_struct_info->uniform_buffers_) {
+            auto struct_ptr = *(void**)((uint8_t*)parameter_struct + e.cpp_offset);
+            if (!RDGParameter_IsUnsetPointer(struct_ptr) && struct_ptr) {
+                uint32_t crc = CRC32(struct_ptr, e.info->size);
+                auto it = param_struct_ptr_to_data_crc.find(struct_ptr);
+                if (it != param_struct_ptr_to_data_crc.end()) {
+                    if (it->second != crc) {
+                        MI_LOG(MIInfraLogType::kError,
+                            "Pass {}: Parameter struct (name {}, pointer {}) has different CRC values among different passes."
+                            "This may indicate that you are reusing a uniform buffer struct as well as modifying its contents"
+                            "in-between different passes. This will cause undefined behavior as RDG identifies paramter structs"
+                            "solely by their pointers. (old {}, new {})",
+                            name, e.info->name, struct_ptr,
+                            it->second, crc);
+                    }
+                } else {
+                    param_struct_ptr_to_data_crc[struct_ptr] = crc;
+                }
+            }
+        }
+    }
+#endif
     auto pass = std::unique_ptr<RDGPass>(ptr);
     // Compile the pass, to keep references to RDG resources alive
     pass->Compile();
@@ -200,6 +224,9 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
             graph->num_pass_predecessors_[dst] ++;
         }
     }
+#ifndef NDEBUG
+    param_struct_ptr_to_data_crc.clear();
+#endif
     return graph;
 }
 

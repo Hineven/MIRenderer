@@ -112,27 +112,12 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     // Uniform buffers are handled upon pass execution
     // Create and upload all uniform buffers. Also, inject usage to passes
     {
-        auto WriteUniforms = [&] (void * ptr, const RDGShaderParamStructAndSizeInfo * param_info, const void * param_data) {
-            for (auto e : param_info->global_uniforms_) {
-                FastTinyCopy((std::byte*)ptr + e.shader_offset, (std::byte*)param_data + e.cpp_offset, e.size);
-            }
-        };
         size_t all_uniform_buffer_size = 0;
-
+        auto WriteUniforms = [&] (void * ptr, const RDGShaderParamInfo * param_info, const void * param_data) {
+            memcpy(ptr, param_data, param_info->size);
+        };
         for (auto & pass : passes_) {
-            // Generic passes have no shader parameters and thus no need to upload uniforms.
-            if (pass->shader_param_struct_info_) {
-                {
-                    auto it = param_ptr_to_uniform_buffer_segment_.find(pass->shader_param_data_);
-                    if (it == param_ptr_to_uniform_buffer_segment_.end()) {
-                        auto aligned_size = RoundUp(pass->shader_param_struct_info_->size, C::kUniformBufferAlignment);
-                        param_ptr_to_uniform_buffer_segment_[pass->shader_param_data_] = {
-                            all_uniform_buffer_size,
-                            pass->shader_param_struct_info_
-                        };
-                        all_uniform_buffer_size += aligned_size;
-                    }
-                }
+            if (pass->shader_param_struct_info_) { // Valid for non-generic passes
                 // Also recursively request all the uniform buffers referenced
                 for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
                     auto struct_ptr = *(void**)((std::byte*)pass->shader_param_data_ + ref.cpp_offset);
@@ -141,10 +126,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     }
                     auto it = param_ptr_to_uniform_buffer_segment_.find(struct_ptr);
                     if (it == param_ptr_to_uniform_buffer_segment_.end()) {
-                        auto aligned_size = RoundUp(ref.info->cpp_imported_struct_info.cpp_struct_info->size, C::kUniformBufferAlignment);
+                        auto aligned_size = RoundUp(ref.info->size, C::kUniformBufferAlignment);
                         param_ptr_to_uniform_buffer_segment_[struct_ptr] = {
                             all_uniform_buffer_size,
-                            ref.info->cpp_imported_struct_info.cpp_struct_info
+                            ref.info
                         };
                         all_uniform_buffer_size += aligned_size;
                     }

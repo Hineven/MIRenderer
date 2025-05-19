@@ -10,38 +10,10 @@ MI_NAMESPACE_BEGIN
 
 namespace details {
     bool zzFinalizeParams(std::vector<RDGShaderParamInfo> &params) {
-        uint32_t curr_position = 0;
         uint32_t vertex_buffer_index = 0;
         uint32_t vertex_attribute_index = 0;
         uint32_t render_target_index = 0;
-        std::map<std::string, size_t> name_to_offset;
-        name_to_offset.clear();
-        bool is_renderpass = false;
         for (auto & e : params) {
-            // Ignore non-uniform buffer contents (shader resources, uniform buffer ref)
-            if (e.type == RHIParamType::kBasic || e.type == RHIParamType::kStruct) {
-                auto alignment = e.GetAlignment();
-                curr_position = (curr_position + alignment - 1) & ~(alignment - 1);
-                // HLSL buffer-row rule check: if the element lies on the 16-byte boundary, it should be aligned to 16 bytes
-                if (e.type == RHIParamType::kBasic) {
-                    auto param_size = RHIGetBasicParamSize(e.basic_type);
-                    auto start_row = curr_position / 16;
-                    auto end_row = (curr_position + param_size - 1) / 16;
-                    if (start_row != end_row) {
-                        curr_position = (curr_position + 16 - 1) & ~(16 - 1);
-                    }
-                }
-                e.offset = curr_position;
-                curr_position += e.size;
-                auto it = name_to_offset.find(e.name);
-                if (it != name_to_offset.end()) {
-                    // FIXME there will be a compile error if i uncomment the LOG line. Why?
-                    assert(false);
-                    // MI_LOG(MIInfraLogType::kError, "Duplicate param name: {}", e.name);
-                    return false;
-                }
-                name_to_offset[e.name] = e.offset;
-            }
             if (e.type == RHIParamType::kVertexBuffer) {
                 // Finalize vertex buffer index now
                 e.cpp_extra.vertex_buffer_info->index = vertex_buffer_index++;
@@ -55,7 +27,6 @@ namespace details {
                 if (!IsDepthStencilPixelFormat(e.cpp_extra.render_targets_info->format))
                     e.cpp_extra.render_targets_info->target_index = render_target_index++;
                 else e.cpp_extra.render_targets_info->target_index = UINT32_MAX; // stands for depth stencil
-                is_renderpass = true;
             }
         }
         // Do some simple validation
@@ -63,14 +34,6 @@ namespace details {
         std::vector<bool> used_vertex_buffer;
         used_vertex_buffer.resize(vertex_buffer_index, false);
         for (auto & e : params) {
-            if (is_renderpass && e.type != RHIParamType::kRenderTarget) {
-                MI_LOG(MIInfraLogType::kError,
-                    "Renderpass struct should only contain render target parameters. "
-                    "Conventional shader parameter struct should not contain any render target parameters."
-                    " (param name {}).", e.name
-                );
-                return false;
-            }
             if (e.type == RHIParamType::kVertexAttribute) {
                 if (e.cpp_extra.vertex_attribute_info->buffer_index >= vertex_buffer_index) {
                     MI_LOG(MIInfraLogType::kError,
@@ -101,54 +64,41 @@ namespace details {
     }
 
     void zzFinalizeTopLevelParamsStructInfo(RDGShaderParamStructAndSizeInfo *info) {
-        std::vector<RDGShaderParameterLocation> global_uniforms, storage_buffers, uniform_buffers,
+        std::vector<RDGShaderParameterLocation> storage_buffers, uniform_buffers,
             uavs, srvs, samplers, acceleration_structures, vertex_buffers, vertex_attributes,
             render_targets;
-        RDGShaderParameterLocation index_buffer, dispatch_command, renderpass;
-        std::function<void(const RDGShaderParamStructInfo *info, uint32_t base_cpp_offset, uint32_t base_offset)> Recurse
-            = [&](const RDGShaderParamStructInfo *info, uint32_t base_cpp_offset, uint32_t base_offset) {
+        RDGShaderParameterLocation index_buffer {}, dispatch_command {};
+        {
             for (auto & e : info->cpp_members) {
-                uint32_t cpp_offset = e.cpp_offset + base_cpp_offset;
-                uint32_t offset = e.offset + base_offset;
-                if (e.type == RHIParamType::kStruct) {
-                    Recurse(e.cpp_imported_struct_info.cpp_struct_info, cpp_offset, offset);
-                } else if (e.type == RHIParamType::kBasic) {
-                    global_uniforms.emplace_back(&e, cpp_offset, offset, e.size);
-                } else if (e.type == RHIParamType::kStorageBuffer) {
-                    storage_buffers.emplace_back(&e, cpp_offset, offset, 0);
+                uint32_t cpp_offset = e.cpp_offset;
+                if (e.type == RHIParamType::kStorageBuffer) {
+                    storage_buffers.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kUniformBuffer) {
-                    uniform_buffers.emplace_back(&e, cpp_offset, offset, 0);
-                } else if (e.type == RHIParamType::kUAVTexture) {
-                    uavs.emplace_back(&e, cpp_offset, offset, 0);
-                } else if (e.type == RHIParamType::kSRVTexture) {
-                    srvs.emplace_back(&e, cpp_offset, offset, 0);
+                    uniform_buffers.emplace_back(&e, cpp_offset, e.size);
+                } else if (e.type == RHIParamType::kUAVTexture || e.type == RHIParamType::kUAVTextureArray) {
+                    uavs.emplace_back(&e, cpp_offset, 0);
+                } else if (e.type == RHIParamType::kSRVTexture || e.type == RHIParamType::kSRVTextureArray) {
+                    srvs.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kVertexBuffer) {
-                    vertex_buffers.emplace_back(&e, cpp_offset, offset, 0);
+                    vertex_buffers.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kVertexAttribute) {
-                    vertex_attributes.emplace_back(&e, cpp_offset, offset, 0);
+                    vertex_attributes.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kIndexBuffer) {
-                    index_buffer = {&e, cpp_offset, offset, 0};
+                    index_buffer = {&e, cpp_offset, 0};
                 } else if (e.type == RHIParamType::kRenderTarget) {
-                    render_targets.emplace_back(&e, cpp_offset, offset, 0);
+                    render_targets.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kDispatchCommand) {
-                    dispatch_command = {&e, cpp_offset, offset, 0};
-                } else if (e.type == RHIParamType::kRenderPass) {
-                    renderpass = {&e, cpp_offset, offset, 0};
+                    dispatch_command = {&e, cpp_offset, 0};
                 } else if (e.type == RHIParamType::kAccelerationStructure){
-                    acceleration_structures.emplace_back(&e, cpp_offset, offset, 0);
+                    acceleration_structures.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kSampler) {
-                    samplers.emplace_back(&e, cpp_offset, offset, 0);
+                    samplers.emplace_back(&e, cpp_offset, 0);
                 } else {
                     assert(false && "Unimplemented");
                 }
             }
-        };
-        Recurse(info, 0, 0);
+        }
         {
-            if (!global_uniforms.empty()) {
-                info->global_uniforms_ = std::span(new RDGShaderParameterLocation[global_uniforms.size()], global_uniforms.size());
-                std::copy(global_uniforms.begin(), global_uniforms.end(), info->global_uniforms_.begin());
-            } else info->global_uniforms_ = {};
             if (!storage_buffers.empty()) {
                 info->storage_buffers_ = std::span(new RDGShaderParameterLocation[storage_buffers.size()], storage_buffers.size());
                 std::copy(storage_buffers.begin(), storage_buffers.end(), info->storage_buffers_.begin());
@@ -191,9 +141,6 @@ namespace details {
             if (dispatch_command.info) {
                 info->dispatch_command_ = dispatch_command;
             } else info->dispatch_command_ = {};
-            if (renderpass.info) {
-                info->renderpass_ = renderpass;
-            } else info->renderpass_ = {};
         }
         // Some late validations
         {

@@ -13,6 +13,8 @@
 #include "rhi/rhi.h"
 
 MI_NAMESPACE_BEGIN
+
+struct RDGShaderParamInfo;
 struct RDGShaderParamStructAndSizeInfo;
 class RDGShader;
 class RDGPass;
@@ -50,7 +52,7 @@ protected:
 
     struct UniformBufferSegment {
         size_t offset;
-        const RDGShaderParamStructAndSizeInfo * param_info;
+        const RDGShaderParamInfo * param_info;
     };
     // Used to query uniform buffer offsets according to parameter structs when running the graph.
     std::map<const void*, UniformBufferSegment> param_ptr_to_uniform_buffer_segment_;

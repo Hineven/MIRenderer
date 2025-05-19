@@ -26,16 +26,6 @@ size_t RDGShaderInitializationInfo::GetHash() const {
     return final_hash;
 }
 
-
-bool RDGShaderParamStructInfo::CanBeImported () const {
-    for (auto & member : cpp_members) {
-        if (member.type != RHIParamType::kStruct && member.type != RHIParamType::kBasic) {
-            return false;
-        }
-    }
-    return true;
-}
-
 bool RDGShaderParamStructInfo::CanBeRenderpass () const {
     for (auto & member : cpp_members) {
         if (member.type != RHIParamType::kRenderTarget) return false;
@@ -63,112 +53,33 @@ static std::string LoadFile(const std::string & path) {
     return content;
 }
 
-static void RecursiveCheckConstantBufferDefinitions (
-    std::string shader_name,
-    std::string struct_path_prefix,
-    const RDGShaderParamStructInfo * cpp_declared_struct,
-    const RHIParamStructInfo * shader_reflected_struct,
-    int & remaining_mismatch_count,
-    bool strict_mode = true
-    // Disabled for global constant buffer, the cpp side reflection may contain more members
-    // such as textures that does not exist in shader reflection.
-) {
-    // Check if both structs have the same number of members
-    if (strict_mode && cpp_declared_struct->cpp_members.size() != shader_reflected_struct->members.size()) {
-        MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' - Struct '{}' has {} members in C++ but {} members in shader",
-                   shader_name, struct_path_prefix,
-               cpp_declared_struct->cpp_members.size(),
-               shader_reflected_struct->members.size());
-        if (--remaining_mismatch_count == 0) return;
-    }
-
-    std::set<int> visited_shader_member_indices;
-    int ub_member_index = 0;
-    // Check each member from C++ against shader reflection
-    for (const auto& cpp_member : cpp_declared_struct->cpp_members) {
-        // Only compare uniforms
-        if (strict_mode || (cpp_member.type == RHIParamType::kStruct || cpp_member.type == RHIParamType::kBasic)) {
-            int shader_member_idx = -1;
-            for (size_t i = 0; i < shader_reflected_struct->members.size(); ++i) {
-                if (shader_reflected_struct->members[i].name == cpp_member.name) {
-                    shader_member_idx = static_cast<int>(i);
-                    break;
-                }
-            }
-
-            if (shader_member_idx == -1) {
-                MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Member '{}::{}' is defined in C++ but not found in shader",
-                       shader_name, struct_path_prefix, cpp_member.name);
-                if (--remaining_mismatch_count == 0) return;
-            }
-            if (shader_member_idx != -1 && shader_member_idx != ub_member_index) {
-                MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Member '{}::{}' have different order in C++ and shader."
-                       " Shader: {}, C++: {}",
-                       shader_name, struct_path_prefix, cpp_member.name, shader_member_idx, ub_member_index);
-                if (--remaining_mismatch_count == 0) return;
-            }
-            visited_shader_member_indices.insert(shader_member_idx);
-
-            const auto& shader_member = shader_reflected_struct->members[shader_member_idx];
-
-            // Check if types match
-            if (cpp_member.type != shader_member.type) {
-                MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Member '{}::{}' has type mismatch between C++ and shader",
-                       shader_name, struct_path_prefix, cpp_member.name);
-                if (--remaining_mismatch_count == 0) return;
-            }
-
-            // If it's a nested struct, recursively check them
-            if (cpp_member.type == RHIParamType::kStruct && shader_member.type == RHIParamType::kStruct) {
-                std::string nested_path = struct_path_prefix + "::" + cpp_member.name;
-                RecursiveCheckConstantBufferDefinitions(
-                    shader_name,
-                    nested_path,
-                    cpp_member.cpp_imported_struct_info.cpp_struct_info,
-                    shader_member.struct_info,
-                    remaining_mismatch_count
-                    // Here, always use strict mode for nested structs
-                );
-                // Stop checking if we've reached the limit
-                if (remaining_mismatch_count <= 0) return ;
-            }
-            ub_member_index ++;
-        }
-    }
-    if (visited_shader_member_indices.size() != shader_reflected_struct->members.size()) {
-        // Find and log the missing members
-        for (auto [i, e] : std::views::enumerate(shader_reflected_struct->members)) {
-            if (!visited_shader_member_indices.contains((int)i)) {
-                MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Member '{}::{}' missing from C++ uniform buffer declaration.",
-                       shader_name, struct_path_prefix, e.name);
-                if (--remaining_mismatch_count == 0) return;
-            }
-        }
-    }
-}
-
 bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamStructAndSizeInfo &info) {
     // Firstly, export uniform buffers from cpp shader param struct reflection
     TOneTimeLinearAllocator<> aloc;
 
     // Quick compare with hash values for the referenced structs
     bool passed_checking = true;
-    int cpp_failure_index = -1, shader_failure_index = -1;
     auto & shader_reflected_uniform_buffers = shader->GetUniformBufferDesc();
     bool has_bindless = shader->HasBindlessResources();
-    bool cpp_has_globals = info.global_uniforms_.size() > 0;
-    // if (shader_reflected_uniform_buffers.size() - has_bindless != info.uniform_buffers_.size() + cpp_has_globals) {
-    //     MI_LOG(MIInfraLogType::kWarning,
-    //            "Shader '{}' - Uniform buffer count mismatch between C++ and shader",
-    //            class_registry_->source_location);
-    //     passed_checking = false;
-    // }
-    if ((int)shader_reflected_uniform_buffers.size() - has_bindless > info.uniform_buffers_.size() + cpp_has_globals) {
+
+    // Look for the autogenerated '$Globals' uniform buffer. (which should not be present)
+    {
+        bool flag = false;
+        for (int j = 0; j < (int)shader_reflected_uniform_buffers.size(); ++j) {
+            if (shader_reflected_uniform_buffers[j].name == "$Globals") {
+                flag = true;
+                break;
+            }
+        }
+        if (flag) {
+            MI_LOG(MIInfraLogType::kWarning,
+                   "Shader '{}' - Global uniform buffer is not supported. Use something like 'ConstantBuffer<UniformBufferStruct> UB;' instead.",
+                   class_registry_->source_location);
+            passed_checking = false;
+        }
+    }
+
+    if ((int)shader_reflected_uniform_buffers.size() - has_bindless > info.uniform_buffers_.size()) {
         // Shader is requesting for more uniform buffers than C++ has defined, find and log the missing ones
         for (const auto& shader_ub : shader_reflected_uniform_buffers) {
             bool found = false;
@@ -187,7 +98,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         }
     }
     // Check and remap referenced uniform buffers
-    cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size() + cpp_has_globals, UINT32_MAX);
+    cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
     for (auto const & [i, e] : info.uniform_buffers_ | std::views::enumerate) {
         // find corresponding uniform buffer in shader reflection
         int shader_ub_idx = -1;
@@ -204,64 +115,22 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             //        class_registry_->source_location, e.info->name);
             // passed_checking = false;
         } else {
-            // Check if the hash values match
-            if (shader_reflected_uniform_buffers[shader_ub_idx].struct_reflection->uniforms_layout_hash
-                != e.info->cpp_imported_struct_info.cpp_struct_info->uniforms_layout_hash) {
+            // 25.5.19: Deep reflection is removed for uniform buffer structs.
+            // It is up to the user for maintaining consistency between C++ and shaders.
+            // Now we simply check if the sizes mismatches.
+            if (shader_reflected_uniform_buffers[shader_ub_idx].array_size > 0) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Uniform buffer '{}' has layout hash mismatch between C++ and shader",
-                       class_registry_->source_location, e.info->name);
+                       "Shader '{}' - Array '{}' of uniform buffers of length {} is not supported. (Any UB array is not supported).",
+                       class_registry_->source_location, e.info->name, shader_reflected_uniform_buffers[shader_ub_idx].array_size);
                 passed_checking = false;
-                cpp_failure_index = (int)i;
-                shader_failure_index = shader_ub_idx;
             }
-        }
-    }
-    // Check the '$Globals' uniform buffer
-    {
-        // find corresponding uniform buffer in shader reflection
-        int shader_ub_idx = -1;
-        for (int j = 0; j < (int)shader_reflected_uniform_buffers.size(); ++j) {
-            if (shader_reflected_uniform_buffers[j].name == "$Globals") {
-                shader_ub_idx = j;
-                break;
-            }
-        }
-        if (shader_ub_idx != -1) {
-            // Check if the hash values match
-            if (shader_reflected_uniform_buffers[shader_ub_idx].struct_reflection->uniforms_layout_hash
-                != info.uniforms_layout_hash) {
+            if (shader_reflected_uniform_buffers[shader_ub_idx].size != e.info->size) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Global uniform buffer has layout hash mismatch between C++ and shader",
-                       class_registry_->source_location);
+                       "Shader '{}' - Uniform buffer '{}' has size mismatch between C++ and shader."
+                       "Shader size: {}, C++ size: {}.",
+                       class_registry_->source_location, e.info->name, shader_reflected_uniform_buffers[shader_ub_idx].size, e.info->size);
                 passed_checking = false;
-                cpp_failure_index = (int)-2; // -2 means global uniform buffer
-                shader_failure_index = shader_ub_idx;
             }
-        }
-    }
-    if (!passed_checking) {
-        if (cpp_failure_index > 0) {
-            int remaining_mismatch_count = 5; // End comparison after first 5 mis-matches
-            // Recursively check the layout mismatch for logging the problem.
-            RecursiveCheckConstantBufferDefinitions(
-                shader->GetSourceFilePath() + ":" + shader->GetEntryName(),
-                info.uniform_buffers_[cpp_failure_index].info->name,
-                info.uniform_buffers_[cpp_failure_index].info->cpp_imported_struct_info.cpp_struct_info,
-                shader_reflected_uniform_buffers[shader_failure_index].struct_reflection,
-                remaining_mismatch_count
-            );
-        } else if (cpp_failure_index == -2) {
-            // Check for global uniform buffer
-            int remaining_mismatch_count = 5; // End comparison after first 5 mis-matches
-            // Recursively check the layout mismatch for logging the problem.
-            RecursiveCheckConstantBufferDefinitions(
-                shader->GetSourceFilePath() + ":" + shader->GetEntryName(),
-                "<Globals>",
-                &info,
-                shader_reflected_uniform_buffers[shader_failure_index].struct_reflection,
-                remaining_mismatch_count,
-                false
-            );
         }
     }
 
@@ -424,24 +293,22 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     // Check fragment outputs (RenderTarget vs fragment output reflected from SPIR-V, check format compatibility)
     // (Names can be different, but the location and format must match)
     if (shader->GetFragmentOutputDesc().size()) {
-        if (!info.renderpass_.info) {
-            MI_LOG(MIInfraLogType::kWarning, "RDGShader {} defines fragment outputs but no renderpass is defined.", class_registry_->source_location);
+        if (!info.render_targets_.size()) {
+            MI_LOG(MIInfraLogType::kWarning, "Shader {} has fragment outputs but no render target is specified in C++.", class_registry_->source_location);
             passed_checking = false;
         } else {
-            auto ptr = info.renderpass_.info->cpp_imported_struct_info.cpp_struct_info;
-            if (ptr->render_targets_.size() < shader->GetFragmentOutputDesc().size()) {
+            if (info.render_targets_.size() < shader->GetFragmentOutputDesc().size()) {
                 MI_LOG(MIInfraLogType::kWarning,
-                    "Shader '{}' defines {} fragment outputs but parameter only has {}, which is insufficient.",
-                    class_registry_->source_location, shader->GetFragmentOutputDesc().size(), ptr->render_targets_.size());
+                    "Shader {} has {} fragment outputs but only {} is specified in C++, which is insufficient.",
+                    class_registry_->source_location, shader->GetFragmentOutputDesc().size(), info.render_targets_.size());
                 passed_checking = false;
             }
         }
     }
     for (const auto & [i, output] : std::views::enumerate(shader->GetFragmentOutputDesc())) {
         int index = (int)i;
-        auto pass = info.renderpass_;
-        if (pass.info) {
-            auto & member = *pass.info->cpp_imported_struct_info.cpp_struct_info->render_targets_[index].info;
+        if (index < info.render_targets_.size()) {
+            auto & member = *info.render_targets_[index].info;
             if (member.type != RHIParamType::kRenderTarget) {
                 MI_LOG(MIInfraLogType::kWarning,
                     "Shader '{}' defines '{}' as fragment output but parameter has incompatible type."
@@ -471,7 +338,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     return passed_checking;
 }
 
-void RDGShader::RemapResourceIndexToResourceSlots() {
+void RDGShader::RemapResourceIndexToRHIResourceSlots() {
     // Clear the previous bindings
     for (auto & e : cpp_resource_index_to_slot_) e.clear();
     assert(IsValid() && "Only with an assembled pipeline can we remap bindings");
@@ -481,6 +348,9 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
         pipeline = graphics_pipeline_.Raw();
     } else if (class_registry_->type == RHIPipelineType::kCompute) {
         pipeline = compute_pipeline_.Raw();
+    } else {
+        assert(false);
+        return;
     }
     auto FindSlotIndex = [&] <typename T> (const std::string & name, T & list) {
         for (int i = 0; i < (int)list.size(); ++i) {
@@ -490,12 +360,11 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
         }
         return -1;
     };
-    bool cpp_has_globals = info.global_uniforms_.size() > 0;
     // Remap uniform buffers
     {
         auto & ub = pipeline->GetUniformBufferDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size() + cpp_has_globals, UINT32_MAX);
-        for (auto [i, e] : std::views::enumerate(info.uniform_buffers_)) {
+        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
+        for (const auto& [i, e] : std::views::enumerate(info.uniform_buffers_)) {
             auto index = FindSlotIndex(e.info->name, ub);
             if (index != -1) {
                 cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][i] = index;
@@ -503,20 +372,11 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
             // Potentially there are UBs declared in cpp but not present in shaders. Simply omit that case.
         }
     }
-    // Remap global uniform buffer
-    if (cpp_has_globals) {
-        auto & ub = pipeline->GetUniformBufferDesc();
-        auto index = FindSlotIndex("$Globals", ub);
-        if (index != -1) {
-            // The global uniform buffer is always the last one
-            cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][info.uniform_buffers_.size()] = index;
-        }
-    }
     // Remap storage buffers
     {
         auto & sb = pipeline->GetStorageBufferDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
-        for (auto [i, e] : std::views::enumerate(info.storage_buffers_)) {
+        for (const auto& [i, e] : std::views::enumerate(info.storage_buffers_)) {
             auto index = FindSlotIndex(e.info->name, sb);
             if (index != -1) {
                 cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer][i] = index;
@@ -527,7 +387,7 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
     {
         auto & uavs = pipeline->GetUAVDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture].resize(info.uavs_.size(), UINT32_MAX);
-        for (auto [i, e] : std::views::enumerate(info.uavs_)) {
+        for (const auto& [i, e] : std::views::enumerate(info.uavs_)) {
             auto index = FindSlotIndex(e.info->name, uavs);
             if (index != -1) {
                 cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture][i] = index;
@@ -538,7 +398,7 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
     {
         auto & srvs = pipeline->GetSRVDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture].resize(info.srvs_.size(), UINT32_MAX);
-        for (auto [i, e] : std::views::enumerate(info.srvs_)) {
+        for (const auto& [i, e] : std::views::enumerate(info.srvs_)) {
             auto index = FindSlotIndex(e.info->name, srvs);
             if (index != -1) {
                 cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture][i] = index;
@@ -549,7 +409,7 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
     {
         auto & samplers = pipeline->GetSamplerDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler].resize(info.samplers_.size(), UINT32_MAX);
-        for (auto [i, e] : std::views::enumerate(info.samplers_)) {
+        for (const auto& [i, e] : std::views::enumerate(info.samplers_)) {
             auto index = FindSlotIndex(e.info->name, samplers);
             if (index != -1) {
                 cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler][i] = index;
@@ -560,7 +420,7 @@ void RDGShader::RemapResourceIndexToResourceSlots() {
     {
         auto & as = pipeline->GetAccelerationStructureDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure].resize(info.acceleration_structures_.size(), UINT32_MAX);
-        for (auto [i, e] : std::views::enumerate(info.acceleration_structures_)) {
+        for (const auto& [i, e] : std::views::enumerate(info.acceleration_structures_)) {
             auto index = FindSlotIndex(e.info->name, as);
             if (index != -1) {
                 cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = index;
@@ -769,19 +629,16 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         std::vector<RHIColorAttachmentDesc> color_attachments;
         RHIDepthStencilAttachmentDesc depth_stencil {};
         // Gather color attachment configurations from shader param struct info
-        if (params->renderpass_.info) {
-            auto pass_ptr = params->renderpass_.info->cpp_imported_struct_info.cpp_struct_info;
-            for (auto & e : pass_ptr->cpp_members) {
-                if (e.type == RHIParamType::kRenderTarget) {
-                    if (e.cpp_extra.render_targets_info->target_index != UINT32_MAX) {
-                        // TODO support more blending operations
-                        RHIColorAttachmentBlendDesc blend {};
-                        color_attachments.push_back({blend, e.cpp_extra.render_targets_info->format});
-                    } else {
-                        depth_stencil = {
-                            e.cpp_extra.render_targets_info->format
-                        };
-                    }
+        if (!params->render_targets_.empty()) {
+            for (auto & e : params->render_targets_) {
+                if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
+                    // TODO support more blending operations
+                    RHIColorAttachmentBlendDesc blend {};
+                    color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
+                } else {
+                    depth_stencil = {
+                        e.info->cpp_extra.render_targets_info->format
+                    };
                 }
             }
         }
@@ -800,7 +657,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     is_valid_ = true;
 
     // Remap bindings, so we can actually associate the shader parameters with RHI pipeline binding slots
-    RemapResourceIndexToResourceSlots();
+    RemapResourceIndexToRHIResourceSlots();
 
     return true;
 }

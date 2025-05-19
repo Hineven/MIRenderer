@@ -1,15 +1,20 @@
-float4 TestFloat4;
-float2 TestFloat2;
+struct TestShader1UB {
+    float4 TestFloat4;
+    float2 TestFloat2;
+    float2 Padding;
+};
+
+ConstantBuffer<TestShader1UB> UB;
 
 RWTexture2D<float4> TestTexture;
 RWStructuredBuffer<float4> TestBuffer;
 
 [numthreads(1, 1, 1)]
 void TestComputeShaderMain () {
-    TestTexture[uint2(0, 0)] = TestFloat4;
-    TestTexture[uint2(0, 1)] = float4(TestFloat2, 1, 1);
+    TestTexture[uint2(0, 0)] = UB.TestFloat4;
+    TestTexture[uint2(0, 1)] = float4(UB.TestFloat2, 1, 1);
     TestBuffer[0] = float4(123, 0, 111, 0);
-    TestBuffer[1] = TestFloat4;
+    TestBuffer[1] = UB.TestFloat4;
 }
 
 struct VS_Output {
@@ -30,6 +35,6 @@ struct PS_Output {
 
 PS_Output TestGraphicsShaderPS(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) {
     PS_Output output = (PS_Output)0;
-    output.OutColor = float4(uv, TestFloat2);
+    output.OutColor = float4(uv, UB.TestFloat2);
     return output;
 }
