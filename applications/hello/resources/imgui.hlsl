@@ -10,13 +10,17 @@ struct ImGuiVertOutput {
     float4 col : TEXCOORD1;
 };
 
-float2 Scale;
-Texture2D <float4> ImGuiTexture : register(t0);
-SamplerState ImGuiSampler : register(s0);
+struct ImGuiUB {
+    float2 Scale;
+    float2 Padding;
+};
+ConstantBuffer<ImGuiUB> UB;
+Texture2D <float4> ImGuiTexture;
+SamplerState ImGuiSampler;
 
 ImGuiVertOutput ImGuiVS(ImGuiVertInput input) {
     ImGuiVertOutput output;
-    output.pos = float4(2 * (float2(0.f, 1.f) + float2(input.pos.x, -input.pos.y) * Scale) - 1, 0, 1);
+    output.pos = float4(2 * (float2(0.f, 1.f) + float2(input.pos.x, -input.pos.y) * UB.Scale) - 1, 0, 1);
     output.uv  = input.uv;
     uint input_col = asuint(input.col);
     // Unpack to RGBA

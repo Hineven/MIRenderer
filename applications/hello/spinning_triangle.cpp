@@ -16,17 +16,18 @@
 
 using namespace mi;
 
-BEGIN_SHADER_PARAMETERS(BackbufferRenderPass)
-    SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, OutColor)
-END_SHADER_PARAMETERS()
 class TriangleShader : public RDGShader {
     DECLARE_SHADER()
+    struct TriangleShaderUB {
+        float SpinRadians;
+        glm::vec3 Padding;
+    };
     BEGIN_SHADER_PARAMETERS(Parameters)
-        SHADER_PARAMETER(float, SpinRadians)
+        SHADER_UNIFORM_BUFFER(TriangleShaderUB, UB)
         SHADER_VERTEX_BUFFER(12 + 8, vertex_buffer)
         SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k3xFp32, pos)
         SHADER_VERTEX_ATTRIBUTE(0, 12, RHIVertexAttributeFormatType::k2xFp32, uv)
-        SHADER_USE_RENDERPASS(BackbufferRenderPass, pass)
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, OutColor)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Parameters)
     static std::vector<std::string> GetDefaultMacros() {
@@ -54,14 +55,13 @@ void RenderTriangle (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
     };
     memcpy(staging_buffer->Map(), vertices, sizeof(float) * 5 * 3);
 
-    auto pass = builder.Allocate<BackbufferRenderPass>();
-    pass->OutColor = fb.Raw();
-    pass->OutColor.load_op = RHILoadOpType::kClear;
 
     auto shader_params = builder.Allocate<TriangleShader::ShaderParameters>();
-    shader_params->pass = pass;
+    shader_params->OutColor = fb.Raw();
+    shader_params->OutColor.load_op = RHILoadOpType::kClear;
     shader_params->vertex_buffer = vertex_buffer.Raw();
-    shader_params->SpinRadians = float(rhi.GetFrameIndex()) * 0.006f;
+    shader_params->UB = builder.Allocate<TriangleShader::TriangleShaderUB>();
+    shader_params->UB->SpinRadians = float(rhi.GetFrameIndex()) * 0.006f;
 
     builder.AddPass("Upload Vertices", {},
         [shader_params, staging_raw = staging_buffer.Raw(), vertex_raw = vertex_buffer.Raw()]
@@ -76,11 +76,15 @@ void RenderTriangle (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
 
 class ImGuiRenderShader : public RDGShader {
     DECLARE_SHADER()
+    struct ImGuiRenderShaderUB {
+        glm::vec2 Scale;
+        glm::vec2 Padding;
+    };
     BEGIN_SHADER_PARAMETERS(Parameters)
-        SHADER_PARAMETER(float2, Scale)
-        SHADER_PARAMETER(Texture2D, ImGuiTexture)
-        SHADER_PARAMETER(SamplerState, ImGuiSampler)
-        SHADER_USE_RENDERPASS(BackbufferRenderPass, pass)
+        SHADER_UNIFORM_BUFFER(ImGuiRenderShaderUB, UB)
+        SHADER_RESOURCE_PARAMETER(Texture2D, ImGuiTexture)
+        SHADER_RESOURCE_PARAMETER(SamplerState, ImGuiSampler)
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, OutColor)
         SHADER_VERTEX_BUFFER(sizeof(ImDrawVert), vertex_buffer)
         SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k2xFp32, pos)
         SHADER_VERTEX_ATTRIBUTE(0, 8, RHIVertexAttributeFormatType::k2xFp32, uv)
@@ -118,15 +122,14 @@ void RenderImGui (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
     }
 
     auto fb = RDGTexture::Import(rhi.GetBackBuffer());
-    auto pass = builder.Allocate<BackbufferRenderPass>();
-    pass->OutColor = fb.Raw();
-    pass->OutColor.load_op = RHILoadOpType::kLoad;
-    pass->OutColor.store_op = RHIStoreOpType::kStore;
     auto params = builder.Allocate<ImGuiRenderShader::ShaderParameters>();
-    params->pass = pass;
+    params->OutColor = fb.Raw();
+    params->OutColor.load_op = RHILoadOpType::kLoad;
+    params->OutColor.store_op = RHIStoreOpType::kStore;
     params->vertex_buffer = vertex_buffer.Raw();
     auto window_size = ImGui::GetIO().DisplaySize;
-    params->Scale = {1.f / window_size.x, 1.f / window_size.y};
+    params->UB = builder.Allocate<ImGuiRenderShader::ImGuiRenderShaderUB>();
+    params->UB->Scale = {1.f / window_size.x, 1.f / window_size.y};
     params->ImGuiTexture = nullptr; // This parameter is set inside the draw pass
     params->ImGuiSampler = rhi.GetGlobalSamplers().linear_wrap;
 

@@ -8,13 +8,18 @@ struct VS_Output {
     float2 uv : TEXCOORD0;
 };
 
-float SpinRadians;
+struct SpinningTriangleUB {
+    float SpinRadians;
+    float3 Padding;
+};
+
+ConstantBuffer<SpinningTriangleUB> UB;
 
 VS_Output TriangleVS(VS_Input input) {
     VS_Output output;
     // Spin the triangle around the origin
-    float s = sin(SpinRadians);
-    float c = cos(SpinRadians);
+    float s = sin(UB.SpinRadians);
+    float c = cos(UB.SpinRadians);
     output.pos.x = input.pos.x * c - input.pos.y * s;
     output.pos.y = input.pos.x * s + input.pos.y * c;
     output.pos.zw = float2(input.pos.z, 1);
