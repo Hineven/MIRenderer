@@ -623,6 +623,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     SortUnique(parameter_table.acceleration_structures);
 
     const VulkanPipelineBindingRemappings * remapping = nullptr;
+    assert(bound_pipeline);
     if (bind_point_type == RHIBindPointType::kGraphics) {
         remapping = &((VulkanGraphicsPipeline*)bound_pipeline)->GetRemappings();
     } else if (bind_point_type == RHIBindPointType::kCompute) {
