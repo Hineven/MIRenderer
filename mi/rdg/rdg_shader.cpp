@@ -176,7 +176,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             passed_checking = false;
         } else {
             auto & member = *info.uavs_[index].info;
-            if (member.type != RHIParamType::kUAVTexture) {
+            if (member.type != RHIParamType::kUAVTexture && member.type != RHIParamType::kUAVTextureArray) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as UAV texture but parameter has incompatible type."
                        "Parameter type: {}",
@@ -195,7 +195,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             passed_checking = false;
         } else {
             auto & member = *info.srvs_[index].info;
-            if (member.type != RHIParamType::kSRVTexture) {
+            if (member.type != RHIParamType::kSRVTexture && member.type != RHIParamType::kSRVTextureArray) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}' defines '{}' as SRV texture but parameter has incompatible type."
                        "Parameter type: {}",

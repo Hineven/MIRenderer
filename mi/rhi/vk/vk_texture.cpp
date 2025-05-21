@@ -11,6 +11,15 @@ MI_NAMESPACE_BEGIN
 
 VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
                          RHITexture(desc) {
+
+    // Do some validation
+    if (desc.type == RHITextureType::k2D) {
+        assert(desc.dimensions.depth == 1);
+        assert(desc.array_layers == 1);
+    }
+    if (desc.type == RHITextureType::k2DArray) assert(desc.dimensions.depth == 1);
+    if (desc.type == RHITextureType::k3D || desc.type == RHITextureType::k3DArray) assert(false && "Unimplemented");
+
     vk_aspect_ = GetVulkanImageAspectFlags(desc.usage);
     if(imported) {
         flags_ = flags_ | RHIResourceFlagBits::kImported;

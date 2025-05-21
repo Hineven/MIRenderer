@@ -3,27 +3,27 @@
 
 #include "SharedCommon.hlsl"
 
-BEGIN_SHADER_PARAMETERS(CameraParameters)
-    SHADER_PARAMETER(float3, Position)
-    SHADER_PARAMETER(float,  NearPlane)
+struct CameraParameters {
+    float3 Position;
+    float  NearPlane;
 
-    SHADER_PARAMETER(float3, Direction)
-    SHADER_PARAMETER(float,  FarPlane)
+    float3 Direction;
+    float  FarPlane;
 
-    SHADER_PARAMETER(float3, Up)
-    SHADER_PARAMETER(float,  FoVY)
+    float3 Up;
+    float  FoVY;
 
-    SHADER_PARAMETER(float3, Right)
+    float3 Right;
     // Camera type
-    SHADER_PARAMETER(uint,  Type)
+    uint  Type;
 
-    SHADER_PARAMETER(uint2,   FilmDimensions)
-    SHADER_PARAMETER(float2,  FilmAspectRatioAndInvAspectRatio)
-END_SHADER_PARAMETERS()
+    uint2   FilmDimensions;
+    float2  FilmAspectRatioAndInvAspectRatio;
+};
 
-BEGIN_SHADER_PARAMETERS(ViewCommonShaderParameters)
-    SHADER_PARAMETER_STRUCT_NESTED(CameraParameters, Camera)
-END_SHADER_PARAMETERS()
+struct ViewCommonShaderParameters {
+    CameraParameters Camera;
+};
 
 #define CAMERA_TYPE_PERSPECTIVE 0u
 #define CAMERA_TYPE_ORTHOGRAPHIC 1u

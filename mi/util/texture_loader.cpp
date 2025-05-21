@@ -6,25 +6,40 @@
 #include <fstream>
 #include <util/texture_loader.h>
 
-
 #define STB_IMAGE_IMPLEMENTATION
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+
 #include "stb_image.h"
 #include "core/infra.h"
 #include "rdg/rdg.h"
+#include "rdg/rdg_builder.h"
+#include "rdg/rdg_cmd.h"
 #include "rdg/rdg_shader.h"
 #include "renderer/mi_texture.h"
+
+#define M_PI 3.14159265358979323846
 
 MI_NAMESPACE_BEGIN
 
 class MappingShader : public RDGShader {
+public:
+    DECLARE_SHADER()
+    struct MappingShaderUB {
+        glm::mat4 ViewProjectionInverse;
+        uint2 TextureDimensions;
+        uint2 Padding;
+    };
     BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_PARAMETER(float4x4, ViewProjectionInverse)
-        SHADER_PARAMETER(Texture2D, InEnvironmentMap)
-        SHADER_PARAMETER(RWTexture2D, OutEnvironmentMap)
-        SHADER_PARAMETER(uint2, TextureDimensions)
+        SHADER_UNIFORM_BUFFER(MappingShaderUB, UB)
+        SHADER_RESOURCE_PARAMETER(Texture2D, InEnvironmentMap)
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_UNORM, OutEnvironmentMap)
+        SHADER_RESOURCE_PARAMETER(SamplerState, InSampler)
     END_SHADER_PARAMETERS()
-    RDG_SHADER_USE_PARAMETERS(Params);
+    RDG_SHADER_USE_PARAMETERS(Params)
 };
+
+IMPLEMENT_RDG_GRAPHICS_SHADER(MappingShader, "shaders/util/texture_loader/MappingShader.hlsl", "VS_Main", "PS_Main")
 
 TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &name, const std::string &mime_type, const void *ptr, size_t size) {
     auto env_texture = LoadFromBuffer(name + "_env", mime_type, ptr, size);
@@ -38,32 +53,53 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         glm::dvec3(0.0, 0.0, -1.0), glm::dvec3(0.0, 0.0, 1.0), glm::dvec3(0.0, -1.0, 0.0),
         glm::dvec3(0.0, -1.0, 0.0)};
 
-    auto mapping_shader = RDGShaderLibrary::Get().GetShader<MappingShader>();
-    MappingShader::ShaderParameters params;
     // 1k res
-    params.TextureDimensions = {1024, 1024};
-    params.InEnvironmentMap = env_texture;
-    params.OutEnvironmentMap = env_texture;
-
-    gfxProgramSetParameter(gfx, ibl_program_, "g_BufferDimensions", buffer_dimensions);
-    gfxProgramSetParameter(gfx, ibl_program_, "g_EnvironmentMap", in_environment_texture);
-    gfxProgramSetParameter(gfx, ibl_program_, "g_LinearSampler", AppInternal::GetInstance().GetSamplers().linear_wrap);
-
-    for (uint32_t cubemap_face = 0; cubemap_face < 6; ++cubemap_face)
+    constexpr auto face_resolution = 1024;
+    auto env_cubemap = Texture::Create(PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution, 6);
+    // Make sure pool is destroyed after the render graph
+    auto pool = RDGResourcePool::Create();
     {
+        auto mapping_shader = RDGShaderLibrary::Get().GetShader<MappingShader>();
+        MappingShader::ShaderParameters template_params;
+        RenderGraphBuilder builder;
+        auto rdg_env_map = RDGTexture::Import(env_texture->GetDeviceTexture());
+        auto rdg_env_cubemap = RDGTexture::Import(env_cubemap->GetDeviceTexture());
+        env_cubemap->CreateOnDevice();
+        template_params.InEnvironmentMap  = rdg_env_map.Raw();
+        template_params.OutEnvironmentMap = rdg_env_cubemap.Raw();
+        template_params.OutEnvironmentMap.load_op = RHILoadOpType::kClear;
+        template_params.InSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-        gfxCommandBindColorTarget(gfx, 0, environment_map_, 0, cubemap_face);
-
-        glm::dmat4 const view =
-            glm::lookAt(glm::dvec3(0.0), forward_vectors[cubemap_face], up_vectors[cubemap_face]);
-        glm::dmat4 const proj          = glm::perspective(M_PI / 2.0, 1.0, 0.1, 1e4);
-        glm::mat4 const  view_proj_inv = glm::mat4(glm::inverse(proj * view));
-
-        gfxProgramSetParameter(gfx, ibl_program_, "g_ViewProjectionInverse", view_proj_inv);
-
-        gfxCommandBindKernel(gfx, draw_sky_kernel_);
-        gfxCommandDraw(gfx, 3);
+        for (uint32_t cubemap_face = 0; cubemap_face < 6; ++cubemap_face)
+        {
+            auto params = builder.Allocate<MappingShader::ShaderParameters>();
+            *params = template_params;
+            params->OutEnvironmentMap.array_layer = cubemap_face;
+            glm::dmat4 const view =
+                glm::lookAt(glm::dvec3(0.0), forward_vectors[cubemap_face], up_vectors[cubemap_face]);
+            glm::dmat4 const proj          = glm::perspective(M_PI / 2.0, 1.0, 0.1, 1e4);
+            glm::mat4 const  view_proj_inv = glm::mat4(glm::inverse(proj * view));
+            params->UB = builder.Allocate<MappingShader::MappingShaderUB>();
+            params->UB->TextureDimensions = {face_resolution, face_resolution};
+            params->UB->ViewProjectionInverse = view_proj_inv;
+            builder.AddPass<MappingShader>(RDGPassFlagBits::kNeverCull, params, [
+                params, mapping_shader
+            ](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::Draw<MappingShader>(queue, pass, mapping_shader, params, 3);
+            });
+        }
+        builder.Compile()->Execute(pool.Raw());
+        // manual barrier
+        RHI::Get().GetGraphicsCommandQueue().TextureBarrier(
+            env_cubemap->GetDeviceTexture(),
+            RHITextureLayoutType::kShaderReadOnlyOptimal,
+            RHIPipelineStageFlagBits::kAccelBuild,
+            RHIGPUAccessFlagBits::kRW,
+            RHIGPUAccessFlagBits::kRW
+        );
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
     }
+    return env_cubemap;
 }
 
 

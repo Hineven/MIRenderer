@@ -336,6 +336,9 @@ struct RHIDrawDesc {
     RHILoadOpType load_ops[C::kRHIMaxNumFramebufferAttachments] {};
     // Framebuffer attachment store ops
     RHIStoreOpType store_ops[C::kRHIMaxNumFramebufferAttachments] {};
+    // Layer index for each framebuffer attachment to draw to
+    uint32_t layers[C::kRHIMaxNumFramebufferAttachments] {};
+
 
     RHITexture * depth_stencil_attachment {};
     std::array<float, 4> depth_stencil_clear_value {};
@@ -381,12 +384,14 @@ struct RHIDrawDesc {
     FORCEINLINE void SetAttachment(uint32_t index, RHITexture * texture,
                                    RHILoadOpType load_op = RHILoadOpType::kClear,
                                    RHIStoreOpType store_op = RHIStoreOpType::kStore,
-                                   std::array<float, 4> clear_value = {0, 0, 0, 1}) {
+                                   std::array<float, 4> clear_value = {0, 0, 0, 1},
+                                   uint32_t layer = 0) {
         attachments[index] = texture;
         load_ops[index] = load_op;
         store_ops[index] = store_op;
         num_framebuffer_attachments_ = std::max(num_framebuffer_attachments_, index + 1);
         clear_values[index] = clear_value;
+        layers[index] = layer;
     }
     FORCEINLINE void SetDepthStencilAttachment (RHITexture * texture,
         RHILoadOpType load_op = RHILoadOpType::kClear,

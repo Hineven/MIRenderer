@@ -7,17 +7,16 @@
 
 #include "r_internal_common.h"
 #include "r_view_common.h"
-#include "r_draw_to_output.h"
 #include "renderer/mi_texture.h"
 
 MI_NAMESPACE_BEGIN
 class SkyShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(SkyShaderParameters)
-        SHADER_PARAMETER_STRUCT_REF(ViewCommonShaderParameters, View)
-        SHADER_PARAMETER(TextureCube, SkyTexture)
-        SHADER_PARAMETER(SamplerState, LinearWrapSampler)
-        SHADER_USE_RENDERPASS(DrawToOutputPass, Pass)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_RESOURCE_PARAMETER(TextureCube, SkyTexture)
+        SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
+        SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Output)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(SkyShaderParameters)
     DECLARE_SHADER()
@@ -27,11 +26,9 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(SkyShader, "shaders/renderer/Sky.hlsl", "VS_Main",
 void Renderer::Render_Sky(RendererView *view, RenderGraphBuilder &builder) {
     auto &lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<SkyShader>();
-    auto pass = builder.Allocate<DrawToOutputPass>();
     auto params = builder.Allocate<SkyShader::SkyShaderParameters>();
     {
-        pass->Output = view->imported.output_.Raw();
-        params->Pass = pass;
+        params->Output = view->imported.output_.Raw();
         params->View = view->view_common_params_;
         params->SkyTexture = view->imported.sky_texture.Raw();
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;

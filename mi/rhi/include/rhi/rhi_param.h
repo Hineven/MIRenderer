@@ -44,7 +44,9 @@ FORCEINLINE std::string ToString (RHIParamType type) {
         case RHIParamType::kStorageBuffer: return "StorageBuffer";
         case RHIParamType::kUniformBuffer: return "UniformBuffer";
         case RHIParamType::kUAVTexture: return "UAVTexture";
+        case RHIParamType::kUAVTextureArray: return "UAVTextureArray";
         case RHIParamType::kSRVTexture: return "SRVTexture";
+        case RHIParamType::kSRVTextureArray: return "SRVTextureArray";
         case RHIParamType::kSampler: return "Sampler";
         case RHIParamType::kAccelerationStructure: return "AccelerationStructure";
         case RHIParamType::kRenderTarget: return "RenderTarget";

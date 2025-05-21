@@ -601,9 +601,9 @@ bool GLTFLoader::LoadGLTF(
             if(it != meshes.end())
                 for(size_t i = 0; i < (*it).second.size(); ++i)
                 {
-                    TRef<StaticMesh> instance_ref = StaticMesh::Create();
+                    TRef<StaticMesh> instance_ref = StaticMesh::Create(&world, Transform::Identity());
                     instances.push_back(instance_ref);
-                    for (auto e : (*it)) {
+                    for (auto e : (it->second)) {
                         instance_ref->AddMeshPrimitive(e.first, e.second);
                     }
                     instance_ref->SetTransform(Transform::FromMatrix(transform));

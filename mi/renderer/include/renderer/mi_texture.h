@@ -54,16 +54,16 @@ public:
     void ConvertToBindless (bool update_slot_immediately = true);
     void ReleaseBindlessSlot ();
 
-    FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height) {
-        return TRef(new Texture(format, width, height));
+    FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height, uint32_t array_layers = 1) {
+        return TRef(new Texture(format, width, height, array_layers));
     }
 
 protected:
-    Texture(PixelFormatType format, uint32_t width, uint32_t height);
+    Texture(PixelFormatType format, uint32_t width, uint32_t height, uint32_t layers);
 
     std::string name_;
 
-    uint32_t width_ {}, height_ {};
+    uint32_t width_ {}, height_ {}, layers_ {};
     PixelFormatType format_ {PixelFormatType::kUnknown};
     std::vector<uint8_t> data_;
 

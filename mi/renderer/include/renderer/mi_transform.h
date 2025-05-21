@@ -39,6 +39,10 @@ struct Transform {
         return glm::mat4x3(transform);
     }
 
+    FORCEINLINE static Transform Identity () {
+        return Transform();
+    }
+
     static Transform FromMatrix (glm::mat4) ;
 };
 

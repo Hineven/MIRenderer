@@ -29,7 +29,7 @@ class CommonGroupedDeviceResourceAllocator;
 class DeviceBufferHeapInterface;
 class DeviceBufferHeapBuffer;
 
-class ViewCommonShaderParameters;
+struct ViewCommonShaderParameters;
 
 enum class MinimumMaterialFlagBits : unsigned {
     kNone = 0,

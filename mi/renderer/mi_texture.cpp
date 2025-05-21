@@ -14,9 +14,10 @@
 
 MI_NAMESPACE_BEGIN
 
-Texture::Texture(PixelFormatType format, uint32_t width, uint32_t height)
+Texture::Texture(PixelFormatType format, uint32_t width, uint32_t height, uint32_t layers)
     : width_(width)
     , height_(height)
+    , layers_(layers)
     , format_(format)
     , dirty_(true)
 {
@@ -51,10 +52,10 @@ void Texture::CreateOnDevice_Async(RHICommandQueueGraphics& queue)
     }
     
     RHITextureDesc desc;
-    desc.type = RHITextureType::k2D;
+    desc.type = layers_ == 1 ? RHITextureType::k2D : RHITextureType::k2DArray;
     desc.dimensions = {width_, height_, 1};
     desc.mip_levels = 1;
-    desc.array_layers = 1;
+    desc.array_layers = layers_;
     desc.format = format_;
     desc.usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransferDst;
 

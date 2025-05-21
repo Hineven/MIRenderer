@@ -229,6 +229,8 @@ struct RDGShaderRenderTargetParameter {
     RDGTexture * texture {};
     RHILoadOpType load_op {RHILoadOpType::kLoad};
     RHIStoreOpType store_op {RHIStoreOpType::kStore};
+    // Destination of the array layer of the render target. In case the texture is a texture array or a cube map.
+    uint32_t array_layer {0};
     std::array<float, 4> clear_value {0.0f, 0.0f, 0.0f, 1.0f};
     FORCEINLINE operator RDGTexture * () const { return texture; }
     FORCEINLINE RDGShaderRenderTargetParameter & operator = (RDGTexture * tex) {

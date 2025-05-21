@@ -26,5 +26,5 @@ float4 PS_Main (
 ) : SV_TARGET {
     float2 NDC = UVToNDC2(Position.xy);
     float3 Direction = NDC2ToCameraDirectionUnnormalized(View.Camera, Position.xy);
-    return SkyTexture.SampleLevel(LinearWrapSampler, Direction, 0);
+    return float4(1, 0, 0, 1);//SkyTexture.SampleLevel(LinearWrapSampler, Direction, 0);
 }

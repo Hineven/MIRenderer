@@ -180,23 +180,30 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_
     vk::RenderingAttachmentInfo attachments_info[C::kRHIMaxNumFramebufferAttachments];
     for(int i = 0; i < (int)state.draw_state_.num_framebuffer_attachments_; i++) {
         auto tex = (VulkanTexture*)state.draw_state_.attachments[i];
-        attachments_info[i] = vk::RenderingAttachmentInfo{
-                tex->GetImageView(),
+        if (tex) {
+            assert(state.draw_state_.layers[i] < tex->GetArrayLayers());
+            attachments_info[i] = vk::RenderingAttachmentInfo{
+                tex->GetImageViewForLayer(state.draw_state_.layers[i]),
                 tex->GetImageLayout(),
                 {}, {}, {},
                 GetVulkanLoadOp(state.draw_state_.load_ops[i]),
                 GetVulkanStoreOp(state.draw_state_.store_ops[i]),
                 {state.draw_state_.clear_values[i]}
-        };
+            };
+        } else {
+            attachments_info[i] = vk::RenderingAttachmentInfo{};
+        }
     }
     vk::RenderingAttachmentInfo depth_stencil_info {};
     if (auto ptr = state.draw_state_.depth_stencil_attachment) {
         auto vk_ptr = (VulkanTexture*)ptr;
-        depth_stencil_info.imageView = vk_ptr->GetImageView();
-        depth_stencil_info.imageLayout = vk_ptr->GetImageLayout();
-        depth_stencil_info.loadOp = GetVulkanLoadOp(state.draw_state_.depth_stencil_load_op);
-        depth_stencil_info.storeOp = GetVulkanStoreOp(state.draw_state_.depth_stencil_store_op);
-        depth_stencil_info.clearValue = {state.draw_state_.depth_stencil_clear_value};
+        if (vk_ptr) {
+            depth_stencil_info.imageView = vk_ptr->GetImageView();
+            depth_stencil_info.imageLayout = vk_ptr->GetImageLayout();
+            depth_stencil_info.loadOp = GetVulkanLoadOp(state.draw_state_.depth_stencil_load_op);
+            depth_stencil_info.storeOp = GetVulkanStoreOp(state.draw_state_.depth_stencil_store_op);
+            depth_stencil_info.clearValue = {state.draw_state_.depth_stencil_clear_value};
+        }
     }
     auto rendering_info = vk::RenderingInfo {
             {}, render_area, 1, {}, state.draw_state_.num_framebuffer_attachments_, attachments_info,

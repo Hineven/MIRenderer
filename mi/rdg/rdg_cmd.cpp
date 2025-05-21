@@ -44,6 +44,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
     }
     // Bind storage buffers
     {
+        int num_active_storages = 0;
         ret.storages = std::span(queue.Allocate<RHIPipelineParameterBufferDesc[]>(base_info->storage_buffers_.size()), base_info->storage_buffers_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->storage_buffers_)) {
             auto buffer_ptr = *static_cast<RDGBuffer**>((void*)((uint8_t*)params + e.cpp_offset));
@@ -52,12 +53,15 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kStorageBuffer>((int)i);
-            mi_assert(slot != UINT32_MAX, "Failed to convert storage buffer index to slot.");
-            ret.storages[i] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
+            if (slot != UINT32_MAX) {
+                ret.storages[num_active_storages ++] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
+            } // Otherwise potentially the shader is not using this storage buffer. Silently ignore it.
         }
+        ret.storages = ret.storages.first(num_active_storages);
     }
     // Bind UAVs
     {
+        int num_active_uavs = 0;
         ret.uavs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->uavs_.size()), base_info->uavs_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->uavs_)) {
             auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
@@ -68,12 +72,15 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
-            mi_assert(slot != UINT32_MAX, "Failed to convert UAV texture index to slot.");
-            ret.uavs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
+            if (slot != UINT32_MAX) {
+                ret.uavs[num_active_uavs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
+            } // Otherwise potentially the shader is not using this UAV. Silently ignore it.
         }
+        ret.uavs = ret.uavs.first(num_active_uavs);
     }
     // Bind SRVs
     {
+        int num_active_srvs = 0;
         ret.srvs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(base_info->srvs_.size()), base_info->srvs_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->srvs_)) {
             auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
@@ -84,12 +91,15 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
-            mi_assert(slot != UINT32_MAX, "Failed to convert SRV texture index to slot.");
-            ret.srvs[i] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
+            if (slot != UINT32_MAX) {
+                ret.srvs[num_active_srvs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
+            } // Otherwise potentially the shader is not using this SRV. Silently ignore it.
         }
+        ret.srvs = ret.srvs.first(num_active_srvs);
     }
     // Bind samplers
     {
+        int num_active_samplers = 0;
         ret.samplers = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(base_info->samplers_.size()), base_info->samplers_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->samplers_)) {
             auto sampler_ptr = *static_cast<RHISampler**>((void*)((uint8_t*)params + e.cpp_offset));
@@ -98,11 +108,14 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>((int)i);
-            mi_assert(slot != UINT32_MAX, "Failed to convert sampler index to slot.");
-            ret.samplers[i] = {sampler_ptr, slot};
+            if (slot != UINT32_MAX) {
+                ret.samplers[num_active_samplers ++] = {sampler_ptr, slot};
+            } // Otherwise potentially the shader is not using this sampler. Silently ignore it.
         }
+        ret.samplers = ret.samplers.first(num_active_samplers);
     }
     {
+        int num_active_acceleration_structures = 0;
         ret.acceleration_structures = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(base_info->acceleration_structures_.size()), base_info->acceleration_structures_.size());
         for (const auto& [i, e] : std::views::enumerate(base_info->acceleration_structures_)) {
             auto as_ptr = *static_cast<RHIAccelerationStructure**>((void*)((uint8_t*)params + e.cpp_offset));
@@ -111,9 +124,11 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kAccelerationStructure>((int)i);
-            mi_assert(slot != UINT32_MAX, "Failed to convert AS index to slot.");
-            ret.acceleration_structures[i] = {as_ptr, slot};
+            if (slot != UINT32_MAX) {
+                ret.acceleration_structures[num_active_acceleration_structures ++] = {as_ptr, slot};
+            } // Otherwise potentially the shader is not using this AS. Silently ignore it.
         }
+        ret.acceleration_structures = ret.acceleration_structures.first(num_active_acceleration_structures);
     }
     return ret;
 }
@@ -178,7 +193,8 @@ bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
             }
             ds.SetAttachment(
                 e.info->cpp_extra.render_targets_info->target_index, to_bound,
-                param.load_op, param.store_op, param.clear_value
+                param.load_op, param.store_op, param.clear_value,
+                param.array_layer == UINT64_MAX ? 0 : param.array_layer
             );
             if (e.info->cpp_extra.render_targets_info->target_index == -1) {
                 ds.SetDepthStencilAttachment(to_bound, param.load_op, param.store_op, param.clear_value);

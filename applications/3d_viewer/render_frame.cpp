@@ -16,17 +16,18 @@
 
 using namespace MI_NAMESPACE;
 
-BEGIN_SHADER_PARAMETERS(BackbufferRenderPass)
-    SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, OutColor)
-END_SHADER_PARAMETERS()
 
 class ImGuiRenderShader : public RDGShader {
     DECLARE_SHADER()
+    struct ImGuiRenderUB {
+        glm::vec2 Scale;
+        glm::vec2 Padding;
+    };
     BEGIN_SHADER_PARAMETERS(Parameters)
-        SHADER_PARAMETER(float2, Scale)
-        SHADER_PARAMETER(Texture2D, ImGuiTexture)
-        SHADER_PARAMETER(SamplerState, ImGuiSampler)
-        SHADER_USE_RENDERPASS(BackbufferRenderPass, pass)
+        SHADER_UNIFORM_BUFFER(ImGuiRenderUB, UB)
+        SHADER_RESOURCE_PARAMETER(Texture2D, ImGuiTexture)
+        SHADER_RESOURCE_PARAMETER(SamplerState, ImGuiSampler)
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, OutColor)
         SHADER_VERTEX_BUFFER(sizeof(ImDrawVert), vertex_buffer)
         SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k2xFp32, pos)
         SHADER_VERTEX_ATTRIBUTE(0, 8, RHIVertexAttributeFormatType::k2xFp32, uv)
@@ -63,15 +64,14 @@ void RenderImGui (RDGResourcePool * pool, RenderGraphBuilder & builder, RDGTextu
         index_buffer_byte_offset += index_size;
     }
 
-    auto pass = builder.Allocate<BackbufferRenderPass>();
-    pass->OutColor = backbuffer;
-    pass->OutColor.load_op = RHILoadOpType::kLoad;
-    pass->OutColor.store_op = RHIStoreOpType::kStore;
     auto params = builder.Allocate<ImGuiRenderShader::ShaderParameters>();
-    params->pass = pass;
+    params->OutColor = backbuffer;
+    params->OutColor.load_op = RHILoadOpType::kLoad;
+    params->OutColor.store_op = RHIStoreOpType::kStore;
     params->vertex_buffer = vertex_buffer.Raw();
     auto window_size = ImGui::GetIO().DisplaySize;
-    params->Scale = {1.f / window_size.x, 1.f / window_size.y};
+    params->UB = builder.Allocate<ImGuiRenderShader::ImGuiRenderUB>();
+    params->UB->Scale = {1.f / window_size.x, 1.f / window_size.y};
     params->ImGuiTexture = nullptr; // This parameter is set inside the draw pass
     params->ImGuiSampler = rhi.GetGlobalSamplers().linear_wrap;
 

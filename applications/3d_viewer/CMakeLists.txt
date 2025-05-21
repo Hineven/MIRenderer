@@ -14,5 +14,6 @@ else()
 endif()
 
 add_shaders(3d_viewer)
+add_assets(3d_viewer)
 
 target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw)
