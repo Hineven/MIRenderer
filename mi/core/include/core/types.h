@@ -37,6 +37,12 @@ return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint3
 } \
 FORCEINLINE FlagName##Flags operator&(FlagName##FlagBits a, FlagName##Flags b) { \
 return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator|(FlagName##Flags a, FlagName##Flags b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
+} \
+FORCEINLINE FlagName##Flags operator&(FlagName##Flags a, FlagName##Flags b) { \
+return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
 }
 
 #include "core/common.h"
