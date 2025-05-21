@@ -336,7 +336,7 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
         point.bound_private_descriptor_set = nullptr;
-        state.points[(uint32_t)RHIBindPointType::kCompute].bound_pipeline = pipeline;
+        point.bound_pipeline = pipeline;
     }
 }
 
