@@ -177,7 +177,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     // Upload sky texture
     {
-        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().GetResourceDirectory() / "assets/3d_viewer/tief_etz_4k.png");
+        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
     }
 
     // Get ready for device rendering

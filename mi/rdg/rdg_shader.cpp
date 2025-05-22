@@ -33,6 +33,13 @@ bool RDGShaderParamStructInfo::CanBeRenderpass () const {
     return true;
 }
 
+RDGShaderHash &RDGShaderHash::AddUnordered(const char *marker, uint64_t v) {
+    uint64_t hash = XXH64(marker, strlen(marker), v);
+    value ^= hash;
+    return * this;
+}
+
+
 RDGShader::RDGShader (const RDGShaderClassRegistry * class_registry) : class_registry_(class_registry) {
 
 }
@@ -338,6 +345,18 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     return passed_checking;
 }
 
+std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderInitializationInfo & ini) const {
+    std::vector<std::string> extra_options;
+    auto macros = class_registry_->GetShaderDefaultMacros();
+    for (const auto & macro : macros) {
+        extra_options.emplace_back("-D" + macro);
+    }
+    for (const auto & extra_macro : ini.macros) {
+        extra_options.emplace_back("-D" + extra_macro);
+    }
+    return extra_options;
+}
+
 void RDGShader::RemapResourceIndexToRHIResourceSlots() {
     // Clear the previous bindings
     for (auto & e : cpp_resource_index_to_slot_) e.clear();
@@ -450,9 +469,53 @@ static std::string wstring_to_utf8(std::wstring const& str)
 }
 #pragma warning(pop)
 
+RDGShaderHash RDGShader::ComputeShaderHash() const {
+    auto source_code = LoadSource();
+    if (source_code.empty()) {
+        MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", class_registry_->source_location);
+        return {};
+    }
+    std::vector<std::string> extra_options = GetExtraCompilerOptions(ini_);
+
+    RDGShaderHash shader_hash {};
+
+    if (class_registry_->type == RHIPipelineType::kCompute) {
+        bool is_valid {false};
+        auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+            class_registry_->source_location, extra_options, is_valid
+        );
+        if (is_valid) shader_hash.AddUnordered("ComputeShader", result);
+    }
+
+    if (class_registry_->type == RHIPipelineType::kGraphics) {
+        if (!class_registry_->vertex_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("VertexShader", result);
+        }
+        if (!class_registry_->fragment_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("FragmentShader", result);
+        }
+    }
+    if (shader_hash.value == 0) {
+        MI_LOG(MIInfraLogType::kError, "Failed to compute shader hash: {}", class_registry_->source_location);
+        return {};
+    }
+    return shader_hash;
+}
+
+
 bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShaderInitializationInfo & ini) {
     // Re-compile the shader
     shaders_ = {};
+    shader_hash_.Reset();
+
     if (source_code.empty()) {
         MI_LOG(MIInfraLogType::kError, "Empty shader source: {}", class_registry_->source_location);
         return false;
@@ -462,32 +525,26 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
 
     // Compile the shader and create RHI shaders
     std::string errmsg;
-    auto absolute_path = GetInfra().GetResourceDirectory() / class_registry_->source_location;
+    auto absolute_path = GetInfra().TranslateResPathToFilePath(class_registry_->source_location);
     auto absolute_path_string = absolute_path.string();
     std::wstring source_location_wstr(absolute_path_string.begin(), absolute_path_string.end());
 
-
     // Stack macros
-    std::vector<std::string> extra_options;
-    auto macros = class_registry_->GetShaderDefaultMacros();
-    for (const auto & macro : macros) {
-        extra_options.emplace_back("-D" + macro);
-    }
-    for (const auto & extra_macro : ini.macros) {
-        extra_options.emplace_back("-D" + extra_macro);
-    }
+    std::vector<std::string> extra_options = GetExtraCompilerOptions(ini);
 
     if(class_registry_->type == RHIPipelineType::kCompute) {
+        uint64_t cs_hash = 0;
         std::wstring out_command;
         auto result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
             MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
             return false;
         }
+        shader_hash_.AddUnordered("ComputeShader", cs_hash);
         // Create the compute shader
         auto bytecode_span = std::span(reinterpret_cast<const std::byte *>(result.data()), result.size() * sizeof(uint32_t));
         auto shader = RHI::Get().CreateShader(
@@ -509,30 +566,34 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         // For graphics pipeline, we need to compile vertex and fragment shaders
         // First compile vertex shader
         {
+            uint64_t vs_hash = 0;
             std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
                     source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_3",
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
                 MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
+            shader_hash_.AddUnordered("VertexShader", vs_hash);
         }
 
         {
+            uint64_t fs_hash = 0;
             std::wstring out_command;
             // Then compile fragment shader
             fs_result = GetInfra().CompileHLSLToSPIRV(
                     source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_3",
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
             );
             if (fs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
                 MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
+            shader_hash_.AddUnordered("FragmentShader", fs_hash);
         }
 
         // Create the vertex shader
@@ -569,8 +630,6 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
     }
     return true;
 }
-
-
 
 bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 
@@ -682,6 +741,29 @@ RDGShaderLibrary::~RDGShaderLibrary() {}
 void RDGShaderLibrary::Init() {
     // lalala
     MI_LOG(MIInfraLogType::kInfo, "Initializing RDGShaderLibrary");
+}
+
+void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
+    // Iterate over all shaders and check if they need to be recompiled
+    std::vector<RDGShader*> shaders_to_recompile;
+    for (auto & [type_hash, shader] : cached_shaders_) {
+        if (shader->IsValid()) {
+            // If the shader is valid, check for new hash value.
+            auto old_hash = shader->GetShaderHash();
+            auto new_hash = shader->ComputeShaderHash();
+            if (old_hash != new_hash) {
+                shaders_to_recompile.push_back(shader.get());
+            }
+        } else {
+            // Invalid shaders always need to be recompiled
+            shaders_to_recompile.push_back(shader.get());
+        }
+    }
+    // Recompile all shaders that need to be recompiled
+    // TODO parallize
+    for (auto & shader : shaders_to_recompile) {
+        shader->Recompile(shader->ini_);
+    }
 }
 
 

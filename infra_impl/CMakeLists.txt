@@ -7,4 +7,4 @@ set(SOURCE_FILES
 
 add_library(infra STATIC ${SOURCE_FILES})
 target_include_directories(infra PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(infra PUBLIC core ${dxc_library_target})
+target_link_libraries(infra PUBLIC core ${dxc_library_target} xxHash::xxhash)

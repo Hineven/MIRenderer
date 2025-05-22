@@ -35,7 +35,7 @@ struct RDGShaderInitializationInfo {
 struct RDGShaderClassRegistry {
     std::string name;
     RHIPipelineType type;
-    // Relative source location to the resource directory
+    // Resource path for the source location
     std::string source_location;
     std::string compute_entry_;
     std::string vertex_entry_;
@@ -44,6 +44,20 @@ struct RDGShaderClassRegistry {
     std::vector<std::string> (*GetShaderDefaultMacros)();
     const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)();
     RDGShaderPipelineConfig (*GetShaderPipelineConfig)();
+};
+
+struct RDGShaderHash {
+    uint64_t value {};
+    FORCEINLINE RDGShaderHash () : value(0) {}
+    FORCEINLINE explicit RDGShaderHash (uint64_t v) : value(v) {}
+    FORCEINLINE bool operator== (const RDGShaderHash & other) const {
+        return value == other.value;
+    }
+    FORCEINLINE bool operator!= (const RDGShaderHash & other) const {
+        return value != other.value;
+    }
+    FORCEINLINE void Reset () {value = 0;}
+    RDGShaderHash & AddUnordered (const char * marker, uint64_t v);
 };
 
 class RDGShader : public RefCounted<true> {
@@ -78,7 +92,16 @@ public:
         };
     }
 
+    FORCEINLINE const RDGShaderHash & GetShaderHash () const {
+        return shader_hash_;
+    }
+
+    // Compute shader hash from infra resources. The hash value will be different if the shader source code
+    // or compile options are changed.
+    RDGShaderHash ComputeShaderHash () const ;
+
 protected:
+
     // Shader initialization info (default, given in constructor)
     RDGShaderInitializationInfo ini_ {
         {}
@@ -91,10 +114,12 @@ protected:
     // Note: special case, global uniform buffer have index ref_uniform_buffers.size() in the kUniformBuffer vector.
     // (the last element in the vector)
     std::vector<uint32_t> cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kMax];
+
+    // Get the extra compiler options for the shader with the given initialization info
+    std::vector<std::string> GetExtraCompilerOptions (const RDGShaderInitializationInfo & ini) const;
+
     // Clear and rebuild the mapping between cpp resource indices and pipeline slots
     void RemapResourceIndexToRHIResourceSlots ();
-
-
 
     std::string LoadSource () const ;
     // Helper function, re-compile shaders only.
@@ -103,6 +128,8 @@ protected:
     // Check if all parameters declared & used in the shader are defined in the shader parameter struct
     bool CheckShaderReflection (RHIShader * shader, const RDGShaderParamStructAndSizeInfo & info) ;
 
+    // Shader (compile options + source with expanded includes) hash value (xxhash64), used for checking if the shader source has changed
+    RDGShaderHash shader_hash_;
 
     // Resource path (infra)
     bool is_valid_ {false};
@@ -186,11 +213,16 @@ public:
     static RDGShaderLibrary & Get() ;
     static void DestroySingleton () ;
 
+    // Check all shaders and recompile the modified ones.
+    // Should only be performed when RHI is idle.
+    void RecompileUpdatedCachedShaders () ;
+
     template<typename T>
     FORCEINLINE T * GetShader (RDGShaderInitializationInfo ini = {}) {
         return (T*)GetShader(typeid(T).hash_code(), ini);
     }
     RDGShader * GetShader (size_t type_hash, RDGShaderInitializationInfo ini = {}) ;
+
 protected:
     void RegisterShaderClass (size_t type_hash, RDGShaderClassRegistry registry) ;
 
