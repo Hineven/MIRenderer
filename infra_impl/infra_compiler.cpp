@@ -10,14 +10,19 @@
 #include <dxcapi.h>
 #else
 #include <dlfcn.h>
-#include "dxc_linux.h"  // 我们将创建这个头文件来处理Linux上的DXC接口
+#include "dxc_linux.h"  // 处理Linux上的DXC接口
 #endif
 
+#include <xxhash.h>
 #include <iostream>
 #include <string>
 #include <codecvt>
 #include <locale>
+#include <unordered_set>
+
 #include "infra_impl/infra.h"
+// 不再需要包含ShaderIncludeCollector
+// #include "infra_impl/shader_include_collector.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -45,6 +50,8 @@ std::wstring Utf8ToWide(const std::string& str) {
     return converter.from_bytes(str);
 #endif
 }
+
+
 
 HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id thread_id) {
     auto it = hlsl_compiler_contexts_.find(thread_id);
@@ -93,7 +100,10 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
         }
         hr = ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
 #endif
-
+        // 古法引用计数，匠心独运，传承配方（主要是因为ComPtr Linux上还得写代码）
+        ctx->dxc_compiler->AddRef();
+        ctx->dxc_lib->AddRef();
+        ctx->include_handler->AddRef();
         hlsl_compiler_contexts_[thread_id] = ctx;
         return ctx;
     } else {
@@ -103,6 +113,7 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
 
 void MyInfra::DestroyHLSLCompilerContexts() {
     for(auto & [thread_id, ctx] : hlsl_compiler_contexts_) {
+        // 古法引用释放
         ctx->include_handler->Release();
         ctx->dxc_lib->Release();
         ctx->dxc_compiler->Release();
@@ -116,6 +127,87 @@ void MyInfra::DestroyHLSLCompilerContexts() {
     hlsl_compiler_contexts_.clear();
 }
 
+static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shader_path, std::vector<std::string> options, bool preprocess_only = false) {
+    auto w_options = std::vector<std::wstring>(options.size());
+    for (size_t i = 0; i < options.size(); i++) {
+        w_options[i] = Utf8ToWide(options[i]);
+    }
+
+    auto add_option = [&](std::wstring option) {
+        for(auto & opt : w_options) {
+            if(opt == option) {
+                return;
+            }
+        }
+        w_options.push_back(option);
+    };
+
+    if (preprocess_only) {
+        // 对于预处理，添加-P选项
+        add_option(L"-P");
+    } else {
+        // Instruct dxc to compile adequate SPIRV
+        add_option(L"-spirv");
+        add_option(L"-Ges");
+        // Compatibility
+        add_option(L"-fvk-use-dx-layout");
+        add_option(L"-fspv-use-vulkan-memory-model");
+        // Debugging flag
+        add_option(L"-Zi");
+        add_option(L"-fspv-reflect");
+        add_option(L"-fspv-debug=vulkan-with-source");
+    }
+    // Add a default include path (same as the shader parent directory)
+    std::filesystem::path shader_path_fs = shader_path;
+    std::filesystem::path shader_dir = shader_path_fs.parent_path();
+    std::wstring shader_dir_w = Utf8ToWide("\"" + shader_dir.string() + "\"");
+    add_option(L"-I");
+    add_option(shader_dir_w);
+    return w_options;
+}
+
+// 添加预处理并计算哈希的辅助函数
+static uint64_t PreprocessAndComputeHash(
+        IDxcCompiler* dxc_compiler,
+        IDxcIncludeHandler* include_handler,
+        IDxcBlobEncoding* source_blob,
+        const wchar_t* shader_path,
+        const std::vector<const wchar_t*>& options_cstr,
+        uint32_t options_count) {
+    
+    // 进行预处理操作
+    IDxcOperationResult *preprocess_result;
+    dxc_compiler->Compile(
+        source_blob,
+        shader_path,
+        L"main", // 入口点名称不重要，因为我们只是预处理
+        L"vs_6_0", // 目标配置文件不重要，因为我们只是预处理
+        (LPCWSTR*)options_cstr.data(), options_count,
+        nullptr, 0,
+        include_handler, // 使用标准include handler
+        &preprocess_result
+    );
+    
+    // 检查预处理结果
+    HRESULT hr;
+    preprocess_result->GetStatus(&hr);
+    uint64_t hash_value = 0;
+    
+    if (SUCCEEDED(hr)) {
+        // 获取预处理后的代码
+        IDxcBlob *preprocessed_code;
+        preprocess_result->GetResult(&preprocessed_code);
+        
+        // 计算预处理后代码的哈希值
+        hash_value = XXH64(preprocessed_code->GetBufferPointer(), preprocessed_code->GetBufferSize(), 0);
+        
+        preprocessed_code->Release();
+    }
+    
+    preprocess_result->Release();
+    return hash_value;
+}
+
 std::vector<uint32_t>
 MyInfra::CompileHLSLToSPIRV(
         const wchar_t * shader_path,
@@ -123,7 +215,8 @@ MyInfra::CompileHLSLToSPIRV(
         std::string target_profile,
         std::span<const char> hlsl_code,
         std::vector<std::string> options,
-        std::string & error, std::wstring * out_compile_command) {
+        std::string & error, std::wstring * out_compile_command,
+        uint64_t * out_shader_xxhash64) {
 
     auto ctx = GetHLSLCompilerContextForThread(std::this_thread::get_id());
     if (!ctx) {
@@ -140,36 +233,16 @@ MyInfra::CompileHLSLToSPIRV(
     std::wstring entry_point_w = Utf8ToWide(entry_point);
     std::wstring target_profile_w = Utf8ToWide(target_profile);
 
-    auto w_options = std::vector<std::wstring>(options.size());
-    for (size_t i = 0; i < options.size(); i++) {
-        w_options[i] = Utf8ToWide(options[i]);
-    }
-    
-    auto add_option = [&](std::wstring option) {
-        for(auto & opt : w_options) {
-            if(opt == option) {
-                return;
-            }
+    if (out_shader_xxhash64) {
+        *out_shader_xxhash64 = 0;
+        // Include extra options in the hash
+        for (const auto& e : options) {
+            *out_shader_xxhash64 = XXH64(e.c_str(), e.size() * sizeof(char), *out_shader_xxhash64);
         }
-        w_options.push_back(option);
-    };
-    
-    // Instruct dxc to compile adequate SPIRV
-    add_option(L"-spirv");
-    add_option(L"-Ges");
-    // Compatibility
-    add_option(L"-fvk-use-dx-layout");
-    add_option(L"-fspv-use-vulkan-memory-model");
-    // Debugging flag
-    add_option(L"-Zi");
-    add_option(L"-fspv-reflect");
-    add_option(L"-fspv-debug=vulkan-with-source");
-    // Add a default include path (same as the shader parent directory)
-    std::filesystem::path shader_path_fs = shader_path;
-    std::filesystem::path shader_dir = shader_path_fs.parent_path();
-    std::wstring shader_dir_w = Utf8ToWide("\"" + shader_dir.string() + "\"");
-    add_option(L"-I");
-    add_option(shader_dir_w);
+    }
+
+    // 获取编译选项
+    auto w_options = GetImplicitCompileOptions(shader_path, options);
 
     auto w_options_cstr = std::vector<const wchar_t *>(w_options.size());
     for (size_t i = 0; i < w_options.size(); i++) {
@@ -181,11 +254,31 @@ MyInfra::CompileHLSLToSPIRV(
         for (auto & opt : w_options) {
             compile_command += L" " + opt;
         }
-        std::wstring shader_path_ws = Utf8ToWide(shader_path_fs.string());
-        compile_command += L" \"" + shader_path_ws + L"\"";
+        compile_command += L" \"" + std::wstring(shader_path) + L"\"";
         *out_compile_command = compile_command;
     }
 
+    // 首先，计算预处理后代码的哈希值
+    // 为了预处理，创建预处理选项
+    auto prep_options = GetImplicitCompileOptions(shader_path, options, true);
+    auto prep_options_cstr = std::vector<const wchar_t *>(prep_options.size());
+    for (size_t i = 0; i < prep_options.size(); i++) {
+        prep_options_cstr[i] = prep_options[i].c_str();
+    }
+
+    if (out_shader_xxhash64) {
+        // 计算预处理后代码的哈希值
+        *out_shader_xxhash64 ^= PreprocessAndComputeHash(
+            dxc_compiler,
+            ctx->include_handler,
+            hlsl_blob,
+            shader_path,
+            prep_options_cstr,
+            (uint32_t)prep_options_cstr.size()
+        );
+    }
+
+    // 进行实际编译
     IDxcOperationResult *compile_result;
     dxc_compiler->Compile(hlsl_blob, shader_path, entry_point_w.c_str(), target_profile_w.c_str(),
                           w_options_cstr.data(), (uint32_t)w_options_cstr.size(),
@@ -214,6 +307,75 @@ MyInfra::CompileHLSLToSPIRV(
     hlsl_blob->Release();
     
     return spirv;
+}
+
+uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
+        const MIResourcePath & res_path,
+        std::vector<std::string> options,
+        bool & is_shader_valid) {
+    
+    is_shader_valid = false;
+    
+    // 转换资源路径为文件路径并尝试打开着色器文件
+    std::filesystem::path shader_path = TranslateResPathToFilePath(res_path);
+    if (!std::filesystem::exists(shader_path)) {
+        return 0; // 文件不存在
+    }
+    
+    std::wstring shader_path_w = shader_path.wstring();
+    
+    // 读取着色器源码
+    std::ifstream file(shader_path, std::ios::binary);
+    if (!file.is_open()) {
+        return 0; // 无法打开文件
+    }
+    
+    file.seekg(0, std::ios::end);
+    size_t file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::string hlsl_code(file_size, '\0');
+    file.read(hlsl_code.data(), file_size);
+    file.close();
+    
+    // 获取 DXC 编译上下文
+    auto ctx = GetHLSLCompilerContextForThread(std::this_thread::get_id());
+    if (!ctx) {
+        return 0; // 无法初始化编译器
+    }
+    
+    IDxcLibrary *dxc_lib = ctx->dxc_lib;
+    IDxcCompiler *dxc_compiler = ctx->dxc_compiler;
+    
+    // 创建着色器代码 blob
+    IDxcBlobEncoding *hlsl_blob;
+    dxc_lib->CreateBlobWithEncodingFromPinned(hlsl_code.data(), (uint32_t)hlsl_code.size(), CP_UTF8, &hlsl_blob);
+    
+    // 准备预处理选项（添加-P选项）
+    auto w_options = GetImplicitCompileOptions(shader_path_w.c_str(), options, true);
+
+    auto w_options_cstr = std::vector<const wchar_t *>(w_options.size());
+    for (size_t i = 0; i < w_options.size(); i++) {
+        w_options_cstr[i] = w_options[i].c_str();
+    }
+    
+    // 计算预处理后代码的哈希值
+    uint64_t hash_value = PreprocessAndComputeHash(
+        dxc_compiler, 
+        ctx->include_handler, 
+        hlsl_blob, 
+        shader_path_w.c_str(), 
+        w_options_cstr, 
+        (uint32_t)w_options_cstr.size()
+    );
+    
+    // 如果哈希值不为0，说明预处理成功，shader有效
+    is_shader_valid = (hash_value != 0);
+    
+    // 释放资源
+    hlsl_blob->Release();
+    
+    return hash_value;
 }
 
 MI_NAMESPACE_END

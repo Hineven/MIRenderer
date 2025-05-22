@@ -82,21 +82,25 @@ public:
     // MI will access the file system directly, but will use this interface to load/save files.
     // These operations should usually be done in dedicated threads for maximum performance
 
-    // The renderer request a persistent blob resource to load from the infrastructure.
+    // Translate a resource path to a file path. If the resource does have a mapping to a file,
+    // return the file path. Otherwise, return an empty path.
+    virtual std::filesystem::path TranslateResPathToFilePath (const MIResourcePath & res_path) = 0;
+
+    // Request a persistent blob resource to load from the infrastructure.
     // Thread safety: required
     virtual TRef<BlobResourceInterface> RIO_Open (const MIResourcePath & res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access = BlobResourceAccessFlagBits::kRead) = 0;
 
-    // The renderer request the infrastructure to check if a resource exists.
+    // Request the infrastructure to check if a resource exists.
     // @return true if the resource exists.
     // Thread safety: required
     virtual bool RIO_Exists (const MIResourcePath & res_path) = 0;
 
-    // The renderer request the infrastructure to delete a resource.
+    // Request the infrastructure to delete a resource.
     // @return true if the resource is successfully deleted.
     // Thread safety: required
     virtual bool RIO_Delete (const MIResourcePath & res_path) = 0;
 
-    // The renderer request the infrastructure to launch and keep a thread.
+    // Request the infrastructure to launch and keep a thread.
     // @return true if the thread is successfully launched.
     // Thread safety: required
     virtual std::optional<std::unique_ptr<std::thread>> LaunchThread (ThreadPerformanceType perf_type, std::function<void()> thread_func) = 0;
@@ -130,9 +134,17 @@ public:
             std::span<const char> hlsl_code,
             std::vector<std::string> options,
             std::string & error,
-            std::wstring * out_compile_command = nullptr
+            std::wstring * out_compile_command = nullptr,
+            uint64_t * out_shader_xxhash64 = nullptr
     ) = 0;
 
+    // Debugging mode only
+    // Helper function for check shader changes.
+    virtual uint64_t GetShaderXXHashFromShaderResourcePath (
+        const MIResourcePath & shader_resource_path,
+        std::vector<std::string> options,
+        bool & is_shader_valid
+    ) = 0;
 
     // Logging interface
     virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;

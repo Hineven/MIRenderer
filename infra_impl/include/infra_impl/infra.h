@@ -91,6 +91,8 @@ public:
 
     std::filesystem::path GetTempDirectory() override;
 
+    std::filesystem::path TranslateResPathToFilePath (const MIResourcePath & res_path);
+
     MIInfraLimits GetResourceLimits () override;
 
     void Init () override;
@@ -124,7 +126,14 @@ public:
             std::span<const char> hlsl_code,
             std::vector<std::string> options,
             std::string & error,
-            std::wstring * out_compile_command = nullptr
+            std::wstring * out_compile_command = nullptr,
+            uint64_t * out_shader_xxhash64 = nullptr
+    ) override;
+
+    uint64_t GetShaderXXHashFromShaderResourcePath (
+        const MIResourcePath & res_path,
+        std::vector<std::string> options,
+        bool & is_shader_valid
     ) override;
 
     void LogMessage(MIInfraLogType level, const std::string &message) override;
@@ -143,8 +152,6 @@ protected:
 
     HLSLCompilerContext *  GetHLSLCompilerContextForThread(std::thread::id thread_id);
     void DestroyHLSLCompilerContexts ();
-
-    std::filesystem::path TranslateResPathToFilePath (const MIResourcePath & res_path);
 
     // Configurations
     MIInfraLimits limits_;
