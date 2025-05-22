@@ -162,6 +162,7 @@ protected:
         // For debugging purposes only
 #ifndef NDEBUG
         std::stack<std::string> debug_marker_stack;
+        std::string last_inserted_debug_marker;
 #endif
         FORCEINLINE void PushDebugMarker (const std::string & name) {
 #ifndef NDEBUG

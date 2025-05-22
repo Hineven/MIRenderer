@@ -30,16 +30,16 @@ RendererScene::~RendererScene() {
 }
 
 
-void RendererScene::SetSkyTexture(Texture *texture) {
+void RendererScene::SetSkyCube(Texture *texture) {
     if (!texture) {
-        sky_texture_ = nullptr;
+        sky_cube_ = nullptr;
         return ;
     }
     if (!texture->IsBindless()) {
         MI_WARN("Setting sky texture to a non-bindless texture will not take any effect.");
         return ;
     }
-    sky_texture_ = texture;
+    sky_cube_ = texture;
 }
 
 

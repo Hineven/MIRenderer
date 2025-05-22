@@ -72,6 +72,7 @@ uint32_t RDGTexture::GetResourceClassHash() const {
 }
 
 TRef<RDGTexture> RDGTexture::Import([[maybe_unused]] const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) {
+    mi_assert(resource != nullptr, "Cannot import a null texture.");
     auto texture_raw_ptr = new RDGTexture(resource->GetDesc());
     auto texture = TRef<RDGTexture>(texture_raw_ptr);
     texture->rhi_texture_ = resource;

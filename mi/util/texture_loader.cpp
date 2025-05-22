@@ -33,7 +33,7 @@ public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(MappingShaderUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, InEnvironmentMap)
-        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_UNORM, OutEnvironmentMap)
+        SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, OutEnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, InSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -55,7 +55,9 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
 
     // 1k res
     constexpr auto face_resolution = 1024;
-    auto env_cubemap = Texture::Create(PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution, 6);
+    auto env_cubemap = Texture::Create(RHITextureType::kCube, PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution, 6);
+    env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
+    env_cubemap->CreateOnDevice();
     // Make sure pool is destroyed after the render graph
     auto pool = RDGResourcePool::Create();
     {
@@ -100,6 +102,44 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
     }
     return env_cubemap;
+}
+
+TRef<Texture> TextureLoader::LoadEnvironmentMap(std::string name, std::filesystem::path resource_path) {
+    if (!resource_path.is_absolute()) {
+        resource_path = GetInfra().GetResourceDirectory() / resource_path;
+    }
+    if (!std::filesystem::exists(resource_path)) {
+        MI_WARN("TextureLoader: Texture file {} does not exist.", resource_path.string());
+        return nullptr;
+    }
+    if (resource_path.extension() != ".png" && resource_path.extension() != ".jpg" && resource_path.extension() != ".jpeg") {
+        MI_WARN("TextureLoader: Unsupported image format {} for {}.", resource_path.extension().string(), resource_path.string());
+        return nullptr;
+    }
+    // Read binary data
+    std::ifstream file(resource_path, std::ios::binary);
+    if (!file) {
+        MI_WARN("TextureLoader: Failed to open texture file {}.", resource_path.string());
+        return nullptr;
+    }
+    file.seekg(0, std::ios::end);
+    size_t size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buffer(size);
+    file.read(reinterpret_cast<char *>(buffer.data()), size);
+    if (!file) {
+        MI_WARN("TextureLoader: Failed to read texture file {}.", resource_path.string());
+        return nullptr;
+    }
+    file.close();
+    // Load texture from buffer
+    std::string ext_name = resource_path.extension().string();
+    std::string mime = "image/png";
+    if (ext_name == ".jpg" || ext_name == ".jpeg") {
+        mime = "image/jpeg";
+    }
+    auto texture = LoadEnvironmentMapFromBuffer(resource_path.string(), mime, buffer.data(), size);
+    return texture;
 }
 
 

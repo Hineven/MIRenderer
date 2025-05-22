@@ -40,9 +40,9 @@ public:
         return renderables_;
     }
 
-    void SetSkyTexture (Texture * texture) ;
+    void SetSkyCube (Texture * texture) ;
     FORCEINLINE Texture * GetSkyTexture () const {
-        return sky_texture_.Raw();
+        return sky_cube_.Raw();
     }
 
 protected:
@@ -69,7 +69,7 @@ protected:
     // Keep track of free renderable indices, so we can reallocate them.
     std::stack<uint32_t> free_renderables_;
 
-    TRef<Texture> sky_texture_;
+    TRef<Texture> sky_cube_;
 
 
     // Indexed with renderable index.

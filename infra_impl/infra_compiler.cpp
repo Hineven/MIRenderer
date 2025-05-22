@@ -157,6 +157,11 @@ MyInfra::CompileHLSLToSPIRV(
     // Instruct dxc to compile adequate SPIRV
     add_option(L"-spirv");
     add_option(L"-Ges");
+    // Compatibility
+    add_option(L"-fvk-use-dx-layout");
+    add_option(L"-fspv-use-vulkan-memory-model");
+    // Debugging flag
+    add_option(L"-Zi");
     add_option(L"-fspv-reflect");
     add_option(L"-fspv-debug=vulkan-with-source");
     // Add a default include path (same as the shader parent directory)

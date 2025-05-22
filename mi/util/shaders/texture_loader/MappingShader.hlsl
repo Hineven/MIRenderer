@@ -13,9 +13,11 @@ struct MappingShaderUB {
     uint2 Padding;
 };
 
+ConstantBuffer<MappingShaderUB> UB;
+
 Texture2D InEnvironmentMap;
 
-SamplerState Sampler;
+SamplerState InSampler;
 
 float2 SampleSphericalMap(in float3 rd)
 {
@@ -24,15 +26,15 @@ float2 SampleSphericalMap(in float3 rd)
 
 float4 PS_Main(in float4 pos : SV_Position) : SV_Target
 {
-    float2 uv  = pos.xy / TextureDimensions;
+    float2 uv  = pos.xy / UB.TextureDimensions;
     float2 ndc = 2.0f * uv - 1.0f;
 
-    float4 world = mul(ViewProjectionInverse, float4(ndc, 1.0f, 1.0f));
+    float4 world = mul(UB.ViewProjectionInverse, float4(ndc, 1.0f, 1.0f));
     world /= world.w;   // perspective divide
 
     uv = SampleSphericalMap(normalize(world.xyz));
 
-    float3 color = InEnvironmentMap.Sample(Sampler, uv).xyz;
+    float3 color = InEnvironmentMap.Sample(InSampler, uv).xyz;
 
     return float4(color, 1.0f);
 }

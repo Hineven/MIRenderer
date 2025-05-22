@@ -1,5 +1,11 @@
 #include "headers/CommonSamplers.hlsl"
 
+struct DrawToOutputUB {
+    float2 InTextureDimensions;
+    float2 Padding;
+};
+ConstantBuffer<DrawToOutputUB> UB;
+
 Texture2D<float4> InTexture;
 
 float4 VS_Main (uint VertexIndex : SV_VERTEXID) : SV_POSITION {
@@ -12,6 +18,7 @@ float4 VS_Main (uint VertexIndex : SV_VERTEXID) : SV_POSITION {
 }
 
 float4 PS_Main (float4 Position : SV_POSITION) : SV_TARGET {
-    return InTexture.SampleLevel(LinearWrapSampler, Position.xy, 0);
+    float2 UV = Position.xy / UB.InTextureDimensions;
+    return InTexture.SampleLevel(LinearWrapSampler, UV, 0);
 }
 

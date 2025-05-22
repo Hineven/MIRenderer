@@ -150,8 +150,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         }
         if(!physical_device_) {
             mi_assert(false, "No discrete GPU found. "
-                             "If you actually have a discrete GPU, make sure it is properly installed and have upgraded"
-                             "its driver to the latest version.");
+                             "If you actually have a discrete GPU, make sure it is properly installed and with "
+                             "a driver upgraded to the latest version.");
         }
         MI_LOG(MIInfraLogType::kInfo, "Selected physical device: {}", physical_device_.getProperties().deviceName.operator char *());
     }

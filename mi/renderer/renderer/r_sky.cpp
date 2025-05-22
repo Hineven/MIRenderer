@@ -28,7 +28,9 @@ void Renderer::Render_Sky(RendererView *view, RenderGraphBuilder &builder) {
     auto shader = lib.GetShader<SkyShader>();
     auto params = builder.Allocate<SkyShader::SkyShaderParameters>();
     {
-        params->Output = view->imported.output_.Raw();
+        params->Output = view->G_albedo_.Raw();
+        params->Output.load_op = RHILoadOpType::kDontCare;
+        params->Output.store_op = RHIStoreOpType::kStore;
         params->View = view->view_common_params_;
         params->SkyTexture = view->imported.sky_texture.Raw();
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;

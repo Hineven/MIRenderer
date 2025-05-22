@@ -173,18 +173,18 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     Renderer::Get().Init(pool.Raw());
 
     auto world = std::make_unique<RendererScene>();
-    TRef<Texture> sky_tex;
+    TRef<Texture> sky_cube;
 
     // Upload sky texture
     {
-        sky_tex = TextureLoader::LoadFromFile("SkyTexture", GetInfra().GetResourceDirectory() / "assets/3d_viewer/tief_etz_4k.png");
+        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().GetResourceDirectory() / "assets/3d_viewer/tief_etz_4k.png");
     }
 
     // Get ready for device rendering
-    sky_tex->CreateOnDevice();
-    sky_tex->ConvertToBindless();
+    sky_cube->CreateOnDevice();
+    sky_cube->ConvertToBindless();
 
-    world->SetSkyTexture(sky_tex.Raw());
+    world->SetSkyCube(sky_cube.Raw());
 
     // View
     auto view = std::make_unique<RendererView>();
@@ -246,7 +246,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     world.reset();
 
-    sky_tex.SafeRelease();
+    sky_cube.SafeRelease();
 
     Renderer::DestroySingleton();
 
@@ -273,8 +273,8 @@ MI_NAMESPACE_END
 
 int main () {
     mi::MainLoopStartConfig cfg;
-    cfg.window_width = 800;
-    cfg.window_height = 600;
+    cfg.window_width = 1440;
+    cfg.window_height = 900;
 
     auto infra = std::make_unique<mi::MyInfra>(true);
     mi::Start(std::move(infra), cfg);

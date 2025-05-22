@@ -10,6 +10,7 @@
 #include "rdg/rdg_resource.h"
 #include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_scene.h"
+#include "renderer/mi_texture.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_desc.h"
@@ -256,6 +257,10 @@ void RendererView::InitFrame () {
                     world_->d_renderable_headers_.Raw(),
                     RHIGPUAccessFlagBits::kRW
                 );
+                imported.sky_texture = RDGTexture::Import(
+                    world_->GetSkyTexture()->GetDeviceTexture(),
+                    RDGTextureUsageType::kShaderReadWrite
+                );
             }
         }
     }
@@ -269,20 +274,33 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     view_common_params_ = builder.Allocate<ViewCommonShaderParameters>();
     auto & camera = view_common_params_->Camera;
 
-    camera.Direction = glm::normalize(camera_.direction);
     camera.Position = camera_.position;
-    glm::vec3 camera_right = camera_.GetRight();
-    glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_.direction));
-    camera.Up = camera_up;
+    {
+        glm::vec3 camera_right = camera_.GetRight();
+        glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_.direction));
+        auto aspect = (double)film_width_ / film_height_;
+        auto tan_fov_y = tan(camera_.fov_Y / 2.0);
+        // auto two_tan_fov_y = float(tan_fov_y * 2.0);
+
+        glm::vec3 axis_forward = glm::normalize(camera_.direction);
+        // Camera forward is -z axis
+        glm::vec3 axis_right = glm::normalize(glm::cross(axis_forward, camera_.up));
+        glm::vec3 axis_up = glm::normalize(glm::cross(axis_right, axis_forward));
+        // Thus, normalize(axis_forward + axis_right * ndc.x + axis_up * ndc.y) is the camera ray direction
+        axis_up    *= tan_fov_y;
+        axis_right *= tan_fov_y * aspect;
+
+        camera.Direction = glm::normalize(camera_.direction);
+        camera.Right = axis_right;
+        camera.Up = axis_up;
+    }
     camera.NearPlane = camera_.near_plane;
     camera.FarPlane = camera_.far_plane;
     camera.FoVY = camera_.fov_Y;
     camera.FilmDimensions = {film_width_, film_height_};
+
     float aspect_ratio = float(film_width_) / float(film_height_);
     camera.FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
 }
-
-
-
 
 MI_NAMESPACE_END

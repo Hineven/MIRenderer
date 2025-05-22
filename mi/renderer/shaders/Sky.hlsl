@@ -24,7 +24,8 @@ TextureCube<float4> SkyTexture;
 float4 PS_Main (
     float4 Position : SV_POSITION
 ) : SV_TARGET {
-    float2 NDC = UVToNDC2(Position.xy);
-    float3 Direction = NDC2ToCameraDirectionUnnormalized(View.Camera, Position.xy);
-    return float4(1, 0, 0, 1);//SkyTexture.SampleLevel(LinearWrapSampler, Direction, 0);
+    float2 UV = Position.xy / View.Camera.FilmDimensions;
+    float2 NDC = UVToNDC2(UV);
+    float3 Direction = NDC2ToCameraDirectionUnnormalized(View.Camera, NDC);
+    return SkyTexture.SampleLevel(LinearWrapSampler, Direction, 0);
 }

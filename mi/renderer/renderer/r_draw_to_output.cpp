@@ -10,10 +10,16 @@
 MI_NAMESPACE_BEGIN
 
 class DrawToOutputShader : public RDGShader {
+public:
+    struct DrawToOutputUB {
+        glm::vec2 InTextureDimensions;
+        glm::vec2 Padding;
+    };
     BEGIN_SHADER_PARAMETERS(Parameters)
+        SHADER_UNIFORM_BUFFER(DrawToOutputUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, InTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
-        SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Output)
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, Output)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Parameters)
     DECLARE_SHADER()
@@ -26,6 +32,9 @@ void Renderer::Render_DrawToOutput(RendererView * view, RenderGraphBuilder & bui
     auto shader = lib.GetShader<DrawToOutputShader>();
     auto params = builder.Allocate<DrawToOutputShader::ShaderParameters>();
     {
+        params->UB = builder.Allocate<DrawToOutputShader::DrawToOutputUB>();
+        auto dims = texture->GetDesc().dimensions;
+        params->UB->InTextureDimensions = glm::vec2(dims.width, dims.height);
         params->Output = view->imported.output_.Raw();
         params->InTexture = texture;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;

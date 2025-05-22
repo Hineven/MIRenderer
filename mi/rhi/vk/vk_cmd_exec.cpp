@@ -757,26 +757,28 @@ void VulkanCommandExecutor::FlushBindPointState(
     vk::PipelineBindPoint vk_point {};
     vk::PipelineLayout vk_pipeline_layout {};
     vk::Pipeline vk_pipeline {};
-    vk::DescriptorSetLayout set_layout {};
-    // Rebind pipeline
+    vk::DescriptorSetLayout vk_set_layout {};
+
+    if (point_t == RHIBindPointType::kGraphics) {
+        auto g_pipeline = (VulkanGraphicsPipeline*)point.bound_pipeline;
+        vk_pipeline_layout = g_pipeline->GetPipelineLayout();
+        vk_set_layout = g_pipeline->GetPrivateDescriptorSetLayout();
+        vk_pipeline = g_pipeline->GetPipeline();
+        vk_point = vk::PipelineBindPoint::eGraphics;
+    } else if (point_t == RHIBindPointType::kCompute) {
+        auto c_pipeline = (VulkanComputePipeline*)point.bound_pipeline;
+        vk_pipeline_layout = c_pipeline->GetPipelineLayout();
+        vk_set_layout = c_pipeline->GetPrivateDescriptorSetLayout();
+        vk_pipeline = c_pipeline->GetPipeline();
+        vk_point = vk::PipelineBindPoint::eCompute;
+    } else {
+        vk_point = vk::PipelineBindPoint::eRayTracingKHR;
+        assert(false);
+    }
+
+    // Rebind pipeline if dirty
     if (point.bound_pipeline_dirty) {
         point.bound_descriptor_dirty = true;
-        if (point_t == RHIBindPointType::kGraphics) {
-            auto g_pipeline = (VulkanGraphicsPipeline*)point.bound_pipeline;
-            set_layout = g_pipeline->GetPrivateDescriptorSetLayout();
-            vk_pipeline = g_pipeline->GetPipeline();
-            vk_pipeline_layout = g_pipeline->GetPipelineLayout();
-            vk_point = vk::PipelineBindPoint::eGraphics;
-        } else if (point_t == RHIBindPointType::kCompute) {
-            auto c_pipeline = (VulkanComputePipeline*)point.bound_pipeline;
-            set_layout = c_pipeline->GetPrivateDescriptorSetLayout();
-            vk_pipeline = c_pipeline->GetPipeline();
-            vk_pipeline_layout = c_pipeline->GetPipelineLayout();
-            vk_point = vk::PipelineBindPoint::eCompute;
-        } else {
-            assert(false);
-            vk_point = vk::PipelineBindPoint::eRayTracingKHR;
-        }
         state.cmd.bindPipeline(vk_point, vk_pipeline);
         // Bind the bindless descriptor set upon pipeline binding (at binding 1)
         if (point.bound_pipeline->HasBindlessResources()) {
@@ -786,13 +788,13 @@ void VulkanCommandExecutor::FlushBindPointState(
         }
     }
 
-    // Allocate descriptor set
-    if(point.bound_descriptor_dirty && set_layout) {
+    // Allocate descriptor set for new pipeline or modified descriptors
+    if(point.bound_descriptor_dirty && vk_set_layout) {
         auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
                 vk::DescriptorSetAllocateInfo()
                         .setDescriptorPool(state.descriptor_pool)
                         .setDescriptorSetCount(1)
-                        .setSetLayouts(set_layout)
+                        .setSetLayouts(vk_set_layout)
         );
         mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
         point.bound_private_descriptor_set = descriptor_set[0];
@@ -922,6 +924,9 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
+#ifndef NDEBUG
+    state.last_inserted_debug_marker = cmd->marker_name_;
+#endif
 }
 
 void
@@ -974,6 +979,8 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
         for(auto [i, point] : std::views::enumerate(points)) {
             point.bound_private_descriptor_set = nullptr;
             point.bound_pipeline = nullptr;
+            point.bound_descriptor_dirty = true;
+            point.bound_pipeline_dirty = true;
             point.parameter_table = {};
             point.bind_point_type = (RHIBindPointType) i;
         }
@@ -1043,6 +1050,8 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
     for(auto & point : points) {
         point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = nullptr;
+        point.bound_descriptor_dirty = true;
+        point.bound_pipeline_dirty = true;
         point.parameter_table = {};
     }
     // Reset the temporary allocator

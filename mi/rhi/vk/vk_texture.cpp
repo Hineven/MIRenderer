@@ -33,15 +33,23 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
         mi_assert(desc.array_layers == 6, "Cube texture must have 6 array layers!");
     }
 
+    vk::ImageCreateFlags flags;
+    if (desc.type == RHITextureType::kCube) {
+        flags = vk::ImageCreateFlagBits::eCubeCompatible;
+    } else if (desc.type == RHITextureType::k2DArray) {
+        flags = vk::ImageCreateFlagBits::e2DArrayCompatible;
+    } else if (desc.type == RHITextureType::k3D || desc.type == RHITextureType::k3DArray) {
+        assert(false);
+    }
     // Create image
     vk::ImageCreateInfo image_create_info{
-            vk::ImageCreateFlags{},
+            flags,
             GetVulkanImageType(desc.type),
             GetVulkanPixelFormat(desc.format),
-            vk::Extent3D{static_cast<uint32_t>(desc.dimensions.width), static_cast<uint32_t>(desc.dimensions.height),
-                         static_cast<uint32_t>(desc.dimensions.depth)},
-            static_cast<uint32_t>(desc.mip_levels),
-            static_cast<uint32_t>(desc.array_layers),
+            vk::Extent3D{desc.dimensions.width, desc.dimensions.height,
+                         desc.dimensions.depth},
+            desc.mip_levels,
+            desc.array_layers,
             vk::SampleCountFlagBits::e1,
             vk::ImageTiling::eOptimal,
             GetVulkanImageUsage(desc.usage),
@@ -103,15 +111,15 @@ void VulkanTexture::CreateDefaultImageViews () {
                 device.createImageView(vk::ImageViewCreateInfo{
                 vk::ImageViewCreateFlags{},
                 vk_image_,
-                GetVulkanImageViewType(GetType()),
+                vk::ImageViewType::e2D,
                 GetVulkanPixelFormat(GetFormat()),
                 vk::ComponentMapping{}, // identity swizzle by default
                 vk::ImageSubresourceRange{
                         GetVulkanImageAspectFlags(GetUsage()),
-                        (uint32_t) i,
-                        1,
                         0,
-                        GetArrayLayers()
+                        1,
+                        (uint32_t) i,
+                        1
                     }
                 }
             ));

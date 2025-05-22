@@ -15,6 +15,7 @@
 #include "core/pixel_format.h"
 #include "core/refcounted.h"
 #include "rhi/rhi_fwd.h"
+#include "rhi/rhi_types.h"
 #include "renderer/mi_renderer_fwd.h"
 
 MI_NAMESPACE_BEGIN
@@ -46,6 +47,10 @@ public:
         name_ = name;
     }
 
+    FORCEINLINE void AddDeviceUsage (RHITextureUsageFlags usage) {
+        extra_device_usage_ = extra_device_usage_ | usage;
+    }
+
     void CreateOnDevice ();
     // You need to manually synchronize on the command queue after calling this for the device texture
     // to become available.
@@ -55,17 +60,23 @@ public:
     void ReleaseBindlessSlot ();
 
     FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height, uint32_t array_layers = 1) {
-        return TRef(new Texture(format, width, height, array_layers));
+        return TRef(new Texture(RHITextureType::k2D, format, width, height, array_layers));
+    }
+    FORCEINLINE static TRef<Texture> Create (RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t array_layers = 1) {
+        return TRef(new Texture(type, format, width, height, array_layers));
     }
 
 protected:
-    Texture(PixelFormatType format, uint32_t width, uint32_t height, uint32_t layers);
+    Texture(RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t layers);
 
     std::string name_;
 
+    RHITextureType type_ {};
     uint32_t width_ {}, height_ {}, layers_ {};
     PixelFormatType format_ {PixelFormatType::kUnknown};
     std::vector<uint8_t> data_;
+
+    RHITextureUsageFlags extra_device_usage_ {};
 
     bool dirty_ {};
 
