@@ -36,6 +36,11 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     endif()
 endif()
 
+# For code to access project root (in debug builds)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions("-DMI_PROJECT_ROOT=\"${CMAKE_SOURCE_DIR}\"")
+endif()
+
 # VMA-HPP from vcpkg
 find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
 find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)

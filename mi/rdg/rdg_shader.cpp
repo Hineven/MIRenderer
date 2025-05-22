@@ -764,6 +764,7 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
     for (auto & shader : shaders_to_recompile) {
         shader->Recompile(shader->ini_);
     }
+    MI_INFO("RDGShaderLibrary: {} shaders recompiled.", shaders_to_recompile.size());
 }
 
 

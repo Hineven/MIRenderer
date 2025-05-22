@@ -276,6 +276,11 @@ int main () {
     cfg.window_width = 1440;
     cfg.window_height = 900;
 
+#ifndef NDEBUG
+    // 仅用于Debug
+    auto infra = std::make_unique<mi::MyInfra>(false, MI_PROJECT_ROOT);
+#else
     auto infra = std::make_unique<mi::MyInfra>(true);
+#endif
     mi::Start(std::move(infra), cfg);
 }
