@@ -138,15 +138,6 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
     auto backbuffer = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
 
-    // std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    ImGui::Begin("Rendering");
-    ImGui::Text("Hello");
-    if (ImGui::Button("Reload Shaders")) {
-        RHI::Get().WaitForIdle();
-        RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
-    }
-    ImGui::End();
-
     RenderGraphBuilder builder;
 
     // Clear backbuffer

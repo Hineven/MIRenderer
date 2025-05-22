@@ -206,6 +206,71 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 ImGui_ImplGlfw_NewFrame();
                 ImGui::NewFrame();
             }
+            // Camera control
+            {
+                // 相机移动参数
+                const float move_speed = 0.05f;
+                const float mouse_sensitivity = 0.002f;
+                glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
+                // 获取键盘输入控制移动
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                    view->camera_.position += view->camera_.direction * move_speed;
+                if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+                    view->camera_.position -= view->camera_.direction * move_speed;
+                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+                    view->camera_.position -= camera_right * move_speed;
+                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+                    view->camera_.position += camera_right * move_speed;
+                if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+                    view->camera_.position += view->camera_.up * move_speed;
+                if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+                    view->camera_.position -= view->camera_.up * move_speed;
+
+                // 鼠标控制视角旋转
+                static double last_mouse_x = 0.0, last_mouse_y = 0.0;
+                static bool first_mouse = true;
+
+                double mouse_x, mouse_y;
+                glfwGetCursorPos(window, &mouse_x, &mouse_y);
+
+                if (first_mouse) {
+                    last_mouse_x = mouse_x;
+                    last_mouse_y = mouse_y;
+                    first_mouse = false;
+                }
+
+                if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+                    // 计算鼠标偏移量
+                    float delta_x = static_cast<float>(mouse_x - last_mouse_x) * mouse_sensitivity;
+                    float delta_y = static_cast<float>(mouse_y - last_mouse_y) * mouse_sensitivity;
+
+                    // 更新相机方向
+                    // 水平旋转（偏航角）
+                    glm::mat4 rotate_y = glm::rotate(glm::mat4(1.0f), -delta_x, glm::vec3(0, 1, 0));
+                    view->camera_.direction = glm::vec3(rotate_y * glm::vec4(view->camera_.direction, 0.0f));
+
+                    // 垂直旋转（俯仰角）- 围绕右向量旋转
+                    glm::mat4 rotate_x = glm::rotate(glm::mat4(1.0f), -delta_y, camera_right);
+                    view->camera_.direction = glm::vec3(rotate_x * glm::vec4(view->camera_.direction, 0.0f));
+                    // view->camera_.Up = glm::vec3(rotate_x * glm::vec4(view->camera_.Up, 0.0f));
+
+                    // 确保所有向量都是单位向量
+                    view->camera_.direction = glm::normalize(view->camera_.direction);
+                }
+
+                last_mouse_x = mouse_x;
+                last_mouse_y = mouse_y;
+            }
+            // UI
+            {
+                ImGui::Begin("Rendering");
+                ImGui::Text("Hello");
+                if (ImGui::Button("Reload Shaders")) {
+                    RHI::Get().WaitForIdle();
+                    RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
+                }
+                ImGui::End();
+            }
             // Render
             {
                 RenderFrame(view.get(), pool.Raw());
