@@ -21,7 +21,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(SkyShaderParameters)
     DECLARE_SHADER()
 };
-IMPLEMENT_RDG_GRAPHICS_SHADER(SkyShader, "shaders/renderer/Sky.hlsl", "VS_Main", "PS_Main");
+IMPLEMENT_RDG_GRAPHICS_SHADER(SkyShader, "mi/renderer/shaders/Sky.hlsl", "VS_Main", "PS_Main");
 
 void Renderer::Render_Sky(RendererView *view, RenderGraphBuilder &builder) {
     auto &lib = RDGShaderLibrary::Get();

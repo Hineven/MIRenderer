@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 23)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Helper utilities
-include(cmake/AddShaders.cmake)
+include(cmake/AddResources.cmake)
 
 message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")

@@ -23,6 +23,7 @@ constexpr uint32_t kMaxFIOThreads = 4;
 // Simply uses OS FS as resource system
 class MyBlobResource : public BlobResourceInterface {
 public:
+
     const void *ReadBlobZeroCopy(size_t pos, size_t size) override;
     std::future<const void *> Async_ReadBlobZeroCopy(size_t pos, size_t size) override;
 

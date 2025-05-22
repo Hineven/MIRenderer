@@ -18,7 +18,7 @@ set(SOURCES
 
 add_library(renderer ${SOURCES})
 
-add_shaders(renderer)
+add_resources(renderer shaders "shaders/*.hlsl")
 
 target_include_directories(renderer PUBLIC include)
 target_link_libraries(renderer PUBLIC infra core rhi rdg)

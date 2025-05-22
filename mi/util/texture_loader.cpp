@@ -39,7 +39,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(Params)
 };
 
-IMPLEMENT_RDG_GRAPHICS_SHADER(MappingShader, "shaders/util/texture_loader/MappingShader.hlsl", "VS_Main", "PS_Main")
+IMPLEMENT_RDG_GRAPHICS_SHADER(MappingShader, "mi/util/shaders/texture_loader/MappingShader.hlsl", "VS_Main", "PS_Main")
 
 TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &name, const std::string &mime_type, const void *ptr, size_t size) {
     auto env_texture = LoadFromBuffer(name + "_env", mime_type, ptr, size);

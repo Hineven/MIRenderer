@@ -35,7 +35,7 @@ class TriangleShader : public RDGShader {
     }
 };
 
-IMPLEMENT_RDG_GRAPHICS_SHADER(TriangleShader, "triangle.hlsl", "TriangleVS", "TrianglePS");
+IMPLEMENT_RDG_GRAPHICS_SHADER(TriangleShader, "applications/hello/shaders/triangle.hlsl", "TriangleVS", "TrianglePS");
 
 void RenderTriangle (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {
 
@@ -93,7 +93,7 @@ class ImGuiRenderShader : public RDGShader {
     RDG_SHADER_USE_PARAMETERS(Parameters)
 };
 
-IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "imgui.hlsl", "ImGuiVS", "ImGuiPS");
+IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "applocations/hello/shaders/imgui.hlsl", "ImGuiVS", "ImGuiPS");
 
 
 void RenderImGui (TRef<RDGResourcePool> pool, RenderGraphBuilder & builder) {

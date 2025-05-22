@@ -13,7 +13,7 @@ else()
     message(FATAL_ERROR "imgui not found")
 endif()
 
-add_shaders(3d_viewer)
-add_assets(3d_viewer)
+add_resources(3d_viewer shaders "shaders/*.hlsl")
+add_resources(3d_viewer assets  "assets/*")
 
 target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw)

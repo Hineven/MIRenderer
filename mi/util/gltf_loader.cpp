@@ -34,6 +34,7 @@ bool GLTFLoader::LoadGLTF(
     assert(!path.empty());
     cgltf_options options = {};
     cgltf_data *gltf_model = nullptr;
+    // TODO : use Infra resource ops to open file
     cgltf_result result = cgltf_parse_file(&options, path.string().c_str(), &gltf_model);
     if(result != cgltf_result_success) {
         MI_WARN("GLTFLoader: Failed to parse GLTF file {}.", path.string());
