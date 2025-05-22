@@ -27,5 +27,5 @@ float4 PS_Main (
     float2 UV = Position.xy / View.Camera.FilmDimensions;
     float2 NDC = UVToNDC2(UV);
     float3 Direction = NDC2ToCameraDirectionUnnormalized(View.Camera, NDC);
-    return SkyTexture.SampleLevel(LinearWrapSampler, Direction, 0);
+    return SkyTexture.SampleLevel(LinearWrapSampler, -Direction, 0);
 }
