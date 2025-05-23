@@ -23,6 +23,8 @@ class RHIBuffer;
 class RenderGraphBuilder;
 class RHITexture;
 
+struct Render_StaticMeshesData;
+
 // Integrated with scene resource management... Maybe I'll separate it later
 class Renderer : public NonCopyable, public NonMovable {
 public:
@@ -39,14 +41,40 @@ public:
 
 protected:
 
-    // Draw a texture to back buffer directly.
-    void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture);
+    struct DrawInvocationSortingHeader {
+        uint32_t material_index;
+        uint32_t world_renderable_handle;
+        RHIBufferSpan vertex_buffer;
+        RHIBufferSpan index_buffer;
+        RHIDrawIndexedIndirectCommand indirect_command;
+    };
 
-    // Render the sky to the view output (back buffer)
-    void Render_Sky (RendererView * view, RenderGraphBuilder & builder) ;
+    void Render_DrawSky (RendererView * view, RenderGraphBuilder & builder) ;
+    void Render_PrepareStaticMeshes (
+        RendererView * view, RenderGraphBuilder & builder
+    );
+    void Render_DrawStaticMeshes (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture) ;
+
+
+    struct FrameContext {
+        std::vector<TRef<Renderable>> visible_renderables;
+        struct StaticMeshes {
+            std::vector<DrawInvocationSortingHeader> draw_invocation_sorting_headers;
+            std::vector<RHIDrawIndexedIndirectCommand> draw_indirect_commands;
+            // Indirect draw commands (device side)
+            TRef<RDGBuffer> d_static_draw_commands;
+            // Used to index the renderable & material for draw commands, used for viewport rasterization
+            TRef<RDGBuffer> d_static_mesh_draw_command_renderable_material_indices;
+        } static_meshes;
+
+        void Init ();
+        void Deinit ();
+    } ctx;
 
     TRef<RDGResourcePool> pool_;
-
 };
 
 

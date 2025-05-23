@@ -3,6 +3,8 @@
 
 #include "SharedCommon.hlsl"
 
+MI_SHARED_HLSL_BEGIN
+
 struct CameraParameters {
     float3 Position;
     float  NearPlane;
@@ -39,5 +41,7 @@ typedef uint CameraType;
 
 
 SHADERONLY(ConstantBuffer<ViewCommonShaderParameters> View;)
+
+MI_SHARED_HLSL_END
 
 #endif

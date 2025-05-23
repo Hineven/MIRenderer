@@ -186,7 +186,7 @@ void RendererViewPersistentData::Update(RendererView *view) {
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
     prev_G_albedo = view->G_albedo_;
-    prev_G_roughness = view->G_roughness_;
+    prev_G_roughness = view->G_metallic_roughness_;
 
     prev_world_ = view->world_;
 
@@ -231,7 +231,7 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
-    G_roughness_ = RDGTexture::CreateTexture2D(film_width_, film_height_, PixelFormatType::kR8_UNORM,
+    G_metallic_roughness_ = RDGTexture::CreateTexture2D(film_width_, film_height_, PixelFormatType::kR8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 

@@ -100,6 +100,10 @@ public:
     // or compile options are changed.
     RDGShaderHash ComputeShaderHash () const ;
 
+    const RDGShaderClassRegistry * GetShaderClassRegistry () const {
+        return class_registry_;
+    }
+
 protected:
 
     // Shader initialization info (default, given in constructor)

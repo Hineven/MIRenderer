@@ -14,6 +14,7 @@ set(SOURCES
         # Implementing the renderer
         renderer/r_draw_to_output.cpp
         renderer/r_sky.cpp
+        renderer/r_static_meshes.cpp
 )
 
 add_library(renderer ${SOURCES})

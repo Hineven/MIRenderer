@@ -36,6 +36,12 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                     return std::nullopt;
                 }
                 auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
+                if (!buffer_ptr.buffer) {
+                    MI_WARN("Shader {}: Can not find pre-allocated uniform buffer {} from the render graph. Draw cancelled.",
+                        shader->GetShaderClassRegistry()->name,
+                        base_info->uniform_buffers_[i].info->name);
+                    return std::nullopt;
+                }
                 auto span = buffer_ptr.buffer->GetRHI();
                 span.offset += buffer_ptr.offset;
                 ret.uniforms[i] = {span, slot};
