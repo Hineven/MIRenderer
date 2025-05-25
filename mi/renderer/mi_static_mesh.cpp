@@ -27,11 +27,15 @@ TRef<StaticMesh> StaticMesh::Create(RendererScene *world, Transform transform) {
     mesh->SetTransform(transform);
     mesh->index_ = index;
     mesh->world_ = world;
+
+    world->renderables_[index] = mesh.Raw();
+
     return std::move(mesh);
 }
 
 
 void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
+    assert(mat->GetDeviceMaterial());
     geometries_.push_back(geom);
     materials_.push_back(mat);
     dirty_ = true;
@@ -40,7 +44,7 @@ void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
 void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
     if (!dirty_) return;
     if (geometries_.empty()) return ;
-    uint32_t current_count = (uint32_t)(geometry_material_indices_ ? 0 : geometry_material_indices_->GetRHI().size);
+    uint32_t current_count = (uint32_t)(geometry_material_indices_ ? geometry_material_indices_->GetRHI().size : 0);
     if (geometries_.size() > current_count) {
         current_count = std::max(current_count * 2u, 4u);
         geometry_material_indices_.SafeRelease();

@@ -72,10 +72,10 @@ void Material::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *allocator) {
     if (dirty_) {
         if (!device_material_) {
             device_material_ = new DeviceMaterial(allocator);
-            device_material_->index_ = allocator->AllocateMaterialSlot();
-            assert(device_material_->index_ != UINT32_MAX);
-            device_material_->material_header_ = PackMaterialHeader();
         }
+        device_material_->index_ = allocator->AllocateMaterialSlot();
+        assert(device_material_->index_ != UINT32_MAX);
+        device_material_->material_header_ = PackMaterialHeader();
         dirty_ = false;
     }
 }

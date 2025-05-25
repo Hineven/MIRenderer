@@ -74,7 +74,7 @@ public:
     FORCEINLINE uint32_t GetBindlessIndex (bool validation = true) {
         uint32_t index = device_bindless_slot ? device_bindless_slot->GetSlot() : UINT32_MAX;
         if (validation) {
-            assert(index != UINT32_MAX);
+            assert(index != UINT32_MAX && "Texture is not bindless.");
         }
         return index;
     }

@@ -30,7 +30,6 @@ protected:
     uint32_t first_index_ {};
     uint32_t vertex_count_ {};
     uint32_t index_count_ {};
-    bool dirty_ {false};
 public:
 
     friend class Geometry;
@@ -61,7 +60,7 @@ protected:
     TRef<DeviceGeometry> device_geometry_;
 
     // If the geometry is modified on host and requires a rebuild on device.
-    bool dirty_ {false};
+    bool dirty_ {true};
 public:
     friend class StaticMesh;
     static TRef<Geometry> CreateFromVertices (
@@ -93,7 +92,10 @@ public:
     void SetName (std::string_view name);
 
     // Update on device. Manually submission and synchronization required for graphics queue.
+    void UpdateOnDevice_Async (CommonGroupedDeviceResourceAllocator * alloc);
+
     void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * alloc);
+
     void ReleaseHost ();
     void ReleaseDevice ();
 

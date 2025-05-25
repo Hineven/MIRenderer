@@ -37,12 +37,12 @@ bool GLTFLoader::LoadGLTF(
     // TODO : use Infra resource ops to open file
     cgltf_result result = cgltf_parse_file(&options, path.string().c_str(), &gltf_model);
     if(result != cgltf_result_success) {
-        MI_WARN("GLTFLoader: Failed to parse GLTF file {}.", path.string());
+        MI_WARN("GLTFLoader: Failed to parse GLTF file {}. Error: {}", path.string(), (uint32_t)result);
         return false;
     }
     result = cgltf_load_buffers(&options, gltf_model, path.string().c_str());
     if(result != cgltf_result_success) {
-        MI_WARN("GLTFLoader: Failed to load buffers for GLTF file {}.", path.string());
+        MI_WARN("GLTFLoader: Failed to load buffers for GLTF file {}. Error: {}", path.string(), (uint32_t)result);
         return false;
     }
 #ifndef NDEBUG
@@ -129,18 +129,22 @@ bool GLTFLoader::LoadGLTF(
         {
             auto folder = path.parent_path();
             auto image_file = folder / gltf_image->uri;
-            image_ref = TextureLoader::LoadFromFile(gltf_image->name, image_file);
+            image_ref = TextureLoader::LoadFromFile(gltf_image->name ? gltf_image->name : "", image_file);
         }
         else if(gltf_image->buffer_view != nullptr)
         {
             const std::string mime(gltf_image->mime_type);
             if(mime != "image/jpeg" && mime != "image/png")
             {
-                MI_WARN("Unsupported embedded texture type '{}' for {}", mime.c_str(), gltf_image->name);
+                MI_WARN("Unsupported embedded texture type '{}' for {}", mime.c_str(), gltf_image->name ? gltf_image->name : "");
                 continue;
             }
             void *ptr = (uint8_t*)gltf_image->buffer_view->buffer->data + gltf_image->buffer_view->offset;
-            image_ref = TextureLoader::LoadFromBuffer(gltf_image->name, gltf_image->mime_type, ptr, gltf_image->buffer_view->size);
+            image_ref = TextureLoader::LoadFromBuffer(gltf_image->name ? gltf_image->name : "", gltf_image->mime_type, ptr, gltf_image->buffer_view->size);
+        }
+        if (image_ref) {
+            image_ref->UpdateOnDevice();
+            image_ref->ConvertToBindless();
         }
         images[gltf_image] = image_ref;
     }
@@ -349,9 +353,6 @@ bool GLTFLoader::LoadGLTF(
                 {
                     continue;
                 }
-                bool skinned_mesh = joints_buffer != nullptr;
-                TRef<Geometry> mesh_ref = Geometry::Create();
-                Geometry &mesh = *mesh_ref;
                 std::vector<DefaultStaticMeshVertex> mesh_vertices;
                 std::vector<uint32_t> mesh_indices;
                 auto unpack_vertex = [&](size_t const gltf_index) {
@@ -487,7 +488,10 @@ bool GLTFLoader::LoadGLTF(
                     mesh_name += ".";
                     mesh_name += std::to_string(j);
                 }
+                TRef<Geometry> mesh_ref = Geometry::CreateFromVertices(mesh_vertices, mesh_indices);
                 mesh_ref->SetName(mesh_name);
+                mesh_ref->UpdateOnDevice(&allocator);
+                printf("Geom: %p, dev: %p\n", mesh_ref.Raw(), mesh_ref->GetDeviceGeometry());
                 current_mesh                   = mesh_ref;
                 meshInstances[position_buffer] = mesh_ref;
             }
@@ -605,6 +609,7 @@ bool GLTFLoader::LoadGLTF(
                     TRef<StaticMesh> instance_ref = StaticMesh::Create(&world, Transform::Identity());
                     instances.push_back(instance_ref);
                     for (auto e : (it->second)) {
+                        e.second->UpdateOnDevice(&allocator);
                         instance_ref->AddMeshPrimitive(e.first, e.second);
                     }
                     instance_ref->SetTransform(Transform::FromMatrix(transform));

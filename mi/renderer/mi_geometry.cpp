@@ -48,7 +48,7 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     return geom;
 }
 
-void Geometry::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *alloc) {
+void Geometry::UpdateOnDevice_Async(CommonGroupedDeviceResourceAllocator *alloc) {
     mi_assert(!device_geometry_, "Device geometry already created.");
     mi_check(GetVertexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for vertex buffer.");
     mi_check(GetIndexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for index buffer.");
@@ -68,6 +68,13 @@ void Geometry::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *alloc) {
         device_geometry_->vertex_count_ = (int)vertices_.size();
         device_geometry_->index_count_ = (int)indices_.size();
         dirty_ = false;
+    }
+}
+
+void Geometry::UpdateOnDevice(CommonGroupedDeviceResourceAllocator * alloc) {
+    if (dirty_) {
+        UpdateOnDevice_Async(alloc);
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
     }
 }
 

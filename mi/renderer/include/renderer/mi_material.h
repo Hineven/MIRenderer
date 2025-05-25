@@ -111,7 +111,7 @@ protected:
 
     bool double_sided_ {false};
 
-    bool dirty_ {false};
+    bool dirty_ {true};
 
     TRef<DeviceMaterial> device_material_;
 };
