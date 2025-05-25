@@ -14,6 +14,17 @@
 #include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 
+DeviceMaterial::DeviceMaterial(CommonGroupedDeviceResourceAllocator *allocator) {
+    allocator_ = allocator;
+}
+
+DeviceMaterial::~DeviceMaterial() {
+    if (index_ != UINT32_MAX) {
+        allocator_->FreeMaterialSlot(index_);
+    }
+}
+
+
 
 Material::Material() {
 
@@ -42,5 +53,43 @@ void Material::SetEmissiveTexture(Texture * texture) {
     emissive_texture_ = texture;
     dirty_ = true;
 }
+
+MaterialHeader Material::PackMaterialHeader() const {
+    MaterialHeader header = {};
+    header.albedo_ = albedo_;
+    header.emissive_ = emissive_;
+    header.roughness_ = roughness_;
+    header.metallic_ = metallic_;
+    header.specular_tint_ = glm::vec3{1.f};
+    header.albedo_map_ = albedo_texture_ ? albedo_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.normal_map_ = normal_texture_ ? normal_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.emissive_map_ = emissive_texture_ ? emissive_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.metallic_roughness_map_ = metallic_roughness_texture_ ? metallic_roughness_texture_->GetBindlessIndex() : UINT32_MAX;
+    return header;
+}
+
+void Material::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *allocator) {
+    if (dirty_) {
+        if (!device_material_) {
+            device_material_ = new DeviceMaterial(allocator);
+            device_material_->index_ = allocator->AllocateMaterialSlot();
+            assert(device_material_->index_ != UINT32_MAX);
+            device_material_->material_header_ = PackMaterialHeader();
+        }
+        dirty_ = false;
+    }
+}
+
+TRef<Material> Material::Create(std::string name, glm::vec4 albedo, float roughness, glm::vec3 emissive) {
+    auto material = new Material();
+    material->SetAlbedo(albedo);
+    material->SetRoughness(roughness);
+    material->SetEmissive(emissive);
+    material->name_ = name;
+    material->dirty_ = true;
+    return {material};
+}
+
+
 
 MI_NAMESPACE_END

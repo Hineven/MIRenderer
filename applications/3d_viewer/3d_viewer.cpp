@@ -27,9 +27,12 @@
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
 #include "renderer/mi_renderer.h"
+#include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
+#include "renderer/mi_static_mesh.h"
 #include "util/texture_loader.h"
+#include "util/gltf_loader.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -171,6 +174,16 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     // Renderer
     Renderer::Get().Init(pool.Raw());
+    // Resource allocator
+
+    auto resource_allocator = std::make_unique<CommonGroupedDeviceResourceAllocator>(
+        SimpleDeviceBufferHeap::Create(
+            RHIBufferUsageFlagBits::kVertex, 256
+        ).Raw(),
+        SimpleDeviceBufferHeap::Create(
+            RHIBufferUsageFlagBits::kIndex, 256
+        ).Raw()
+    );
 
     auto world = std::make_unique<RendererScene>();
     TRef<Texture> sky_cube;
@@ -180,8 +193,24 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
     }
 
+    std::vector<TRef<StaticMesh>> meshes;
+    // Load default model
+    {
+        std::vector<TRef<Geometry>> geometries;
+        std::vector<TRef<Material>> materials;
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *world,
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        }
+    }
+
     // Get ready for device rendering
-    sky_cube->CreateOnDevice();
+    sky_cube->UpdateOnDevice();
     sky_cube->ConvertToBindless();
 
     world->SetSkyCube(sky_cube.Raw());
@@ -309,7 +338,11 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     view.reset();
 
+    meshes.clear();
+
     world.reset();
+
+    resource_allocator.reset();
 
     sky_cube.SafeRelease();
 

@@ -29,8 +29,11 @@ public:
         DeviceBufferHeapInterface * vertex_buffer_heap,
         DeviceBufferHeapInterface * index_buffer_heap
     );
+    ~CommonGroupedDeviceResourceAllocator();
+
     friend class Geometry;
     friend class DeviceGeometry;
+    friend class Material;
     friend class DeviceMaterial;
     friend class BindlessDeviceTexture;
 
@@ -80,6 +83,10 @@ protected:
             return idx;
         }
         return UINT32_MAX;
+    }
+    FORCEINLINE void FreeMaterialSlot (uint32_t idx) {
+        assert(idx < kMaxNumMaterials);
+        free_material_slots_.push(idx);
     }
 };
 

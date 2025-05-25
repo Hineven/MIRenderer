@@ -25,6 +25,10 @@ CommonGroupedDeviceResourceAllocator::CommonGroupedDeviceResourceAllocator(Devic
     material_header_buffer_ = RHI::Get().CreateBuffer({sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kUniform});
 }
 
+CommonGroupedDeviceResourceAllocator::~CommonGroupedDeviceResourceAllocator() {
+
+}
+
 
 
 MI_NAMESPACE_END

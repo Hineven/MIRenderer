@@ -38,14 +38,16 @@ void Texture::InitializeFromBinary(std::span<uint8_t> data)
     dirty_ = true;
 }
 
-void Texture::CreateOnDevice()
+void Texture::UpdateOnDevice()
 {
-    auto & queue = RHI::Get().GetGraphicsCommandQueue();
-    CreateOnDevice_Async(queue);
-    RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
+    if (dirty_ || !device_texture_) {
+        auto & queue = RHI::Get().GetGraphicsCommandQueue();
+        UpdateOnDevice_Async(queue);
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
+    }
 }
 
-void Texture::CreateOnDevice_Async(RHICommandQueueGraphics& queue)
+void Texture::UpdateOnDevice_Async(RHICommandQueueGraphics& queue)
 {
     if (!dirty_ && device_texture_) {
         return;
@@ -81,7 +83,7 @@ void Texture::ConvertToBindless(bool update_immediately)
     
     // 确保纹理已在设备上创建
     if (!device_texture_) {
-        CreateOnDevice();
+        UpdateOnDevice();
     }
     
     // 创建无绑定槽纹理

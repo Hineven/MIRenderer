@@ -335,6 +335,27 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
     }
 }
 
+class TestShader3 : public RDGShader {
+public:
+    DECLARE_SHADER()
+    struct TestShader3UB {
+        uint32_t Index;
+        glm::uvec3 Padding;
+    };
+    BEGIN_SHADER_PARAMETERS(Parameters)
+        SHADER_UNIFORM_BUFFER(TestShader3UB, UB)
+        SHADER_RESOURCE_PARAMETER(Texture2DArray, TextureArray)
+        SHADER_VERTEX_BUFFER(12 + 8, vertex_buffer)
+        SHADER_VERTEX_ATTRIBUTE(0, 0, RHIVertexAttributeFormatType::k3xFp32, pos)
+        SHADER_VERTEX_ATTRIBUTE(0, 12, RHIVertexAttributeFormatType::k2xFp32, uv)
+        SHADER_RENDER_TARGET(PixelFormatType::kR32G32B32A32_FLOAT, OutColor)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Parameters)
+    static std::vector<std::string> GetDefaultMacros() {
+        return {};
+    }
+};
+
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -43,7 +43,7 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(MappingShader, "mi/util/shaders/texture_loader/Map
 
 TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &name, const std::string &mime_type, const void *ptr, size_t size) {
     auto env_texture = LoadFromBuffer(name + "_env", mime_type, ptr, size);
-    env_texture->CreateOnDevice();
+    env_texture->UpdateOnDevice();
 
     glm::dvec3 const forward_vectors[] = {glm::dvec3(-1.0, 0.0, 0.0), glm::dvec3(1.0, 0.0, 0.0),
     glm::dvec3(0.0, 1.0, 0.0), glm::dvec3(0.0, -1.0, 0.0), glm::dvec3(0.0, 0.0, -1.0),
@@ -57,7 +57,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
     constexpr auto face_resolution = 1024;
     auto env_cubemap = Texture::Create(RHITextureType::kCube, PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution, 6);
     env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
-    env_cubemap->CreateOnDevice();
+    env_cubemap->UpdateOnDevice();
     // Make sure pool is destroyed after the render graph
     auto pool = RDGResourcePool::Create();
     {
@@ -66,7 +66,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         RenderGraphBuilder builder;
         auto rdg_env_map = RDGTexture::Import(env_texture->GetDeviceTexture());
         auto rdg_env_cubemap = RDGTexture::Import(env_cubemap->GetDeviceTexture());
-        env_cubemap->CreateOnDevice();
+        env_cubemap->UpdateOnDevice();
         template_params.InEnvironmentMap  = rdg_env_map.Raw();
         template_params.OutEnvironmentMap = rdg_env_cubemap.Raw();
         template_params.OutEnvironmentMap.load_op = RHILoadOpType::kClear;

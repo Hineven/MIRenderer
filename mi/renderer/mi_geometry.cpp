@@ -24,6 +24,16 @@ DeviceGeometry::~DeviceGeometry() {
         allocator_->FreeIndexBuffer(index_buffer_);
 }
 
+Geometry::Geometry() {
+
+}
+
+Geometry::~Geometry() {
+    ReleaseHost();
+    ReleaseDevice();
+}
+
+
 TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> vertices, std::span<uint32_t> indices) {
     auto geom = TRef<Geometry>(new Geometry());
     if (indices.data() == nullptr) {
@@ -38,30 +48,27 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     return geom;
 }
 
-void Geometry::CreateOnDevice(CommonGroupedDeviceResourceAllocator *alloc) {
+void Geometry::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *alloc) {
     mi_assert(!device_geometry_, "Device geometry already created.");
-    auto device = TRef(new DeviceGeometry(alloc));
     mi_check(GetVertexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for vertex buffer.");
     mi_check(GetIndexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for index buffer.");
-    auto vbuf = alloc->AllocateVertexBuffer((uint32_t)GetVertexBufferSize());
-    auto ibuf = alloc->AllocateIndexBuffer((uint32_t)GetIndexBufferSize());
-    device->vertex_buffer_ = vbuf;
-    device->index_buffer_ = ibuf;
-    device->first_index_ = 0;
-    device->vertex_count_ = (int)vertices_.size();
-    device->index_count_ = (int)indices_.size();
-    device_geometry_ = std::move(device);
-    dirty_ = true;
-}
-
-void Geometry::SyncAndUpdateOnDevice () {
-    mi_assert(device_geometry_, "Device geometry not created.");
-    Helpers::Upload_Async(device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
-    Helpers::Upload_Async(device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
-    RHI::Get().GetGraphicsCommandQueue().EnqueueTranslateAndSubmit();
-    RHI::Get().WaitForIdle();
-    device_geometry_->first_index_ = 0;
-    dirty_ = false;
+    if (dirty_) {
+        if (!device_geometry_) {
+            device_geometry_ = TRef(new DeviceGeometry(alloc));
+        }
+        if (device_geometry_->vertex_buffer_.size != GetVertexBufferSize()) {
+            device_geometry_->vertex_buffer_ = alloc->AllocateVertexBuffer((uint32_t)GetVertexBufferSize());
+        }
+        if (device_geometry_->index_buffer_.size != GetIndexBufferSize()) {
+            device_geometry_->index_buffer_ = alloc->AllocateIndexBuffer((uint32_t)GetIndexBufferSize());
+        }
+        Helpers::Upload_Async(device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
+        Helpers::Upload_Async(device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
+        device_geometry_->first_index_ = 0;
+        device_geometry_->vertex_count_ = (int)vertices_.size();
+        device_geometry_->index_count_ = (int)indices_.size();
+        dirty_ = false;
+    }
 }
 
 void Geometry::ReleaseHost() {

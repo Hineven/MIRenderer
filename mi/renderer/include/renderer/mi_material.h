@@ -21,7 +21,7 @@ MI_NAMESPACE_BEGIN
 
 class DeviceMaterial : public NonMovable, public RefCounted<> {
 public:
-    friend class Renderer;
+    friend class Material;
     FORCEINLINE uint32_t GetIndex () const {return index_;}
 protected:
     DeviceMaterial (CommonGroupedDeviceResourceAllocator * allocator);
@@ -71,7 +71,9 @@ public:
         return double_sided_;
     }
 
-    void CreateOnDevice (CommonGroupedDeviceResourceAllocator * allocator) ;
+    MaterialHeader PackMaterialHeader () const ;
+
+    void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * allocator) ;
 
     DeviceMaterial * GetDeviceMaterial () {return device_material_.Raw();}
 

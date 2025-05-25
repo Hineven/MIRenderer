@@ -12,17 +12,36 @@
 #include <vector>
 
 #include "core/base.h"
+#include "core/infra.h"
 #include "core/pixel_format.h"
 #include "core/refcounted.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_types.h"
 #include "renderer/mi_renderer_fwd.h"
+#include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
-
-class Texture : public RefCounted<>, public NonMovable {
+    class Texture : public RefCounted<>, public NonMovable {
 public:
     void InitializeFromBinary (std::span<uint8_t> data);
+    void GetBinary (std::vector<uint8_t> & data) const {
+        data = data_;
+    }
+    void GetBinaryForLayer (uint32_t layer, std::vector<uint8_t> & data) const {
+        size_t needed_size = width_ * height_ * GetPixelFormatBytesPerPixel(format_);
+        data.resize(needed_size);
+        data.shrink_to_fit();
+        std::memcpy(data.data(), data_.data() + layer * needed_size, needed_size);
+    }
+    void SetBinaryForLayer (uint32_t layer, std::span<uint8_t> data) {
+        size_t needed_size = width_ * height_ * GetPixelFormatBytesPerPixel(format_);
+        if (data.size() != needed_size) {
+            MI_WARN("Texture::SetBinaryForLayer(): Incorrect data size. Expected {}, got {}.", needed_size, data.size());
+            return;
+        }
+        std::memcpy(data_.data() + layer * needed_size, data.data(), needed_size);
+        dirty_ = true;
+    }
 
     FORCEINLINE uint32_t GetWidth () const { return width_; }
     FORCEINLINE uint32_t GetHeight () const { return height_; }
@@ -51,10 +70,19 @@ public:
         extra_device_usage_ = extra_device_usage_ | usage;
     }
 
-    void CreateOnDevice ();
+    // shortcut.
+    FORCEINLINE uint32_t GetBindlessIndex (bool validation = true) {
+        uint32_t index = device_bindless_slot ? device_bindless_slot->GetSlot() : UINT32_MAX;
+        if (validation) {
+            assert(index != UINT32_MAX);
+        }
+        return index;
+    }
+
+    void UpdateOnDevice ();
     // You need to manually synchronize on the command queue after calling this for the device texture
     // to become available.
-    void CreateOnDevice_Async (RHICommandQueueGraphics & queue);
+    void UpdateOnDevice_Async (RHICommandQueueGraphics & queue);
 
     void ConvertToBindless (bool update_slot_immediately = true);
     void ReleaseBindlessSlot ();

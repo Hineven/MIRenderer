@@ -7,19 +7,19 @@
 #ifndef MI_STATIC_MESH_H
 #define MI_STATIC_MESH_H
 
-#include <memory>
 #include <span>
 #include <vector>
 
-#include "mi_scene.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_geometry.h"
+#include "renderer/mi_material.h"
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
 class StaticMesh : public Renderable {
 public:
+
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
     void Update (RendererView * view, RenderGraphBuilder & builder);
     FORCEINLINE bool IsDirty () const {return dirty_;}

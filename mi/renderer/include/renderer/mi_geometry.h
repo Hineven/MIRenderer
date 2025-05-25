@@ -92,9 +92,8 @@ public:
 
     void SetName (std::string_view name);
 
-    void CreateOnDevice (CommonGroupedDeviceResourceAllocator * alloc);
-    // Update on device. This function synchronizes with RHI thread directly.
-    void SyncAndUpdateOnDevice ();
+    // Update on device. Manually submission and synchronization required for graphics queue.
+    void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * alloc);
     void ReleaseHost ();
     void ReleaseDevice ();
 
