@@ -33,14 +33,14 @@ SimpleDeviceBufferHeap::BufferBlock::~BufferBlock() {
 
 SimpleDeviceBufferHeap::SimpleDeviceBufferHeap (RHIBufferUsageFlags usage, uint32_t alignment, uint32_t buffer_block_size) :
 DeviceBufferHeapInterface(usage, alignment) {
-    buffer_block_size_ = buffer_block_size;
-    assert(buffer_block_size_ % alignment == 0);
+    default_buffer_block_size_ = buffer_block_size;
+    assert(default_buffer_block_size_ % alignment == 0);
 }
 
 SimpleDeviceBufferHeap::~SimpleDeviceBufferHeap() {
     for (auto& buffer_block : buffer_blocks_) {
         if (buffer_block.buffer) {
-            mi_assert_nothrow(buffer_block.free_segments_.size() == 1 && buffer_block.free_segments_.begin()->size == buffer_block_size_,
+            mi_assert_nothrow(buffer_block.free_segments_.size() == 1 && buffer_block.free_segments_.begin()->size == default_buffer_block_size_,
                 "GPUHeapBuffers not fully freed.");
         }
     }
@@ -53,6 +53,16 @@ int SimpleDeviceBufferHeap::FindBufferBlockIndex(RHIBuffer *buffer) const {
         }
     }
     return -1;
+}
+
+void SimpleDeviceBufferHeap::AddNewBlock(size_t block_size, size_t first_allocation_size) {
+    auto new_buffer = RHI::Get().CreateBuffer(block_size, usage_);
+    BufferBlock new_block;
+    new_block.buffer = new_buffer;
+    if (block_size != first_allocation_size) {
+        new_block.free_segments_.emplace(first_allocation_size, block_size - first_allocation_size);
+    }
+    buffer_blocks_.push_back(new_block);
 }
 
 
@@ -84,19 +94,10 @@ RHIBufferSpan SimpleDeviceBufferHeap::Allocate(uint32_t size) {
         return RHIBufferSpan{};
     }
 
-    uint32_t new_buffer_size = std::max(buffer_block_size_, aligned_size);
+    uint32_t new_block_size = std::max(default_buffer_block_size_, aligned_size);
+    AddNewBlock(new_block_size, aligned_size);
 
-    auto new_buffer = RHI::Get().CreateBuffer(new_buffer_size, usage_);
-    BufferBlock new_block;
-    new_block.buffer = new_buffer;
-
-    if (new_buffer_size > aligned_size) {
-        new_block.free_segments_.emplace(aligned_size, new_buffer_size - aligned_size);
-    }
-
-    buffer_blocks_.push_back(new_block);
-
-    return RHIBufferSpan{new_buffer.Raw(), 0, aligned_size};
+    return RHIBufferSpan{buffer_blocks_.back().buffer.Raw(), 0, aligned_size};
 }
 
 void SimpleDeviceBufferHeap::Free (RHIBufferSpan allocation) {
@@ -144,6 +145,9 @@ void SimpleDeviceBufferHeap::SetNumBufferBlockLimit(uint32_t num) {
     max_num_buffer_blocks_ = num;
 }
 
+void SimpleDeviceBufferHeap::PreAllocateBlocks(uint32_t num_blocks) {
+    for (int i = 0; i < num_blocks; i++) AddNewBlock(default_buffer_block_size_, 0);
+}
 
 
 MI_NAMESPACE_END

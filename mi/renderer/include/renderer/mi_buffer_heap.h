@@ -21,7 +21,7 @@
 MI_NAMESPACE_BEGIN
 
 // Interface for resource level buffer allocator
-class DeviceBufferHeapInterface : public NonMovable, public RefCounted<> {
+class DeviceBufferHeapInterface : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
     friend class DeviceBufferHeapBuffer;
     DeviceBufferHeapInterface (RHIBufferUsageFlags usage, uint32_t alignment) : usage_(usage), allocation_alignment(alignment) {}
@@ -37,28 +37,32 @@ public:
     virtual uint32_t GetNumHeapBufferBlocks () const = 0;
     virtual void SetNumBufferBlockLimit (uint32_t num) = 0;
     virtual ~DeviceBufferHeapInterface () = default;
+
+    // Allocate blocks even if they are unused.
+    virtual void PreAllocateBlocks (uint32_t num_blocks) = 0;
 protected:
 
     RHIBufferUsageFlags usage_;
     uint32_t allocation_alignment {};
 };
 
-class DeviceBufferHeapBuffer : public NonMovable, public RefCounted<> {
+class DeviceBufferHeapBuffer : public NonMovable, public NonCopyable, public RefCounted<> {
 protected:
     FORCEINLINE DeviceBufferHeapBuffer () = default;
     RHIBufferSpan buffer {};
-    DeviceBufferHeapInterface * heap {};
+    TRef<DeviceBufferHeapInterface> heap {};
     friend class DeviceBufferHeapInterface;
 public:
     ~DeviceBufferHeapBuffer();
-    FORCEINLINE DeviceBufferHeapInterface * GetHeap () const {return heap; }
+    FORCEINLINE DeviceBufferHeapInterface * GetHeap () const {return heap.Raw(); }
     FORCEINLINE RHIBufferSpan GetRHI () const {return buffer; }
 };
 
 // A very simple buffer heap for grouping up one kind of memory in buffer resource level
 class SimpleDeviceBufferHeap : public DeviceBufferHeapInterface {
 protected:
-    uint32_t buffer_block_size_ {};
+    // Default size of a buffer block in bytes
+    uint32_t default_buffer_block_size_ {};
     struct BufferBlock {
         BufferBlock();
         ~BufferBlock();
@@ -75,6 +79,9 @@ protected:
     };
     std::vector<BufferBlock> buffer_blocks_;
     int FindBufferBlockIndex (RHIBuffer * buffer) const ;
+
+    void AddNewBlock (size_t block_size, size_t first_allocation_size);
+
 public:
     SimpleDeviceBufferHeap (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024);
     ~SimpleDeviceBufferHeap();
@@ -92,6 +99,8 @@ public:
     FORCEINLINE static TRef<SimpleDeviceBufferHeap> Create (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024) {
         return {new SimpleDeviceBufferHeap(usage, allocation_alignment, buffer_block_size)};
     }
+
+    void PreAllocateBlocks(uint32_t num_blocks) override;
 
 protected:
 

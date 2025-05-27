@@ -172,11 +172,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     auto pool = RDGResourcePool::Create();
 
-    // Renderer
-    Renderer::Get().Init(pool.Raw());
     // Resource allocator
-
-    auto resource_allocator = std::make_unique<CommonGroupedDeviceResourceAllocator>(
+    auto resource_allocator = new CommonGroupedDeviceResourceAllocator(
         SimpleDeviceBufferHeap::Create(
             RHIBufferUsageFlagBits::kVertex, 256
         ).Raw(),
@@ -184,6 +181,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             RHIBufferUsageFlagBits::kIndex, 256
         ).Raw()
     );
+
+    // Renderer
+    Renderer::Get().Init(resource_allocator, pool.Raw());
 
     auto world = std::make_unique<RendererScene>();
     TRef<Texture> sky_cube;
@@ -341,8 +341,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     meshes.clear();
 
     world.reset();
-
-    resource_allocator.reset();
 
     sky_cube.SafeRelease();
 

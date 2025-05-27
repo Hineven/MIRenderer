@@ -35,11 +35,14 @@ public:
     static Renderer * GetPointer ();
     static void DestroySingleton () ;
 
-    void Init (RDGResourcePool * pool) ;
+    void Init (CommonGroupedDeviceResourceAllocator * allocator, RDGResourcePool * pool) ;
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
 protected:
+
+    Renderer();
+    ~Renderer();
 
     struct DrawInvocationSortingHeader {
         uint32_t material_index;
@@ -74,7 +77,13 @@ protected:
         void Deinit ();
     } ctx;
 
+    TRef<CommonGroupedDeviceResourceAllocator> device_allocator_;
     TRef<RDGResourcePool> pool_;
+
+    struct {
+        TRef<RDGBuffer> d_material_headers;
+    } imported_;
+
 };
 
 

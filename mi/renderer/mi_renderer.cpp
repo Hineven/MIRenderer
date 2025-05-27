@@ -19,15 +19,25 @@
 #include <rhi/rhi_buffer.h>
 
 #include "rdg/rdg_cmd.h"
+#include "renderer/mi_resource_allocator.h"
 #include "renderer/r_ctx.h"
 
 MI_NAMESPACE_BEGIN
-    static Renderer * g_renderer = nullptr;
+
+Renderer::Renderer() {
+
+}
+
+Renderer::~Renderer() {
+
+}
+
+
+static Renderer * g_renderer = nullptr;
 
 Renderer *Renderer::GetPointer() {
     return g_renderer;
 }
-
 
 Renderer &Renderer::Get() {
     if (!g_renderer) g_renderer = new Renderer();
@@ -41,12 +51,14 @@ void Renderer::DestroySingleton() {
     }
 }
 
-void Renderer::Init(RDGResourcePool * pool) {
+void Renderer::Init(CommonGroupedDeviceResourceAllocator * allocator, RDGResourcePool * pool) {
+    device_allocator_ = allocator;
     pool_ = pool;
+    imported_.d_material_headers = RDGResource::device_allocator_->material_header_buffer_.Raw();
 }
 
 void Renderer::FrameContext::Init() {
-    // ...
+
 }
 
 
@@ -118,6 +130,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Reset frame context
     ctx.Deinit();
+
+    // Update persistent data using current frame for next frame use
+    view->UpdatePersistentData();
 
 }
 

@@ -27,6 +27,9 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaders)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndMaterialIndex)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaders)
+
+        SHADER_RESOURCE_PARAMETER(SamplerState, Sampler)
 
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Albedo)
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Normal)
@@ -104,7 +107,7 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
             view->upload_context_.Add(data.d_static_draw_commands.Raw(), data.draw_indirect_commands.data(), size);
             // Upload the renderable & material indices
             view->upload_context_.Add(data.d_static_mesh_draw_command_renderable_material_indices.Raw(),
-                draw_indirect_renderable_and_material_indices, data.draw_indirect_commands.size() * sizeof(uint32_t));
+                draw_indirect_renderable_and_material_indices, data.draw_indirect_commands.size() * sizeof(uint32_t) * 2);
         }
     }
 }
@@ -116,31 +119,48 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
     params->RenderableHeaders = view->imported.renderable_headers.Raw();
     params->RenderableTransforms = view->imported.renderable_transforms.Raw();
     params->RenderableIndexAndMaterialIndex = ctx.static_meshes.d_static_mesh_draw_command_renderable_material_indices.Raw();
+    params->MaterialHeaders = view->imported.material_headers.Raw();
+    params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+
     params->Albedo = view->G_albedo_.Raw();
     params->Normal = view->G_normal_.Raw();
     params->MetallicRoughness = view->G_metallic_roughness_.Raw();
     params->Depth = view->G_depth_.Raw();
 
+    auto shader = RDGShaderLibrary::Get().GetShader<DrawStaticMeshesShader>();
+
     // Rasterize static meshes with batched drawing
-    auto raster_pass = builder.AddPass<DrawStaticMeshesShader>({}, params,
-        [data = ctx.static_meshes, rdg_draw_cmd = ctx.static_meshes.d_static_draw_commands.Raw()]
+    auto raster_pass = builder.AddPass<DrawStaticMeshesShader>(RDGPassFlagBits::kNeverCull, params,
+        [params, shader, data = ctx.static_meshes, rdg_draw_cmd = ctx.static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-            RHIBufferSpan last_vertex_buffer {};
-            RHIBufferSpan last_index_buffer {};
-            RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
-            for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
-                // auto & cmd = indirect_commands[i];
-                auto & hdr = data.draw_invocation_sorting_headers[i];
-                if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
-                    if (i > 0) {
-                        // Batch submit previous commands sharing the same vertex & index buffer settings.
-                        auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                        queue.DrawIndexedIndirect(hdr.index_buffer, cmd_span,  i - first_cmd);
-                        cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
+            if (RDGCommandHelper::BindGraphicsShader<DrawStaticMeshesShader>(
+                queue, pass, shader, params
+            )) {
+                RHIBufferSpan last_vertex_buffer {};
+                RHIBufferSpan last_index_buffer {};
+                RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
+                for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
+                    // auto & cmd = indirect_commands[i];
+                    auto & hdr = data.draw_invocation_sorting_headers[i];
+                    if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
+                        if (i > 0) {
+                            // Batch submit previous commands sharing the same vertex & index buffer settings.
+                            auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                            queue.DrawIndexedIndirect(hdr.index_buffer, cmd_span,  i - first_cmd);
+                            cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
+                        }
+                        last_vertex_buffer = hdr.vertex_buffer;
+                        last_index_buffer = hdr.index_buffer;
+                        queue.BindVertexBuffer(0, hdr.vertex_buffer);
                     }
-                    last_vertex_buffer = hdr.vertex_buffer;
-                    last_index_buffer = hdr.index_buffer;
-                    queue.BindVertexBuffer(0, hdr.vertex_buffer);
+                }
+                // Submit last batch if not empty
+                if (!data.draw_indirect_commands.empty()) {
+                    int i = (int)data.draw_indirect_commands.size() - 1;
+                    // Batch submit previous commands sharing the same vertex & index buffer settings.
+                    auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                    queue.DrawIndexedIndirect(data.draw_invocation_sorting_headers[i].index_buffer,
+                        cmd_span,  i - first_cmd);
                 }
             }
         }

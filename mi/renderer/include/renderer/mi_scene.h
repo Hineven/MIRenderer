@@ -77,7 +77,7 @@ protected:
     TRef<RHIBuffer> d_renderable_headers_;
 
     // Record the index of the material of each geometry from all static mesh renderables.
-    // This buffer heap is limited to 1 buffer block.
+    // This buffer heap is limited to 1 buffer block. And it is always present.
     TRef<DeviceBufferHeapInterface> d_static_mesh_renderable_materials_;
 };
 

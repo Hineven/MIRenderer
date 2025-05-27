@@ -23,6 +23,7 @@ RendererScene::RendererScene () {
     d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     d_static_mesh_renderable_materials_ = DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 1, sizeof(uint32_t) * RendererScene::kMaxNumStaticMeshGeometryMaterialPairs);
     d_static_mesh_renderable_materials_->SetNumBufferBlockLimit(1);
+    d_static_mesh_renderable_materials_->PreAllocateBlocks(1);
 }
 
 RendererScene::~RendererScene() {

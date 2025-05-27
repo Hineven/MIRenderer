@@ -78,6 +78,8 @@ void BatchedUploadContext::AddExtraBarrier(RDGBuffer *buffer) {
     // Filter naive duplicates
     if (!extra_barriers_.empty() && buffer == extra_barriers_.back()) return;
     extra_barriers_.push_back(buffer);
+    // Validation
+    mi_assert(buffer != nullptr, "Buffer is null.");
 }
 
 
@@ -193,7 +195,7 @@ void RendererViewPersistentData::Update(RendererView *view) {
     frame_index_ ++;
 }
 
-void RendererView::ImportedRDGResources::InvalidateBuffersFromWorld() {
+void RendererView::ImportedRDGResources::InvalidateFromWorld() {
     static_mesh_geometry_material_indices = {};
     renderable_transforms = {};
     renderable_headers = {};
@@ -209,12 +211,7 @@ void RendererView::InitFrame () {
         auto persistent = new RendererViewPersistentData();
         persistent_data_.reset(persistent);
         persistent->Init();
-    } else {
-        // Roll states for the next frame
-        persistent_data_->Update(this);
     }
-
-    bool world_changed = world_ != persistent_data_->prev_world_;
 
     static_mesh_geometry_material_indices_start_index = {};
 
@@ -235,20 +232,20 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
+    bool world_changed = world_ != persistent_data_->prev_world_;
     {
         // Import output backbuffer as RDG resource. We dont care about its previous usage.
         imported.output_ = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
         if (world_changed) {
-            imported.InvalidateBuffersFromWorld();
+            imported.InvalidateFromWorld();
             if (world_) {
-                if (world_->d_static_mesh_renderable_materials_->GetNumHeapBufferBlocks()) {
+                // It should always be present even if nothing is allocated.
+                // if (world_->d_static_mesh_renderable_materials_->GetNumHeapBufferBlocks()) {
                     imported.static_mesh_geometry_material_indices = RDGBuffer::Import(
                         world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0),
                         RHIGPUAccessFlagBits::kRW
                     );
-                } else {
-                    imported.static_mesh_geometry_material_indices = nullptr;
-                }
+                // }
                 imported.renderable_transforms = RDGBuffer::Import(
                     world_->d_renderable_transforms_.Raw(),
                     RHIGPUAccessFlagBits::kRW
@@ -270,6 +267,13 @@ void RendererView::InitFrame () {
 
     temp_allocator_.Reset();
 }
+
+
+void RendererView::UpdatePersistentData () {
+    // Roll states for the next frame
+    persistent_data_->Update(this);
+}
+
 void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     view_common_params_ = builder.Allocate<ViewCommonShaderParameters>();
     auto & camera = view_common_params_->Camera;

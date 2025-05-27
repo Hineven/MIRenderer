@@ -360,7 +360,7 @@ bool GLTFLoader::LoadGLTF(
                     if(sparse_position_buffer.empty())
                     {
                         cgltf_accessor_read_float(
-                            position_buffer, gltf_index, (float *)&vertex.position, sizeof(glm::vec3));
+                            position_buffer, gltf_index, (float *)&vertex.Position, sizeof(glm::vec3));
                     }
                     else
                     {
@@ -368,14 +368,14 @@ bool GLTFLoader::LoadGLTF(
                         element += position_buffer->offset + position_buffer->stride * gltf_index;
                         cgltf_element_read_float(element, position_buffer->type,
                                 position_buffer->component_type, position_buffer->normalized,
-                                (float *)&vertex.position, sizeof(glm::vec3));
+                                (float *)&vertex.Position, sizeof(glm::vec3));
                     }
                     if(normal_buffer != nullptr)
                     {
                         if(sparse_normal_buffer.empty())
                         {
                             cgltf_accessor_read_float(
-                                normal_buffer, gltf_index, (float *)&vertex.normal, sizeof(glm::vec3));
+                                normal_buffer, gltf_index, (float *)&vertex.Normal, sizeof(glm::vec3));
                         }
                         else
                         {
@@ -383,7 +383,7 @@ bool GLTFLoader::LoadGLTF(
                             element += normal_buffer->offset + normal_buffer->stride * gltf_index;
                             cgltf_element_read_float(element, normal_buffer->type,
                                     normal_buffer->component_type, normal_buffer->normalized,
-                                    (float *)&vertex.normal, sizeof(glm::vec3));
+                                    (float *)&vertex.Normal, sizeof(glm::vec3));
                         }
                     }
                     if(uv_buffer != nullptr)
@@ -391,14 +391,14 @@ bool GLTFLoader::LoadGLTF(
                         if(sparse_uv_buffer.empty())
                         {
                             cgltf_accessor_read_float(
-                                uv_buffer, gltf_index, (float *)&vertex.uv, sizeof(glm::vec2));
+                                uv_buffer, gltf_index, (float *)&vertex.UV, sizeof(glm::vec2));
                         }
                         else
                         {
                             uint8_t *element = (uint8_t *)sparse_uv_buffer.data();
                             element += uv_buffer->offset + uv_buffer->stride * gltf_index;
                             cgltf_element_read_float(element, uv_buffer->type, uv_buffer->component_type,
-                                    uv_buffer->normalized, (float *)&vertex.uv, sizeof(glm::vec2));
+                                    uv_buffer->normalized, (float *)&vertex.UV, sizeof(glm::vec2));
                         }
                     }
                     // if(skinned_mesh)

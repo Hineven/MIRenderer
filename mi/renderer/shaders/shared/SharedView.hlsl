@@ -21,6 +21,8 @@ struct CameraParameters {
 
     uint2   FilmDimensions;
     float2  FilmAspectRatioAndInvAspectRatio;
+
+    float4x4 WorldToNDC;
 };
 
 struct ViewCommonShaderParameters {

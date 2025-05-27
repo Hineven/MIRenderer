@@ -56,15 +56,15 @@ void Material::SetEmissiveTexture(Texture * texture) {
 
 MaterialHeader Material::PackMaterialHeader() const {
     MaterialHeader header = {};
-    header.albedo_ = albedo_;
-    header.emissive_ = emissive_;
-    header.roughness_ = roughness_;
-    header.metallic_ = metallic_;
-    header.specular_tint_ = glm::vec3{1.f};
-    header.albedo_map_ = albedo_texture_ ? albedo_texture_->GetBindlessIndex() : UINT32_MAX;
-    header.normal_map_ = normal_texture_ ? normal_texture_->GetBindlessIndex() : UINT32_MAX;
-    header.emissive_map_ = emissive_texture_ ? emissive_texture_->GetBindlessIndex() : UINT32_MAX;
-    header.metallic_roughness_map_ = metallic_roughness_texture_ ? metallic_roughness_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.Albedo = albedo_;
+    header.Emissive = emissive_;
+    header.Roughness = roughness_;
+    header.Metallic = metallic_;
+    header.SpecularTint = glm::vec3{1.f};
+    header.AlbedoMap = albedo_texture_ ? albedo_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.NormalMap = normal_texture_ ? normal_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.EmissiveMap = emissive_texture_ ? emissive_texture_->GetBindlessIndex() : UINT32_MAX;
+    header.MetallicRoughnessMap = metallic_roughness_texture_ ? metallic_roughness_texture_->GetBindlessIndex() : UINT32_MAX;
     return header;
 }
 

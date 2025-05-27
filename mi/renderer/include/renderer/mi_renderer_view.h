@@ -98,6 +98,9 @@ struct RendererView {
     // Called once per frame to initialize the view.
     void InitFrame ();
 
+    // Called once per frame at the frame end to roll data to the persistent store
+    void UpdatePersistentData ();
+
     // Update view common shader parameters
     void SetViewCommonShaderParameters (RenderGraphBuilder & builder);
 
@@ -120,7 +123,7 @@ struct RendererView {
         // Imported back buffer for current frame
         TRef<RDGTexture> output_;
 
-        void InvalidateBuffersFromWorld ();
+        void InvalidateFromWorld ();
         // Imported buffer from the renderer scene
         TRef<RDGBuffer> static_mesh_geometry_material_indices;
         TRef<RDGBuffer> renderable_transforms;

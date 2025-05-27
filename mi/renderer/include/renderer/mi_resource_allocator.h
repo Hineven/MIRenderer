@@ -23,7 +23,7 @@ MI_NAMESPACE_BEGIN
 // Allocate grouped GPU resources used for common rendering (geometry buffers, materials, etc)
 // Resources that does not need to be grouped (textures, etc) should be allocated separately.
 // One allocator per renderer, at the highest level hierarchy.
-class CommonGroupedDeviceResourceAllocator : public NonCopyable, public NonMovable {
+class CommonGroupedDeviceResourceAllocator : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
     CommonGroupedDeviceResourceAllocator (
         DeviceBufferHeapInterface * vertex_buffer_heap,
