@@ -159,7 +159,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
             params->UB->TestFloat4 = {0.3f, 0.4f, 0.5f, 0.6f};
             auto storage_buffer_ref = RDGBuffer::Create(RHIBufferUsageFlagBits::kStorage, 1024);
             params->TestBuffer = storage_buffer_ref.Raw();
-            auto test_texture = RDGTexture::CreateTexture2D(
+            auto test_texture = builder.CreateTexture2D(
                 128, 128, PixelFormatType::kR32G32B32A32_FLOAT,
                 RHITextureUsageFlagBits::kTransferSrc | RHITextureUsageFlagBits::kUnorderedAccess
             );
@@ -265,7 +265,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
             params->UB = builder.Allocate<TestShader1::TestShader1UB>();
             params->UB->TestFloat4 = {0.3f, 0.4f, 0.5f, 0.6f};
             params->UB->TestFloat2 = {0.7f, 1.f};
-            auto test_texture = RDGTexture::CreateTexture2D(
+            auto test_texture = builder.CreateTexture2D(
                 128, 128, PixelFormatType::kR32G32B32A32_FLOAT,
                 RHITextureUsageFlagBits::kTransferSrc | RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kRenderTarget
             );
