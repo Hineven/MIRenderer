@@ -39,7 +39,7 @@ class ImGuiRenderShader : public RDGShader {
 IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "applications/3d_viewer/shaders/imgui.hlsl", "ImGuiVS", "ImGuiPS");
 
 
-void RenderImGui (RDGResourcePool * pool, RenderGraphBuilder & builder, RDGTexture * backbuffer) {
+void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     ImGui::Render();
     ImDrawData * draw_data = ImGui::GetDrawData();
     if (draw_data->TotalVtxCount == 0 || draw_data->TotalIdxCount == 0) {
@@ -136,23 +136,24 @@ void RenderImGui (RDGResourcePool * pool, RenderGraphBuilder & builder, RDGTextu
 void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
 
-    auto backbuffer = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
 
     RenderGraphBuilder builder;
+
+    auto backbuffer = builder.Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
 
     // Clear backbuffer
     {
         builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {},
-            [bf = backbuffer.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            [bf = backbuffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.ClearTexture(bf->GetRHI(), {0, 0, 0, 1});
-        })->AddTexture(backbuffer.Raw(), RDGTextureUsageType::kTransferDst);
+        })->AddTexture(backbuffer, RDGTextureUsageType::kTransferDst);
     }
 
     auto & renderer = Renderer::Get();
     renderer.Render(view_state, builder);
 
 
-    RenderImGui(pool, builder, backbuffer.Raw());
+    RenderImGui(builder, backbuffer);
     auto graph = builder.Compile();
     graph->Execute(pool);
 }

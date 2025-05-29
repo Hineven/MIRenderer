@@ -28,7 +28,10 @@ struct VulkanPipelineBindingRemappings {
         }
     }
     FORCEINLINE RemappedDestination GetDestination (RHIPipelineResourceType type, uint32_t src_slot) const {
-        return lists[(uint32_t)type][src_slot];
+        if (lists[(uint32_t)type].size() > src_slot) {
+            return lists[(uint32_t)type][src_slot];
+        }
+        return {UINT32_MAX, UINT32_MAX}; // Invalid destination
     }
 
     std::vector<RemappedDestination> lists[(uint32_t)RHIPipelineResourceType::kMax];

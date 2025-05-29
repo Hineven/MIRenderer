@@ -130,8 +130,11 @@ void RDGPass::Compile() {
                             name_, field.name);
                     continue;
                 }
-                // TODO support depth stencil
-                AddTexture(render_target.texture, RDGTextureUsageType::kOutputAttachment);
+                if (IsDepthStencilPixelFormat(field.cpp_extra.render_targets_info->format)) {
+                    AddTexture(render_target.texture, RDGTextureUsageType::kDepthStencilAttachment);
+                } else {
+                    AddTexture(render_target.texture, RDGTextureUsageType::kOutputAttachment);
+                }
             } else {
                 assert(false && "Unsupported parameter type.");
             }

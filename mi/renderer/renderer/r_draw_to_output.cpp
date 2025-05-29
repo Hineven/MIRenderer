@@ -35,7 +35,7 @@ void Renderer::Render_DrawToOutput(RendererView * view, RenderGraphBuilder & bui
         params->UB = builder.Allocate<DrawToOutputShader::DrawToOutputUB>();
         auto dims = texture->GetDesc().dimensions;
         params->UB->InTextureDimensions = glm::vec2(dims.width, dims.height);
-        params->Output = view->imported.output_.Raw();
+        params->Output = builder.Import(RHI::Get().GetBackBuffer());
         params->InTexture = texture;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }

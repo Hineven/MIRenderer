@@ -36,10 +36,15 @@ public:
     virtual void Update (RendererView * view, RenderGraphBuilder& builder) = 0;
 
     FORCEINLINE void SetTransform (const Transform& transform) {
-        transform_ = transform;
         dirty_ = true;
+        transform_ = transform;
     }
     FORCEINLINE const Transform& GetTransform () const {
+        return transform_;
+    }
+
+    FORCEINLINE Transform & EditTransform () {
+        dirty_ = true;
         return transform_;
     }
 

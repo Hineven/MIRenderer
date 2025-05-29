@@ -152,8 +152,10 @@ void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass,
     }
 }
 
-bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
-    const RDGShaderParamStructAndSizeInfo * info, const void * params) {
+bool RDGCommandHelper::BindGraphicsShader (
+    RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void * params,
+    bool manual_vbuffer) {
     if (!graphics_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid shader. Draw cancelled.",
             graphics_shader->class_registry_->name);
@@ -166,7 +168,6 @@ bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
         return false;
     }
     queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw());
-    queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc.value());
     if (!info->vertex_buffers_.empty()) {
         for (auto e : info->vertex_buffers_) {
             auto ptr = (RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset);
@@ -176,10 +177,12 @@ bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
                     ((RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset))->GetRHI()
                 );
             } else {
-                MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null vertex buffer for paramter '{}'. Draw cancelled.",
-                    graphics_shader->class_registry_->name, e.info->name);
-                // cancel the draw
-                return false;
+                if (!manual_vbuffer) {
+                    MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null vertex buffer for paramter '{}'. Bind cancelled.",
+                        graphics_shader->class_registry_->name, e.info->name);
+                    // cancel the draw
+                    return false;
+                }
             }
         }
     }
@@ -189,24 +192,29 @@ bool RDGCommandHelper::BindGraphicsShader (RHICommandQueueGraphics & queue, RDGP
             auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)params + e.cpp_offset);
             RHITexture * to_bound = nullptr;
             if (param.texture == nullptr) {
-                MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null render target for paramter '{}'. It will not be drawn.",
+                MI_WARN("Shader {}: Null render target for paramter '{}'. It will not be drawn.",
                     graphics_shader->class_registry_->name, e.info->name);
-            } else {
+                continue ;
+            }
+            to_bound = param.texture->GetRHI();
+            if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
                 mi_warning(param.texture->GetDesc().usage & RHITextureUsageFlagBits::kRenderTarget,
                     "Shader {}: Assigned render target texture for {} is not created with kRenderTarget usage.",
                     graphics_shader->class_registry_->name, e.info->name);
-                to_bound = param.texture->GetRHI();
-            }
-            ds.SetAttachment(
-                e.info->cpp_extra.render_targets_info->target_index, to_bound,
-                param.load_op, param.store_op, param.clear_value,
-                param.array_layer == UINT64_MAX ? 0 : param.array_layer
-            );
-            if (e.info->cpp_extra.render_targets_info->target_index == -1) {
+                ds.SetAttachment(
+                    e.info->cpp_extra.render_targets_info->target_index, to_bound,
+                    param.load_op, param.store_op, param.clear_value,
+                    param.array_layer == UINT64_MAX ? 0 : param.array_layer
+                );
+            } else {
+                mi_warning(param.texture->GetDesc().usage & RHITextureUsageFlagBits::kDepthStencil,
+                    "Shader {}: Assigned depth stencil target texture for {} is not created with kDepthStencil usage.",
+                    graphics_shader->class_registry_->name, e.info->name);
                 ds.SetDepthStencilAttachment(to_bound, param.load_op, param.store_op, param.clear_value);
             }
         }
     }
+    queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc.value());
     queue.UpdateDrawState(ds);
     return true;
 }

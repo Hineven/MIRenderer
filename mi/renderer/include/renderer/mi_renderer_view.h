@@ -119,18 +119,6 @@ struct RendererView {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_metallic_roughness_;
 
-    struct ImportedRDGResources {
-        // Imported back buffer for current frame
-        TRef<RDGTexture> output_;
-
-        void InvalidateFromWorld ();
-        // Imported buffer from the renderer scene
-        TRef<RDGBuffer> static_mesh_geometry_material_indices;
-        TRef<RDGBuffer> renderable_transforms;
-        TRef<RDGBuffer> renderable_headers;
-        TRef<RDGTexture> sky_texture;
-    } imported;
-
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
     BatchedUploadContext upload_context_;
 

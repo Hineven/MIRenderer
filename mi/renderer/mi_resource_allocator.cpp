@@ -22,7 +22,10 @@ CommonGroupedDeviceResourceAllocator::CommonGroupedDeviceResourceAllocator(Devic
     for (uint32_t i = kMaxNumMaterials; i > 0; i--) {
         free_material_slots_.push(i - 1);
     }
-    material_header_buffer_ = RHI::Get().CreateBuffer({sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kUniform});
+    material_header_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kStorage}
+    );
+    material_header_buffer_->SetName("MaterialHeaderBuffer");
 }
 
 CommonGroupedDeviceResourceAllocator::~CommonGroupedDeviceResourceAllocator() {

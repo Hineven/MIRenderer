@@ -22,24 +22,6 @@ class RDGTexture : public RDGResource {
 public:
     friend class RDGResourcePool;
     friend class RenderGraphBuilder;
-    FORCEINLINE static TRef<RDGTexture> Create (RHITextureDesc desc) {
-        return TRef<RDGTexture>(new RDGTexture(desc));
-    }
-    FORCEINLINE static TRef<RDGTexture> CreateTexture2D (
-        uint32_t width, uint32_t height, PixelFormatType format,
-        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
-        return Create(RHITextureDesc{
-            RHITextureType::k2D,
-            {width, height, 1},
-            1, 1, format, usage
-        });
-    }
-    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
-    static TRef<RDGTexture> Import (const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) ;
-    // Import a rhi texture. NOTE: the reference is not kept by RDGTexture, you should manage the lifetime of the resource.
-    FORCEINLINE static TRef<RDGTexture> Import (RHITexture * resource, RDGTextureUsageType prev_usage = RDGTextureUsageType::kNone) {
-        return Import("<unnamed>", resource, prev_usage);
-    }
     ~RDGTexture () override ;
     FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
     uint32_t GetResourceClassHash () const override;
@@ -56,6 +38,29 @@ public:
         return rhi_texture_ == texture;
     }
 
+    FORCEINLINE const std::string & GetName () const {
+        return name_;
+    }
+    FORCEINLINE void SetName (const std::string & name) {
+        name_ = name;
+    }
+
+
+    // Create a RDG texture with the given description.
+    FORCEINLINE static TRef<RDGTexture> Create (RHITextureDesc desc) {
+        return {new RDGTexture(desc)};
+    }
+
+    FORCEINLINE static TRef<RDGTexture> Create2D (
+    uint32_t width, uint32_t height, PixelFormatType format,
+    RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
+        return Create(RHITextureDesc{
+            RHITextureType::k2D,
+            {width, height, 1},
+            1, 1, format, usage
+        });
+    }
+
 protected:
     RHITextureDesc desc_ {};
     // Underlying RHI texture, can be null if not allocated.
@@ -63,6 +68,8 @@ protected:
     RHITexture * rhi_texture_ {};
     // Track the last access of the texture, used for barrier placement.
     RDGTextureUsageType usage_ {};
+
+    std::string name_ {};
 };
 
 class RDGBuffer : public RDGResource {
@@ -82,6 +89,7 @@ public:
     friend class RenderGraphBuilder;
 
     FORCEINLINE void SetName (const std::string & name) {name_ = name;}
+    FORCEINLINE std::string GetName () const { return name_;}
 
     FORCEINLINE static size_t GetBestAllocationSizeFromRequestedSize (size_t requested_size) {
         int l = std::max((int)std::ceil(log2(requested_size)), (int)kMinBufferSizeLog2);
@@ -89,16 +97,6 @@ public:
             return requested_size;
         }
         return 1ull << l;
-    }
-
-    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) {
-        return TRef<RDGBuffer>(new RDGBuffer(size, usage, 0, dedicated, no_warning));
-    }
-    // Import a rhi buffer. NOTE: the reference is not kept by RDGBuffer, you should manage the lifetime of the resource.
-    static TRef<RDGBuffer> Import (const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) ;
-    // Import a rhi buffer. NOTE: the reference is not kept by RDGBuffer, you should manage the lifetime of the resource.
-    FORCEINLINE static TRef<RDGBuffer> Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone) {
-        return Import("<unnamed>", resource, prev_access);
     }
 
     constexpr static uint32_t kMinBufferSizeLog2 = 10;
@@ -132,6 +130,13 @@ public:
 
     // Short hand for (std::byte*)GetRHI().buffer->Map() + GetRHI().offset
     void * Map () const ;
+
+    FORCEINLINE static TRef<RDGBuffer> Create (RHIBufferUsageFlags usage, size_t size,
+        bool dedicated = false, bool no_warning = false) {
+        return {new RDGBuffer(GetBestAllocationSizeFromRequestedSize(size), usage, size, dedicated, no_warning)};
+    }
+
+
 protected:
     // If true, RDG resource pool tends to map the buffer to a dedicated RHI buffer.
     // when set, rhi_buffer_span_ should have 0 offset.

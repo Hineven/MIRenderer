@@ -64,11 +64,9 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         auto mapping_shader = RDGShaderLibrary::Get().GetShader<MappingShader>();
         MappingShader::ShaderParameters template_params;
         RenderGraphBuilder builder;
-        auto rdg_env_map = RDGTexture::Import(env_texture->GetDeviceTexture());
-        auto rdg_env_cubemap = RDGTexture::Import(env_cubemap->GetDeviceTexture());
         env_cubemap->UpdateOnDevice();
-        template_params.InEnvironmentMap  = rdg_env_map.Raw();
-        template_params.OutEnvironmentMap = rdg_env_cubemap.Raw();
+        template_params.InEnvironmentMap  = builder.Import(env_texture->GetDeviceTexture());
+        template_params.OutEnvironmentMap = builder.Import(env_cubemap->GetDeviceTexture());
         template_params.OutEnvironmentMap.load_op = RHILoadOpType::kClear;
         template_params.InSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 

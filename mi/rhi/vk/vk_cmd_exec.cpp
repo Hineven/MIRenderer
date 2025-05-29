@@ -80,7 +80,16 @@ void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommand
             .setLayerCount(clear_texture->layer_count_);
     auto & color = clear_texture->clear_value_;
     CheckImageLayout(texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
-    state.cmd.clearColorImage(texture->GetImage(), texture->GetImageLayout(), vk::ClearColorValue(color), region);
+    if (texture->GetImageAspect() & vk::ImageAspectFlagBits::eColor) {
+        state.cmd.clearColorImage(texture->GetImage(), texture->GetImageLayout(), vk::ClearColorValue(color), region);
+    } else {
+        // TODO support stencil clear value.
+        state.cmd.clearDepthStencilImage(
+            texture->GetImage(), texture->GetImageLayout(),
+            vk::ClearDepthStencilValue(color[0], 0),
+            region
+        );
+    }
 }
 
 void VulkanCommandExecutor::RHICopyBufferToTexture(RHICommandQueueBase *cmd,
@@ -644,21 +653,26 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
             (parameter_table.uniforms.size() + parameter_table.storages.size() + parameter_table.uavs.size()
                 + parameter_table.srvs.size() + parameter_table.samplers.size() + parameter_table.acceleration_structures.size());
     vk::WriteDescriptorSet * writes = state.Allocate<vk::WriteDescriptorSet[]>(write_count);
-    int write_index = 0;
+    size_t write_index = 0;
     for(auto ubo : parameter_table.uniforms) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
         assert(ubo.buffer.buffer && "Uniform buffer must not be null.");
         buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer(); // NOLINT its safe
         buffer_info.offset = ubo.buffer.offset;
         buffer_info.range = ubo.buffer.size;
-        auto write = vk::WriteDescriptorSet()
+        auto destination = remapping->GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
-                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot).binding)
+                .setDstBinding(destination.binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eUniformBuffer)
                 .setPBufferInfo(&buffer_info);
-        writes[write_index++] = write;
+            writes[write_index++] = write;
+        } else {
+            MI_WARN("Uniform buffer slot {} is not present in bound pipeline {}.", ubo.slot, bound_pipeline->GetName());
+        }
     }
     for(auto storage : parameter_table.storages) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
@@ -666,14 +680,19 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         buffer_info.buffer = buffer ? buffer->GetBuffer() : nullptr;
         buffer_info.offset = storage.buffer.offset;
         buffer_info.range = storage.buffer.size;
-        auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set)
-                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot).binding)
-                .setDstArrayElement(0)
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-                .setPBufferInfo(&buffer_info);
-        writes[write_index++] = write;
+        auto destination = remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                    .setDstSet(descriptor_set)
+                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot).binding)
+                    .setDstArrayElement(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+                    .setPBufferInfo(&buffer_info);
+            writes[write_index++] = write;
+        } else {
+            MI_WARN("Storage buffer slot {} is not present in bound pipeline {}.", storage.slot, bound_pipeline->GetName());
+        }
     }
     for(auto uav : parameter_table.uavs) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
@@ -682,14 +701,19 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
             image_info.imageView = image ? image->GetImageView() : nullptr;
         else image_info.imageView = image ? image->GetImageViewForLayer(uav.array_layer) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eGeneral;
-        auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set)
-                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot).binding)
-                .setDstArrayElement(0)
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setPImageInfo(&image_info);
-        writes[write_index++] = write;
+        auto destination = remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
+        if (UINT_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                    .setDstSet(descriptor_set)
+                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot).binding)
+                    .setDstArrayElement(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eStorageImage)
+                    .setPImageInfo(&image_info);
+            writes[write_index++] = write;
+        } else {
+            MI_WARN("UAV slot {} is not present in bound pipeline {}.", uav.slot, bound_pipeline->GetName());
+        }
     }
     for(auto srv : parameter_table.srvs) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
@@ -698,43 +722,59 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
             image_info.imageView = image ? image->GetImageView() : nullptr;
         else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set)
-                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
-                .setDstArrayElement(0)
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eSampledImage)
-                .setPImageInfo(&image_info);
-        writes[write_index++] = write;
+        auto destination = remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                    .setDstSet(descriptor_set)
+                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
+                    .setDstArrayElement(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eSampledImage)
+                    .setPImageInfo(&image_info);
+            writes[write_index++] = write;
+        } else {
+            MI_WARN("SRV slot {} is not present in bound pipeline {}.", srv.slot, bound_pipeline->GetName());
+        }
     }
     for(auto sampler : parameter_table.samplers) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         assert(sampler.resource && "Sampler must not be null.");
         image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
-        auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set)
-                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot).binding)
-                .setDstArrayElement(0)
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eSampler)
-                .setPImageInfo(&image_info);
-        writes[write_index++] = write;
+        auto destination = remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                    .setDstSet(descriptor_set)
+                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot).binding)
+                    .setDstArrayElement(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eSampler)
+                    .setPImageInfo(&image_info);
+            writes[write_index++] = write;
+        } else {
+            MI_WARN("Sampler slot {} is not present in bound pipeline {}.", sampler.slot, bound_pipeline->GetName());
+        }
     }
     for(auto acc : parameter_table.acceleration_structures) {
         auto& write_khr = *state.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
         auto  p_ac = state.Allocate<vk::AccelerationStructureKHR>();
-        auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set)
-                .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot).binding)
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-                .setPNext(&write_khr);
-        write_khr.accelerationStructureCount = 1;
-        auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
-        *p_ac = rhi_acc ? rhi_acc->GetAccelerationStructure() : nullptr;
-        write_khr.pAccelerationStructures = p_ac;
-        writes[write_index++] = write;
+        auto destination = remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                    .setDstSet(descriptor_set)
+                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot).binding)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+                    .setPNext(&write_khr);
+            write_khr.accelerationStructureCount = 1;
+            auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
+            *p_ac = rhi_acc ? rhi_acc->GetAccelerationStructure() : nullptr;
+            write_khr.pAccelerationStructures = p_ac;
+            writes[write_index++] = write;
+        } else {
+            MI_WARN("Acceleration structure slot {} is not present in bound pipeline {}.", acc.slot, bound_pipeline->GetName());
+        }
     }
+    // TODO should i really clear them? or just cache them in case consecutive shader calls have the same parameters?
     // Clear all bindings
     parameter_table.uniforms.clear();
     parameter_table.storages.clear();
@@ -743,7 +783,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     parameter_table.samplers.clear();
     parameter_table.acceleration_structures.clear();
 
-    return {writes, write_count};
+    return {writes, write_index};
 }
 
 

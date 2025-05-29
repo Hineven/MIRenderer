@@ -37,7 +37,9 @@ protected:
     );
 public:
 
+    // Specify how are you using the texture in the pass.
     RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsageType usage) ;
+    // Specify how are you using the buffer in the pass, with access flags.
     RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
 
     FORCEINLINE void SetName (std::string name) {

@@ -289,8 +289,8 @@ MyInfra::CompileHLSLToSPIRV(
     if (FAILED(hr)) {
         IDxcBlobEncoding *error_blob;
         compile_result->GetErrorBuffer(&error_blob);
-        error.resize(error_blob->GetBufferSize());
-        memcpy(error.data(), error_blob->GetBufferPointer(), error_blob->GetBufferSize());
+        error.resize(error_blob->GetBufferSize() - 1); // -1 to exclude null terminator
+        memcpy(error.data(), error_blob->GetBufferPointer(), error_blob->GetBufferSize() - 1);
         error_blob->Release();
         compile_result->Release();
         hlsl_blob->Release();

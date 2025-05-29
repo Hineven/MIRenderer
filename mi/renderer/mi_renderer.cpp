@@ -54,7 +54,6 @@ void Renderer::DestroySingleton() {
 void Renderer::Init(CommonGroupedDeviceResourceAllocator * allocator, RDGResourcePool * pool) {
     device_allocator_ = allocator;
     pool_ = pool;
-    imported_.d_material_headers = RDGResource::device_allocator_->material_header_buffer_.Raw();
 }
 
 void Renderer::FrameContext::Init() {
@@ -104,6 +103,17 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             renderable_headers.push_back(e->GetDeviceRenderableHeader());
         }
     }
+    // Upload renderable transforms and headers
+    view->upload_context_.Add(
+        builder.Import(view->world_->d_renderable_transforms_.Raw()),
+        renderable_transforms.data(),
+        renderable_transforms.size() * sizeof(glm::mat4x3));
+    view->upload_context_.Add(
+        builder.Import(view->world_->d_renderable_headers_.Raw()),
+        renderable_headers.data(),
+        renderable_headers.size() * sizeof(RenderableHeader)
+    );
+
 
     // Filter visible rendeables
     ctx.visible_renderables.reserve(all_renderables.size());
@@ -119,8 +129,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Ready for rendering
 
-    // Draw the sky first
+    // Draw the sky first.
     Render_DrawSky(view, builder);
+
+    // Clear Depth buffer
+    builder.AddPass("ClearDepth", RDGPassFlagBits::kNeverCull,
+        [depth = view->G_depth_.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
+        queue.ClearTexture(depth->GetRHI(), {1, 1, 1, 1});
+    })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferDst);
 
     Render_DrawStaticMeshes(view, builder);
 

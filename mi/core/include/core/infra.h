@@ -174,6 +174,14 @@ void DestroyInfra () ;
 #define MI_INFO(fmt, ...) MI_LOG(MIInfraLogType::kInfo, fmt, ##__VA_ARGS__)
 #define MI_WARN(fmt, ...) MI_LOG(MIInfraLogType::kWarning, fmt, ##__VA_ARGS__)
 
+#define MI_WARN_ONCE(fmt, ...) do { \
+static bool __warned_once = false; \
+if (!__warned_once) { \
+__warned_once = true; \
+MI_WARN(fmt, ##__VA_ARGS__); \
+} \
+} while(false)
+
 #ifndef NDEBUG
 // Only active in debug builds. For debugging purposes.
 #define mi_assert(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::logic_error("assertion failure.");}}while(false)

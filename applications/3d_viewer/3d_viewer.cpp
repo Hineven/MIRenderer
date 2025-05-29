@@ -206,6 +206,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+            for (auto e : meshes) {
+                e->EditTransform().scale *= 0.1f; // Scale down the model
+            }
         }
     }
 

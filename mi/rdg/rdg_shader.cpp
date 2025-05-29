@@ -695,6 +695,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
                     RHIColorAttachmentBlendDesc blend {};
                     color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
                 } else {
+                    // Enable depth testing
                     depth_stencil = {
                         e.info->cpp_extra.render_targets_info->format
                     };
@@ -703,6 +704,12 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         }
         desc.color_attachments = color_attachments;
         desc.depth_stencil_attachment = depth_stencil;
+        if (depth_stencil.format != PixelFormatType::kUnknown) {
+            // TODO support more depth-stencil ops rather than default behavior
+            desc.depth_stencil.depth_compare_op = RHIDepthCompareOpType::kLess;
+            desc.depth_stencil.depth_test_enable = true;
+            desc.depth_stencil.depth_write_enable = true;
+        }
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, class_registry_->name.c_str()
         );

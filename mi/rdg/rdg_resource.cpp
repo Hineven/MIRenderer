@@ -71,25 +71,5 @@ uint32_t RDGTexture::GetResourceClassHash() const {
     return CRC32(&desc_, sizeof(desc_));
 }
 
-TRef<RDGTexture> RDGTexture::Import([[maybe_unused]] const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) {
-    mi_assert(resource != nullptr, "Cannot import a null texture.");
-    auto texture_raw_ptr = new RDGTexture(resource->GetDesc());
-    auto texture = TRef<RDGTexture>(texture_raw_ptr);
-    texture->rhi_texture_ = resource;
-    texture->usage_ = prev_usage;
-    texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
-    return texture;
-}
-
-TRef<RDGBuffer> RDGBuffer::Import([[maybe_unused]] const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) {
-    auto desc = resource->GetDesc();
-    auto buffer_raw_ptr = new RDGBuffer(desc.size, desc);
-    auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
-    buffer->rhi_buffer_span_ = resource->GetSpan();
-    buffer->usage_ = prev_access;
-    buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
-    return buffer;
-}
-
 
 MI_NAMESPACE_END

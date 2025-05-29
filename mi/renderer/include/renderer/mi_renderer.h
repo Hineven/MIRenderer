@@ -80,10 +80,6 @@ protected:
     TRef<CommonGroupedDeviceResourceAllocator> device_allocator_;
     TRef<RDGResourcePool> pool_;
 
-    struct {
-        TRef<RDGBuffer> d_material_headers;
-    } imported_;
-
 };
 
 

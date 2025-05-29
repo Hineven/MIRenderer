@@ -195,13 +195,6 @@ void RendererViewPersistentData::Update(RendererView *view) {
     frame_index_ ++;
 }
 
-void RendererView::ImportedRDGResources::InvalidateFromWorld() {
-    static_mesh_geometry_material_indices = {};
-    renderable_transforms = {};
-    renderable_headers = {};
-    sky_texture = {};
-}
-
 
 void RendererView::InitFrame () {
 
@@ -215,52 +208,25 @@ void RendererView::InitFrame () {
 
     static_mesh_geometry_material_indices_start_index = {};
 
-    G_depth_ = RDGTexture::CreateTexture2D(
+    G_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kDepthStencil);
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
 
-    G_albedo_ = RDGTexture::CreateTexture2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
+    G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
-    G_normal_ = RDGTexture::CreateTexture2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
+    G_normal_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
-    G_metallic_roughness_ = RDGTexture::CreateTexture2D(film_width_, film_height_, PixelFormatType::kR8_UNORM,
+    G_metallic_roughness_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
-    bool world_changed = world_ != persistent_data_->prev_world_;
-    {
-        // Import output backbuffer as RDG resource. We dont care about its previous usage.
-        imported.output_ = RDGTexture::Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
-        if (world_changed) {
-            imported.InvalidateFromWorld();
-            if (world_) {
-                // It should always be present even if nothing is allocated.
-                // if (world_->d_static_mesh_renderable_materials_->GetNumHeapBufferBlocks()) {
-                    imported.static_mesh_geometry_material_indices = RDGBuffer::Import(
-                        world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0),
-                        RHIGPUAccessFlagBits::kRW
-                    );
-                // }
-                imported.renderable_transforms = RDGBuffer::Import(
-                    world_->d_renderable_transforms_.Raw(),
-                    RHIGPUAccessFlagBits::kRW
-                );
-                imported.renderable_headers = RDGBuffer::Import(
-                    world_->d_renderable_headers_.Raw(),
-                    RHIGPUAccessFlagBits::kRW
-                );
-                imported.sky_texture = RDGTexture::Import(
-                    world_->GetSkyTexture()->GetDeviceTexture(),
-                    RDGTextureUsageType::kShaderReadWrite
-                );
-            }
-        }
-    }
+    // bool world_changed = world_ != persistent_data_->prev_world_;
+
 
     // Initialize the upload context used for batching uploads
     upload_context_.Init();
@@ -305,6 +271,14 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
 
     float aspect_ratio = float(film_width_) / float(film_height_);
     camera.FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
+
+    glm::mat4 view_matrix = glm::lookAt(
+        camera_.position, camera_.position + camera_.direction, camera_.up
+    );
+    glm::mat4 proj_matrix = glm::perspective(
+        camera_.fov_Y, float(film_width_) / float(film_height_), camera_.near_plane, camera_.far_plane
+    );
+    camera.WorldToNDC = proj_matrix * view_matrix;
 }
 
 MI_NAMESPACE_END

@@ -99,9 +99,26 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             desc.name = compiler_hlsl.get_name(resource.id);
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationDescriptorSet, desc.locations.set_offset);
-            uint32_t word_offset;
-            bool has_decoration = compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationNonWritable, word_offset);
-            bool read_only = has_decoration && (bool)(((uint32_t*)ir_)[word_offset]);
+            auto bitset = compiler_hlsl.get_decoration_bitset(resource.id);
+            // puts("qwq");
+            // struct Op {
+            //     const spirv_cross::CompilerHLSL &comp;
+            //     uint32_t res_id;
+            //     Op(const spirv_cross::CompilerHLSL &in, uint32_t in_res) : comp(in), res_id(in_res) {}
+            //     FORCEINLINE void operator () (int i) const {
+            //         printf("%d\n", i);
+            //     }
+            // };
+            // bitset.for_each_bit(Op(compiler_hlsl, resource.id));
+
+            // 25.5.29: have to get the type of the variable for RW identification. This is a pointer to a storage buffer
+            auto res_ptr_type = compiler_hlsl.get_type_from_variable(resource.id);
+            // Now get the type the pointer type points to
+            auto res_pointed_type_id = res_ptr_type.parent_type;
+            // Okay, check if the first member of the type struct is decorated with NonWritable decoration as a member.
+            // If it is, then it is a read-only storage buffer.
+            bool has_decoration = compiler_hlsl.has_member_decoration(res_pointed_type_id, 0, spv::DecorationNonWritable);
+            bool read_only = has_decoration;
             desc.access_flags = {};
             if (!read_only) desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kWrite;
             desc.access_flags = desc.access_flags | RHIGPUAccessFlagBits::kRead;

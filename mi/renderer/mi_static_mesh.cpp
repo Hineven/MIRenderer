@@ -55,7 +55,9 @@ void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilde
         mem[i] = materials_[i]->GetDeviceMaterial()->GetIndex();
     }
     view->upload_context_.AddUnsafe(geometry_material_indices_->GetRHI(), mem, geometries_.size() * sizeof(uint32_t));
-    view->upload_context_.AddExtraBarrier(view->imported.static_mesh_geometry_material_indices.Raw());
+    view->upload_context_.AddExtraBarrier(
+        builder.Import(view->world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0))
+    );
 }
 
 RenderableHeader StaticMesh::GetDeviceRenderableHeader() const {

@@ -14,6 +14,7 @@
 #include "r_view_common.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderable.h"
+#include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_static_mesh.h"
 
 MI_NAMESPACE_BEGIN
@@ -30,6 +31,11 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaders)
 
         SHADER_RESOURCE_PARAMETER(SamplerState, Sampler)
+
+        SHADER_VERTEX_BUFFER(sizeof(DefaultStaticMeshVertex), VertexBuffer)
+        SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Position), RHIVertexAttributeFormatType::k3xFp32, position)
+        SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Normal), RHIVertexAttributeFormatType::k3xFp32, normal)
+        SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, UV), RHIVertexAttributeFormatType::k2xFp32, uv)
 
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Albedo)
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Normal)
@@ -77,6 +83,7 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
         RHIBufferUsageFlagBits::kIndirect,
         sizeof(RHIDrawIndexedIndirectCommand) * data.draw_invocation_sorting_headers.size()
     );
+    data.d_static_draw_commands->SetName("StaticMeshDrawCommandsBuffer");
     // Used to index the renderable & material for draw commands, used for viewport rasterization
     data.d_static_mesh_draw_command_renderable_material_indices = RDGBuffer::Create(
         RHIBufferUsageFlagBits::kStorage,
@@ -116,10 +123,10 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
 
     auto params = builder.Allocate<DrawStaticMeshesShader::Params>();
     params->View = view->view_common_params_;
-    params->RenderableHeaders = view->imported.renderable_headers.Raw();
-    params->RenderableTransforms = view->imported.renderable_transforms.Raw();
+    params->RenderableHeaders = builder.Import(view->world_->d_renderable_headers_.Raw());
+    params->RenderableTransforms = builder.Import(view->world_->d_renderable_transforms_.Raw());
     params->RenderableIndexAndMaterialIndex = ctx.static_meshes.d_static_mesh_draw_command_renderable_material_indices.Raw();
-    params->MaterialHeaders = view->imported.material_headers.Raw();
+    params->MaterialHeaders = builder.Import(device_allocator_->material_header_buffer_.Raw());
     params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->Albedo = view->G_albedo_.Raw();
@@ -134,8 +141,9 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
         [params, shader, data = ctx.static_meshes, rdg_draw_cmd = ctx.static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             if (RDGCommandHelper::BindGraphicsShader<DrawStaticMeshesShader>(
-                queue, pass, shader, params
+                queue, pass, shader, params, true
             )) {
+                queue.BeginRendering();
                 RHIBufferSpan last_vertex_buffer {};
                 RHIBufferSpan last_index_buffer {};
                 RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
@@ -146,7 +154,10 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
                         if (i > 0) {
                             // Batch submit previous commands sharing the same vertex & index buffer settings.
                             auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                            queue.DrawIndexedIndirect(hdr.index_buffer, cmd_span,  i - first_cmd);
+                            queue.DrawIndexedIndirect(
+                                data.draw_invocation_sorting_headers[i-1].index_buffer,
+                                cmd_span,  i - first_cmd
+                            );
                             cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                         }
                         last_vertex_buffer = hdr.vertex_buffer;
@@ -156,12 +167,14 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
                 }
                 // Submit last batch if not empty
                 if (!data.draw_indirect_commands.empty()) {
-                    int i = (int)data.draw_indirect_commands.size() - 1;
+                    int i = (int)data.draw_indirect_commands.size();
                     // Batch submit previous commands sharing the same vertex & index buffer settings.
                     auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                    queue.DrawIndexedIndirect(data.draw_invocation_sorting_headers[i].index_buffer,
+                    queue.DrawIndexedIndirect(
+                        data.draw_invocation_sorting_headers[i-1].index_buffer,
                         cmd_span,  i - first_cmd);
                 }
+                queue.EndRendering();
             }
         }
     );
@@ -183,12 +196,11 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
         }
         for (auto e : barrier_buffers) {
             // Destructors of temporaries created in one line of code will destruct after the line
-            raster_pass->AddBuffer(RDGBuffer::Import(e, RHIGPUAccessFlagBits::kAll).Raw(), RHIGPUAccessFlagBits::kRead);
+            raster_pass->AddBuffer(builder.Import(e, RHIGPUAccessFlagBits::kAll), RHIGPUAccessFlagBits::kRead);
         }
 
         // Indirect command
         raster_pass->AddBuffer(ctx.static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kRead);
-
     }
 }
 

@@ -25,6 +25,7 @@ class RendererScene : public NonCopyable, public NonMovable {
 public:
     friend class Renderable;
     friend struct RendererView;
+    friend class Renderer;
     // TODO remove this
     friend class StaticMesh;
 

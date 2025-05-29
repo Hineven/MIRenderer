@@ -31,12 +31,14 @@ public:
     }
 
     static bool BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
-    const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
+    const RDGShaderParamStructAndSizeInfo * info, const void * params, bool manual_vbuffer = false) ;
 
     template<CShaderType T>
     FORCEINLINE static bool BindGraphicsShader (
-        RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const void * params) {
-        return BindGraphicsShader(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params);
+        RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const void * params,
+        bool manual_vbuffer = false
+    ) {
+        return BindGraphicsShader(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params, manual_vbuffer);
     }
 
     // RDG Pass API (automatically spawn resource dependencies)

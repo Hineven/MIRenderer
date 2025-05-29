@@ -70,6 +70,53 @@ RDGPass * RenderGraphBuilder::AddPass(
     return ptr;
 }
 
+TRef<RDGTexture> RenderGraphBuilder::CreateTexture(RHITextureDesc desc) {
+    return RDGTexture::Create(desc);
+}
+
+TRef<RDGBuffer> RenderGraphBuilder::CreateBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated, bool no_warning) {
+    return RDGBuffer::Create(usage, size, dedicated, no_warning);
+}
+
+RDGBuffer * RenderGraphBuilder::Import(const char *name, RHIBuffer *resource, RHIGPUAccessFlags prev_access) {
+    mi_assert(resource != nullptr, "Importing null buffer resource.");
+    auto it = external_buffer_map_.find(resource);
+    if (it != external_buffer_map_.end()) {
+        auto ret = external_buffer_map_[resource];
+        ret->SetName(name);
+        return ret.Raw();
+    }
+    auto desc = resource->GetDesc();
+    auto buffer_raw_ptr = new RDGBuffer(desc.size, desc);
+    auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
+    buffer->rhi_buffer_span_ = resource->GetSpan();
+    buffer->usage_ = prev_access;
+    buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
+    buffer->SetName(name);
+    external_buffer_map_[resource] = buffer;
+    return buffer.Raw();
+}
+
+RDGTexture * RenderGraphBuilder::Import(const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) {
+    mi_assert(resource != nullptr, "Importing null texture resource.");
+    auto it = external_texture_map_.find(resource);
+    if (it != external_texture_map_.end()) {
+        auto ret = external_texture_map_[resource];
+        ret->SetName(name);
+        return ret.Raw();
+    }
+    mi_assert(resource != nullptr, "Cannot import a null texture.");
+    auto texture_raw_ptr = new RDGTexture(resource->GetDesc());
+    auto texture = TRef<RDGTexture>(texture_raw_ptr);
+    texture->rhi_texture_ = resource;
+    texture->usage_ = prev_usage;
+    texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
+    texture->SetName(name);
+    external_texture_map_[resource] = texture;
+    return texture.Raw();
+}
+
+
 
 TRef<RenderGraph> RenderGraphBuilder::Compile() {
 

@@ -36,6 +36,7 @@ public:
     friend class Material;
     friend class DeviceMaterial;
     friend class BindlessDeviceTexture;
+    friend class Renderer;
 
     static constexpr uint32_t kMaxNumMaterials = 1024;
 

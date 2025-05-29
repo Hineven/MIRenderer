@@ -214,7 +214,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 if (buffer_use.buffer->GetRHI()) {
                     buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
                     src_accesses[num_barriers_used] = buffer_use.buffer->GetLastUsage();
-                    dst_accesses[num_barriers_used] = buffer_use.access;
+                dst_accesses[num_barriers_used] = buffer_use.access;
                     buffer_use.buffer->Use(buffer_use.access);
                     num_barriers_used ++;
                 }
