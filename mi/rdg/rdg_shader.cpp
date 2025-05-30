@@ -745,9 +745,143 @@ void RDGShaderLibrary::DestroySingleton() {
 
 RDGShaderLibrary::~RDGShaderLibrary() {}
 
+static bool ValidateMacroDecl (std::string macro_decl) {
+    // Check for invalid characters in macro declaration
+    int num_eq = 0;
+    for (char c : macro_decl) {
+        if (c == '=') num_eq ++;
+        if (!isalnum(c) && c != '_' && c != '=') {
+            MI_LOG(MIInfraLogType::kError, "Invalid character '{}' in macro declaration '{}'", c, macro_decl);
+            return false;
+        }
+    }
+    if (num_eq > 1) {
+        MI_LOG(MIInfraLogType::kError, "Multiple '=' in macro declaration '{}'", macro_decl);
+        return false;
+    }
+    // Macros should not start with a digit
+    if (!macro_decl.empty() && isdigit(macro_decl[0])) {
+        MI_LOG(MIInfraLogType::kError, "Macro declaration '{}' cannot start with a digit", macro_decl);
+        return false;
+    }
+    // Macros should not be empty
+    if (macro_decl.empty()) {
+        MI_LOG(MIInfraLogType::kError, "Macro declaration cannot be empty");
+        return false;
+    }
+    return true;
+}
+
 void RDGShaderLibrary::Init() {
-    // lalala
     MI_LOG(MIInfraLogType::kInfo, "Initializing RDGShaderLibrary");
+    // Pre-compile shaders. Cache them to prevent sudden lagging when switching
+    // rendering operations.
+    struct ShaderToCompile {
+        std::vector<std::string> macro_decls;
+        RDGShaderClassRegistry * shader_class;
+    };
+
+    std::vector<ShaderToCompile> shaders_to_compile;
+    std::function<void(const std::vector<std::pair<std::string, std::vector<std::string>>> & macro_decls,
+        RDGShaderClassRegistry * shader_class, std::vector<std::string> & generated_macro_decls,
+        int curr_macro_decl_index)> GenerateShaderPermutations = [&] (
+        const std::vector<std::pair<std::string, std::vector<std::string>>> & macro_decls,
+        RDGShaderClassRegistry * shader_class, std::vector<std::string> & generated_macro_decls,
+        int curr_macro_decl_index) {
+        if (curr_macro_decl_index >= (int)macro_decls.size()) {
+            // We have generated a full permutation, add it to the list
+            shaders_to_compile.push_back({generated_macro_decls, shader_class});
+            return;
+        }
+        // Iterate over all possible values for the current macro declaration
+        const auto & macro_decl = macro_decls[curr_macro_decl_index];
+        if (macro_decl.second[0].empty()) {
+            // Flag macro
+            // Either include or exclude
+            generated_macro_decls.push_back(macro_decl.first);
+            GenerateShaderPermutations(macro_decls, shader_class, generated_macro_decls, curr_macro_decl_index + 1);
+            generated_macro_decls.pop_back();
+            GenerateShaderPermutations(macro_decls, shader_class, generated_macro_decls, curr_macro_decl_index + 1);
+        } else {
+            // Value macro
+            // Enumeare all possible values
+            for (const auto & e : macro_decl.second) {
+                generated_macro_decls.push_back(macro_decl.first + "=" + e);
+                GenerateShaderPermutations(macro_decls, shader_class, generated_macro_decls, curr_macro_decl_index + 1);
+                generated_macro_decls.pop_back();
+            }
+        }
+    };
+
+    for (const auto & shader_class : registered_shader_classes_) {
+        auto optional_macros = shader_class.second->GetShaderOptionalMacros();
+        // Find all possible permutations for the optional macros
+        std::map<std::string, std::vector<std::string>> macro_values;
+        for (auto optional_macro : optional_macros) {
+            if (!ValidateMacroDecl(optional_macro)) {
+                MI_WARN("Invalid optional macro declaration '{}' for shader {}, skipping", optional_macro, shader_class.second->name);
+                continue ;
+            }
+            if (optional_macro.find_first_of('=') != std::string::npos) {
+                // Split the macro declaration into name and value
+                auto pos = optional_macro.find('=');
+                std::string macro_name = optional_macro.substr(0, pos);
+                std::string macro_value = optional_macro.substr(pos + 1);
+                macro_values[macro_name].push_back(macro_value);
+            } else {
+                // No value, just a flag
+                macro_values[optional_macro].push_back("");
+            }
+        }
+        // Unique macro values
+        for (auto & e : macro_values) {
+            auto & values = e.second;
+            std::sort(values.begin(), values.end());
+            values.erase(std::unique(values.begin(), values.end()), values.end());
+            if (values.size() > 1 && values[0].empty()) {
+                // If the first value is empty, and there are more values, the macro seems to be ill
+                // defined. We should warn about it.
+                std::string value_list;
+                for (auto v : values) {
+                    if (!v.empty()) {
+                        if (!value_list.empty()) value_list += ", ";
+                        value_list += v;
+                    }
+                }
+                MI_WARN("Shader {} has optional macro '{}' with empty value, but also has other values ({}). "
+                        "Dropping the flag behavior of the macro.",
+                        shader_class.second->name, e.first, value_list);
+                // The macro will not be used as a flag, but as a value.
+                values.erase(values.begin());
+            }
+        }
+        std::vector<std::pair<std::string, std::vector<std::string>>> macro_decls;
+        for (auto e : macro_values) {
+            // Convert the map to a vector of pairs
+            macro_decls.emplace_back(e.first, e.second);
+        }
+        std::vector<std::string> generated_macro_decls;
+        // Generate all combinations of macro values
+        GenerateShaderPermutations(macro_decls, shader_class.second.get(), generated_macro_decls, 0);
+    }
+
+    MI_INFO("ShaderLibrary: Gathered {} shader permutations to compile.", shaders_to_compile.size());
+    // Compile all shaders
+    // TODO parallize
+    for (auto & shader : shaders_to_compile) {
+        RDGShaderInitializationInfo ini;
+        ini.macros = shader.macro_decls;
+        auto new_shader = shader.shader_class->Creator(shader.shader_class, ini);
+        if (!new_shader->Recompile(new_shader->ini_)) {
+            std::string macro_decl;
+            for (const auto & macro : shader.macro_decls) {
+                if (!macro_decl.empty()) macro_decl += ", ";
+                macro_decl += macro;
+            }
+            MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with optional macros: {}",
+                   shader.shader_class->name, macro_decl);
+        }
+    }
 }
 
 void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
@@ -786,12 +920,18 @@ RDGShader *RDGShaderLibrary::GetShader(size_t type_hash, RDGShaderInitialization
     auto it = cached_shaders_.find(shader_hash);
     if (it == cached_shaders_.end()) {
         // Not cached, try to create a new shader
-        auto reg = registered_shaders_.find(type_hash);
-        if (reg == registered_shaders_.end()) {
+        auto reg = registered_shader_classes_.find(type_hash);
+        if (reg == registered_shader_classes_.end()) {
             // The class does not exist.
             return nullptr;
         }
+        MI_INFO("Missing shader {} with hash {}. Creating it.", reg->second->name, shader_hash);
         auto new_shader = reg->second->Creator(reg->second.get(), ini);
+        if (!new_shader->Recompile(ini)) {
+            MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with hash {}",
+                   reg->second->name, shader_hash);
+            return nullptr;
+        }
         cached_shaders_[shader_hash].reset(new_shader);
         return new_shader;
     } else {
@@ -802,10 +942,10 @@ RDGShader *RDGShaderLibrary::GetShader(size_t type_hash, RDGShaderInitialization
 void RDGShaderLibrary::RegisterShaderClass(
     size_t type_hash,
     RDGShaderClassRegistry in_reg) {
-    auto it = registered_shaders_.find(type_hash);
-    if (it == registered_shaders_.end()) {
+    auto it = registered_shader_classes_.find(type_hash);
+    if (it == registered_shader_classes_.end()) {
         auto reg = std::make_unique<RDGShaderClassRegistry>(in_reg);
-        registered_shaders_[type_hash] = std::move(reg);
+        registered_shader_classes_[type_hash] = std::move(reg);
     } else {
         assert(false && "Double registration, this should never happen!");
     }
