@@ -171,6 +171,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         int pass_index = ready_passes.front();
         ready_passes.pop();
         auto &pass = passes_[pass_index];
+        // printf("Pass: %s\n", pass->name_.c_str());
         // Get resources ready
         for (auto texture_use : pass->compiled_.used_textures) {
             texture_use.texture->RequestRHI(pool);
@@ -202,7 +203,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     num_barriers_used ++;
                 }
             }
-            cmd.TextureBarriers(num_barriers_used, textures, layouts, new_stages, src_accesses, dst_accesses);
+            if (num_barriers_used) cmd.TextureBarriers(num_barriers_used, textures, layouts, new_stages, src_accesses, dst_accesses);
         }
         {
             auto num_barriers = pass->compiled_.used_buffers.size();
@@ -214,12 +215,12 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 if (buffer_use.buffer->GetRHI()) {
                     buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
                     src_accesses[num_barriers_used] = buffer_use.buffer->GetLastUsage();
-                dst_accesses[num_barriers_used] = buffer_use.access;
+                    dst_accesses[num_barriers_used] = buffer_use.access;
                     buffer_use.buffer->Use(buffer_use.access);
                     num_barriers_used ++;
                 }
             }
-            cmd.BufferBarriers(num_barriers_used, buffers, new_stages, src_accesses, dst_accesses);
+            if (num_barriers_used) cmd.BufferBarriers(num_barriers_used, buffers, new_stages, src_accesses, dst_accesses);
         }
         // Execute the pass
         pass->pass_(pass.get(), cmd);

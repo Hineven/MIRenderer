@@ -80,7 +80,7 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
-    // printf("RecycleBuffer size %llu\n", buffer->GetAllocationSize());
+    // printf("RecycleBuffer %s size %llu\n", buffer->GetName().c_str(), buffer->GetAllocationSize());
     auto hash = buffer->GetResourceClassHash();
     rhi_free_buffer_map_[hash].emplace_back(
         buffer->rhi_buffer_span_.buffer,
