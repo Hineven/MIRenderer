@@ -20,9 +20,23 @@ MI_NAMESPACE_BEGIN
 
 size_t RDGShaderInitializationInfo::GetHash() const {
     size_t final_hash = 0;
+    // Order inreleavnt hashing.
+#ifndef NDEBUG
+    std::vector<uint64_t> hashes;
+#endif
     for (const auto & macro : macros) {
-        final_hash ^= XXH64(macro.c_str(), macro.size(), 12312321);
+        auto curr_hash_value = XXH64(macro.c_str(), macro.size(), 12312321);
+        final_hash ^= curr_hash_value;
+#ifndef NDEBUG
+        hashes.push_back(curr_hash_value);
+#endif
     }
+#ifndef NDEBUG
+    std::sort(hashes.begin(), hashes.end());
+    for (int i = 1; i < (int)hashes.size(); i++) {
+        mi_assert(hashes[i] != hashes[i - 1], "Shader macro '{}' is duplicated. Must be a bug somewhere!", macros[i]);
+    }
+#endif
     return final_hash;
 }
 
@@ -35,7 +49,8 @@ bool RDGShaderParamStructInfo::CanBeRenderpass () const {
 
 RDGShaderHash &RDGShaderHash::AddUnordered(const char *marker, uint64_t v) {
     uint64_t hash = XXH64(marker, strlen(marker), v);
-    value ^= hash;
+    // Unordered. and can be duplicating.
+    value += hash;
     return * this;
 }
 
