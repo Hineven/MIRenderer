@@ -553,6 +553,7 @@ FORCEINLINE vk::PipelineStageFlags GetVulkanPipelineStageFlags (RHIPipelineStage
                 vk::PipelineStageFlagBits::eGeometryShader |
                 vk::PipelineStageFlagBits::eVertexInput |
                 vk::PipelineStageFlagBits::eVertexShader |
+                vk::PipelineStageFlagBits::eDrawIndirect |
 //                vk::PipelineStageFlagBits::eTessellationControlShader |
 //                vk::PipelineStageFlagBits::eTessellationEvaluationShader |
                 vk::PipelineStageFlagBits::eFragmentShader |
