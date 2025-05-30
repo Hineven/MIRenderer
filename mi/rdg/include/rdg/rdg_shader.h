@@ -41,7 +41,13 @@ struct RDGShaderClassRegistry {
     std::string vertex_entry_;
     std::string fragment_entry_;
     RDGShader * (*Creator) (RDGShaderClassRegistry *, RDGShaderInitializationInfo);
+    // Macros always present when compiling the shader
     std::vector<std::string> (*GetShaderDefaultMacros)();
+    // Macros that are optionally present, all possibilities are enumerated when building the shader cache in
+    // the shader library.
+    // Note: for macros with a value (e.g. "PASS_NUMBER=1"), all possible values of the macro will be automatically
+    // collected and enumerated.
+    std::vector<std::string> (*GetShaderOptionalMacros)();
     const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)();
     RDGShaderPipelineConfig (*GetShaderPipelineConfig)();
 };
@@ -83,9 +89,16 @@ public:
 
 
     // The following functions CAN be implemented by sub-classes to specify special shader attributes
+    // Default macros that are always present when compiling the shader.
     FORCEINLINE static std::vector<std::string> GetShaderDefaultMacros () {
         return {};
     }
+    // Macros that are optionally present, all possibilities are enumerated when building the shader cache in
+    // the shader library.
+    FORCEINLINE static std::vector<std::string> GetShaderOptionalMacros () {
+        return {};
+    }
+    // Modify the shader pipeline configuration, e.g. topology type.
     FORCEINLINE static RDGShaderPipelineConfig  GetShaderPipelineConfig () {
         return RDGShaderPipelineConfig {
             RHIPrimitiveTopologyType::kTriangleList
@@ -164,6 +177,15 @@ struct TGetShaderDefaultMacros<T, std::void_t<decltype(T::GetShaderDefaultMacros
     constexpr static auto value = T::GetShaderDefaultMacros;
 };
 
+template<typename T, typename = void>
+struct TGetShaderOptionalMacros {
+    constexpr static auto value = RDGShader::GetShaderDefaultMacros;
+};
+template<typename T>
+struct TGetShaderOptionalMacros<T, std::void_t<decltype(T::GetShaderOptionalMacros)>> {
+    constexpr static auto value = T::GetShaderOptionalMacros;
+};
+
 #define DECLARE_SHADER() \
 protected: \
     using RDGShader::RDGShader; \
@@ -240,7 +262,7 @@ protected:
     };
 
     // Shader creators
-    std::map<size_t, std::unique_ptr<RDGShaderClassRegistry>> registered_shaders_ {};
+    std::map<size_t, std::unique_ptr<RDGShaderClassRegistry>> registered_shader_classes_ {};
     // Compiled shaders
     // REMEMBER to delete shaders when removing them.
     std::map<size_t, std::unique_ptr<RDGShader, DeleteShaderType>> cached_shaders_ {};
@@ -268,6 +290,7 @@ public:
             fragment_entry,
             RDGShaderClassRegistrator<T>::zzShaderFactoryFunction,
             TGetShaderDefaultMacros<T>::value,
+            TGetShaderOptionalMacros<T>::value,
             T::GetShaderParamStructInfo,
             TGetShaderPipelineConfig<T>::value
         };
