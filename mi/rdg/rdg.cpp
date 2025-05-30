@@ -167,6 +167,8 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
     }
 
+    std::string active_debug_marker_name;
+
     while (!ready_passes.empty()) {
         int pass_index = ready_passes.front();
         ready_passes.pop();
@@ -179,9 +181,20 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         for (auto buffer_use : pass->compiled_.used_buffers) {
             buffer_use.buffer->RequestRHI(pool);
         }
-        // Add debug marker
+        // Add debug marker, group the passes with the same names
         if (!pass->name_.empty()) {
-            cmd.BeginDebugMarker(pass->name_.c_str());
+            if (pass->name_ != active_debug_marker_name) {
+                if (!active_debug_marker_name.empty()) {
+                    cmd.EndDebugMarker();
+                }
+                cmd.BeginDebugMarker(pass->name_.c_str());
+                active_debug_marker_name = pass->name_;
+            }
+        } else {
+            if (!active_debug_marker_name.empty()) {
+                cmd.EndDebugMarker();
+                active_debug_marker_name.clear();
+            }
         }
 
         // Place resource barriers.
@@ -232,13 +245,15 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 ready_passes.push(edge.dst_pass_index);
             }
         }
-        // End debug marker
-        if (!pass->name_.empty()) {
-            cmd.EndDebugMarker();
-        }
         // Release the pass (and decrement the reference count of the resources its holding)
         pass.reset();
     }
+
+    // End the debug marker if it is still active
+    if (!active_debug_marker_name.empty()) {
+        cmd.EndDebugMarker();
+    }
+
     cmd.EnqueueTranslateAndSubmit(sync_point);
 }
 MI_NAMESPACE_END
