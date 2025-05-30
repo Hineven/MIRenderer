@@ -140,7 +140,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
 }
 
 void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
-    const RDGShaderParamStructAndSizeInfo * info, const void * params, int x, int y, int z) {
+    const RDGShaderParamStructAndSizeInfo * info, const void * params, uint32_t x, uint32_t y, uint32_t z) {
     auto desc = UploadShaderParams(pass, shader, queue, info, params);
     if (desc.has_value()) {
         queue.BindPipeline(shader->compute_pipeline_.Raw());

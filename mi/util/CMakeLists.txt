@@ -1,6 +1,7 @@
 set(SOURCES
         gltf_loader.cpp
         texture_loader.cpp
+        radix_sort.cpp
 )
 
 add_library(util ${SOURCES})

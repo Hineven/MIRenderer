@@ -16,7 +16,7 @@ template<typename T>
 concept CShaderType = std::is_base_of<RDGShader, std::remove_cvref_t<T>>::value;
 
 // Helpers for dispatching shaders, etc.
-// Used inside pass lambdas.
+// NOTE: Use them inside pass lambdas.
 class RDGCommandHelper {
 public:
 
@@ -43,15 +43,22 @@ public:
 
     // RDG Pass API (automatically spawn resource dependencies)
     static void Dispatch (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
-        const RDGShaderParamStructAndSizeInfo * info, const void * params, int x = 1, int y = 1, int z = 1) ;
+        const RDGShaderParamStructAndSizeInfo * info, const void * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) ;
     template<CShaderType T>
     FORCEINLINE static void Dispatch (
         RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const void * params,
-        int x = 1, int y = 1, int z = 1) {
+        uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) {
         Dispatch(queue, pass, compute_shader, T::GetShaderParamStructInfo(), params, x, y, z);
     }
 
-    static void DispatchIndirect (RHICommandQueueGraphics & queue, RenderGraph & graph, TRef<RDGShader> compute_shader, TRef<RDGBuffer> indirect_buffer) ;
+    static void DispatchIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
+        const RDGShaderParamStructAndSizeInfo * info, const void * params, RDGBuffer * indirect_buffer) ;
+
+    template<CShaderType T>
+    FORCEINLINE static void DispatchIndirect (
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const void * params, RDGBuffer * indirect_buffer) {
+        DispatchIndirect(queue, pass, compute_shader, T::GetShaderParamStructInfo(), params, indirect_buffer);
+    }
 
     static void Draw (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
         const RDGShaderParamStructAndSizeInfo * info, const void * params,
@@ -63,9 +70,9 @@ public:
         Draw(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params, vertex_count, instance_count, first_vertex, first_instance);
     }
 
-    static void DrawIndexed (RenderGraph & graph, TRef<RDGShader> graphics_shader, int index_count, int instance_count = 1, int first_index = 0, int vertex_offset = 0, int first_instance = 0) ;
-    static void DrawIndirect (RenderGraph & graph, TRef<RDGShader> graphics_shader, TRef<RDGBuffer> indirect_buffer) ;
-    static void DrawIndexedIndirect (RenderGraph & graph, TRef<RDGShader> graphics_shader, TRef<RDGBuffer> indirect_buffer) ;
+    static void DrawIndexed (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, int index_count, int instance_count = 1, int first_index = 0, int vertex_offset = 0, int first_instance = 0) ;
+    static void DrawIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, RDGBuffer * indirect_buffer) ;
+    static void DrawIndexedIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, RDGBuffer * indirect_buffer) ;
 };
 
 MI_NAMESPACE_END
