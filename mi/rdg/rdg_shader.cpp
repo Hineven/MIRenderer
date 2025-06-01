@@ -787,6 +787,17 @@ static bool ValidateMacroDecl (std::string macro_decl) {
     return true;
 }
 
+static uint64_t HashCompiledShader (uint64_t type_hash, const RDGShaderInitializationInfo & ini) {
+    struct {
+        uint64_t type_hash;
+        uint64_t ini_hash;
+    } hash_data;
+    hash_data.type_hash = type_hash;
+    hash_data.ini_hash = ini.GetHash();
+    uint64_t shader_hash = XXH64(&hash_data, sizeof(hash_data), 0);
+    return shader_hash;
+}
+
 void RDGShaderLibrary::Init() {
     MI_LOG(MIInfraLogType::kInfo, "Initializing RDGShaderLibrary");
     // Pre-compile shaders. Cache them to prevent sudden lagging when switching
@@ -846,7 +857,7 @@ void RDGShaderLibrary::Init() {
             } else {
                 // No value, just a flag
                 macro_values[optional_macro].push_back("");
-            }
+            }c
         }
         // Unique macro values
         for (auto & e : macro_values) {
@@ -896,6 +907,7 @@ void RDGShaderLibrary::Init() {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with optional macros: {}",
                    shader.shader_class->name, macro_decl);
         }
+        cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
     }
 }
 
@@ -925,13 +937,7 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
 
 
 RDGShader *RDGShaderLibrary::GetShader(size_t type_hash, RDGShaderInitializationInfo ini) {
-    struct {
-        size_t type_hash;
-        size_t ini_hash;
-    } hash_data;
-    hash_data.type_hash = type_hash;
-    hash_data.ini_hash = ini.GetHash();
-    size_t shader_hash = XXH64(&hash_data, sizeof(hash_data), 0);
+    size_t shader_hash = HashCompiledShader(type_hash, ini);
     auto it = cached_shaders_.find(shader_hash);
     if (it == cached_shaders_.end()) {
         // Not cached, try to create a new shader

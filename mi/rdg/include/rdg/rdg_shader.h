@@ -35,6 +35,7 @@ struct RDGShaderInitializationInfo {
 struct RDGShaderClassRegistry {
     std::string name;
     RHIPipelineType type;
+    uint64_t type_hash;
     // Resource path for the source location
     std::string source_location;
     std::string compute_entry_;
@@ -200,6 +201,7 @@ public: \
     static RDGShaderClassRegistrator<ClassName> ClassName##Registrator( \
         #ClassName, \
         Type,\
+        typeid(ClassName).hash_code(), \
         SourcePath, \
         EntryPoint_CS, \
         EntryPoint_VS, \
@@ -275,6 +277,7 @@ public:
     FORCEINLINE RDGShaderClassRegistrator (
         std::string name,
         RHIPipelineType type,
+        uint64_t type_hash,
         const std::string & source_location,
         const std::string & compute_entry,
         const std::string & vertex_entry,
@@ -284,6 +287,7 @@ public:
         auto registry = RDGShaderClassRegistry {
             name,
             type,
+            type_hash,
             source_location,
             compute_entry,
             vertex_entry,
