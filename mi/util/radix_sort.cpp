@@ -33,6 +33,10 @@ public:
     DECLARE_SHADER()
 
     static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
+        return {"WAVE_SIZE="};
+    }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
     }
@@ -99,7 +103,7 @@ void RadixSort::AddRadixSort32BitsPass(
 
     TRef<RDGBuffer> dispatch_command;
     if (count_buffer) {
-        dispatch_command = RDGHelper::SpawnDispatchIndirectCommand1D(builder, count_buffer);
+        dispatch_command = Helpers::SpawnDispatchIndirectCommand1D(builder, count_buffer);
     }
 
     for (int i = 0; i < 32; i += 8) {

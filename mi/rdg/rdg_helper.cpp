@@ -9,13 +9,13 @@
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
 #include "rdg/rdg_shader.h"
+#include "rhi/rhi_buffer.h"
 MI_NAMESPACE_BEGIN
-
 class SpawnDispatchIndirectCommand1DShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(SpawnDispatchIndirectCommand1DShaderParameters)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, Command)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, CountBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(SpawnDispatchIndirectCommand1DShaderParameters)
     DECLARE_SHADER()
@@ -23,7 +23,7 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(SpawnDispatchIndirectCommand1DShader, "mi/rdg/shaders/Helpers.hlsl", "SpawnDispatchIndirectCommand1D");
 
-TRef<RDGBuffer> RDGHelper::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &builder, RDGBuffer *count_buffer) {
+TRef<RDGBuffer> Helpers::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &builder, RDGBuffer *count_buffer) {
     auto command = RDGBuffer::Create(
         RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage,
         sizeof(RHIDispatchIndirectCommand)
@@ -31,7 +31,7 @@ TRef<RDGBuffer> RDGHelper::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &bu
     command->SetName("DispatchIndirectCommand1D");
     auto params = builder.Allocate<SpawnDispatchIndirectCommand1DShader::SpawnDispatchIndirectCommand1DShaderParameters>();
     params->Command = command.Raw();
-    params->CountBuffer = count_buffer;
+    params->Count = count_buffer;
     auto shader = RDGShaderLibrary::Get().GetShader<SpawnDispatchIndirectCommand1DShader>();
     builder.AddPass<SpawnDispatchIndirectCommand1DShader>(RDGPassFlagBits::kNeverCull, params,
         [shader, params, cmd = command.Raw(), count_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
@@ -39,6 +39,130 @@ TRef<RDGBuffer> RDGHelper::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &bu
         }
     );
     return command;
+}
+
+
+void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHIBufferSpan buffer, const void *data, size_t size) {
+    auto & rhi = RHI::Get();
+    auto staging_buffer = rhi.CreateBuffer(size, RHIBufferUsageFlagBits::kStaging);
+    auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
+    memcpy(staging_buffer_ptr, data, size);
+    staging_buffer->Unmap();
+    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+    queue.CopyBuffer(staging_buffer->GetSpan(), buffer);
+    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
+}
+
+void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHITexture *texture, const void *data, size_t size, RHITextureLayoutType dst_layout, RHIGPUAccessFlags dst_access) {
+    auto & rhi = RHI::Get();
+    auto staging_buffer = rhi.CreateBuffer(size, RHIBufferUsageFlagBits::kStaging);
+    auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
+    memcpy(staging_buffer_ptr, data, size);
+    staging_buffer->Unmap();
+    queue.TextureBarrier(texture, RHITextureLayoutType::kTransferDstOptimal,
+        RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+    queue.CopyBufferToTexture(staging_buffer->GetSpan(), texture);
+    queue.TextureBarrier(texture, dst_layout, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kWrite, dst_access);
+}
+
+
+void Helpers::Upload_Async(RHIBufferSpan buffer, const void *data, size_t size) {
+    Upload_Async(RHI::Get().GetGraphicsCommandQueue(), buffer, data, size);
+}
+
+
+void Helpers::UploadWithRDG_Unsafe(RenderGraphBuilder & builder, RHIBufferSpan buffer, const void * data) {
+    auto & rhi = RHI::Get();
+    auto staging_buffer = rhi.CreateBuffer(buffer.size, RHIBufferUsageFlagBits::kStaging);
+    auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
+    memcpy(staging_buffer_ptr, data, buffer.size);
+    staging_buffer->Unmap();
+    builder.AddPass("UploadWithRDG_Unsafe", RDGPassType::kGeneric, {}, {}, {},
+        [src = staging_buffer.Raw(), dst = buffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            queue.BufferBarrier(dst,
+                RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+            queue.CopyBuffer(src->GetSpan(), dst);
+            queue.BufferBarrier(dst,
+                RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
+        }
+    );
+}
+
+void Helpers::UploadWithRDG(RenderGraphBuilder &builder, RDGBuffer * buffer, const void *data, size_t size, size_t dst_offset) {
+    auto & rhi = RHI::Get();
+    auto staging_buffer = rhi.CreateBuffer(size, RHIBufferUsageFlagBits::kStaging);
+    auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
+    memcpy(staging_buffer_ptr, data, size);
+    staging_buffer->Unmap();
+    builder.AddPass("UploadWithRDG", RDGPassType::kGeneric, {}, {}, {},
+        [src = staging_buffer.Raw(), dst = buffer, size, dst_offset]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            auto dst_span = dst->GetRHI();
+            dst_span.size = size;
+            dst_span.offset += dst_offset;
+            queue.CopyBuffer(src->GetSpan(), dst_span);
+        }
+    )->AddBuffer(buffer, RHIGPUAccessFlagBits::kWrite);
+}
+
+void Helpers::ReadbackWithRDG(RenderGraphBuilder &builder, RDGBuffer *buffer, size_t src_offset, RHIBufferSpan readback_buffer) {
+    mi_assert(readback_buffer.buffer->GetBufferUsage() & RHIBufferUsageFlagBits::kReadback, "Must be a readback buffer with corresponding usage.");
+    auto src_span = buffer->GetRHI();
+    mi_assert(src_offset < src_span.size, "OOB: offset must be less than the source buffer size.");
+    size_t max_size = src_span.size - src_offset;
+    mi_assert(readback_buffer.size <= max_size, "OOB: no enough data in the source buffer to read into the readback buffer.");
+
+    builder.AddPass("ReadbackWithRDG", RDGPassType::kGeneric, {}, {}, {},
+        [src = buffer, src_offset, dst = readback_buffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            auto src_span = src->GetRHI();
+            src_span.offset += src_offset;
+            src_span.size = dst.size;
+            queue.CopyBuffer(src_span, dst);
+            queue.BufferBarrier(dst,
+                RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+        }
+    )->AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
+}
+
+
+void Helpers::ReadbackWithRDG_Unsafe(RenderGraphBuilder &builder, RHIBufferSpan buffer, RHIBufferSpan readback_buffer) {
+    mi_assert(buffer.size == readback_buffer.size, "Readback buffer size must match the source buffer size.");
+    mi_assert(readback_buffer.buffer->GetBufferUsage() & RHIBufferUsageFlagBits::kReadback, "Must be a readback buffer with corresponding usage.");
+    builder.AddPass("ReadbackWithRDG_Unsafe", RDGPassType::kGeneric, {}, {}, {},
+        [src = buffer, dst = readback_buffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            queue.BufferBarrier(src,
+                RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kRead);
+            queue.CopyBuffer(src, dst);
+            queue.BufferBarrier(dst,
+                RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+        }
+    );
+}
+
+void Helpers::Readback(RHICommandQueueGraphics & queue, RHIBufferSpan buffer, void * data) {
+    auto & rhi = RHI::Get();
+    auto readback_buffer = rhi.CreateBuffer(buffer.size, RHIBufferUsageFlagBits::kReadback);
+
+    queue.BufferBarrier(buffer,
+        RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kRead);
+    queue.CopyBuffer(buffer, readback_buffer->GetSpan());
+    queue.BufferBarrier(readback_buffer->GetSpan(),
+        RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
+
+    queue.WaitForIdle();
+
+    auto src_ptr = static_cast<const uint8_t*>(readback_buffer->Map());
+    memcpy(data, src_ptr, buffer.size);
+    readback_buffer->Unmap();
 }
 
 

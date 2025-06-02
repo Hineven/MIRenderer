@@ -19,6 +19,11 @@
 
 MI_NAMESPACE_BEGIN
 
+struct RHIDeviceProperties {
+    uint32_t wave_size {}; // Wave size in threads
+    char device_name[256] {}; // Device name
+};
+
 struct RHIParamStructInfo;
 
 struct RHIBufferSpan {

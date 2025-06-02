@@ -26,8 +26,6 @@ public:
     friend class Renderable;
     friend struct RendererView;
     friend class Renderer;
-    // TODO remove this
-    friend class StaticMesh;
 
     constexpr static uint32_t kMaxNumRenderables = 4096;
     constexpr static uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 4096 * 16;
@@ -45,6 +43,10 @@ public:
     FORCEINLINE Texture * GetSkyTexture () const {
         return sky_cube_.Raw();
     }
+
+    // Record the index of the material of each geometry from all static mesh renderables.
+    // This buffer heap is limited to 1 buffer block. And it is always present.
+    TRef<DeviceBufferHeapInterface> d_static_mesh_renderable_materials_;
 
 protected:
 
@@ -72,14 +74,9 @@ protected:
 
     TRef<Texture> sky_cube_;
 
-
     // Indexed with renderable index.
     TRef<RHIBuffer> d_renderable_transforms_;
     TRef<RHIBuffer> d_renderable_headers_;
-
-    // Record the index of the material of each geometry from all static mesh renderables.
-    // This buffer heap is limited to 1 buffer block. And it is always present.
-    TRef<DeviceBufferHeapInterface> d_static_mesh_renderable_materials_;
 };
 
 MI_NAMESPACE_END

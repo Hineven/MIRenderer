@@ -143,6 +143,8 @@ public:
         return global_samplers_;
     }
 
+    virtual RHIDeviceProperties GetDeviceProperties () const = 0;
+
 protected:
 
     GlobalSamplers global_samplers_ {};

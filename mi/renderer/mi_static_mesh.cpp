@@ -8,12 +8,12 @@
 #include "rdg/rdg_builder.h"
 #include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_geometry.h"
-#include "renderer/mi_helpers.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_view.h"
 
 MI_NAMESPACE_BEGIN
-    StaticMesh::StaticMesh(uint32_t index, RendererScene * world): Renderable(RenderableType::kStaticMesh, index, world) {}
+
+StaticMesh::StaticMesh(uint32_t index, RendererScene * world): Renderable(RenderableType::kStaticMesh, index, world) {}
 
 StaticMesh::~StaticMesh() {}
 
@@ -28,7 +28,7 @@ TRef<StaticMesh> StaticMesh::Create(RendererScene *world, Transform transform) {
     mesh->index_ = index;
     mesh->world_ = world;
 
-    world->renderables_[index] = mesh.Raw();
+    mesh->RegisterToWorld();
 
     return std::move(mesh);
 }

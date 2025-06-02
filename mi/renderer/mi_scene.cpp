@@ -8,7 +8,6 @@
 #include "shaders/shared/SharedRenderable.hlsl"
 
 #include <rhi/rhi.h>
-#include <renderer/mi_helpers.h>
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_texture.h>
 #include <rhi/rhi_buffer.h>

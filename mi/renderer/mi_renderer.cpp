@@ -14,7 +14,6 @@
 #include <rdg/rdg_builder.h>
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_renderer_view.h>
-#include <renderer/mi_helpers.h>
 #include <renderer/mi_material.h>
 #include <rhi/rhi_buffer.h>
 
@@ -134,7 +133,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Clear Depth buffer
     builder.AddPass("ClearDepth", RDGPassFlagBits::kNeverCull,
-        [depth = view->G_depth_.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
+        [depth = view->G_depth_.Raw()]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
         queue.ClearTexture(depth->GetRHI(), {1, 1, 1, 1});
     })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferDst);
 

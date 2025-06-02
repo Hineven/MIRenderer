@@ -420,11 +420,14 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
         int current_binding_index = 0;
 
         auto AddBindings = [&] (const auto & desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
-            if(!desc.empty()) bindfull_bindings.emplace_back()
-                        .setBinding(current_binding_index)
+            for (int i = 0; i < (int)desc.size(); ++i) {
+                auto & res = desc[i];
+                bindfull_bindings.emplace_back()
+                        .setBinding(current_binding_index + i)
                         .setDescriptorType(type)
-                        .setDescriptorCount((int)desc.size())
-                        .setStageFlags(vk::ShaderStageFlagBits::eCompute);
+                        .setDescriptorCount(1)
+                        .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
+            }
             for(int i = 0; i < (int)desc.size(); ++i) {
                 remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
             }

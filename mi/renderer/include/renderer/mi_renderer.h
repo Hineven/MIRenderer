@@ -39,6 +39,10 @@ public:
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
+    FORCEINLINE CommonGroupedDeviceResourceAllocator * GetDeviceAllocator () {
+        return device_allocator_.Raw();
+    }
+
 protected:
 
     Renderer();

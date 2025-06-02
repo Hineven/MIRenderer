@@ -71,3 +71,7 @@ target_sources(rdg_test PRIVATE ${RDG_TEST_SHADER_FILES})
 target_include_directories(rdg_test PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(rdg_test PRIVATE cpptrace::cpptrace infra rhi rdg core ${GTEST_LIBRARIES})
 add_test(NAME rdg COMMAND rdg_test)
+
+# Util
+add_executable(util_test util/util_test.cpp)
+target_link_libraries(util_test PRIVATE cpptrace::cpptrace infra rhi rdg util core ${GTEST_LIBRARIES})

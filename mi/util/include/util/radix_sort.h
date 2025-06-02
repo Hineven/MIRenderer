@@ -26,9 +26,9 @@ public:
         const std::string & name = ""
     ) ;
 
-    constexpr static uint32_t kBitsPerPass = 8; // 8 bits per pass, 4 passes for 32 bits
-    constexpr static uint32_t kBinsPerGroup = 1 << kBitsPerPass; // 256 bins per wave
-    constexpr static uint32_t kElementsPerGroup = 1024; // process 1024 array elements per wave
+    constexpr static uint32_t kBitsPerPass = 8; // 8 bits per pass, 4 passes for 32 bits. Must be consistent with the shader code.
+    constexpr static uint32_t kBinsPerGroup = 1 << kBitsPerPass; // 256 bins per thread group. Must be consistent with the shader code.
+    constexpr static uint32_t kElementsPerGroup = 1024; // process 1024 array elements per wave. Must be consistent with the shader code.
 };
 
 MI_NAMESPACE_END

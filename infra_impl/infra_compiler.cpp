@@ -156,6 +156,8 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-Zi");
         add_option(L"-fspv-reflect");
         add_option(L"-fspv-debug=vulkan-with-source");
+        // Debug printf (automatically used , no need to add it)
+        // add_option(L"-fspv-extension=SPV_KHR_non_semantic_info");
     }
     // Add a default include path (same as the shader parent directory)
     std::filesystem::path shader_path_fs = shader_path;

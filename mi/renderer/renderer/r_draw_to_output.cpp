@@ -27,7 +27,7 @@ public:
 
 IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "mi/renderer/shaders/DrawToOutput.hlsl", "VS_Main", "PS_Main");
 
-void Renderer::Render_DrawToOutput(RendererView * view, RenderGraphBuilder & builder, RDGTexture *texture) {
+void Renderer::Render_DrawToOutput([[maybe_unused]] RendererView * view, RenderGraphBuilder & builder, RDGTexture *texture) {
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<DrawToOutputShader>();
     auto params = builder.Allocate<DrawToOutputShader::ShaderParameters>();

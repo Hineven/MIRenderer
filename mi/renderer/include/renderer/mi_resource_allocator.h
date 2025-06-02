@@ -7,6 +7,7 @@
 #ifndef MI_RESOURCE_ALLOCATOR_H
 #define MI_RESOURCE_ALLOCATOR_H
 
+#include <map>
 #include <mutex>
 #include <set>
 #include <stack>
@@ -48,6 +49,15 @@ public:
         return index_buffer_heap_.Raw();
     }
 
+    FORCEINLINE void RegisterCustomBufferHeap (uint32_t index, DeviceBufferHeapInterface * heap) {
+        assert(custom_buffer_heaps_.find(index) == custom_buffer_heaps_.end() && "Custom buffer heap already registered for this index.");
+        custom_buffer_heaps_[index] = heap;
+    }
+
+    FORCEINLINE DeviceBufferHeapInterface * GetCustomBufferHeap (uint32_t index) const {
+        return custom_buffer_heaps_.at(index).Raw();
+    }
+
 
 protected:
 
@@ -62,6 +72,9 @@ protected:
     // Heaps for consistent geometry
     TRef<DeviceBufferHeapInterface> vertex_buffer_heap_;
     TRef<DeviceBufferHeapInterface> index_buffer_heap_;
+
+    // Custom buffer heaps for custom resources (e.g. custom renderable class)
+    std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;
 
     FORCEINLINE RHIBufferSpan AllocateVertexBuffer (uint32_t size) {
         return vertex_buffer_heap_->Allocate(size);

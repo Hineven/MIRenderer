@@ -123,6 +123,28 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         instance_info.ppEnabledLayerNames = enabled_layer_names.data();
         instance_info.enabledLayerCount = (uint32_t)enabled_layer_names.size();
 
+        // Custom debug messenger for capturing shader debug messages
+
+        // auto debug_messenger_create_info = vk::DebugUtilsMessengerCreateInfoEXT {
+        //     {},
+        //     vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo
+        //     | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+        //     vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
+        //     | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::e,
+        //     [](vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+        //        vk::DebugUtilsMessageTypeFlagsEXT message_types,
+        //        const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData,
+        //        void *pUserData) -> vk::Bool32 {
+        //         // if (pCallbackData->pMessageIdName && strcmp(pCallbackData->pMessageIdName, "Loader Message") == 0) {
+        //         //     // Ignore loader messages
+        //         //     return VK_FALSE;
+        //         // }
+        //         MI_LOG(MIInfraLogType::kInfo, "Vulkan debug: {}", pCallbackData->pMessage);
+        //         return VK_FALSE; // Return false to continue the validation
+        //     }
+        // };
+        // instance_info.pNext = &debug_messenger_create_info;
+
         instance_ = vk::createInstance(instance_info);
     }
 
@@ -371,6 +393,16 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         VULKAN_HPP_DEFAULT_DISPATCHER.init(device_);
     }
 
+    // Initialize device properties
+    {
+        auto props = physical_device_.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties>();
+        auto& subgroup_props = props.get<vk::PhysicalDeviceSubgroupProperties>();
+
+        rhi_device_properties_.wave_size = subgroup_props.subgroupSize;
+        strcpy_s(rhi_device_properties_.device_name, physical_device_properties_.self.properties.deviceName);
+        // ...
+    }
+
     // Device resources
     {
         queue_ = device_.getQueue(graphics_queue_family_index_, 0);
@@ -447,6 +479,11 @@ VulkanRHI::~VulkanRHI() {
     instance_.destroy();
 
     // The RHI thread is stopped later.
+}
+
+RHIDeviceProperties VulkanRHI::GetDeviceProperties() const {
+    assert(rhi_device_properties_.wave_size != 0);
+    return rhi_device_properties_;
 }
 
 bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) {

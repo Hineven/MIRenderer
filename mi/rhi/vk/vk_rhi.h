@@ -118,6 +118,8 @@ public:
 
     FORCEINLINE vk::SwapchainKHR GetSwapChain () const {return swapchain_;}
 
+    RHIDeviceProperties GetDeviceProperties() const override;
+
 protected:
 
     bool InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) override;
@@ -156,6 +158,8 @@ protected:
         vk::PhysicalDeviceProperties2 self {};
         vk::PhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer {};
     } physical_device_properties_;
+
+    RHIDeviceProperties rhi_device_properties_ {};
 
     uint32_t graphics_queue_family_index_ {};
 };

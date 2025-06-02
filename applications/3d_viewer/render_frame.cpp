@@ -144,7 +144,7 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
     // Clear backbuffer
     {
         builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {},
-            [bf = backbuffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            [bf = backbuffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.ClearTexture(bf->GetRHI(), {0, 0, 0, 1});
         })->AddTexture(backbuffer, RDGTextureUsageType::kTransferDst);
     }

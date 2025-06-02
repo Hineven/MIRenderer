@@ -4,6 +4,7 @@
  * See LICENSE for licensing.
  */
 
+#include <ranges>
 #include "renderer/mi_buffer_heap.h"
 
 #include "rhi/rhi.h"
@@ -20,6 +21,10 @@ TRef<DeviceBufferHeapBuffer> DeviceBufferHeapInterface::AllocateRefCounted(uint3
     ref->buffer = buf;
     ref->heap = this;
     return std::move(ref);
+}
+
+void DeviceBufferHeapInterface::SetName(const std::string &name) {
+    name_ = name;
 }
 
 
@@ -57,6 +62,7 @@ int SimpleDeviceBufferHeap::FindBufferBlockIndex(RHIBuffer *buffer) const {
 
 void SimpleDeviceBufferHeap::AddNewBlock(size_t block_size, size_t first_allocation_size) {
     auto new_buffer = RHI::Get().CreateBuffer(block_size, usage_);
+    if (!name_.empty()) new_buffer->SetName(name_);
     BufferBlock new_block;
     new_block.buffer = new_buffer;
     if (block_size != first_allocation_size) {
@@ -74,7 +80,7 @@ RHIBufferSpan SimpleDeviceBufferHeap::Allocate(uint32_t size) {
     for (auto& buffer_block : buffer_blocks_) {
         for (auto it = buffer_block.free_segments_.begin(); it != buffer_block.free_segments_.end(); ++it) {
             if (it->size >= aligned_size) {
-                uint32_t start_offset = it->start_offset;
+                size_t start_offset = it->start_offset;
                 size_t remaining_size = it->size - aligned_size;
 
                 buffer_block.free_segments_.erase(it);
@@ -145,8 +151,18 @@ void SimpleDeviceBufferHeap::SetNumBufferBlockLimit(uint32_t num) {
     max_num_buffer_blocks_ = num;
 }
 
+void SimpleDeviceBufferHeap::SetName(const std::string &name) {
+    DeviceBufferHeapInterface::SetName(name);
+    for (auto [i, e] : std::views::enumerate(buffer_blocks_)) {
+        if (e.buffer) {
+            e.buffer->SetName(name + " Block " + std::to_string(i));
+        }
+    }
+}
+
+
 void SimpleDeviceBufferHeap::PreAllocateBlocks(uint32_t num_blocks) {
-    for (int i = 0; i < num_blocks; i++) AddNewBlock(default_buffer_block_size_, 0);
+    for (int i = 0; i < (int)num_blocks; i++) AddNewBlock(default_buffer_block_size_, 0);
 }
 
 

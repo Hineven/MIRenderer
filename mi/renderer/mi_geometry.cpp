@@ -7,9 +7,9 @@
 
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_geometry.h>
-#include <renderer/mi_helpers.h>
 #include <rhi/rhi.h>
 
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
 

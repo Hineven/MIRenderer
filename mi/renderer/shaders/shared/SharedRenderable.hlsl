@@ -17,6 +17,13 @@ struct StaticMeshRenderableHeader {
     uint Padding2;
 };
 
+struct VolumePrimitivesRenderableHeader {
+    uint NumPrimitives;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
+};
+
 MI_SHARED_HLSL_END
 
 #endif // MI_RENDERER_SHADERS_SHARED_RENDERABLE_HLSL

@@ -944,7 +944,7 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
     state.debug_marker_stack.push(cmd->marker_name_);
 }
 
-void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) {
+void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[maybe_unused]] RHICommandDebugMarkerEnd *cmd) {
     // Insert debug marker
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();

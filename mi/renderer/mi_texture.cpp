@@ -5,7 +5,7 @@
  */
 #include "renderer/mi_texture.h"
 
-#include "renderer/mi_helpers.h"
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_resource_allocator.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_bindless.h"

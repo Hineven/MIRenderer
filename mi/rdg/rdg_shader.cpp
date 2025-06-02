@@ -857,7 +857,7 @@ void RDGShaderLibrary::Init() {
             } else {
                 // No value, just a flag
                 macro_values[optional_macro].push_back("");
-            }c
+            }
         }
         // Unique macro values
         for (auto & e : macro_values) {

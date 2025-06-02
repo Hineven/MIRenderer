@@ -22,7 +22,6 @@ public:
 
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
     void Update (RendererView * view, RenderGraphBuilder & builder);
-    FORCEINLINE bool IsDirty () const {return dirty_;}
 
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
@@ -35,8 +34,6 @@ protected:
 
     StaticMesh(uint32_t index, RendererScene * world) ;
     ~StaticMesh() override;
-
-    bool dirty_ {true};
 
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;

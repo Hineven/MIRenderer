@@ -23,7 +23,7 @@ MI_NAMESPACE_BEGIN
 class StaticMesh;
 
 class RenderGraphBuilder;
-class Renderable : public NonMovable, public RefCounted<> {
+class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
     friend class RendererScene;
     virtual ~Renderable();
@@ -32,11 +32,13 @@ public:
     // Dirty means that the renderer will make a call to Update before rendering.
     FORCEINLINE bool IsDirty () const { return dirty_; }
     FORCEINLINE void SetDirty (bool dirty) { dirty_ = dirty; }
+    FORCEINLINE bool IsTransformDirty () const { return transform_dirty_; }
+    FORCEINLINE void SetTransformDirty (bool dirty) { transform_dirty_ = dirty; }
     FORCEINLINE RenderableType GetType() const { return type_; }
     virtual void Update (RendererView * view, RenderGraphBuilder& builder) = 0;
 
     FORCEINLINE void SetTransform (const Transform& transform) {
-        dirty_ = true;
+        transform_dirty_ = true;
         transform_ = transform;
     }
     FORCEINLINE const Transform& GetTransform () const {
@@ -44,7 +46,7 @@ public:
     }
 
     FORCEINLINE Transform & EditTransform () {
-        dirty_ = true;
+        transform_dirty_ = true;
         return transform_;
     }
 
@@ -61,6 +63,9 @@ public:
 
 protected:
 
+    // Register a renderable to the world. Called by childs.
+    void RegisterToWorld () ;
+
     // Proxy for World::AllocateRenderableIndex();
     static uint32_t AllocateRenderableIndexFromWorld (RendererScene * world) ;
 
@@ -72,7 +77,8 @@ protected:
 
     // Invisible renderables wont be rendered.
     bool visible_ {true};
-    bool dirty_ {false};
+    bool dirty_ {true};
+    bool transform_dirty_ {true};
     RenderableType type_ {RenderableType::kStaticMesh};
 
 };

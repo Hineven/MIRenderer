@@ -193,7 +193,6 @@ bool GLTFLoader::LoadGLTF(
               albedo_map_text->basisu_image : albedo_map_text->image) : images.end());
         if(it != images.end())
         {
-            auto *temp = (*it).second.Raw();
             material_ref->SetAlbedoTexture((*it).second.Raw());
         }
         cgltf_texture const *metallicity_roughness_map_text = gltf_material_pbr.metallic_roughness_texture.texture;

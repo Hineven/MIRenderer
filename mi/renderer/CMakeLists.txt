@@ -5,11 +5,11 @@ set(SOURCES
         mi_transform.cpp
         mi_geometry.cpp
         mi_static_mesh.cpp
+        mi_volume_primitives.cpp
         mi_renderable.cpp
         mi_scene.cpp
         mi_renderer_view.cpp
         mi_renderer.cpp
-        mi_helpers.cpp
         mi_buffer_heap.cpp
         # Implementing the renderer
         renderer/r_draw_to_output.cpp

@@ -38,10 +38,15 @@ public:
     virtual void SetNumBufferBlockLimit (uint32_t num) = 0;
     virtual ~DeviceBufferHeapInterface () = default;
 
+    virtual void SetName (const std::string & name) ;
+    FORCEINLINE const std::string & GetName () const {
+        return name_;
+    }
+
     // Allocate blocks even if they are unused.
     virtual void PreAllocateBlocks (uint32_t num_blocks) = 0;
 protected:
-
+    std::string name_ {};
     RHIBufferUsageFlags usage_;
     uint32_t allocation_alignment {};
 };
@@ -82,8 +87,9 @@ protected:
 
     void AddNewBlock (size_t block_size, size_t first_allocation_size);
 
-public:
     SimpleDeviceBufferHeap (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024);
+
+public:
     ~SimpleDeviceBufferHeap();
 
     void SetNumBufferBlockLimit (uint32_t num) override ;
@@ -99,6 +105,8 @@ public:
     FORCEINLINE static TRef<SimpleDeviceBufferHeap> Create (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024) {
         return {new SimpleDeviceBufferHeap(usage, allocation_alignment, buffer_block_size)};
     }
+
+    void SetName (const std::string & name) override;
 
     void PreAllocateBlocks(uint32_t num_blocks) override;
 

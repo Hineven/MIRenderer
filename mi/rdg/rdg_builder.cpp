@@ -78,12 +78,11 @@ TRef<RDGBuffer> RenderGraphBuilder::CreateBuffer (RHIBufferUsageFlags usage, siz
     return RDGBuffer::Create(usage, size, dedicated, no_warning);
 }
 
-RDGBuffer * RenderGraphBuilder::Import(const char *name, RHIBuffer *resource, RHIGPUAccessFlags prev_access) {
+RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags prev_access) {
     mi_assert(resource != nullptr, "Importing null buffer resource.");
     auto it = external_buffer_map_.find(resource);
     if (it != external_buffer_map_.end()) {
         auto ret = external_buffer_map_[resource];
-        ret->SetName(name);
         return ret.Raw();
     }
     auto desc = resource->GetDesc();
@@ -92,17 +91,19 @@ RDGBuffer * RenderGraphBuilder::Import(const char *name, RHIBuffer *resource, RH
     buffer->rhi_buffer_span_ = resource->GetSpan();
     buffer->usage_ = prev_access;
     buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
-    buffer->SetName(name);
+    {
+        auto original_name = resource->GetName();
+        if (original_name) buffer->SetName(original_name);
+    }
     external_buffer_map_[resource] = buffer;
     return buffer.Raw();
 }
 
-RDGTexture * RenderGraphBuilder::Import(const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) {
+RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RDGTextureUsageType prev_usage) {
     mi_assert(resource != nullptr, "Importing null texture resource.");
     auto it = external_texture_map_.find(resource);
     if (it != external_texture_map_.end()) {
         auto ret = external_texture_map_[resource];
-        ret->SetName(name);
         return ret.Raw();
     }
     mi_assert(resource != nullptr, "Cannot import a null texture.");
@@ -111,7 +112,10 @@ RDGTexture * RenderGraphBuilder::Import(const char * name, RHITexture * resource
     texture->rhi_texture_ = resource;
     texture->usage_ = prev_usage;
     texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
-    texture->SetName(name);
+    {
+        auto original_name = resource->GetName();
+        if (original_name) texture->SetName(original_name);
+    }
     external_texture_map_[resource] = texture;
     return texture.Raw();
 }

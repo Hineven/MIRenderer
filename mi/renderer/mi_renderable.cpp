@@ -25,5 +25,10 @@ Renderable::~Renderable() {
     }
 }
 
+void Renderable::RegisterToWorld() {
+    world_->renderables_[index_] = this;
+}
+
+
 
 MI_NAMESPACE_END

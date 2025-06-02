@@ -111,20 +111,12 @@ public:
     }
 
     // Import a rhi texture. NOTE: The builder kept a reference to the resource once imported.
-    RDGTexture * Import (const char * name, RHITexture * resource, RDGTextureUsageType prev_usage) ;
-    // Import a rhi texture. NOTE: The builder kept a reference to the resource once imported.
-    FORCEINLINE RDGTexture* Import (RHITexture * resource, RDGTextureUsageType prev_usage = RDGTextureUsageType::kNone) {
-        return Import("<unnamed>", resource, prev_usage);
-    }
+    RDGTexture * Import (RHITexture * resource, RDGTextureUsageType prev_usage = RDGTextureUsageType::kDontCare) ;
 
     // Create a RDG buffer with the given description.
     TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) ;
     // Import a rhi buffer. NOTE: The builder kept a reference to the resource once imported.
-    RDGBuffer * Import (const char *name, RHIBuffer * resource, RHIGPUAccessFlags prev_access) ;
-    // Import a rhi buffer. NOTE: The builder kept a reference to the resource once imported.
-    FORCEINLINE RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone) {
-        return Import("<unnamed>", resource, prev_access);
-    }
+    RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone) ;
 
 
 
