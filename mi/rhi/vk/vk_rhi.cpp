@@ -5,6 +5,7 @@
  */
 
 #include <string>
+#include <fstream>
 #include "rhi/rhi.h"
 #include "core/infra.h"
 
@@ -432,13 +433,50 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     };
 }
 
+static const char* PIPELINE_CACHE_FILE_PATH = "pipeline_cache.bin";
+
 void VulkanRHI::InvalidateDiskPipelineCache() {
-    // TODO
+    if (std::remove(PIPELINE_CACHE_FILE_PATH) == 0) {
+        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache file '{}' deleted.", PIPELINE_CACHE_FILE_PATH);
+    } else {
+        // It's okay if the file doesn't exist, so only log actual errors if needed,
+        // or just ignore if std::remove returns non-zero for "file not found".
+        // perror can give more info on std::remove failure.
+        // MI_LOG(MIInfraLogType::kWarning, "Error deleting pipeline cache file '{}'.", PIPELINE_CACHE_FILE_PATH);
+    }
 }
 
 void VulkanRHI::LoadPipelineCache() {
-    // TODO actually load from disk
-    pipeline_cache_ = device_.createPipelineCache(vk::PipelineCacheCreateInfo());
+    std::vector<char> cache_data;
+    std::ifstream cache_file(PIPELINE_CACHE_FILE_PATH, std::ios::binary | std::ios::ate);
+
+    if (cache_file.is_open()) {
+        size_t file_size = cache_file.tellg();
+        cache_file.seekg(0, std::ios::beg);
+        cache_data.resize(file_size);
+        cache_file.read(cache_data.data(), file_size);
+        cache_file.close();
+        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache loaded from '{}', size: {} bytes.", PIPELINE_CACHE_FILE_PATH, file_size);
+    } else {
+        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache file '{}' not found. Creating new cache.", PIPELINE_CACHE_FILE_PATH);
+    }
+
+    vk::PipelineCacheCreateInfo cache_create_info;
+    if (!cache_data.empty()) {
+        // Vulkan spec: The data is valid if the first 16 bytes match the header structure.
+        // We can pass it directly; Vulkan will validate.
+        cache_create_info.initialDataSize = cache_data.size();
+        cache_create_info.pInitialData = cache_data.data();
+    }
+
+    auto result = device_.createPipelineCache(cache_create_info);
+    if (!result) {
+        MI_LOG(MIInfraLogType::kWarning, "Failed to load pipeline cache from disk (the binary is corrupted?). Creating empty cache.");
+        // Fallback to creating an empty cache if loading/creating with data failed
+        pipeline_cache_ = device_.createPipelineCache(vk::PipelineCacheCreateInfo());
+    } else {
+        pipeline_cache_ = result;
+    }
 }
 
 VulkanRHI::~VulkanRHI() {
@@ -447,6 +485,23 @@ VulkanRHI::~VulkanRHI() {
     // Release the resources held by upper layers first
     delete this->bindless_manager_;
     delete this->command_executor_;
+
+    // Save pipeline cache before destroying it
+    if (pipeline_cache_) {
+        auto result = device_.getPipelineCacheData(pipeline_cache_);
+        if (!result.empty()) {
+            std::ofstream cache_file(PIPELINE_CACHE_FILE_PATH, std::ios::binary | std::ios::trunc);
+            if (cache_file.is_open()) {
+                cache_file.write(reinterpret_cast<const char*>(result.data()), result.size());
+                cache_file.close();
+                MI_LOG(MIInfraLogType::kInfo, "Pipeline cache saved to '{}', size: {} bytes.", PIPELINE_CACHE_FILE_PATH, result.size());
+            } else {
+                MI_LOG(MIInfraLogType::kWarning, "Failed to open pipeline cache file '{}' for writing.", PIPELINE_CACHE_FILE_PATH);
+            }
+        } else {
+            MI_LOG(MIInfraLogType::kWarning, "Failed to get pipeline cache data.");
+        }
+    }
 
     // Release swapchain (if present)
     if(swapchain_) {

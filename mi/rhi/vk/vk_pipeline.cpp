@@ -260,7 +260,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     vk::PipelineTessellationStateCreateInfo tessellation_vk {};
     {
         // Tess is not supported by RHI for now
-//        pipeline_info_vk.setPTessellationState(&tessellation_vk);
+        //        pipeline_info_vk.setPTessellationState(&tessellation_vk);
     }
 
     // The viewport and rasterization states are partially dynamic
@@ -315,19 +315,19 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 
     vk::PipelineDynamicStateCreateInfo dynamic_state_vk {};
     std::vector<vk::DynamicState> dynamic_states {
-            vk::DynamicState::eViewportWithCount,
-            // vk::DynamicState::eViewport,
-            vk::DynamicState::eScissorWithCount,
-            // vk::DynamicState::eScissor,
-            vk::DynamicState::eDepthClampEnableEXT,
+        vk::DynamicState::eViewportWithCount,
+        // vk::DynamicState::eViewport,
+        vk::DynamicState::eScissorWithCount,
+        // vk::DynamicState::eScissor,
+        vk::DynamicState::eDepthClampEnableEXT,
 //            vk::DynamicState::eRasterizerDiscardEnable,
-            vk::DynamicState::ePolygonModeEXT,
-            vk::DynamicState::eCullMode,
-            vk::DynamicState::eFrontFace,
-            vk::DynamicState::eDepthBiasEnable,
-            vk::DynamicState::eDepthBias,
-            vk::DynamicState::eLineWidth
-    };
+        vk::DynamicState::ePolygonModeEXT,
+        vk::DynamicState::eCullMode,
+        vk::DynamicState::eFrontFace,
+        vk::DynamicState::eDepthBiasEnable,
+        vk::DynamicState::eDepthBias,
+        vk::DynamicState::eLineWidth
+};
     {
         dynamic_state_vk.setDynamicStateCount((int)dynamic_states.size());
         dynamic_state_vk.setPDynamicStates(dynamic_states.data());
@@ -346,23 +346,25 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
             );
         }
         auto rdn_info = vk::PipelineRenderingCreateInfo {
-                {}, color_attachment_formats,
-                has_depth_stencil ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
-                {}
+                    {}, color_attachment_formats,
+                    has_depth_stencil ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+                    {}
         };
         pipeline_info_vk.setPNext(&rdn_info);
     }
-
-    auto result = device.createGraphicsPipeline(GetVulkanRHI()->GetPipelineCache(), pipeline_info_vk);
-    if(result.result != vk::Result::eSuccess) {
-        MI_LOG(MIInfraLogType::kWarning, "Failed to create graphics pipeline: %s. Error code: %s", GetName(), vk::to_string(result.result));
-        device.destroy(vk_pipeline_layout_);
-        device.destroy(vk_render_pass_);
-        vk_pipeline_layout_ = nullptr;
-        vk_render_pass_ = nullptr;
-        return false;
+    {
+        auto guard = std::lock_guard(GetVulkanRHI()->GetPipelineCacheMutex());
+        auto result = device.createGraphicsPipeline(GetVulkanRHI()->GetPipelineCache(), pipeline_info_vk);
+        if(result.result != vk::Result::eSuccess) {
+            MI_LOG(MIInfraLogType::kWarning, "Failed to create graphics pipeline: %s. Error code: %s", GetName(), vk::to_string(result.result));
+            device.destroy(vk_pipeline_layout_);
+            device.destroy(vk_render_pass_);
+            vk_pipeline_layout_ = nullptr;
+            vk_render_pass_ = nullptr;
+            return false;
+        }
+        vk_pipeline_ = result.value;
     }
-    vk_pipeline_ = result.value;
 
     SetName(GetName());
 
@@ -485,19 +487,22 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     RelocateShaderResourceBindings(this, device, compute_shader, remappings_, shader_stages, shader_module_keepers);
 
     // Create pipeline
-    auto result = device.createComputePipeline(
-            GetVulkanRHI()->GetPipelineCache(),
-            vk::ComputePipelineCreateInfo()
-                    .setLayout(vk_pipeline_layout_)
-                    .setStage(shader_stages[0])
-    );
+    {
+        auto guard = std::lock_guard(GetVulkanRHI()->GetPipelineCacheMutex());
+        auto result = device.createComputePipeline(
+                GetVulkanRHI()->GetPipelineCache(),
+                vk::ComputePipelineCreateInfo()
+                        .setLayout(vk_pipeline_layout_)
+                        .setStage(shader_stages[0])
+        );
 
-    if(result.result != vk::Result::eSuccess) {
-        MI_LOG(MIInfraLogType::kWarning, "Failed to create compute pipeline: %s.", GetName());
-        device.destroy(vk_pipeline_layout_);
-        return false;
+        if(result.result != vk::Result::eSuccess) {
+            MI_LOG(MIInfraLogType::kWarning, "Failed to create compute pipeline: %s.", GetName());
+            device.destroy(vk_pipeline_layout_);
+            return false;
+        }
+        vk_pipeline_ = result.value;
     }
-    vk_pipeline_ = result.value;
 
     SetName(GetName());
 

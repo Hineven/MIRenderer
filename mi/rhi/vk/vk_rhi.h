@@ -120,6 +120,10 @@ public:
 
     RHIDeviceProperties GetDeviceProperties() const override;
 
+    FORCEINLINE std::mutex & GetPipelineCacheMutex() {
+        return pipeline_cache_mutex_;
+    }
+
 protected:
 
     bool InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) override;
@@ -145,6 +149,7 @@ protected:
     std::vector<vk::Semaphore> vk_swapchain_image_available_semaphores_;
     std::vector<vk::Semaphore> vk_swapchain_render_finished_semaphores_;
 
+    std::mutex pipeline_cache_mutex_ {};
     vk::PipelineCache pipeline_cache_ {};
 
     int surface_offset_x_ {};
