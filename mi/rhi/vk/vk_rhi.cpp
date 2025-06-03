@@ -456,7 +456,7 @@ void VulkanRHI::LoadPipelineCache() {
         cache_data.resize(file_size);
         cache_file.read(cache_data.data(), file_size);
         cache_file.close();
-        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache loaded from '{}', size: {} bytes.", PIPELINE_CACHE_FILE_PATH, file_size);
+        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache loaded from '{}', size: {} KB.", PIPELINE_CACHE_FILE_PATH, file_size / 1024);
     } else {
         MI_LOG(MIInfraLogType::kInfo, "Pipeline cache file '{}' not found. Creating new cache.", PIPELINE_CACHE_FILE_PATH);
     }
@@ -494,7 +494,7 @@ VulkanRHI::~VulkanRHI() {
             if (cache_file.is_open()) {
                 cache_file.write(reinterpret_cast<const char*>(result.data()), result.size());
                 cache_file.close();
-                MI_LOG(MIInfraLogType::kInfo, "Pipeline cache saved to '{}', size: {} bytes.", PIPELINE_CACHE_FILE_PATH, result.size());
+                MI_LOG(MIInfraLogType::kInfo, "Pipeline cache saved to '{}', size: {} KB.", PIPELINE_CACHE_FILE_PATH, result.size() / 1024);
             } else {
                 MI_LOG(MIInfraLogType::kWarning, "Failed to open pipeline cache file '{}' for writing.", PIPELINE_CACHE_FILE_PATH);
             }

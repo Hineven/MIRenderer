@@ -25,7 +25,7 @@ public:
         SHADER_UNIFORM_BUFFER(RadixSortUB, UB)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Keys)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Values)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, Bins)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWBins)
         // Count is only valid when the shader is an indirect version
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
     END_SHADER_PARAMETERS()
@@ -35,26 +35,35 @@ public:
     static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE="};
+        return {"WAVE_SIZE=" + wave_size};
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScanShader, "mi/util/shaders/RadixSort.hlsl", "RadixSortScan");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScanShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortScan");
 
 class RadixSortSumShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(RadixSortSumShaderParameters)
         SHADER_UNIFORM_BUFFER(RadixSortUB, UB)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, Bins)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWBins)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(RadixSortSumShaderParameters)
     DECLARE_SHADER()
+    static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
+        return {"WAVE_SIZE=" + wave_size};
+    }
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {kIndirectMacro};
+    }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortSumShader, "mi/util/shaders/RadixSort.hlsl", "RadixSortSum");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortSumShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortSum");
 
 class RadixSortScatterShader : public RDGShader {
 public:
@@ -62,17 +71,25 @@ public:
         SHADER_UNIFORM_BUFFER(RadixSortUB, UB)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Keys)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Values)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, OutKeys)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, OutValues)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, Bins)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWOutKeys)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWOutValues)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Bins)
         // Count is only valid when the shader is an indirect version
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(RadixSortScatterShaderParameters)
     DECLARE_SHADER()
+    static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
+        return {"WAVE_SIZE=" + wave_size};
+    }
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {kIndirectMacro};
+    }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScatterShader, "mi/util/shaders/RadixSort.hlsl", "RadixSortScatter");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScatterShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortScatter");
 
 void RadixSort::AddRadixSort32BitsPass(
     RenderGraphBuilder &builder, uint32_t num_elements, RDGBuffer *src_keys_buffer, RDGBuffer *dst_keys_buffer,
@@ -111,15 +128,15 @@ void RadixSort::AddRadixSort32BitsPass(
         auto UB = builder.Allocate<RadixSortUB>();
         UB->NumElements = num_elements;
         UB->BitShift = i * 8;
-        auto max_num_groups = DivideAndRoundUp(num_elements, kElementsPerGroup);
-        auto bins = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, max_num_groups * kBinsPerGroup);
+        auto max_num_groups = DivideAndRoundUp(num_elements, kElementsPerSegment);
+        auto bins = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, max_num_groups * kBinsPerPass);
         // Scan
         {
             auto params = builder.Allocate<RadixSortScanShader::ShaderParameters>();
             params->UB = UB;
             params->Keys = src_keys_buffer;
             params->Values = src_values_buffer;
-            params->Bins = bins.Raw();
+            params->RWBins = bins.Raw();
             params->Count = count_buffer;
             builder.AddPass<RadixSortScanShader>(
                 RDGPassFlagBits::kNeverCull, params,
@@ -132,15 +149,16 @@ void RadixSort::AddRadixSort32BitsPass(
                 }
             )->AddBuffer(dispatch_command.Raw(), RHIGPUAccessFlagBits::kRead)->SetName(radix_sort_pass_name);
         }
-        // Sum (using 1 group)
+        // Sum (using kBinsPerPass groups)
         {
             auto params = builder.Allocate<RadixSortSumShader::ShaderParameters>();
             params->UB = UB;
-            params->Bins = params->Bins;
+            params->RWBins = bins.Raw();
+            params->Count = count_buffer;
             builder.AddPass<RadixSortSumShader>(
             RDGPassFlagBits::kNeverCull, params,
                 [sum_shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    RDGCommandHelper::Dispatch<RadixSortScanShader>(queue, pass, sum_shader, params, 1, 1, 1);
+                    RDGCommandHelper::Dispatch<RadixSortScanShader>(queue, pass, sum_shader, params, kBinsPerPass, 1, 1);
                 }
             )->SetName(radix_sort_pass_name);
         }
@@ -152,8 +170,8 @@ void RadixSort::AddRadixSort32BitsPass(
             params->UB = UB;
             params->Keys = src_keys_buffer;
             params->Values = src_values_buffer;
-            params->OutKeys = curr_dst_keys_buffer;
-            params->OutValues = curr_dst_values_buffer;
+            params->RWOutKeys = curr_dst_keys_buffer;
+            params->RWOutValues = curr_dst_values_buffer;
             params->Bins = bins.Raw();
             params->Count = count_buffer;
             builder.AddPass<RadixSortScatterShader>(
@@ -165,7 +183,7 @@ void RadixSort::AddRadixSort32BitsPass(
                         RDGCommandHelper::DispatchIndirect<RadixSortScatterShader>(queue, pass, scatter_shader, params, cmd);
                     }
                 }
-            )->SetName(radix_sort_pass_name);
+            )->AddBuffer(dispatch_command.Raw(), RHIGPUAccessFlagBits::kRead)->SetName(radix_sort_pass_name);
         }
         if (i != 0) {
             std::swap(src_keys_buffer, curr_dst_keys_buffer);

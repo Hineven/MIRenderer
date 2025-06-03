@@ -59,6 +59,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kStorageBuffer>((int)i);
+            // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
                 ret.storages[num_active_storages ++] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
             } // Otherwise potentially the shader is not using this storage buffer. Silently ignore it.
@@ -78,6 +79,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
+            // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
                 ret.uavs[num_active_uavs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
             } // Otherwise potentially the shader is not using this UAV. Silently ignore it.
@@ -97,6 +99,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
+            // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
                 ret.srvs[num_active_srvs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
             } // Otherwise potentially the shader is not using this SRV. Silently ignore it.
@@ -114,6 +117,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>((int)i);
+            // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
                 ret.samplers[num_active_samplers ++] = {sampler_ptr, slot};
             } // Otherwise potentially the shader is not using this sampler. Silently ignore it.
@@ -130,6 +134,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::UploadShaderParam
                 return std::nullopt;
             }
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kAccelerationStructure>((int)i);
+            // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
                 ret.acceleration_structures[num_active_acceleration_structures ++] = {as_ptr, slot};
             } // Otherwise potentially the shader is not using this AS. Silently ignore it.
@@ -172,10 +177,12 @@ bool RDGCommandHelper::BindGraphicsShader (
         for (auto e : info->vertex_buffers_) {
             auto ptr = (RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset);
             if (ptr) {
-                queue.BindVertexBuffer(
-                    e.info->cpp_extra.vertex_buffer_info->index,
-                    ((RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset))->GetRHI()
-                );
+                if (!manual_vbuffer) {
+                    queue.BindVertexBuffer(
+                        e.info->cpp_extra.vertex_buffer_info->index,
+                        ((RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset))->GetRHI()
+                    );
+                }
             } else {
                 if (!manual_vbuffer) {
                     MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null vertex buffer for paramter '{}'. Bind cancelled.",
@@ -219,6 +226,27 @@ bool RDGCommandHelper::BindGraphicsShader (
     return true;
 }
 
+bool RDGCommandHelper::BindComputeShader (
+    RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void * params) {
+    if (!compute_shader->IsValid()) {
+        MI_WARN("Shader {}: Invalid shader. Dispatch cancelled.",
+            compute_shader->class_registry_->name);
+        return false;
+    }
+    auto desc = UploadShaderParams(pass, compute_shader, queue, info, params);
+    if (!desc.has_value()) {
+        MI_WARN("Shader {}: Failed to upload shader parameters. Dispatch cancelled.",
+            compute_shader->class_registry_->name);
+        return false;
+    }
+    queue.BindPipeline(compute_shader->graphics_pipeline_.Raw());
+
+    queue.BindPipelineParameters(RHIBindPointType::kCompute, desc.value());
+
+    return true;
+}
+
 void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void *params,
     int vertex_count, int instance_count, int first_vertex, int first_instance) {
@@ -226,6 +254,13 @@ void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGSh
         queue.BeginRendering();
         queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);
         queue.EndRendering();
+    }
+}
+
+void RDGCommandHelper::DispatchIndirect(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *compute_shader,
+    const RDGShaderParamStructAndSizeInfo *info, const void *params, RDGBuffer *indirect_buffer, uint32_t offset) {
+    if (BindComputeShader(queue, pass, compute_shader, info, params)) {
+        queue.DispatchIndirect(indirect_buffer->GetRHI().buffer, indirect_buffer->GetRHI().offset + offset);
     }
 }
 

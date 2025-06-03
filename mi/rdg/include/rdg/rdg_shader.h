@@ -83,8 +83,10 @@ public:
     FORCEINLINE bool IsValid () const {return is_valid_;}
 
     // Convert the parameter resource index (within its kind) to pipeline slot used for RHI resource binding
+    // Returns UINT32_MAX if the index is invalid (e.g. not used in the shader).
     template<RHIParamType type>
     FORCEINLINE uint32_t ConvertParamResourceIndexToResourceSlot (int index) {
+        if (index >= (int)cpp_resource_index_to_slot_[(uint32_t)type].size()) return UINT32_MAX;
         return cpp_resource_index_to_slot_[(uint32_t)type][index];
     }
 
@@ -303,7 +305,6 @@ public:
 protected:
     FORCEINLINE static RDGShader * zzShaderFactoryFunction (RDGShaderClassRegistry * registry, RDGShaderInitializationInfo info) {
         auto shader = (RDGShader*)(new T(registry));
-        shader->Recompile(info);
         return shader;
     }
 };

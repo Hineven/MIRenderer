@@ -13,20 +13,24 @@
 #include "rdg/rdg_pool.h"
 
 #include <exception>
+#include <random>
 #include <cpptrace/from_current.hpp>
 
 #include "rdg/rdg_helper.h"
+#include "rdg/rdg_shader.h"
 #include "rhi/rhi_buffer.h"
 
 TEST(UtilTest, UtilRadixSort) {
     using namespace mi;
-    TransferInfra(std::make_unique<MyInfra>());
+    TransferInfra(std::make_unique<MyInfra>(true));
     GetInfra().Init();
 
     // Hack: we need to pretend that we're a render thread to pass the assertions
     SetCurrentThreadType(ThreadType::kRenderThread);
 
     RHI::InitializeSingleton(RHIType::kVulkan);
+
+    RDGShaderLibrary::Get().Init();
 
     {
         RenderGraphBuilder builder;
@@ -39,17 +43,39 @@ TEST(UtilTest, UtilRadixSort) {
 
         std::vector<uint32_t> host_keys(num_elements);
         std::vector<uint32_t> host_values(num_elements);
+
+        // Initialize host data with random values
+        {
+            std::mt19937 rng(12312);
+            for (uint32_t i = 0; i < num_elements; ++i) {
+                host_keys[i] = rng(); // Random keys
+                host_values[i] = rng(); // Random values
+            }
+            // Manually select some keys and duplicate them to test stability
+            for (int i = 0; i < 7; i++) {
+                int index = rng() % num_elements;
+                for (int j = 0; j < 800; j++) {
+                    int k = rng() % num_elements;
+                    host_keys[k] = host_keys[index];
+                }
+            }
+        }
+
         Helpers::UploadWithRDG(builder, src_keys.Raw(), host_keys.data(), host_keys.size() * sizeof(uint32_t));
         Helpers::UploadWithRDG(builder, src_values.Raw(), host_values.data(), host_values.size() * sizeof(uint32_t));
-        RadixSort::AddRadixSort32BitsPass(builder, num_elements, src_keys.Raw(), src_values.Raw(),
-                                          dst_keys.Raw(), dst_values.Raw());
+
+        RadixSort::AddRadixSort32BitsPass(builder, num_elements, src_keys.Raw(), dst_keys.Raw(), src_values.Raw(), dst_values.Raw());
+
         auto readback_values = RHI::Get().CreateBuffer(num_elements * sizeof(uint32_t), RHIBufferUsageFlagBits::kReadback);
         auto readback_keys = RHI::Get().CreateBuffer(num_elements * sizeof(uint32_t), RHIBufferUsageFlagBits::kReadback);
         Helpers::ReadbackWithRDG(builder, dst_keys.Raw(), 0, readback_keys->GetSpan());
-        Helpers::ReadbackWithRDG(builder, dst_values.Raw(), 0, readback_keys->GetSpan());
+        Helpers::ReadbackWithRDG(builder, dst_values.Raw(), 0, readback_values->GetSpan());
         builder.Compile()->Execute(pool.Raw());
 
+        RHI::Get().AdvanceFrame();
+
         RHI::Get().WaitForIdle();
+
         std::vector<uint32_t> readback_values_data(num_elements);
         std::vector<uint32_t> readback_keys_data(num_elements);
         std::memcpy(readback_keys_data.data(), readback_keys->Map(), num_elements * sizeof(uint32_t));
@@ -69,8 +95,8 @@ TEST(UtilTest, UtilRadixSort) {
         }
         uint32_t mismatch_index = UINT32_MAX;
         for (uint32_t i = 0; i < num_elements; ++i) {
-            if (readback_keys_data[i] != sorted_keys[i]) mismatch_index = i;
-            if (readback_values_data[i] != sorted_values[i]) mismatch_index = i;
+            if (readback_keys_data[i] != sorted_keys[i]) mismatch_index = std::min(mismatch_index, i);
+            if (readback_values_data[i] != sorted_values[i]) mismatch_index = std::min(mismatch_index, i);
         }
         if (mismatch_index != UINT32_MAX) {
             std::cout << "Mismatch at index: " << mismatch_index << std::endl;
@@ -79,6 +105,9 @@ TEST(UtilTest, UtilRadixSort) {
         }
         ASSERT_EQ(mismatch_index, UINT32_MAX) << "Radix sort failed to sort the data correctly.";
     }
+
+
+    RDGShaderLibrary::Get().DestroySingleton();
 
     RHI::DestroySingleton();
 

@@ -37,6 +37,7 @@ public:
     void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
     void RHIDrawIndexedIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndexedIndirect * draw_indexed_indirect) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
+    void RHIDispatchIndirect(RHICommandQueueBase * cmd, RHICommandDispatchIndirect * dispatch_indirect) override ;
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
     void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) override;
     void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetScissor *set_scissor) override;

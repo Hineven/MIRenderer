@@ -14,5 +14,8 @@ StructuredBuffer<uint> Count;
 void SpawnDispatchIndirectCommand1D () {
     DispatchIndirecCommand Cmd = (DispatchIndirecCommand)0;
     Cmd.ThreadGroupCountX = Count[0];
+    Cmd.ThreadGroupCountY = 1;
+    Cmd.ThreadGroupCountZ = 1;
     Command[0] = Cmd;
+    printf("SpawnDispatchIndirectCommand1D: %d\n", Cmd.ThreadGroupCountX);
 }

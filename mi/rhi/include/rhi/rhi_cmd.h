@@ -419,11 +419,11 @@ public:
 
 class RHICommandDispatchIndirect : public TRHICommand<RHICommandDispatchIndirect> {
 public:
-    RHICommandDispatchIndirect(RHIBufferSpan dispatch_command_buffer, uint32_t offset)
+    RHICommandDispatchIndirect(RHIBuffer * dispatch_command_buffer, uint32_t offset)
         : dispatch_command_buffer_(dispatch_command_buffer), offset_(offset) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
-    RHIBufferSpan dispatch_command_buffer_;
+    RHIBuffer * dispatch_command_buffer_;
     uint32_t offset_;
 };
 
@@ -606,7 +606,7 @@ public:
     FORCEINLINE void Dispatch (uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) {
         AddCommand(AllocateCommand<RHICommandDispatch>(group_count_x, group_count_y, group_count_z));
     }
-    FORCEINLINE void DispatchIndirect (RHIBufferSpan dispatch_command_buffer, uint32_t offset) {
+    FORCEINLINE void DispatchIndirect (RHIBuffer * dispatch_command_buffer, uint32_t offset) {
         AddCommand(AllocateCommand<RHICommandDispatchIndirect>(dispatch_command_buffer, offset));
     }
     // Allocate RHIBindPipelineParameterDesc with the command buffer allocator.

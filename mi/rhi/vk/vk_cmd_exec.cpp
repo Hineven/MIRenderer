@@ -296,10 +296,19 @@ void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
 void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDispatch *dispatch) {
     assert(IsRHIThread());
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-//    auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
     FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::ShaderStageFlagBits::eCompute);
     state.cmd.dispatch(dispatch->group_count_x_, dispatch->group_count_y_, dispatch->group_count_z_);
 }
+
+void VulkanCommandExecutor::RHIDispatchIndirect(RHICommandQueueBase *cmd, RHICommandDispatchIndirect *dispatch_indirect) {
+    assert(IsRHIThread());
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::ShaderStageFlagBits::eCompute);
+    auto vk_buffer = static_cast<VulkanBuffer*>(dispatch_indirect->dispatch_command_buffer_); // NOLINT its safe
+    assert(vk_buffer && vk_buffer->GetBuffer() != nullptr);
+    state.cmd.dispatchIndirect(vk_buffer->GetBuffer(), dispatch_indirect->offset_);
+}
+
 
 void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
                                                     RHICommandBindGraphicsPipeline *bind_graphics_pipeline) {

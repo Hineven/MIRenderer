@@ -30,8 +30,14 @@ public:
         return UploadShaderParams(pass, shader, queue, T::GetShaderParamStructInfo(), params);
     }
 
+    // Bind a graphics shader, setting up required shader parameters and bindings for draw commands.
+    // @param manual_vbuffer If true, the function will not automatically bind the vertex buffer specified in shader params.
     static bool BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params, bool manual_vbuffer = false) ;
+
+    // Bind a compute shader, setting up required shader parameters and bindings for dispatch commands.
+    static bool BindComputeShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
 
     template<CShaderType T>
     FORCEINLINE static bool BindGraphicsShader (
@@ -52,7 +58,7 @@ public:
     }
 
     static void DispatchIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
-        const RDGShaderParamStructAndSizeInfo * info, const void * params, RDGBuffer * indirect_buffer) ;
+    const RDGShaderParamStructAndSizeInfo * info, const void * params, RDGBuffer * indirect_buffer, uint32_t offset = 0) ;
 
     template<CShaderType T>
     FORCEINLINE static void DispatchIndirect (

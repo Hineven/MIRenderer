@@ -120,6 +120,11 @@ void RHICommandDispatch::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDispatch(&cmd, this);
 }
 
+void RHICommandDispatchIndirect::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDispatchIndirect(&cmd, this);
+}
+
+
 void RHICommandBindGraphicsPipeline::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindGraphicsPipeline(&cmd, this);
 }
