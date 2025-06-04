@@ -146,14 +146,13 @@ void RadixSort::AddRadixSort32BitsPass(
     if (count_buffer) {
         dispatch_command = Helpers::SpawnDispatchIndirectCommand1D(builder, count_buffer);
     }
-
     for (int i = 0; i < 32; i += 8) {
         auto radix_sort_pass_name = name.empty() ? (std::string("RadixSort_Pass_") + std::to_string(i)) : (name + "_Pass_" + std::to_string(i));
         auto UB = builder.Allocate<RadixSortUB>();
         UB->NumElements = num_elements;
-        UB->BitShift = i * 8;
+        UB->BitShift = i;
         auto max_num_groups = DivideAndRoundUp(num_elements, kElementsPerSegment);
-        auto bins = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, max_num_groups * kBinsPerPass);
+        auto bins = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, max_num_groups * kBinsPerPass * sizeof(uint32_t));
         auto sum_bins = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, kBinsPerPass * sizeof(uint32_t));
         // Scan
         {

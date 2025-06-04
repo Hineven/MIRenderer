@@ -82,7 +82,7 @@ void RadixSortSum (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupID) {
 #endif
     // Each thread group sums the bins for a segment of elements.
     uint CurrentPrefixSum = 0;
-    for(int StartOffset = 0; StartOffset < NumSegments; StartOffset += SUM_ARRAY_SIZE) {
+    for(uint StartOffset = 0; StartOffset < NumSegments; StartOffset += SUM_ARRAY_SIZE) {
         // Process SUM_ARRAY_SIZE elements at once
         // Load the bins for the current segment
         {
@@ -93,9 +93,10 @@ void RadixSortSum (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupID) {
             }
             SharedSumArray[LocalID] = Value;
         }
+        GroupMemoryBarrierWithGroupSync();
         // Prefix sum the bins
         uint Temp = SharedSumArray[LocalID];
-        for(int Level = 1; Level < SUM_ARRAY_SIZE; Level *= 2) {
+        for(uint Level = 1; Level < SUM_ARRAY_SIZE; Level *= 2) {
             if(LocalID >= Level) {
                 Temp += SharedSumArray[LocalID - Level];
             }
@@ -128,9 +129,10 @@ void RadixSortSumBins (uint LocalID : SV_GroupThreadID) {
     {
         SharedBins[LocalID] = Bins[LocalID * NumSegments + NumSegments - 1];
     }
+    GroupMemoryBarrierWithGroupSync();
     // Prefix sum the bins
     uint Temp = SharedBins[LocalID];
-    for(int Level = 1; Level < BINS_PER_PASS; Level *= 2) {
+    for(uint Level = 1; Level < BINS_PER_PASS; Level *= 2) {
         if(LocalID >= Level) {
             Temp += SharedBins[LocalID - Level];
         }
@@ -173,7 +175,7 @@ void RadixSortScatter (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupI
     for(uint Offset = 0; Offset < BINS_PER_PASS; Offset += WAVE_SIZE) {
         uint Prefix = 0;
         if(Offset + LocalID > 0) Prefix = SumBins[Offset + LocalID - 1];
-        SharedBins[Offset + LocalID] = Prefix + Bins[GroupID + (Offset + LocalID) * NumSegments];
+        SharedBins[Offset + LocalID] = Prefix + Bins[(Offset + LocalID) * NumSegments + GroupID];
     }
     
     GroupMemoryBarrierWithGroupSync();

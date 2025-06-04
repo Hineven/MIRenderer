@@ -35,7 +35,7 @@ TEST(UtilTest, UtilRadixSort) {
     {
         RenderGraphBuilder builder;
         auto pool = RDGResourcePool::Create();
-        uint32_t num_elements = 256;
+        uint32_t num_elements = 819103;
         auto src_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
         auto src_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
         auto dst_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
@@ -46,13 +46,13 @@ TEST(UtilTest, UtilRadixSort) {
 
         // Initialize host data with random values
         {
-            std::mt19937 rng(12312);
+            std::mt19937 rng(312);
             for (uint32_t i = 0; i < num_elements; ++i) {
-                host_keys[i] = rng() % 256; // Random keys
+                host_keys[i] = rng(); // Random keys
                 host_values[i] = rng(); // Random values
             }
             // Manually select some keys and duplicate them to test stability
-            if (false) for (int i = 0; i < 7; i++) {
+            for (int i = 0; i < 7; i++) {
                 int index = rng() % num_elements;
                 for (int j = 0; j < 800; j++) {
                     int k = rng() % num_elements;
