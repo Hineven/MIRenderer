@@ -79,6 +79,8 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     // Firstly, export uniform buffers from cpp shader param struct reflection
     TOneTimeLinearAllocator<> aloc;
 
+    std::string entry = shader->GetEntryName();
+
     // Quick compare with hash values for the referenced structs
     bool passed_checking = true;
     auto & shader_reflected_uniform_buffers = shader->GetUniformBufferDesc();
@@ -95,8 +97,8 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         }
         if (flag) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' - Global uniform buffer is not supported. Use something like 'ConstantBuffer<UniformBufferStruct> UB;' instead.",
-                   class_registry_->source_location);
+                   "Shader '{}:{}' - Global uniform buffer is not supported. Use something like 'ConstantBuffer<UniformBufferStruct> UB;' instead.",
+                   class_registry_->source_location, entry);
             passed_checking = false;
         }
     }
@@ -113,8 +115,8 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             }
             if (!found) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Uniform buffer '{}' is defined in shader but not found in C++",
-                       class_registry_->source_location, shader_ub.name);
+                       "Shader '{}:{}' - Uniform buffer '{}' is defined in shader but not found in C++",
+                       class_registry_->source_location, entry, shader_ub.name);
                 passed_checking = false;
             }
         }
@@ -142,15 +144,15 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             // Now we simply check if the sizes mismatches.
             if (shader_reflected_uniform_buffers[shader_ub_idx].array_size > 0) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Array '{}' of uniform buffers of length {} is not supported. (Any UB array is not supported).",
-                       class_registry_->source_location, e.info->name, shader_reflected_uniform_buffers[shader_ub_idx].array_size);
+                       "Shader '{}:{}' - Array '{}' of uniform buffers of length {} is not supported. (Any UB array is not supported).",
+                       class_registry_->source_location, entry, e.info->name, shader_reflected_uniform_buffers[shader_ub_idx].array_size);
                 passed_checking = false;
             }
             if (shader_reflected_uniform_buffers[shader_ub_idx].size != e.info->size) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' - Uniform buffer '{}' has size mismatch between C++ and shader."
+                       "Shader '{}:{}' - Uniform buffer '{}' has size mismatch between C++ and shader."
                        "Shader size: {}, C++ size: {}.",
-                       class_registry_->source_location, e.info->name, shader_reflected_uniform_buffers[shader_ub_idx].size, e.info->size);
+                       class_registry_->source_location, entry, e.info->name, shader_reflected_uniform_buffers[shader_ub_idx].size, e.info->size);
                 passed_checking = false;
             }
         }
@@ -173,16 +175,16 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = FindIndex(info.storage_buffers_, sb.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' uses storage buffer '{}' which is not defined in shader parameters",
-                   class_registry_->source_location, sb.name);
+                   "Shader '{}:{}' uses storage buffer '{}' which is not defined in shader parameters",
+                   class_registry_->source_location, entry, sb.name);
             passed_checking = false;
         } else {
             auto & member = *info.storage_buffers_[index].info;
             if (member.access_flags != sb.access_flags) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' defines '{}' as storage buffer but parameter has incompatible access flags."
+                       "Shader '{}:{}' defines '{}' as storage buffer but parameter has incompatible access flags."
                        "Shader flags: {}, Parameter flags: {}",
-                       class_registry_->source_location, sb.name, ToString(sb.access_flags), ToString(member.access_flags));
+                       class_registry_->source_location, entry, sb.name, ToString(sb.access_flags), ToString(member.access_flags));
                 passed_checking = false;
             }
         }
@@ -193,16 +195,16 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = FindIndex(info.uavs_, uav.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' uses UAV texture '{}' which is not defined in shader parameters",
-                   class_registry_->source_location, uav.name);
+                   "Shader '{}:{}' uses UAV texture '{}' which is not defined in shader parameters",
+                   class_registry_->source_location, entry, uav.name);
             passed_checking = false;
         } else {
             auto & member = *info.uavs_[index].info;
             if (member.type != RHIParamType::kUAVTexture && member.type != RHIParamType::kUAVTextureArray) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' defines '{}' as UAV texture but parameter has incompatible type."
+                       "Shader '{}:{}' defines '{}' as UAV texture but parameter has incompatible type."
                        "Parameter type: {}",
-                       class_registry_->source_location, uav.name, ToString(member.type));
+                       class_registry_->source_location, entry, uav.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -212,16 +214,16 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = FindIndex(info.srvs_, srv.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' uses SRV texture '{}' which is not defined in shader parameters",
-                   class_registry_->source_location, srv.name);
+                   "Shader '{}:{}' uses SRV texture '{}' which is not defined in shader parameters",
+                   class_registry_->source_location, entry, srv.name);
             passed_checking = false;
         } else {
             auto & member = *info.srvs_[index].info;
             if (member.type != RHIParamType::kSRVTexture && member.type != RHIParamType::kSRVTextureArray) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' defines '{}' as SRV texture but parameter has incompatible type."
+                       "Shader '{}:{}' defines '{}' as SRV texture but parameter has incompatible type."
                        "Parameter type: {}",
-                       class_registry_->source_location, srv.name, ToString(member.type));
+                       class_registry_->source_location, entry, srv.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -232,16 +234,16 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = FindIndex(info.samplers_, sampler.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' uses sampler '{}' which is not defined in shader parameters",
-                   class_registry_->source_location, sampler.name);
+                   "Shader '{}:{}' uses sampler '{}' which is not defined in shader parameters",
+                   class_registry_->source_location, entry, sampler.name);
             passed_checking = false;
         } else {
             auto & member = *info.samplers_[index].info;
             if (member.type != RHIParamType::kSampler) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' defines '{}' as sampler but parameter has incompatible type."
+                       "Shader '{}:{}' defines '{}' as sampler but parameter has incompatible type."
                        "Parameter type: {}",
-                       class_registry_->source_location, sampler.name, ToString(member.type));
+                       class_registry_->source_location, entry, sampler.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -252,16 +254,16 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = FindIndex(info.acceleration_structures_, as.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}' uses acceleration structure '{}' which is not defined in shader parameters",
-                   class_registry_->source_location, as.name);
+                   "Shader '{}:{}' uses acceleration structure '{}' which is not defined in shader parameters",
+                   class_registry_->source_location, entry, as.name);
             passed_checking = false;
         } else {
             auto & member = *info.acceleration_structures_[index].info;
             if (member.type != RHIParamType::kAccelerationStructure) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}' defines '{}' as acceleration structure but parameter has incompatible type."
+                       "Shader '{}:{}' defines '{}' as acceleration structure but parameter has incompatible type."
                        "Parameter type: {}",
-                       class_registry_->source_location, as.name, ToString(member.type));
+                       class_registry_->source_location, entry, as.name, ToString(member.type));
                 passed_checking = false;
             }
         }
@@ -272,8 +274,8 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = info.GetCppMemberIndex(vb.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                "Shader '{}' uses vertex attribute '{}' (location {}) which is not defined in shader parameters",
-                class_registry_->source_location, vb.name, vb.location);
+                "Shader '{}:{}' uses vertex attribute '{}' (location {}) which is not defined in shader parameters",
+                class_registry_->source_location, entry, vb.name, vb.location);
             passed_checking = false;
             // Find the vertex attribute with corresponding location
             for (auto & member : info.cpp_members) {
@@ -289,23 +291,23 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             auto & member = info.cpp_members[index];
             if (member.type != RHIParamType::kVertexAttribute) {
                 MI_LOG(MIInfraLogType::kWarning,
-                        "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible type."
+                        "Shader '{}:{}' defines '{}' as vertex attribute but parameter has incompatible type."
                         "Parameter type: {}",
-                        class_registry_->source_location, vb.name, ToString(member.type));
+                        class_registry_->source_location, entry, vb.name, ToString(member.type));
                 passed_checking = false;
             } else {
                 if (member.cpp_extra.vertex_attribute_info->attribute_index != vb.location) {
                     MI_LOG(MIInfraLogType::kWarning,
-                        "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible location."
+                        "Shader '{}:{}' defines '{}' as vertex attribute but parameter has incompatible location."
                         "Parameter location: {}, Shader location: {}",
-                        class_registry_->source_location, vb.name, member.cpp_extra.vertex_attribute_info->attribute_index, vb.location);
+                        class_registry_->source_location, entry, vb.name, member.cpp_extra.vertex_attribute_info->attribute_index, vb.location);
                     passed_checking = false;
                 }
                 if (member.cpp_extra.vertex_attribute_info->format != vb.format) {
                     MI_LOG(MIInfraLogType::kWarning,
-                            "Shader '{}' defines '{}' as vertex attribute but parameter has incompatible format."
+                            "Shader '{}:{}' defines '{}' as vertex attribute but parameter has incompatible format."
                             "Parameter format: {}, Shader format: {}",
-                            class_registry_->source_location, vb.name, ToString(member.cpp_extra.vertex_attribute_info->format), ToString(vb.format));
+                            class_registry_->source_location, entry, vb.name, ToString(member.cpp_extra.vertex_attribute_info->format), ToString(vb.format));
                     passed_checking = false;
                 }
             }
@@ -321,8 +323,8 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         } else {
             if (info.render_targets_.size() < shader->GetFragmentOutputDesc().size()) {
                 MI_LOG(MIInfraLogType::kWarning,
-                    "Shader {} has {} fragment outputs but only {} is specified in C++, which is insufficient.",
-                    class_registry_->source_location, shader->GetFragmentOutputDesc().size(), info.render_targets_.size());
+                    "Shader {}:{} has {} fragment outputs but only {} is specified in C++, which is insufficient.",
+                    class_registry_->source_location, entry, shader->GetFragmentOutputDesc().size(), info.render_targets_.size());
                 passed_checking = false;
             }
         }
@@ -333,23 +335,23 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             auto & member = *info.render_targets_[index].info;
             if (member.type != RHIParamType::kRenderTarget) {
                 MI_LOG(MIInfraLogType::kWarning,
-                    "Shader '{}' defines '{}' as fragment output but parameter has incompatible type."
+                    "Shader '{}:{}' defines '{}' as fragment output but parameter has incompatible type."
                     "Parameter type: {}",
-                    class_registry_->source_location, output.name, ToString(member.type));
+                    class_registry_->source_location, entry, output.name, ToString(member.type));
                 passed_checking = false;
             } else {
                 if (member.cpp_extra.render_targets_info->target_index != output.location) {
                     MI_LOG(MIInfraLogType::kWarning,
-                        "Shader '{}' defines '{}' as fragment output but parameter has incompatible location."
+                        "Shader '{}:{}' defines '{}' as fragment output but parameter has incompatible location."
                         "Parameter location: {}, Shader location: {}",
-                        class_registry_->source_location, output.name, member.cpp_extra.render_targets_info->target_index, output.location);
+                        class_registry_->source_location, entry, output.name, member.cpp_extra.render_targets_info->target_index, output.location);
                     passed_checking = false;
                 }
                 if (!RHIIsOutputCompatiablePixelFormat(output.format, member.cpp_extra.render_targets_info->format)) {
                     MI_LOG(MIInfraLogType::kWarning,
-                        "Shader '{}' defines '{}' as fragment output but parameter has incompatible format."
+                        "Shader '{}:{}' defines '{}' as fragment output but parameter has incompatible format."
                         "Parameter format: {}, Shader format: {}",
-                        class_registry_->source_location, output.name, ToString(member.cpp_extra.render_targets_info->format), ToString(output.format));
+                        class_registry_->source_location, entry, output.name, ToString(member.cpp_extra.render_targets_info->format), ToString(output.format));
                     passed_checking = false;
                 }
             }

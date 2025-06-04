@@ -11,6 +11,8 @@ StructuredBuffer<uint> Keys;
 StructuredBuffer<uint> Values;
 StructuredBuffer<uint> Bins;
 RWStructuredBuffer<uint> RWBins;
+StructuredBuffer<uint> SumBins;
+RWStructuredBuffer<uint> RWSumBins;
 StructuredBuffer<uint> Count;
 RWStructuredBuffer<uint> RWOutKeys;
 RWStructuredBuffer<uint> RWOutValues;
@@ -60,20 +62,6 @@ void RadixSortScan (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupID) 
         }
     }
     GroupMemoryBarrierWithGroupSync();
-    
-    uint Temp = SharedBins[LocalID];
-    // TODO Use wave ops to accelerate prefix sum within the wave
-    // uint PrefixSumInWave = WavePrefixSum(Temp);
-    // Perform prefix sum in groupshared memory among bins cooperatively
-    for (uint Level = 1/*WAVE_SIZE*/; Level < BINS_PER_PASS; Level *= 2) {
-        int Index = LocalID - Level;
-        if (Index >= 0) {
-            Temp += SharedBins[Index];
-        } 
-        GroupMemoryBarrierWithGroupSync();
-        SharedBins[LocalID] = Temp;
-        GroupMemoryBarrierWithGroupSync();
-    }
     
     uint NumSegments = (NumElements + ELEMENTS_PER_SEGMENT - 1) / ELEMENTS_PER_SEGMENT;
 
@@ -128,6 +116,34 @@ void RadixSortSum (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupID) {
     }
 }
 
+// Prefix sum the summed bins. Only one group here.
+[numthreads(BINS_PER_PASS, 1, 1)]
+void RadixSortSumBins (uint LocalID : SV_GroupThreadID) {
+#ifndef RADIX_SORT_INDIRECT
+    uint NumSegments = (UB.NumElements + ELEMENTS_PER_SEGMENT - 1) / ELEMENTS_PER_SEGMENT;
+#else
+    uint NumSegments = (Count[0] + ELEMENTS_PER_SEGMENT - 1) / ELEMENTS_PER_SEGMENT;
+#endif
+    // Load the sums of bins
+    {
+        SharedBins[LocalID] = Bins[LocalID * NumSegments + NumSegments - 1];
+    }
+    // Prefix sum the bins
+    uint Temp = SharedBins[LocalID];
+    for(int Level = 1; Level < BINS_PER_PASS; Level *= 2) {
+        if(LocalID >= Level) {
+            Temp += SharedBins[LocalID - Level];
+        }
+        GroupMemoryBarrierWithGroupSync();
+        SharedBins[LocalID] = Temp;
+        GroupMemoryBarrierWithGroupSync();
+    }
+    // Write the prefix sum back to the Bins buffer
+    {
+        RWSumBins[LocalID] = SharedBins[LocalID];
+    }
+}
+
 #if WAVE_SIZE <= 32
 #define WaveMask_T uint
 #else
@@ -155,7 +171,9 @@ void RadixSortScatter (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupI
 
     // Load the bins into groupshared memory
     for(uint Offset = 0; Offset < BINS_PER_PASS; Offset += WAVE_SIZE) {
-        SharedBins[Offset + LocalID] = Bins[GroupID + (Offset + LocalID) * NumSegments];
+        uint Prefix = 0;
+        if(Offset + LocalID > 0) Prefix = SumBins[Offset + LocalID - 1];
+        SharedBins[Offset + LocalID] = Prefix + Bins[GroupID + (Offset + LocalID) * NumSegments];
     }
     
     GroupMemoryBarrierWithGroupSync();
@@ -169,14 +187,14 @@ void RadixSortScatter (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupI
             InterlockedOr(SharedBinsMask[BinIndex], WaveMask_T(1) << LocalID);
             GroupMemoryBarrierWithGroupSync();
             WaveMask_T Threads = SharedBinsMask[BinIndex];
-            WaveMask_T Mask = Threads & (~((WaveMask_T(1) << LocalID) - 1));
-            uint Rank = countbits(Mask);
+            WaveMask_T Masked = Threads & (~((WaveMask_T(1) << LocalID) - 1));
+            uint Rank = countbits(Masked);
             uint ReorderIndex = SharedBins[BinIndex] - Rank;
             // Reorder
             RWOutKeys[ReorderIndex] = Key;
             RWOutValues[ReorderIndex] = Values[Index];
             // Update the bin count
-            bool bIsPrimary = Mask == Threads;
+            bool bIsPrimary = Masked == Threads;
             GroupMemoryBarrierWithGroupSync();
             if (bIsPrimary) {
                 SharedBins[BinIndex] -= Rank;
@@ -185,8 +203,4 @@ void RadixSortScatter (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupI
             GroupMemoryBarrierWithGroupSync();
         }
     }
-    // if(LocalID == 0) {
-    //     printf("qwq %u %u\n", Keys[3], Values[3]);
-    //     RWOutKeys[0] = 123123;
-    // }
 }

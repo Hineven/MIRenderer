@@ -26,7 +26,7 @@ public:
         const RDGShaderParamStructAndSizeInfo * base_info, const void * params) ;
     template <CShaderType T>
     FORCEINLINE static RHIBindPipelineParametersDesc UploadShaderParams(
-        RDGPass * pass, T * shader, RHICommandQueueGraphics & queue, const void * params) {
+        RDGPass * pass, T * shader, RHICommandQueueGraphics & queue, const typename T::ShaderParameters * params) {
         return UploadShaderParams(pass, shader, queue, T::GetShaderParamStructInfo(), params);
     }
 
@@ -41,7 +41,7 @@ public:
 
     template<CShaderType T>
     FORCEINLINE static bool BindGraphicsShader (
-        RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const void * params,
+        RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const typename T::ShaderParameters * params,
         bool manual_vbuffer = false
     ) {
         return BindGraphicsShader(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params, manual_vbuffer);
@@ -52,7 +52,7 @@ public:
         const RDGShaderParamStructAndSizeInfo * info, const void * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) ;
     template<CShaderType T>
     FORCEINLINE static void Dispatch (
-        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const void * params,
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const typename T::ShaderParameters * params,
         uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) {
         Dispatch(queue, pass, compute_shader, T::GetShaderParamStructInfo(), params, x, y, z);
     }
@@ -62,7 +62,7 @@ public:
 
     template<CShaderType T>
     FORCEINLINE static void DispatchIndirect (
-        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const void * params, RDGBuffer * indirect_buffer) {
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader, const typename T::ShaderParameters * params, RDGBuffer * indirect_buffer) {
         DispatchIndirect(queue, pass, compute_shader, T::GetShaderParamStructInfo(), params, indirect_buffer);
     }
 
@@ -71,7 +71,7 @@ public:
         int vertex_count, int instance_count = 1, int first_vertex = 0, int first_instance = 0) ;
     template<CShaderType T>
     FORCEINLINE static void Draw (
-        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, const void * params,
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, const typename T::ShaderParameters * params,
         int vertex_count, int instance_count = 1, int first_vertex = 0, int first_instance = 0) {
         Draw(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params, vertex_count, instance_count, first_vertex, first_instance);
     }

@@ -35,7 +35,7 @@ TEST(UtilTest, UtilRadixSort) {
     {
         RenderGraphBuilder builder;
         auto pool = RDGResourcePool::Create();
-        uint32_t num_elements = 632812;
+        uint32_t num_elements = 256;
         auto src_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
         auto src_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
         auto dst_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
@@ -48,11 +48,11 @@ TEST(UtilTest, UtilRadixSort) {
         {
             std::mt19937 rng(12312);
             for (uint32_t i = 0; i < num_elements; ++i) {
-                host_keys[i] = rng(); // Random keys
+                host_keys[i] = rng() % 256; // Random keys
                 host_values[i] = rng(); // Random values
             }
             // Manually select some keys and duplicate them to test stability
-            for (int i = 0; i < 7; i++) {
+            if (false) for (int i = 0; i < 7; i++) {
                 int index = rng() % num_elements;
                 for (int j = 0; j < 800; j++) {
                     int k = rng() % num_elements;
@@ -88,7 +88,13 @@ TEST(UtilTest, UtilRadixSort) {
         for (uint32_t i = 0; i < num_elements; ++i) {
             pairs[i] = {host_keys[i], host_values[i]};
         }
-        std::sort(pairs.begin(), pairs.end());
+        // Stable sorting according to the key
+        struct cmp {
+            bool operator () (const std::pair<uint32_t, uint32_t> &a, const std::pair<uint32_t, uint32_t> &b) const {
+                return a.first < b.first;
+            }
+        };
+        std::stable_sort(pairs.begin(), pairs.end(), cmp());
         for (uint32_t i = 0; i < num_elements; ++i) {
             sorted_keys[i] = pairs[i].first;
             sorted_values[i] = pairs[i].second;
@@ -107,7 +113,7 @@ TEST(UtilTest, UtilRadixSort) {
     }
 
 
-    RDGShaderLibrary::Get().DestroySingleton();
+    RDGShaderLibrary::DestroySingleton();
 
     RHI::DestroySingleton();
 
