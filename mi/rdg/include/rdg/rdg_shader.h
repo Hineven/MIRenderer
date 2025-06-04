@@ -41,7 +41,7 @@ struct RDGShaderClassRegistry {
     std::string compute_entry_;
     std::string vertex_entry_;
     std::string fragment_entry_;
-    RDGShader * (*Creator) (RDGShaderClassRegistry *, RDGShaderInitializationInfo);
+    RDGShader * (*Creator) (RDGShaderClassRegistry *);
     // Macros always present when compiling the shader
     std::vector<std::string> (*GetShaderDefaultMacros)();
     // Macros that are optionally present, all possibilities are enumerated when building the shader cache in
@@ -233,6 +233,7 @@ protected:
     ~RDGShaderLibrary() ;
 public:
     void Init ();
+    void Deinit ();
 
     // Release all compiled shaders of all shader classes.
     // Further requests of any shader will invoke a re-compile.
@@ -241,7 +242,6 @@ public:
     template<typename T>
     friend class RDGShaderClassRegistrator;
     static RDGShaderLibrary & Get() ;
-    static void DestroySingleton () ;
 
     // Check all shaders and recompile the modified ones.
     // Should only be performed when RHI is idle.
@@ -303,7 +303,7 @@ public:
         lib.RegisterShaderClass(typeid(T).hash_code(), registry);
     }
 protected:
-    FORCEINLINE static RDGShader * zzShaderFactoryFunction (RDGShaderClassRegistry * registry, RDGShaderInitializationInfo info) {
+    FORCEINLINE static RDGShader * zzShaderFactoryFunction (RDGShaderClassRegistry * registry) {
         auto shader = (RDGShader*)(new T(registry));
         return shader;
     }

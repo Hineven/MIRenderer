@@ -14,7 +14,7 @@ MI_NAMESPACE_BEGIN
 class Helpers {
 public:
     // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
-    static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer);
+    static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);
 
     // Enqueue upload commands to the RHI graphics command queue and place barriers.
     // If you want that happen immediately, launch a submit on the queue and wait idle.

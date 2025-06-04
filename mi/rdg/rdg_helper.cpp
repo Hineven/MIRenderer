@@ -11,9 +11,17 @@
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi_buffer.h"
 MI_NAMESPACE_BEGIN
+
 class SpawnDispatchIndirectCommand1DShader : public RDGShader {
 public:
+    struct SpawnDispatchIndirectCommand1DUB {
+        uint32_t UpDivisor; // The divisor for calculating the number of dispatches
+        uint32_t Padding0;
+        uint32_t Padding1;
+        uint32_t Padding2;
+    };
     BEGIN_SHADER_PARAMETERS(SpawnDispatchIndirectCommand1DShaderParameters)
+        SHADER_UNIFORM_BUFFER(SpawnDispatchIndirectCommand1DUB, UB)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, Command)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
     END_SHADER_PARAMETERS()
@@ -23,13 +31,15 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(SpawnDispatchIndirectCommand1DShader, "mi/rdg/shaders/Helpers.hlsl", "SpawnDispatchIndirectCommand1D");
 
-TRef<RDGBuffer> Helpers::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &builder, RDGBuffer *count_buffer) {
+TRef<RDGBuffer> Helpers::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &builder, RDGBuffer *count_buffer, uint32_t up_divisor) {
     auto command = RDGBuffer::Create(
         RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage,
         sizeof(RHIDispatchIndirectCommand)
     );
     command->SetName("DispatchIndirectCommand1D");
     auto params = builder.Allocate<SpawnDispatchIndirectCommand1DShader::SpawnDispatchIndirectCommand1DShaderParameters>();
+    params->UB = builder.Allocate<SpawnDispatchIndirectCommand1DShader::SpawnDispatchIndirectCommand1DUB>();
+    params->UB->UpDivisor = up_divisor;
     params->Command = command.Raw();
     params->Count = count_buffer;
     auto shader = RDGShaderLibrary::Get().GetShader<SpawnDispatchIndirectCommand1DShader>();

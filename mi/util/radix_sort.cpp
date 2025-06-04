@@ -19,6 +19,8 @@ struct RadixSortUB {
     uint32_t Padding1;
 };
 
+static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
+
 class RadixSortScanShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(RadixSortScanShaderParameters)
@@ -32,7 +34,6 @@ public:
     RDG_SHADER_USE_PARAMETERS(RadixSortScanShaderParameters)
     DECLARE_SHADER()
 
-    static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
         return {"WAVE_SIZE=" + wave_size};
@@ -53,7 +54,6 @@ public:
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(RadixSortSumShaderParameters)
     DECLARE_SHADER()
-    static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
         return {"WAVE_SIZE=" + wave_size};
@@ -75,7 +75,6 @@ public:
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(RadixSortSumBinsShaderParameters)
     DECLARE_SHADER()
-    static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
         return {"WAVE_SIZE=" + wave_size};
@@ -102,7 +101,6 @@ public:
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(RadixSortScatterShaderParameters)
     DECLARE_SHADER()
-    static constexpr auto kIndirectMacro = "RADIX_SORT_INDIRECT";
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
         return {"WAVE_SIZE=" + wave_size};
@@ -120,7 +118,7 @@ void RadixSort::AddRadixSort32BitsPass(
 ) {
     auto &lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo{};
-    if (count_buffer) ini.macros.push_back(RadixSortScanShader::kIndirectMacro);
+    if (count_buffer) ini.macros.push_back(kIndirectMacro);
     auto scan_shader = lib.GetShader<RadixSortScanShader>(ini);
     auto sum_shader = lib.GetShader<RadixSortSumShader>(ini);
     auto sum_bins_shader = lib.GetShader<RadixSortSumBinsShader>(ini);
@@ -144,7 +142,7 @@ void RadixSort::AddRadixSort32BitsPass(
 
     TRef<RDGBuffer> dispatch_command;
     if (count_buffer) {
-        dispatch_command = Helpers::SpawnDispatchIndirectCommand1D(builder, count_buffer);
+        dispatch_command = Helpers::SpawnDispatchIndirectCommand1D(builder, count_buffer, kElementsPerSegment);
     }
     for (int i = 0; i < 32; i += 8) {
         auto radix_sort_pass_name = name.empty() ? (std::string("RadixSort_Pass_") + std::to_string(i)) : (name + "_Pass_" + std::to_string(i));

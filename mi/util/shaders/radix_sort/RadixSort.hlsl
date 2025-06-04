@@ -67,7 +67,6 @@ void RadixSortScan (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupID) 
 
     // Write the results back to the Bins buffer
     RWBins[LocalID * NumSegments + GroupID] = SharedBins[LocalID];
-    
 }
 
 // One single thread group for summing one kind of bin (256 groups)

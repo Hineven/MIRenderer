@@ -173,7 +173,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         int pass_index = ready_passes.front();
         ready_passes.pop();
         auto &pass = passes_[pass_index];
-        // printf("Pass: %s\n", pass->name_.c_str());
+        printf("Pass: %s\n", pass->name_.c_str());
         // Get resources ready
         for (auto texture_use : pass->compiled_.used_textures) {
             texture_use.texture->RequestRHI(pool);

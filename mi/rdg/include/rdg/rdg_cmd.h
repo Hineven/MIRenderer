@@ -21,13 +21,13 @@ class RDGCommandHelper {
 public:
 
     // Convenience function to upload shader parameters
-    static std::optional<RHIBindPipelineParametersDesc> UploadShaderParams(
+    static std::optional<RHIBindPipelineParametersDesc> SetupShaderParams(
         RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
         const RDGShaderParamStructAndSizeInfo * base_info, const void * params) ;
     template <CShaderType T>
-    FORCEINLINE static RHIBindPipelineParametersDesc UploadShaderParams(
+    FORCEINLINE static RHIBindPipelineParametersDesc SetupShaderParams(
         RDGPass * pass, T * shader, RHICommandQueueGraphics & queue, const typename T::ShaderParameters * params) {
-        return UploadShaderParams(pass, shader, queue, T::GetShaderParamStructInfo(), params);
+        return SetupShaderParams(pass, shader, queue, T::GetShaderParamStructInfo(), params);
     }
 
     // Bind a graphics shader, setting up required shader parameters and bindings for draw commands.

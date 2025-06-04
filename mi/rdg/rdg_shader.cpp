@@ -655,6 +655,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     compute_pipeline_ = {};
     shaders_ = {};
     is_valid_ = false;
+    ini_ = ini;
 
     auto source_code = LoadSource();
     if (source_code.empty()) {
@@ -662,6 +663,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         return false;
     }
     if (!RecompileShaders(source_code, ini)) return false;
+
 
     auto pipeline_config = class_registry_->GetShaderPipelineConfig();
 
@@ -751,13 +753,6 @@ RDGShaderLibrary &RDGShaderLibrary::Get() {
         shader_library_instance_ptr = new RDGShaderLibrary();
     }
     return *shader_library_instance_ptr;
-}
-
-void RDGShaderLibrary::DestroySingleton() {
-    if (shader_library_instance_ptr) {
-        delete shader_library_instance_ptr;
-        shader_library_instance_ptr = {};
-    }
 }
 
 RDGShaderLibrary::~RDGShaderLibrary() {}
@@ -899,8 +894,8 @@ void RDGShaderLibrary::Init() {
     for (auto & shader : shaders_to_compile) {
         RDGShaderInitializationInfo ini;
         ini.macros = shader.macro_decls;
-        auto new_shader = shader.shader_class->Creator(shader.shader_class, ini);
-        if (!new_shader->Recompile(new_shader->ini_)) {
+        auto new_shader = shader.shader_class->Creator(shader.shader_class);
+        if (!new_shader->Recompile(ini)) {
             std::string macro_decl;
             for (const auto & macro : shader.macro_decls) {
                 if (!macro_decl.empty()) macro_decl += ", ";
@@ -912,6 +907,11 @@ void RDGShaderLibrary::Init() {
         cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
     }
 }
+
+void RDGShaderLibrary::Deinit() {
+    cached_shaders_.clear();
+}
+
 
 void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
     // Iterate over all shaders and check if they need to be recompiled
@@ -949,7 +949,7 @@ RDGShader *RDGShaderLibrary::GetShader(size_t type_hash, RDGShaderInitialization
             return nullptr;
         }
         MI_INFO("Missing shader {} with hash {}. Creating it.", reg->second->name, shader_hash);
-        auto new_shader = reg->second->Creator(reg->second.get(), ini);
+        auto new_shader = reg->second->Creator(reg->second.get());
         if (!new_shader->Recompile(ini)) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with hash {}",
                    reg->second->name, shader_hash);
