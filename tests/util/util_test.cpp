@@ -37,9 +37,13 @@ TEST(UtilTest, UtilRadixSort) {
         auto pool = RDGResourcePool::Create();
         uint32_t num_elements = 819103;
         auto src_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        src_keys->SetName("SrcKeysBuffer");
         auto src_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        src_values->SetName("SrcValuesBuffer");
         auto dst_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        dst_keys->SetName("DstKeysBuffer");
         auto dst_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        dst_values->SetName("DstValuesBuffer");
 
         std::vector<uint32_t> host_keys(num_elements);
         std::vector<uint32_t> host_values(num_elements);
@@ -140,10 +144,15 @@ TEST(UtilTest, UtilRadixSortIndirect) {
         uint32_t num_elements = 819103;
         uint32_t num_sort_elements = 582911; // Number of elements to sort, must be less than num_elements
         auto src_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        src_keys->SetName("SrcKeysBuffer");
         auto src_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        src_values->SetName("SrcValuesBuffer");
         auto dst_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        dst_keys->SetName("DstKeysBuffer");
         auto dst_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        dst_values->SetName("DstValuesBuffer");
         auto count_buffer = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));
+        count_buffer->SetName("CountBuffer");
 
         std::vector<uint32_t> host_keys(num_elements);
         std::vector<uint32_t> host_values(num_elements);

@@ -10,7 +10,7 @@
 #include <rdg/rdg_pool.h>
 #include <rhi/rhi_buffer.h>
 MI_NAMESPACE_BEGIN
-    RDGResource::RDGResource() {}
+RDGResource::RDGResource() {}
 
 RDGResource::~RDGResource() {}
 

@@ -43,7 +43,7 @@ TRef<RDGBuffer> Helpers::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &buil
     params->Command = command.Raw();
     params->Count = count_buffer;
     auto shader = RDGShaderLibrary::Get().GetShader<SpawnDispatchIndirectCommand1DShader>();
-    builder.AddPass<SpawnDispatchIndirectCommand1DShader>(RDGPassFlagBits::kNeverCull, params,
+    builder.AddPass<SpawnDispatchIndirectCommand1DShader>({}, params,
         [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
             RDGCommandHelper::Dispatch<SpawnDispatchIndirectCommand1DShader>(queue, pass, shader, params);
         }
@@ -90,7 +90,7 @@ void Helpers::UploadWithRDG_Unsafe(RenderGraphBuilder & builder, RHIBufferSpan b
     auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
     memcpy(staging_buffer_ptr, data, buffer.size);
     staging_buffer->Unmap();
-    builder.AddPass("UploadWithRDG_Unsafe", RDGPassType::kGeneric, RDGPassFlagBits::kNeverCull, {}, {},
+    builder.AddPass("UploadWithRDG_Unsafe", RDGPassType::kGeneric, {}, {}, {},
         [src = staging_buffer.Raw(), dst = buffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.BufferBarrier(dst,
                 RHIPipelineStageFlagBits::kTransfer,
@@ -109,7 +109,7 @@ void Helpers::UploadWithRDG(RenderGraphBuilder &builder, RDGBuffer * buffer, con
     auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
     memcpy(staging_buffer_ptr, data, size);
     staging_buffer->Unmap();
-    builder.AddPass("UploadWithRDG", RDGPassType::kGeneric, RDGPassFlagBits::kNeverCull, {}, {},
+    builder.AddPass("UploadWithRDG", RDGPassType::kGeneric, {}, {}, {},
         [src = staging_buffer.Raw(), dst = buffer, size, dst_offset]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             auto dst_span = dst->GetRHI();
             dst_span.size = size;

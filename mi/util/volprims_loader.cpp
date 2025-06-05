@@ -8,7 +8,7 @@
 
 MI_NAMESPACE_BEGIN
 
-bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, CommonGroupedDeviceResourceAllocator &allocator, RendererScene &world, TRef<VolumePrimitives> &out_volprims) {
+bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] CommonGroupedDeviceResourceAllocator &allocator, RendererScene &world, TRef<VolumePrimitives> &out_volprims) {
     if (path.extension() != ".ply") {
         MI_WARN("VolumePrimitivesLoader: Not a PLY file: {}", path.string());
         return false;
@@ -22,7 +22,7 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, CommonGr
     auto& element = plyIn.getElement("vertex");
     // No larger gaussian models is supported.
     assert(element.count < (1 << 24));
-    int num_prims = element.count;
+    int num_prims = (int)element.count;
 
     std::vector<VolumePrimitive> data;
 

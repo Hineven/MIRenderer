@@ -90,7 +90,7 @@ RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags pr
     auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
     buffer->rhi_buffer_span_ = resource->GetSpan();
     buffer->usage_ = prev_access;
-    buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
+    buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport;
     {
         auto original_name = resource->GetName();
         if (original_name) buffer->SetName(original_name);
@@ -111,7 +111,7 @@ RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RDGTextureUsageTy
     auto texture = TRef<RDGTexture>(texture_raw_ptr);
     texture->rhi_texture_ = resource;
     texture->usage_ = prev_usage;
-    texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kPersistent;
+    texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport;
     {
         auto original_name = resource->GetName();
         if (original_name) texture->SetName(original_name);
@@ -133,12 +133,12 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
     std::vector<RenderGraph::Edge> culled_edges, edges_rev;
     auto AddEdge = [&](int from, int to) {
         int edge_index = (int)culled_edges.size();
-        culled_edges.emplace_back(from, to, culled_pass_heads[to]);
+        culled_edges.emplace_back(from, to, culled_pass_heads[from]);
         culled_pass_heads[from] = edge_index;
     };
     auto AddEdgeRev = [&](int from, int to) {
         int edge_index_rev = (int)edges_rev.size();
-        edges_rev.emplace_back(from, to, pass_heads_rev[to]);
+        edges_rev.emplace_back(from, to, pass_heads_rev[from]);
         pass_heads_rev[from] = edge_index_rev;
     };
     for(auto & pass : passes_) {
@@ -155,23 +155,24 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
                 dependencies.push_back(out_pass);
             }
         }
-        // RW-W
-        for(auto & out_texture : pass->compiled_.out_textures) {
-            for(auto & out_pass : out_resource_pass_map[out_texture]) {
-                dependencies.push_back(out_pass);
-            }
-            for(auto & in_pass : in_resource_pass_map[out_texture]) {
-                dependencies.push_back(in_pass);
-            }
-        }
-        for (auto & out_buffer : pass->compiled_.out_buffers) {
-            for (auto & out_pass : out_resource_pass_map[out_buffer]) {
-                dependencies.push_back(out_pass);
-            }
-            for (auto & in_pass : in_resource_pass_map[out_buffer]) {
-                dependencies.push_back(in_pass);
-            }
-        }
+        // RW-W -> This is the dependency in execution order, not in the graph.
+        // (execution dependency is satisfied by sorting pass indices)
+        // for(auto & out_texture : pass->compiled_.out_textures) {
+        //     for(auto & out_pass : out_resource_pass_map[out_texture]) {
+        //         dependencies.push_back(out_pass);
+        //     }
+        //     for(auto & in_pass : in_resource_pass_map[out_texture]) {
+        //         dependencies.push_back(in_pass);
+        //     }
+        // }
+        // for (auto & out_buffer : pass->compiled_.out_buffers) {
+        //     for (auto & out_pass : out_resource_pass_map[out_buffer]) {
+        //         dependencies.push_back(out_pass);
+        //     }
+        //     for (auto & in_pass : in_resource_pass_map[out_buffer]) {
+        //         dependencies.push_back(in_pass);
+        //     }
+        // }
 
         // Unique the dependencies
         std::ranges::sort(dependencies);
@@ -206,14 +207,14 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
             if (e->GetFlags() & RDGPassFlagBits::kNeverCull) {
                 flag = true;
             }
-            // The pass is writing to a resource that is meant for export
+            // The pass is writing to a resource that is meant for export, or an external resource
             for (auto res : e->compiled_.out_buffers) {
-                if (exporting_resources_.find(res) != exporting_resources_.end()) {
+                if (res->GetFlags() & RDGResourceFlagBits::kExport || res->GetFlags() & RDGResourceFlagBits::kImported) {
                     flag = true;
                 }
             }
             for (auto res : e->compiled_.out_textures) {
-                if (exporting_resources_.find(res) != exporting_resources_.end()) {
+                if (res->GetFlags() & RDGResourceFlagBits::kExport || res->GetFlags() & RDGResourceFlagBits::kImported) {
                     flag = true;
                 }
             }
@@ -233,7 +234,7 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
                 }
             }
         }
-        // Remap the passes
+        // Remap the passes, as well as keeping the indices in a sorted order
         std::vector<int> pass_remap(passes_.size(), -1);
         int new_index = 0;
         for (int i = 0; i < (int)passes_.size(); i++) {
@@ -261,11 +262,6 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
     graph->edges_ = std::move(culled_edges);
     graph->num_pass_predecessors_.resize(culled_pass_heads.size(), 0);
     graph->pass_node_heads_ = std::move(culled_pass_heads);
-    // Make the graph hold references to resources for exporting
-    // so that the pool won't recycle them
-    for (auto e : exporting_resources_) {
-        graph->exporting_resources_.emplace_back(e);
-    }
     // Transfer allocator, let the graph keep the ownership
     graph->allocator_ = std::move(allocator_);
     // Calculate number of predecessors for each pass

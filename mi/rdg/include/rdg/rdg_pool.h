@@ -105,7 +105,9 @@ protected:
 
     size_t total_device_memory_usage_ {0};
 
-
+    // Keep track of the number of active (allocated) buffers and textures in the pool.
+    uint32_t num_active_buffers_ {0};
+    uint32_t num_active_textures_ {0};
 };
 
 MI_NAMESPACE_END

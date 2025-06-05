@@ -24,10 +24,10 @@ MAKE_FLAGS(RDGPass);
 
 enum class RDGResourceFlagBits : unsigned {
     kNone = 0,
-    // The resource may be used among multiple RDGs, making passes writing to it never be culled
-    kPersistent = 1 << 0,
+    // The resource is used for exportation (for presentation, etc.), making passes writing to it never culled.
+    kExport = 1 << 0,
     // Whether the resource is imported from external RHI resource. (thus should not be related to the pool)
-    // Imported resources are also created with persistent flag.
+    // Imported resources are also created with kExport flag.
     kImported = 1 << 1
 };
 
@@ -76,6 +76,9 @@ class RenderGraphBuilder;
 // This is used to check if the user has set the parameter (setting to nullptr also counts).
 constexpr static uint64_t RDGParameter_UnsetPointer = 0xffffffffffffffffull;
 template<typename T> concept CPointerType = std::is_pointer_v<T>;
+
+// Check if the render thread is in a rdg pass lambda.
+bool RDG_IsInRDGExecution () ;
 
 MI_NAMESPACE_END
 

@@ -134,7 +134,6 @@ protected:
     std::unordered_map<void *, TRef<RDGTexture>> external_texture_map_;
 
     std::vector<std::unique_ptr<RDGPass>> passes_;
-    std::set<RDGResource*> exporting_resources_;
     int current_pass_index_ {};
 
 };

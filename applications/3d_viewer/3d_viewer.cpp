@@ -354,7 +354,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     pool.SafeRelease();
 
     // TaskGraph::DestroySingleton();
-    RDGShaderLibrary::DestroySingleton();
+    RDGShaderLibrary::Get().Deinit();
 
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

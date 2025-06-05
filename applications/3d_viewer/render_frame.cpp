@@ -99,7 +99,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     }
 
     // Draw
-    builder.AddPass<ImGuiRenderShader>(RDGPassFlagBits::kNeverCull, params, [
+    builder.AddPass<ImGuiRenderShader>({}, params, [
         index_raw = index_buffer.Raw(), draw_cmds, params
     ](RDGPass * pass, RHICommandQueueGraphics & cmd) {
         auto shader = RDGShaderLibrary::Get().GetShader<ImGuiRenderShader>();
@@ -151,7 +151,6 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
     auto & renderer = Renderer::Get();
     renderer.Render(view_state, builder);
-
 
     RenderImGui(builder, backbuffer);
     auto graph = builder.Compile();

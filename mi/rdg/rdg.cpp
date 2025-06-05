@@ -17,6 +17,12 @@
 
 MI_NAMESPACE_BEGIN
 
+static bool is_rdg_executing = false;
+
+bool RDG_IsInRDGExecution () {
+    return is_rdg_executing;
+}
+
 RenderGraph::~RenderGraph() {}
 
 FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
@@ -95,8 +101,22 @@ static RHITextureLayoutType GetTextureLayout (RDGTextureUsageType usage) {
 
 void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
-    if (passes_.size() == 0) {
+    if (passes_.empty()) {
         MI_WARN("All graph passes are culled, nothing to execute.");
+    }
+
+    mi_assert(IsRenderThread(), "Only the render thread can execute RDG graphs.");
+    mi_assert(RDG_IsInRDGExecution() == false, "Cannot execute RDG graph while another graph is executing. (which should be impossible!)");
+    is_rdg_executing = true;
+
+    // Prepare resource counters
+    for (auto & e : passes_) {
+        for (auto & texture : e->compiled_.used_textures) {
+            texture.texture->execution_ref_counter ++;
+        }
+        for (auto & buffer : e->compiled_.used_buffers) {
+            buffer.buffer->execution_ref_counter ++;
+        }
     }
 
     // Directly use the graphics queue.
@@ -173,12 +193,12 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         int pass_index = ready_passes.front();
         ready_passes.pop();
         auto &pass = passes_[pass_index];
-        printf("Pass: %s\n", pass->name_.c_str());
+        // printf("Pass: %s\n", pass->name_.c_str());
         // Get resources ready
-        for (auto texture_use : pass->compiled_.used_textures) {
+        for (const auto& texture_use : pass->compiled_.used_textures) {
             texture_use.texture->RequestRHI(pool);
         }
-        for (auto buffer_use : pass->compiled_.used_buffers) {
+        for (const auto & buffer_use : pass->compiled_.used_buffers) {
             buffer_use.buffer->RequestRHI(pool);
         }
         // Add debug marker, group the passes with the same names
@@ -245,6 +265,23 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 ready_passes.push(edge.dst_pass_index);
             }
         }
+        // Release resource counters
+        for (auto & texture_use : pass->compiled_.used_textures) {
+            if (texture_use.texture->GetRHI()) {
+                texture_use.texture->execution_ref_counter --;
+                if (texture_use.texture->execution_ref_counter == 0) {
+                    texture_use.texture->ReleaseRHI();
+                }
+            }
+        }
+        for (auto & buffer_use : pass->compiled_.used_buffers) {
+            if (buffer_use.buffer->GetRHI()) {
+                buffer_use.buffer->execution_ref_counter --;
+                if (buffer_use.buffer->execution_ref_counter == 0) {
+                    buffer_use.buffer->ReleaseRHI();
+                }
+            }
+        }
         // Release the pass (and decrement the reference count of the resources its holding)
         pass.reset();
     }
@@ -255,5 +292,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     }
 
     cmd.EnqueueTranslateAndSubmit(sync_point);
+
+    // Release all uniform buffers as they are no longer needed.
+    uniform_buffer_.SafeRelease();
+
+    is_rdg_executing = false;
 }
 MI_NAMESPACE_END

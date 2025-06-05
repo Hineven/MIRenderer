@@ -137,7 +137,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
     auto shader = RDGShaderLibrary::Get().GetShader<DrawStaticMeshesShader>();
 
     // Rasterize static meshes with batched drawing
-    auto raster_pass = builder.AddPass<DrawStaticMeshesShader>(RDGPassFlagBits::kNeverCull, params,
+    auto raster_pass = builder.AddPass<DrawStaticMeshesShader>({}, params,
         [params, shader, data = ctx.static_meshes, rdg_draw_cmd = ctx.static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             if (RDGCommandHelper::BindGraphicsShader<DrawStaticMeshesShader>(

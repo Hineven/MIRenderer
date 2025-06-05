@@ -16,6 +16,8 @@ RDGResourcePool::RDGResourcePool() {
 }
 
 RDGResourcePool::~RDGResourcePool() {
+    if (num_active_buffers_ + num_active_textures_ != 0)
+        MI_LOG(MIInfraLogType::kError, "RDGResourcePool is destroyed with {} / {} active allocations left!", num_active_buffers_, num_active_textures_);
 }
 
 TRef<RDGResourcePool> RDGResourcePool::Create() {
@@ -77,6 +79,8 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
     }
     buffer->rhi_buffer_span_ = {allocated.buffer, 0, requested_size};
     buffer->usage_ = allocated.last_usage;
+
+    num_active_buffers_ ++;
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
@@ -90,6 +94,8 @@ void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
     buffer->rhi_buffer_span_ = {};
     buffer->usage_ = {};
     buffer->desc_.size = 0;
+
+    num_active_buffers_ --;
 }
 
 void RDGResourcePool::AllocateResource(RDGTexture *texture) {
@@ -115,6 +121,8 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
     
     texture->rhi_texture_ = allocated.texture;
     texture->usage_ = allocated.last_usage;
+
+    num_active_textures_ ++;
 }
 
 void RDGResourcePool::RecycleResource(RDGTexture *texture) {
@@ -123,6 +131,8 @@ void RDGResourcePool::RecycleResource(RDGTexture *texture) {
     rhi_free_texture_map_[hash].emplace_back(texture->rhi_texture_, texture->usage_);
     texture->rhi_texture_ = nullptr;
     texture->usage_ = {};
+
+    num_active_textures_ --;
 }
 
 

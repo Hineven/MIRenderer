@@ -59,7 +59,7 @@ class RefCounted<false, false>
 {
 public:
     RefCounted() = default;
-    virtual ~RefCounted() = default;
+    virtual ~RefCounted() = default; // NOTE: this is crucially necessary for correct behavior on `delete this;`.
 
     RefCounted(const RefCounted& Rhs) = delete;
     RefCounted& operator=(const RefCounted& Rhs) = delete;

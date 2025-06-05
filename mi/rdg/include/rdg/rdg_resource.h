@@ -62,6 +62,7 @@ public:
     }
 
 protected:
+
     RHITextureDesc desc_ {};
     // Underlying RHI texture, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
