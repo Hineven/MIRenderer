@@ -12,11 +12,6 @@
 
 MI_NAMESPACE_BEGIN
 
-class GLTFGeometryFactory : public Geometry {
-public:
-    friend class GLTFLoader;
-};
-
 class GLTFLoader {
 public:
     static bool LoadGLTF (

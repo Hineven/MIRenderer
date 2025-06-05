@@ -213,13 +213,14 @@ public:
         }
     }
     template<CUpcastAvailableRefType<ReferencedType> AnotherRefType>
-    TRef& operator=(TRef<AnotherRefType>&& Move)
+    TRef& operator=(TRef<AnotherRefType>&& Move) noexcept
     {
         ptr_ = static_cast<ReferencedType*>(Move.Raw());
         Move.ptr_ = nullptr;
     }
 
-    FORCEINLINE TRef(TRef&& Move)  // NOLINT implicit move construction
+    FORCEINLINE TRef(TRef&& Move) noexcept // NOLINT implicit move construction
+    // NOTE: noexcept is crucial here. See: https://www.zhihu.com/question/355171938/answer/1890418443267862946
     {
         ptr_ = Move.ptr_;
         Move.ptr_ = nullptr;

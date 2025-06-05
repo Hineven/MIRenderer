@@ -18,6 +18,7 @@ A set of CG libraries.
 * `cpptrace`
 * `xxhash`
 * `cgltf`
+* `happly`
 ### TODO
 * Infra : Thread pool
 * RHI   : Section marks
