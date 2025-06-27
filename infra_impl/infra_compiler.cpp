@@ -148,10 +148,11 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
     } else {
         // Instruct dxc to compile adequate SPIRV
         add_option(L"-spirv");
-        add_option(L"-Ges");
+        add_option(L"-fspv-target-env=universal1.5"); // Highest version
         // Compatibility
         add_option(L"-fvk-use-dx-layout");
         add_option(L"-fspv-use-vulkan-memory-model");
+        add_option(L"-Ges"); // Strict mode
         // Debugging flag
         add_option(L"-Zi");
         add_option(L"-fspv-reflect");
