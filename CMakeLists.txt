@@ -2,10 +2,12 @@ cmake_minimum_required(VERSION 3.28.0)
 
 project(MI)
 
+option(MI_USE_VCPKG_VMA_HPP "Use VMA-HPP from vcpkg" OFF)
+
 enable_language(CXX)
 set(CMAKE_CXX_STANDARD 23)
 
-# Our findvulkan fix
+# Extra CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Helper utilities
@@ -41,12 +43,27 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions("-DMI_PROJECT_ROOT=\"${CMAKE_SOURCE_DIR}\"")
 endif()
 
-# VMA-HPP from vcpkg
 find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
-find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)
+if(NOT MI_USE_VCPKG_VMA_HPP)
+    # Use submodule for VMA and VMA-HPP
+    add_subdirectory(external/VulkanMemoryAllocator-Hpp)
+    set(VMA_HPP_TARGET_NAME VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp)
+else()
+    # Try to use VMA-HPP from vcpkg
+    # Note: currently VMA-HPP on vcpkg is not up to date with the latest VMA version, causing compilation errors.
+    find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)
+    set(VMA_HPP_TARGET_NAME unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp)
+endif()
+# Emit found VMA version
+message(STATUS "Found Vulkan Memory Allocator version: ${VulkanMemoryAllocator_VERSION}")
+
 find_package(glm REQUIRED GLOBAL)
 
 find_package(Vulkan REQUIRED GLOBAL COMPONENTS dxc GLOBAL)
+
+# Emit found Vulkan SDK version
+message(STATUS "Found Vulkan SDK version: ${Vulkan_VERSION}")
+
 find_package(spirv_cross_core REQUIRED GLOBAL)
 # spirv_cross_glsl is required for spirv_cross_hlsl
 find_package(spirv_cross_glsl REQUIRED GLOBAL)

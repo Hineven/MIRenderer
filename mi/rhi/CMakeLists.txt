@@ -48,7 +48,7 @@ list(
     Vulkan::Vulkan
     # Vulkan Alloc
     GPUOpen::VulkanMemoryAllocator
-    unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
+    ${VMA_HPP_TARGET_NAME}
     # Reflection
     spirv-cross-core
     spirv-cross-glsl

@@ -19,7 +19,6 @@
 
 #include "rdg/rdg_cmd.h"
 #include "renderer/mi_resource_allocator.h"
-#include "renderer/r_ctx.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -137,7 +136,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         queue.ClearTexture(depth->GetRHI(), {1, 1, 1, 1});
     })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferDst);
 
+    // Static meshes
     Render_DrawStaticMeshes(view, builder);
+
+    // Volume primitives
+    Render_DrawVolumePrimitives(view, builder);
 
     // Draw G-Buffer to output directly for debug purposes
     Render_DrawToOutput(view, builder, view->G_albedo_.Raw());

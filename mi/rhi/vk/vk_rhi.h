@@ -17,7 +17,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include "vma_overrides.h"
-#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vk_mem_alloc.hpp>
 #include "rhi/rhi.h"
 #include "rhi/vk/vk_export.h"
 

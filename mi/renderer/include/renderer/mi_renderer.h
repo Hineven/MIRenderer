@@ -63,6 +63,9 @@ protected:
     void Render_DrawStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+    void Render_DrawVolumePrimitives (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
     void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture) ;
 
 

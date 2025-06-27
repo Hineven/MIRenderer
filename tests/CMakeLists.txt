@@ -33,7 +33,7 @@ add_dependencies(
         copy_rhi_resources
 )
 add_custom_command(
-        TARGET rhi_test
+        TARGET copy_rhi_resources
         PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_CURRENT_BINARY_DIR}/rhi/resources/
@@ -61,7 +61,7 @@ add_dependencies(
 
 # Make sure the destination directory exists
 add_custom_command(
-        TARGET rdg_test
+        TARGET copy_rdg_resources
         PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources/
