@@ -9,6 +9,7 @@
 #include "common.h"
 #include "base.h"
 #include "refcounted.h"
+#include "types.h"
 #include "util/lockfree.h"
 
 MI_NAMESPACE_BEGIN

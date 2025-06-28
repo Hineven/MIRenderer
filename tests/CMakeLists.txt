@@ -10,6 +10,11 @@ add_executable(example_test test_example.cpp)
 target_link_libraries(example_test ${GTEST_LIBRARIES})
 add_test(NAME example COMMAND example_test)
 
+# Core - Task System Test
+add_executable(core_task_test core/test_task_system.cpp)
+target_link_libraries(core_task_test core infra ${GTEST_LIBRARIES})
+add_test(NAME core_task COMMAND core_task_test)
+
 # Infra
 add_executable(infra_test infra/infra_test.cpp)
 target_link_libraries(infra_test infra core ${GTEST_LIBRARIES})
@@ -73,5 +78,6 @@ target_link_libraries(rdg_test PRIVATE cpptrace::cpptrace infra rhi rdg core ${G
 add_test(NAME rdg COMMAND rdg_test)
 
 # Util
-add_executable(util_test util/util_test.cpp)
+add_executable(util_test util/util_test.cpp util/test_fixed_allocator.cpp)
 target_link_libraries(util_test PRIVATE cpptrace::cpptrace infra rhi rdg util core ${GTEST_LIBRARIES})
+add_test(NAME util COMMAND util_test)
