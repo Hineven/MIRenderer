@@ -92,12 +92,16 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
+    std::vector<glm::mat3x3> renderable_normal_transforms;
     std::vector<RenderableHeader> renderable_headers;
     {
         renderable_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
         for (auto & e : all_renderables) {
-            renderable_transforms.push_back(e->GetTransform().GetToWorldTransformMatrix());
+            auto to_world = e->GetTransform().GetToWorldTransformMatrix();
+            renderable_transforms.push_back(to_world);
+            auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
+            renderable_normal_transforms.push_back(normal_transform);
             renderable_headers.push_back(e->GetDeviceRenderableHeader());
         }
     }
@@ -107,10 +111,26 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_transforms.data(),
         renderable_transforms.size() * sizeof(glm::mat4x3));
     view->upload_context_.Add(
+        builder.Import(view->world_->d_renderable_normal_transforms_.Raw()),
+        renderable_normal_transforms.data(),
+        renderable_normal_transforms.size() * sizeof(glm::mat3x3)
+    );
+    view->upload_context_.Add(
         builder.Import(view->world_->d_renderable_headers_.Raw()),
         renderable_headers.data(),
         renderable_headers.size() * sizeof(RenderableHeader)
     );
+
+    // Upload material changes
+    // TODO maintain a list of materials in CommonGroupedDeviceResourceAllocator for better performance
+    // Or, should we manually track material changes outside of the renderer?
+    for (auto & e : all_renderables) {
+        if (auto mesh = e->As<StaticMesh>()) for (auto m : mesh->GetMaterials()) {
+            // m->UpdateOnDevice(device_allocator_.Raw());
+            assert(!m->IsDirty() && "Material should not be dirty at this point. "
+                                    "You should manually call UpdateOnDevice() before rendering.");
+        }
+    }
 
 
     // Filter visible rendeables
@@ -143,7 +163,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     Render_DrawVolumePrimitives(view, builder);
 
     // Draw G-Buffer to output directly for debug purposes
-    Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+    Render_DrawToOutput(view, builder, view->G_normal_.Raw());
 
 
     // Reset frame context

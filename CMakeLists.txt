@@ -44,6 +44,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
+# Emit include directories for vma
 if(NOT MI_USE_VCPKG_VMA_HPP)
     # Use submodule for VMA and VMA-HPP
     add_subdirectory(external/VulkanMemoryAllocator-Hpp)
@@ -56,7 +57,6 @@ else()
 endif()
 # Emit found VMA version
 message(STATUS "Found Vulkan Memory Allocator version: ${VulkanMemoryAllocator_VERSION}")
-
 find_package(glm REQUIRED GLOBAL)
 
 find_package(Vulkan REQUIRED GLOBAL COMPONENTS dxc GLOBAL)

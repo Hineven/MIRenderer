@@ -26,6 +26,7 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaders)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableNormalTransforms)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndMaterialIndex)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaders)
 
@@ -124,6 +125,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
     params->View = view->view_common_params_;
     params->RenderableHeaders = builder.Import(view->world_->d_renderable_headers_.Raw());
     params->RenderableTransforms = builder.Import(view->world_->d_renderable_transforms_.Raw());
+    params->RenderableNormalTransforms = builder.Import(view->world_->d_renderable_normal_transforms_.Raw());
     params->RenderableIndexAndMaterialIndex = ctx.static_meshes.d_static_mesh_draw_command_renderable_material_indices.Raw();
     params->MaterialHeaders = builder.Import(device_allocator_->material_header_buffer_.Raw());
     params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;

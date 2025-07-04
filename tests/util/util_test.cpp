@@ -15,7 +15,7 @@
 #include <exception>
 #include <random>
 #include <cpptrace/from_current.hpp>
-
+#include "core/task.h"
 #include "rdg/rdg_helper.h"
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi_buffer.h"
@@ -29,6 +29,7 @@ TEST(UtilTest, UtilRadixSort) {
     SetCurrentThreadType(ThreadType::kRenderThread);
 
     RHI::InitializeSingleton(RHIType::kVulkan);
+    TaskGraph::InitializeSingleton(2, 2); // 2 low perf and 2 high perf threads
 
     RDGShaderLibrary::Get().Init();
 
@@ -120,6 +121,7 @@ TEST(UtilTest, UtilRadixSort) {
     RDGShaderLibrary::Get().Deinit();
 
     RHI::DestroySingleton();
+    TaskGraph::DestroySingleton();
 
     GetInfra().Shutdown();
     DestroyInfra();
@@ -135,6 +137,7 @@ TEST(UtilTest, UtilRadixSortIndirect) {
     SetCurrentThreadType(ThreadType::kRenderThread);
 
     RHI::InitializeSingleton(RHIType::kVulkan);
+    TaskGraph::InitializeSingleton(2, 2);
 
     RDGShaderLibrary::Get().Init();
 
@@ -226,9 +229,8 @@ TEST(UtilTest, UtilRadixSortIndirect) {
         ASSERT_EQ(mismatch_index, UINT32_MAX) << "Radix sort failed to sort the data correctly.";
     }
 
-
     RDGShaderLibrary::Get().Deinit();
-
+    TaskGraph::DestroySingleton();
     RHI::DestroySingleton();
 
     GetInfra().Shutdown();

@@ -13,6 +13,7 @@ MI_NAMESPACE_BEGIN
 
 RHIResource::RHIResource() {
 #ifndef NDEBUG
+    assert(GetCurrentThreadType() != ThreadType::kUnknown);
     owner_thread_ = GetCurrentThreadType();
 #endif
 }

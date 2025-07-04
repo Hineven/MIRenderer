@@ -63,6 +63,13 @@ public:
         assert(owner_thread_ == GetCurrentThreadType());
     }
 
+    // Transfer the ownership of the resource to the current thread.
+    FORCEINLINE void UpdateOwner () {
+#ifndef NDEBUG
+        owner_thread_ = GetCurrentThreadType();
+#endif
+    }
+
 protected:
 
     // Can only be allocated by RHI and memory is allocated via infrastructure.

@@ -120,6 +120,9 @@ public:
         return class_registry_;
     }
 
+    // Transfer the thread owner for underlying RHI resources.
+    void UpdateOwnerForRHIResources ();
+
 protected:
 
     // Shader initialization info (default, given in constructor)

@@ -19,6 +19,3 @@ A set of CG libraries.
 * `xxhash`
 * `cgltf`
 * `happly`
-### TODO
-* Infra : Thread pool
-* RHI   : Section marks

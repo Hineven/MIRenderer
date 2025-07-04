@@ -626,6 +626,12 @@ bool GLTFLoader::LoadGLTF(
     for(size_t i = 0; i < gltf_scene.nodes_count; ++i)
         VisitNode(gltf_scene.nodes[i], glm::mat4(1.0));
     out_meshes = instances;
+    for (auto e : materials) {
+        out_materials.push_back(e.second);
+    }
+    for (auto e : meshInstances) {
+        out_geometries.push_back(e.second);
+    }
     cgltf_free(gltf_model);
     return true;
 }

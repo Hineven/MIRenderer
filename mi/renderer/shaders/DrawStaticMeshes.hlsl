@@ -7,6 +7,7 @@
 
 StructuredBuffer<RenderableHeader> RenderableHeaders;
 StructuredBuffer<float3x4>         RenderableTransforms;
+StructuredBuffer<float3x3>         RenderableNormalTransforms; // InvTranspose of RenderableTransforms
 StructuredBuffer<uint2>            RenderableIndexAndMaterialIndex;
 StructuredBuffer<MaterialHeader>   MaterialHeaders;
 
@@ -17,21 +18,23 @@ struct VS_Output {
     float2 UV : TEXCOORD0;
     float3 Normal : NORMAL;
     uint   MaterialIndex : TEXCOORD1;
+    float3 WorldPosition : TEXCOORD2; // For tangent computation in PS
 };
 
 VS_Output VS_Main (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID) {
     uint RenderableIndex = RenderableIndexAndMaterialIndex[InstanceIndex].x;
     float3x4 ToWorldTransform = RenderableTransforms[RenderableIndex];
-    // float3x4 ToWorldTransformInverse = transpose(ToWorldTransform);
+    float3x3 ToWorldNormalTransform = RenderableNormalTransforms[RenderableIndex];
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
-    // float3 WorldNormal   = mul()
+    float3 WorldNormal   = mul(ToWorldNormalTransform, Vertex.Normal);
     float4 PositionW = mul(View.Camera.WorldToNDC, float4(WorldPosition, 1));
 
     VS_Output Output = (VS_Output)0;
     Output.Position = PositionW;
     Output.UV = Vertex.UV;
-    Output.Normal = float3(0, 0, 1);//mul(ToWorldTransform, float4(Vertex.Normal, 0)).xyz;
+    Output.Normal = WorldNormal;
     Output.MaterialIndex = RenderableIndexAndMaterialIndex[InstanceIndex].y;
+    Output.WorldPosition = WorldPosition;
     return Output;
 }
 
@@ -50,9 +53,23 @@ PS_Output PS_Main (VS_Output Input) : SV_TARGET {
     if(IsValid(Material.AlbedoMap)) {
         Output.AlbedoAlpha.rgb = GetBindlessSRV(Material.AlbedoMap).Sample(Sampler, Input.UV).rgb;
     }
-    // if(IsValid(Material.NormalMap)) {
-    //     Output.Normal.xyz = (Material.NormalMap).Sample(Sampler, Input.UV).xyz * 2 - 1;
-    // }
+    if(IsValid(Material.NormalMap)) {
+        // online tbn construction
+        float3 dpdx = ddx(Input.WorldPosition);
+        float3 dpdy = ddy(Input.WorldPosition);
+        float2 duvdx = ddx(Input.UV);
+        float2 duvdy = ddy(Input.UV);
+        float3 Tangent = normalize(dpdx * duvdy.y - dpdy * duvdx.y);
+        float3 Normal = normalize(Input.Normal);
+        float3 Bitangent = cross(Normal, Tangent);
+
+        float3 NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(Sampler, Input.UV).xyz * 2 - 1;
+        Output.Normal.xyz = normalize(
+            NormalMapSample.x * Tangent +
+            NormalMapSample.y * Bitangent +
+            NormalMapSample.z * Normal
+        );
+    }
     if(IsValid(Material.MetallicRoughnessMap)) {
         float2 MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(Sampler, Input.UV).xy;
         Output.MetallicRoughness = float4(MetallicRoughness.x, MetallicRoughness.y, 0, 1);

@@ -76,6 +76,7 @@ protected:
 
     // Indexed with renderable index.
     TRef<RHIBuffer> d_renderable_transforms_;
+    TRef<RHIBuffer> d_renderable_normal_transforms_;
     TRef<RHIBuffer> d_renderable_headers_;
 };
 

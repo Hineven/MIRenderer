@@ -273,6 +273,14 @@ public:
     // Get number of pending tasks
     size_t GetPendingTaskCount() const;
 
+    // Shortcut for simple parallization
+    template<typename T, typename F>
+    inline std::vector<TaskRef> ForEach(T & iteratable, F runnable) {
+        std::vector<TaskRef> tasks;
+        for (auto & e : iteratable) tasks.push_back(CreateSimpleTask([&](){runnable(e);}));
+        return std::move(tasks);
+    }
+
 protected:
     inline TaskGraph (int num_low_performance_threads, int num_high_performance_threads);
 
@@ -311,7 +319,6 @@ protected:
 
 private:
     static TaskGraph * instance_;
-    static std::mutex instance_mutex_;
 };
 
 struct TaskGraphThreadMeta {

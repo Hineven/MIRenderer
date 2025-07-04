@@ -71,6 +71,10 @@ public:
         return double_sided_;
     }
 
+    FORCEINLINE bool IsDirty () const {
+        return dirty_;
+    }
+
     MaterialHeader PackMaterialHeader () const ;
 
     void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * allocator) ;

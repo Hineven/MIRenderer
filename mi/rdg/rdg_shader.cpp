@@ -16,6 +16,8 @@
 #include "rhi/rhi_pipeline.h"
 #include "core/infra.h"
 
+#include "core/task.h"
+
 MI_NAMESPACE_BEGIN
 
 size_t RDGShaderInitializationInfo::GetHash() const {
@@ -527,6 +529,14 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
     return shader_hash;
 }
 
+void RDGShader::UpdateOwnerForRHIResources() {
+    if (shaders_.compute) shaders_.compute->UpdateOwner();
+    if (shaders_.vertex) shaders_.vertex->UpdateOwner();
+    if (shaders_.fragment) shaders_.fragment->UpdateOwner();
+    if (graphics_pipeline_) graphics_pipeline_->UpdateOwner();
+    if (compute_pipeline_) compute_pipeline_->UpdateOwner();
+}
+
 
 bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShaderInitializationInfo & ini) {
     // Re-compile the shader
@@ -649,6 +659,9 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
 }
 
 bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
+
+    // Update owner to current thread
+    UpdateOwnerForRHIResources();
 
     // Clear legacy resources
     graphics_pipeline_ = {};
@@ -889,22 +902,38 @@ void RDGShaderLibrary::Init() {
     }
 
     MI_INFO("ShaderLibrary: Gathered {} shader permutations to compile.", shaders_to_compile.size());
-    // Compile all shaders
-    // TODO parallize
+
+    std::vector<TaskRef> compile_tasks;
+    compile_tasks.reserve(shaders_to_compile.size());
+    std::mutex cache_mutex; // Ensure thread safety when updating the cache
+
     for (auto & shader : shaders_to_compile) {
-        RDGShaderInitializationInfo ini;
-        ini.macros = shader.macro_decls;
-        auto new_shader = shader.shader_class->Creator(shader.shader_class);
-        if (!new_shader->Recompile(ini)) {
-            std::string macro_decl;
-            for (const auto & macro : shader.macro_decls) {
-                if (!macro_decl.empty()) macro_decl += ", ";
-                macro_decl += macro;
+        auto task = TaskGraph::Get().CreateSimpleTask([this, &shader, &cache_mutex]() {
+            RDGShaderInitializationInfo ini;
+            ini.macros = shader.macro_decls;
+            auto new_shader = shader.shader_class->Creator(shader.shader_class);
+            if (!new_shader->Recompile(ini)) {
+                std::string macro_decl;
+                for (const auto & macro : shader.macro_decls) {
+                    if (!macro_decl.empty()) macro_decl += ", ";
+                    macro_decl += macro;
+                }
+                MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with optional macros: {}",
+                       shader.shader_class->name, macro_decl);
             }
-            MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with optional macros: {}",
-                   shader.shader_class->name, macro_decl);
-        }
-        cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
+
+            {
+                std::lock_guard<std::mutex> lock(cache_mutex);
+                cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
+            }
+        });
+        compile_tasks.push_back(task);
+    }
+
+    TaskGraph::Get().WaitForTasks(compile_tasks);
+    // Transfer the ownership of underlying RHI resources to the render thread (current thread)
+    for (auto & shader : cached_shaders_) {
+        shader.second->UpdateOwnerForRHIResources();
     }
 }
 
@@ -930,9 +959,14 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
         }
     }
     // Recompile all shaders that need to be recompiled
-    // TODO parallize
-    for (auto & shader : shaders_to_recompile) {
+    auto tasks = TaskGraph::Get().ForEach(shaders_to_recompile, [](RDGShader * shader) {
         shader->Recompile(shader->ini_);
+    });
+
+    TaskGraph::Get().WaitForTasks(tasks);
+
+    for (auto &shader: shaders_to_recompile) {
+        shader->UpdateOwnerForRHIResources();
     }
     MI_INFO("RDGShaderLibrary: {} shaders recompiled.", shaders_to_recompile.size());
 }

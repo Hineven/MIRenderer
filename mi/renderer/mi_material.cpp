@@ -9,8 +9,11 @@
 #include <renderer/mi_texture.h>
 
 #include <rhi/rhi_bindless.h>
+
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_resource_allocator.h"
 #include "rhi/rhi.h"
+#include "rhi/rhi_buffer.h"
 #include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 
@@ -76,6 +79,11 @@ void Material::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *allocator) {
         device_material_->index_ = allocator->AllocateMaterialSlot();
         assert(device_material_->index_ != UINT32_MAX);
         device_material_->material_header_ = PackMaterialHeader();
+        Helpers::Upload_Async(
+            allocator->material_header_buffer_->GetSpan(sizeof(MaterialHeader) * device_material_->index_, sizeof(MaterialHeader)),
+            &device_material_->material_header_, sizeof(MaterialHeader)
+        );
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
         dirty_ = false;
     }
 }

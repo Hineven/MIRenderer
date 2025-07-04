@@ -19,6 +19,7 @@ MI_NAMESPACE_BEGIN
 RendererScene::RendererScene () {
     auto & rhi = RHI::Get();
     d_renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_normal_transforms_ = rhi.CreateBuffer(sizeof(glm::mat3x3) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     d_static_mesh_renderable_materials_ = DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 1, sizeof(uint32_t) * RendererScene::kMaxNumStaticMeshGeometryMaterialPairs);
     d_static_mesh_renderable_materials_->SetNumBufferBlockLimit(1);

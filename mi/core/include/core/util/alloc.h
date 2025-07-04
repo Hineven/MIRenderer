@@ -223,8 +223,12 @@ private:
         return offset / kElementSize;
     }
 
+// Disable warning C4324
+#pragma warning(push)
+#pragma warning(disable: 4324)
     // Buffer to hold all elements, properly aligned
     ALIGNAS(Alignment) std::byte buffer_[ElementCount * kElementSize];
+#pragma warning(pop)
 
     // Index of the first free slot (kInvalidIndex if no free slots)
     size_t first_free_ = 0;

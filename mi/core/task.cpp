@@ -12,7 +12,9 @@ thread_local TaskGraphThreadMeta G_ThreadMeta;
 
 // Static members
 TaskGraph * TaskGraph::instance_;
-std::mutex TaskGraph::instance_mutex_;
+
+// Released after TaskGraph::instance_ is set.
+static std::mutex instance_initialization_mutex_;
 
 uint64_t GetCurrentTimeNanoseconds() {
     auto now = std::chrono::high_resolution_clock::now();
@@ -25,6 +27,14 @@ void WorkerThreadRunnable::Run() {
     G_ThreadMeta.performance = performance_type_;
     G_ThreadMeta.flags = 0;
 
+    // Wait for the instance registration
+    {
+        instance_initialization_mutex_.lock();
+        instance_initialization_mutex_.unlock();
+    }
+
+    SetCurrentThreadType(ThreadType::kTaskGraphWorkerThread);
+
     while (true) {
         Task *task = TaskGraph::Get().WaitAndGetNextTask(this);
         if (task != nullptr) {
@@ -35,6 +45,8 @@ void WorkerThreadRunnable::Run() {
         }
         if (stop_) break;
     }
+
+    SetCurrentThreadType(ThreadType::kUnknown);
 }
 
 TaskInitializer::~TaskInitializer () {
@@ -198,7 +210,6 @@ TaskGraph::~TaskGraph() {
 void TaskGraph::OnTaskReadyToRun(Task* task) {
     if (shutdown_) return; // Don't accept new tasks if shutting down
 
-
     task->IncRef(); // Initialize reference count for task graph management
     {
         std::lock_guard<std::mutex> lock(task_queue_mutex_);
@@ -214,7 +225,7 @@ void TaskGraph::OnTaskReadyToRun(Task* task) {
     task_available_cv_.notify_one();
 }
 
-void TaskGraph::OnTaskFinished(Task *task) {
+void TaskGraph::OnTaskFinished([[maybe_unused]] Task *task) {
     // This is called when a task finishes running
     // Do nothing really
 }
@@ -251,8 +262,12 @@ TaskGraph& TaskGraph::Get() {
 
 void TaskGraph::InitializeSingleton(int num_low_performance_threads, int num_high_performance_threads) {
     if (!instance_) {
+        // Make sure TaskGraph::Get() is called only after initialization
+        std::lock_guard<std::mutex> lock(instance_initialization_mutex_);
         instance_ = new TaskGraph(num_low_performance_threads, num_high_performance_threads);
     }
+    // Make sure the write is visible to all threads
+    std::atomic_thread_fence(std::memory_order_release);
 }
 
 void TaskGraph::DestroySingleton() {

@@ -26,6 +26,7 @@
 #include "rdg/rdg_shader.h"
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
+#include "core/task.h"
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
@@ -108,6 +109,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     if(total_task_graph_thread_count < 1) {
         mi_assert(false, "At least 3 threads are required.");
     }
+
+    TaskGraph::InitializeSingleton(0, task_graph_hpt_count);
 
     // Initialize the task graph singleton and its workers.
     // TaskGraph::InitializeSingleton(limits.max_low_performance_thread_count, task_graph_hpt_count);
@@ -233,7 +236,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         // Main loop
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
-
+            bool should_reload_shaders = false;
             // ImGui new frame routine
             {
                 ImGui_ImplGlfw_NewFrame();
@@ -294,11 +297,18 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 last_mouse_x = mouse_x;
                 last_mouse_y = mouse_y;
             }
+            // Hotkeys
+            {
+                // F5: Reload shaders
+                if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS) {
+                    should_reload_shaders = true;
+                }
+            }
             // UI
             {
                 ImGui::Begin("Rendering");
                 ImGui::Text("Hello");
-                if (ImGui::Button("Reload Shaders")) {
+                if (ImGui::Button("Reload Shaders") || should_reload_shaders) {
                     RHI::Get().WaitForIdle();
                     RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
                 }
@@ -353,8 +363,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     assert(pool.GetRefCount() == 1);
     pool.SafeRelease();
 
-    // TaskGraph::DestroySingleton();
     RDGShaderLibrary::Get().Deinit();
+
+    TaskGraph::DestroySingleton();
 
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
