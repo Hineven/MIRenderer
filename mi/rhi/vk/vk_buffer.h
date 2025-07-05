@@ -26,6 +26,8 @@ public:
 
     void SetName(const std::string & name) override;
 
+    vk::DeviceAddress GetDeviceAddress() const ;
+
 protected:
     vk::Buffer vk_buffer_;
     vma::Allocation allocation_;

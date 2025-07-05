@@ -22,6 +22,13 @@ MI_NAMESPACE_BEGIN
 struct RHIDeviceProperties {
     uint32_t wave_size {}; // Wave size in threads
     char device_name[256] {}; // Device name
+
+    // Ray tracing properties
+    uint32_t shader_group_handle_size {};         // Size of a shader group handle
+    uint32_t shader_group_handle_alignment {};    // Alignment of shader group handles
+    uint32_t shader_group_base_alignment {};      // Base alignment for SBT entries
+    uint32_t max_ray_recursion_depth {};          // Maximum ray recursion depth
+    uint32_t max_shader_group_stride {};          // Maximum stride for shader binding table
 };
 
 struct RHIParamStructInfo;

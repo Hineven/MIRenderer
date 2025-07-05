@@ -258,7 +258,7 @@ void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass,
 void RDGCommandHelper::DispatchIndirect(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *compute_shader,
     const RDGShaderParamStructAndSizeInfo *info, const void *params, RDGBuffer *indirect_buffer, uint32_t offset) {
     if (BindComputeShader(queue, pass, compute_shader, info, params)) {
-        queue.DispatchIndirect(indirect_buffer->GetRHI().buffer, indirect_buffer->GetRHI().offset + offset);
+        queue.DispatchIndirect(indirect_buffer->GetRHI().buffer, uint32_t(indirect_buffer->GetRHI().offset + offset));
     }
 }
 

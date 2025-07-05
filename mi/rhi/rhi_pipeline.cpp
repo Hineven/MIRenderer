@@ -235,5 +235,75 @@ void RHIComputePipeline::Compile(mi::RHIShader *compute_shader) {
     is_valid_ = true;
 }
 
+void RHIRayTracingPipeline::Compile(const RHIRayTracingPipelineDesc& desc) {
+    Reset();
+
+    // Check all shaders in the pipeline
+    for (auto* shader : desc.shaders) {
+        if (!CheckAndRemapShaderResources(shader)) return;
+    }
+
+    if (!CheckNoOverlappingNamesAmongDifferentTypes()) return;
+
+    // Build pipeline resource index
+    BuildPipelineResourceIndex();
+
+    // Check if any shader has bindless resources
+    has_bindless_resources_ = false;
+    for (auto* shader : desc.shaders) {
+        if (shader && shader->HasBindlessResources()) {
+            has_bindless_resources_ = true;
+            break;
+        }
+    }
+
+    // Store pipeline configuration
+    shader_group_count_ = static_cast<uint32_t>(desc.shader_groups.size());
+    max_recursion_depth_ = desc.max_recursion_depth;
+
+    // Validate shader group configuration
+    for (const auto& group : desc.shader_groups) {
+        switch (group.type) {
+            case RHIRayTracingShaderGroupType::kRayGeneration:
+            case RHIRayTracingShaderGroupType::kMiss:
+            case RHIRayTracingShaderGroupType::kCallable:
+                if (group.general_shader_index >= desc.shaders.size()) {
+                    MI_LOG(MIInfraLogType::kWarning, "Invalid general shader index in ray tracing pipeline");
+                    return;
+                }
+                break;
+            case RHIRayTracingShaderGroupType::kTrianglesHitGroup:
+            case RHIRayTracingShaderGroupType::kProceduralHitGroup:
+                if (group.closest_hit_shader_index != UINT32_MAX &&
+                    group.closest_hit_shader_index >= desc.shaders.size()) {
+                    MI_LOG(MIInfraLogType::kWarning, "Invalid closest hit shader index in ray tracing pipeline");
+                    return;
+                }
+                if (group.any_hit_shader_index != UINT32_MAX &&
+                    group.any_hit_shader_index >= desc.shaders.size()) {
+                    MI_LOG(MIInfraLogType::kWarning, "Invalid any hit shader index in ray tracing pipeline");
+                    return;
+                }
+                if (group.type == RHIRayTracingShaderGroupType::kProceduralHitGroup &&
+                    group.intersection_shader_index != UINT32_MAX &&
+                    group.intersection_shader_index >= desc.shaders.size()) {
+                    MI_LOG(MIInfraLogType::kWarning, "Invalid intersection shader index in ray tracing pipeline");
+                    return;
+                }
+                break;
+            default:
+                MI_LOG(MIInfraLogType::kWarning, "Invalid shader group type in ray tracing pipeline");
+                return;
+        }
+    }
+
+    // Compile the RHI-specific implementation
+    if (!CompileRHI(desc)) {
+        MI_LOG(MIInfraLogType::kWarning, "Ray tracing pipeline {} assemble failed.", GetName());
+        return;
+    }
+
+    is_valid_ = true;
+}
 
 MI_NAMESPACE_END

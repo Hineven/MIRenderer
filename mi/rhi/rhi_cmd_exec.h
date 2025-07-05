@@ -45,6 +45,13 @@ public:
     virtual void RHIDebugMarkerEnd (RHICommandQueueBase * buffer, RHICommandDebugMarkerEnd * cmd) = 0;
     virtual void RHIDebugMarkerInsert (RHICommandQueueBase * buffer, RHICommandDebugMarkerInsert * cmd) = 0;
 
+    // Ray tracing commands
+    virtual void RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) = 0;
+    virtual void RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) = 0;
+    virtual void RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) = 0;
+    virtual void RHIDispatchRays(RHICommandQueueBase *cmd, RHICommandDispatchRays *dispatch_rays) = 0;
+    virtual void RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) = 0;
+
     // Submit all translated command stored within the command buffer and clear them.
     virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point, bool recycle_resources) = 0;
     // End the frame, enqueue a present command.

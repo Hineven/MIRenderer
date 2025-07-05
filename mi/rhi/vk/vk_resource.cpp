@@ -5,6 +5,8 @@
  */
 
 #include "vk_resource.h"
+
+#include "vk_as.h"
 #include "vk_conversion.h"
 
 MI_NAMESPACE_BEGIN
@@ -48,20 +50,6 @@ void VulkanSampler::SetName(const std::string& name) {
     vk::DebugUtilsObjectNameInfoEXT name_info{
         vk::ObjectType::eSampler,
         reinterpret_cast<uint64_t>(static_cast<VkSampler>(vk_sampler_)),
-        name.c_str()
-    };
-    device.setDebugUtilsObjectNameEXT(name_info);
-}
-
-void *VulkanAccelerationStructure::GetAPIHandle() const {
-    return (void*)as_;
-}
-
-void VulkanAccelerationStructure::SetName(const std::string& name) {
-    auto device = GetVulkanRHI()->GetDevice();
-    vk::DebugUtilsObjectNameInfoEXT name_info{
-        vk::ObjectType::eAccelerationStructureKHR,
-        reinterpret_cast<uint64_t>(static_cast<VkAccelerationStructureKHR>(as_)),
         name.c_str()
     };
     device.setDebugUtilsObjectNameEXT(name_info);

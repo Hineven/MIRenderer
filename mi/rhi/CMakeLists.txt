@@ -13,9 +13,12 @@ set(SOURCE_FILES
         vk/vk_pipeline.cpp
         vk/vk_device.cpp
         vk/vk_cmd_exec.cpp
+        vk/vk_cmd_exec_common.cpp
+        vk/vk_cmd_exec_rt.cpp
         vk/vk_texture.cpp
         vk/vk_resource.cpp
         vk/vk_buffer.cpp
+        vk/vk_as.cpp
         vk/vk_bindless.cpp
         vk/vk_rhi.cpp
         vk/vk_shader.cpp

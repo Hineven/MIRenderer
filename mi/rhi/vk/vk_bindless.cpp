@@ -9,6 +9,7 @@
 #include "vk_bindless.h"
 #include "vk_conversion.h"
 #include "vk_resource.h"
+#include "vk_as.h"
 #include "vk_texture.h"
 #include "vk_buffer.h"
 

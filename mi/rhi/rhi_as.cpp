@@ -4,12 +4,17 @@
  * See LICENSE for licensing.
  */
 
-#include <rhi/rhi_as.h>
+#include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
 
-RHIAccelerationStructure::RHIAccelerationStructure() {};
+RHIAccelerationStructure::RHIAccelerationStructure(RHIAccelerationStructureType type)
+    : type_(type) {
+    // Base implementation
+}
 
-RHIAccelerationStructure::~RHIAccelerationStructure() {}
+RHIAccelerationStructure::~RHIAccelerationStructure() {
+    // Base implementation
+}
 
 MI_NAMESPACE_END

@@ -124,28 +124,6 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         instance_info.ppEnabledLayerNames = enabled_layer_names.data();
         instance_info.enabledLayerCount = (uint32_t)enabled_layer_names.size();
 
-        // Custom debug messenger for capturing shader debug messages
-
-        // auto debug_messenger_create_info = vk::DebugUtilsMessengerCreateInfoEXT {
-        //     {},
-        //     vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo
-        //     | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-        //     vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
-        //     | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::e,
-        //     [](vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
-        //        vk::DebugUtilsMessageTypeFlagsEXT message_types,
-        //        const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData,
-        //        void *pUserData) -> vk::Bool32 {
-        //         // if (pCallbackData->pMessageIdName && strcmp(pCallbackData->pMessageIdName, "Loader Message") == 0) {
-        //         //     // Ignore loader messages
-        //         //     return VK_FALSE;
-        //         // }
-        //         MI_LOG(MIInfraLogType::kInfo, "Vulkan debug: {}", pCallbackData->pMessage);
-        //         return VK_FALSE; // Return false to continue the validation
-        //     }
-        // };
-        // instance_info.pNext = &debug_messenger_create_info;
-
         instance_ = vk::createInstance(instance_info);
     }
 
@@ -401,7 +379,16 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
         rhi_device_properties_.wave_size = subgroup_props.subgroupSize;
         strcpy_s(rhi_device_properties_.device_name, physical_device_properties_.self.properties.deviceName);
-        // ...
+
+        auto rt_props = physical_device_.getProperties2<
+            vk::PhysicalDeviceProperties2,
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+
+        rhi_device_properties_.shader_group_handle_size = rt_props.shaderGroupHandleSize;
+        rhi_device_properties_.shader_group_handle_alignment = rt_props.shaderGroupHandleAlignment;
+        rhi_device_properties_.shader_group_base_alignment = rt_props.shaderGroupBaseAlignment;
+        rhi_device_properties_.max_ray_recursion_depth = rt_props.maxRayRecursionDepth;
+        rhi_device_properties_.max_shader_group_stride = rt_props.maxShaderGroupStride;
     }
 
     // Device resources

@@ -8,15 +8,29 @@
 #define RHI_AS_H
 
 #include <rhi/rhi_resource.h>
+#include <rhi/rhi_buffer.h>
+#include <rhi/rhi_types.h>
+#include <rhi/rhi_as_types.h>
+#include <vector>
 
 MI_NAMESPACE_BEGIN
 
 class RHIAccelerationStructure : public RHIResource {
 public:
-    RHIAccelerationStructure() ;
-    virtual ~RHIAccelerationStructure() ;
+    RHIAccelerationStructure(RHIAccelerationStructureType type);
+    virtual ~RHIAccelerationStructure();
+
+    RHIAccelerationStructureType GetType() const { return type_; }
+
+    // Get the device address of this acceleration structure (for instance references)
+    virtual uint64_t GetDeviceAddress() const = 0;
+
+    // Get the build sizes information for the given build info
+    virtual RHIAccelerationStructureBuildSizesInfo GetBuildSizes(
+        const RHIAccelerationStructureBuildGeometryInfo& build_info) const = 0;
+
 protected:
-    // TODO
+    RHIAccelerationStructureType type_;
 };
 
 MI_NAMESPACE_END

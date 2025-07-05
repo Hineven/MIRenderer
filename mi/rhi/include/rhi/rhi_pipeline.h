@@ -48,7 +48,13 @@ public:
 
     virtual void Reset () ;
 
+    FORCEINLINE RHIPipelineType GetType() const {
+        return type_;
+    }
+
 protected:
+    FORCEINLINE RHIPipeline(RHIPipelineType type) : type_(type) {}
+
     // Append reflected shader resources to the pipeline resources and check compatibility
     bool CheckAndRemapShaderResources (RHIShader * shader);
     // Check if all resource names are unique among different types
@@ -64,6 +70,7 @@ protected:
 
     bool is_valid_ {false};
 
+    RHIPipelineType type_ {RHIPipelineType::kMax};
     // Aggregated by the pipeline
     USE_PIPELINE_REFLECTION_STRUCTS
 
@@ -77,6 +84,7 @@ protected:
     std::vector<ImmutableSamplerDesc> immutable_samplers_;
     std::vector<AccelerationStructureDesc> acceleration_structures_;
     std::vector<CommandConstantDesc> command_constant_;
+
 
     // This should be set by the derived class implementation upon compilation
     bool has_bindless_resources_ {false};
@@ -110,7 +118,6 @@ public:
 
 class RHIGraphicsPipeline : public RHIPipeline {
 public:
-    using RHIPipeline::RHIPipeline;
 
     virtual void Reset () override;
     void Compile (const RHIGraphicsPipelineDesc &) ;
@@ -127,6 +134,9 @@ public:
 
     virtual ~RHIGraphicsPipeline() = default;
 protected:
+
+    FORCEINLINE RHIGraphicsPipeline (): RHIPipeline(RHIPipelineType::kGraphics) {}
+
     virtual bool CompileRHI (const RHIGraphicsPipelineDesc &) = 0;
 
     bool depth_test_enable_ {false};
@@ -137,11 +147,93 @@ protected:
 
 class RHIComputePipeline : public RHIPipeline {
 public:
-    using RHIPipeline::RHIPipeline;
     void Compile (RHIShader * compute_shader) ;
 protected:
+    FORCEINLINE RHIComputePipeline() : RHIPipeline(RHIPipelineType::kCompute) {}
     virtual ~RHIComputePipeline() = default;
     virtual bool CompileRHI (RHIShader * compute_shader) = 0;
+};
+
+// Ray tracing shader group types
+enum class RHIRayTracingShaderGroupType {
+    kRayGeneration,     // Ray generation shader group
+    kMiss,              // Miss shader group
+    kTrianglesHitGroup, // Hit group for triangle geometry
+    kProceduralHitGroup,// Hit group for procedural geometry
+    kCallable,          // Callable shader group
+    kMax
+};
+
+// Ray tracing shader group description
+struct RHIRayTracingShaderGroupDesc {
+    RHIRayTracingShaderGroupType type;
+    uint32_t general_shader_index;      // Index for raygen, miss, or callable shaders
+    uint32_t closest_hit_shader_index;  // Index for closest hit shader (hit groups only)
+    uint32_t any_hit_shader_index;      // Index for any hit shader (hit groups only)
+    uint32_t intersection_shader_index; // Index for intersection shader (procedural hit groups only)
+
+    RHIRayTracingShaderGroupDesc()
+        : type(RHIRayTracingShaderGroupType::kMax)
+        , general_shader_index(UINT32_MAX)
+        , closest_hit_shader_index(UINT32_MAX)
+        , any_hit_shader_index(UINT32_MAX)
+        , intersection_shader_index(UINT32_MAX) {}
+};
+
+// Ray tracing pipeline description
+struct RHIRayTracingPipelineDesc {
+    std::vector<RHIShader*> shaders;                        // All shaders used in the pipeline
+    std::vector<RHIRayTracingShaderGroupDesc> shader_groups;// Shader group descriptions
+    uint32_t max_recursion_depth;                           // Maximum ray recursion depth
+
+    RHIRayTracingPipelineDesc() : max_recursion_depth(1) {}
+};
+
+class RHIRayTracingPipeline : public RHIPipeline {
+public:
+    void Compile(const RHIRayTracingPipelineDesc& desc);
+
+    // Get shader group count
+    uint32_t GetShaderGroupCount() const { return shader_group_count_; }
+
+    // Get shader group handle size (for SBT construction)
+    virtual uint32_t GetShaderGroupHandleSize() const = 0;
+
+    // Get shader group handles (for SBT construction)
+    virtual bool GetShaderGroupHandles(uint32_t first_group, uint32_t group_count, void* data) const = 0;
+
+    // Get shader group handle alignment
+    virtual uint32_t GetShaderGroupHandleAlignment() const = 0;
+
+    // Get shader group base alignment (for SBT)
+    virtual uint32_t GetShaderGroupBaseAlignment() const = 0;
+
+    // Get SBT strides for different shader types
+    // These methods return the stride (in bytes) for each SBT type
+    virtual uint32_t GetRaygenSBTStride() const = 0;
+    virtual uint32_t GetMissSBTStride() const = 0;
+    virtual uint32_t GetHitSBTStride() const = 0;
+    virtual uint32_t GetCallableSBTStride() const = 0;
+
+    // Get shader group information by type (helper methods)
+    uint32_t GetRaygenGroupCount() const { return raygen_group_count_; }
+    uint32_t GetMissGroupCount() const { return miss_group_count_; }
+    uint32_t GetHitGroupCount() const { return hit_group_count_; }
+    uint32_t GetCallableGroupCount() const { return callable_group_count_; }
+
+protected:
+    FORCEINLINE RHIRayTracingPipeline() : RHIPipeline(RHIPipelineType::kRayTracing) {}
+    virtual ~RHIRayTracingPipeline() = default;
+    virtual bool CompileRHI(const RHIRayTracingPipelineDesc& desc) = 0;
+
+    uint32_t shader_group_count_ = 0;
+    uint32_t max_recursion_depth_ = 1;
+
+    // Shader group counts by type (calculated during compilation)
+    uint32_t raygen_group_count_ = 0;
+    uint32_t miss_group_count_ = 0;
+    uint32_t hit_group_count_ = 0;
+    uint32_t callable_group_count_ = 0;
 };
 
 MI_NAMESPACE_END

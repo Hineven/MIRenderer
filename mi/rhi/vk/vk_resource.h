@@ -26,24 +26,6 @@ protected:
     vk::Sampler vk_sampler_;
 };
 
-class VulkanAccelerationStructure : public RHIResource {
-public:
-    VulkanAccelerationStructure(vk::AccelerationStructureKHR as) : as_(as) {}
-    ~VulkanAccelerationStructure() override {
-        auto device = GetVulkanRHI()->GetDevice();
-        device.destroyAccelerationStructureKHR(as_);
-    }
-
-    FORCEINLINE vk::AccelerationStructureKHR GetAccelerationStructure() const { return as_; }
-
-    void *GetAPIHandle() const override;
-    void SetName(const std::string& name) override;
-
-//    void Use (vk::CommandBuffer cmd, vk::PipelineStageFlags use_stages, vk::AccessFlags use_access) ;
-protected:
-    vk::AccelerationStructureKHR as_;
-};
-
 class VulkanSyncPoint : public RHISyncPoint {
 protected:
     VulkanSyncPoint () ;

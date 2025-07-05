@@ -542,5 +542,292 @@ void *VulkanComputePipeline::GetAPIHandle() const {
     return (void*)vk_pipeline_;
 }
 
+// Ray tracing pipeline implementation
+uint32_t VulkanRayTracingPipeline::GetShaderGroupHandleSize() const {
+    return shader_group_handle_size_;
+}
+
+bool VulkanRayTracingPipeline::GetShaderGroupHandles(uint32_t first_group, uint32_t group_count, void* data) const {
+    if (!vk_pipeline_ || !data) {
+        return false;
+    }
+
+    size_t data_size = group_count * shader_group_handle_size_;
+    auto result = GetVulkanRHI()->GetDevice().getRayTracingShaderGroupHandlesKHR(
+        vk_pipeline_, first_group, group_count, data_size, data);
+
+    return result == vk::Result::eSuccess;
+}
+
+uint32_t VulkanRayTracingPipeline::GetShaderGroupHandleAlignment() const {
+    return shader_group_handle_alignment_;
+}
+
+uint32_t VulkanRayTracingPipeline::GetShaderGroupBaseAlignment() const {
+    return shader_group_base_alignment_;
+}
+
+// SBT stride methods implementation
+uint32_t VulkanRayTracingPipeline::GetRaygenSBTStride() const {
+    return raygen_sbt_stride_;
+}
+
+uint32_t VulkanRayTracingPipeline::GetMissSBTStride() const {
+    return miss_sbt_stride_;
+}
+
+uint32_t VulkanRayTracingPipeline::GetHitSBTStride() const {
+    return hit_sbt_stride_;
+}
+
+uint32_t VulkanRayTracingPipeline::GetCallableSBTStride() const {
+    return callable_sbt_stride_;
+}
+
+void VulkanRayTracingPipeline::SetName(const std::string& name) {
+    RHIPipeline::SetName(name);
+#ifdef MI_DEBUG
+    if (vk_pipeline_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::ePipeline,
+            (uint64_t)(VkPipeline)vk_pipeline_,
+            GetName()
+        });
+    }
+#endif
+}
+
+VulkanRayTracingPipeline::~VulkanRayTracingPipeline() {
+    ResetRHI();
+}
+
+void* VulkanRayTracingPipeline::GetAPIHandle() const {
+    return (void*)vk_pipeline_;
+}
+
+bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc) {
+    auto device = GetVulkanRHI()->GetDevice();
+
+    // Get ray tracing properties from RHI device properties
+    auto props = GetVulkanRHI()->GetDeviceProperties();
+    shader_group_handle_size_ = props.shader_group_handle_size;
+    shader_group_handle_alignment_ = props.shader_group_handle_alignment;
+    shader_group_base_alignment_ = props.shader_group_base_alignment;
+
+    // Create descriptor set layout and pipeline layout
+    // Following the same pattern as VulkanComputePipeline
+    std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
+    std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
+
+    // Take the first descriptor set for bindfull resources
+    {
+        int set_index = (int)descriptor_set_layouts.size();
+        int current_binding_index = 0;
+
+        auto AddBindings = [&](const auto& desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
+            for (int i = 0; i < (int)desc.size(); ++i) {
+                auto& res = desc[i];
+                bindfull_bindings.emplace_back()
+                        .setBinding(current_binding_index + i)
+                        .setDescriptorType(type)
+                        .setDescriptorCount(1)
+                        .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
+            }
+            for(int i = 0; i < (int)desc.size(); ++i) {
+                remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
+            }
+            current_binding_index += (int)desc.size();
+        };
+
+        AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
+        AddBindings(storage_buffers_, vk::DescriptorType::eStorageBuffer, RHIPipelineResourceType::kStorageBuffer);
+        AddBindings(uavs_, vk::DescriptorType::eStorageImage, RHIPipelineResourceType::kUAV);
+        AddBindings(srvs_, vk::DescriptorType::eSampledImage, RHIPipelineResourceType::kSRV);
+        AddBindings(samplers_, vk::DescriptorType::eSampler, RHIPipelineResourceType::kSampler);
+        AddBindings(acceleration_structures_, vk::DescriptorType::eAccelerationStructureKHR, RHIPipelineResourceType::kAccelerationStructure);
+
+        if(!immutable_samplers_.empty()) {
+            mi_assert(false, "Immutable samplers are not implemented currently.");
+        }
+
+        if(!bindfull_bindings.empty()) {
+            auto descriptor_set_layout = device.createDescriptorSetLayout(
+                    vk::DescriptorSetLayoutCreateInfo()
+                            .setBindingCount((int)bindfull_bindings.size())
+                            .setPBindings(bindfull_bindings.data())
+            );
+            descriptor_set_layouts.push_back(descriptor_set_layout);
+            vk_private_descriptor_set_layout_ = descriptor_set_layout;
+        } else {
+            vk_private_descriptor_set_layout_ = nullptr;
+        }
+    }
+
+    // If the pipeline contains bindless resources, take set 1 as bindless set
+    if(HasBindlessResources()) {
+        auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
+        descriptor_set_layouts.push_back(bindless_descriptor_layout);
+    }
+
+    // Push constant
+    vk::PushConstantRange push_constant_range;
+    push_constant_range.setOffset(0);
+    push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
+    push_constant_range.setSize(push_constant_roundup_size_);
+    push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
+
+    // Create pipeline layout
+    auto info = vk::PipelineLayoutCreateInfo{}
+        .setSetLayoutCount((int)descriptor_set_layouts.size())
+        .setPSetLayouts(descriptor_set_layouts.data());
+    if (push_constant_roundup_size_ > 0) {
+        info.setPushConstantRanges(push_constant_range);
+    }
+    vk_pipeline_layout_ = device.createPipelineLayout(info);
+
+    // Create shader stages with resource binding relocation
+    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
+    std::vector<VkShaderModuleKeeper> shader_module_keepers;
+
+    for (auto* shader : desc.shaders) {
+        if (shader) {
+            RelocateShaderResourceBindings(this, device, shader, remappings_, shader_stages, shader_module_keepers);
+        }
+    }
+
+    // Convert shader groups
+    std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shader_groups;
+    shader_groups.reserve(desc.shader_groups.size());
+
+    for (const auto& group : desc.shader_groups) {
+        vk::RayTracingShaderGroupCreateInfoKHR vk_group{};
+
+        switch (group.type) {
+            case RHIRayTracingShaderGroupType::kRayGeneration:
+            case RHIRayTracingShaderGroupType::kMiss:
+            case RHIRayTracingShaderGroupType::kCallable:
+                vk_group.type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
+                vk_group.generalShader = group.general_shader_index;
+                vk_group.closestHitShader = VK_SHADER_UNUSED_KHR;
+                vk_group.anyHitShader = VK_SHADER_UNUSED_KHR;
+                vk_group.intersectionShader = VK_SHADER_UNUSED_KHR;
+                break;
+
+            case RHIRayTracingShaderGroupType::kTrianglesHitGroup:
+                vk_group.type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup;
+                vk_group.generalShader = VK_SHADER_UNUSED_KHR;
+                vk_group.closestHitShader = (group.closest_hit_shader_index != UINT32_MAX) ?
+                    group.closest_hit_shader_index : VK_SHADER_UNUSED_KHR;
+                vk_group.anyHitShader = (group.any_hit_shader_index != UINT32_MAX) ?
+                    group.any_hit_shader_index : VK_SHADER_UNUSED_KHR;
+                vk_group.intersectionShader = VK_SHADER_UNUSED_KHR;
+                break;
+
+            case RHIRayTracingShaderGroupType::kProceduralHitGroup:
+                vk_group.type = vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup;
+                vk_group.generalShader = VK_SHADER_UNUSED_KHR;
+                vk_group.closestHitShader = (group.closest_hit_shader_index != UINT32_MAX) ?
+                    group.closest_hit_shader_index : VK_SHADER_UNUSED_KHR;
+                vk_group.anyHitShader = (group.any_hit_shader_index != UINT32_MAX) ?
+                    group.any_hit_shader_index : VK_SHADER_UNUSED_KHR;
+                vk_group.intersectionShader = (group.intersection_shader_index != UINT32_MAX) ?
+                    group.intersection_shader_index : VK_SHADER_UNUSED_KHR;
+                break;
+        }
+
+        shader_groups.push_back(vk_group);
+    }
+
+    // Create ray tracing pipeline
+    vk::RayTracingPipelineCreateInfoKHR pipeline_info{};
+    pipeline_info.stageCount = static_cast<uint32_t>(shader_stages.size());
+    pipeline_info.pStages = shader_stages.data();
+    pipeline_info.groupCount = static_cast<uint32_t>(shader_groups.size());
+    pipeline_info.pGroups = shader_groups.data();
+    pipeline_info.maxPipelineRayRecursionDepth = desc.max_recursion_depth;
+    pipeline_info.layout = vk_pipeline_layout_;
+
+    {
+        auto guard = std::lock_guard(GetVulkanRHI()->GetPipelineCacheMutex());
+        auto result = device.createRayTracingPipelineKHR(nullptr, nullptr, pipeline_info);
+        if (result.result != vk::Result::eSuccess) {
+            MI_LOG(MIInfraLogType::kWarning, "Failed to create Vulkan ray tracing pipeline: %s", vk::to_string(result.result));
+            device.destroy(vk_pipeline_layout_);
+            vk_pipeline_layout_ = nullptr;
+            return false;
+        }
+        vk_pipeline_ = result.value;
+    }
+
+    // Calculate shader group counts by type
+    raygen_group_count_ = 0;
+    miss_group_count_ = 0;
+    hit_group_count_ = 0;
+    callable_group_count_ = 0;
+
+    for (const auto& group : desc.shader_groups) {
+        switch (group.type) {
+            case RHIRayTracingShaderGroupType::kRayGeneration:
+                raygen_group_count_++;
+                break;
+            case RHIRayTracingShaderGroupType::kMiss:
+                miss_group_count_++;
+                break;
+            case RHIRayTracingShaderGroupType::kTrianglesHitGroup:
+            case RHIRayTracingShaderGroupType::kProceduralHitGroup:
+                hit_group_count_++;
+                break;
+            case RHIRayTracingShaderGroupType::kCallable:
+                callable_group_count_++;
+                break;
+            default: assert(false && "Unknown ray tracing shader group type");
+        }
+    }
+
+    // Calculate SBT strides based on shader group handle size and alignment
+    // SBT stride = shader group handle size + user data size (aligned)
+    // For now, we assume no user data, so stride = aligned handle size
+    auto aligned_handle_size = RoundUp(shader_group_handle_size_, shader_group_base_alignment_);
+
+    // For raygen, typically only one entry, so stride equals handle size
+    raygen_sbt_stride_ = aligned_handle_size;
+
+    // For miss, hit, and callable shaders, use the base alignment
+    miss_sbt_stride_ = aligned_handle_size;
+    hit_sbt_stride_ = aligned_handle_size;
+    callable_sbt_stride_ = aligned_handle_size;
+
+    // Store shader group count in base class
+    shader_group_count_ = static_cast<uint32_t>(desc.shader_groups.size());
+    max_recursion_depth_ = desc.max_recursion_depth;
+
+    SetName(GetName());
+    return true;
+}
+
+void VulkanRayTracingPipeline::ResetRHI() {
+    auto device = GetVulkanRHI()->GetDevice();
+
+    if (vk_pipeline_) {
+        device.destroyPipeline(vk_pipeline_);
+        vk_pipeline_ = nullptr;
+    }
+
+    if (vk_pipeline_layout_) {
+        device.destroyPipelineLayout(vk_pipeline_layout_);
+        vk_pipeline_layout_ = nullptr;
+    }
+
+    if (vk_private_descriptor_set_layout_) {
+        device.destroyDescriptorSetLayout(vk_private_descriptor_set_layout_);
+        vk_private_descriptor_set_layout_ = nullptr;
+    }
+
+    remappings_.Reset();
+    shader_group_handle_size_ = 0;
+    shader_group_handle_alignment_ = 0;
+    shader_group_base_alignment_ = 0;
+    push_constant_roundup_size_ = 0;
+}
 
 MI_NAMESPACE_END

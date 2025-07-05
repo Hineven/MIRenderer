@@ -51,6 +51,13 @@ public:
     void RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) override;
     void RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) override;
 
+    // Ray tracing commands
+    void RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) override;
+    void RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) override;
+    void RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) override;
+    void RHIDispatchRays(RHICommandQueueBase *cmd, RHICommandDispatchRays *dispatch_rays) override;
+    void RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) override;
+
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHISyncPoint * sync) override ;
 
     void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync, bool release_resources) override ;
@@ -81,6 +88,12 @@ protected:
         void InstallDrawState (vk::CommandBuffer cmdb);
 
         void BindIndexBuffer (RHIBufferSpan span, RHIIndexType type) ;
+
+        // Ray tracing shader binding table regions (cached for dispatch rays)
+        vk::StridedDeviceAddressRegionKHR raygen_sbt {};
+        vk::StridedDeviceAddressRegionKHR miss_sbt {};
+        vk::StridedDeviceAddressRegionKHR hit_sbt {};
+        vk::StridedDeviceAddressRegionKHR callable_sbt {};
 
         // Keep states of each bind point
         struct BindPoint {

@@ -13,6 +13,7 @@
 #include <stack>
 
 #include "rhi_desc.h"
+#include "rhi_as_types.h"
 #include "core/base.h"
 #include "core/util/alloc.h"
 #include "rhi/rhi_types.h"
@@ -529,6 +530,66 @@ public:
     std::array<float, 4> color_;
 };
 
+
+// Ray tracing commands
+class RHICommandBuildAccelerationStructure : public TRHICommand<RHICommandBuildAccelerationStructure> {
+public:
+    RHICommandBuildAccelerationStructure(
+        const RHIAccelerationStructureBuildGeometryInfo& build_info,
+        RHIBufferSpan scratch_buffer)
+        : build_info_(build_info), scratch_buffer_(scratch_buffer) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIAccelerationStructureBuildGeometryInfo build_info_;
+    RHIBufferSpan scratch_buffer_;
+};
+
+class RHICommandBindRayTracingPipeline : public TRHICommand<RHICommandBindRayTracingPipeline> {
+public:
+    RHICommandBindRayTracingPipeline(RHIRayTracingPipeline * pipeline)
+        : pipeline_(pipeline) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIRayTracingPipeline * pipeline_;
+};
+
+class RHICommandBindShaderBindingTable : public TRHICommand<RHICommandBindShaderBindingTable> {
+public:
+    RHICommandBindShaderBindingTable(
+        RHIBufferSpan raygen_sbt,
+        RHIBufferSpan miss_sbt,
+        RHIBufferSpan hit_sbt,
+        RHIBufferSpan callable_sbt)
+        : raygen_sbt_(raygen_sbt), miss_sbt_(miss_sbt),
+          hit_sbt_(hit_sbt), callable_sbt_(callable_sbt) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIBufferSpan raygen_sbt_;
+    RHIBufferSpan miss_sbt_;
+    RHIBufferSpan hit_sbt_;
+    RHIBufferSpan callable_sbt_;
+};
+
+class RHICommandDispatchRays : public TRHICommand<RHICommandDispatchRays> {
+public:
+    RHICommandDispatchRays(uint32_t width, uint32_t height, uint32_t depth)
+        : width_(width), height_(height), depth_(depth) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    uint32_t width_;
+    uint32_t height_;
+    uint32_t depth_;
+};
+
+class RHICommandDispatchRaysIndirect : public TRHICommand<RHICommandDispatchRaysIndirect> {
+public:
+    RHICommandDispatchRaysIndirect(RHIBufferSpan indirect_buffer)
+        : indirect_buffer_(indirect_buffer) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIBufferSpan indirect_buffer_;
+};
+
 // The first command queue takes care of graphics commands.
 class RHICommandQueueGraphics : public RHICommandQueueBase {
 protected:
@@ -677,6 +738,32 @@ public:
     }
     FORCEINLINE void BindPipeline(RHIComputePipeline * pipeline) {
         AddCommand(AllocateCommand<RHICommandBindComputePipeline>(pipeline));
+    }
+    FORCEINLINE void BindPipeline(RHIRayTracingPipeline * pipeline) {
+        AddCommand(AllocateCommand<RHICommandBindRayTracingPipeline>(pipeline));
+    }
+
+    // Ray tracing commands
+    FORCEINLINE void BuildAccelerationStructure(
+        const RHIAccelerationStructureBuildGeometryInfo& build_info,
+        RHIBufferSpan scratch_buffer) {
+        AddCommand(AllocateCommand<RHICommandBuildAccelerationStructure>(build_info, scratch_buffer));
+    }
+
+    FORCEINLINE void BindShaderBindingTable(
+        RHIBufferSpan raygen_sbt,
+        RHIBufferSpan miss_sbt = {},
+        RHIBufferSpan hit_sbt = {},
+        RHIBufferSpan callable_sbt = {}) {
+        AddCommand(AllocateCommand<RHICommandBindShaderBindingTable>(raygen_sbt, miss_sbt, hit_sbt, callable_sbt));
+    }
+
+    FORCEINLINE void DispatchRays(uint32_t width, uint32_t height, uint32_t depth = 1) {
+        AddCommand(AllocateCommand<RHICommandDispatchRays>(width, height, depth));
+    }
+
+    FORCEINLINE void DispatchRaysIndirect(RHIBufferSpan indirect_buffer) {
+        AddCommand(AllocateCommand<RHICommandDispatchRaysIndirect>(indirect_buffer));
     }
 
     FORCEINLINE void BeginDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {

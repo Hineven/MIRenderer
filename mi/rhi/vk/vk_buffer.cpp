@@ -80,5 +80,9 @@ void VulkanBuffer::SetName(const std::string & name) {
     }
 }
 
+vk::DeviceAddress VulkanBuffer::GetDeviceAddress() const {
+    return GetVulkanRHI()->GetDevice().getBufferAddress(vk_buffer_);
+}
+
 
 MI_NAMESPACE_END
