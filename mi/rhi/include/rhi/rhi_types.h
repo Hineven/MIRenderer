@@ -36,8 +36,8 @@ enum class RHIShaderFrequencyFlagBits : uint32_t {
     kMiss = 1u<<7,
     kClosestHit = 1u<<8,
     kAnyHit = 1u<<9,
-    kIntersection = 1u<<10,  // 缺少的Intersection着色器支持
-    kCallable = 1u<<11,      // 缺少的Callable着色器支持
+    kIntersection = 1u<<10,
+    kCallable = 1u<<11,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIShaderFrequency)
@@ -45,20 +45,30 @@ MAKE_FLAGS(RHIShaderFrequency)
 enum class RHIPipelineStageFlagBits : uint32_t {
     // No stages to wait / barrier
     kNone = 0,
+    kVertex = 1u<<0,        // Vertex stage (vertex/index input, vertex shader)
+    kGeometry = 1u<<1,      // Geometry stage
+    kTess = 1u<<2,         // Tesselation stage (control / eval)
+    kFragment = 1u<<3,      // Fragment stage (framebuffer output not included!)
+    kFramebufferOutput = 1u<<4, // Framebuffer output stage
     // Geom, vert, tess, depth, frag, fbo write...
-    kOrdinaryGraphics = 1u<<0,
+    kOrdinaryGraphics =
+        kVertex | kFragment | kFramebufferOutput | kGeometry | kTess,
+    // Task & mesh
+    kTaskMesh = 1u<<5,
+    // All graphics including tesselation, task and mesh shaders
+    kAllGraphics = kOrdinaryGraphics | kTess | kTaskMesh,
     // Compute
-    kCompute = 1u<<1,
-    // Ray tracing
-    kRayTracing = 1u<<2,
-    // Task, mesh
-    kTaskMesh = 1u<<3,
-    // transfer, copies
-    kTransfer = 1u<<4,
+    kCompute = 1u<<6,
+    // Acceleration structure build
+    kAccelerationStructureBuild = 1u<<7,
+    // Ray tracing shaders
+    kRayTracing = 1u<<8,
+    // transfer, copies, blits...
+    kTransfer = 1u<<9,
     // indirect dispatch...
-    kIndirect = 1u<<5,
-    // update/build accel
-    kAccelBuild = 1u<<6,
+    kIndirect = 1u<<10,
+    // Only commonly seen stages are abstracted. Some rare stages are not included above
+    // If you don't know what to use, use this. This is mapped to all stages.
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIPipelineStage);
@@ -98,8 +108,26 @@ struct RHIBufferDesc {
 
 enum class RHIGPUAccessFlagBits : uint32_t {
     kNone = 0,
-    kRead = 1<<0,
-    kWrite = 1<<1,
+    kIndirectCommandRead = 1u<<0,
+    kIndexRead = 1u<<1,
+    kVertexAttributeRead = 1u<<2,
+    kUniformRead = 1u<<3,
+    // Read in shaders
+    kShaderRead = 1u<<4,
+    kAccelerationStructureRead = 1u<<5,
+    kTransferRead = 1u<<6,
+    kDepthStencilRead = 1u<<7,
+    kColorAttachmentRead = 1u<<8,
+    // Only commonly seen read accesses are abstraced. Some rare read accesses are not included above
+    // (such as eInputAttachmentRead. Subpass inputs are not commonly seen in desktop environments)
+    // If you don't know what to use, use this. This is mapped to all read operations.
+    kRead = 0xFFFFu,
+    kShaderWrite = 1u<<16,
+    kAccelerationStructureWrite = 1u<<17,
+    kDepthStencilWrite = 1u<<18,
+    kColorAttachmentWrite = 1u<<19,
+    kTransferWrite = 1u<<20,
+    kWrite = 0xFFFF0000u,
     kRW = kRead | kWrite,
     kAll = kRW
 };

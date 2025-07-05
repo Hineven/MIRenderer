@@ -470,7 +470,7 @@ public:
     RHICommandTextureBarrier(
             uint32_t num_textures,
             RHITexture ** textures, RHITextureLayoutType * layouts,
-            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ): num_textures_(num_textures),
     textures_(textures), layouts_(layouts), src_stages_(src_stages), dst_stages_(dst_stages),
@@ -479,8 +479,8 @@ public:
     uint32_t num_textures_;
     RHITexture ** textures_;
     RHITextureLayoutType * layouts_;
-    RHIPipelineStageFlags src_stages_;
-    RHIPipelineStageFlags dst_stages_;
+    RHIPipelineStageFlags * src_stages_;
+    RHIPipelineStageFlags * dst_stages_;
     RHIGPUAccessFlags * src_accesses_;
     RHIGPUAccessFlags * dst_accesses_;
 };
@@ -490,7 +490,7 @@ public:
     RHICommandBufferBarrier(
             uint32_t num_buffers,
             RHIBufferSpan * buffers,
-            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ): num_buffers_(num_buffers),
         buffers_(buffers), src_stages_(src_stages), dst_stages_(dst_stages),
@@ -498,8 +498,8 @@ public:
     void Execute(RHICommandQueueBase & cmd) override ;
     uint32_t num_buffers_;
     RHIBufferSpan * buffers_;
-    RHIPipelineStageFlags src_stages_;
-    RHIPipelineStageFlags dst_stages_;
+    RHIPipelineStageFlags * src_stages_;
+    RHIPipelineStageFlags * dst_stages_;
     RHIGPUAccessFlags * src_accesses_;
     RHIGPUAccessFlags * dst_accesses_;
 };
@@ -682,11 +682,9 @@ public:
 
     FORCEINLINE void TextureBarrier (
             RHITexture * texture, RHITextureLayoutType layout,
-            /*RHIPipelineStageFlags src_stages,*/ RHIPipelineStageFlags dst_stages,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
     ) {
-        // TODO simplified to all stages. Will this cost a lot?
-        RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
         auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
         src_access_ptr[0] = src_access;
         auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
@@ -700,22 +698,19 @@ public:
 
     FORCEINLINE void TextureBarriers (
         uint32_t texture_count, RHITexture ** textures, RHITextureLayoutType * layouts,
-        /*RHIPipelineStageFlags src_stages,*/ RHIPipelineStageFlags dst_stages,
+        RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
         RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ) {
-        auto src_stages = RHIPipelineStageFlagBits::kAll;
         AddCommand(AllocateCommand<RHICommandTextureBarrier>(texture_count, textures, layouts, src_stages, dst_stages, src_accesses, dst_accesses));
     }
 
     FORCEINLINE void BufferBarrier (
             RHIBufferSpan buffer,
-            /*RHIPipelineStageFlags src_stages,*/ RHIPipelineStageFlags dst_stages,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
     ) {
         auto * desc = Allocate<RHIBufferSpan[]>(1);
         desc[0] = buffer;
-        // TODO simplified to all stages. Will this cost a lot?
-        RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
         auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
         src_access_ptr[0] = src_access;
         auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
@@ -725,11 +720,9 @@ public:
 
     FORCEINLINE void BufferBarriers (
             uint32_t buffer_count, RHIBufferSpan * buffers,
-            /*RHIPipelineStageFlags src_stages,*/
-            RHIPipelineStageFlags dst_stages,
+            RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ) {
-        RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll;
         AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer_count, buffers, src_stages, dst_stages, src_accesses, dst_accesses));
     }
 

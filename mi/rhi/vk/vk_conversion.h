@@ -562,63 +562,105 @@ FORCEINLINE vk::ImageLayout GetVulkanImageLayout (RHITextureLayoutType type) {
     }
 }
 
-FORCEINLINE vk::AccessFlags GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
-    vk::AccessFlags vk_flags = {};
+FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
+    vk::AccessFlags2 vk_flags = {};
+    if(flags & RHIGPUAccessFlagBits::kIndirectCommandRead) {
+        vk_flags |= vk::AccessFlagBits2::eIndirectCommandRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kIndexRead) {
+        vk_flags |= vk::AccessFlagBits2::eIndexRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kVertexAttributeRead) {
+        vk_flags |= vk::AccessFlagBits2::eVertexAttributeRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kUniformRead) {
+        vk_flags |= vk::AccessFlagBits2::eUniformRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kShaderRead) {
+        vk_flags |= vk::AccessFlagBits2::eShaderRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kAccelerationStructureRead) {
+        vk_flags |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+    }
+    if(flags & RHIGPUAccessFlagBits::kTransferRead) {
+        vk_flags |= vk::AccessFlagBits2::eTransferRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kDepthStencilRead) {
+        vk_flags |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kColorAttachmentRead) {
+        vk_flags |= vk::AccessFlagBits2::eColorAttachmentRead;
+    }
     if(flags & RHIGPUAccessFlagBits::kRead) {
-        vk_flags |= vk::AccessFlagBits::eMemoryRead;
+        vk_flags |= vk::AccessFlagBits2::eMemoryRead;
+    }
+    if(flags & RHIGPUAccessFlagBits::kShaderWrite) {
+        vk_flags |= vk::AccessFlagBits2::eShaderWrite;
+    }
+    if(flags & RHIGPUAccessFlagBits::kDepthStencilWrite) {
+        vk_flags |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+    }
+    if(flags & RHIGPUAccessFlagBits::kColorAttachmentWrite) {
+        vk_flags |= vk::AccessFlagBits2::eColorAttachmentWrite;
+    }
+    if (flags & RHIGPUAccessFlagBits::kAccelerationStructureWrite) {
+        vk_flags |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+    }
+    if(flags & RHIGPUAccessFlagBits::kTransferWrite) {
+        vk_flags |= vk::AccessFlagBits2::eTransferWrite;
     }
     if(flags & RHIGPUAccessFlagBits::kWrite) {
-        vk_flags |= vk::AccessFlagBits::eMemoryWrite;
-    }
-    if(flags == RHIGPUAccessFlagBits::kNone) {
-        return vk::AccessFlagBits::eNone;
+        vk_flags |= vk::AccessFlagBits2::eMemoryWrite;
     }
     return vk_flags;
 }
 
-FORCEINLINE vk::PipelineStageFlags GetVulkanPipelineStageFlags (RHIPipelineStageFlags stages) {
-    vk::PipelineStageFlags vk_stages = {};
+FORCEINLINE vk::PipelineStageFlags2 GetVulkanPipelineStageFlags (RHIPipelineStageFlags stages) {
+    vk::PipelineStageFlags2 vk_stages = {};
     if(stages == RHIPipelineStageFlagBits::kAll) {
-        return vk::PipelineStageFlagBits::eAllCommands;
+        return vk::PipelineStageFlagBits2::eAllCommands;
     }
-    if(stages & RHIPipelineStageFlagBits::kOrdinaryGraphics) {
-        vk_stages |=
-                vk::PipelineStageFlagBits::eGeometryShader |
-                vk::PipelineStageFlagBits::eVertexInput |
-                vk::PipelineStageFlagBits::eVertexShader |
-                vk::PipelineStageFlagBits::eDrawIndirect |
-//                vk::PipelineStageFlagBits::eTessellationControlShader |
-//                vk::PipelineStageFlagBits::eTessellationEvaluationShader |
-                vk::PipelineStageFlagBits::eFragmentShader |
-                vk::PipelineStageFlagBits::eEarlyFragmentTests |
-                vk::PipelineStageFlagBits::eLateFragmentTests |
-                vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    if (stages & RHIPipelineStageFlagBits::kVertex) {
+        vk_stages |= vk::PipelineStageFlagBits2::eVertexInput |
+                vk::PipelineStageFlagBits2::eVertexShader |
+                vk::PipelineStageFlagBits2::eIndexInput;
     }
-    if(stages & RHIPipelineStageFlagBits::kCompute) {
-        vk_stages |= vk::PipelineStageFlagBits::eComputeShader;
+    if (stages & RHIPipelineStageFlagBits::kGeometry) {
+        vk_stages |= vk::PipelineStageFlagBits2::eGeometryShader;
     }
-    if(stages & RHIPipelineStageFlagBits::kTransfer) {
-        vk_stages |=
-                vk::PipelineStageFlagBits::eTransfer;
+    if (stages & RHIPipelineStageFlagBits::kTess) {
+        vk_stages |= vk::PipelineStageFlagBits2::eTessellationControlShader |
+                vk::PipelineStageFlagBits2::eTessellationEvaluationShader;
     }
-    if(stages & RHIPipelineStageFlagBits::kIndirect) {
-        vk_stages |= vk::PipelineStageFlagBits::eDrawIndirect;
+    if (stages & RHIPipelineStageFlagBits::kFragment) {
+        vk_stages |= vk::PipelineStageFlagBits2::eFragmentShader |
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                vk::PipelineStageFlagBits2::eLateFragmentTests;
     }
-    if(stages & RHIPipelineStageFlagBits::kRayTracing) {
-        vk_stages |=
-                vk::PipelineStageFlagBits::eRayTracingShaderKHR;
+    if(stages & RHIPipelineStageFlagBits::kFramebufferOutput) {
+        vk_stages |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
     }
-    if(stages & RHIPipelineStageFlagBits::kAccelBuild) {
-        vk_stages |=
-                vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR;
+    if (stages & RHIPipelineStageFlagBits::kTaskMesh) {
+        vk_stages |= vk::PipelineStageFlagBits2::eTaskShaderEXT |
+            vk::PipelineStageFlagBits2::eMeshShaderEXT;
     }
-    if(stages & RHIPipelineStageFlagBits::kTaskMesh) {
-        vk_stages |=
-                vk::PipelineStageFlagBits::eTaskShaderEXT
-                | vk::PipelineStageFlagBits::eMeshShaderEXT;
+    if (stages & RHIPipelineStageFlagBits::kAllGraphics) {
+        vk_stages |= vk::PipelineStageFlagBits2::eAllGraphics;
     }
-    if(stages == RHIPipelineStageFlagBits::kNone) {
-        return vk::PipelineStageFlagBits::eNone;
+    if (stages & RHIPipelineStageFlagBits::kCompute) {
+        vk_stages |= vk::PipelineStageFlagBits2::eComputeShader;
+    }
+    if (stages & RHIPipelineStageFlagBits::kAccelerationStructureBuild) {
+        vk_stages |= vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
+    }
+    if (stages & RHIPipelineStageFlagBits::kRayTracing) {
+        vk_stages |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+    }
+    if (stages & RHIPipelineStageFlagBits::kTransfer) {
+        vk_stages |= vk::PipelineStageFlagBits2::eTransfer;
+    }
+    if (stages & RHIPipelineStageFlagBits::kIndirect) {
+        vk_stages |= vk::PipelineStageFlagBits2::eDrawIndirect;
     }
     return vk_stages;
 }
