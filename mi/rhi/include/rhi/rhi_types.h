@@ -36,6 +36,8 @@ enum class RHIShaderFrequencyFlagBits : uint32_t {
     kMiss = 1u<<7,
     kClosestHit = 1u<<8,
     kAnyHit = 1u<<9,
+    kIntersection = 1u<<10,  // 缺少的Intersection着色器支持
+    kCallable = 1u<<11,      // 缺少的Callable着色器支持
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIShaderFrequency)
@@ -80,6 +82,11 @@ enum class RHIBufferUsageFlagBits : uint32_t {
     // This buffer can be a source of copy command
     // (Default enabled with kStorage, and disabled for the rest)
     kTransferSrc = 1u<<7,
+    // Ray tracing related buffer usages
+    kAccelerationStructureStorage = 1u<<8,
+    kAccelerationStructureBuildInput = 1u<<9,
+    kShaderBindingTable = 1u<<10,
+    kAccelerationStructureScratch = 1u<<11,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIBufferUsage)

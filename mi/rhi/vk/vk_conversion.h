@@ -199,6 +199,10 @@ FORCEINLINE vk::ShaderStageFlagBits GetVulkanShaderStage (RHIShaderFrequencyFlag
             return vk::ShaderStageFlagBits::eClosestHitKHR;
         case RHIShaderFrequencyFlagBits::kAnyHit:
             return vk::ShaderStageFlagBits::eAnyHitKHR;
+        case RHIShaderFrequencyFlagBits::kIntersection:
+            return vk::ShaderStageFlagBits::eIntersectionKHR;
+        case RHIShaderFrequencyFlagBits::kCallable:
+            return vk::ShaderStageFlagBits::eCallableKHR;
         default:
             mi_assert(false, "Invalid shader frequency");
             return {};
@@ -236,6 +240,12 @@ FORCEINLINE vk::ShaderStageFlags GetVulkanShaderStageFlags (RHIShaderFrequencyFl
     }
     if(frequency & RHIShaderFrequencyFlagBits::kAnyHit) {
         flags |= vk::ShaderStageFlagBits::eAnyHitKHR;
+    }
+    if(frequency & RHIShaderFrequencyFlagBits::kIntersection) {
+        flags |= vk::ShaderStageFlagBits::eIntersectionKHR;
+    }
+    if(frequency & RHIShaderFrequencyFlagBits::kCallable) {
+        flags |= vk::ShaderStageFlagBits::eCallableKHR;
     }
     return flags;
 }
@@ -465,11 +475,34 @@ FORCEINLINE vk::BufferUsageFlags GetVulkanBufferUsage (RHIBufferUsageFlags usage
     if(usage & RHIBufferUsageFlagBits::kStaging) {
         vk_usage |= vk::BufferUsageFlagBits::eTransferSrc;
     }
+    // Ray tracing specific buffer usages
+    if(usage & RHIBufferUsageFlagBits::kAccelerationStructureStorage) {
+        vk_usage |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+    }
+    if(usage & RHIBufferUsageFlagBits::kAccelerationStructureBuildInput) {
+        vk_usage |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
+    }
+    if(usage & RHIBufferUsageFlagBits::kShaderBindingTable) {
+        vk_usage |= vk::BufferUsageFlagBits::eShaderBindingTableKHR;
+    }
+    if(usage & RHIBufferUsageFlagBits::kAccelerationStructureScratch) {
+        vk_usage |= vk::BufferUsageFlagBits::eStorageBuffer; // Scratch buffers are storage buffers
+    }
+
     if ((usage & RHIBufferUsageFlagBits::kStorage)
     || (usage & RHIBufferUsageFlagBits::kTransferSrc)) {
         vk_usage |= vk::BufferUsageFlagBits::eTransferSrc;
     }
     vk_usage |= vk::BufferUsageFlagBits::eTransferDst;
+
+    // Ray tracing buffers need device address support
+    if(usage & (RHIBufferUsageFlagBits::kAccelerationStructureStorage |
+                RHIBufferUsageFlagBits::kAccelerationStructureBuildInput |
+                RHIBufferUsageFlagBits::kShaderBindingTable |
+                RHIBufferUsageFlagBits::kAccelerationStructureScratch)) {
+        vk_usage |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
+    }
+
     return vk_usage;
 }
 
