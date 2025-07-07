@@ -564,6 +564,17 @@ FORCEINLINE vk::ImageLayout GetVulkanImageLayout (RHITextureLayoutType type) {
 
 FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     vk::AccessFlags2 vk_flags = {};
+    // Special flags
+    if (flags == RHIGPUAccessFlagBits::kAll || flags == RHIGPUAccessFlagBits::kRW) {
+        return vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
+    }
+    if ((flags & RHIGPUAccessFlagBits::kRead) == RHIGPUAccessFlagBits::kRead) {
+        vk_flags |= vk::AccessFlagBits2::eMemoryRead;
+    }
+    if((flags & RHIGPUAccessFlagBits::kWrite) == RHIGPUAccessFlagBits::kWrite) {
+        vk_flags |= vk::AccessFlagBits2::eMemoryWrite;
+    }
+    // Ordinary flags
     if(flags & RHIGPUAccessFlagBits::kIndirectCommandRead) {
         vk_flags |= vk::AccessFlagBits2::eIndirectCommandRead;
     }
@@ -576,7 +587,7 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kUniformRead) {
         vk_flags |= vk::AccessFlagBits2::eUniformRead;
     }
-    if(flags & RHIGPUAccessFlagBits::kShaderRead) {
+    if((flags & RHIGPUAccessFlagBits::kShaderRead) == RHIGPUAccessFlagBits::kShaderRead) {
         vk_flags |= vk::AccessFlagBits2::eShaderRead;
     }
     if(flags & RHIGPUAccessFlagBits::kAccelerationStructureRead) {
@@ -591,10 +602,7 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kColorAttachmentRead) {
         vk_flags |= vk::AccessFlagBits2::eColorAttachmentRead;
     }
-    if(flags & RHIGPUAccessFlagBits::kRead) {
-        vk_flags |= vk::AccessFlagBits2::eMemoryRead;
-    }
-    if(flags & RHIGPUAccessFlagBits::kShaderWrite) {
+    if((flags & RHIGPUAccessFlagBits::kShaderWrite) == RHIGPUAccessFlagBits::kShaderWrite) {
         vk_flags |= vk::AccessFlagBits2::eShaderWrite;
     }
     if(flags & RHIGPUAccessFlagBits::kDepthStencilWrite) {
@@ -609,20 +617,19 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kTransferWrite) {
         vk_flags |= vk::AccessFlagBits2::eTransferWrite;
     }
-    if(flags & RHIGPUAccessFlagBits::kWrite) {
-        vk_flags |= vk::AccessFlagBits2::eMemoryWrite;
-    }
     return vk_flags;
 }
 
 FORCEINLINE vk::PipelineStageFlags2 GetVulkanPipelineStageFlags (RHIPipelineStageFlags stages) {
     vk::PipelineStageFlags2 vk_stages = {};
+    // Special flags
     if(stages == RHIPipelineStageFlagBits::kAll) {
         return vk::PipelineStageFlagBits2::eAllCommands;
     }
     if (stages == RHIPipelineStageFlagBits::kAllGraphics) {
         return vk::PipelineStageFlagBits2::eAllGraphics;
     }
+    // Ordinary flags
     if (stages & RHIPipelineStageFlagBits::kVertex) {
         vk_stages |= vk::PipelineStageFlagBits2::eVertexInput |
                 vk::PipelineStageFlagBits2::eVertexShader |

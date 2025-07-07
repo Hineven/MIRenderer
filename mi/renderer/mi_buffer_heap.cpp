@@ -160,7 +160,6 @@ void SimpleDeviceBufferHeap::SetName(const std::string &name) {
     }
 }
 
-
 void SimpleDeviceBufferHeap::PreAllocateBlocks(uint32_t num_blocks) {
     for (int i = 0; i < (int)num_blocks; i++) AddNewBlock(default_buffer_block_size_, 0);
 }

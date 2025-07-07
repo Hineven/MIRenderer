@@ -171,7 +171,7 @@ void RadixSort::AddRadixSort32BitsPass(
                         RDGCommandHelper::DispatchIndirect<RadixSortScanShader>(queue, pass, scan_shader, params, cmd);
                     }
                 }
-            )->AddBuffer(dispatch_command.Raw(), RHIGPUAccessFlagBits::kRead)->SetName(radix_sort_pass_name);
+            )->AddBuffer(dispatch_command.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead)->SetName(radix_sort_pass_name);
         }
         // Sum (using kBinsPerPass groups)
         {
@@ -220,7 +220,7 @@ void RadixSort::AddRadixSort32BitsPass(
                         RDGCommandHelper::DispatchIndirect<RadixSortScatterShader>(queue, pass, scatter_shader, params, cmd);
                     }
                 }
-            )->AddBuffer(dispatch_command.Raw(), RHIGPUAccessFlagBits::kRead)->SetName(radix_sort_pass_name);
+            )->AddBuffer(dispatch_command.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead)->SetName(radix_sort_pass_name);
         }
         if (i != 0) {
             std::swap(src_keys_buffer, curr_dst_keys_buffer);

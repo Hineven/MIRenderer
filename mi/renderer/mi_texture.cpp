@@ -69,7 +69,7 @@ void Texture::UpdateOnDevice_Async(RHICommandQueueGraphics& queue)
 
     if (!data_.empty()) {
         Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size(),
-            RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kRead);
+            RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kShaderRead);
     }
     
     dirty_ = false;

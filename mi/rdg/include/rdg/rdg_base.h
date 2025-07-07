@@ -52,7 +52,7 @@ public:
             read_stages_ = RHIPipelineStageFlagBits::kNone;
             read_access_ = RHIGPUAccessFlagBits::kNone;
             write_stages_ = stages;
-            write_access_ = write_access_ | GetWriteAccessFlags(usage);
+            write_access_ = GetWriteAccessFlags(usage);
         }
         if (usage & RHIGPUAccessFlagBits::kRead) {
             read_stages_ = read_stages_ | stages;

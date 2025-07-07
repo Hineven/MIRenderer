@@ -197,11 +197,14 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
         }
         for (auto e : barrier_buffers) {
             // Destructors of temporaries created in one line of code will destruct after the line
-            raster_pass->AddBuffer(builder.Import(e, RHIGPUAccessFlagBits::kAll), RHIGPUAccessFlagBits::kRead);
+            raster_pass->AddBuffer(
+                builder.Import(e, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer),
+                RHIGPUAccessFlagBits::kVertexAttributeRead | RHIGPUAccessFlagBits::kIndexRead
+            );
         }
 
         // Indirect command
-        raster_pass->AddBuffer(ctx.static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kRead);
+        raster_pass->AddBuffer(ctx.static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead);
     }
 }
 

@@ -129,7 +129,7 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage, RH
         // If the usage stages are not specified, auto-detect them.
         stages = GetTextureStagesFromUsage(GetType(), usage);
     }
-    compiled_.used_textures.emplace_back(layout, access, stages, texture);
+    AddTexture(texture, layout, access, stages);
     return this;
 }
 
@@ -139,7 +139,13 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_textures.emplace_back(texture);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_textures.emplace_back(texture);
     assert(stages != RHIPipelineStageFlagBits::kNone);
-    compiled_.used_textures.emplace_back(layout, access, stages);
+    compiled_.used_textures.emplace_back(layout, access, stages, texture);
+    if (access & RHIGPUAccessFlagBits::kRead) {
+        compiled_.in_textures.emplace_back(texture);
+    }
+    if (access & RHIGPUAccessFlagBits::kWrite) {
+        compiled_.out_textures.emplace_back(texture);
+    }
     return this;
 }
 
@@ -191,6 +197,12 @@ RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPip
         }
     }
     compiled_.used_buffers.emplace_back(access, stages, buffer);
+    if (access & RHIGPUAccessFlagBits::kRead) {
+        compiled_.in_buffers.emplace_back(buffer);
+    }
+    if (access & RHIGPUAccessFlagBits::kWrite) {
+        compiled_.out_buffers.emplace_back(buffer);
+    }
     return this;
 }
 

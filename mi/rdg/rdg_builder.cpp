@@ -172,15 +172,24 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
             for(auto & in_pass : in_resource_pass_map[out_texture]) {
                 dependencies.push_back(in_pass);
             }
+            for (auto & out_pass : out_resource_pass_map[out_texture]) {
+                dependencies.push_back(out_pass);
+            }
         }
         for(auto & out_buffer : pass->compiled_.out_buffers) {
             for(auto & in_pass : in_resource_pass_map[out_buffer]) {
                 dependencies.push_back(in_pass);
             }
+            for (auto & out_pass : out_resource_pass_map[out_buffer]) {
+                dependencies.push_back(out_pass);
+            }
         }
         for (auto & out_as : pass->compiled_.out_acceleration_structures) {
             for (auto & in_pass : in_resource_pass_map[out_as]) {
                 dependencies.push_back(in_pass);
+            }
+            for (auto & out_pass : out_resource_pass_map[out_as]) {
+                dependencies.push_back(out_pass);
             }
         }
 

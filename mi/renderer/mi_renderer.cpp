@@ -107,16 +107,19 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
     // Upload renderable transforms and headers
     view->upload_context_.Add(
-        builder.Import(view->world_->d_renderable_transforms_.Raw()),
+        builder.Import(view->world_->d_renderable_transforms_.Raw(),
+            RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_transforms.data(),
         renderable_transforms.size() * sizeof(glm::mat4x3));
     view->upload_context_.Add(
-        builder.Import(view->world_->d_renderable_normal_transforms_.Raw()),
+        builder.Import(view->world_->d_renderable_normal_transforms_.Raw(),
+            RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_normal_transforms.data(),
         renderable_normal_transforms.size() * sizeof(glm::mat3x3)
     );
     view->upload_context_.Add(
-        builder.Import(view->world_->d_renderable_headers_.Raw()),
+        builder.Import(view->world_->d_renderable_headers_.Raw(),
+            RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_headers.data(),
         renderable_headers.size() * sizeof(RenderableHeader)
     );

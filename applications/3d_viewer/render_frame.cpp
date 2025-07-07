@@ -153,7 +153,9 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
     renderer.Render(view_state, builder);
 
     RenderImGui(builder, backbuffer);
-    auto graph = builder.Compile();
+
+    std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
+    auto graph = builder.Compile(frame_name);
     graph->Execute(pool);
 }
 

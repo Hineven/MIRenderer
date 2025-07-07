@@ -157,7 +157,7 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
                 if (buffer.offset + buffer.size < e.dst_buffer.offset + e.data.size()) {
                     buffer = e.dst_buffer;
                     buffer.size = e.data.size();
-                    furthest_index = i;
+                    furthest_index = (int)i;
                 }
             }
         }

@@ -27,6 +27,9 @@ TRef<RDGResourcePool> RDGResourcePool::Create() {
 RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (RHIBufferDesc for_buffer_desc) {
     // Allocate a new buffer
     auto rhi_buffer = RHI::Get().CreateBuffer(for_buffer_desc);
+#ifndef NDEBUG
+    rhi_buffer->SetName("Unnamed RDG pool buffer #" + std::to_string(rhi_buffer_references_.size()));
+#endif
     RDGPoolFreeBufferRecord allocated = {
         rhi_buffer.Raw(), for_buffer_desc.size, {}, {}, {}
     };
