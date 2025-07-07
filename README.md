@@ -1,21 +1,51 @@
-# MI
-A set of CG libraries.
-### Extenal Dependencies
-* `Vulkan SDK`: https://vulkan.lunarg.com/
-### Vcpkg Dependencies
-* `glm`
-* `imgui[glfw-binding]`
-* `spirv-cross`
-* `spirv-reflect`
-* `spirv-headers`
-* `spirv-tools`
-* `vulkan-memory-allocator`
-* `vulkan-memory-allocator-hpp`
-* `vulkan`
-* `directx-dxc`
-* `stb`
-* `gtest`
-* `cpptrace`
-* `xxhash`
-* `cgltf`
-* `happly`
+# MI 项目
+
+## 项目描述
+MI 是一个基于 Vulkan 的高性能图形渲染框架，专注于实现灵活的渲染管线和资源管理。该项目支持多种渲染技术，包括传统光栅化渲染和光线追踪，并提供了一个基于 Render Graph 的高效渲染流程管理系统。
+
+## 外部依赖
+- **Vulkan SDK**
+- **GLFW**
+- **ImGui**
+- **GLM**
+- **VMA (Vulkan Memory Allocator)**
+
+## 构建说明
+1. 确保已安装上述所有依赖。
+2. 使用 CMake 配置项目：
+   ```bash
+   cmake -B build
+   ```
+3. 构建项目：
+   ```bash
+   cmake --build build
+   ```
+
+## 特性
+- **Render Graph 系统**：用于组织和优化渲染流程。
+- **光线追踪支持**：通过 Vulkan 的光线追踪扩展实现。
+- **跨平台支持**：基于 Vulkan 和标准 C++ 实现，可在支持 Vulkan 的平台上运行。
+- **资源管理系统**：支持纹理、缓冲区和加速结构的高效加载与管理。
+
+## 许可证
+本项目采用 Mulan PSL v2 和 Unlicense 双许可证模式。详情请参阅根目录下的 `LICENSE` 文件。第三方模型（如 Bunny）使用 CC-BY-4.0 许可证，请在使用时注意遵守相关条款。
+
+## 示例应用
+- `applications/hello`：展示了一个简单的三角形旋转示例。
+- `applications/3d_viewer`：展示了一个 3D 模型查看器，支持加载和渲染 glTF 格式的模型。
+
+## 开发者工具
+- **测试框架**：使用 Google Test 编写了多个单元测试，涵盖任务系统、资源管理、渲染管线等核心模块。
+- **代码结构清晰**：模块化设计，便于扩展和维护。
+
+## 贡献指南
+欢迎贡献代码！请遵循以下步骤：
+1. Fork 本仓库。
+2. 创建新分支。
+3. 提交 Pull Request。
+
+## 联系方式
+如有问题或建议，请联系项目维护者。
+
+## 致谢
+感谢所有贡献者和开源社区的支持。
