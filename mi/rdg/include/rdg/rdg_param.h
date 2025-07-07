@@ -167,7 +167,11 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     RDGShaderParamInfo info {};
     info.name = std::move(param_name);
     info.type = RHITypeNameStringToParamType(type_name);
-    info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
+    if (type_name == "VertexBuffer") {
+        info.access_flags = RHIGPUAccessFlagBits::kVertexAttributeRead;
+    } else if (type_name == "RenderTarget" || type_name == "VertexAttribute") {
+        // RenderTarget is a special type, it has no access flags.
+    } else info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
     if (info.type == RHIParamType::kUniformBuffer) {
         info.size = size;
     } else info.size = 0;
@@ -299,27 +303,6 @@ private: \
         uint32_t cpp_offset = offsetof(ThisClass, zzVertexAttributePlaceHolder_##Name); \
         auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
         param_info.cpp_extra.vertex_attribute_info = new RDGShaderVertexAttributeInfo {BufferIndex, Offset, 0xffffffffu, Format}; \
-        params->emplace_back(param_info); \
-        PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
-        return (zzFuncPtr)PrevFunc; \
-    } \
-    typedef zz##Name##_TypeID
-
-// Declare dispatch command
-// Usage: SHADER_DISPATCH(Name)
-#define SHADER_DISPATCH_COMMAND(Name) \
-    zz##Name##_PrevTypeID; \
-public: \
-    RDGBuffer * Name {}; \
-private: \
-    struct zz##Name##_TypeID { \
-        static constexpr const char * name = #Name; \
-        static constexpr const char * type_name = "DispatchCommand"; \
-    }; \
-    static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zz##Name##_TypeID, std::vector<RDGShaderParamInfo> * params) { \
-        zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
-        uint32_t cpp_offset = offsetof(ThisClass, Name); \
-        auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \

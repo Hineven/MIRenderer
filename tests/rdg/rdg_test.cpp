@@ -101,7 +101,6 @@ public:
         SHADER_UNIFORM_BUFFER(TestShader1UB, UB)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, TestBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, TestTexture)
-        SHADER_DISPATCH_COMMAND(command)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Parameters)
     static std::vector<std::string> GetDefaultMacros() {

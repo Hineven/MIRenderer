@@ -50,10 +50,12 @@ bool IsRHIThreadActive () ;
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) ;
 // Send flushed commands to RHI thread for baking and submission
 // @param sync a sync point that can be waited on for the device to complete executing the submitted commands.
+// @param submit_prefix a prefix for the command buffer name, used for debugging.
 // @param recyle_resources whether to recycle translated commands immediately after submission rather than in
 // frame intervals. May cause overhead.
 // @return a future that will be ready when the submission is completed.
-std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync, bool recyle_resources = false) ;
+std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync,
+    const std::string & submit_prefix = "", bool recyle_resources = false) ;
 
 // Enqueue a task to the RHI thread for execution.
 // @return a future that will be ready when the task is completed on RHI thread.

@@ -176,6 +176,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             }
         }
         assert(graphics_queue_family_index != -1);
+
         graphics_queue_family_index_ = graphics_queue_family_index;
         std::array queue_priorities = {1.0f};
         vk::DeviceQueueCreateInfo queue_info({}, graphics_queue_family_index, queue_priorities);
@@ -254,6 +255,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         enabled_features.geometryShader = VK_TRUE;
         enabled_features.shaderInt64 = VK_TRUE;
         enabled_features.vertexPipelineStoresAndAtomics = VK_TRUE;
+        enabled_features.tessellationShader = VK_TRUE;
 
         // 25.5.1: DO NOT use vk::PhysicalDeviceVulkan1xFeatures to replace the structs,
         // they trigger false positives in validation layers, potentially due to Vulkan SDK bugs.
@@ -393,7 +395,14 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
     // Device resources
     {
+
         queue_ = device_.getQueue(graphics_queue_family_index_, 0);
+#ifndef NDEBUG
+        device_.setDebugUtilsObjectNameEXT(vk::DebugUtilsObjectNameInfoEXT{
+            vk::ObjectType::eQueue, reinterpret_cast<uint64_t>((VkQueue)queue_),
+            "Graphics Queue"
+        });
+#endif
         LoadPipelineCache();
     }
     vma_ = vma::createAllocator(vma::AllocatorCreateInfo{
@@ -767,7 +776,7 @@ void VulkanRHI::PostInitialize() {
     RHI::PostInitialize();
     // Create bindless manager and command executor
     {
-        mi_assert(IsRHIThreadActive(), "RHI thread must be active when creating VulkanRHI.");
+        mi_assert(IsRHIThreadActive() || BYPASS_RHI_THREAD, "RHI thread must be active when creating VulkanRHI.");
         // Initialization are automatically dispatched to the RHI thread
         // via the constructor functions
         bindless_manager_ = new VulkanBindlessManager();

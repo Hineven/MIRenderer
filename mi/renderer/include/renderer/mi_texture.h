@@ -21,7 +21,7 @@
 #include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
-    class Texture : public RefCounted<>, public NonMovable {
+class Texture : public RefCounted<>, public NonMovable {
 public:
     void InitializeFromBinary (std::span<uint8_t> data);
     void GetBinary (std::vector<uint8_t> & data) const {
@@ -92,6 +92,10 @@ public:
     }
     FORCEINLINE static TRef<Texture> Create (RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t array_layers = 1) {
         return TRef(new Texture(type, format, width, height, array_layers));
+    }
+
+    FORCEINLINE const std::string & GetName () const {
+        return name_;
     }
 
 protected:

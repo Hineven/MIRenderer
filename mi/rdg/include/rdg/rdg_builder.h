@@ -77,7 +77,7 @@ public:
         );
     }
     
-    TRef<RenderGraph> Compile ();
+    TRef<RenderGraph> Compile (const std::string & name = "Unnamed Render Graph") ;
 
     // Allocate temporary memory that lives up to the end of the graph execution.
     // Useful for trasfering data to pass lambdas
@@ -111,12 +111,15 @@ public:
     }
 
     // Import a rhi texture. NOTE: The builder kept a reference to the resource once imported.
-    RDGTexture * Import (RHITexture * resource, RDGTextureUsageType prev_usage = RDGTextureUsageType::kDontCare) ;
+    // If the layout is kUndefined, we don't care about the contents of the imported texture.
+    // All the data will be lost within the first pass that uses it.
+    RDGTexture * Import (RHITexture * resource, RHITextureLayoutType layout = RHITextureLayoutType::kUndefined,
+    RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone, RHIPipelineStageFlags prev_stages = RHIPipelineStageFlagBits::kNone) ;
 
     // Create a RDG buffer with the given description.
     TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) ;
     // Import a rhi buffer. NOTE: The builder kept a reference to the resource once imported.
-    RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone) ;
+    RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone, RHIPipelineStageFlags prev_stages = RHIPipelineStageFlagBits::kNone) ;
 
 
 

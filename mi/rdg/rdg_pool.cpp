@@ -27,7 +27,9 @@ TRef<RDGResourcePool> RDGResourcePool::Create() {
 RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (RHIBufferDesc for_buffer_desc) {
     // Allocate a new buffer
     auto rhi_buffer = RHI::Get().CreateBuffer(for_buffer_desc);
-    RDGPoolFreeBufferRecord allocated = {rhi_buffer.Raw(), for_buffer_desc.size, RHIGPUAccessFlagBits::kNone};
+    RDGPoolFreeBufferRecord allocated = {
+        rhi_buffer.Raw(), for_buffer_desc.size, {}, {}, {}
+    };
     rhi_buffer_references_.emplace_back(std::move(rhi_buffer));
 
     total_device_memory_usage_ += for_buffer_desc.size;
@@ -78,7 +80,10 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
         allocated.buffer->SetName(buffer->name_);
     }
     buffer->rhi_buffer_span_ = {allocated.buffer, 0, requested_size};
-    buffer->usage_ = allocated.last_usage;
+    buffer->read_stages_ = allocated.last_read_stages;
+    buffer->write_stages_ = allocated.last_write_stages;
+    buffer->read_access_ = allocated.last_access & RHIGPUAccessFlagBits::kRead;
+    buffer->write_access_ = allocated.last_access & RHIGPUAccessFlagBits::kWrite;
 
     num_active_buffers_ ++;
 }
@@ -89,10 +94,15 @@ void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
     rhi_free_buffer_map_[hash].emplace_back(
         buffer->rhi_buffer_span_.buffer,
         buffer->desc_.size,
-        buffer->usage_
+        buffer->read_stages_,
+        buffer->write_stages_,
+        buffer->read_access_ | buffer->write_access_
     );
     buffer->rhi_buffer_span_ = {};
-    buffer->usage_ = {};
+    buffer->read_access_ = {};
+    buffer->write_access_ = {};
+    buffer->read_stages_ = {};
+    buffer->write_stages_ = {};
     buffer->desc_.size = 0;
 
     num_active_buffers_ --;
@@ -109,7 +119,7 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
         // Allocate a new texture
         auto desc = texture->GetDesc();
         auto rhi_texture = RHI.CreateTexture(desc);
-        allocated = {rhi_texture.Raw(), RDGTextureUsageType::kNone};
+        allocated = {rhi_texture.Raw(), {}, {}, {}};
         total_device_memory_usage_ += rhi_texture->GetSize();
 
         rhi_texture_references_.emplace_back(std::move(rhi_texture));
@@ -120,7 +130,11 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
     }
     
     texture->rhi_texture_ = allocated.texture;
-    texture->usage_ = allocated.last_usage;
+    texture->read_access_ = allocated.last_access & RHIGPUAccessFlagBits::kRead;
+    texture->write_access_ = allocated.last_access & RHIGPUAccessFlagBits::kWrite;
+    texture->read_stages_ = allocated.last_read_stages;
+    texture->write_stages_ = allocated.last_write_stages;
+    texture->current_layout_ = RHITextureLayoutType::kUndefined;
 
     num_active_textures_ ++;
 }
@@ -128,9 +142,15 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
 void RDGResourcePool::RecycleResource(RDGTexture *texture) {
     assert(texture->IsAllocated() && "This texture should be allocated.");
     auto hash = texture->GetResourceClassHash();
-    rhi_free_texture_map_[hash].emplace_back(texture->rhi_texture_, texture->usage_);
+    rhi_free_texture_map_[hash].emplace_back(texture->rhi_texture_,
+        texture->read_stages_, texture->write_stages_,
+        texture->read_access_ | texture->write_access_);
     texture->rhi_texture_ = nullptr;
-    texture->usage_ = {};
+    texture->read_access_ = {};
+    texture->write_access_ = {};
+    texture->read_stages_ = {};
+    texture->write_stages_ = {};
+    texture->current_layout_ = RHITextureLayoutType::kUndefined;
 
     num_active_textures_ --;
 }

@@ -82,10 +82,22 @@ FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
 }
 
 FORCEINLINE RHIGPUAccessFlags TypeNameStringToRHIAccessFlags (std::string_view type) {
+    bool write = false;
     if (type.length() >= 2 && type.starts_with("RW")) {
-        return RHIGPUAccessFlagBits::kAll;
+        write = true;
     }
-    return RHIGPUAccessFlagBits::kRead;
+    auto view = type.substr(write ? 2 : 0);
+    if (view == "Buffer" || view == "StructuredBuffer" || view == "Texture2D" || view == "TextureCube" || view == "Texture2DArray") {
+        return write ? RHIGPUAccessFlagBits::kShaderStorageRW : RHIGPUAccessFlagBits::kShaderStorageRead;
+    } else if (view == "SamplerState") {
+        return RHIGPUAccessFlagBits::kNone;
+    } else if (view == "AccelerationStructure") {
+        return RHIGPUAccessFlagBits::kAccelerationStructureRead;
+    } else if (view == "ConstantBuffer") {
+        return RHIGPUAccessFlagBits::kUniformRead;
+    }
+    assert(false && "Unknown type for RHIAccessFlags conversion");
+    return RHIGPUAccessFlagBits::kNone;
 }
 
 struct RHIParamStructInfo ;

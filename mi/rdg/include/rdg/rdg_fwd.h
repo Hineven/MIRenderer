@@ -45,24 +45,27 @@ enum class RDGPassType {
     kGraphics,
     // Compute shader
     kCompute,
-    // Basic RHI commands
+    // Ray tracing pass, using ray tracing shaders
+    kRayTracing,
+    // Custom pass, executing whatever you want
     kGeneric,
-    // TODO add more (mesh, raytracing, etc)
     kMax
 };
 
-enum class RDGTextureUsageType : uint32_t {
+// Describe how a RDG texture is used in a pass. Used for automatic barrier placement.
+enum class RDGTextureUsageType {
     kNone = 0,
-    // No usage specified, barrier all previous operations and discard the contents
-    kDontCare,
-    kTransferDst,
-    kTransferSrc,
-    kShaderRead,
-    // Storage image
-    kShaderReadWrite,
-    kOutputAttachment,
-    kDepthStencilAttachment,
-    kMax
+    // kTransferSrc = 1 << 0, // Transfer source, read-only
+    // kTransferDst = 1 << 1, // Transfer destination, write-only
+    kShaderRead, // Shader read, read-only
+    kShaderReadWrite, // Shader read/write, read-write
+    kOutputAttachment, // Output attachment, read-write
+    kOverwriteOutputAttachment, // Output attachment, write only
+    kDepthStencilAttachment, // Depth/stencil attachment, read-write
+    kReadonlyDepthStencilAttachment, // Depth/stencil attachment, read-only
+    kTransferRead, // Transfer read, for copy operations, read-only
+    kTransferWrite, // Transfer write, for copy/clear operations, write-only
+    kMax // Maximum value, used for validation
 };
 
 class RDGPass;

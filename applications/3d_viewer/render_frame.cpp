@@ -130,7 +130,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
             vertex_offset += draw_cmd.UserCallbackDataOffset;
         }
         cmd.EndRendering();
-    })->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kRead);
+    })->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }
 
 void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
@@ -139,14 +139,14 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
     RenderGraphBuilder builder;
 
-    auto backbuffer = builder.Import(RHI::Get().GetBackBuffer(), RDGTextureUsageType::kDontCare);
+    auto backbuffer = builder.Import(RHI::Get().GetBackBuffer());
 
     // Clear backbuffer
     {
         builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {},
             [bf = backbuffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.ClearTexture(bf->GetRHI(), {0, 0, 0, 1});
-        })->AddTexture(backbuffer, RDGTextureUsageType::kTransferDst);
+        })->AddTexture(backbuffer, RDGTextureUsageType::kTransferWrite);
     }
 
     auto & renderer = Renderer::Get();

@@ -15,7 +15,7 @@
 MI_NAMESPACE_BEGIN
 
 void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
 
@@ -174,7 +174,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
 }
 
 void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
     auto & ray_tracing_bind_point = state.points[(uint32_t)RHIBindPointType::kRayTracing];
@@ -189,7 +189,7 @@ void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, 
 }
 
 void VulkanCommandExecutor::RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & ray_tracing_bind_point = state.points[(uint32_t)RHIBindPointType::kRayTracing];
 
@@ -240,7 +240,7 @@ void VulkanCommandExecutor::RHIBindShaderBindingTable(RHICommandQueueBase *cmd, 
 }
 
 void VulkanCommandExecutor::RHIDispatchRays(RHICommandQueueBase *cmd, RHICommandDispatchRays *dispatch_rays) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
 
@@ -258,7 +258,7 @@ void VulkanCommandExecutor::RHIDispatchRays(RHICommandQueueBase *cmd, RHICommand
 }
 
 void VulkanCommandExecutor::RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
 
@@ -276,5 +276,30 @@ void VulkanCommandExecutor::RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RH
     // Use SBT regions from state (set by RHIBindShaderBindingTable)
     cmdb.traceRaysIndirectKHR(state.raygen_sbt, state.miss_sbt, state.hit_sbt, state.callable_sbt, indirect_device_address);
 }
+
+void VulkanCommandExecutor::RHIAcclerationStructureBarriers(RHICommandQueueBase *cmd, RHICommandAccelerationStructureBarrier *barrier) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    auto as = barrier->acceleration_structures_;
+    auto vk_barriers = state.Allocate<vk::BufferMemoryBarrier2[]>(barrier->num_barriers_);
+    for (const auto& [i, e] : std::views::enumerate(std::span(as, barrier->num_barriers_))) {
+        vk_barriers[i].srcStageMask = GetVulkanPipelineStageFlags(barrier->src_stages_[i]);
+        vk_barriers[i].dstStageMask = GetVulkanPipelineStageFlags(barrier->dst_stages_[i]);
+        vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
+        vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
+        vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        VulkanAccelerationStructure * vk_as = static_cast<VulkanAccelerationStructure*>(e);
+        vk_barriers[i].buffer = vk_as->GetBuffer();
+        vk_barriers[i].offset = 0;
+        vk_barriers[i].size = vk_as->GetSize();
+    }
+    state.cmd.pipelineBarrier2(vk::DependencyInfo{
+        {}, 0, nullptr, barrier->num_barriers_,
+        vk_barriers, 0, nullptr
+    });
+}
+
 
 MI_NAMESPACE_END

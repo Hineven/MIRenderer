@@ -149,10 +149,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             memcpy(staging->Map(), pixels, width * height * 4);
             auto  & cmd = rhi.GetGraphicsCommandQueue();
             cmd.TextureBarrier(font_texture.Raw(), RHITextureLayoutType::kTransferDstOptimal,
-                RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kWrite);
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kWrite);
             cmd.CopyBufferToTexture(staging->GetSpan(), font_texture.Raw());
             cmd.TextureBarrier(font_texture.Raw(), RHITextureLayoutType::kShaderReadOnlyOptimal,
-                RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
             cmd.EnqueueTranslateAndSubmit();
             rhi.WaitForIdle();
             // 设置ImGui纹理ID

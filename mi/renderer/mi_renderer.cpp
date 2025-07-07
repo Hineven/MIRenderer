@@ -154,7 +154,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     builder.AddPass("ClearDepth", {},
         [depth = view->G_depth_.Raw()]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
         queue.ClearTexture(depth->GetRHI(), {1, 1, 1, 1});
-    })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferDst);
+    })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite);
 
     // Static meshes
     Render_DrawStaticMeshes(view, builder);

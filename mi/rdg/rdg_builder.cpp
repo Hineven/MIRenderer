@@ -78,7 +78,7 @@ TRef<RDGBuffer> RenderGraphBuilder::CreateBuffer (RHIBufferUsageFlags usage, siz
     return RDGBuffer::Create(usage, size, dedicated, no_warning);
 }
 
-RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags prev_access) {
+RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags prev_access, RHIPipelineStageFlags prev_stages) {
     mi_assert(resource != nullptr, "Importing null buffer resource.");
     auto it = external_buffer_map_.find(resource);
     if (it != external_buffer_map_.end()) {
@@ -89,7 +89,10 @@ RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags pr
     auto buffer_raw_ptr = new RDGBuffer(desc.size, desc);
     auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
     buffer->rhi_buffer_span_ = resource->GetSpan();
-    buffer->usage_ = prev_access;
+    buffer->read_access_ = prev_access & RHIGPUAccessFlagBits::kRead;
+    buffer->write_access_ = prev_access & RHIGPUAccessFlagBits::kWrite;
+    buffer->read_stages_ = (prev_access & RHIGPUAccessFlagBits::kRead) ? prev_stages : RHIPipelineStageFlagBits::kNone;
+    buffer->write_stages_ = (prev_access & RHIGPUAccessFlagBits::kWrite) ? prev_stages : RHIPipelineStageFlagBits::kNone;
     buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport;
     {
         auto original_name = resource->GetName();
@@ -99,7 +102,7 @@ RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags pr
     return buffer.Raw();
 }
 
-RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RDGTextureUsageType prev_usage) {
+RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RHITextureLayoutType prev_layout, RHIGPUAccessFlags prev_access, RHIPipelineStageFlags prev_stages) {
     mi_assert(resource != nullptr, "Importing null texture resource.");
     auto it = external_texture_map_.find(resource);
     if (it != external_texture_map_.end()) {
@@ -110,7 +113,11 @@ RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RDGTextureUsageTy
     auto texture_raw_ptr = new RDGTexture(resource->GetDesc());
     auto texture = TRef<RDGTexture>(texture_raw_ptr);
     texture->rhi_texture_ = resource;
-    texture->usage_ = prev_usage;
+    texture->read_access_ = prev_access & RHIGPUAccessFlagBits::kRead;
+    texture->write_access_ = prev_access & RHIGPUAccessFlagBits::kWrite;
+    texture->read_stages_ = (prev_access & RHIGPUAccessFlagBits::kRead) ? prev_stages : RHIPipelineStageFlagBits::kNone;
+    texture->write_stages_ = (prev_access & RHIGPUAccessFlagBits::kWrite) ? prev_stages : RHIPipelineStageFlagBits::kNone;
+    texture->current_layout_ = prev_layout;
     texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport;
     {
         auto original_name = resource->GetName();
@@ -122,10 +129,10 @@ RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RDGTextureUsageTy
 
 
 
-TRef<RenderGraph> RenderGraphBuilder::Compile() {
+TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
 
-    std::map<RDGResource*, std::vector<RDGPass*>> in_resource_pass_map;
-    std::map<RDGResource*, std::vector<RDGPass*>> out_resource_pass_map;
+    std::map<void*, std::vector<RDGPass*>> in_resource_pass_map;
+    std::map<void*, std::vector<RDGPass*>> out_resource_pass_map;
     std::vector<std::unique_ptr<RDGPass>> culled_passes;
     std::vector<int> culled_pass_heads, pass_heads_rev;
     culled_pass_heads.resize(passes_.size(), -1);
@@ -142,7 +149,7 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
         pass_heads_rev[from] = edge_index_rev;
     };
     for(auto & pass : passes_) {
-        // Find dependencies (to prior passes)
+        // Find execution dependencies (to prior passes)
         std::vector<RDGPass*> dependencies;
         // W-R
         for(auto & in_texture : pass->compiled_.in_textures) {
@@ -155,24 +162,27 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
                 dependencies.push_back(out_pass);
             }
         }
-        // RW-W -> This is the dependency in execution order, not in the graph.
-        // (execution dependency is satisfied by sorting pass indices)
-        // for(auto & out_texture : pass->compiled_.out_textures) {
-        //     for(auto & out_pass : out_resource_pass_map[out_texture]) {
-        //         dependencies.push_back(out_pass);
-        //     }
-        //     for(auto & in_pass : in_resource_pass_map[out_texture]) {
-        //         dependencies.push_back(in_pass);
-        //     }
-        // }
-        // for (auto & out_buffer : pass->compiled_.out_buffers) {
-        //     for (auto & out_pass : out_resource_pass_map[out_buffer]) {
-        //         dependencies.push_back(out_pass);
-        //     }
-        //     for (auto & in_pass : in_resource_pass_map[out_buffer]) {
-        //         dependencies.push_back(in_pass);
-        //     }
-        // }
+        for (auto & in_as : pass->compiled_.in_acceleration_structures) {
+            for (auto & out_pass : out_resource_pass_map[in_as]) {
+                dependencies.push_back(out_pass);
+            }
+        }
+        // RW-W
+        for(auto & out_texture : pass->compiled_.out_textures) {
+            for(auto & in_pass : in_resource_pass_map[out_texture]) {
+                dependencies.push_back(in_pass);
+            }
+        }
+        for(auto & out_buffer : pass->compiled_.out_buffers) {
+            for(auto & in_pass : in_resource_pass_map[out_buffer]) {
+                dependencies.push_back(in_pass);
+            }
+        }
+        for (auto & out_as : pass->compiled_.out_acceleration_structures) {
+            for (auto & in_pass : in_resource_pass_map[out_as]) {
+                dependencies.push_back(in_pass);
+            }
+        }
 
         // Unique the dependencies
         std::ranges::sort(dependencies);
@@ -190,11 +200,17 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
         for(auto & in_buffer : pass->compiled_.in_buffers) {
             in_resource_pass_map[in_buffer].emplace_back(pass.get());
         }
+        for (auto & in_as : pass->compiled_.in_acceleration_structures) {
+            in_resource_pass_map[in_as].emplace_back(pass.get());
+        }
         for(auto & out_texture : pass->compiled_.out_textures) {
             out_resource_pass_map[out_texture].emplace_back(pass.get());
         }
         for(auto & out_buffer : pass->compiled_.out_buffers) {
             out_resource_pass_map[out_buffer].emplace_back(pass.get());
+        }
+        for (auto & out_as : pass->compiled_.out_acceleration_structures) {
+            out_resource_pass_map[out_as].emplace_back(pass.get());
         }
     }
     {
@@ -218,6 +234,7 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
                     flag = true;
                 }
             }
+            // AS is not a RDG resource, so we don't check it here.
             if (flag) {
                 q.push((int)i);
                 visited[i] = true;
@@ -254,7 +271,7 @@ TRef<RenderGraph> RenderGraphBuilder::Compile() {
         }
     }
     // Culling completed, write to the graph
-    auto graph = RenderGraphRef(new RenderGraph());
+    auto graph = RenderGraphRef(new RenderGraph(graph_name));
     graph->passes_ = std::move(culled_passes);
     for (auto & pass : graph->passes_) {
         pass->graph_ = graph.Raw();

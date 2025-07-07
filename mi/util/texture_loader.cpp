@@ -93,11 +93,12 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         RHI::Get().GetGraphicsCommandQueue().TextureBarrier(
             env_cubemap->GetDeviceTexture(),
             RHITextureLayoutType::kShaderReadOnlyOptimal,
-            RHIPipelineStageFlagBits::kAccelBuild,
+            RHIPipelineStageFlagBits::kAll,
+            RHIPipelineStageFlagBits::kAll,
             RHIGPUAccessFlagBits::kRW,
             RHIGPUAccessFlagBits::kRW
         );
-        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle("TextureLoader::LoadEnvironmentMapFromBuffer " + name);
     }
     return env_cubemap;
 }

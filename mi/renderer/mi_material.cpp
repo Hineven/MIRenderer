@@ -83,7 +83,7 @@ void Material::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *allocator) {
             allocator->material_header_buffer_->GetSpan(sizeof(MaterialHeader) * device_material_->index_, sizeof(MaterialHeader)),
             &device_material_->material_header_, sizeof(MaterialHeader)
         );
-        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle("Material::UpdateOnDevice " + GetName());
         dirty_ = false;
     }
 }

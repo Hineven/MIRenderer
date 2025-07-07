@@ -57,10 +57,12 @@ public:
     void RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) override;
     void RHIDispatchRays(RHICommandQueueBase *cmd, RHICommandDispatchRays *dispatch_rays) override;
     void RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) override;
+    void RHIAcclerationStructureBarriers(RHICommandQueueBase *cmd, RHICommandAccelerationStructureBarrier *barrier) override;
 
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHISyncPoint * sync) override ;
 
-    void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync, bool release_resources) override ;
+    void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync,
+        const std::string & submit_prefix, bool release_resources) override ;
 protected:
 
 

@@ -35,6 +35,7 @@ public:
     // Vulkan specific
     FORCEINLINE vk::AccelerationStructureKHR GetAccelerationStructure() const { return acceleration_structure_; }
     FORCEINLINE vk::Buffer GetBuffer() const { return buffer_; }
+    FORCEINLINE size_t GetSize() const { return size_; }
 
     void SetName (const std::string & name) override;
 
@@ -43,9 +44,8 @@ protected:
 
 private:
     vk::AccelerationStructureKHR acceleration_structure_;
-    // 使用VMA管理缓冲区内存，更简洁高效
     vk::Buffer buffer_;
-    vma::Allocation allocation_;  // 使用 vma-hpp 类型而不是 C 类型
+    vma::Allocation allocation_;
     size_t size_ = 0;
 };
 

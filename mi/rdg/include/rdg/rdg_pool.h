@@ -81,7 +81,9 @@ protected:
         size_t size;
         // Keep the last access of the buffer, used to initialize the RDG buffer usage
         // when it's allocated.
-        RHIGPUAccessFlags last_usage;
+        RHIPipelineStageFlags last_read_stages;
+        RHIPipelineStageFlags last_write_stages;
+        RHIGPUAccessFlags last_access;
     };
 
     // Map descriptor hash to underlying buffer index
@@ -95,7 +97,9 @@ protected:
         RHITexture * texture;
         // Keep the last access of the texture, used to initialize the RDG texture usage
         // when it's allocated.
-        RDGTextureUsageType last_usage;
+        RHIPipelineStageFlags last_read_stages;
+        RHIPipelineStageFlags last_write_stages;
+        RHIGPUAccessFlags last_access;
     };
 
     // Map descriptor hash to underlying texture index

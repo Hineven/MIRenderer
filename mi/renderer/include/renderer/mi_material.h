@@ -75,6 +75,10 @@ public:
         return dirty_;
     }
 
+    FORCEINLINE const std::string & GetName () const {
+        return name_;
+    }
+
     MaterialHeader PackMaterialHeader () const ;
 
     void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * allocator) ;

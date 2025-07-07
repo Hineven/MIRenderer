@@ -10,11 +10,11 @@
 #include <rhi/rhi_types.h>
 MI_NAMESPACE_BEGIN
 
-RHIGPUAccessFlags GetReadAccessFlags(RHIGPUAccessFlags access) {
+FORCEINLINE RHIGPUAccessFlags GetReadAccessFlags(RHIGPUAccessFlags access) {
     return access & RHIGPUAccessFlagBits::kRead;
 }
 
-RHIGPUAccessFlags GetWriteAccessFlags(RHIGPUAccessFlags access) {
+FORCEINLINE RHIGPUAccessFlags GetWriteAccessFlags(RHIGPUAccessFlags access) {
     return access & RHIGPUAccessFlagBits::kWrite;
 }
 

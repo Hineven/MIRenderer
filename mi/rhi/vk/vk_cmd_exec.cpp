@@ -28,7 +28,7 @@ VulkanCommandExecutor::~VulkanCommandExecutor() {
 }
 
 void VulkanCommandExecutor::Initialize_RHIThread() {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     for(int i = 0; i < (int)RHICommandQueueType::kMax; i++) {
         auto & chain = state_chains_[i];
         for(auto & state : chain.states) {
@@ -38,7 +38,7 @@ void VulkanCommandExecutor::Initialize_RHIThread() {
 }
 
 void VulkanCommandExecutor::Destroy_RHIThread() {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     for(int i = 0; i < (int)RHICommandQueueType::kMax; i++) {
         auto & chain = state_chains_[i];
         for(auto & state : chain.states) {
@@ -60,7 +60,7 @@ static void CheckImageLayout(VulkanTexture * texture, [[maybe_unused]] Layouts..
 }
 
 void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommandClearTexture *clear_texture) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto texture = static_cast<VulkanTexture*>(clear_texture->texture_);
     auto & region = vk::ImageSubresourceRange()
@@ -85,7 +85,7 @@ void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommand
 
 void VulkanCommandExecutor::RHICopyBufferToTexture(RHICommandQueueBase *cmd,
                                                    RHICommandCopyBufferToTexture *copy_buffer_to_texture) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
     auto src_buffer = static_cast<VulkanBuffer*>(copy_buffer_to_texture->buffer_.buffer);
@@ -108,7 +108,7 @@ void VulkanCommandExecutor::RHICopyBufferToTexture(RHICommandQueueBase *cmd,
 
 void VulkanCommandExecutor::RHICopyTextureToBuffer(RHICommandQueueBase *cmd,
                                                    RHICommandCopyTextureToBuffer *copy_texture_to_buffer) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & cmdb = state.cmd;
     auto src_texture = static_cast<VulkanTexture*>(copy_texture_to_buffer->texture_);
@@ -130,7 +130,7 @@ void VulkanCommandExecutor::RHICopyTextureToBuffer(RHICommandQueueBase *cmd,
 }
 
 void VulkanCommandExecutor::RHICopyBuffer(RHICommandQueueBase *queue, RHICommandCopyBuffer *copy_buffer) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & cmd = state_chains_[(uint32_t)queue->GetCommandQueueType()].Current().cmd;
     auto & region = vk::BufferCopy()
         .setSrcOffset(copy_buffer->src_.offset)
@@ -142,7 +142,7 @@ void VulkanCommandExecutor::RHICopyBuffer(RHICommandQueueBase *queue, RHICommand
 }
 
 void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHICommandCopyTexture *copy_texture) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & cmd = state_chains_[(uint32_t)queue->GetCommandQueueType()].Current().cmd;
     auto src_texture = static_cast<VulkanTexture*>(copy_texture->src_);
     auto dst_texture = static_cast<VulkanTexture*>(copy_texture->dst_);
@@ -172,7 +172,7 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
 }
 
 void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_unused]] RHICommandBeginRendering *begin_rendering) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     [[maybe_unused]] auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
 
@@ -213,7 +213,7 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_
 }
 
 void VulkanCommandExecutor::RHIEndRendering(RHICommandQueueBase *cmd, [[maybe_unused]] RHICommandEndRendering *end_rendering) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     state.cmd.endRendering();
 }
@@ -225,7 +225,7 @@ const static vk::ShaderStageFlags kBasicDrawStages =
 
 void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
                                              RHICommandDrawPrimitive *draw_primitive) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
 
@@ -251,7 +251,7 @@ void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
 
 void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
                                                     RHICommandDrawIndexedPrimitive *draw_indexed_primitive) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
 
@@ -268,7 +268,7 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
 
 void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
                                                     RHICommandDrawIndexedIndirect *draw_indexed_indirect) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
     state.InstallDrawState(state.cmd);
@@ -285,14 +285,14 @@ void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
 
 
 void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDispatch *dispatch) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::ShaderStageFlagBits::eCompute);
     state.cmd.dispatch(dispatch->group_count_x_, dispatch->group_count_y_, dispatch->group_count_z_);
 }
 
 void VulkanCommandExecutor::RHIDispatchIndirect(RHICommandQueueBase *cmd, RHICommandDispatchIndirect *dispatch_indirect) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     FlushBindPointState(cmd, RHIBindPointType::kCompute, vk::ShaderStageFlagBits::eCompute);
     auto vk_buffer = static_cast<VulkanBuffer*>(dispatch_indirect->dispatch_command_buffer_); // NOLINT its safe
@@ -303,7 +303,7 @@ void VulkanCommandExecutor::RHIDispatchIndirect(RHICommandQueueBase *cmd, RHICom
 
 void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
                                                     RHICommandBindGraphicsPipeline *bind_graphics_pipeline) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     assert(bind_graphics_pipeline->pipeline_->GetType() == RHIPipelineType::kGraphics);
     auto pipeline = static_cast<VulkanGraphicsPipeline*>(bind_graphics_pipeline->pipeline_); // NOLINT its safe
@@ -316,14 +316,14 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
 }
 
 void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetScissor *set_scissor) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.scissor = {
         set_scissor->x_, set_scissor->y_, set_scissor->width_, set_scissor->height_
     };
 }
 
 void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.viewport = {
         set_viewport->x_, set_viewport->y_, set_viewport->width_, set_viewport->height_,
         set_viewport->min_depth_, set_viewport->max_depth_
@@ -332,14 +332,14 @@ void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHIComm
 
 void
 VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandUpdateDrawState *update_draw_state) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     state.draw_state_ = update_draw_state->draw_state_;
 }
 
 void VulkanCommandExecutor::RHIBindComputePipeline(
         RHICommandQueueBase *cmd, RHICommandBindComputePipeline *bind_compute_pipeline) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     assert(bind_compute_pipeline->pipeline_->GetType() == RHIPipelineType::kCompute);
     auto pipeline = static_cast<VulkanComputePipeline*>(bind_compute_pipeline->pipeline_); // NOLINT its safe
@@ -353,7 +353,7 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
 
 void VulkanCommandExecutor::RHIBindPipelineParameters(
         RHICommandQueueBase *cmd, RHICommandBindPipelineParameters *bind_pipeline_parameters) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
     auto table = bind_pipeline_parameters->table_;
     auto & point = state.points[(uint32_t)bind_pipeline_parameters->point_];
@@ -362,7 +362,7 @@ void VulkanCommandExecutor::RHIBindPipelineParameters(
 
 void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
                                                RHICommandBindVertexBuffer *bind_vertex_buffer) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & vb = bind_vertex_buffer->buffer_;
     auto * buffer = static_cast<VulkanBuffer*>(vb.buffer); // NOLINT its safe
@@ -372,16 +372,20 @@ void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
 }
 
 void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint * sync) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & chain = state_chains_[(uint32_t)cmd->GetCommandQueueType()];
     auto & state = chain.Current();
 
     state.CheckDebugMarkerStack();
+    std::string prefix;
+#ifndef NDEBUG
+    prefix = "EndOfFrame (" + std::to_string(GetFrameIndexForCurrentThread()) + ")";
+#endif
 
     auto vk_rhi = GetVulkanRHI();
     if (!vk_rhi->IsSwapChainInitialized()) {
         // Offscreen rendering, no need for presenting, simply do a submission
-        RHISubmitCommandBuffer(cmd, sync, false);
+        RHISubmitCommandBuffer(cmd, sync, prefix, false);
     } else {
         // Do present if needed
         auto queue = vk_rhi->GetQueue(cmd->GetCommandQueueType());
@@ -477,6 +481,13 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
             GetCurrentFrameIndex_RHIThread() % vk_rhi->swapchain_images.size()
         ];
         vk::PipelineStageFlags submit_wait_stages = vk::PipelineStageFlagBits::eTransfer;
+        if (!prefix.empty()) {
+            GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+                vk::DebugUtilsObjectNameInfoEXT {
+                vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)state.cmd),
+                prefix.c_str()
+            });
+        }
         auto submit_info = vk::SubmitInfo {
             1, &image_ready_sem, &submit_wait_stages,
             1, &state.cmd,
@@ -513,7 +524,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
 // Helpers
 
 vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetScissorRect() {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     vk::Rect2D rect = {
         {draw_state_.scissor.x, draw_state_.scissor.y},
         {draw_state_.scissor.width, draw_state_.scissor.height}
@@ -532,7 +543,7 @@ vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetScissorRect() {
 }
 
 vk::Viewport VulkanCommandExecutor::CommandQueueState::GetViewport() {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     vk::Viewport viewport = {
         draw_state_.viewport.x, draw_state_.viewport.y,
         draw_state_.viewport.width, draw_state_.viewport.height,
@@ -566,7 +577,7 @@ void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffe
 }
 
 bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto CompareAndInsert = [&] <typename T>  (std::vector<T> & dst, std::span<T> src) {
         bool dirty = false;
         for (const auto & e : src) {
@@ -620,7 +631,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     vk::DescriptorSet descriptor_set,
     [[maybe_unused]] vk::CommandBuffer cmdb
 ) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
 
     // Sort and merge all recorded slot bindings
     auto SortUnique = [&](auto & arr) {
@@ -792,7 +803,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
 // Bind pipeline, descriptor set and flush descriptor writes.
 void VulkanCommandExecutor::FlushBindPointState(
         RHICommandQueueBase * cmd, RHIBindPointType point_t, vk::ShaderStageFlags use_shaders) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & point = state.points[(uint32_t)point_t];
 
@@ -877,7 +888,7 @@ void VulkanCommandExecutor::FlushBindPointState(
 
 void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
                                               RHICommandTextureBarrier *barrier) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto barriers = state.Allocate<vk::ImageMemoryBarrier2[]>(barrier->num_textures_);
     for (int i = 0; i < (int)barrier->num_textures_; i++) {
@@ -907,12 +918,11 @@ void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
         {}, 0, {}, 0, {},
         barrier->num_textures_, barriers
     });
-
 }
 
 void
 VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBufferBarrier *barrier) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
     auto buffers = barrier->buffers_;
@@ -920,8 +930,10 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     for (const auto& [i, e] : std::views::enumerate(std::span(buffers, barrier->num_buffers_))) {
         vk_barriers[i].srcStageMask = GetVulkanPipelineStageFlags(barrier->src_stages_[i]);
         vk_barriers[i].dstStageMask = GetVulkanPipelineStageFlags(barrier->dst_stages_[i]);
-        vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
-        vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
+        vk_barriers[i].srcAccessMask = (barrier->src_stages_[i] == RHIPipelineStageFlagBits::kNone)
+            ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->src_accesses_[i]);
+        vk_barriers[i].dstAccessMask = (barrier->dst_stages_[i] == RHIPipelineStageFlagBits::kNone)
+            ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->dst_accesses_[i]);
         vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].buffer = ((VulkanBuffer*)buffers[i].buffer)->GetBuffer();
@@ -936,7 +948,7 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
 
 void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHICommandDebugMarkerBegin *cmd) {
     // Insert debug marker
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
     state.cmd.beginDebugUtilsLabelEXT(
@@ -949,7 +961,7 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
 
 void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[maybe_unused]] RHICommandDebugMarkerEnd *cmd) {
     // Insert debug marker
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
     state.cmd.endDebugUtilsLabelEXT();
@@ -959,7 +971,7 @@ void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[may
 
 void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) {
     // Insert debug marker
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     state.BeginCmd();
     state.cmd.insertDebugUtilsLabelEXT(
@@ -974,9 +986,10 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
 
 void
 VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
+const std::string & submit_prefix,
 // TODO make this useful (or completely remove it)
 [[maybe_unused]] bool recycle_resources) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
     if (sync) {
         // Place an execution barrier if sync point is specified, barrier the previously submitted commands
@@ -988,6 +1001,13 @@ VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISy
         );
     }
     auto & cmd = state.cmd;
+    if (!submit_prefix.empty()) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+            vk::DebugUtilsObjectNameInfoEXT {
+            vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)cmd),
+            submit_prefix.c_str()
+        });
+    }
     bool dirty = state.CloseCmd();
     auto vk_rhi = GetVulkanRHI();
     auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());

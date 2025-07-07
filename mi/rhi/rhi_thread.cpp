@@ -31,6 +31,9 @@ struct RHIThreadTask {
             RHISyncPoint * sync_point;
         } frame_end;
     } param;
+#ifndef NDEBUG
+    std::string name;
+#endif
     std::function<void()> lambda;
     RHIThreadTaskType type;
     RHICommandQueueBase * queue;
@@ -45,37 +48,67 @@ static std::counting_semaphore<> task_queue_sem_ {0};
 static RHIWorkerThread * rhi_worker_thread_ = nullptr;
 
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) {
-    RHIThreadTask task;
-    task.type = RHIThreadTaskType::kTranslate;
-    task.queue = command_buffer;
-    task.param.ptr = command_chain_head;
-    auto future = task.promise.get_future();
-    task_queue_.Push(std::move(task));
-    task_queue_sem_.release();
-    return future;
+    if (BYPASS_RHI_THREAD) {
+        assert(IsRenderThread());
+        // Do nothing actually
+        auto promise = std::promise<void>();
+        // Set the promise value to indicate the task is done
+        promise.set_value();
+        return promise.get_future();
+    } else {
+        RHIThreadTask task;
+        task.type = RHIThreadTaskType::kTranslate;
+        task.queue = command_buffer;
+        task.param.ptr = command_chain_head;
+        auto future = task.promise.get_future();
+        task_queue_.Push(std::move(task));
+        task_queue_sem_.release();
+        return future;
+    }
 }
 
-std::future<void> EnqueueRHICommandBufferSubmitTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync, bool recyle_resources) {
-    RHIThreadTask task;
-    task.type = RHIThreadTaskType::kSubmit;
-    task.queue = command_buffer;
-    task.param.submit.sync_point = sync;
-    task.param.submit.recycle = recyle_resources;
-    auto future = task.promise.get_future();
-    task_queue_.Push(std::move(task));
-    task_queue_sem_.release();
-    return future;
+std::future<void> EnqueueRHICommandBufferSubmitTask (
+    RHICommandQueueBase * command_buffer, RHISyncPoint * sync,
+    const std::string & submit_prefix, bool recyle_resources
+) {
+    if (BYPASS_RHI_THREAD) {
+        assert(IsRenderThread());
+        RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(command_buffer, sync, submit_prefix, recyle_resources);
+        auto promise = std::promise<void>();
+        // Set the promise value to indicate the task is done
+        promise.set_value();
+        return promise.get_future();
+    } else {
+        RHIThreadTask task;
+        task.type = RHIThreadTaskType::kSubmit;
+        task.queue = command_buffer;
+        task.param.submit.sync_point = sync;
+        task.param.submit.recycle = recyle_resources;
+        auto future = task.promise.get_future();
+        task_queue_.Push(std::move(task));
+        task_queue_sem_.release();
+        return future;
+    }
 }
 
 std::future<void> EnqueueRHIFrameEndTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync) {
-    RHIThreadTask task;
-    task.type = RHIThreadTaskType::kFrameEnd;
-    task.queue = command_buffer;
-    task.param.frame_end.sync_point = sync;
-    auto future = task.promise.get_future();
-    task_queue_.Push(std::move(task));
-    task_queue_sem_.release();
-    return future;
+    if (BYPASS_RHI_THREAD) {
+        assert(IsRenderThread());
+        RHI::Get().GetCommandExecutor()->RHIFrameEnd(command_buffer, sync);
+        auto promise = std::promise<void>();
+        // Set the promise value to indicate the task is done
+        promise.set_value();
+        return promise.get_future();
+    } else {
+        RHIThreadTask task;
+        task.type = RHIThreadTaskType::kFrameEnd;
+        task.queue = command_buffer;
+        task.param.frame_end.sync_point = sync;
+        auto future = task.promise.get_future();
+        task_queue_.Push(std::move(task));
+        task_queue_sem_.release();
+        return future;
+    }
 }
 
 void EnqueueRHIThreadIdleTask () {
@@ -100,22 +133,36 @@ bool IsRHIThreadActive() {
 }
 
 std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
-    RHIThreadTask rhi_task;
-    rhi_task.type = RHIThreadTaskType::kLambda;
-    rhi_task.queue = nullptr;
-    rhi_task.lambda = std::move(task);
-    auto future = rhi_task.promise.get_future();
-    task_queue_.Push(std::move(rhi_task));
-    task_queue_sem_.release();
-    return future;
+    if (BYPASS_RHI_THREAD) {
+        task();
+        auto promise = std::promise<void>();
+        // Set the promise value to indicate the task is done
+        promise.set_value();
+        return promise.get_future();
+    } else {
+        RHIThreadTask rhi_task;
+        rhi_task.type = RHIThreadTaskType::kLambda;
+        rhi_task.queue = nullptr;
+        rhi_task.lambda = std::move(task);
+        auto future = rhi_task.promise.get_future();
+        task_queue_.Push(std::move(rhi_task));
+        task_queue_sem_.release();
+        return future;
+    }
 }
 
 void AdvanceFrame_RHIThread() {
-    mi_assert(IsRHIThread(), "AdvanceFrame_RHIThread must be called in RHI thread.");
+    mi_assert(IsRHIThread() || BYPASS_RHI_THREAD, "AdvanceFrame_RHIThread must be called in RHI thread.");
     rhi_worker_thread_->AdvanceFrame();
 }
 
 void RHIWorkerThread::Run() {
+
+    if (BYPASS_RHI_THREAD) {
+        MI_LOG(MIInfraLogType::kWarning, "Bypassing RHI thread for debugging purposes. RHI thread exits upon its launch.");
+        MI_LOG(MIInfraLogType::kWarning, "Set BYPASS_RHI_THREAD to false to silent this warning.");
+        return ;
+    }
 
     if(GetCurrentThreadType() != ThreadType::kUnknown) {
         MI_LOG(MIInfraLogType::kError, "RHI thread is not created by an unknown thread.");
@@ -153,6 +200,7 @@ void RHIWorkerThread::Run() {
                 RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(
                         task.queue,
                         task.param.submit.sync_point,
+                        task.name,
                         task.param.submit.recycle
                 );
                 // Notify the task is finished

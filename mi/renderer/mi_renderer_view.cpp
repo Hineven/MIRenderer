@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <ranges>
 #include "renderer/mi_renderer_view.h"
 
 #include "rdg/rdg_builder.h"
@@ -53,7 +54,8 @@ void BatchedUploadContext::Init() {
 }
 
 void BatchedUploadContext::AddUnsafe(RHIBufferSpan buffer, const void *data, size_t size) {
-    mi_assert(!fired_, "Adding uploads after upload.");
+    mi_assert(!fired_, "Adding uploads after BatchedUploadContext::Fire().");
+    mi_assert(buffer.size >= size, "Overflowing the destination buffer in upload.");
     PendingUpload upload = {};
     upload.dst_buffer = buffer;
     upload.data = std::span((const uint8_t*)data, size);
@@ -124,6 +126,78 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
         }
     }
 
+#ifndef NDEBUG
+    {
+        // Validate that there are no overlapping uploads
+        std::sort(pending_uploads_.begin(), pending_uploads_.end(),
+            [](const PendingUpload & a, const PendingUpload & b) {
+                if (a.dst_buffer.buffer == b.dst_buffer.buffer) {
+                    if (a.dst_buffer.offset == b.dst_buffer.offset)
+                        return a.data.size() < b.data.size();
+                    return a.dst_buffer.offset < b.dst_buffer.offset;
+                }
+                return a.dst_buffer.buffer < b.dst_buffer.buffer;
+            });
+        int furthest_index = -1;
+        RHIBufferSpan buffer {};
+        for (auto [i, e] : std::views::enumerate(pending_uploads_)) {
+            if (e.dst_buffer.buffer != buffer.buffer) {
+                buffer = e.dst_buffer;
+                buffer.size = e.data.size();
+                furthest_index = (int)i;
+            } else {
+                if (e.dst_buffer.size > 0 && buffer.offset + buffer.size >= e.dst_buffer.offset) {
+                    // Overlapping uploads detected.
+
+                    mi_assert(false, "Overlapping RHI buffer uploads detected at index {} vs {}: {} ({}, {}) vs {} ({}, {}).",
+                        furthest_index, i,
+                        e.dst_buffer.buffer->GetName(), e.dst_buffer.offset, e.dst_buffer.size,
+                        buffer.buffer->GetName(), buffer.offset, buffer.size);
+                }
+                if (buffer.offset + buffer.size < e.dst_buffer.offset + e.data.size()) {
+                    buffer = e.dst_buffer;
+                    buffer.size = e.data.size();
+                    furthest_index = i;
+                }
+            }
+        }
+    }
+    {
+        // Validate that there are no overlapping uploads
+        std::sort(pending_rdg_uploads_.begin(), pending_rdg_uploads_.end(),
+            [](const PendingRDGUpload & a, const PendingRDGUpload & b) {
+                if (a.dst_buffer == b.dst_buffer) {
+                    if (a.dst_offset == b.dst_offset)
+                        return a.data.size() < b.data.size();
+                    return a.dst_offset < b.dst_offset;
+                }
+                return a.dst_buffer < b.dst_buffer;
+            });
+        int furthest_index = -1;
+        RDGBuffer * buffer {};
+        size_t offset = 0, size = 0;
+        for (auto [i, e] : std::views::enumerate(pending_rdg_uploads_)) {
+            if (e.dst_buffer != buffer) buffer = e.dst_buffer.Raw(), offset = e.dst_offset, size = e.data.size(), furthest_index = (int)i;
+            else {
+                if (e.data.size() > 0 && offset + size >= e.dst_offset) {
+                    // Overlapping uploads detected.
+
+                    mi_assert(false, "Overlapping RDG buffer uploads detected at index {} vs {}: {} ({}, {}) vs {} ({}, {}).",
+                        furthest_index, i,
+                        e.dst_buffer->GetName(), e.dst_offset, e.data.size(),
+                        buffer->GetName(), offset, size);
+                }
+                if (offset + size < e.dst_offset + e.data.size()) {
+                    buffer = e.dst_buffer.Raw();
+                    offset = e.dst_offset;
+                    size = e.data.size();
+                    furthest_index = (int)i;
+                }
+            }
+        }
+    }
+#endif
+
     auto pass = builder.AddPass("BatchedUploadBuffers", RDGPassType::kGeneric, {}, nullptr, nullptr,
         [staging = staging_buffer.Raw(), pending_rhi = std::move(pending_uploads_), pending_rdg = std::move(pending_rdg_uploads_)](
             [[maybe_unused]] RDGPass *pass, RHICommandQueueGraphics & queue
@@ -132,7 +206,7 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
             for (const auto & e : pending_rhi) {
                 auto size = e.data.size();
                 auto rounded_size = RoundUp(size, 16);
-                auto dst_span = e.dst_buffer;
+                auto dst_span = RHIBufferSpan{e.dst_buffer.buffer, e.dst_buffer.offset, size};
                 queue.CopyBuffer(RHIBufferSpan{staging, offset, size}, dst_span);
                 offset += rounded_size;
             }

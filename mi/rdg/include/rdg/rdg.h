@@ -37,7 +37,11 @@ public:
         }
         return {uniform_buffer_.Raw(), it->second.offset};
     }
+    FORCEINLINE const std::string & GetName () {return name_;}
+
 protected:
+    RenderGraph(const std::string & name) ;
+
     std::vector<std::unique_ptr<RDGPass>> passes_;
     struct Edge {
         int src_pass_index;
@@ -59,6 +63,9 @@ protected:
 
     // Temporary memory allocator (transferred from the RDG builder)
     std::unique_ptr<TOneTimeLinearAllocator<>> allocator_;
+
+    // Graph name. For debugging purposes.
+    std::string name_;
 };
 
 typedef TRef<RenderGraph> RenderGraphRef;

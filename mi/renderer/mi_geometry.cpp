@@ -74,7 +74,7 @@ void Geometry::UpdateOnDevice_Async(CommonGroupedDeviceResourceAllocator *alloc)
 void Geometry::UpdateOnDevice(CommonGroupedDeviceResourceAllocator * alloc) {
     if (dirty_) {
         UpdateOnDevice_Async(alloc);
-        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle("Geometry::UpdateOnDevice");
     }
 }
 

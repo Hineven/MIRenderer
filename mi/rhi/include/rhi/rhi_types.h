@@ -112,9 +112,11 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kIndexRead = 1u<<1,
     kVertexAttributeRead = 1u<<2,
     kUniformRead = 1u<<3,
-    // Read in shaders
-    kShaderRead = 1u<<4,
+    // UAV (storage texture / buffer)
+    kShaderStorageRead = 1u<<4,
     kAccelerationStructureRead = 1u<<5,
+    // All possible reads in shader code
+    kShaderRead = kUniformRead | kShaderStorageRead | kAccelerationStructureRead,
     kTransferRead = 1u<<6,
     kDepthStencilRead = 1u<<7,
     kColorAttachmentRead = 1u<<8,
@@ -128,22 +130,58 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kColorAttachmentWrite = 1u<<19,
     kTransferWrite = 1u<<20,
     kWrite = 0xFFFF0000u,
+    kShaderStorageRW = kShaderStorageRead | kShaderWrite,
+    kShaderRW = kShaderRead | kShaderWrite,
+    kColorAttachmentRW = kColorAttachmentRead | kColorAttachmentWrite,
+    kDepthStencilRW = kDepthStencilRead | kDepthStencilWrite,
+    kTransferRW = kTransferRead | kTransferWrite,
     kRW = kRead | kWrite,
     kAll = kRW
 };
 MAKE_FLAGS(RHIGPUAccess)
 
-FORCEINLINE std::string ToString (RHIGPUAccessFlags flags) {
-    std::string result = "";
-    if (flags & RHIGPUAccessFlagBits::kRead) {
-        result += "Read";
+FORCEINLINE std::string ToString(RHIGPUAccessFlags flags) {
+    if (flags == RHIGPUAccessFlagBits::kNone) return "None";
+    std::string result;
+    struct FlagName {
+        RHIGPUAccessFlagBits bit;
+        const char* name;
+    };
+    static const FlagName flagNames[] = {
+        {RHIGPUAccessFlagBits::kIndirectCommandRead, "IndirectCommandRead"},
+        {RHIGPUAccessFlagBits::kIndexRead, "IndexRead"},
+        {RHIGPUAccessFlagBits::kVertexAttributeRead, "VertexAttributeRead"},
+        {RHIGPUAccessFlagBits::kUniformRead, "UniformRead"},
+        {RHIGPUAccessFlagBits::kShaderStorageRead, "ShaderStorageRead"},
+        {RHIGPUAccessFlagBits::kAccelerationStructureRead, "AccelerationStructureRead"},
+        {RHIGPUAccessFlagBits::kShaderRead, "ShaderRead"},
+        {RHIGPUAccessFlagBits::kTransferRead, "TransferRead"},
+        {RHIGPUAccessFlagBits::kDepthStencilRead, "DepthStencilRead"},
+        {RHIGPUAccessFlagBits::kColorAttachmentRead, "ColorAttachmentRead"},
+        {RHIGPUAccessFlagBits::kRead, "Read"},
+        {RHIGPUAccessFlagBits::kShaderWrite, "ShaderWrite"},
+        {RHIGPUAccessFlagBits::kAccelerationStructureWrite, "AccelerationStructureWrite"},
+        {RHIGPUAccessFlagBits::kDepthStencilWrite, "DepthStencilWrite"},
+        {RHIGPUAccessFlagBits::kColorAttachmentWrite, "ColorAttachmentWrite"},
+        {RHIGPUAccessFlagBits::kTransferWrite, "TransferWrite"},
+        {RHIGPUAccessFlagBits::kWrite, "Write"},
+        {RHIGPUAccessFlagBits::kShaderStorageRW, "ShaderStorageRW"},
+        {RHIGPUAccessFlagBits::kShaderRW, "ShaderRW"},
+        {RHIGPUAccessFlagBits::kColorAttachmentRW, "ColorAttachmentRW"},
+        {RHIGPUAccessFlagBits::kDepthStencilRW, "DepthStencilRW"},
+        {RHIGPUAccessFlagBits::kTransferRW, "TransferRW"},
+        {RHIGPUAccessFlagBits::kRW, "RW"},
+        {RHIGPUAccessFlagBits::kAll, "All"},
+    };
+    bool first = true;
+    for (const auto& fn : flagNames) {
+        if ((flags & fn.bit) == fn.bit) {
+            if (!first) result += " | ";
+            result += fn.name;
+            first = false;
+        }
     }
-    if (flags & RHIGPUAccessFlagBits::kWrite) {
-        if (!result.empty()) result += " | ";
-        result += "Write";
-    }
-    if (result.empty()) result = "None";
-    return result;
+    return result.empty() ? "None" : result;
 }
 
 enum class RHISamplerAddressModeType {

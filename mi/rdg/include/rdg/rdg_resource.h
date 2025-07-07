@@ -7,8 +7,9 @@
 #ifndef MI_RDG_RESOURCE_H
 #define MI_RDG_RESOURCE_H
 
+#include <corecrt_io.h>
 #include <core/crc.h>
-
+#include <rhi/rhi_type_helpers.h>
 #include "rdg_pool.h"
 #include "rhi/rhi.h"
 #include "rdg/rdg_base.h"
@@ -30,8 +31,16 @@ public:
     FORCEINLINE bool IsAllocated () const { return rhi_texture_ != nullptr; }
     FORCEINLINE RHITexture * GetRHI () const { return rhi_texture_; }
 
-    FORCEINLINE RDGTextureUsageType GetLastUsage () const { return usage_; }
-    FORCEINLINE void Use (RDGTextureUsageType usage) { usage_ = usage; }
+    FORCEINLINE RHIPipelineStageFlags GetReadStages () const { return read_stages_; }
+    FORCEINLINE RHIPipelineStageFlags GetWriteStages () const {return write_stages_;}
+    FORCEINLINE void Use (RHIPipelineStageFlags stages, RHIGPUAccessFlags usage, RHITextureLayoutType layout = RHITextureLayoutType::kUndefined) {
+        RDGResource::Use(stages, usage);
+        if (layout != RHITextureLayoutType::kUndefined) {
+            // If the layout is specified, we assume that the texture will be used in this layout.
+            // This is useful for textures that are used in a specific layout, such as depth textures.
+            current_layout_ = layout;
+        }
+    }
 
     FORCEINLINE bool IsImportedFrom (RHITexture * texture) {
         mi_assert(IsImported(), "This should be an imported texture to call RDGTexture::IsImportedFrom().");
@@ -67,8 +76,8 @@ protected:
     // Underlying RHI texture, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHITexture * rhi_texture_ {};
-    // Track the last access of the texture, used for barrier placement.
-    RDGTextureUsageType usage_ {};
+    // Current layout of the texture, used for barrier placement.
+    RHITextureLayoutType current_layout_ {RHITextureLayoutType::kUndefined};
 
     std::string name_ {};
 };
@@ -121,9 +130,6 @@ public:
     FORCEINLINE bool IsAllocated () const { return rhi_buffer_span_.buffer != nullptr; }
     FORCEINLINE RHIBufferSpan GetRHI () const { return rhi_buffer_span_; }
 
-    FORCEINLINE RHIGPUAccessFlags GetLastUsage () const { return usage_; }
-    FORCEINLINE void Use (RHIGPUAccessFlags usage) { usage_ = usage; }
-
     FORCEINLINE bool IsImportedFrom (RHIBufferSpan buffer) {
         mi_assert(IsImported(), "This should be an imported buffer to call RDGBuffer::IsImportedFrom().");
         return rhi_buffer_span_ == buffer;
@@ -149,8 +155,6 @@ protected:
     // Underlying RHI buffer, can be null if not allocated.
     // The reference is kept by RDG resource pool, we'll just use plain pointer here.
     RHIBufferSpan rhi_buffer_span_ {};
-    // Track the last access of the buffer, used for barrier placement.
-    RHIGPUAccessFlags usage_ {};
 
     // Name of the buffer, used for debug tracking
     std::string name_ {};

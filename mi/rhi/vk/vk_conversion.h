@@ -620,6 +620,9 @@ FORCEINLINE vk::PipelineStageFlags2 GetVulkanPipelineStageFlags (RHIPipelineStag
     if(stages == RHIPipelineStageFlagBits::kAll) {
         return vk::PipelineStageFlagBits2::eAllCommands;
     }
+    if (stages == RHIPipelineStageFlagBits::kAllGraphics) {
+        return vk::PipelineStageFlagBits2::eAllGraphics;
+    }
     if (stages & RHIPipelineStageFlagBits::kVertex) {
         vk_stages |= vk::PipelineStageFlagBits2::eVertexInput |
                 vk::PipelineStageFlagBits2::eVertexShader |
@@ -643,9 +646,6 @@ FORCEINLINE vk::PipelineStageFlags2 GetVulkanPipelineStageFlags (RHIPipelineStag
     if (stages & RHIPipelineStageFlagBits::kTaskMesh) {
         vk_stages |= vk::PipelineStageFlagBits2::eTaskShaderEXT |
             vk::PipelineStageFlagBits2::eMeshShaderEXT;
-    }
-    if (stages & RHIPipelineStageFlagBits::kAllGraphics) {
-        vk_stages |= vk::PipelineStageFlagBits2::eAllGraphics;
     }
     if (stages & RHIPipelineStageFlagBits::kCompute) {
         vk_stages |= vk::PipelineStageFlagBits2::eComputeShader;

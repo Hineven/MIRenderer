@@ -93,8 +93,9 @@ public:
     // @return a future that will be ready when the submission is completed.
     FORCEINLINE std::future<void> SubmitTranslatedCommands (
             RHISyncPoint * in_sync_point = nullptr,
+            const std::string & submit_prefix = "",
             bool recycle_resources = false) {
-        return EnqueueRHICommandBufferSubmitTask(this, in_sync_point, recycle_resources);
+        return EnqueueRHICommandBufferSubmitTask(this, in_sync_point, submit_prefix, recycle_resources);
     }
 
     // Flush existing commands, and send to RHI thread for baking and submission
@@ -102,15 +103,17 @@ public:
     // @param recycle_resources whether to recycle translated commands immediately after submission rather than in
     // frame intervals. May cause overhead.
     // @return a future that will be ready when the submission is completed.
-    FORCEINLINE std::future<void> EnqueueTranslateAndSubmit (RHISyncPoint * in_sync_point = nullptr,
-                                                        bool recycle_resources = false) {
+    FORCEINLINE std::future<void> EnqueueTranslateAndSubmit (
+        RHISyncPoint * in_sync_point = nullptr,
+        const std::string & submit_prefix = "",
+        bool recycle_resources = false) {
         EnqueueTranslation();
-        return SubmitTranslatedCommands(in_sync_point, recycle_resources);
+        return SubmitTranslatedCommands(in_sync_point, submit_prefix, recycle_resources);
     }
 
     // Shortcut.
     // Flush the queue and wait for all commands to finish execution on the device.
-    void WaitForIdle () ;
+    void WaitForIdle (const std::string & submit_prefix = "") ;
 
     // End the frame, enqueue a present command, and return resources to the system if requested.
     // The command is special, it does not require submission to execute. Translation will be enough.
@@ -164,11 +167,16 @@ protected:
     }
 
     void AddCommand (RHICommandBase * cmd) {
-        if (!first_command_) {
-            first_command_ = last_command_ = AllocateCommand<RHIEmptyCommand>();
+        if constexpr (BYPASS_RHI_THREAD) {
+            // If we are bypassing the RHI thread, execute the command immediately.
+            cmd->ExecuteAndDestruct(*this);
+        } else {
+            if (!first_command_) {
+                first_command_ = last_command_ = AllocateCommand<RHIEmptyCommand>();
+            }
+            last_command_->next_command_ = cmd;
+            last_command_ = cmd;
         }
-        last_command_->next_command_ = cmd;
-        last_command_ = cmd;
     }
 
     int allocator_index_ {0};
@@ -504,6 +512,25 @@ public:
     RHIGPUAccessFlags * dst_accesses_;
 };
 
+class RHICommandAccelerationStructureBarrier : public TRHICommand<RHICommandAccelerationStructureBarrier> {
+public:
+    RHICommandAccelerationStructureBarrier(
+        uint32_t num_barriers,
+        RHIAccelerationStructure ** acceleration_structures,
+        RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
+        RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ): num_barriers_(num_barriers),
+        acceleration_structures_(acceleration_structures), src_stages_(src_stages), dst_stages_(dst_stages),
+        src_accesses_(src_accesses), dst_accesses_(dst_accesses) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    uint32_t num_barriers_;
+    RHIAccelerationStructure ** acceleration_structures_;
+    RHIPipelineStageFlags * src_stages_;
+    RHIPipelineStageFlags * dst_stages_;
+    RHIGPUAccessFlags * src_accesses_;
+    RHIGPUAccessFlags * dst_accesses_;
+};
+
 class RHICommandDebugMarkerBegin : public TRHICommand<RHICommandDebugMarkerBegin> {
 public:
     RHICommandDebugMarkerBegin(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f})
@@ -685,15 +712,19 @@ public:
             RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
             RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
     ) {
+        auto * layouts_ptr = Allocate<RHITextureLayoutType>();
+        layouts_ptr[0] = layout;
+        auto src_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        src_stages_ptr[0] = src_stages;
+        auto dst_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        dst_stages_ptr[0] = dst_stages;
         auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
         src_access_ptr[0] = src_access;
         auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
         dst_access_ptr[0] = dst_access;
         auto * texture_ptr = Allocate<RHITexture*>();
         texture_ptr[0] = texture;
-        auto * layout_ptr = Allocate<RHITextureLayoutType>();
-        layout_ptr[0] = layout;
-        AddCommand(AllocateCommand<RHICommandTextureBarrier>(1, texture_ptr, layout_ptr, src_stages, dst_stages, src_access_ptr, dst_access_ptr));
+        AddCommand(AllocateCommand<RHICommandTextureBarrier>(1, texture_ptr, layouts_ptr, src_stages_ptr, dst_stages_ptr, src_access_ptr, dst_access_ptr));
     }
 
     FORCEINLINE void TextureBarriers (
@@ -711,11 +742,15 @@ public:
     ) {
         auto * desc = Allocate<RHIBufferSpan[]>(1);
         desc[0] = buffer;
+        auto src_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        src_stages_ptr[0] = src_stages;
+        auto dst_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        dst_stages_ptr[0] = dst_stages;
         auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
         src_access_ptr[0] = src_access;
         auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
         dst_access_ptr[0] = dst_access;
-        AddCommand(AllocateCommand<RHICommandBufferBarrier>(1, desc, src_stages, dst_stages, src_access_ptr, dst_access_ptr));
+        AddCommand(AllocateCommand<RHICommandBufferBarrier>(1, desc, src_stages_ptr, dst_stages_ptr, src_access_ptr, dst_access_ptr));
     }
 
     FORCEINLINE void BufferBarriers (
@@ -724,6 +759,32 @@ public:
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ) {
         AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer_count, buffers, src_stages, dst_stages, src_accesses, dst_accesses));
+    }
+
+    FORCEINLINE void AccelerationStructureBarrier (
+            RHIAccelerationStructure * acceleration_structure,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ) {
+        auto * desc = Allocate<RHIAccelerationStructure*>();
+        desc[0] = acceleration_structure;
+        auto src_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        src_stages_ptr[0] = src_stages;
+        auto dst_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        dst_stages_ptr[0] = dst_stages;
+        auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
+        src_access_ptr[0] = src_access;
+        auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
+        dst_access_ptr[0] = dst_access;
+        AddCommand(AllocateCommand<RHICommandAccelerationStructureBarrier>(1, desc, src_stages_ptr, dst_stages_ptr, src_access_ptr, dst_access_ptr));
+    }
+
+    FORCEINLINE void AccelerationStructureBarriers (
+            uint32_t acceleration_structure_count, RHIAccelerationStructure ** acceleration_structures,
+            RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
+            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ) {
+        AddCommand(AllocateCommand<RHICommandAccelerationStructureBarrier>(acceleration_structure_count, acceleration_structures, src_stages, dst_stages, src_accesses, dst_accesses));
     }
 
     FORCEINLINE void BindPipeline(RHIGraphicsPipeline * pipeline) {

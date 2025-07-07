@@ -23,7 +23,7 @@ void RHICommandQueueBase::PreDestruction() {
 }
 
 
-void RHICommandQueueBase::WaitForIdle () {
+void RHICommandQueueBase::WaitForIdle (const std::string & submit_prefix) {
     auto guard = std::lock_guard(sync_point_mutex_);
     if (!sync_point_) {
         sync_point_ = RHI::Get().CreateSyncPoint();
@@ -31,7 +31,7 @@ void RHICommandQueueBase::WaitForIdle () {
             std::format("SyncPoint for RHICommandQueueBase (Type: {})", ToString(GetCommandQueueType()))
         );
     }
-    EnqueueTranslateAndSubmit(sync_point_.Raw());
+    EnqueueTranslateAndSubmit(sync_point_.Raw(), submit_prefix);
     sync_point_->Wait();
     sync_point_->Reset();
 }
@@ -147,6 +147,10 @@ void RHICommandTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
 
 void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBufferBarriers(&cmd, this);
+}
+
+void RHICommandAccelerationStructureBarrier::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIAcclerationStructureBarriers(&cmd, this);
 }
 
 void RHICommandDebugMarkerBegin::Execute(RHICommandQueueBase &cmd) {

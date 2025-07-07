@@ -84,7 +84,7 @@ void VulkanSyncPoint::Reset() {
 }
 
 void VulkanSyncPoint::NotifySubmission() {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     assert(can_be_waited_);
     submission_sem_.release();
 }

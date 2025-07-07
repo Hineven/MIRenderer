@@ -27,7 +27,7 @@
 MI_NAMESPACE_BEGIN
 
 void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     {
         assert(cmd_pool == nullptr);
         assert(cmd == nullptr);
@@ -94,7 +94,7 @@ void VulkanCommandExecutor::CommandQueueState::BindPoint::Destroy() {
 
 
 void VulkanCommandExecutor::CommandQueueState::Destroy() {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     auto rhi = GetVulkanRHI();
     for(auto & point : points) {
         point.Destroy();
@@ -105,7 +105,7 @@ void VulkanCommandExecutor::CommandQueueState::Destroy() {
 }
 
 void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_system) {
-    assert(IsRHIThread());
+    CHECK_RHI_THREAD();
     // Clear states, get ready for the next frame.
     auto rhi = GetVulkanRHI();
     {

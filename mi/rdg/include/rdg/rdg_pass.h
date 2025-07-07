@@ -16,12 +16,20 @@ class RenderGraph;
 class RDGPass : public NonMovable, public NonCopyable {
 public:
     struct RDGTextureUsage {
-        RDGTextureUsageType usage;
+        RHITextureLayoutType layout;
+        RHIGPUAccessFlags access;
+        RHIPipelineStageFlags stages;
         RDGTextureRef texture;
     };
     struct RDGBufferUsage {
         RHIGPUAccessFlags access;
+        RHIPipelineStageFlags stages;
         RDGBufferRef buffer;
+    };
+    struct RDGASUsage {
+        RHIGPUAccessFlags access;
+        RHIPipelineStageFlags stages;
+        RHIAccelerationStructure* as;
     };
 protected:
     // Can only be allocated by RDG
@@ -37,10 +45,15 @@ protected:
     );
 public:
 
-    // Specify how are you using the texture in the pass.
-    RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsageType usage) ;
-    // Specify how are you using the buffer in the pass, with access flags.
-    RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access) ;
+    // Add a texture to the pass, with layout and access flags. kNone for stages will be replaced with auto-detected stages.
+    RDGPass * AddTexture (RDGTexture * texture, RHITextureLayoutType layout, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) ;
+    // Specify how are you using the texture in the pass. kNone for stgages will be replaced with auto-detected stages.
+    // This is a function mostly for convenience. Using AddTexture(texture, layout, ...) can achieve the same result.
+    RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsageType usage, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // Specify how are you using the buffer in the pass, with access flags. kNone for stgages will be replaced with auto-detected stages.
+    RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // Add an acceleration structure to the pass, with access flags. kNone for stages will be replaced with auto-detected stages.
+    RDGPass * AddAS (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
 
     FORCEINLINE void SetName (std::string name) {
         name_ = std::move(name);
@@ -97,13 +110,17 @@ protected:
         // Grouping resources by access types
         std::vector<RDGTexture*> out_textures;
         std::vector<RDGBuffer*> out_buffers;
+        std::vector<RHIAccelerationStructure*> out_acceleration_structures;
         std::vector<RDGTexture*> in_textures;
         std::vector<RDGBuffer*> in_buffers;
+        std::vector<RHIAccelerationStructure*> in_acceleration_structures;
 
         // Details of each resource access, and reference holding
         std::vector<RDGTextureUsage> used_textures;
         // Details of each resource access, and reference holding
         std::vector<RDGBufferUsage> used_buffers;
+        // Details of each acceleration structure access
+        std::vector<RDGASUsage> used_acceleration_structures;
     } compiled_; // Generated after compilation
 
     // This is filled up by the RDG builder upon spawning the pass

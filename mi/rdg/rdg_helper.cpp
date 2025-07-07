@@ -58,11 +58,11 @@ void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHIBufferSpan buffer,
     auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
     memcpy(staging_buffer_ptr, data, size);
     staging_buffer->Unmap();
-    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer,
-        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
     queue.CopyBuffer(staging_buffer->GetSpan(), buffer);
-    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer,
-        RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
+    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kAll);
 }
 
 void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHITexture *texture, const void *data, size_t size, RHITextureLayoutType dst_layout, RHIGPUAccessFlags dst_access) {
@@ -71,11 +71,11 @@ void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHITexture *texture, 
     auto staging_buffer_ptr = static_cast<uint8_t *>(staging_buffer->Map());
     memcpy(staging_buffer_ptr, data, size);
     staging_buffer->Unmap();
-    queue.TextureBarrier(texture, RHITextureLayoutType::kTransferDstOptimal,
-        RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+    queue.TextureBarrier(texture, RHITextureLayoutType::kTransferDstOptimal, RHIPipelineStageFlagBits::kAll,
+        RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
     queue.CopyBufferToTexture(staging_buffer->GetSpan(), texture);
-    queue.TextureBarrier(texture, dst_layout, RHIPipelineStageFlagBits::kAll,
-        RHIGPUAccessFlagBits::kWrite, dst_access);
+    queue.TextureBarrier(texture, dst_layout, RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kTransferWrite, dst_access);
 }
 
 
@@ -93,12 +93,12 @@ void Helpers::UploadWithRDG_Unsafe(RenderGraphBuilder & builder, RHIBufferSpan b
     builder.AddPass("UploadWithRDG_Unsafe", RDGPassType::kGeneric, {}, {}, {},
         [src = staging_buffer.Raw(), dst = buffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.BufferBarrier(dst,
-                RHIPipelineStageFlagBits::kTransfer,
-                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite);
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
             queue.CopyBuffer(src->GetSpan(), dst);
             queue.BufferBarrier(dst,
-                RHIPipelineStageFlagBits::kTransfer,
-                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
+                RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kAll);
         }
     );
 }
@@ -116,7 +116,7 @@ void Helpers::UploadWithRDG(RenderGraphBuilder &builder, RDGBuffer * buffer, con
             dst_span.offset += dst_offset;
             queue.CopyBuffer(src->GetSpan(), dst_span);
         }
-    )->AddBuffer(buffer, RHIGPUAccessFlagBits::kWrite);
+    )->AddBuffer(buffer, RHIGPUAccessFlagBits::kTransferWrite);
 }
 
 void Helpers::ReadbackWithRDG(RenderGraphBuilder &builder, RDGBuffer *buffer, size_t src_offset, RHIBufferSpan readback_buffer) {
@@ -130,12 +130,12 @@ void Helpers::ReadbackWithRDG(RenderGraphBuilder &builder, RDGBuffer *buffer, si
             auto src_span = src->GetRHI();
             src_span.offset += src_offset;
             src_span.size = dst.size;
-            queue.CopyBuffer(src_span, dst);
             queue.BufferBarrier(dst,
-                RHIPipelineStageFlagBits::kTransfer,
-                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
+            queue.CopyBuffer(src_span, dst);
         }
-    )->AddBuffer(buffer, RHIGPUAccessFlagBits::kRead);
+    )->AddBuffer(buffer, RHIGPUAccessFlagBits::kTransferRead);
 }
 
 
@@ -145,12 +145,15 @@ void Helpers::ReadbackWithRDG_Unsafe(RenderGraphBuilder &builder, RHIBufferSpan 
     builder.AddPass("ReadbackWithRDG_Unsafe", RDGPassType::kGeneric, RDGPassFlagBits::kNeverCull, {}, {},
         [src = buffer, dst = readback_buffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.BufferBarrier(src,
-                RHIPipelineStageFlagBits::kTransfer,
-                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kRead);
-            queue.CopyBuffer(src, dst);
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferRead);
             queue.BufferBarrier(dst,
-                RHIPipelineStageFlagBits::kTransfer,
-                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
+            queue.CopyBuffer(src, dst);
+            queue.BufferBarrier(src,
+                RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kTransferRead, RHIGPUAccessFlagBits::kAll);
         }
     );
 }
@@ -160,14 +163,17 @@ void Helpers::Readback(RHICommandQueueGraphics & queue, RHIBufferSpan buffer, vo
     auto readback_buffer = rhi.CreateBuffer(buffer.size, RHIBufferUsageFlagBits::kReadback);
 
     queue.BufferBarrier(buffer,
-        RHIPipelineStageFlagBits::kTransfer,
-        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kRead);
+        RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferRead);
+    queue.BufferBarrier(readback_buffer->GetSpan(),
+        RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
     queue.CopyBuffer(buffer, readback_buffer->GetSpan());
     queue.BufferBarrier(readback_buffer->GetSpan(),
-        RHIPipelineStageFlagBits::kTransfer,
-        RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kAll);
+        RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kTransferRead, RHIGPUAccessFlagBits::kAll);
 
-    queue.WaitForIdle();
+    queue.WaitForIdle("Helpers::Readback");
 
     auto src_ptr = static_cast<const uint8_t*>(readback_buffer->Map());
     memcpy(data, src_ptr, buffer.size);

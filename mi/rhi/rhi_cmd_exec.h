@@ -51,9 +51,11 @@ public:
     virtual void RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) = 0;
     virtual void RHIDispatchRays(RHICommandQueueBase *cmd, RHICommandDispatchRays *dispatch_rays) = 0;
     virtual void RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) = 0;
+    virtual void RHIAcclerationStructureBarriers(RHICommandQueueBase * cmd, RHICommandAccelerationStructureBarrier *barrier) = 0;
 
     // Submit all translated command stored within the command buffer and clear them.
-    virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point, bool recycle_resources) = 0;
+    virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point,
+        const std::string & submit_prefix, bool recycle_resources) = 0;
     // End the frame, enqueue a present command.
     virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHISyncPoint * sync) = 0;
 

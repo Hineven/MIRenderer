@@ -182,9 +182,9 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             passed_checking = false;
         } else {
             auto & member = *info.storage_buffers_[index].info;
-            if (member.access_flags != sb.access_flags) {
+            if ((member.access_flags & sb.access_flags) != sb.access_flags) {
                 MI_LOG(MIInfraLogType::kWarning,
-                       "Shader '{}:{}' defines '{}' as storage buffer but parameter has incompatible access flags."
+                       "Shader '{}:{}' defines '{}' as storage buffer but parameter access is not a super set of the shader reflected access flags."
                        "Shader flags: {}, Parameter flags: {}",
                        class_registry_->source_location, entry, sb.name, ToString(sb.access_flags), ToString(member.access_flags));
                 passed_checking = false;

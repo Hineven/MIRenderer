@@ -23,6 +23,7 @@ bool RDG_IsInRDGExecution () {
     return is_rdg_executing;
 }
 
+RenderGraph::RenderGraph(const std::string & name): name_(name) {}
 RenderGraph::~RenderGraph() {}
 
 FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
@@ -48,57 +49,6 @@ FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restri
     }
 }
 
-static RHIGPUAccessFlags GetTextureUsageAccess (RDGTextureUsageType usage) {
-    if (usage == RDGTextureUsageType::kDontCare) {
-        return RHIGPUAccessFlagBits::kAll;
-    } else if (usage == RDGTextureUsageType::kTransferSrc) {
-        return RHIGPUAccessFlagBits::kRead;
-    } else if (usage == RDGTextureUsageType::kTransferDst) {
-        return RHIGPUAccessFlagBits::kWrite;
-    } else if (usage == RDGTextureUsageType::kShaderRead) {
-        // The barrier-chain rule allows us to replace the access mask with the new one.
-        // For example, Write, Read, Read produces a W-R barrier and a R-R barrier.
-        // The R-R barrier may be incorrect if it is standalone, but it is correct if it's following the
-        // W-R barrier (chaining up, see Vulkan Barrier Chain).
-        return RHIGPUAccessFlagBits::kRead;
-    } else if (usage == RDGTextureUsageType::kShaderReadWrite) {
-        return RHIGPUAccessFlagBits::kAll;
-    } else if (usage == RDGTextureUsageType::kOutputAttachment) {
-        // Read for (potentially) alpha blending
-        return RHIGPUAccessFlagBits::kAll;
-    } else if (usage == RDGTextureUsageType::kDepthStencilAttachment) {
-        return RHIGPUAccessFlagBits::kAll;
-    } else if (usage == RDGTextureUsageType::kNone) {
-        return RHIGPUAccessFlagBits::kNone;
-    } else {
-        assert(false);
-        return RHIGPUAccessFlagBits::kNone; // Default return to avoid compiler warnings
-    }
-}
-
-static RHITextureLayoutType GetTextureLayout (RDGTextureUsageType usage) {
-    if (usage == RDGTextureUsageType::kDontCare) {
-        return RHITextureLayoutType::kUndefined;
-    } else if (usage == RDGTextureUsageType::kTransferSrc) {
-        return RHITextureLayoutType::kTransferSrcOptimal;
-    } else if (usage == RDGTextureUsageType::kTransferDst) {
-        return RHITextureLayoutType::kTransferDstOptimal;
-    } else if (usage == RDGTextureUsageType::kShaderRead) {
-        return RHITextureLayoutType::kShaderReadOnlyOptimal;
-    } else if (usage == RDGTextureUsageType::kShaderReadWrite) {
-        return RHITextureLayoutType::kGeneral;
-    } else if (usage == RDGTextureUsageType::kOutputAttachment) {
-        return RHITextureLayoutType::kColorAttachment;
-    } else if (usage == RDGTextureUsageType::kDepthStencilAttachment) {
-        return RHITextureLayoutType::kDepthStencilAttachment;
-    } else if (usage == RDGTextureUsageType::kNone) {
-        return RHITextureLayoutType::kUndefined;
-    } else {
-        assert(false);
-        return RHITextureLayoutType::kUndefined; // Default return to avoid compiler warnings
-    }
-}
-
 void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     if (passes_.empty()) {
@@ -117,6 +67,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         for (auto & buffer : e->compiled_.used_buffers) {
             buffer.buffer->execution_ref_counter ++;
         }
+        // for (auto & as : e->compiled_.used_acceleration_structures) {
+            // AccelerationStructure doesn't have ref counter like RDG resources,
+            // but we track usage for barrier generation
+        // }
     }
 
     // Directly use the graphics queue.
@@ -175,14 +129,22 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             }
             // Barrier the uniform buffer
             cmd.BufferBarrier(
-                uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kTransfer,
-                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kWrite
+                uniform_buffer_->GetRHI(), uniform_buffer_->GetReadStages() | uniform_buffer_->GetWriteStages(),
+                RHIPipelineStageFlagBits::kTransfer,
+                RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite
             );
+            uniform_buffer_->Use(RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferWrite);
             // Schedule the copy
             cmd.CopyBuffer(staging_buffer->GetSpan(), uniform_buffer_->GetRHI());
             // Insert a manual barrier
-            cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kAll,
-                RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
+            cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kTransfer,
+                // Uniform buffers are potentially used in graphics, compute and ray tracing stages.
+                RHIPipelineStageFlagBits::kAllGraphics | RHIPipelineStageFlagBits::kCompute | RHIPipelineStageFlagBits::kRayTracing,
+                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kShaderRead);
+            uniform_buffer_->Use(
+                RHIPipelineStageFlagBits::kAllGraphics | RHIPipelineStageFlagBits::kCompute | RHIPipelineStageFlagBits::kRayTracing,
+                RHIGPUAccessFlagBits::kShaderRead
+            );
         }
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
     }
@@ -218,42 +180,76 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         }
 
         // Place resource barriers.
-        RHIPipelineStageFlags new_stages = pass->GetStageFlags();
+        // RHIPipelineStageFlags current_stages = pass->GetStageFlags();
         {
             auto num_barriers = pass->compiled_.used_textures.size();
             uint32_t num_barriers_used = 0;
             auto textures = cmd.Allocate<RHITexture*[]>(num_barriers);
             auto layouts = cmd.Allocate<RHITextureLayoutType[]>(num_barriers);
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
+            auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & texture_use : pass->compiled_.used_textures) {
                 if (texture_use.texture->GetRHI()) {
                     textures[num_barriers_used] = texture_use.texture->GetRHI();
-                    src_accesses[num_barriers_used] = GetTextureUsageAccess(texture_use.texture->GetLastUsage());
-                    layouts[num_barriers_used] = GetTextureLayout(texture_use.usage);
-                    dst_accesses[num_barriers_used] = GetTextureUsageAccess(texture_use.usage);
-                    texture_use.texture->Use(texture_use.usage);
+                    src_accesses[num_barriers_used] = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
+                    src_stages[num_barriers_used] = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
+                    auto current_access = texture_use.access;
+                    dst_accesses[num_barriers_used] = current_access;
+                    dst_stages[num_barriers_used] = texture_use.stages;
+                    auto current_layout = texture_use.layout;
+                    layouts[num_barriers_used] = current_layout;
+                    texture_use.texture->Use(texture_use.stages, current_access, current_layout);
                     num_barriers_used ++;
                 }
             }
-            if (num_barriers_used) cmd.TextureBarriers(num_barriers_used, textures, layouts, new_stages, src_accesses, dst_accesses);
+            if (num_barriers_used) cmd.TextureBarriers(num_barriers_used, textures, layouts, src_stages, dst_stages, src_accesses, dst_accesses);
         }
         {
             auto num_barriers = pass->compiled_.used_buffers.size();
             auto num_barriers_used = 0;
             auto buffers = cmd.Allocate<RHIBufferSpan[]>(num_barriers);
+            auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
+            auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & buffer_use: pass->compiled_.used_buffers) {
                 if (buffer_use.buffer->GetRHI()) {
                     buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
-                    src_accesses[num_barriers_used] = buffer_use.buffer->GetLastUsage();
+                    src_stages[num_barriers_used] = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
+                    auto new_stages = buffer_use.stages;
+                    dst_stages[num_barriers_used] = new_stages;
+                    src_accesses[num_barriers_used] = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
                     dst_accesses[num_barriers_used] = buffer_use.access;
-                    buffer_use.buffer->Use(buffer_use.access);
+                    buffer_use.buffer->Use(new_stages, buffer_use.access);
                     num_barriers_used ++;
                 }
             }
-            if (num_barriers_used) cmd.BufferBarriers(num_barriers_used, buffers, new_stages, src_accesses, dst_accesses);
+            if (num_barriers_used) cmd.BufferBarriers(num_barriers_used, buffers, src_stages, dst_stages, src_accesses, dst_accesses);
+        }
+        {
+            // Handle acceleration structure barriers
+            auto num_barriers = pass->compiled_.used_acceleration_structures.size();
+            auto num_barriers_used = 0;
+            auto acceleration_structures = cmd.Allocate<RHIAccelerationStructure*[]>(num_barriers);
+            auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
+            auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
+            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            for (const auto & as_use : pass->compiled_.used_acceleration_structures) {
+                if (as_use.as) {
+                    acceleration_structures[num_barriers_used] = as_use.as;
+                    // For acceleration structures, we need to track previous usage
+                    // This would typically be stored in a global state tracker
+                    src_stages[num_barriers_used] = RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kRayTracing;
+                    dst_stages[num_barriers_used] = as_use.stages;
+                    src_accesses[num_barriers_used] = RHIGPUAccessFlagBits::kAccelerationStructureRead | RHIGPUAccessFlagBits::kAccelerationStructureWrite;
+                    dst_accesses[num_barriers_used] = as_use.access;
+                    num_barriers_used ++;
+                }
+            }
+            if (num_barriers_used) cmd.AccelerationStructureBarriers(num_barriers_used, acceleration_structures, src_stages, dst_stages, src_accesses, dst_accesses);
         }
         // Execute the pass
         pass->pass_(pass.get(), cmd);
@@ -291,7 +287,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         cmd.EndDebugMarker();
     }
 
-    cmd.EnqueueTranslateAndSubmit(sync_point);
+    cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
 
     // Release all uniform buffers as they are no longer needed.
     uniform_buffer_.SafeRelease();

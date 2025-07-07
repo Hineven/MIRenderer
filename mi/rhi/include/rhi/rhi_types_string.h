@@ -109,8 +109,8 @@ FORCEINLINE std::string ToString(RHIPipelineStageFlagBits bit) {
             return "Transfer";
         case RHIPipelineStageFlagBits::kIndirect:
             return "Indirect";
-        case RHIPipelineStageFlagBits::kAccelBuild:
-            return "AccelBuild";
+        case RHIPipelineStageFlagBits::kAccelerationStructureBuild:
+            return "AccelerationStructureBuild";
         case RHIPipelineStageFlagBits::kAll:
             return "All";
         default:

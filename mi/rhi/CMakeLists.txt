@@ -11,7 +11,6 @@ set(SOURCE_FILES
     rhi_as.cpp
     rhi.cpp
         vk/vk_pipeline.cpp
-        vk/vk_device.cpp
         vk/vk_cmd_exec.cpp
         vk/vk_cmd_exec_common.cpp
         vk/vk_cmd_exec_rt.cpp

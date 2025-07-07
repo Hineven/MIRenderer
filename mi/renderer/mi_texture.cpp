@@ -43,7 +43,7 @@ void Texture::UpdateOnDevice()
     if (dirty_ || !device_texture_) {
         auto & queue = RHI::Get().GetGraphicsCommandQueue();
         UpdateOnDevice_Async(queue);
-        RHI::Get().GetGraphicsCommandQueue().WaitForIdle();
+        RHI::Get().GetGraphicsCommandQueue().WaitForIdle("Texture::UpdateOnDevice " + GetName());
     }
 }
 
