@@ -77,6 +77,11 @@ TEST(RHITest, RHIShaderCompile) {
 }
 
 TEST(RHITest, RHIThreadTasks) {
+
+    if constexpr (BYPASS_RHI_THREAD) {
+        return ; // If we're bypassing the RHI thread, we don't need to run this test
+    }
+
     using namespace mi;
     TransferInfra(std::make_unique<MyInfra>());
     GetInfra().Init();
@@ -282,7 +287,7 @@ TEST(RHITest, RHITriangle) {
             queue.TextureBarrier(
                     texture0.Raw(),
                     RHITextureLayoutType::kTransferDstOptimal,
-                    // RHIPipelineStageFlagBits::kNone,
+                    RHIPipelineStageFlagBits::kNone,
                     RHIPipelineStageFlagBits::kTransfer,
                     RHIGPUAccessFlagBits::kNone,
                     RHIGPUAccessFlagBits::kWrite
@@ -290,7 +295,7 @@ TEST(RHITest, RHITriangle) {
             queue.TextureBarrier(
                     texture1.Raw(),
                     RHITextureLayoutType::kTransferDstOptimal,
-                    // RHIPipelineStageFlagBits::kNone,
+                    RHIPipelineStageFlagBits::kNone,
                     RHIPipelineStageFlagBits::kTransfer,
                     RHIGPUAccessFlagBits::kNone,
                     RHIGPUAccessFlagBits::kWrite
@@ -298,7 +303,7 @@ TEST(RHITest, RHITriangle) {
             queue.TextureBarrier(
                     depth.Raw(),
                     RHITextureLayoutType::kDepthStencilAttachment,
-                    // RHIPipelineStageFlagBits::kNone,
+                    RHIPipelineStageFlagBits::kNone,
                     RHIPipelineStageFlagBits::kOrdinaryGraphics,
                     RHIGPUAccessFlagBits::kNone,
                     RHIGPUAccessFlagBits::kRW
@@ -308,7 +313,7 @@ TEST(RHITest, RHITriangle) {
             queue.TextureBarrier(
                     texture0.Raw(),
                     RHITextureLayoutType::kColorAttachment,
-                    // RHIPipelineStageFlagBits::kTransfer,
+                    RHIPipelineStageFlagBits::kTransfer,
                     RHIPipelineStageFlagBits::kOrdinaryGraphics,
                     RHIGPUAccessFlagBits::kWrite,
                     RHIGPUAccessFlagBits::kRW
@@ -316,7 +321,7 @@ TEST(RHITest, RHITriangle) {
             queue.TextureBarrier(
                     texture1.Raw(),
                     RHITextureLayoutType::kColorAttachment,
-                    // RHIPipelineStageFlagBits::kTransfer,
+                    RHIPipelineStageFlagBits::kTransfer,
                     RHIPipelineStageFlagBits::kOrdinaryGraphics,
                     RHIGPUAccessFlagBits::kWrite,
                     RHIGPUAccessFlagBits::kRW
@@ -347,12 +352,12 @@ TEST(RHITest, RHITriangle) {
             memcpy(staging_buf->Map(), vbuf_host, 3 * sizeof(float) * 5);
             queue.CopyBuffer(staging_buf->GetSpan(), vtx_buf->GetSpan());
             queue.BufferBarrier(vtx_buf->GetSpan(),
-                                // RHIPipelineStageFlagBits::kTransfer,
+                                RHIPipelineStageFlagBits::kTransfer,
                                 RHIPipelineStageFlagBits::kOrdinaryGraphics,
                                 RHIGPUAccessFlagBits::kWrite,
                                 RHIGPUAccessFlagBits::kRead);
             queue.BufferBarrier(storage_buf->GetSpan(),
-                                // RHIPipelineStageFlagBits::kAll,
+                                RHIPipelineStageFlagBits::kAll,
                                 RHIPipelineStageFlagBits::kAll,
                                 RHIGPUAccessFlagBits::kNone,
                                 RHIGPUAccessFlagBits::kRW);
@@ -371,10 +376,17 @@ TEST(RHITest, RHITriangle) {
             queue.TextureBarrier(
                     texture0.Raw(),
                     RHITextureLayoutType::kTransferSrcOptimal,
-                    // RHIPipelineStageFlagBits::kOrdinaryGraphics | RHIPipelineStageFlagBits::kTransfer,
+                    RHIPipelineStageFlagBits::kOrdinaryGraphics | RHIPipelineStageFlagBits::kTransfer,
                     RHIPipelineStageFlagBits::kTransfer,
                     RHIGPUAccessFlagBits::kWrite,
                     RHIGPUAccessFlagBits::kRead
+            );
+            queue.BufferBarrier(
+                staging_buf->GetSpan(),
+                RHIPipelineStageFlagBits::kAll,
+                RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kRW,
+                RHIGPUAccessFlagBits::kRW
             );
             queue.CopyTextureToBuffer(texture0.Raw(), staging_buf.Raw());
             auto sync = RHI::Get().CreateSyncPoint();

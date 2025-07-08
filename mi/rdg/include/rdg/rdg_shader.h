@@ -162,6 +162,10 @@ protected:
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};
         TRef<RHIShader> fragment {};
+        TRef<RHIShader> ray_gen {};
+        TRef<RHIShader> miss {};
+        TRef<RHIShader> hit_group {};
+        TRef<RHIShader> callable {};
     } shaders_;
 };
 

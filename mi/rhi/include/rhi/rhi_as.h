@@ -29,6 +29,9 @@ public:
     virtual RHIAccelerationStructureBuildSizesInfo GetBuildSizes(
         const RHIAccelerationStructureBuildGeometryInfo& build_info) const = 0;
 
+    // Create acceleration structure with given size (which you should firt query with GetBuildSizes)
+    virtual bool Create(size_t size) = 0;
+
 protected:
     RHIAccelerationStructureType type_;
 };

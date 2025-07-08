@@ -480,6 +480,15 @@ enum class RHITextureLayoutType {
     kMax
 };
 
+// Ray tracing shader group types
+enum class RHIRayTracingShaderGroupType {
+    kRayGeneration,     // Ray generation shader group
+    kMiss,              // Miss shader group
+    kTrianglesHitGroup, // Hit group for triangle geometry
+    kProceduralHitGroup,// Hit group for procedural geometry
+    kCallable,          // Callable shader group
+    kMax
+};
 
 MI_NAMESPACE_END
 

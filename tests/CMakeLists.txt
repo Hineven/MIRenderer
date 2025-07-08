@@ -25,18 +25,23 @@ find_package(Stb REQUIRED)
 find_package(cpptrace CONFIG REQUIRED)
 add_executable(rhi_test rhi/rhi_test.cpp rhi/rhi_test_bindless.cpp)
 file(GLOB RHI_TEST_RESOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/rhi/resources/*.png")
+set(RHI_DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/rhi/resources)
 add_custom_target(
-        copy_rhi_resources ALL DEPENDS ${RHI_TEST_RESOURCE_FILES}
+        copy_rhi_resources ALL
+        # 1. 先创建目录
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${RHI_DEST_DIR}
+        # 2. 再复制文件
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${RHI_TEST_RESOURCE_FILES}
-        ${CMAKE_CURRENT_BINARY_DIR}/rhi/resources/
+        ${RHI_DEST_DIR}
+        DEPENDS ${RHI_TEST_RESOURCE_FILES}
         COMMENT "Copying RHI resources to build directory"
 )
-target_sources(copy_rhi_resources PRIVATE ${RHI_TEST_RESOURCE_FILES})
 add_dependencies(
         rhi_test
         copy_rhi_resources
 )
+# Make sure the destination directory exists
 add_custom_command(
         TARGET copy_rhi_resources
         PRE_BUILD
@@ -51,14 +56,16 @@ add_test(NAME rhi COMMAND rhi_test)
 add_executable(rdg_test rdg/rdg_test.cpp)
 # Create custom commands to copy the shader file at build time
 file(GLOB RDG_TEST_SHADER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/rdg/resources/*.hlsl")
+set(RDG_DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources)
 add_custom_target(
-        copy_rdg_resources ALL DEPENDS ${RDG_TEST_SHADER_FILES}
+        copy_rdg_resources ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${RDG_DEST_DIR}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${RDG_TEST_SHADER_FILES}
-        ${CMAKE_CURRENT_BINARY_DIR}/rdg/resources/
+        ${RDG_DEST_DIR}
+        DEPENDS ${RDG_TEST_SHADER_FILES}
         COMMENT "Copying RDG resources to build directory"
 )
-target_sources(copy_rdg_resources PRIVATE ${RDG_TEST_SHADER_FILES})
 add_dependencies(
         rdg_test
         copy_rdg_resources

@@ -136,6 +136,22 @@ struct RHIGraphicsPipelineDesc {
     RHIDepthStencilAttachmentDesc depth_stencil_attachment;
 };
 
+// Ray tracing shader group description
+struct RHIRayTracingShaderGroupDesc {
+    RHIRayTracingShaderGroupType type {RHIRayTracingShaderGroupType::kMax};
+    uint32_t general_shader_index {UINT32_MAX};      // Index for raygen, miss, or callable shaders
+    uint32_t closest_hit_shader_index {UINT32_MAX};  // Index for closest hit shader (hit groups only)
+    uint32_t any_hit_shader_index {UINT32_MAX};      // Index for any hit shader (hit groups only)
+    uint32_t intersection_shader_index {UINT32_MAX}; // Index for intersection shader (procedural hit groups only)
+};
+
+// Ray tracing pipeline description
+struct RHIRayTracingPipelineDesc {
+    std::vector<RHIShader*> shaders;                        // All shaders used in the pipeline
+    std::vector<RHIRayTracingShaderGroupDesc> shader_groups;// Shader group descriptions
+    uint32_t max_recursion_depth;                           // Maximum ray recursion depth
+};
+
 struct RHITextureDimensions {
     uint32_t width {0};
     uint32_t height {0};

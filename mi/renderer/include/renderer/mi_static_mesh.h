@@ -43,6 +43,10 @@ protected:
     // Store a list of material indices on the device
     TRef<DeviceBufferHeapBuffer> geometry_material_indices_;
     StaticMeshRenderableHeader renderable_header_;
+
+    // If this static mesh is ray-traced. If true, it should have an acceleration structure.
+    bool is_ray_traced_ {};
+
 };
 
 

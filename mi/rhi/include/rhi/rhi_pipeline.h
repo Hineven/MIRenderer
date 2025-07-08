@@ -154,41 +154,6 @@ protected:
     virtual bool CompileRHI (RHIShader * compute_shader) = 0;
 };
 
-// Ray tracing shader group types
-enum class RHIRayTracingShaderGroupType {
-    kRayGeneration,     // Ray generation shader group
-    kMiss,              // Miss shader group
-    kTrianglesHitGroup, // Hit group for triangle geometry
-    kProceduralHitGroup,// Hit group for procedural geometry
-    kCallable,          // Callable shader group
-    kMax
-};
-
-// Ray tracing shader group description
-struct RHIRayTracingShaderGroupDesc {
-    RHIRayTracingShaderGroupType type;
-    uint32_t general_shader_index;      // Index for raygen, miss, or callable shaders
-    uint32_t closest_hit_shader_index;  // Index for closest hit shader (hit groups only)
-    uint32_t any_hit_shader_index;      // Index for any hit shader (hit groups only)
-    uint32_t intersection_shader_index; // Index for intersection shader (procedural hit groups only)
-
-    RHIRayTracingShaderGroupDesc()
-        : type(RHIRayTracingShaderGroupType::kMax)
-        , general_shader_index(UINT32_MAX)
-        , closest_hit_shader_index(UINT32_MAX)
-        , any_hit_shader_index(UINT32_MAX)
-        , intersection_shader_index(UINT32_MAX) {}
-};
-
-// Ray tracing pipeline description
-struct RHIRayTracingPipelineDesc {
-    std::vector<RHIShader*> shaders;                        // All shaders used in the pipeline
-    std::vector<RHIRayTracingShaderGroupDesc> shader_groups;// Shader group descriptions
-    uint32_t max_recursion_depth;                           // Maximum ray recursion depth
-
-    RHIRayTracingPipelineDesc() : max_recursion_depth(1) {}
-};
-
 class RHIRayTracingPipeline : public RHIPipeline {
 public:
     void Compile(const RHIRayTracingPipelineDesc& desc);

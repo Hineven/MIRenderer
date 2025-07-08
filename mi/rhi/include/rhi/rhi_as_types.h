@@ -50,7 +50,7 @@ MAKE_FLAGS(RHIASGeometry)
 // Geometry description for BLAS
 struct RHIASGeometryTriangles {
     RHIBufferSpan vertex_data;          // Vertex buffer
-    uint32_t vertex_stride;             // Stride between vertices
+    uint32_t vertex_stride;             // Stride between vertices (bytes)
     uint32_t vertex_count;              // Number of vertices
     RHIVertexAttributeFormatType vertex_format; // Vertex position format, must be float3
 
@@ -78,13 +78,17 @@ struct RHIASGeometry {
 };
 
 // Instance description for TLAS
-struct RHIAccelerationStructureInstance {
+struct RHIAccelerationStructureInstanceDesc {
     float transform[12];                // 3x4 transform matrix (row-major)
     uint32_t instance_custom_index : 24;// Custom index for shader access
     uint32_t mask : 8;                  // Visibility mask
     uint32_t instance_shader_binding_table_record_offset : 24; // SBT offset
     uint32_t flags : 8;                 // Instance flags
     uint64_t acceleration_structure_reference; // Reference to BLAS
+};
+
+struct RHIAccelerationStructureInstance {
+    char data[256]; // Opaque 256 bytes, related to the underlying RHI implementation.
 };
 
 // Build information for acceleration structures
@@ -97,7 +101,7 @@ struct RHIAccelerationStructureBuildGeometryInfo {
     RHIAccelerationStructure* dst_acceleration_structure; // Destination AS
 
     // For BLAS
-    std::vector<RHIASGeometry> geometries;
+    std::span<RHIASGeometry> geometries;
 
     // For TLAS
     RHIBufferSpan instance_data;        // Instance buffer for TLAS

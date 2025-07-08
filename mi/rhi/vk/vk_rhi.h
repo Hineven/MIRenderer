@@ -54,6 +54,8 @@ public:
 
     RHITextureRef CreateTexture(RHITextureDesc desc) override;
 
+    TRef<RHIAccelerationStructure> CreateAccelerationStructure(RHIAccelerationStructureType type) override;
+
     RHISamplerRef CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) override;
 
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -62,6 +64,8 @@ public:
     RHIGraphicsPipelineRef CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name) override;
 
     RHIComputePipelineRef CreateComputePipeline(RHIShader *shader, const char * name) override;
+
+    RHIRayTracingPipelineRef CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name) override;
 
     RHISyncPointRef CreateSyncPoint() override;
 

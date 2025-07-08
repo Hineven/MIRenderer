@@ -21,7 +21,7 @@ public:
     virtual ~VulkanAccelerationStructure();
 
     // Create acceleration structure with given size
-    bool Create(size_t size);
+    bool Create(size_t size) override;
 
     // RHIAccelerationStructure interface
     uint64_t GetDeviceAddress() const override;

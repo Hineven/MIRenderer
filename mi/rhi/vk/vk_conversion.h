@@ -570,9 +570,11 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     }
     if ((flags & RHIGPUAccessFlagBits::kRead) == RHIGPUAccessFlagBits::kRead) {
         vk_flags |= vk::AccessFlagBits2::eMemoryRead;
+        flags = flags & (~RHIGPUAccessFlagBits::kRead); // Clear read flag to avoid double counting
     }
     if((flags & RHIGPUAccessFlagBits::kWrite) == RHIGPUAccessFlagBits::kWrite) {
         vk_flags |= vk::AccessFlagBits2::eMemoryWrite;
+        flags = flags & (~RHIGPUAccessFlagBits::kWrite); // Clear write flag to avoid double counting
     }
     // Ordinary flags
     if(flags & RHIGPUAccessFlagBits::kIndirectCommandRead) {

@@ -17,6 +17,7 @@
 #include "vk_resource.h"
 #include "vk_buffer.h"
 #include "vk_texture.h"
+#include "vk_as.h"
 #include "vk_shader.h"
 #include "vk_pipeline.h"
 #include "vk_bindless.h"
@@ -676,6 +677,12 @@ RHITextureRef VulkanRHI::CreateTexture(RHITextureDesc desc) {
     return TRef<RHITexture>(texture);
 }
 
+TRef<RHIAccelerationStructure> VulkanRHI::CreateAccelerationStructure(RHIAccelerationStructureType type) {
+    auto as = new VulkanAccelerationStructure(type);
+    return TRef<RHIAccelerationStructure>(as);
+}
+
+
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
     auto sampler = new VulkanSampler(filter, address_mode);
     return TRef<RHISampler>(sampler);
@@ -711,6 +718,17 @@ RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const 
     delete pipeline;
     return nullptr;
 }
+
+RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name) {
+    auto pipeline = new VulkanRayTracingPipeline();
+    pipeline->Compile(desc);
+    pipeline->SetName(name);
+    if(pipeline->IsValid()) return TRef<RHIRayTracingPipeline>(pipeline);
+    pipeline->~VulkanRayTracingPipeline();
+    delete pipeline;
+    return nullptr;
+}
+
 
 void VulkanRHI::ResetPipelineCache() {
     device_.destroy(pipeline_cache_);

@@ -79,6 +79,12 @@ public:
             RHITextureType type, RHITextureDimensions dimensions, PixelFormatType format, RHITextureUsageFlags usage, int mip_levels = 1, int array_layers = 1
     ) = 0;
 
+    virtual TRef<RHIAccelerationStructure> CreateAccelerationStructure (RHIAccelerationStructureType type) = 0;
+
+    // Convert a description of an BLAS instance to an implementation-specific description which can be uploaded to the
+    // instance buffer when building a TLAS.
+    virtual RHIAccelerationStructureInstance CreateAccelerationStructureInstance (RHIAccelerationStructureInstanceDesc desc) = 0;
+
     // Create a sampler, thread safe
     virtual RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) = 0;
 
@@ -88,6 +94,9 @@ public:
 
     virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name = "unnamed") = 0;
     virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name = "unnamed") = 0;
+    virtual RHIRayTracingPipelineRef CreateRayTracingPipeline (
+        const RHIRayTracingPipelineDesc & desc, const char * name = "unnamed"
+    ) = 0;
 
     virtual void ResetPipelineCache () = 0;
 

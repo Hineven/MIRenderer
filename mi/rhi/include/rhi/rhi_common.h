@@ -9,8 +9,12 @@
 
 #include "core/common.h"
 
+#ifndef NDEBUG
 // Set this macro to true to bypass the RHI thread and execute commands directly on the render thread
 #define BYPASS_RHI_THREAD true
+#else
+#define BYPASS_RHI_THREAD false
+#endif
 
 #define CHECK_RHI_THREAD() {assert(IsRHIThread() || BYPASS_RHI_THREAD);}
 
