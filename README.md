@@ -19,3 +19,4 @@ A set of CG libraries.
 * `xxhash`
 * `cgltf`
 * `happly`
+* `nlohmann-json`

@@ -21,10 +21,12 @@ class StaticMesh : public Renderable {
 public:
 
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
+    void ClearMeshPrimitives ();
     void Update (RendererView * view, RenderGraphBuilder & builder);
 
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
+
 
     static TRef<StaticMesh> Create (RendererScene * world, Transform transform = {}) ;
 

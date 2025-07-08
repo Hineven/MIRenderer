@@ -38,7 +38,7 @@ typedef TRef<RDGResource> RDGResourceRef;
 
 class RDGBuffer;
 class RDGTexture;
-
+class RDGResourcePool;
 
 enum class RDGPassType {
     // Invoking draw commands

@@ -240,5 +240,4 @@ TRef<Texture> TextureLoader::LoadFromBuffer(const std::string& name, const std::
 
     return texture;
 }
-
 MI_NAMESPACE_END

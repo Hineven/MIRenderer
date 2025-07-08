@@ -146,7 +146,7 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
                 buffer.size = e.data.size();
                 furthest_index = (int)i;
             } else {
-                if (e.dst_buffer.size > 0 && buffer.offset + buffer.size >= e.dst_buffer.offset) {
+                if (e.dst_buffer.size > 0 && buffer.offset + buffer.size > e.dst_buffer.offset) {
                     // Overlapping uploads detected.
 
                     mi_assert(false, "Overlapping RHI buffer uploads detected at index {} vs {}: {} ({}, {}) vs {} ({}, {}).",

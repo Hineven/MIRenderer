@@ -27,8 +27,6 @@ DeviceMaterial::~DeviceMaterial() {
     }
 }
 
-
-
 Material::Material() {
 
 }

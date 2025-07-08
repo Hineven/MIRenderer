@@ -166,7 +166,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     Render_DrawVolumePrimitives(view, builder);
 
     // Draw G-Buffer to output directly for debug purposes
-    Render_DrawToOutput(view, builder, view->G_normal_.Raw());
+    Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
 
 
     // Reset frame context

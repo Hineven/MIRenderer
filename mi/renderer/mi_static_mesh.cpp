@@ -35,11 +35,18 @@ TRef<StaticMesh> StaticMesh::Create(RendererScene *world, Transform transform) {
 
 
 void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
-    assert(mat->GetDeviceMaterial());
+    assert(mat->GetDeviceMaterial() && "Material must have a device material. Call UpdateOnDevice() on the material first.");
     geometries_.push_back(geom);
     materials_.push_back(mat);
-    dirty_ = true;
+    SetDirty(true);
 }
+
+void StaticMesh::ClearMeshPrimitives() {
+    geometries_.clear();
+    materials_.clear();
+    SetDirty(true);
+}
+
 
 void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
     if (!dirty_) return;
