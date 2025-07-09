@@ -62,15 +62,17 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
     }
 
     // Handle geometry data based on AS type
-    std::vector<vk::AccelerationStructureGeometryKHR> geometries;
-    std::vector<vk::AccelerationStructureBuildRangeInfoKHR> range_infos;
+    vk::AccelerationStructureGeometryKHR * geometries;
+    vk::AccelerationStructureBuildRangeInfoKHR * range_infos;
 
     if (build_info.type == RHIAccelerationStructureType::kBottomLevel) {
         // BLAS - handle geometry data
-        geometries.reserve(build_info.geometries.size());
-        range_infos.reserve(build_info.geometries.size());
+        geometries =
+            cmd->Allocate<vk::AccelerationStructureGeometryKHR[]>(build_info.geometries.size());
+        range_infos =
+            cmd->Allocate<vk::AccelerationStructureBuildRangeInfoKHR[]>(build_info.geometries.size());
 
-        for (const auto& geometry : build_info.geometries) {
+        for (const auto [i, geometry] : std::views::enumerate(build_info.geometries)) {
             vk::AccelerationStructureGeometryKHR vk_geometry;
             vk_geometry.setGeometryType(geometry.type == RHIASGeometryType::kTriangles ?
                                         vk::GeometryTypeKHR::eTriangles :
@@ -115,7 +117,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
                 range_info.setPrimitiveOffset(0);
                 range_info.setFirstVertex(0);
                 range_info.setTransformOffset(0);
-                range_infos.push_back(range_info);
+                range_infos[i] = range_info;
             } else {
                 const auto& aabbs = geometry.aabbs;
                 auto aabb_buffer = static_cast<VulkanBuffer*>(aabbs.aabb_data.buffer);
@@ -131,10 +133,10 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
                 range_info.setPrimitiveOffset(0);
                 range_info.setFirstVertex(0);
                 range_info.setTransformOffset(0);
-                range_infos.push_back(range_info);
+                range_infos[i] = range_info;
             }
 
-            geometries.push_back(vk_geometry);
+            geometries[i] = vk_geometry;
         }
     } else {
         // TLAS - handle instance data
@@ -148,29 +150,31 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
         instance_data.setData(instance_buffer->GetDeviceAddress() + build_info.instance_data.offset);
 
         vk_geometry.geometry.setInstances(instance_data);
-        geometries.push_back(vk_geometry);
+        geometries = cmd->Allocate<vk::AccelerationStructureGeometryKHR>(1);
+        geometries[0] = vk_geometry;
 
         vk::AccelerationStructureBuildRangeInfoKHR range_info;
         range_info.setPrimitiveCount(build_info.instance_count);
         range_info.setPrimitiveOffset(0);
         range_info.setFirstVertex(0);
         range_info.setTransformOffset(0);
-        range_infos.push_back(range_info);
+        range_infos = cmd->Allocate<vk::AccelerationStructureBuildRangeInfoKHR>(1);
+        range_infos[0] = range_info;
     }
 
-    vk_build_info.setGeometries(geometries);
+    vk_build_info.setPGeometries(geometries);
+    vk_build_info.setGeometryCount(
+        build_info.type == RHIAccelerationStructureType::kBottomLevel ? build_info.geometries.size() : 1
+    );
 
     // Set scratch buffer
     vk_build_info.setScratchData(scratch_buffer->GetDeviceAddress() + build_acceleration_structure->scratch_buffer_.offset);
 
     // Build the acceleration structure
-    std::vector<const vk::AccelerationStructureBuildRangeInfoKHR*> range_info_ptrs;
-    range_info_ptrs.reserve(range_infos.size());
-    for (const auto& range_info : range_infos) {
-        range_info_ptrs.push_back(&range_info);
-    }
+    auto range_infos_ptr = cmd->Allocate<vk::AccelerationStructureBuildRangeInfoKHR*>();
+    *range_infos_ptr = range_infos;
 
-    cmdb.buildAccelerationStructuresKHR(vk_build_info, range_info_ptrs);
+    cmdb.buildAccelerationStructuresKHR(1, &vk_build_info, range_infos_ptr);
 }
 
 void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) {
