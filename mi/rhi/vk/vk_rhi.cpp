@@ -790,6 +790,19 @@ RHISyncPointRef VulkanRHI::CreateSyncPoint() {
     return TRef<RHISyncPoint>(ptr);
 }
 
+uint32_t VulkanRHI::GetAccelerationStructureInstanceStride() const {
+    return sizeof(vk::AccelerationStructureInstanceKHR);
+}
+
+void VulkanRHI::CreateAccelerationStructureInstances(uint32_t count, const RHIAccelerationStructureInstanceDesc *in_desc, void *out_desc) const {
+    // They are the same. Simply copy the data
+    assert(in_desc && out_desc);
+    assert(sizeof(RHIAccelerationStructureInstanceDesc) == sizeof(vk::AccelerationStructureInstanceKHR));
+    memcpy(out_desc, in_desc, count * sizeof(RHIAccelerationStructureInstanceDesc));
+}
+
+
+
 void VulkanRHI::PostInitialize() {
     RHI::PostInitialize();
     // Create bindless manager and command executor

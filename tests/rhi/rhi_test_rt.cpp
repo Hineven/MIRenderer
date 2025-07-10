@@ -278,17 +278,19 @@ TEST(RHITest, RHIRayTracedTriangle) {
                 );
                 build_info.dst_acceleration_structure = blas.Raw();
                 queue.BuildAccelerationStructure(build_info, scratch->GetSpan());
+
+                // TLAS
                 tlas = RHI::Get().CreateAccelerationStructure(
                         RHIAccelerationStructureType::kTopLevel
                 );
                 build_info = RHIAccelerationStructureBuildGeometryInfo{
-                    RHIAccelerationStructureType::kBottomLevel,
-                    RHIAccelerationStructureBuildFlagBits::kPre ferFastTrace,
+                    RHIAccelerationStructureType::kTopLevel,
+                    RHIAccelerationStructureBuildFlagBits::kPreferFastTrace,
                     RHIAccelerationStructureBuildMode::kBuild,
                     nullptr,
                     nullptr,
-                    {},
-                    {},
+                    Geometry,
+                    {}, // For querying, we don't need to specify any geometries here
                     1
                 };
                 RHIAccelerationStructureInstance

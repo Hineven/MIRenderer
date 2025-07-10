@@ -22,6 +22,7 @@ struct CameraParameters {
     uint2   FilmDimensions;
     float2  FilmAspectRatioAndInvAspectRatio;
 
+    // Perspective-View matrix
     float4x4 WorldToNDC;
 };
 

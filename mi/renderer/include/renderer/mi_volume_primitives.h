@@ -22,7 +22,7 @@ struct VolumePrimitive {
     glm::vec3 position;
     uint32_t packed_rotation;
     glm::vec3 scale;
-    float opacity;
+    uint32_t packed_color_opacity; // RGBA color, packed into uint32_t
 };
 
 class VolumePrimitives : public Renderable {

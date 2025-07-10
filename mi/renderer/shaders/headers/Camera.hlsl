@@ -4,6 +4,10 @@
 #include "../shared/SharedView.hlsl"
 #include "Conversions.hlsl"
 
+CameraParameters GetActiveCamera() {
+    return View.Camera;
+}
+
 uint GetCameraType (CameraParameters C) {
     return C.Type;
 }

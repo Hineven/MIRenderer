@@ -78,6 +78,8 @@ struct RHIASGeometry {
 };
 
 // Instance description for TLAS
+// DO NOT copy an array of this struct directly to the instance buffer when building a TLAS.
+// Use RHI::CreateAccelerationStructureInstance(RHIAccelerationStructureInstanceDesc, void*) to convert them before uploading.
 struct RHIAccelerationStructureInstanceDesc {
     float transform[12];                // 3x4 transform matrix (row-major)
     uint32_t instance_custom_index : 24;// Custom index for shader access
@@ -85,10 +87,6 @@ struct RHIAccelerationStructureInstanceDesc {
     uint32_t instance_shader_binding_table_record_offset : 24; // SBT offset
     uint32_t flags : 8;                 // Instance flags
     uint64_t acceleration_structure_reference; // Reference to BLAS
-};
-
-struct RHIAccelerationStructureInstance {
-    char data[256]; // Opaque 256 bytes, related to the underlying RHI implementation.
 };
 
 // Build information for acceleration structures

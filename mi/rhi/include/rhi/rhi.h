@@ -81,10 +81,6 @@ public:
 
     virtual TRef<RHIAccelerationStructure> CreateAccelerationStructure (RHIAccelerationStructureType type) = 0;
 
-    // Convert a description of an BLAS instance to an implementation-specific description which can be uploaded to the
-    // instance buffer when building a TLAS.
-    virtual RHIAccelerationStructureInstance CreateAccelerationStructureInstance (RHIAccelerationStructureInstanceDesc desc) = 0;
-
     // Create a sampler, thread safe
     virtual RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) = 0;
 
@@ -153,6 +149,12 @@ public:
     }
 
     virtual RHIDeviceProperties GetDeviceProperties () const = 0;
+
+    // Get the stride of input instance header when building TLAS.
+    virtual uint32_t GetAccelerationStructureInstanceStride () const = 0;
+    // Create acceleration structure instance headers from given descriptions.
+    virtual void CreateAccelerationStructureInstances(uint32_t count,
+        const RHIAccelerationStructureInstanceDesc * in_desc, void * out_desc) const = 0;
 
 protected:
 

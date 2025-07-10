@@ -128,6 +128,10 @@ public:
         return pipeline_cache_mutex_;
     }
 
+    uint32_t GetAccelerationStructureInstanceStride() const override;
+
+    void CreateAccelerationStructureInstances(uint32_t count, const RHIAccelerationStructureInstanceDesc *in_desc, void *out_desc) const override;
+
 protected:
 
     bool InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) override;

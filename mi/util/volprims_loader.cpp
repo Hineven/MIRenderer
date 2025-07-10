@@ -37,13 +37,6 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
         }
     }
 
-    // Opacity
-    {
-        auto alphas = element.getProperty<float>("opacity");
-        for (int i = 0; i < num_prims; i++) {
-            data[i].opacity = alphas[i];
-        }
-    }
     // Scales
     {
         auto scale_x = element.getProperty<float>("scale_0");
@@ -65,9 +58,22 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
             float len = sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
             q /= len;
 			// Pack quaternion to 4xunorm8
-			uint32_t packed = (uint32_t)(glm::packUnorm4x8(glm::vec4(q.x, q.y, q.z, q.w)));
+			uint32_t packed = (uint32_t)(glm::packSnorm4x8(glm::vec4(q.x, q.y, q.z, q.w)));
 			data[i].packed_rotation = packed;
         }
+    }
+    // Opacity & color
+    {
+        auto alphas = element.getProperty<float>("opacity");
+        auto color_0 = element.getProperty<float>("color_0");
+        auto color_1 = element.getProperty<float>("color_1");
+        auto color_2 = element.getProperty<float>("color_2");
+        for (int i = 0; i < num_prims; i++) {
+            data[i].packed_color_opacity = glm::packUnorm4x8(
+            {color_0[i], color_1[i], color_2[i], alphas[i]}
+            );
+        }
+
     }
     // Create the volume primitives object
     out_volprims = VolumePrimitives::Create(&world);
