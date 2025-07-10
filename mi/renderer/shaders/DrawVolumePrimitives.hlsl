@@ -14,8 +14,11 @@ RWStructuredBuffer<uint> RWActivePrimitiveListBuffer;
 RWStructuredBuffer<uint> RWActiveInstanceSortingKeyBuffer;
 RWStructuredBuffer<uint> RWActiveInstancePrimitiveListBuffer;
 StructuredBuffer<uint> ActiveInstanceSortingKeySortedBuffer;
+StructuredBuffer<uint> ActiveInstancePrimitiveListSortedBuffer;
 StructuredBuffer<uint> TileInstancePrimitiveListOffsetBuffer;
 StructuredBuffer<uint> TileInstancePrimitiveListCountsBuffer;
+
+Texture2D<float4> RWOutputTexture;
 
 struct UniformBuffer {
     uint PrimitiveCount;
@@ -27,8 +30,8 @@ ConstantBuffer<UniformBuffer> UB;
 
 [numthreads(1, 1, 1)]
 void ClearCounters() {
-    ActiveInstanceCount[0] = 0;
-    ActivePrimitiveCount[0] = 0;
+    RWActiveInstanceCount[0] = 0;
+    RWActivePrimitiveCount[0] = 0;
 }
 
 
@@ -461,6 +464,10 @@ void CountTileInstances(
     TileInstancePrimitiveListCountsBuffer[global_index] = count;
 }
 
+float4 RenderRay () {
+    
+}
+
 // Dispatch 1 group per tile, each group processes a 16x16 tile of pixels
 [shader("compute")]
 // Use a minimum wave size (rather than 32x32) for larger shared memory per thread
@@ -485,10 +492,10 @@ void Render(
             float2 NDC2 = UVToNDC2((pixel_index + 0.5f) / float2(GetActiveCamera().FilmDimensions));
             float3 ray_direction = NDC2ToCameraDirection(GetActiveCamera(), NDC2);
 
-            float4 rendered = RenderRay_Forward(ray_origin, ray_direction,
-                                                active_instance_primitive_list_sorted_buf, instance_primitive_list_offset,
-                                                NumPrimitivesInTile);
-            output_texture[pixel_index] = float4(rendered_pair.p.rgb * rendered_pair.p.w, 1.f);
+            float4 rendered = RenderRay(ray_origin, ray_direction,
+                                        ActiveInstancePrimitiveListSortedBuffer, instance_primitive_list_offset,
+                                        NumPrimitivesInTile);
+            RWOutputTexture[pixel_index] = rendered;
             
         }
     }

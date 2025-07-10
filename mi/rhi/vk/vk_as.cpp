@@ -82,6 +82,7 @@ RHIAccelerationStructureBuildSizesInfo VulkanAccelerationStructure::GetBuildSize
         // Convert geometries for BLAS
         for (const auto& geom : build_info.geometries) {
             vk::AccelerationStructureGeometryKHR vk_geom{};
+            vk_geom.flags = GetVulkanGeometryFlags(geom.flags);
 
             if (geom.type == RHIASGeometryType::kTriangles) {
                 vk_geom.geometryType = vk::GeometryTypeKHR::eTriangles;
@@ -113,7 +114,14 @@ RHIAccelerationStructureBuildSizesInfo VulkanAccelerationStructure::GetBuildSize
         }
     } else {
         // For TLAS, we have instances
+        assert(build_info.geometries.size() == 0 && "TLAS should not have geometries, use instance data instead");
         primitive_counts.push_back(build_info.instance_count);
+        vk::AccelerationStructureGeometryKHR vk_geom{};
+        vk_geom.geometry.instances = vk::AccelerationStructureGeometryInstancesDataKHR{};
+        vk_geom.geometryType = vk::GeometryTypeKHR::eInstances;
+        // TODO support opaque TLAS ?
+        vk_geom.flags = GetVulkanGeometryFlags(RHIASGeometryFlagBits::kNone);
+        geometries.push_back(vk_geom);
     }
 
     // Query build sizes
@@ -121,7 +129,7 @@ RHIAccelerationStructureBuildSizesInfo VulkanAccelerationStructure::GetBuildSize
     vk_build_info.type = (build_info.type == RHIAccelerationStructureType::kBottomLevel)
         ? vk::AccelerationStructureTypeKHR::eBottomLevel
         : vk::AccelerationStructureTypeKHR::eTopLevel;
-    vk_build_info.flags = static_cast<vk::BuildAccelerationStructureFlagsKHR>(build_info.flags);
+    vk_build_info.flags = GetVulkanBuildAccelerationStructureFlags(build_info.flags);
     vk_build_info.mode = (build_info.mode == RHIAccelerationStructureBuildMode::kBuild)
         ? vk::BuildAccelerationStructureModeKHR::eBuild
         : vk::BuildAccelerationStructureModeKHR::eUpdate;

@@ -150,7 +150,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
         instance_data.setData(instance_buffer->GetDeviceAddress() + build_info.instance_data.offset);
 
         vk_geometry.geometry.setInstances(instance_data);
-        geometries = cmd->Allocate<vk::AccelerationStructureGeometryKHR>(1);
+        geometries = cmd->Allocate<vk::AccelerationStructureGeometryKHR[]>(1);
         geometries[0] = vk_geometry;
 
         vk::AccelerationStructureBuildRangeInfoKHR range_info;
@@ -164,7 +164,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
 
     vk_build_info.setPGeometries(geometries);
     vk_build_info.setGeometryCount(
-        build_info.type == RHIAccelerationStructureType::kBottomLevel ? build_info.geometries.size() : 1
+        build_info.type == RHIAccelerationStructureType::kBottomLevel ? (uint32_t)build_info.geometries.size() : 1
     );
 
     // Set scratch buffer

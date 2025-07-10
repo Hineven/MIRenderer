@@ -57,7 +57,6 @@ struct RHIASGeometryTriangles {
     RHIBufferSpan index_data;           // Index buffer (optional)
     uint32_t index_count;               // Number of indices (or 0 if no indices)
     RHIIndexType index_type;            // Index format
-
     RHIBufferSpan transform_data;       // Transform matrix (optional, 3x4 matrix)
 };
 
@@ -77,6 +76,15 @@ struct RHIASGeometry {
     } ;
 };
 
+enum class RHIASGeometryInstanceFlagBits {
+    kNone = 0,
+    kDisableTriangleFaceCulling = (1u << 0), // Disable triangle face culling
+    kFlipTriangleFacing = (1u << 1), // Flip triangle facing
+    kForceOpaque = (1u << 2), // Force geometry to be opaque
+    kForceNoOpaque = (1u << 3), // Force geometry to be non-opaque
+};
+MAKE_FLAGS(RHIASGeometryInstance)
+
 // Instance description for TLAS
 // DO NOT copy an array of this struct directly to the instance buffer when building a TLAS.
 // Use RHI::CreateAccelerationStructureInstance(RHIAccelerationStructureInstanceDesc, void*) to convert them before uploading.
@@ -85,7 +93,7 @@ struct RHIAccelerationStructureInstanceDesc {
     uint32_t instance_custom_index : 24;// Custom index for shader access
     uint32_t mask : 8;                  // Visibility mask
     uint32_t instance_shader_binding_table_record_offset : 24; // SBT offset
-    uint32_t flags : 8;                 // Instance flags
+    RHIASGeometryInstanceFlagBits flags : 8;                 // Instance flags
     uint64_t acceleration_structure_reference; // Reference to BLAS
 };
 

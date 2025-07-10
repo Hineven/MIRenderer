@@ -165,6 +165,27 @@ void RHICommandDebugMarkerInsert::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDebugMarkerInsert(&cmd, this);
 }
 
+void RHICommandBuildAccelerationStructure::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBuildAccelerationStructure(&cmd, this);
+}
+
+void RHICommandBindRayTracingPipeline::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBindRayTracingPipeline(&cmd, this);
+}
+
+void RHICommandDispatchRays::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDispatchRays(&cmd, this);
+}
+
+void RHICommandDispatchRaysIndirect::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDispatchRaysIndirect(&cmd, this);
+}
+
+void RHICommandBindShaderBindingTable::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBindShaderBindingTable(&cmd, this);
+}
+
+
 MI_NAMESPACE_END
 
 

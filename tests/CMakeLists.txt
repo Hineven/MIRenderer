@@ -23,8 +23,8 @@ add_test(NAME infra COMMAND infra_test)
 # RHI
 find_package(Stb REQUIRED)
 find_package(cpptrace CONFIG REQUIRED)
-add_executable(rhi_test rhi/rhi_test.cpp rhi/rhi_test_bindless.cpp)
-file(GLOB RHI_TEST_RESOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/rhi/resources/*.png")
+add_executable(rhi_test rhi/rhi_test.cpp rhi/rhi_test_bindless.cpp rhi/rhi_test_rt.cpp)
+file(GLOB RHI_TEST_RESOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/rhi/resources/*")
 set(RHI_DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/rhi/resources)
 add_custom_target(
         copy_rhi_resources ALL

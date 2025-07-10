@@ -123,6 +123,11 @@ public:
         EnqueueRHIFrameEndTask(this, sync_point);
     }
 
+    // Allocate raw memory
+    FORCEINLINE void * AllocateRaw (size_t size) {
+        assert(IsRenderThread());
+        return GetBufferAllocator().Allocate(size);
+    }
 
     // Allocate a piece of frame local host buffer memory. Very fast linear allocation. Use this
     // function to allocate frame temporaries. The memory will be automatically freed when the command buffer is reset.

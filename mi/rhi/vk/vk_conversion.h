@@ -576,6 +576,10 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
         vk_flags |= vk::AccessFlagBits2::eMemoryWrite;
         flags = flags & (~RHIGPUAccessFlagBits::kWrite); // Clear write flag to avoid double counting
     }
+    if((flags & RHIGPUAccessFlagBits::kShaderRead) == RHIGPUAccessFlagBits::kShaderRead) {
+        vk_flags |= vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+        flags = flags & (~RHIGPUAccessFlagBits::kShaderRead); // Clear shader read flag to avoid double counting
+    }
     // Ordinary flags
     if(flags & RHIGPUAccessFlagBits::kIndirectCommandRead) {
         vk_flags |= vk::AccessFlagBits2::eIndirectCommandRead;
@@ -588,9 +592,6 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     }
     if(flags & RHIGPUAccessFlagBits::kUniformRead) {
         vk_flags |= vk::AccessFlagBits2::eUniformRead;
-    }
-    if((flags & RHIGPUAccessFlagBits::kShaderRead) == RHIGPUAccessFlagBits::kShaderRead) {
-        vk_flags |= vk::AccessFlagBits2::eShaderRead;
     }
     if(flags & RHIGPUAccessFlagBits::kAccelerationStructureRead) {
         vk_flags |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
@@ -618,6 +619,9 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     }
     if(flags & RHIGPUAccessFlagBits::kTransferWrite) {
         vk_flags |= vk::AccessFlagBits2::eTransferWrite;
+    }
+    if (flags & RHIGPUAccessFlagBits::kShaderBindingTableRead) {
+        vk_flags |= vk::AccessFlagBits2::eShaderBindingTableReadKHR;
     }
     return vk_flags;
 }
@@ -686,6 +690,37 @@ FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIBindlessResourceType 
             mi_assert(false, "Invalid pipeline resource type");
             return {};
     }
+}
+
+FORCEINLINE vk::BuildAccelerationStructureFlagsKHR GetVulkanBuildAccelerationStructureFlags (RHIAccelerationStructureBuildFlags flags) {
+    vk::BuildAccelerationStructureFlagsKHR ret = {};
+    if (flags & RHIAccelerationStructureBuildFlagBits::kAllowUpdate) {
+        ret |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate;
+    }
+    if (flags & RHIAccelerationStructureBuildFlagBits::kAllowCompaction) {
+        ret |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
+    }
+    if (flags & RHIAccelerationStructureBuildFlagBits::kPreferFastTrace) {
+        ret |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+    }
+    if (flags & RHIAccelerationStructureBuildFlagBits::kPreferFastBuild) {
+        ret |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+    }
+    if (flags & RHIAccelerationStructureBuildFlagBits::kLowMemory) {
+        ret |= vk::BuildAccelerationStructureFlagBitsKHR::eLowMemory;
+    }
+    return ret;
+}
+
+FORCEINLINE vk::GeometryFlagsKHR GetVulkanGeometryFlags (RHIASGeometryFlags flags) {
+    vk::GeometryFlagsKHR ret = {};
+    if (flags & RHIASGeometryFlagBits::kOpaque) {
+        ret |= vk::GeometryFlagBitsKHR::eOpaque;
+    }
+    if (flags & RHIASGeometryFlagBits::kNoDuplicateAnyHitInvocation) {
+        ret |= vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation;
+    }
+    return ret;
 }
 
 MI_NAMESPACE_END

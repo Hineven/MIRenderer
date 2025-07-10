@@ -26,6 +26,7 @@ public:
     virtual uint64_t GetDeviceAddress() const = 0;
 
     // Get the build sizes information for the given build info
+    // If you are building a TLAS, you should not fill the geometries field.
     virtual RHIAccelerationStructureBuildSizesInfo GetBuildSizes(
         const RHIAccelerationStructureBuildGeometryInfo& build_info) const = 0;
 

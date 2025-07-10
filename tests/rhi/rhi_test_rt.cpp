@@ -44,7 +44,7 @@ TEST(RHITest, RHIRayTracedTriangle) {
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
         // Sim render thread scope
-        {
+        try {
             std::vector<std::string> options;
             options.push_back("-fspv-target-env=vulkan1.3");
             // options.push_back("-fvk-use-scalar-layout");
@@ -55,34 +55,34 @@ TEST(RHITest, RHIRayTracedTriangle) {
             auto shader_source = LoadShaderSourceFromFile("rhi/resources/ray_traced_triangle.hlsl");
             auto shader_code_span = std::span(shader_source.data(), shader_source.size());
             auto raygen_bcode = GetInfra().CompileHLSLToSPIRV(
-                    L"", "Raygen", "cs_6_3", shader_code_span, options, errmsg);
+                    L"", "Raygen", "lib_6_3", shader_code_span, options, errmsg);
             if (raygen_bcode.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
             }
             auto raygen_shader = RHI::Get().CreateShader(
-                    RHIShaderFrequencyFlagBits::kRayGen, "Raygen",
+                    RHIShaderFrequencyFlagBits::kRayGen, "RaygenMain",
                     RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte *>(raygen_bcode.data()),
                                                        raygen_bcode.size() * sizeof(uint32_t))
             );
             EXPECT_TRUE(raygen_shader);
             auto closest_hit_bcode = GetInfra().CompileHLSLToSPIRV(
-                    L"", "ClosestHit", "hs_6_3", shader_code_span, options, errmsg);
+                    L"", "ClosestHit", "lib_6_3", shader_code_span, options, errmsg);
             if (closest_hit_bcode.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
             }
             auto closest_hit_shader = RHI::Get().CreateShader(
-                    RHIShaderFrequencyFlagBits::kRayGen, "ClosestHit",
+                    RHIShaderFrequencyFlagBits::kClosestHit, "ClosestHitMain",
                     RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte *>(closest_hit_bcode.data()),
                                                        closest_hit_bcode.size() * sizeof(uint32_t))
             );
             EXPECT_TRUE(closest_hit_shader);
             auto miss_bcode = GetInfra().CompileHLSLToSPIRV(
-        L"", "Miss", "hs_6_3", shader_code_span, options, errmsg);
+        L"", "Miss", "lib_6_3", shader_code_span, options, errmsg);
             if (miss_bcode.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
             }
             auto miss_shader = RHI::Get().CreateShader(
-                    RHIShaderFrequencyFlagBits::kRayGen, "Raygen",
+                    RHIShaderFrequencyFlagBits::kMiss, "MissMain",
                     RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte *>(miss_bcode.data()),
                                                        miss_bcode.size() * sizeof(uint32_t))
             );
@@ -237,14 +237,14 @@ TEST(RHITest, RHIRayTracedTriangle) {
                         RHIPipelineStageFlagBits::kTransfer,
                         RHIPipelineStageFlagBits::kAccelerationStructureBuild,
                         RHIGPUAccessFlagBits::kTransferWrite,
-                        RHIGPUAccessFlagBits::kAccelerationStructureRead
+                        RHIGPUAccessFlagBits::kShaderRead
                     );
                     queue.BufferBarrier(
                         index_buffer->GetSpan(),
                         RHIPipelineStageFlagBits::kTransfer,
                         RHIPipelineStageFlagBits::kAccelerationStructureBuild,
                         RHIGPUAccessFlagBits::kTransferWrite,
-                        RHIGPUAccessFlagBits::kAccelerationStructureRead
+                        RHIGPUAccessFlagBits::kShaderRead
                     );
                 }
                 RHIASGeometry geometry {
@@ -253,11 +253,12 @@ TEST(RHITest, RHIRayTracedTriangle) {
                 };
                 geometry.triangles = {
                     .vertex_data = vertex_buffer->GetSpan(),
-                    .vertex_format = RHIVertexAttributeFormatType::k3xFp32,
-                    .vertex_count = 3,
                     .vertex_stride = sizeof(float) * 3,
+                    .vertex_count = 3,
+                    .vertex_format = RHIVertexAttributeFormatType::k3xFp32,
                     .index_data = index_buffer->GetSpan(),
-                    .index_count = 3
+                    .index_count = 3,
+                    .index_type = RHIIndexType::kUint32,
                 };
                 blas = RHI::Get().CreateAccelerationStructure(
                         RHIAccelerationStructureType::kBottomLevel
@@ -278,6 +279,7 @@ TEST(RHITest, RHIRayTracedTriangle) {
                 );
                 build_info.dst_acceleration_structure = blas.Raw();
                 queue.BuildAccelerationStructure(build_info, scratch->GetSpan());
+                queue.WaitForIdle();
 
                 // TLAS
                 tlas = RHI::Get().CreateAccelerationStructure(
@@ -289,23 +291,62 @@ TEST(RHITest, RHIRayTracedTriangle) {
                     RHIAccelerationStructureBuildMode::kBuild,
                     nullptr,
                     nullptr,
-                    Geometry,
                     {}, // For querying, we don't need to specify any geometries here
+                    {}, // For querying, we don't need to specify any instance data here
                     1
                 };
-                RHIAccelerationStructureInstance
+                sizes = tlas->GetBuildSizes(build_info);
+                tlas->Create(sizes.acceleration_structure_size);
+
+                scratch = RHI::Get().CreateBuffer(
+                        sizes.build_scratch_size,
+                        RHIBufferUsageFlagBits::kAccelerationStructureScratch
+                );
+                build_info.dst_acceleration_structure = tlas.Raw();
+                // Upload instances data
+                RHIAccelerationStructureInstanceDesc instance {};
+                instance.flags = RHIASGeometryInstanceFlagBits::kNone;
+                // 1 for the second texture
+                instance.instance_custom_index = 1;
+                instance.mask = 0xFF; // Visible to all rays
+                instance.transform[0] = 1.0f; // Scale X
+                instance.transform[5] = 1.0f; // Scale Y
+                instance.transform[10] = 1.0f; // Scale Z
+                instance.acceleration_structure_reference = blas->GetDeviceAddress();
+                auto instance_count = 1;
+                auto instance_buffer_size = RHI::Get().GetAccelerationStructureInstanceStride() * instance_count;
+                auto opaque_instance_buffer_data = queue.AllocateRaw(instance_buffer_size);
+                RHI::Get().CreateAccelerationStructureInstances(instance_count, &instance, opaque_instance_buffer_data);
+                auto instance_buffer = RHI::Get().CreateBuffer(
+                        instance_buffer_size,
+                        RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
+                );
+                auto staging_buf = RHI::Get().CreateBuffer(
+                    instance_buffer_size,
+                    RHIBufferUsageFlagBits::kStaging
+                );
+                memcpy(staging_buf->Map(), opaque_instance_buffer_data, instance_buffer_size);
+                queue.CopyBuffer(staging_buf->GetSpan(), instance_buffer->GetSpan());
+                queue.BufferBarrier(
+                        instance_buffer->GetSpan(),
+                        RHIPipelineStageFlagBits::kTransfer,
+                        RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                        RHIGPUAccessFlagBits::kTransferWrite,
+                        RHIGPUAccessFlagBits::kShaderRead
+                );
+                build_info.instance_data = instance_buffer->GetSpan();
+                build_info.instance_count = instance_count;
+                // Actually build the TLAS
+                queue.BuildAccelerationStructure(build_info, scratch->GetSpan());
+                queue.WaitForIdle();
+                // Done
             }
             // Render texture
             auto output_texture = RHI::Get().CreateTexture(
-                    RHITextureType::k2D, RHITextureDimensions{1280, 720}, PixelFormatType::kR8G8B8A8_SRGB,
-                    RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer
+                    RHITextureType::k2D, RHITextureDimensions{1280, 720}, PixelFormatType::kR8G8B8A8_UNORM,
+                    RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kTransfer
             );
             EXPECT_TRUE(output_texture);
-
-            auto uniform_buf = RHI::Get().CreateBuffer(
-                    256,
-                    RHIBufferUsageFlagBits::kUniform
-            );
 
             auto &queue = RHI::Get().GetGraphicsCommandQueue();
             queue.TextureBarrier(
@@ -319,19 +360,47 @@ TEST(RHITest, RHIRayTracedTriangle) {
             queue.ClearTexture(output_texture.Raw(), {0.f, 0.f, 0.f, 0.f});
             queue.TextureBarrier(
                     output_texture.Raw(),
-                    RHITextureLayoutType::kColorAttachment,
+                    RHITextureLayoutType::kGeneral,
                     RHIPipelineStageFlagBits::kTransfer,
-                    RHIPipelineStageFlagBits::kOrdinaryGraphics,
+                    RHIPipelineStageFlagBits::kRayTracing,
                     RHIGPUAccessFlagBits::kWrite,
                     RHIGPUAccessFlagBits::kRW
             );
             queue.BindPipeline(pipeline.Raw());
-            RHIDrawDesc ds {};
-            ds.SetAttachment(0, output_texture.Raw());
-            ds.SetClearValue(0, {0.f, 1.f, 0.f, 1.f});
-
-            queue.UpdateDrawState(ds);
-
+            auto sbt_buffer = RHI::Get().CreateBuffer(
+                    1024,
+                    RHIBufferUsageFlagBits::kShaderBindingTable
+            );
+            auto sbt_staging_buffer = RHI::Get().CreateBuffer(
+                    1024,
+                    RHIBufferUsageFlagBits::kStaging
+            );
+            auto sbt_host_ptr = sbt_staging_buffer->Map();
+            // Raygen shader binding table (the first one, 1 group)
+            pipeline->GetShaderGroupHandles(0, 1, sbt_host_ptr);
+            // Hit group 1
+            pipeline->GetShaderGroupHandles(1, 1, (char*)sbt_host_ptr + pipeline->GetShaderGroupBaseAlignment());
+            // Miss shader binding table (the second one, 1 group)
+            pipeline->GetShaderGroupHandles(2, 1, (char*)sbt_host_ptr + 2 * pipeline->GetShaderGroupBaseAlignment());
+            // Copy to device
+            queue.CopyBuffer(sbt_staging_buffer->GetSpan(), sbt_buffer->GetSpan());
+            queue.BufferBarrier(
+                    sbt_buffer->GetSpan(),
+                    RHIPipelineStageFlagBits::kTransfer,
+                    RHIPipelineStageFlagBits::kRayTracing,
+                    RHIGPUAccessFlagBits::kTransferWrite,
+                    RHIGPUAccessFlagBits::kShaderBindingTableRead
+            );
+            auto raygen_sbt = sbt_buffer->GetSpan(0, pipeline->GetShaderGroupBaseAlignment());
+            auto hit_sbt = sbt_buffer->GetSpan(
+                    pipeline->GetShaderGroupBaseAlignment(),
+                    pipeline->GetShaderGroupBaseAlignment()
+            );
+            auto miss_sbt = sbt_buffer->GetSpan(
+                    2 * pipeline->GetShaderGroupBaseAlignment(),
+                    pipeline->GetShaderGroupBaseAlignment()
+            );
+            queue.BindShaderBindingTable(raygen_sbt, miss_sbt, hit_sbt, {});
 
             auto staging_buf = RHI::Get().CreateBuffer(
                     1024 * 1024 * 32,
@@ -342,22 +411,27 @@ TEST(RHITest, RHIRayTracedTriangle) {
             auto linear_wrap = RHI::Get().GetGlobalSamplers().linear_wrap;
             auto samplers = queue.Allocate<RHIPipelineParameterResourceDesc[]>(1);
             samplers[0].resource = linear_wrap;
-            auto sampler_binding = pipeline->ReflectResourceSlot("sampler_linear");
+            auto sampler_binding = pipeline->ReflectResourceSlot("LinearSampler");
             samplers[0].slot = sampler_binding.slot_index;
             params.samplers = {samplers, 1};
             auto storage_textures = queue.Allocate<RHIPipelineParameterTextureDesc[]>(1);
             storage_textures[0].texture = output_texture.Raw();
+            storage_textures[0].slot = pipeline->ReflectResourceSlot("OutputTexture").slot_index;
             params.uavs = {storage_textures, 1};
+            auto accel_structures = queue.Allocate<RHIPipelineParameterResourceDesc[]>(1);
+            accel_structures[0].resource = tlas.Raw();
+            accel_structures[0].slot = pipeline->ReflectResourceSlot("TLAS").slot_index;
+            params.acceleration_structures = {accel_structures, 1};
             queue.BindPipelineParameters(RHIBindPointType::kRayTracing, params);
             queue.DispatchRays(1280, 720, 1);
 
             queue.TextureBarrier(
                     output_texture.Raw(),
                     RHITextureLayoutType::kTransferSrcOptimal,
-                    RHIPipelineStageFlagBits::kOrdinaryGraphics | RHIPipelineStageFlagBits::kTransfer,
+                    RHIPipelineStageFlagBits::kAll,
                     RHIPipelineStageFlagBits::kTransfer,
-                    RHIGPUAccessFlagBits::kWrite,
-                    RHIGPUAccessFlagBits::kRead
+                    RHIGPUAccessFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kTransferRead
             );
             queue.CopyTextureToBuffer(output_texture.Raw(), staging_buf.Raw());
             auto sync = RHI::Get().CreateSyncPoint();
@@ -373,11 +447,12 @@ TEST(RHITest, RHIRayTracedTriangle) {
                 auto g = static_cast<uint8_t>(u8_tex[i * 4 + 1]);
                 auto b = static_cast<uint8_t>(u8_tex[i * 4 + 2]);
                 auto a = static_cast<uint8_t>(u8_tex[i * 4 + 3]);
-                // bgra
                 bitmap[i] = (a << 24) | (b << 16) | (g << 8) | r;
             }
             // Save to file
             stbi_write_png("rhi_test_rt.png", 1280, 720, 4, bitmap, 1280 * 4);
+        } catch (const std::exception &e) {
+            ADD_FAILURE() << e.what();
         }
         RHI::DestroySingleton();
         GetInfra().Shutdown();

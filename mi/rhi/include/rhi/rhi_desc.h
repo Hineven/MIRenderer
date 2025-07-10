@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <array>
+#include <vector>
 #include <glm/detail/qualifier.hpp>
 
 #include "rhi/rhi_fwd.h"

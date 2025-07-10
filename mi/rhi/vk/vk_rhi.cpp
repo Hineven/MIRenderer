@@ -213,6 +213,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
                 // more dynamic states
                 VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
+                // Ray tracing maintenance 1
+                VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,
 #ifndef NDEBUG
                 VK_KHR_RAY_QUERY_EXTENSION_NAME
 #endif

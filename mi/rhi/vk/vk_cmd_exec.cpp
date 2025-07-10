@@ -657,6 +657,8 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         remapping = &((VulkanGraphicsPipeline*)bound_pipeline)->GetRemappings();
     } else if (bind_point_type == RHIBindPointType::kCompute) {
         remapping = &((VulkanComputePipeline*)bound_pipeline)->GetRemappings();
+    } else if (bind_point_type == RHIBindPointType::kRayTracing) {
+        remapping = &((VulkanRayTracingPipeline*)bound_pipeline)->GetRemappings();
     } else {
         assert(false && "Not implemented");
     }
@@ -825,8 +827,12 @@ void VulkanCommandExecutor::FlushBindPointState(
         vk_pipeline = c_pipeline->GetPipeline();
         vk_point = vk::PipelineBindPoint::eCompute;
     } else {
+        auto rt_pipeline = (VulkanRayTracingPipeline*)point.bound_pipeline;
         vk_point = vk::PipelineBindPoint::eRayTracingKHR;
-        assert(false);
+        vk_pipeline_layout = rt_pipeline->GetPipelineLayout();
+        vk_set_layout = rt_pipeline->GetPrivateDescriptorSetLayout();
+        vk_pipeline = rt_pipeline->GetPipeline();
+        vk_point = vk::PipelineBindPoint::eRayTracingKHR;
     }
 
     // Rebind pipeline if dirty
