@@ -31,7 +31,10 @@ public:
         const RHIAccelerationStructureBuildGeometryInfo& build_info) const = 0;
 
     // Create acceleration structure with given size (which you should firt query with GetBuildSizes)
+    // Call twice to re-create the acceleration structure with a different size.
     virtual bool Create(size_t size) = 0;
+
+    virtual size_t GetSize() const = 0;
 
 protected:
     RHIAccelerationStructureType type_;

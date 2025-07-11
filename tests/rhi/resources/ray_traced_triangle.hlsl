@@ -36,13 +36,13 @@ void RaygenMain()
     RayPayload Payload;
 
     TraceRay(
-        TLAS,                 // 顶级加速结构
-        RAY_FLAG_NONE,        // 射线标志
-        0xFF,                 // 实例遮罩
-        0,                    // 命中组索引
-        0,                    // 命中组索引偏移vu
-        0,                    // 命中组索引掩码
-        RayDesc,              // 射线描述
+        TLAS,
+        RAY_FLAG_NONE,
+        0xFF,
+        0,
+        0,
+        0,
+        RayDesc,
         Payload
     );
     if(Payload.Barycentrics.x < 0)

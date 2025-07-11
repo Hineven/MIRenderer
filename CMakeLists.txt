@@ -26,6 +26,8 @@ endif()
 # Platform macros & checks
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     add_definitions(-DMI_COMPILER_MSVC)
+    # Disable stupid minmax macros
+    add_definitions(-DNOMINMAX)
 endif()
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     add_definitions(-DMI_COMPILER_GNU)

@@ -220,8 +220,11 @@ RDGPass *RDGPass::AddAS(RHIAccelerationStructure *as, RHIGPUAccessFlags access, 
         } else if (GetType() == RDGPassType::kRayTracing) {
             stages = RHIPipelineStageFlagBits::kRayTracing;
         } else if (GetType() == RDGPassType::kGeneric) {
-            stages = RHIPipelineStageFlagBits::kRayTracing | RHIPipelineStageFlagBits::kCompute
-            | RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kTransfer;
+            if (access & RHIGPUAccessFlagBits::kRead)
+                stages = stages | RHIPipelineStageFlagBits::kRayTracing | RHIPipelineStageFlagBits::kCompute
+                | RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kTransfer;
+            if (access & RHIGPUAccessFlagBits::kWrite)
+                stages = stages | RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kTransfer;
         } else {
             assert(false && "Unsupported RDGPassType for acceleration structure.");
         }

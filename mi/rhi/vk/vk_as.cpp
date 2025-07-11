@@ -18,11 +18,16 @@ VulkanAccelerationStructure::~VulkanAccelerationStructure() {
     ResetRHI();
 }
 
+size_t VulkanAccelerationStructure::GetSize() const {
+    return size_;
+}
+
 bool VulkanAccelerationStructure::Create(size_t size) {
     if (size == 0) {
         MI_LOG(MIInfraLogType::kWarning, "Acceleration structure size cannot be zero");
         return false;
     }
+    ResetRHI();
 
     auto device = GetVulkanRHI()->GetDevice();
     auto& allocator = GetVulkanRHI()->GetVmaAllocator();

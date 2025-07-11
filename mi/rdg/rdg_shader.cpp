@@ -17,10 +17,10 @@
 #include "core/infra.h"
 
 #include "core/task.h"
+#include "rhi/rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
-
-size_t RDGShaderInitializationInfo::GetHash() const {
+    size_t RDGShaderInitializationInfo::GetHash() const {
     size_t final_hash = 0;
     // Order inreleavnt hashing.
 #ifndef NDEBUG
@@ -533,6 +533,15 @@ void RDGShader::UpdateOwnerForRHIResources() {
     if (shaders_.compute) shaders_.compute->UpdateOwner();
     if (shaders_.vertex) shaders_.vertex->UpdateOwner();
     if (shaders_.fragment) shaders_.fragment->UpdateOwner();
+
+    if (shaders_.raygen) shaders_.raygen->UpdateOwner();
+    if (shaders_.closest_hit) shaders_.closest_hit->UpdateOwner();
+    if (shaders_.any_hit) shaders_.any_hit->UpdateOwner();
+    if (shaders_.miss) shaders_.miss->UpdateOwner();
+    if (shaders_.callable) shaders_.callable->UpdateOwner();
+
+    if (sbt_buffer_) sbt_buffer_->UpdateOwner();
+
     if (graphics_pipeline_) graphics_pipeline_->UpdateOwner();
     if (compute_pipeline_) compute_pipeline_->UpdateOwner();
 }
@@ -542,6 +551,11 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
     // Re-compile the shader
     shaders_ = {};
     shader_hash_.Reset();
+
+    // Also reset the sbt buffer
+    sbt_buffer_.SafeRelease();
+    sbt_.clear();
+    sbt_sections_ = {};
 
     if (source_code.empty()) {
         MI_LOG(MIInfraLogType::kError, "Empty shader source: {}", class_registry_->source_location);
@@ -596,7 +610,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t vs_hash = 0;
             std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_3",
+                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_6",
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
@@ -612,7 +626,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             std::wstring out_command;
             // Then compile fragment shader
             fs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_3",
+                    source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_6",
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
             );
             if (fs_result.empty()) {
@@ -655,8 +669,161 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         }
         shaders_.fragment = fragment_shader;
     }
+
+    if(class_registry_->type == RHIPipelineType::kRayTracing) {
+        std::vector<uint32_t> raygen_result, chit_result, ahit_result, miss_result;
+        // For graphics pipeline, we need to compile vertex and fragment shaders
+        // First compile vertex shader
+        {
+            uint64_t raygen_hash = 0;
+            std::wstring out_command;
+            raygen_result = GetInfra().CompileHLSLToSPIRV(
+                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib_6_6",
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &raygen_hash
+            );
+            if (raygen_result.empty()) {
+                MI_LOG(MIInfraLogType::kError, "Failed to compile raygen shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                return false;
+            }
+            shader_hash_.AddUnordered("RaygenShader", raygen_hash);
+        }
+        if (!class_registry_->closest_hit_entry_.empty()) {
+            uint64_t chit_hash = 0;
+            std::wstring out_command;
+            chit_result = GetInfra().CompileHLSLToSPIRV(
+                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib_6_6",
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &chit_hash
+            );
+            if (chit_result.empty()) {
+                MI_LOG(MIInfraLogType::kError, "Failed to compile closest hit shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                return false;
+            }
+            shader_hash_.AddUnordered("ClosestHitShader", chit_hash);
+        }
+        if (!class_registry_->any_hit_entry_.empty()) {
+            uint64_t ahit_hash = 0;
+            std::wstring out_command;
+            ahit_result = GetInfra().CompileHLSLToSPIRV(
+                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib_6_6",
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &ahit_hash
+            );
+            if (ahit_result.empty()) {
+                MI_LOG(MIInfraLogType::kError, "Failed to compile any hit shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                return false;
+            }
+            shader_hash_.AddUnordered("AnyHitShader", ahit_hash);
+        }
+        {
+            uint64_t miss_hash = 0;
+            std::wstring out_command;
+            miss_result = GetInfra().CompileHLSLToSPIRV(
+                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib_6_6",
+                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &miss_hash
+            );
+            if (miss_result.empty()) {
+                MI_LOG(MIInfraLogType::kError, "Failed to compile miss shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                return false;
+            }
+            shader_hash_.AddUnordered("MissShader", miss_hash);
+        }
+        shaders_.raygen = RHI::Get().CreateShader(
+            RHIShaderFrequencyFlagBits::kRayGen, class_registry_->raygen_entry_,
+            RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(raygen_result.data()), raygen_result.size() * sizeof(uint32_t))
+        );
+        if (!shaders_.raygen) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create raygen shader", class_registry_->source_location);
+            return false;
+        }
+        if (!CheckShaderReflection(shaders_.raygen.Raw(), param_info)) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Raygen shader reflection check failed", class_registry_->source_location);
+            return false;
+        }
+        if (!chit_result.empty()) {
+            shaders_.closest_hit = RHI::Get().CreateShader(
+                RHIShaderFrequencyFlagBits::kClosestHit, class_registry_->closest_hit_entry_,
+                RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(chit_result.data()), chit_result.size() * sizeof(uint32_t))
+            );
+            if (!shaders_.closest_hit) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create closest hit shader", class_registry_->source_location);
+                return false;
+            }
+            if (!CheckShaderReflection(shaders_.closest_hit.Raw(), param_info)) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Closest hit shader reflection check failed", class_registry_->source_location);
+                return false;
+            }
+        }
+        if (!ahit_result.empty()) {
+            shaders_.any_hit = RHI::Get().CreateShader(
+                RHIShaderFrequencyFlagBits::kAnyHit, class_registry_->any_hit_entry_,
+                RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(ahit_result.data()), ahit_result.size() * sizeof(uint32_t))
+            );
+            if (!shaders_.any_hit) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create any hit shader", class_registry_->source_location);
+                return false;
+            }
+            if (!CheckShaderReflection(shaders_.any_hit.Raw(), param_info)) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Any hit shader reflection check failed", class_registry_->source_location);
+                return false;
+            }
+        }
+        shaders_.miss = RHI::Get().CreateShader(
+            RHIShaderFrequencyFlagBits::kMiss, class_registry_->miss_entry_,
+            RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(miss_result.data()), miss_result.size() * sizeof(uint32_t))
+        );
+        if (!shaders_.miss) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create miss shader", class_registry_->source_location);
+            return false;
+        }
+        if (!CheckShaderReflection(shaders_.miss.Raw(), param_info)) {
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Miss shader reflection check failed", class_registry_->source_location);
+            return false;
+        }
+    }
     return true;
 }
+
+RDGShader::SBTBuffers RDGShader::GetSBTBuffers(RHICommandQueueGraphics & queue) {
+    if (GetShaderClassRegistry()->type != RHIPipelineType::kRayTracing) {
+        MI_LOG(MIInfraLogType::kError, "GetSBTBuffers called on non-ray tracing shader");
+        return {};
+    }
+    // If the SBT buffer is not created, create it
+    if (!sbt_buffer_) {
+        // Create the SBT buffer
+        sbt_buffer_ = RHI::Get().CreateBuffer(sbt_.size(),RHIBufferUsageFlagBits::kShaderBindingTable);
+        if (!sbt_buffer_) {
+            MI_LOG(MIInfraLogType::kError, "Failed to create SBT buffer for shader: {}", class_registry_->source_location);
+            return {};
+        }
+        // Upload
+        auto staging_buffer = RHI::Get().CreateBuffer(sbt_.size(), RHIBufferUsageFlagBits::kStaging);
+        if (!staging_buffer) {
+            MI_LOG(MIInfraLogType::kError, "Failed to create staging buffer for SBT buffer: {}", class_registry_->source_location);
+            return {};
+        }
+        auto staging_data = staging_buffer->Map();
+        memcpy(staging_data, sbt_.data(), sbt_.size());
+        staging_buffer->Unmap();
+        // Copy to the SBT buffer
+        queue.CopyBuffer(staging_buffer->GetSpan(), sbt_buffer_->GetSpan());
+        // Barrier to ensure the SBT buffer is ready for use
+        queue.BufferBarrier(
+            sbt_buffer_->GetSpan(), RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kRayTracing,
+            RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kShaderBindingTableRead
+        );
+    }
+    // The segments of th SBT buffer is fixed.
+    return {
+        sbt_buffer_->GetSpan(sbt_sections_.raygen.offset, sbt_sections_.raygen.size),
+        sbt_buffer_->GetSpan(sbt_sections_.hit.offset, sbt_sections_.hit.size),
+        sbt_buffer_->GetSpan(sbt_sections_.miss.offset, sbt_sections_.miss.size)
+    };
+}
+
 
 bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 
@@ -667,6 +834,11 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     graphics_pipeline_ = {};
     compute_pipeline_ = {};
     shaders_ = {};
+    // Clear SBT related resources
+    sbt_sections_ = {};
+    sbt_ = {};
+    sbt_buffer_.SafeRelease();
+
     is_valid_ = false;
     ini_ = ini;
 
@@ -750,6 +922,54 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             return false;
         }
         graphics_pipeline_ = pipeline;
+    }
+    if (class_registry_->type == RHIPipelineType::kRayTracing) {
+        // Create the ray tracing pipeline
+        RHIRayTracingPipelineDesc desc {};
+        desc.shaders.push_back(shaders_.raygen.Raw());
+        desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kRayGeneration, 0});
+        uint32_t closest_hit_idx = UINT32_MAX;
+        uint32_t any_hit_idx = UINT32_MAX;
+        uint32_t shader_idx_allocator = 2;
+        if (shaders_.closest_hit && shaders_.closest_hit.IsValid()) {
+            closest_hit_idx = shader_idx_allocator++;
+            desc.shaders.push_back(shaders_.closest_hit.Raw());
+        }
+        if (shaders_.any_hit && shaders_.any_hit.IsValid()) {
+            any_hit_idx = shader_idx_allocator++;
+            desc.shaders.push_back(shaders_.any_hit.Raw());
+        }
+        desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{
+            RHIRayTracingShaderGroupType::kTrianglesHitGroup,
+            UINT32_MAX,
+            closest_hit_idx,
+            any_hit_idx
+        });
+        desc.shaders.push_back(shaders_.miss.Raw());
+        desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kMiss, 1});
+        desc.max_recursion_depth = pipeline_config.ray_tracing.max_recursion_depth;
+        auto pipeline = RHI::Get().CreateRayTracingPipeline(desc);
+        if (!pipeline) {
+            MI_LOG(MIInfraLogType::kError, "Failed to create ray tracing pipeline");
+            return false;
+        }
+        raytracing_pipeline_ = pipeline;
+
+        // Arranged in the order of raygen, miss, hit, ...
+        auto base_alignment = raytracing_pipeline_->GetShaderGroupBaseAlignment();
+        auto handle_size = RoundUp(
+            raytracing_pipeline_->GetShaderGroupHandleSize(),
+            raytracing_pipeline_->GetShaderGroupHandleAlignment()
+            );
+        auto section_size = RoundUp(handle_size, base_alignment);
+        auto all_size = section_size * 3;
+        sbt_.resize(all_size);
+        raytracing_pipeline_->GetShaderGroupHandles(0, 1, sbt_.data());
+        raytracing_pipeline_->GetShaderGroupHandles(1, 1, sbt_.data() + section_size);
+        raytracing_pipeline_->GetShaderGroupHandles(2, 1, sbt_.data() + section_size * 2);
+        sbt_sections_.raygen = {0, section_size};
+        sbt_sections_.miss = {section_size, section_size};
+        sbt_sections_.hit = {section_size * 2, section_size};
     }
 
     is_valid_ = true;

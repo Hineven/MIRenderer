@@ -30,6 +30,12 @@ protected:
     uint32_t first_index_ {};
     uint32_t vertex_count_ {};
     uint32_t index_count_ {};
+
+    // Some ray-traced geometries hold a BLAS
+    // TRef<RHIAccelerationStructure> BLAS_;
+
+    friend StaticMesh;
+
 public:
 
     friend class Geometry;
@@ -61,11 +67,19 @@ protected:
 
     // If the geometry is modified on host and requires a rebuild on device.
     bool dirty_ {true};
+    // If the geometry is used for ray tracing, a BLAS is maintained.
+    bool ray_traced_ {false};
+    // If the geometry is opaque.
+    bool opaque_ {false};
+    // If the geometry is dynamic, it can be updated after creation.
+    // This attribute is only set upon creation, and cannot be changed later.
+    // bool dynamic_ {false};
 public:
     friend class StaticMesh;
     static TRef<Geometry> CreateFromVertices (
         std::span<DefaultStaticMeshVertex> vertices = {},
-        std::span<uint32_t> indices = {}
+        std::span<uint32_t> indices = {},
+        bool dynamic = false
     ) ;
     FORCEINLINE static TRef<Geometry> Create () {return CreateFromVertices();}
 
@@ -87,6 +101,21 @@ public:
 
     FORCEINLINE bool IsDirty () const {
         return dirty_;
+    }
+    FORCEINLINE bool IsRayTraced () const {
+        return ray_traced_;
+    }
+    FORCEINLINE bool IsOpaque () const {
+        return opaque_;
+    }
+
+    FORCEINLINE void SetDirty (bool dirty) {
+        dirty_ = dirty;
+    }
+
+    FORCEINLINE void SetOpaque (bool opaque) {
+        opaque_ = opaque;
+        SetDirty(true);
     }
 
     void SetName (std::string_view name);

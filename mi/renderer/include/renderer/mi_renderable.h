@@ -31,6 +31,7 @@ public:
     FORCEINLINE void SetVisible(bool visible) { visible_ = visible; }
     // Dirty means that the renderer will make a call to Update before rendering.
     FORCEINLINE bool IsDirty () const { return dirty_; }
+    // TODO add dirty renderables to a list every frame for better performance!
     FORCEINLINE void SetDirty (bool dirty) { dirty_ = dirty; }
     FORCEINLINE bool IsTransformDirty () const { return transform_dirty_; }
     FORCEINLINE void SetTransformDirty (bool dirty) { transform_dirty_ = dirty; }
@@ -57,7 +58,12 @@ public:
     }
 
     template<typename T>
-    FORCEINLINE T* As () {return static_cast<T*>(this);}
+    FORCEINLINE T* As () {
+        if (type_ == T::kRenderableType) {
+            return static_cast<T*>(this);
+        }
+        return nullptr;
+    }
 
     virtual RenderableHeader GetDeviceRenderableHeader () const ;
 

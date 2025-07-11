@@ -21,6 +21,9 @@ class RHIComputePipeline;
 struct RDGShaderPipelineConfig {
     RHIPrimitiveTopologyType topology {};
     // std::vector<RHIColorAttachmentDesc> color_attachments;
+    struct {
+        uint32_t max_recursion_depth {1}; // Maximum ray recursion depth
+    } ray_tracing;
 };
 
 class RDGShader;
@@ -41,6 +44,10 @@ struct RDGShaderClassRegistry {
     std::string compute_entry_;
     std::string vertex_entry_;
     std::string fragment_entry_;
+    std::string raygen_entry_;
+    std::string closest_hit_entry_;
+    std::string any_hit_entry_;
+    std::string miss_entry_;
     RDGShader * (*Creator) (RDGShaderClassRegistry *);
     // Macros always present when compiling the shader
     std::vector<std::string> (*GetShaderDefaultMacros)();
@@ -123,6 +130,14 @@ public:
     // Transfer the thread owner for underlying RHI resources.
     void UpdateOwnerForRHIResources ();
 
+    struct SBTBuffers {
+        RHIBufferSpan raygen;
+        RHIBufferSpan miss;
+        RHIBufferSpan hit;
+    };
+
+    SBTBuffers GetSBTBuffers (RHICommandQueueGraphics & queue) ;
+
 protected:
 
     // Shader initialization info (default, given in constructor)
@@ -158,15 +173,29 @@ protected:
     bool is_valid_ {false};
     TRef<RHIComputePipeline> compute_pipeline_;
     TRef<RHIGraphicsPipeline> graphics_pipeline_;
+    TRef<RHIRayTracingPipeline> raytracing_pipeline_;
     struct {
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};
         TRef<RHIShader> fragment {};
-        TRef<RHIShader> ray_gen {};
+        TRef<RHIShader> raygen {};
         TRef<RHIShader> miss {};
-        TRef<RHIShader> hit_group {};
+        TRef<RHIShader> closest_hit {};
+        TRef<RHIShader> any_hit {};
         TRef<RHIShader> callable {};
+
     } shaders_;
+    // SBT buffer only available for ray tracing shaders.
+    // They are generated on-the fly when requested for the first time.
+    TRef<RHIBuffer> sbt_buffer_ {};
+    std::vector<std::byte> sbt_;
+    struct {
+        struct Section {
+            size_t offset {};
+            size_t size {};
+        };
+        Section raygen, hit, miss;
+    } sbt_sections_;
 };
 
 template<typename T, typename = void>
@@ -206,7 +235,7 @@ public: \
     static const char * GetShaderTypeName () ; \
 
 // Generic
-#define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS) \
+#define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
     static RDGShaderClassRegistrator<ClassName> ClassName##Registrator( \
         #ClassName, \
         Type,\
@@ -214,18 +243,26 @@ public: \
         SourcePath, \
         EntryPoint_CS, \
         EntryPoint_VS, \
-        EntryPoint_PS \
+        EntryPoint_PS, \
+        EntryPoint_Raygen, \
+        EntryPoint_ClosestHit, \
+        EntryPoint_AnyHit, \
+        EntryPoint_Miss \
     ); \
     RDGPassType ClassName::GetRDGPassType () {return ::MI_NAMESPACE::GetRDGPassType(Type);} \
     const char * ClassName::GetShaderTypeName () {return #ClassName;}
 
 // Compute
 #define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, EntryPoint_CS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "")
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "")
 
 // Graphics
 #define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS)
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS, "", "", "", "")
+
+// Ray tracing
+#define IMPLEMENT_RDG_RAY_TRACING_SHADER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss)
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
 public: \
@@ -290,7 +327,11 @@ public:
         const std::string & source_location,
         const std::string & compute_entry,
         const std::string & vertex_entry,
-        const std::string & fragment_entry
+        const std::string & fragment_entry,
+        const std::string & raygen_entry,
+        const std::string & closest_hit_entry,
+        const std::string & any_hit_entry,
+        const std::string & miss_entry
     ) {
         auto & lib = RDGShaderLibrary::Get();
         auto registry = RDGShaderClassRegistry {
@@ -301,6 +342,10 @@ public:
             compute_entry,
             vertex_entry,
             fragment_entry,
+            raygen_entry,
+            closest_hit_entry,
+            any_hit_entry,
+            miss_entry,
             RDGShaderClassRegistrator<T>::zzShaderFactoryFunction,
             TGetShaderDefaultMacros<T>::value,
             TGetShaderOptionalMacros<T>::value,

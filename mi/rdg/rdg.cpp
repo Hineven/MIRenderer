@@ -228,29 +228,6 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             }
             if (num_barriers_used) cmd.BufferBarriers(num_barriers_used, buffers, src_stages, dst_stages, src_accesses, dst_accesses);
         }
-        {
-            // Handle acceleration structure barriers
-            auto num_barriers = pass->compiled_.used_acceleration_structures.size();
-            auto num_barriers_used = 0;
-            auto acceleration_structures = cmd.Allocate<RHIAccelerationStructure*[]>(num_barriers);
-            auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
-            auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            for (const auto & as_use : pass->compiled_.used_acceleration_structures) {
-                if (as_use.as) {
-                    acceleration_structures[num_barriers_used] = as_use.as;
-                    // For acceleration structures, we need to track previous usage
-                    // This would typically be stored in a global state tracker
-                    src_stages[num_barriers_used] = RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kRayTracing;
-                    dst_stages[num_barriers_used] = as_use.stages;
-                    src_accesses[num_barriers_used] = RHIGPUAccessFlagBits::kAccelerationStructureRead | RHIGPUAccessFlagBits::kAccelerationStructureWrite;
-                    dst_accesses[num_barriers_used] = as_use.access;
-                    num_barriers_used ++;
-                }
-            }
-            if (num_barriers_used) cmd.AccelerationStructureBarriers(num_barriers_used, acceleration_structures, src_stages, dst_stages, src_accesses, dst_accesses);
-        }
         // Execute the pass
         pass->pass_(pass.get(), cmd);
         // Mark the pass as executed

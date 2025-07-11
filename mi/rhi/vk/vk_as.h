@@ -35,9 +35,10 @@ public:
     // Vulkan specific
     FORCEINLINE vk::AccelerationStructureKHR GetAccelerationStructure() const { return acceleration_structure_; }
     FORCEINLINE vk::Buffer GetBuffer() const { return buffer_; }
-    FORCEINLINE size_t GetSize() const { return size_; }
+    size_t GetSize() const override;
 
     void SetName (const std::string & name) override;
+
 
 protected:
     void ResetRHI() ;

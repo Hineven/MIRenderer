@@ -27,10 +27,33 @@ public:
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 
-
     static TRef<StaticMesh> Create (RendererScene * world, Transform transform = {}) ;
 
     RenderableHeader GetDeviceRenderableHeader() const override;
+
+    FORCEINLINE bool IsDynamic () const {
+        return dynamic_;
+    }
+
+    FORCEINLINE void SetDynamic (bool dynamic) {
+        dynamic_ = dynamic;
+        SetDirty(true);
+    }
+
+    FORCEINLINE bool IsRayTraced () const {
+        return is_ray_traced_;
+    }
+
+    FORCEINLINE void SetRayTraced (bool ray_traced) {
+        is_ray_traced_ = ray_traced;
+        SetDirty(true);
+    }
+
+    FORCEINLINE RHIAccelerationStructure * GetBLAS () const {
+        return BLAS_.Raw();
+    }
+
+    constexpr static RenderableType kRenderableType = RenderableType::kStaticMesh;
 
 protected:
 
@@ -44,8 +67,14 @@ protected:
     TRef<DeviceBufferHeapBuffer> geometry_material_indices_;
     StaticMeshRenderableHeader renderable_header_;
 
+    // If this static mesh is ray-traced, it should have a bottom-level acceleration structure.
+    TRef<RHIAccelerationStructure> BLAS_;
+
     // If this static mesh is ray-traced. If true, it should have an acceleration structure.
     bool is_ray_traced_ {};
+
+    // If true, the mesh is meant to work faster with dynamic geometry updates.
+    bool dynamic_ {};
 
 };
 

@@ -19,10 +19,10 @@
 
 #include "rdg/rdg_cmd.h"
 #include "renderer/mi_resource_allocator.h"
+#include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-
-Renderer::Renderer() {
+    Renderer::Renderer() {
 
 }
 
@@ -84,7 +84,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Update dirty renderables with custom logic
     for (auto & e : all_renderables) {
-        if (e->IsDirty()) {
+        if (e && e->IsDirty()) {
             e->Update(view, builder);
             e->SetDirty(false);
         }
@@ -94,15 +94,21 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<glm::mat4x3> renderable_transforms;
     std::vector<glm::mat3x3> renderable_normal_transforms;
     std::vector<RenderableHeader> renderable_headers;
+    std::vector<int> visible_renderable_indices;
     {
         renderable_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
         for (auto & e : all_renderables) {
-            auto to_world = e->GetTransform().GetToWorldTransformMatrix();
-            renderable_transforms.push_back(to_world);
-            auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
-            renderable_normal_transforms.push_back(normal_transform);
-            renderable_headers.push_back(e->GetDeviceRenderableHeader());
+            if (e) {
+                auto to_world = e->GetTransform().GetToWorldTransformMatrix();
+                renderable_transforms.push_back(to_world);
+                auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
+                renderable_normal_transforms.push_back(normal_transform);
+                renderable_headers.push_back(e->GetDeviceRenderableHeader());
+                // Clear dirty flag
+                e->SetTransformDirty(false);
+                if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
+            }
         }
     }
     // Upload renderable transforms and headers
@@ -123,6 +129,74 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_headers.data(),
         renderable_headers.size() * sizeof(RenderableHeader)
     );
+
+    // A pass to upload / rebuild TLAS
+    {
+        std::vector<int> visible_rt_static_mesh_renderable_indices;
+        for (auto e : visible_renderable_indices) {
+            if (auto static_mesh = all_renderables[e]->As<StaticMesh>()) {
+                if (static_mesh->IsRayTraced()) visible_rt_static_mesh_renderable_indices.push_back(e);
+            }
+        }
+        auto instance_count = (uint32_t)visible_rt_static_mesh_renderable_indices.size();
+        auto instance_data = builder.Allocate<RHIAccelerationStructureInstanceDesc>(instance_count);
+        auto instance_data_bytesize = instance_count * sizeof(RHIAccelerationStructureInstanceDesc);
+        for (auto [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
+            auto renderable = all_renderables[e]->As<StaticMesh>();
+            auto data = RHIAccelerationStructureInstanceDesc {};
+            data.instance_custom_index = e;
+            data.mask = 0xFF; // Visible to all rays
+            data.flags = RHIASGeometryInstanceFlagBits::kNone;
+            data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
+            // Row major
+            auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
+            for (int x = 0; x < 4; x++)
+                for (int y = 0; y < 3; y++)
+                    data.transform[y * 4 + x] = to_world_matrix[x][y];
+            instance_data[i] = data;
+        }
+        auto instance_buffer = builder.CreateBuffer(
+            RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
+            instance_data_bytesize
+        );
+        view->upload_context_.Add(instance_buffer.Raw(), instance_data, instance_data_bytesize);
+        if (!view->world_->TLAS_) {
+            // Create one if not exists
+            view->world_->TLAS_ = RHI::Get().CreateAccelerationStructure(
+                RHIAccelerationStructureType::kTopLevel
+            );
+        }
+        auto TLAS = view->world_->TLAS_;
+        auto build_info = RHIAccelerationStructureBuildGeometryInfo {
+            RHIAccelerationStructureType::kTopLevel,
+            RHIAccelerationStructureBuildFlagBits::kPreferFastTrace
+            | RHIAccelerationStructureBuildFlagBits::kAllowUpdate,
+            RHIAccelerationStructureBuildMode::kUpdate,
+            TLAS.Raw(), TLAS.Raw(),
+            {},{},
+            instance_count
+        };
+        auto build_sizes = TLAS->GetBuildSizes(build_info);
+        bool rebuild = false;
+        if (build_sizes.acceleration_structure_size > TLAS->GetSize()) {
+            // Resize the TLAS if needed
+            TLAS->Create(build_sizes.acceleration_structure_size);
+            rebuild = true;
+        }
+        auto scratch_buffer = builder.CreateBuffer(
+            RHIBufferUsageFlagBits::kAccelerationStructureScratch,
+            rebuild ? build_sizes.build_scratch_size : build_sizes.update_scratch_size
+        );
+        builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
+            [instance_buffer = instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw()]
+            (RDGPass * pass, RHICommandQueueGraphics & queue) {
+            auto as_build_info = build_info;
+            as_build_info.instance_data = instance_buffer->GetRHI();
+            as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
+            queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
+        })->AddAS(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
+        ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead);
+    }
 
     // Upload material changes
     // TODO maintain a list of materials in CommonGroupedDeviceResourceAllocator for better performance

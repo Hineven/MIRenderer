@@ -7,9 +7,6 @@
 #ifndef MIRENDERER_CORE_COMMON_H
 #define MIRENDERER_CORE_COMMON_H
 
-// Disable some Windows macros that conflict with our code
-#define NOMINMAX
-
 #include "core/platform.h"
 #define MI_NAMESPACE mi
 

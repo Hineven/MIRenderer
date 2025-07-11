@@ -11,9 +11,9 @@
 
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_scene.h"
+#include "rhi/rhi_as.h"
 MI_NAMESPACE_BEGIN
-
-DeviceGeometry::DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator) {
+    DeviceGeometry::DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator) {
     allocator_ = allocator;
 }
 
@@ -34,7 +34,7 @@ Geometry::~Geometry() {
 }
 
 
-TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> vertices, std::span<uint32_t> indices) {
+TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> vertices, std::span<uint32_t> indices, bool dynamic) {
     auto geom = TRef<Geometry>(new Geometry());
     if (indices.data() == nullptr) {
         // Non-indexed geometry
@@ -43,6 +43,7 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     }
     geom->vertices_.resize(vertices.size());
     geom->indices_.resize(indices.size());
+    geom->dynamic_ = dynamic;
     std::copy(vertices.begin(), vertices.end(), geom->vertices_.begin());
     std::copy(indices.begin(), indices.end(), geom->indices_.begin());
     return geom;
@@ -67,7 +68,7 @@ void Geometry::UpdateOnDevice_Async(CommonGroupedDeviceResourceAllocator *alloc)
         device_geometry_->first_index_ = 0;
         device_geometry_->vertex_count_ = (int)vertices_.size();
         device_geometry_->index_count_ = (int)indices_.size();
-        dirty_ = false;
+        SetDirty(false);
     }
 }
 

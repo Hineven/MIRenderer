@@ -78,6 +78,9 @@ protected:
     TRef<RHIBuffer> d_renderable_transforms_;
     TRef<RHIBuffer> d_renderable_normal_transforms_;
     TRef<RHIBuffer> d_renderable_headers_;
+
+    // Top level acceleration structure for ray-traced objects
+    TRef<RHIAccelerationStructure> TLAS_;
 };
 
 MI_NAMESPACE_END

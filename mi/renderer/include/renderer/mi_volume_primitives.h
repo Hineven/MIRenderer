@@ -30,7 +30,6 @@ public:
 
     void Update (RendererView * view, RenderGraphBuilder & builder);
     void SetPrimitives (const std::vector<VolumePrimitive> & primitives) ;
-    FORCEINLINE bool IsDirty () const {return dirty_;}
 
     static TRef<VolumePrimitives> Create (RendererScene * world, Transform transform = {}) ;
 
@@ -41,6 +40,8 @@ public:
     // All volume primitive data are allocated in a single buffer heap with a single buffer.
     // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
     static void SetupAllocatorBufferHeap (CommonGroupedDeviceResourceAllocator * allocator) ;
+
+    constexpr static RenderableType kRenderableType = RenderableType::kStaticMesh;
 
 protected:
 

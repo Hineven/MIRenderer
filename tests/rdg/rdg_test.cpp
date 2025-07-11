@@ -18,6 +18,7 @@
 #include <rhi/rhi_pipeline.h>
 
 #include "core/infra.h"
+#include "core/task.h"
 #include "infra_impl/infra.h"
 #include "rhi/rhi.h"
 #include "rdg/rdg_shader.h"
@@ -120,6 +121,7 @@ TEST(RDGTest, RDGShaderLibrary) {
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
+        TaskGraph::InitializeSingleton(0, 3);
         {
             auto & lib = RDGShaderLibrary::Get();
             lib.Init();
@@ -127,7 +129,7 @@ TEST(RDGTest, RDGShaderLibrary) {
             EXPECT_TRUE(shader->IsValid());
             lib.ReleaseCompiledShaders();
         }
-
+        TaskGraph::DestroySingleton();
         RHI::DestroySingleton();
         GetInfra().Shutdown();
         DestroyInfra();
@@ -146,6 +148,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
+        TaskGraph::InitializeSingleton(0, 3);
         {
             auto & lib = RDGShaderLibrary::Get();
             lib.Init();
@@ -181,7 +184,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
                 dst_span.offset = 128;
                 dst_span.size = 64;
                 queue.CopyBuffer(src_span, dst_span);
-            })->AddTexture(test_texture.Raw(), RDGTextureUsageType::kTransferSrc)
+            })->AddTexture(test_texture.Raw(), RDGTextureUsageType::kTransferRead)
               ->AddBuffer(out_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
               ->AddBuffer(storage_buffer_ref.Raw(), RHIGPUAccessFlagBits::kRead);
             auto rdg = builder.Compile();
@@ -217,6 +220,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
             lib.ReleaseCompiledShaders();
         }
 
+        TaskGraph::DestroySingleton();
         RHI::DestroySingleton();
         GetInfra().Shutdown();
         DestroyInfra();
@@ -254,6 +258,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
         GetInfra().Init();
         SetCurrentThreadType(ThreadType::kRenderThread);
         RHI::InitializeSingleton(RHIType::kVulkan);
+        TaskGraph::InitializeSingleton(0, 3);
         {
             auto & lib = RDGShaderLibrary::Get();
             lib.Init();
@@ -302,7 +307,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
                 [ttex = test_texture.Raw(), obuf = readback_buffer.Raw()]
                 ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
                 queue.CopyTextureToBuffer(ttex->GetRHI(), obuf->GetRHI().buffer);
-            })->AddTexture(test_texture.Raw(), RDGTextureUsageType::kTransferSrc)
+            })->AddTexture(test_texture.Raw(), RDGTextureUsageType::kTransferRead)
               ->AddBuffer(readback_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
             auto rdg = builder.Compile();
             auto pool = RDGResourcePool::Create();
@@ -327,6 +332,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
             lib.ReleaseCompiledShaders();
         }
 
+        TaskGraph::DestroySingleton();
         RHI::DestroySingleton();
         GetInfra().Shutdown();
         DestroyInfra();
