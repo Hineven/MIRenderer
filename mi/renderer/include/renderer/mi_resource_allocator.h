@@ -21,8 +21,8 @@
 
 MI_NAMESPACE_BEGIN
 
-// Allocate grouped GPU resources used for common rendering (geometry buffers, materials, etc)
-// Resources that does not need to be grouped (textures, etc) should be allocated separately.
+// Allocate grouped GPU resources used for common rendering (device geometries, materials, etc)
+// Resources that does not need to be grouped or indexed (textures, etc) should be allocated separately.
 // One allocator per renderer, at the highest level hierarchy.
 class CommonGroupedDeviceResourceAllocator : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
@@ -58,7 +58,6 @@ public:
         return custom_buffer_heaps_.at(index).Raw();
     }
 
-
 protected:
 
     // All device materials allocated
@@ -69,7 +68,7 @@ protected:
     // Slots (indices) for unused materials. Initialized to kMaxNumMaterials elements upon construction.
     std::stack<uint32_t> free_material_slots_;
 
-    // Heaps for consistent geometry
+    // Heaps for consistent geometries
     TRef<DeviceBufferHeapInterface> vertex_buffer_heap_;
     TRef<DeviceBufferHeapInterface> index_buffer_heap_;
 

@@ -20,7 +20,7 @@
 
 MI_NAMESPACE_BEGIN
 
-class StaticMesh;
+class StaticMeshInstance;
 
 class RenderGraphBuilder;
 class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {

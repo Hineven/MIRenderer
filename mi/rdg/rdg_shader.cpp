@@ -953,20 +953,20 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             MI_LOG(MIInfraLogType::kError, "Failed to create ray tracing pipeline");
             return false;
         }
-        raytracing_pipeline_ = pipeline;
+        ray_tracing_pipeline_ = pipeline;
 
         // Arranged in the order of raygen, miss, hit, ...
-        auto base_alignment = raytracing_pipeline_->GetShaderGroupBaseAlignment();
+        auto base_alignment = ray_tracing_pipeline_->GetShaderGroupBaseAlignment();
         auto handle_size = RoundUp(
-            raytracing_pipeline_->GetShaderGroupHandleSize(),
-            raytracing_pipeline_->GetShaderGroupHandleAlignment()
+            ray_tracing_pipeline_->GetShaderGroupHandleSize(),
+            ray_tracing_pipeline_->GetShaderGroupHandleAlignment()
             );
         auto section_size = RoundUp(handle_size, base_alignment);
         auto all_size = section_size * 3;
         sbt_.resize(all_size);
-        raytracing_pipeline_->GetShaderGroupHandles(0, 1, sbt_.data());
-        raytracing_pipeline_->GetShaderGroupHandles(1, 1, sbt_.data() + section_size);
-        raytracing_pipeline_->GetShaderGroupHandles(2, 1, sbt_.data() + section_size * 2);
+        ray_tracing_pipeline_->GetShaderGroupHandles(0, 1, sbt_.data());
+        ray_tracing_pipeline_->GetShaderGroupHandles(1, 1, sbt_.data() + section_size);
+        ray_tracing_pipeline_->GetShaderGroupHandles(2, 1, sbt_.data() + section_size * 2);
         sbt_sections_.raygen = {0, section_size};
         sbt_sections_.miss = {section_size, section_size};
         sbt_sections_.hit = {section_size * 2, section_size};

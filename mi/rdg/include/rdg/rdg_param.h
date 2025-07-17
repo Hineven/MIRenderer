@@ -161,6 +161,13 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWBuffer")>
 template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("RWStructuredBuffer")>
 : public TRDGShaderParamPlaceHolderType<ConstStrHash32("Buffer")> {};
 
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("AccelerationStructure")> {
+    typedef RHIAccelerationStructure * value;
+    FORCEINLINE static RHIAccelerationStructure * default_value() {
+        return reinterpret_cast<RHIAccelerationStructure*>(RDGParameter_UnsetPointer);
+    }
+};
+
 FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     const std::string& type_name, std::string param_name, uint32_t size, uint32_t cpp_offset
 ) {

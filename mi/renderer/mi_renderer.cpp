@@ -134,7 +134,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     {
         std::vector<int> visible_rt_static_mesh_renderable_indices;
         for (auto e : visible_renderable_indices) {
-            if (auto static_mesh = all_renderables[e]->As<StaticMesh>()) {
+            if (auto static_mesh = all_renderables[e]->As<StaticMeshInstance>()) {
                 if (static_mesh->IsRayTraced()) visible_rt_static_mesh_renderable_indices.push_back(e);
             }
         }
@@ -142,7 +142,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         auto instance_data = builder.Allocate<RHIAccelerationStructureInstanceDesc>(instance_count);
         auto instance_data_bytesize = instance_count * sizeof(RHIAccelerationStructureInstanceDesc);
         for (auto [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
-            auto renderable = all_renderables[e]->As<StaticMesh>();
+            auto renderable = all_renderables[e]->As<StaticMeshInstance>();
             auto data = RHIAccelerationStructureInstanceDesc {};
             data.instance_custom_index = e;
             data.mask = 0xFF; // Visible to all rays
@@ -202,7 +202,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // TODO maintain a list of materials in CommonGroupedDeviceResourceAllocator for better performance
     // Or, should we manually track material changes outside of the renderer?
     for (auto & e : all_renderables) {
-        if (auto mesh = e->As<StaticMesh>()) for (auto m : mesh->GetMaterials()) {
+        if (auto mesh = e->As<StaticMeshInstance>()) for (auto m : mesh->GetMaterials()) {
             // m->UpdateOnDevice(device_allocator_.Raw());
             assert(!m->IsDirty() && "Material should not be dirty at this point. "
                                     "You should manually call UpdateOnDevice() before rendering.");

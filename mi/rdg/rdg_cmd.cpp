@@ -235,6 +235,35 @@ bool RDGCommandHelper::BindComputeShader (
     return true;
 }
 
+bool RDGCommandHelper::BindRayTracingShader(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params) {
+    if (!ray_tracing_shader->IsValid()) {
+        MI_WARN("Shader {}: Invalid raytracing shader. Dispatch cancelled.",
+            ray_tracing_shader->class_registry_->name);
+        return false;
+    }
+    auto desc = SetupShaderParams(pass, ray_tracing_shader, queue, info, params);
+    if (!desc.has_value()) {
+        MI_WARN("Shader {}: Failed to upload shader parameters. Dispatch cancelled.",
+            ray_tracing_shader->class_registry_->name);
+        return false;
+    }
+
+    queue.BindPipeline(ray_tracing_shader->ray_tracing_pipeline_.Raw());
+    queue.BindPipelineParameters(RHIBindPointType::kRayTracing, desc.value());
+    auto sbt = ray_tracing_shader->GetSBTBuffers(queue);
+    // Bind the shader binding table
+    if (sbt.raygen && sbt.miss && sbt.hit) {
+        queue.BindShaderBindingTable(sbt.raygen, sbt.miss, sbt.hit);
+    } else {
+        MI_WARN("Shader {}: Shader binding table is not set up correctly. Dispatch rays cancelled.",
+            ray_tracing_shader->class_registry_->name);
+        return false;
+    }
+
+    return true;
+}
+
+
 void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void *params,
     int vertex_count, int instance_count, int first_vertex, int first_instance) {
@@ -261,5 +290,12 @@ void RDGCommandHelper::DispatchIndirect(RHICommandQueueGraphics &queue, RDGPass 
         queue.DispatchIndirect(indirect_buffer->GetRHI().buffer, uint32_t(indirect_buffer->GetRHI().offset + offset));
     }
 }
+
+void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params, uint32_t width, uint32_t height, uint32_t depth) {
+    if (BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
+        queue.DispatchRays(width, height, depth);
+    }
+}
+
 
 MI_NAMESPACE_END

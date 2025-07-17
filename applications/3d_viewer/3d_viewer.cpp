@@ -196,7 +196,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
     }
 
-    std::vector<TRef<StaticMesh>> meshes;
+    std::vector<TRef<StaticMeshInstance>> meshes;
     // Load default model
     {
         std::vector<TRef<Geometry>> geometries;

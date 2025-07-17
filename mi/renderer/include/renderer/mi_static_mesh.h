@@ -17,7 +17,9 @@
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
-class StaticMesh : public Renderable {
+// TODO : add a new class StaticMesh to separate the mesh data (geometry-material pairs and BLAS) from the instance.
+
+class StaticMeshInstance : public Renderable {
 public:
 
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
@@ -27,7 +29,7 @@ public:
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 
-    static TRef<StaticMesh> Create (RendererScene * world, Transform transform = {}) ;
+    static TRef<StaticMeshInstance> Create (RendererScene * world, Transform transform = {}) ;
 
     RenderableHeader GetDeviceRenderableHeader() const override;
 
@@ -57,8 +59,8 @@ public:
 
 protected:
 
-    StaticMesh(uint32_t index, RendererScene * world) ;
-    ~StaticMesh() override;
+    StaticMeshInstance(uint32_t index, RendererScene * world) ;
+    ~StaticMeshInstance() override;
 
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
@@ -73,7 +75,7 @@ protected:
     // If this static mesh is ray-traced. If true, it should have an acceleration structure.
     bool is_ray_traced_ {};
 
-    // If true, the mesh is meant to work faster with dynamic geometry updates.
+    // If true, the mesh is being prepared to work faster with frequent geometry updates.
     bool dynamic_ {};
 
 };

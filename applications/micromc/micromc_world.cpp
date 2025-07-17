@@ -111,7 +111,7 @@ void MicroMCChunk::GenerateCubeGeometry(RendererScene * world, Material * block_
         }
     }
     // 重建StaticMesh
-    if (!static_mesh_) static_mesh_ = StaticMesh::Create(world, Transform::Identity());
+    if (!static_mesh_) static_mesh_ = StaticMeshInstance::Create(world, Transform::Identity());
     static_mesh_->ClearMeshPrimitives();
     for (int i = 0; i < MAX_NUM_SUB_CHUNKS; i++) {
         if (geometries_[i]) {

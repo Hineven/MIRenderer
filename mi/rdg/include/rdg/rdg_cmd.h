@@ -39,6 +39,10 @@ public:
     static bool BindComputeShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
 
+    // Bind a raytracing shader, setting up required shader parameters and bindings for dispatch commands.
+    static bool BindRayTracingShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader,
+    const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
+
     template<CShaderType T>
     FORCEINLINE static bool BindGraphicsShader (
         RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const typename T::ShaderParameters * params,
@@ -76,9 +80,21 @@ public:
         Draw(queue, pass, graphics_shader, T::GetShaderParamStructInfo(), params, vertex_count, instance_count, first_vertex, first_instance);
     }
 
-    static void DrawIndexed (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, int index_count, int instance_count = 1, int first_index = 0, int vertex_offset = 0, int first_instance = 0) ;
-    static void DrawIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, RDGBuffer * indirect_buffer) ;
-    static void DrawIndexedIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, RDGBuffer * indirect_buffer) ;
+    // static void DrawIndexed (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, int index_count, int instance_count = 1, int first_index = 0, int vertex_offset = 0, int first_instance = 0) ;
+    // static void DrawIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, RDGBuffer * indirect_buffer) ;
+    // static void DrawIndexedIndirect (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader, RDGBuffer * indirect_buffer) ;
+
+    static void DispatchRays (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader,
+        const RDGShaderParamStructAndSizeInfo * info, const void * params,
+        uint32_t width, uint32_t height, uint32_t depth = 1
+    ) ;
+    template<CShaderType T>
+    FORCEINLINE static void DispatchRays (
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader, const typename T::ShaderParameters * params,
+        uint32_t width, uint32_t height, uint32_t depth = 1
+    ) {
+        DispatchRays(queue, pass, ray_tracing_shader, T::GetShaderParamStructInfo(), params, width, height, depth);
+    }
 };
 
 MI_NAMESPACE_END

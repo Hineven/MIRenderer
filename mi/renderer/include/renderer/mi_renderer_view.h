@@ -119,6 +119,8 @@ struct RendererView {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_metallic_roughness_;
 
+    TRef<RDGTexture> debug_output_;
+
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
     BatchedUploadContext upload_context_;
 

@@ -68,6 +68,9 @@ protected:
     ) ;
     void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture) ;
 
+    // Render material properties from the camera using ray-tracing for debugging purposes.
+    void Render_VisualizeRayTraced (RendererView * view, RenderGraphBuilder & builder) ;
+
 
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;

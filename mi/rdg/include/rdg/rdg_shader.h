@@ -173,7 +173,7 @@ protected:
     bool is_valid_ {false};
     TRef<RHIComputePipeline> compute_pipeline_;
     TRef<RHIGraphicsPipeline> graphics_pipeline_;
-    TRef<RHIRayTracingPipeline> raytracing_pipeline_;
+    TRef<RHIRayTracingPipeline> ray_tracing_pipeline_;
     struct {
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};

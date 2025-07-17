@@ -34,7 +34,7 @@ protected:
     // Some ray-traced geometries hold a BLAS
     // TRef<RHIAccelerationStructure> BLAS_;
 
-    friend StaticMesh;
+    friend StaticMeshInstance;
 
 public:
 
@@ -75,11 +75,10 @@ protected:
     // This attribute is only set upon creation, and cannot be changed later.
     // bool dynamic_ {false};
 public:
-    friend class StaticMesh;
+    friend class StaticMeshInstance;
     static TRef<Geometry> CreateFromVertices (
         std::span<DefaultStaticMeshVertex> vertices = {},
-        std::span<uint32_t> indices = {},
-        bool dynamic = false
+        std::span<uint32_t> indices = {}
     ) ;
     FORCEINLINE static TRef<Geometry> Create () {return CreateFromVertices();}
 

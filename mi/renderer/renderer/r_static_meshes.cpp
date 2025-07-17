@@ -54,7 +54,7 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
     auto & data = ctx.static_meshes;
 
     for (auto & e : ctx.visible_renderables) {
-        if (auto mesh = e->As<StaticMesh>()) {
+        if (auto mesh = e->As<StaticMeshInstance>()) {
             for (auto [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
                 auto dev = geom->GetDeviceGeometry();
                 RHIDrawIndexedIndirectCommand cmd {};
@@ -186,7 +186,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
         std::set<RHIBuffer*> barrier_buffers;
         for (auto & e : ctx.visible_renderables) {
             if (!e->IsDirty()) continue ;
-            if (auto mesh = e->As<StaticMesh>()) {
+            if (auto mesh = e->As<StaticMeshInstance>()) {
                 for (auto geom : mesh->GetGeometries()) {
                     if (auto dev = geom->GetDeviceGeometry()) {
                         if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb.buffer);

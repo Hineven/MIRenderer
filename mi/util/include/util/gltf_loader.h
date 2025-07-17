@@ -19,7 +19,7 @@ public:
         RendererScene & world,
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,
-        std::vector<TRef<StaticMesh>> & out_meshes
+        std::vector<TRef<StaticMeshInstance>> & out_meshes
     );
     // Load SRV image
     // static TRef<Texture> LoadImage (std::string name, std::filesystem::path path);

@@ -14,17 +14,17 @@
 #include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-StaticMesh::StaticMesh(uint32_t index, RendererScene * world): Renderable(RenderableType::kStaticMesh, index, world) {}
+StaticMeshInstance::StaticMeshInstance(uint32_t index, RendererScene * world): Renderable(RenderableType::kStaticMesh, index, world) {}
 
-StaticMesh::~StaticMesh() {}
+StaticMeshInstance::~StaticMeshInstance() {}
 
-TRef<StaticMesh> StaticMesh::Create(RendererScene *world, Transform transform) {
+TRef<StaticMeshInstance> StaticMeshInstance::Create(RendererScene *world, Transform transform) {
     auto index = AllocateRenderableIndexFromWorld(world);
     if (index == UINT32_MAX) {
         MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
         return nullptr;
     }
-    auto mesh = TRef(new StaticMesh(index, world));
+    auto mesh = TRef(new StaticMeshInstance(index, world));
     mesh->SetTransform(transform);
     mesh->index_ = index;
     mesh->world_ = world;
@@ -35,14 +35,14 @@ TRef<StaticMesh> StaticMesh::Create(RendererScene *world, Transform transform) {
 }
 
 
-void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
+void StaticMeshInstance::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     assert(mat->GetDeviceMaterial() && "Material must have a device material. Call UpdateOnDevice() on the material first.");
     geometries_.push_back(geom);
     materials_.push_back(mat);
     SetDirty(true);
 }
 
-void StaticMesh::ClearMeshPrimitives() {
+void StaticMeshInstance::ClearMeshPrimitives() {
     geometries_.clear();
     materials_.clear();
     BLAS_ = {};
@@ -50,7 +50,7 @@ void StaticMesh::ClearMeshPrimitives() {
 }
 
 
-void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
+void StaticMeshInstance::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
     if (!IsDirty()) return;
     if (geometries_.empty()) return ;
     uint32_t current_count = (uint32_t)(geometry_material_indices_ ? geometry_material_indices_->GetRHI().size : 0);
@@ -141,7 +141,7 @@ void StaticMesh::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilde
     SetDirty(false);
 }
 
-RenderableHeader StaticMesh::GetDeviceRenderableHeader() const {
+RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
     return ReinterpretAs<RenderableHeader>(renderable_header_);
 }
 

@@ -30,7 +30,7 @@ bool GLTFLoader::LoadGLTF(
     RendererScene &world,
     std::vector<TRef<Geometry> > &out_geometries,
     std::vector<TRef<Material> > &out_materials,
-    std::vector<TRef<StaticMesh> > &out_meshes
+    std::vector<TRef<StaticMeshInstance> > &out_meshes
 ) {
     assert(out_geometries.empty() && out_materials.empty() && out_meshes.empty() && "Outputs should be empty");
     assert(!path.empty());
@@ -315,7 +315,7 @@ bool GLTFLoader::LoadGLTF(
             geometry_material_pair_list.push_back(std::make_pair(current_geometry, material));
         }
     }
-    std::vector<TRef<StaticMesh>> mesh_instances;
+    std::vector<TRef<StaticMeshInstance>> mesh_instances;
     std::function<void (cgltf_node const *gltf_node, glm::mat4 const &parent_transform)> VisitNode
         = [&](cgltf_node const *gltf_node, glm::mat4 const &parent_transform)
     {
@@ -335,7 +335,7 @@ bool GLTFLoader::LoadGLTF(
             if(it != mesh_map.end())
                 for(size_t i = 0; i < (*it).second.size(); ++i)
                 {
-                    TRef<StaticMesh> instance_ref = StaticMesh::Create(&world, Transform::Identity());
+                    TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(&world, Transform::Identity());
                     mesh_instances.push_back(instance_ref);
                     for (auto e : (it->second)) {
                         e.second->UpdateOnDevice(&allocator);

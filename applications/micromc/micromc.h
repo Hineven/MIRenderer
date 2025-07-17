@@ -55,7 +55,7 @@ public:
                          const std::unordered_map<std::string, TextureUVMapping>& uv_mappings);
 
     // 获取静态网格
-    StaticMesh * GetStaticMesh() const { return static_mesh_.Raw(); }
+    StaticMeshInstance * GetStaticMesh() const { return static_mesh_.Raw(); }
 
     // 获取几何体
     const std::vector<TRef<Geometry>> & GetGeometries() const { return geometries_; }
@@ -66,7 +66,7 @@ public:
 
 private:
     int coord_x_, coord_z_;
-    TRef<StaticMesh> static_mesh_;
+    TRef<StaticMeshInstance> static_mesh_;
     std::vector<TRef<Geometry>> geometries_;
 
     // 生成立方体的顶点和索引
