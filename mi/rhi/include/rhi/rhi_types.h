@@ -114,14 +114,16 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kUniformRead = 1u<<3,
     // UAV (storage texture / buffer)
     kShaderStorageRead = 1u<<4,
+    // SRV (sampled texture)
+    kShaderSampledRead = 1u<<5,
     // Read acceleration structures in shader code
-    kAccelerationStructureRead = 1u<<5,
+    kAccelerationStructureRead = 1u<<6,
     // All possible reads in shader code, as well as build input read for acceleration structures
-    kShaderRead = kUniformRead | kShaderStorageRead | kAccelerationStructureRead,
-    kTransferRead = 1u<<6,
-    kDepthStencilRead = 1u<<7,
-    kColorAttachmentRead = 1u<<8,
-    kShaderBindingTableRead = 1u<<9,
+    kShaderRead = kUniformRead | kShaderStorageRead | kShaderSampledRead | kAccelerationStructureRead,
+    kTransferRead = 1u<<7,
+    kDepthStencilRead = 1u<<8,
+    kColorAttachmentRead = 1u<<9,
+    kShaderBindingTableRead = 1u<<10,
     // Only commonly seen read accesses are abstraced. Some rare read accesses are not included above
     // (such as eInputAttachmentRead. Subpass inputs are not commonly seen in desktop environments)
     // If you don't know what to use, use this. This is mapped to all read operations.

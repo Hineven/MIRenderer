@@ -23,6 +23,7 @@ MI_NAMESPACE_BEGIN
 
 enum class RHIParamType : uint32_t {
     kStorageBuffer = 0,
+    kStorageBufferArray,
     kUniformBuffer,
     kUAVTexture,
     kSRVTexture,
@@ -42,6 +43,7 @@ enum class RHIParamType : uint32_t {
 FORCEINLINE std::string ToString (RHIParamType type) {
     switch (type) {
         case RHIParamType::kStorageBuffer: return "StorageBuffer";
+        case RHIParamType::kStorageBufferArray: return "StorageBufferArray";
         case RHIParamType::kUniformBuffer: return "UniformBuffer";
         case RHIParamType::kUAVTexture: return "UAVTexture";
         case RHIParamType::kUAVTextureArray: return "UAVTextureArray";
@@ -66,9 +68,13 @@ FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "RWTexture2D") return RHIParamType::kUAVTexture;
     if(type == "SamplerState") return RHIParamType::kSampler;
     if(type == "Buffer") return RHIParamType::kStorageBuffer;
+    if(type == "Buffer[]") return RHIParamType::kStorageBufferArray;
     if(type == "StructuredBuffer") return RHIParamType::kStorageBuffer;
+    if(type == "StructuredBuffer[]") return RHIParamType::kStorageBufferArray;
     if(type == "RWBuffer") return RHIParamType::kStorageBuffer;
+    if(type == "RWBuffer[]") return RHIParamType::kStorageBufferArray;
     if(type == "RWStructuredBuffer") return RHIParamType::kStorageBuffer;
+    if(type == "RWStructuredBuffer[]") return RHIParamType::kStorageBufferArray;
     if(type == "ConstantBuffer") return RHIParamType::kUniformBuffer;
     if(type == "AccelerationStructure") return RHIParamType::kAccelerationStructure;
     // The following 4 types have no mapping in hlsl, just corporate with RDG shader reflection.
@@ -87,13 +93,24 @@ FORCEINLINE RHIGPUAccessFlags TypeNameStringToRHIAccessFlags (std::string_view t
         write = true;
     }
     auto view = type.substr(write ? 2 : 0);
-    if (view == "Buffer" || view == "StructuredBuffer" || view == "Texture2D" || view == "TextureCube" || view == "Texture2DArray") {
+    if (view.starts_with("Buffer")
+        || view.starts_with("StructuredBuffer")) {
         return write ? RHIGPUAccessFlagBits::kShaderStorageRW : RHIGPUAccessFlagBits::kShaderStorageRead;
-    } else if (view == "SamplerState") {
+    }
+    if (view.starts_with("Texture2D")
+        || view.starts_with("TextureCube")
+        || view.starts_with("Texture2DArray")) {
+        // texture.SampleXXX() is translated into OpImageSampleXXX, which is considered a sampled read operation.
+        // texture.Load is translated into OpImageRead, which is considered a storage read operation.
+        return write ? RHIGPUAccessFlagBits::kShaderStorageRW : (RHIGPUAccessFlagBits::kShaderStorageRead | RHIGPUAccessFlagBits::kShaderSampledRead);
+    }
+    if (view == "SamplerState") {
         return RHIGPUAccessFlagBits::kNone;
-    } else if (view == "AccelerationStructure") {
+    }
+    if (view == "AccelerationStructure") {
         return RHIGPUAccessFlagBits::kAccelerationStructureRead;
-    } else if (view == "ConstantBuffer") {
+    }
+    if (view == "ConstantBuffer") {
         return RHIGPUAccessFlagBits::kUniformRead;
     }
     assert(false && "Unknown type for RHIAccessFlags conversion");

@@ -593,6 +593,12 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kUniformRead) {
         vk_flags |= vk::AccessFlagBits2::eUniformRead;
     }
+    if (flags & RHIGPUAccessFlagBits::kShaderStorageRead) {
+        vk_flags |= vk::AccessFlagBits2::eShaderStorageRead;
+    }
+    if (flags & RHIGPUAccessFlagBits::kShaderSampledRead) {
+        vk_flags |= vk::AccessFlagBits2::eShaderSampledRead;
+    }
     if(flags & RHIGPUAccessFlagBits::kAccelerationStructureRead) {
         vk_flags |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
     }
@@ -605,17 +611,20 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kColorAttachmentRead) {
         vk_flags |= vk::AccessFlagBits2::eColorAttachmentRead;
     }
+    if(flags & RHIGPUAccessFlagBits::kShaderBindingTableRead) {
+        vk_flags |= vk::AccessFlagBits2::eShaderBindingTableReadKHR;
+    }
     if((flags & RHIGPUAccessFlagBits::kShaderWrite) == RHIGPUAccessFlagBits::kShaderWrite) {
         vk_flags |= vk::AccessFlagBits2::eShaderWrite;
+    }
+    if (flags & RHIGPUAccessFlagBits::kAccelerationStructureWrite) {
+        vk_flags |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
     }
     if(flags & RHIGPUAccessFlagBits::kDepthStencilWrite) {
         vk_flags |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
     }
     if(flags & RHIGPUAccessFlagBits::kColorAttachmentWrite) {
         vk_flags |= vk::AccessFlagBits2::eColorAttachmentWrite;
-    }
-    if (flags & RHIGPUAccessFlagBits::kAccelerationStructureWrite) {
-        vk_flags |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
     }
     if(flags & RHIGPUAccessFlagBits::kTransferWrite) {
         vk_flags |= vk::AccessFlagBits2::eTransferWrite;

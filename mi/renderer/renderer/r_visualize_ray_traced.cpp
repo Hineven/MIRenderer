@@ -18,7 +18,6 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutput)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, )
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
