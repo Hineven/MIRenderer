@@ -10,7 +10,7 @@
 #include "base.h"
 #include "refcounted.h"
 #include "types.h"
-#include "util/lockfree.h"
+#include "util/queue.h"
 
 MI_NAMESPACE_BEGIN
 

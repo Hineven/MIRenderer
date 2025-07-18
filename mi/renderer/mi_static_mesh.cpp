@@ -6,143 +6,198 @@
 #include <ranges>
 #include "renderer/mi_static_mesh.h"
 
+#include <gtest/internal/gtest-port.h>
+
 #include "rdg/rdg_builder.h"
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_geometry.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_view.h"
+#include "renderer/mi_resource_allocator.h"
 #include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-StaticMeshInstance::StaticMeshInstance(uint32_t index, RendererScene * world): Renderable(RenderableType::kStaticMesh, index, world) {}
 
-StaticMeshInstance::~StaticMeshInstance() {}
-
-TRef<StaticMeshInstance> StaticMeshInstance::Create(RendererScene *world, Transform transform) {
-    auto index = AllocateRenderableIndexFromWorld(world);
-    if (index == UINT32_MAX) {
-        MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
-        return nullptr;
-    }
-    auto mesh = TRef(new StaticMeshInstance(index, world));
-    mesh->SetTransform(transform);
-    mesh->index_ = index;
-    mesh->world_ = world;
-
-    mesh->RegisterToWorld();
-
-    return std::move(mesh);
+DeviceStaticMesh::DeviceStaticMesh(DeviceBindlessResourceAllocator * in_allocator) {
+    allocator_ = in_allocator;
+    index_ = allocator_->AllocateStaticMeshSlot();
 }
 
+DeviceStaticMesh::~DeviceStaticMesh() {
+    if (IsValid()) allocator_->FreeStaticMeshSlot(index_);
+}
 
-void StaticMeshInstance::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
+void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     assert(mat->GetDeviceMaterial() && "Material must have a device material. Call UpdateOnDevice() on the material first.");
     geometries_.push_back(geom);
     materials_.push_back(mat);
     SetDirty(true);
 }
 
-void StaticMeshInstance::ClearMeshPrimitives() {
+void StaticMesh::ClearMeshPrimitives() {
     geometries_.clear();
     materials_.clear();
-    BLAS_ = {};
+    device_static_mesh_ = {};
     SetDirty(true);
 }
 
-
-void StaticMeshInstance::Update (RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
+void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) {
     if (!IsDirty()) return;
-    if (geometries_.empty()) return ;
-    uint32_t current_count = (uint32_t)(geometry_material_indices_ ? geometry_material_indices_->GetRHI().size : 0);
-    if (geometries_.size() > current_count) {
-        current_count = std::max(current_count * 2u, 4u);
-        geometry_material_indices_.SafeRelease();
-        geometry_material_indices_ = world_->d_static_mesh_renderable_materials_->AllocateRefCounted(current_count * sizeof(uint32_t));
+    if (!device_static_mesh_) {
+        device_static_mesh_ = new DeviceStaticMesh(alloc);
+        mi_check(device_static_mesh_.IsValid(), "Failed to allocate static mesh slot. Maybe too many static meshes?");
     }
-    auto mem = (uint32_t*)view->temp_allocator_.Allocate(geometries_.size() * sizeof(uint32_t));
+    // Update geometry - material pairs
+    auto device_num_pairs = device_static_mesh_->geometry_material_indices_->GetRHI().size / (sizeof(uint32_t) * 2);
+    auto desired_num_pairs = (uint32_t)geometries_.size();
+    if (device_num_pairs != geometries_.size()) {
+        device_static_mesh_->geometry_material_indices_ = alloc->GetStaticMeshDescriptionBufferHeap()->AllocateRefCounted(
+            desired_num_pairs * sizeof(uint32_t) * 2
+        );
+    }
+    std::vector<uint32_t> data;
+    data.reserve(geometries_.size() * 2);
     for (int i = 0; i < (int)geometries_.size(); i++) {
-        mem[i] = materials_[i]->GetDeviceMaterial()->GetIndex();
+        auto geom = geometries_[i];
+        auto mat = materials_[i];
+        data[i * 2] = geom->GetDeviceGeometry()->GetIndex();
+        data[i * 2 + 1] = mat->GetDeviceMaterial()->GetIndex();
     }
-    view->upload_context_.AddUnsafe(geometry_material_indices_->GetRHI(), mem, geometries_.size() * sizeof(uint32_t));
-    view->upload_context_.AddExtraBarrier(
-        builder.Import(view->world_->d_static_mesh_renderable_materials_->GetHeapBufferBlock(0))
+    Helpers::Upload_Async(queue,
+        device_static_mesh_->geometry_material_indices_->GetRHI(), data.data(), sizeof(uint32_t) * data.size()
     );
-    if (IsRayTraced()) {
-        // Update acceleration structure for raytracing
-        auto & queue = RHI::Get().GetGraphicsCommandQueue();
-        auto geometries = queue.Allocate<RHIASGeometry>(geometries_.size());
-        RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
-        build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : 0);
-        for (auto [i, geometry] : std::views::enumerate(geometries_)) {
-            RHIASGeometryFlags geometry_flags = geometry->IsOpaque() ? RHIASGeometryFlagBits::kOpaque : 0;
-            auto device_geom = geometry->device_geometry_;
-            geometries[i] = RHIASGeometry{
-                RHIASGeometryType::kTriangles,
-                geometry_flags,
-                {
-                    device_geom->vertex_buffer_,
-                    sizeof(DefaultStaticMeshVertex),
-                    (uint32_t)device_geom->vertex_count_,
-                    RHIVertexAttributeFormatType::k3xFp32,
-                    RHIBufferSpan{
-                        device_geom->index_buffer_.buffer,
-                        device_geom->index_buffer_.offset + sizeof(uint32_t) * device_geom->first_index_,
-                        device_geom->index_buffer_.size
-                    },
-                    (uint32_t)device_geom->index_count_,
-                    RHIIndexType::kUint32
-                }
-            };
-        }
-        auto build_info = RHIAccelerationStructureBuildGeometryInfo{
-            RHIAccelerationStructureType::kBottomLevel,
-            build_flags,
-            RHIAccelerationStructureBuildMode::kUpdate,
-            BLAS_.Raw(),
-            BLAS_.Raw(),
-            {geometries, geometries_.size()}, {}, {}
-        };
-        auto sizes = BLAS_->GetBuildSizes(build_info);
-        bool updated = false;
-        if (BLAS_) {
-            // Try to update
-            if (dynamic_ && sizes.acceleration_structure_size <= BLAS_->GetSize()) {
-                auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
-                queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
-                updated = true;
-            } // Need rebuild
-        }
-        if (!updated) {
-            if (!BLAS_) {
+    // Update header
+    auto header = StaticMeshHeader {
+        device_static_mesh_->geometry_material_indices_->GetRHI().offset / (2 * sizeof(uint32_t)),
+        (uint32_t)geometries_.size(),
+    };
+    Helpers::Upload_Async(queue,
+        alloc->GetStaticMeshHeaderBuffer(),
+        sizeof(StaticMeshHeader) * device_static_mesh_->index_,
+        header
+    );
+    // Update BLAS if needed
+    if (!IsRayTraced()) {
+        device_static_mesh_->BLAS_ = {};
+    } else {
+        if (geometries_.empty()) {
+            // No geometries, release BLAS. NullDescriptorSet feature will take care of this case.
+            device_static_mesh_->BLAS_ = {};
+        } else {
+            // Update acceleration structure for raytracing
+            auto geometries = queue.Allocate<RHIASGeometry>(geometries_.size());
+            RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
+            build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : 0);
+            for (auto [i, geometry] : std::views::enumerate(geometries_)) {
+                auto material = materials_[i];
+                RHIASGeometryFlags geometry_flags = material->IsOpaque() ? RHIASGeometryFlagBits::kOpaque : 0;
+                auto device_geom = geometry->GetDeviceGeometry();
+                geometries[i] = RHIASGeometry{
+                    RHIASGeometryType::kTriangles,
+                    geometry_flags,
+                    {
+                        device_geom->GetDeviceVertexBuffer(),
+                        sizeof(DefaultStaticMeshVertex),
+                        (uint32_t)device_geom->GetVertexCount(),
+                        RHIVertexAttributeFormatType::k3xFp32,
+                        RHIBufferSpan{
+                            device_geom->GetDeviceIndexBuffer().buffer,
+                            device_geom->GetDeviceIndexBuffer().offset + sizeof(uint32_t) * device_geom->GetDeviceFirstIndex(),
+                            device_geom->GetDeviceIndexBuffer().size
+                        },
+                        (uint32_t)device_geom->GetIndexCount(),
+                        RHIIndexType::kUint32
+                    }
+                };
+            }
+            if (!device_static_mesh_->BLAS_) {
                 // Create
-                BLAS_ = RHI::Get().CreateAccelerationStructure(
+                device_static_mesh_->BLAS_ = RHI::Get().CreateAccelerationStructure(
                     RHIAccelerationStructureType::kBottomLevel
                 );
             }
-            // Re-create
-            BLAS_->Create(sizes.acceleration_structure_size);
-            // Build
-            build_info.mode = RHIAccelerationStructureBuildMode::kBuild;
-            build_info.src_acceleration_structure = {};
-            build_info.dst_acceleration_structure = BLAS_.Raw();
-            auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
-            queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
+            auto build_info = RHIAccelerationStructureBuildGeometryInfo{
+                RHIAccelerationStructureType::kBottomLevel,
+                build_flags,
+                RHIAccelerationStructureBuildMode::kUpdate,
+                device_static_mesh_->BLAS_.Raw(),
+                device_static_mesh_->BLAS_.Raw(),
+                {geometries, geometries_.size()}, {}, {}
+            };
+            auto sizes = device_static_mesh_->BLAS_->GetBuildSizes(build_info);
+            bool updated = false;
+            // Try to update
+            if (dynamic_ && sizes.acceleration_structure_size <= device_static_mesh_->BLAS_->GetSize()) {
+                auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
+                queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
+                updated = true;
+            }
+            if (!updated) {
+                // Need rebuild
+                // Re-create
+                device_static_mesh_->BLAS_->Create(sizes.acceleration_structure_size);
+                // Build
+                build_info.mode = RHIAccelerationStructureBuildMode::kBuild;
+                build_info.src_acceleration_structure = {};
+                build_info.dst_acceleration_structure = device_static_mesh_->BLAS_.Raw();
+                auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
+                queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
+            }
+            // Barrier
+            queue.AccelerationStructureBarrier(
+                device_static_mesh_->BLAS_.Raw(),
+                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIPipelineStageFlagBits::kRayTracing,
+                RHIGPUAccessFlagBits::kShaderWrite,
+                RHIGPUAccessFlagBits::kAccelerationStructureRead
+            );
         }
-        // Barrier
-        queue.AccelerationStructureBarrier(
-            BLAS_.Raw(),
-            RHIPipelineStageFlagBits::kAccelerationStructureBuild,
-            RHIPipelineStageFlagBits::kRayTracing,
-            RHIGPUAccessFlagBits::kShaderWrite,
-            RHIGPUAccessFlagBits::kAccelerationStructureRead
-        );
     }
-
     SetDirty(false);
 }
 
+void StaticMesh::UpdateOnDevice(DeviceBindlessResourceAllocator * alloc) {
+    auto & queue = RHI::Get().GetGraphicsCommandQueue();
+    UpdateOnDevice_Async(alloc, queue);
+    queue.WaitForIdle("StaticMesh::UpdateOnDevice");
+}
+
+TRef<StaticMesh> StaticMesh::Create(bool is_ray_traced, bool dynamic) {
+    auto mesh = TRef(new StaticMesh());
+    mesh->is_ray_traced_ = is_ray_traced;
+    mesh->dynamic_ = dynamic;
+    return mesh;
+}
+
+
+StaticMeshInstance::StaticMeshInstance(uint32_t index, Scene * scene): Renderable(RenderableType::kStaticMeshInstance, index, scene) {}
+
+StaticMeshInstance::~StaticMeshInstance() {}
+
+void StaticMeshInstance::Update(RendererView *view, RenderGraphBuilder &builder) {
+    SetDirty(false);
+}
+
+
+TRef<StaticMeshInstance> StaticMeshInstance::Create(Scene *scene, StaticMesh * static_mesh, Transform transform) {
+    auto index = AllocateRenderableIndexFromWorld(scene);
+    if (index == UINT32_MAX) {
+        MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
+        return nullptr;
+    }
+    auto mesh = TRef(new StaticMeshInstance(index, scene));
+    mesh->SetTransform(transform);
+    mesh->index_ = index;
+    mesh->scene_ = scene;
+    mesh->static_mesh_ = static_mesh;
+
+    mesh->RegisterToWorld();
+
+    return std::move(mesh);
+}
 RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
-    return ReinterpretAs<RenderableHeader>(renderable_header_);
+    return  {};
 }
 
 

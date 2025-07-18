@@ -32,8 +32,8 @@ void Renderer::Render_DrawSky(RendererView *view, RenderGraphBuilder &builder) {
         params->Output.load_op = RHILoadOpType::kDontCare;
         params->Output.store_op = RHIStoreOpType::kStore;
         params->View = view->view_common_params_;
-        if (view->world_ && view->world_->GetSkyTexture() && view->world_->GetSkyTexture()->GetDeviceTexture()) {
-            params->SkyTexture = builder.Import(view->world_->GetSkyTexture()->GetDeviceTexture());
+        if (view->scene_ && view->scene_->GetSkyTexture() && view->scene_->GetSkyTexture()->GetDeviceTexture()) {
+            params->SkyTexture = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
         } else params->SkyTexture = nullptr; // Black
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }

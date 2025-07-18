@@ -169,7 +169,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     auto pool = RDGResourcePool::Create();
 
     // Resource allocator
-    auto resource_allocator = new CommonGroupedDeviceResourceAllocator(
+    auto resource_allocator = new DeviceBindlessResourceAllocator(
         SimpleDeviceBufferHeap::Create(
             RHIBufferUsageFlagBits::kVertex, 256
         ).Raw(),
@@ -181,7 +181,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     // Renderer
     Renderer::Get().Init(resource_allocator, pool.Raw());
 
-    auto world = std::make_unique<RendererScene>();
+    auto world = std::make_unique<DeviceScene>();
     TRef<Texture> sky_cube;
 
     // Upload sky texture
@@ -210,7 +210,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     auto view = std::make_unique<RendererView>();
     view->film_width_ = cfg.window_width;
     view->film_height_ = cfg.window_height;
-    view->world_ = world.get();
+    view->scene_ = world.get();
 
     {
         std::future<void> previous_frame_future;

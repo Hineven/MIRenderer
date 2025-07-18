@@ -14,8 +14,8 @@ MI_NAMESPACE_BEGIN
 class VolumePrimitivesLoader {
 public:
     static bool LoadPLY (
-        const std::filesystem::path& path, CommonGroupedDeviceResourceAllocator & allocator,
-        RendererScene & world,
+        const std::filesystem::path& path, DeviceBindlessResourceAllocator & allocator,
+        DeviceScene & world,
         TRef<VolumePrimitives> & out_volprims
     );
 };

@@ -54,7 +54,8 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
     auto & data = ctx.static_meshes;
 
     for (auto & e : ctx.visible_renderables) {
-        if (auto mesh = e->As<StaticMeshInstance>()) {
+        if (auto mesh_instance = e->As<StaticMeshInstance>()) {
+            auto mesh = mesh_instance->GetStaticMesh();
             for (auto [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
                 auto dev = geom->GetDeviceGeometry();
                 RHIDrawIndexedIndirectCommand cmd {};
@@ -123,9 +124,9 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
 
     auto params = builder.Allocate<DrawStaticMeshesShader::Params>();
     params->View = view->view_common_params_;
-    params->RenderableHeaders = builder.Import(view->world_->d_renderable_headers_.Raw());
-    params->RenderableTransforms = builder.Import(view->world_->d_renderable_transforms_.Raw());
-    params->RenderableNormalTransforms = builder.Import(view->world_->d_renderable_normal_transforms_.Raw());
+    params->RenderableHeaders = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+    params->RenderableTransforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+    params->RenderableNormalTransforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
     params->RenderableIndexAndMaterialIndex = ctx.static_meshes.d_static_mesh_draw_command_renderable_material_indices.Raw();
     params->MaterialHeaders = builder.Import(device_allocator_->material_header_buffer_.Raw());
     params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
@@ -186,7 +187,8 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
         std::set<RHIBuffer*> barrier_buffers;
         for (auto & e : ctx.visible_renderables) {
             if (!e->IsDirty()) continue ;
-            if (auto mesh = e->As<StaticMeshInstance>()) {
+            if (auto mesh_instance = e->As<StaticMeshInstance>()) {
+                auto mesh = mesh_instance->GetStaticMesh();
                 for (auto geom : mesh->GetGeometries()) {
                     if (auto dev = geom->GetDeviceGeometry()) {
                         if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb.buffer);

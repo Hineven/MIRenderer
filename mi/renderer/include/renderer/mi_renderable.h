@@ -21,11 +21,11 @@
 MI_NAMESPACE_BEGIN
 
 class StaticMeshInstance;
-
 class RenderGraphBuilder;
+
 class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
-    friend class RendererScene;
+    // friend class DeviceScene;
     virtual ~Renderable();
     FORCEINLINE bool IsVisible() const { return visible_; }
     FORCEINLINE void SetVisible(bool visible) { visible_ = visible; }
@@ -73,28 +73,21 @@ protected:
     void RegisterToWorld () ;
 
     // Proxy for World::AllocateRenderableIndex();
-    static uint32_t AllocateRenderableIndexFromWorld (RendererScene * world) ;
+    static uint32_t AllocateRenderableIndexFromWorld (Scene * world) ;
 
-    Renderable(RenderableType type, uint32_t index, RendererScene * world);
+    Renderable(RenderableType type, uint32_t index, Scene * world);
 
     Transform transform_;
-    RendererScene * world_;
+    Scene * scene_;
     uint32_t index_ {UINT32_MAX};
 
     // Invisible renderables wont be rendered.
     bool visible_ {true};
     bool dirty_ {true};
     bool transform_dirty_ {true};
-    RenderableType type_ {RenderableType::kStaticMesh};
+    RenderableType type_ {RenderableType::kStaticMeshInstance};
 
 };
-
-template<CMemTrivial TDst, CMemTrivial TSrc>
-const TDst & ReinterpretAs (const TSrc & src) {
-    static_assert(sizeof (TSrc) == sizeof(TDst), "Size mismatch");
-    static_assert(alignof (TSrc) == alignof (TDst), "Alignment mismatch");
-    return *reinterpret_cast<const TDst *>(&src);
-}
 
 MI_NAMESPACE_END
 

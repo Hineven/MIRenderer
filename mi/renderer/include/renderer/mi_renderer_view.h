@@ -85,7 +85,7 @@ struct RendererViewPersistentData {
     uint32_t frame_index_ {};
 
 
-    RendererScene * prev_world_;
+    Scene * prev_scene_;
 };
 
 
@@ -109,7 +109,7 @@ struct RendererView {
     uint32_t film_width_ {};
     uint32_t film_height_ {};
 
-    RendererScene * world_ {};
+    Scene * scene_ {};
 
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
@@ -132,6 +132,7 @@ struct RendererView {
 
     // Persistent data
     std::unique_ptr<RendererViewPersistentData> persistent_data_ {};
+
 };
 
 MI_NAMESPACE_END

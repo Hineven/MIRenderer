@@ -6,7 +6,7 @@
 #include "core/infra.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_resource.h"
-#include "core/util/lockfree.h"
+#include "core/util/queue.h"
 #include "include/rhi/rhi_bindless.h"
 
 MI_NAMESPACE_BEGIN

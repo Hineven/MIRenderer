@@ -7,22 +7,21 @@
 #include <ranges>
 
 #include "shaders/shared/SharedRenderable.hlsl"
-#include "renderer/mi_renderer.h"
 
 #include <barrier>
 #include <core/infra.h>
+#include <rhi/rhi_as.h>
 #include <rdg/rdg_builder.h>
+#include <rdg/rdg_cmd.h>
+
+#include <renderer/mi_renderer.h>
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_renderer_view.h>
 #include <renderer/mi_material.h>
-#include <rhi/rhi_buffer.h>
 
-#include "rdg/rdg_cmd.h"
-#include "renderer/mi_resource_allocator.h"
-#include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-    Renderer::Renderer() {
+Renderer::Renderer() {
 
 }
 
@@ -49,7 +48,7 @@ void Renderer::DestroySingleton() {
     }
 }
 
-void Renderer::Init(CommonGroupedDeviceResourceAllocator * allocator, RDGResourcePool * pool) {
+void Renderer::Init(DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) {
     device_allocator_ = allocator;
     pool_ = pool;
 }
@@ -75,18 +74,17 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Init frame context
     ctx.Init();
 
-    if (!view->world_) {
+    if (!view->scene_) {
         MI_WARN("World is not present in the view.");
         return ;
     }
     mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
-    auto all_renderables = view->world_->GetRenderables();
+    auto all_renderables = view->scene_->GetRenderables();
 
     // Update dirty renderables with custom logic
     for (auto & e : all_renderables) {
         if (e && e->IsDirty()) {
             e->Update(view, builder);
-            e->SetDirty(false);
         }
     }
 
@@ -113,18 +111,18 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
     // Upload renderable transforms and headers
     view->upload_context_.Add(
-        builder.Import(view->world_->d_renderable_transforms_.Raw(),
+        builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw(),
             RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_transforms.data(),
         renderable_transforms.size() * sizeof(glm::mat4x3));
     view->upload_context_.Add(
-        builder.Import(view->world_->d_renderable_normal_transforms_.Raw(),
+        builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw(),
             RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_normal_transforms.data(),
         renderable_normal_transforms.size() * sizeof(glm::mat3x3)
     );
     view->upload_context_.Add(
-        builder.Import(view->world_->d_renderable_headers_.Raw(),
+        builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw(),
             RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_headers.data(),
         renderable_headers.size() * sizeof(RenderableHeader)
@@ -134,20 +132,21 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     {
         std::vector<int> visible_rt_static_mesh_renderable_indices;
         for (auto e : visible_renderable_indices) {
-            if (auto static_mesh = all_renderables[e]->As<StaticMeshInstance>()) {
-                if (static_mesh->IsRayTraced()) visible_rt_static_mesh_renderable_indices.push_back(e);
+            if (auto static_mesh_inst = all_renderables[e]->As<StaticMeshInstance>()) {
+                if (static_mesh_inst->GetStaticMesh()->IsRayTraced())
+                    visible_rt_static_mesh_renderable_indices.push_back(e);
             }
         }
         auto instance_count = (uint32_t)visible_rt_static_mesh_renderable_indices.size();
         auto instance_data = builder.Allocate<RHIAccelerationStructureInstanceDesc>(instance_count);
         auto instance_data_bytesize = instance_count * sizeof(RHIAccelerationStructureInstanceDesc);
-        for (auto [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
+        for (const auto& [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
             auto renderable = all_renderables[e]->As<StaticMeshInstance>();
             auto data = RHIAccelerationStructureInstanceDesc {};
             data.instance_custom_index = e;
             data.mask = 0xFF; // Visible to all rays
             data.flags = RHIASGeometryInstanceFlagBits::kNone;
-            data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
+            data.acceleration_structure_reference = renderable->GetStaticMesh()->GetDeviceStaticMesh()->GetBLAS()->GetDeviceAddress();
             // Row major
             auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
             for (int x = 0; x < 4; x++)
@@ -160,13 +159,13 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             instance_data_bytesize
         );
         view->upload_context_.Add(instance_buffer.Raw(), instance_data, instance_data_bytesize);
-        if (!view->world_->TLAS_) {
+        if (!view->scene_->GetDeviceScene()->TLAS_) {
             // Create one if not exists
-            view->world_->TLAS_ = RHI::Get().CreateAccelerationStructure(
+            view->scene_->GetDeviceScene()->TLAS_ = RHI::Get().CreateAccelerationStructure(
                 RHIAccelerationStructureType::kTopLevel
             );
         }
-        auto TLAS = view->world_->TLAS_;
+        auto TLAS = view->scene_->GetDeviceScene()->TLAS_;
         auto build_info = RHIAccelerationStructureBuildGeometryInfo {
             RHIAccelerationStructureType::kTopLevel,
             RHIAccelerationStructureBuildFlagBits::kPreferFastTrace
@@ -197,18 +196,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         })->AddAS(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
         ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead);
     }
-
-    // Upload material changes
-    // TODO maintain a list of materials in CommonGroupedDeviceResourceAllocator for better performance
-    // Or, should we manually track material changes outside of the renderer?
-    for (auto & e : all_renderables) {
-        if (auto mesh = e->As<StaticMeshInstance>()) for (auto m : mesh->GetMaterials()) {
-            // m->UpdateOnDevice(device_allocator_.Raw());
-            assert(!m->IsDirty() && "Material should not be dirty at this point. "
-                                    "You should manually call UpdateOnDevice() before rendering.");
-        }
-    }
-
 
     // Filter visible rendeables
     ctx.visible_renderables.reserve(all_renderables.size());

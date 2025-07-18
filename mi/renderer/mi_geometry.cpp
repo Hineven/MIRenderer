@@ -13,8 +13,9 @@
 #include "renderer/mi_scene.h"
 #include "rhi/rhi_as.h"
 MI_NAMESPACE_BEGIN
-DeviceGeometry::DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator) {
+DeviceGeometry::DeviceGeometry(DeviceBindlessResourceAllocator * allocator) {
     allocator_ = allocator;
+    index_ = allocator_->AllocateGeometrySlot();
 }
 
 DeviceGeometry::~DeviceGeometry() {
@@ -22,6 +23,7 @@ DeviceGeometry::~DeviceGeometry() {
         allocator_->FreeVertexBuffer(vertex_buffer_);
     if (index_buffer_.buffer)
         allocator_->FreeIndexBuffer(index_buffer_);
+    if (IsValid()) allocator_->FreeGeometrySlot(index_);
 }
 
 Geometry::Geometry() {
@@ -49,32 +51,45 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     return geom;
 }
 
-void Geometry::UpdateOnDevice_Async(CommonGroupedDeviceResourceAllocator *alloc) {
-    mi_assert(!device_geometry_, "Device geometry already created.");
+void Geometry::UpdateOnDevice_Async(DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue) {
     mi_check(GetVertexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for vertex buffer.");
     mi_check(GetIndexBufferSize() < UINT32_MAX, "Too large geometry! Overflowing allocation size for index buffer.");
     if (dirty_) {
         if (!device_geometry_) {
             device_geometry_ = TRef(new DeviceGeometry(alloc));
+            mi_check(device_geometry_->IsValid(), "Failed to allocate device geometry slot. This may indicate that the device allocator is full.");
         }
+        // Update geometries
         if (device_geometry_->vertex_buffer_.size != GetVertexBufferSize()) {
             device_geometry_->vertex_buffer_ = alloc->AllocateVertexBuffer((uint32_t)GetVertexBufferSize());
         }
         if (device_geometry_->index_buffer_.size != GetIndexBufferSize()) {
             device_geometry_->index_buffer_ = alloc->AllocateIndexBuffer((uint32_t)GetIndexBufferSize());
         }
-        Helpers::Upload_Async(device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
-        Helpers::Upload_Async(device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
+        Helpers::Upload_Async(queue, device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
+        Helpers::Upload_Async(queue, device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
+        // Update geometry header
         device_geometry_->first_index_ = 0;
         device_geometry_->vertex_count_ = (int)vertices_.size();
         device_geometry_->index_count_ = (int)indices_.size();
+        auto index = device_geometry_->GetIndex();
+        auto geometry_header = GeometryHeader {
+            alloc->GetVertexBufferHeap()->GetBufferBlockIndex(device_geometry_->vertex_buffer_.buffer),
+            alloc->GetIndexBufferHeap()->GetBufferBlockIndex(device_geometry_->index_buffer_.buffer),
+            (uint32_t)(device_geometry_->vertex_buffer_.offset / sizeof(DefaultStaticMeshVertex)),
+            (uint32_t)(device_geometry_->index_buffer_.offset / sizeof(uint32_t)) + device_geometry_->first_index_,
+            device_geometry_->vertex_count_, device_geometry_->index_count_
+        };
+        Helpers::Upload_Async(queue, alloc->GetGeometryHeaderBuffer(), index * sizeof(GeometryHeader), geometry_header);
         SetDirty(false);
+    } else {
+        MI_WARN("Geometry is not dirty, no need to update on device.");
     }
 }
 
-void Geometry::UpdateOnDevice(CommonGroupedDeviceResourceAllocator * alloc) {
+void Geometry::UpdateOnDevice(DeviceBindlessResourceAllocator * alloc) {
     if (dirty_) {
-        UpdateOnDevice_Async(alloc);
+        UpdateOnDevice_Async(alloc, RHI::Get().GetGraphicsCommandQueue());
         RHI::Get().GetGraphicsCommandQueue().WaitForIdle("Geometry::UpdateOnDevice");
     }
 }

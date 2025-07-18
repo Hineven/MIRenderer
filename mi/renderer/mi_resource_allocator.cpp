@@ -15,22 +15,37 @@
 
 MI_NAMESPACE_BEGIN
 
-CommonGroupedDeviceResourceAllocator::CommonGroupedDeviceResourceAllocator(DeviceBufferHeapInterface *vertex_buffer_heap, DeviceBufferHeapInterface *index_buffer_heap) {
-    vertex_buffer_heap_ = vertex_buffer_heap;
+DeviceBindlessResourceAllocator::DeviceBindlessResourceAllocator():
+material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_mesh_slots_(kMaxNumStaticMeshes) {
+    vertex_buffer_heap_ = DefaultDeviceBufferHeap::Create(
+        RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage,
+        128
+    );
     vertex_buffer_heap_->SetName("VertexBufferHeap");
-    index_buffer_heap_ = index_buffer_heap;
+    index_buffer_heap_ = DefaultDeviceBufferHeap::Create(
+        RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage,
+        128
+    );
     index_buffer_heap_->SetName("IndexBufferHeap");
-
-    for (uint32_t i = kMaxNumMaterials; i > 0; i--) {
-        free_material_slots_.push(i - 1);
-    }
     material_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kStorage}
     );
     material_header_buffer_->SetName("MaterialHeaderBuffer");
+    geometry_header_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(GeometryHeader) * kMaxNumGeometries, RHIBufferUsageFlagBits::kStorage}
+    );
+    geometry_header_buffer_->SetName("GeometryHeaderBuffer");
+    static_mesh_header_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(StaticMeshHeader) * kMaxNumStaticMeshes, RHIBufferUsageFlagBits::kStorage}
+    );
+    static_mesh_header_buffer_->SetName("StaticMeshHeaderBuffer");
+    static_mesh_description_heap_ = DefaultDeviceBufferHeap::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        1, sizeof(uint2) * kMaxNumStaticMeshGeometryMaterialPairs
+    );
 }
 
-CommonGroupedDeviceResourceAllocator::~CommonGroupedDeviceResourceAllocator() {
+DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {
 
 }
 

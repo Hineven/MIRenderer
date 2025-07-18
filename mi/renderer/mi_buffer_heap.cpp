@@ -151,6 +151,16 @@ void SimpleDeviceBufferHeap::SetNumBufferBlockLimit(uint32_t num) {
     max_num_buffer_blocks_ = num;
 }
 
+uint32_t SimpleDeviceBufferHeap::GetBufferBlockIndex(RHIBuffer *buffer) const {
+    for (int i = 0; i < (int)buffer_blocks_.size(); i++) {
+        if (buffer == buffer_blocks_[i].buffer) {
+            return (uint32_t)i;
+        }
+    }
+    return UINT32_MAX; // Not found
+}
+
+
 void SimpleDeviceBufferHeap::SetName(const std::string &name) {
     DeviceBufferHeapInterface::SetName(name);
     for (auto [i, e] : std::views::enumerate(buffer_blocks_)) {
@@ -163,6 +173,5 @@ void SimpleDeviceBufferHeap::SetName(const std::string &name) {
 void SimpleDeviceBufferHeap::PreAllocateBlocks(uint32_t num_blocks) {
     for (int i = 0; i < (int)num_blocks; i++) AddNewBlock(default_buffer_block_size_, 0);
 }
-
 
 MI_NAMESPACE_END

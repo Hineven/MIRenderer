@@ -8,7 +8,7 @@
 
 MI_NAMESPACE_BEGIN
 
-bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] CommonGroupedDeviceResourceAllocator &allocator, RendererScene &world, TRef<VolumePrimitives> &out_volprims) {
+bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, DeviceScene &world, TRef<VolumePrimitives> &out_volprims) {
     if (path.extension() != ".ply") {
         MI_WARN("VolumePrimitivesLoader: Not a PLY file: {}", path.string());
         return false;

@@ -31,7 +31,7 @@ public:
     void Update (RendererView * view, RenderGraphBuilder & builder);
     void SetPrimitives (const std::vector<VolumePrimitive> & primitives) ;
 
-    static TRef<VolumePrimitives> Create (RendererScene * world, Transform transform = {}) ;
+    static TRef<VolumePrimitives> Create (DeviceScene * world, Transform transform = {}) ;
 
     RenderableHeader GetDeviceRenderableHeader() const override;
 
@@ -39,13 +39,13 @@ public:
 
     // All volume primitive data are allocated in a single buffer heap with a single buffer.
     // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
-    static void SetupAllocatorBufferHeap (CommonGroupedDeviceResourceAllocator * allocator) ;
+    static void SetupAllocatorBufferHeap (DeviceBindlessResourceAllocator * allocator) ;
 
-    constexpr static RenderableType kRenderableType = RenderableType::kStaticMesh;
+    constexpr static RenderableType kRenderableType = RenderableType::kStaticMeshInstance;
 
 protected:
 
-    VolumePrimitives(uint32_t index, RendererScene * world) ;
+    VolumePrimitives(uint32_t index, DeviceScene * world) ;
     ~VolumePrimitives() override;
 
     bool dirty_ {true};

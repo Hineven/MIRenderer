@@ -10,69 +10,29 @@
 #include <set>
 #include <stack>
 #include <vector>
-#include "core/base.h"
-#include "core/refcounted.h"
+#include <core/base.h>
+#include <core/refcounted.h>
+#include <core/util/slot_allocator.h>
 #include <rhi/rhi_fwd.h>
 
-#include "mi_renderable.h"
-#include "renderer/mi_renderer_fwd.h"
+#include <renderer/mi_renderer_fwd.h>
+#include <renderer/mi_renderable.h>
 MI_NAMESPACE_BEGIN
 
 // Integrated class managing the rendering world. This class is not for general use and should only be used
 // for rendering. Scene management is not its responsibility.
 // It is responsible for holding renderables and rendering resources of a scene.
-class RendererScene : public NonCopyable, public NonMovable {
+class DeviceScene : public NonCopyable, public NonMovable, public RefCounted<true> {
 public:
     friend class Renderable;
     friend struct RendererView;
     friend class Renderer;
-
-    constexpr static uint32_t kMaxNumRenderables = 4096;
-    constexpr static uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 4096 * 16;
-
-    RendererScene();
-    ~RendererScene();
-
-    void RemoveRenderable (Renderable * renderable) ;
-
-    FORCEINLINE const std::vector<TRef<Renderable>> & GetRenderables () const {
-        return renderables_;
-    }
-
-    void SetSkyCube (Texture * texture) ;
-    FORCEINLINE Texture * GetSkyTexture () const {
-        return sky_cube_.Raw();
-    }
-
-    // Record the index of the material of each geometry from all static mesh renderables.
-    // This buffer heap is limited to 1 buffer block. And it is always present.
-    TRef<DeviceBufferHeapInterface> d_static_mesh_renderable_materials_;
+    friend class Scene;
 
 protected:
 
-    FORCEINLINE uint32_t AllocateRenderableIndex () {
-        if (free_renderables_.empty()) {
-            if (renderables_.size() < kMaxNumRenderables) {
-                renderables_.emplace_back(nullptr);
-                return (uint32_t)(renderables_.size() - 1);
-            }
-            return UINT32_MAX;
-        }
-        uint32_t index = free_renderables_.top();
-        free_renderables_.pop();
-        return index;
-
-    }
-
-    FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
-        free_renderables_.push(index);
-    }
-
-    std::vector<TRef<Renderable>> renderables_;
-    // Keep track of free renderable indices, so we can reallocate them.
-    std::stack<uint32_t> free_renderables_;
-
-    TRef<Texture> sky_cube_;
+    DeviceScene();
+    ~DeviceScene();
 
     // Indexed with renderable index.
     TRef<RHIBuffer> d_renderable_transforms_;
@@ -81,6 +41,53 @@ protected:
 
     // Top level acceleration structure for ray-traced objects
     TRef<RHIAccelerationStructure> TLAS_;
+};
+
+class Scene : public NonMovable, public NonCopyable {
+public:
+    friend class Renderable;
+
+    constexpr static uint32_t kMaxNumRenderables = 4096;
+
+    Scene();
+    ~Scene();
+
+    void RemoveRenderable (Renderable * renderable) ;
+
+    FORCEINLINE const std::vector<TRef<Renderable>> & GetRenderables () const {
+        return renderables_;
+    }
+    void SetSkyCube (Texture * texture) ;
+
+    FORCEINLINE Texture * GetSkyTexture () const {
+        return sky_cube_.Raw();
+    }
+
+    FORCEINLINE DeviceScene * GetDeviceScene () const {
+        return device_scene_.Raw();
+    }
+
+    // Create the scene on the device.
+    // Unlike geometry & material, device static mesh & device scene are manually
+    // updated in the renderer. See renderer implementation for details.
+    void CreateOnDevice () ;
+
+protected:
+
+    TRef<Texture> sky_cube_;
+
+    std::vector<TRef<Renderable>> renderables_;
+
+    FORCEINLINE uint32_t AllocateRenderableIndex () {
+        return renderable_slots_.AllocateSlot();
+    }
+    FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
+        renderable_slots_.FreeSlot(index);
+    }
+
+    SlotAllocator renderable_slots_;
+
+    TRef<DeviceScene> device_scene_;
 };
 
 MI_NAMESPACE_END

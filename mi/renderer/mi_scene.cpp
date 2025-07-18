@@ -11,27 +11,31 @@
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_texture.h>
 #include <rhi/rhi_buffer.h>
-#include <renderer/mi_buffer_heap.h>
-#include <rhi/rhi_bindlesskeeper.h>
+#include <rhi/rhi_as.h>
 
 MI_NAMESPACE_BEGIN
 
-RendererScene::RendererScene () {
+DeviceScene::DeviceScene () {
     auto & rhi = RHI::Get();
-    d_renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
-    d_renderable_normal_transforms_ = rhi.CreateBuffer(sizeof(glm::mat3x3) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
-    d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * RendererScene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
-    d_static_mesh_renderable_materials_ = DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 1, sizeof(uint32_t) * RendererScene::kMaxNumStaticMeshGeometryMaterialPairs);
-    d_static_mesh_renderable_materials_->SetNumBufferBlockLimit(1);
-    d_static_mesh_renderable_materials_->PreAllocateBlocks(1);
+    d_renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_normal_transforms_ = rhi.CreateBuffer(sizeof(glm::mat3x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
 }
 
-RendererScene::~RendererScene() {
+DeviceScene::~DeviceScene() {
 
 }
 
+Scene::Scene(): renderable_slots_(kMaxNumRenderables) {
 
-void RendererScene::SetSkyCube(Texture *texture) {
+}
+Scene::~Scene() {
+
+}
+
+
+
+void Scene::SetSkyCube(Texture *texture) {
     if (!texture) {
         sky_cube_ = nullptr;
         return ;
@@ -44,12 +48,15 @@ void RendererScene::SetSkyCube(Texture *texture) {
 }
 
 
-void RendererScene::RemoveRenderable (Renderable * renderable) {
+void Scene::RemoveRenderable (Renderable * renderable) {
     auto it = std::find_if(renderables_.begin(), renderables_.end(),
         [renderable](const TRef<Renderable> & r) { return r.Raw() == renderable; });
     if (it != renderables_.end()) {
         renderables_.erase(it);
     }
 }
+
+void Scene::CreateOnDevice() {}
+
 
 MI_NAMESPACE_END

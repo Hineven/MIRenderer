@@ -12,12 +12,13 @@
 #include "renderer/mi_scene.h"
 
 MI_NAMESPACE_BEGIN
-    class RayTracingVisualizationShader : public RDGShader {
+class RayTracingVisualizationShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutput)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, )
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
@@ -33,8 +34,8 @@ void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder 
     auto shader = RDGShaderLibrary::Get().GetShader<RayTracingVisualizationShader>();
     auto params = builder.Allocate<RayTracingVisualizationShader::Params>();
     params->View = view->view_common_params_;
-    params->TLAS = view->world_->TLAS_.Raw();
-    device_allocator_->ge
+    params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+    params->
     params->RWDebugOutput = view->debug_output_.Raw();
     builder.AddPass<RayTracingVisualizationShader>(
         {}, params,

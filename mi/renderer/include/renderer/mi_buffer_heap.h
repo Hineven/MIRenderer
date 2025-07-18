@@ -32,6 +32,8 @@ public:
     FORCEINLINE uint32_t GetAllocationAlignment () const {
         return allocation_alignment;
     }
+    // Return the index of the buffer block that corresponds to the given buffer.
+    virtual uint32_t GetBufferBlockIndex (RHIBuffer * buffer) const = 0;
     // Return a block buffer allocated for the buffer heap
     virtual RHIBuffer * GetHeapBufferBlock (uint32_t block_index) const = 0;
     virtual uint32_t GetNumHeapBufferBlocks () const = 0;
@@ -105,6 +107,8 @@ public:
     FORCEINLINE static TRef<SimpleDeviceBufferHeap> Create (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024) {
         return {new SimpleDeviceBufferHeap(usage, allocation_alignment, buffer_block_size)};
     }
+
+    uint32_t GetBufferBlockIndex(RHIBuffer *buffer) const override;
 
     void SetName (const std::string & name) override;
 

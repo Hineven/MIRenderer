@@ -11,7 +11,7 @@
 
 MI_NAMESPACE_BEGIN
 
-TRef<VolumePrimitives> VolumePrimitives::Create(RendererScene *world, Transform transform) {
+TRef<VolumePrimitives> VolumePrimitives::Create(DeviceScene *world, Transform transform) {
     auto index = AllocateRenderableIndexFromWorld(world);
     if (index == UINT32_MAX) {
         MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
@@ -20,7 +20,7 @@ TRef<VolumePrimitives> VolumePrimitives::Create(RendererScene *world, Transform 
     auto primitives = TRef(new VolumePrimitives(index, world));
     primitives->SetTransform(transform);
     primitives->index_ = index;
-    primitives->world_ = world;
+    primitives->scene_ = world;
 
     primitives->RegisterToWorld();
 
@@ -64,7 +64,7 @@ VolumePrimitives::~VolumePrimitives() {
 
 }
 
-void VolumePrimitives::SetupAllocatorBufferHeap(CommonGroupedDeviceResourceAllocator *allocator) {
+void VolumePrimitives::SetupAllocatorBufferHeap(DeviceBindlessResourceAllocator *allocator) {
     auto heap =
         DefaultDeviceBufferHeap::Create(RHIBufferUsageFlagBits::kStorage, 64, 1024 * 1024 * 1024);
     heap->PreAllocateBlocks(1);

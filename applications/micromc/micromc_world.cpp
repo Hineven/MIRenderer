@@ -25,7 +25,7 @@ MicroMCChunk::MicroMCChunk(int coord_x, int coord_z)
 MicroMCChunk::~MicroMCChunk() {
 }
 
-void MicroMCChunk::UpdateGeometries(RendererScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
+void MicroMCChunk::UpdateGeometries(DeviceScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
                                    const std::unordered_map<std::string, TextureUVMapping>& uv_mappings) {
     // 生成立方体几何体
     GenerateCubeGeometry(world, block_material, blocks, uv_mappings);
@@ -34,7 +34,7 @@ void MicroMCChunk::UpdateGeometries(RendererScene * world, Material * block_mate
 #define SUB_CHUNK_HEIGHT 16 // 每个子区块的高度
 #define MAX_NUM_SUB_CHUNKS 32 // 最大子区块数量
 
-void MicroMCChunk::GenerateCubeGeometry(RendererScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
+void MicroMCChunk::GenerateCubeGeometry(DeviceScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
                                        const std::unordered_map<std::string, TextureUVMapping>& uv_mappings) {
 
     std::vector<DefaultStaticMeshVertex> vertices[MAX_NUM_SUB_CHUNKS];
@@ -194,7 +194,7 @@ MicroMCWorld::MicroMCWorld() {
 MicroMCWorld::~MicroMCWorld() {
 }
 
-bool MicroMCWorld::LoadFromDirectory(const std::string& world_path, const std::string& resource_pack_path, RendererScene* scene) {
+bool MicroMCWorld::LoadFromDirectory(const std::string& world_path, const std::string& resource_pack_path, DeviceScene* scene) {
     // 1. 加载世界数据
     MCWorld world_data;
     if (!LoadWorldData(world_path, world_data)) {

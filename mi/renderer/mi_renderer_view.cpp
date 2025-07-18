@@ -264,7 +264,7 @@ void RendererViewPersistentData::Update(RendererView *view) {
     prev_G_albedo = view->G_albedo_;
     prev_G_roughness = view->G_metallic_roughness_;
 
-    prev_world_ = view->world_;
+    prev_scene_ = view->scene_;
 
     frame_index_ ++;
 }

@@ -10,6 +10,7 @@
 #include <span>
 #include <vector>
 
+#include "mi_resource_allocator.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_geometry.h"
@@ -17,21 +18,34 @@
 #include "renderer/mi_renderer_fwd.h"
 MI_NAMESPACE_BEGIN
 
-// TODO : add a new class StaticMesh to separate the mesh data (geometry-material pairs and BLAS) from the instance.
-
-class StaticMeshInstance : public Renderable {
+// Device side of a static mesh. Holds BLAS & geometry buffers & placeholder
+class DeviceStaticMesh : public NonCopyable, public NonMovable, public RefCounted<true> {
 public:
+    friend class StaticMesh;
+    FORCEINLINE RHIAccelerationStructure * GetBLAS () const {
+        return BLAS_.Raw();
+    }
+    FORCEINLINE bool IsValid () const {
+        return index_ != UINT32_MAX;
+    }
+protected:
+    DeviceStaticMesh (DeviceBindlessResourceAllocator * allocator) ;
+    ~DeviceStaticMesh() ;
+    // Store a list of material indices on the device
+    TRef<DeviceBufferHeapBuffer> geometry_material_indices_;
+    // If this static mesh is ray-traced, it should have a bottom-level acceleration structure.
+    TRef<RHIAccelerationStructure> BLAS_;
 
-    void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
-    void ClearMeshPrimitives ();
-    void Update (RendererView * view, RenderGraphBuilder & builder);
+    uint32_t index_ {UINT32_MAX}; // Index of the static mesh in the bindless device allocator
 
+    DeviceBindlessResourceAllocator * allocator_ {};
+};
+
+// Static mesh, holds a "static mesh" assembled from pairs of geometry and material.
+class StaticMesh : public NonCopyable, public NonMovable, public RefCounted<true> {
+public:
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
-
-    static TRef<StaticMeshInstance> Create (RendererScene * world, Transform transform = {}) ;
-
-    RenderableHeader GetDeviceRenderableHeader() const override;
 
     FORCEINLINE bool IsDynamic () const {
         return dynamic_;
@@ -51,26 +65,37 @@ public:
         SetDirty(true);
     }
 
-    FORCEINLINE RHIAccelerationStructure * GetBLAS () const {
-        return BLAS_.Raw();
+    FORCEINLINE void SetDirty (bool dirty) {
+        if (tracker_ && !dirty_ && dirty) {
+            tracker_->OnObjectTurnedDirty(this);
+        }
+        dirty_ = dirty;
     }
 
-    constexpr static RenderableType kRenderableType = RenderableType::kStaticMesh;
+    FORCEINLINE bool IsDirty () const {
+        return dirty_;
+    }
+
+    void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
+    void ClearMeshPrimitives ();
+
+    void UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) ;
+
+    void UpdateOnDevice (DeviceBindlessResourceAllocator * alloc);
+
+    FORCEINLINE DeviceStaticMesh * GetDeviceStaticMesh () const {
+        return device_static_mesh_.Raw();
+    }
+
+    static TRef<StaticMesh> Create (bool is_ray_traced = true, bool dynamic = false);
 
 protected:
-
-    StaticMeshInstance(uint32_t index, RendererScene * world) ;
-    ~StaticMeshInstance() override;
-
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
 
-    // Store a list of material indices on the device
-    TRef<DeviceBufferHeapBuffer> geometry_material_indices_;
-    StaticMeshRenderableHeader renderable_header_;
+    StaticMeshHeader header_ {};
 
-    // If this static mesh is ray-traced, it should have a bottom-level acceleration structure.
-    TRef<RHIAccelerationStructure> BLAS_;
+    TRef<DeviceStaticMesh> device_static_mesh_;
 
     // If this static mesh is ray-traced. If true, it should have an acceleration structure.
     bool is_ray_traced_ {};
@@ -78,6 +103,33 @@ protected:
     // If true, the mesh is being prepared to work faster with frequent geometry updates.
     bool dynamic_ {};
 
+    // Dirty bit. If dirty, the object is updated on the host but not on the device.
+    bool dirty_ {true};
+
+    DirtyTracker<StaticMesh> * tracker_ {};
+};
+
+// Static mesh instance, links to a static mesh. Owned by Scene.
+class StaticMeshInstance : public Renderable {
+public:
+
+    void Update (RendererView * view, RenderGraphBuilder & builder);
+
+    static TRef<StaticMeshInstance> Create (Scene * scene, StaticMesh * static_mesh, Transform transform = {}) ;
+
+    RenderableHeader GetDeviceRenderableHeader() const override;
+
+    constexpr static RenderableType kRenderableType = RenderableType::kStaticMeshInstance;
+
+    FORCEINLINE StaticMesh * GetStaticMesh () const {
+        return static_mesh_.Raw();
+    }
+
+protected:
+    StaticMeshInstance(uint32_t index, Scene * world) ;
+    ~StaticMeshInstance() override;
+
+    TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to
 };
 
 

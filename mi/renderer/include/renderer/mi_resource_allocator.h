@@ -13,33 +13,45 @@
 #include <stack>
 #include <vector>
 
-#include "core/base.h"
-#include "renderer/mi_renderer_fwd.h"
-#include "rhi/rhi_bindlesskeeper.h"
-#include "rhi/rhi_desc.h"
-#include "renderer/mi_buffer_heap.h"
+#include <core/base.h>
+#include <core/util/slot_allocator.h>
+#include <rhi/rhi_desc.h>
+#include <renderer/mi_renderer_fwd.h>
+#include <renderer/mi_buffer_heap.h>
 
 MI_NAMESPACE_BEGIN
 
-// Allocate grouped GPU resources used for common rendering (device geometries, materials, etc)
-// Resources that does not need to be grouped or indexed (textures, etc) should be allocated separately.
-// One allocator per renderer, at the highest level hierarchy.
-class CommonGroupedDeviceResourceAllocator : public NonCopyable, public NonMovable, public RefCounted<> {
-public:
-    CommonGroupedDeviceResourceAllocator (
-        DeviceBufferHeapInterface * vertex_buffer_heap,
-        DeviceBufferHeapInterface * index_buffer_heap
-    );
-    ~CommonGroupedDeviceResourceAllocator();
 
-    friend class Geometry;
-    friend class DeviceGeometry;
-    friend class Material;
-    friend class DeviceMaterial;
-    friend class BindlessDeviceTexture;
+struct StaticMeshHeader {
+    uint32_t DescriptionOffset; // Offset in the static mesh description heap, in num-entries
+    uint32_t NumGeometries; // Number of material-geometry pairs in the static mesh description
+};
+
+struct GeometryHeader {
+    uint32_t VertexBufferIndex; // Index of the vertex buffer in the vertex buffer heap
+    uint32_t IndexBufferIndex; // Index of the index buffer in the index buffer heap
+    uint32_t VertexOffset; // Offset in the vertex buffer heap, in num elements
+    uint32_t IndexOffset; // Offset in the index buffer heap, in num elements
+    uint32_t VertexCount; // Number of vertices in the geometry
+    uint32_t IndexCount; // Number of indices in the geometry
+};
+
+// Allocate GPU resources used for common bindless rendering (device geometries, materials, static meshes, etc)
+// Resources that does not need to be bindless, or already bindless via RHI layers (for example, textures) should
+// be allocated separately.
+// One allocator for one renderer.
+class DeviceBindlessResourceAllocator : public NonCopyable, public NonMovable, public RefCounted<> {
+public:
+    DeviceBindlessResourceAllocator ();
+    ~DeviceBindlessResourceAllocator();
+
     friend class Renderer;
 
+
     static constexpr uint32_t kMaxNumMaterials = 1024;
+    static constexpr uint32_t kMaxNumGeometries = 64 * 1024; // 64K geometries
+    static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
+    static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
 
     FORCEINLINE DeviceBufferHeapInterface * GetVertexBufferHeap () const {
         return vertex_buffer_heap_.Raw();
@@ -58,23 +70,7 @@ public:
         return custom_buffer_heaps_.at(index).Raw();
     }
 
-protected:
-
-    // All device materials allocated
-    std::vector<TRef<DeviceMaterial>> materials_;
-    // Underlying buffer holding the material headers. This is updated on a per-frame basis.
-    // Allocated a proper size upon construction.
-    TRef<RHIBuffer> material_header_buffer_;
-    // Slots (indices) for unused materials. Initialized to kMaxNumMaterials elements upon construction.
-    std::stack<uint32_t> free_material_slots_;
-
-    // Heaps for consistent geometries
-    TRef<DeviceBufferHeapInterface> vertex_buffer_heap_;
-    TRef<DeviceBufferHeapInterface> index_buffer_heap_;
-
-    // Custom buffer heaps for custom resources (e.g. custom renderable class)
-    std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;
-
+    // Allocate a vertex buffer from the vertex buffer heap.
     FORCEINLINE RHIBufferSpan AllocateVertexBuffer (uint32_t size) {
         return vertex_buffer_heap_->Allocate(size);
     }
@@ -90,17 +86,68 @@ protected:
     }
 
     FORCEINLINE uint32_t AllocateMaterialSlot () {
-        if (!free_material_slots_.empty ()) {
-            auto idx = free_material_slots_.top();
-            free_material_slots_.pop();
-            return idx;
-        }
-        return UINT32_MAX;
+        return material_slots_.AllocateSlot();
     }
     FORCEINLINE void FreeMaterialSlot (uint32_t idx) {
         assert(idx < kMaxNumMaterials);
-        free_material_slots_.push(idx);
+        material_slots_.FreeSlot(idx);
     }
+
+    FORCEINLINE uint32_t AllocateGeometrySlot () {
+        return geometry_slots_.AllocateSlot();
+    }
+    FORCEINLINE void FreeGeometrySlot (uint32_t idx) {
+        assert(idx < kMaxNumMaterials);
+        geometry_slots_.FreeSlot(idx);
+    }
+
+    FORCEINLINE uint32_t AllocateStaticMeshSlot () {
+        return static_mesh_slots_.AllocateSlot();
+    }
+    FORCEINLINE void FreeStaticMeshSlot (uint32_t idx) {
+        assert(idx < kMaxNumMaterials);
+        static_mesh_slots_.FreeSlot(idx);
+    }
+
+    FORCEINLINE RHIBuffer * GetStaticMeshHeaderBuffer() const {
+        return static_mesh_header_buffer_.Raw();
+    }
+    FORCEINLINE DeviceBufferHeapInterface * GetStaticMeshDescriptionBufferHeap() const {
+        return static_mesh_description_heap_.Raw();
+    }
+
+    FORCEINLINE RHIBuffer * GetMaterialHeaderBuffer() const {
+        return material_header_buffer_.Raw();
+    }
+    FORCEINLINE RHIBuffer * GetGeometryHeaderBuffer() const {
+        return geometry_header_buffer_.Raw();
+    }
+
+
+protected:
+
+    // All device materials allocated
+    std::vector<TRef<DeviceMaterial>> materials_;
+    // Underlying buffer holding the material headers. This is updated on a per-frame basis.
+    // Allocated a proper size upon construction.
+    TRef<RHIBuffer> material_header_buffer_;
+
+    // Heaps for consistent geometries
+    TRef<DeviceBufferHeapInterface> vertex_buffer_heap_;
+    TRef<DeviceBufferHeapInterface> index_buffer_heap_;
+    // Header for geometries.
+    // A geometry header holds DeviceGeometryHeader structs.
+    TRef<RHIBuffer> geometry_header_buffer_;
+    // A static mesh header buffer holding StaticMeshHeader structs.
+    TRef<RHIBuffer> static_mesh_header_buffer_;
+    // A static mesh description heap (single block buffer heap), use the offsets in static mesh header to access the descriptions.
+    TRef<DeviceBufferHeapInterface> static_mesh_description_heap_;
+
+    // Custom buffer heaps for custom resources (e.g. custom renderable class)
+    std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;
+
+    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_;
+
 };
 
 MI_NAMESPACE_END

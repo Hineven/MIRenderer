@@ -26,8 +26,8 @@
 MI_NAMESPACE_BEGIN
 
 bool GLTFLoader::LoadGLTF(
-    std::filesystem::path path, CommonGroupedDeviceResourceAllocator &allocator,
-    RendererScene &world,
+    std::filesystem::path path, DeviceBindlessResourceAllocator &allocator,
+    Scene &world,
     std::vector<TRef<Geometry> > &out_geometries,
     std::vector<TRef<Material> > &out_materials,
     std::vector<TRef<StaticMeshInstance> > &out_meshes
@@ -335,12 +335,14 @@ bool GLTFLoader::LoadGLTF(
             if(it != mesh_map.end())
                 for(size_t i = 0; i < (*it).second.size(); ++i)
                 {
-                    TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(&world, Transform::Identity());
+                    auto mesh = StaticMesh::Create();
+                    TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(&world, mesh.Raw(), Transform::Identity());
                     mesh_instances.push_back(instance_ref);
                     for (auto e : (it->second)) {
                         e.second->UpdateOnDevice(&allocator);
-                        instance_ref->AddMeshPrimitive(e.first, e.second);
+                        mesh->AddMeshPrimitive(e.first, e.second);
                     }
+                    mesh->UpdateOnDevice(&allocator);
                     instance_ref->SetTransform(Transform::FromMatrix(transform));
                 }
         }

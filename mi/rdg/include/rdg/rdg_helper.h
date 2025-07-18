@@ -23,6 +23,11 @@ public:
     static void Upload_Async (RHICommandQueueGraphics & queue, RHIBufferSpan buffer, const void * data, size_t size) ;
     // You should manually barrier / wait for idle on the queue before the buffer is used.
     static void Upload_Async (RHICommandQueueGraphics & queue, RHITexture * texture, const void * data, size_t size, RHITextureLayoutType dst_layout, RHIGPUAccessFlags dst_access) ;
+    // You should manually barrier / wait for idle on the queue before the buffer is used.
+    template<CMemTrivial T>
+    static void Upload_Async (RHICommandQueueGraphics & queue, RHIBuffer * buffer, size_t offset, const T & data) {
+        Upload_Async(queue, RHIBufferSpan{buffer, offset, sizeof(T)}, &data, sizeof(T));
+    }
     // Add a RDG pass to upload data to a buffer. Will not track buffer usage in RDG.
     static void UploadWithRDG_Unsafe (RenderGraphBuilder & builder, RHIBufferSpan buffer, const void * data) ;
     // Add a RDG pass to upload data to a buffer.

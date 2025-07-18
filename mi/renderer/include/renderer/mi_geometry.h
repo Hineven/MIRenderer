@@ -9,6 +9,8 @@
 
 #include <vector>
 
+#include "mi_dirty_tracker.h"
+#include "mi_renderer.h"
 #include "core/base.h"
 #include "core/refcounted.h"
 #include "rhi/rhi_desc.h"
@@ -16,29 +18,34 @@
 #include "../../shaders/shared/SharedVertex.hlsl"
 MI_NAMESPACE_BEGIN
 
+// Device side of a geometry. Owned by Geometry and allocated by DeviceBindlessResourceAllocator.
 class DeviceGeometry : public RefCounted<>, public NonMovable {
 protected:
-    DeviceGeometry(CommonGroupedDeviceResourceAllocator * allocator);
+    DeviceGeometry(DeviceBindlessResourceAllocator * allocator);
     ~DeviceGeometry() override;
 
-    CommonGroupedDeviceResourceAllocator * allocator_ {};
+    DeviceBindlessResourceAllocator * allocator_ {};
 
     // Device related data (manually released to the allocator)
     RHIBufferSpan vertex_buffer_;
     RHIBufferSpan index_buffer_;
-    // The first index to draw of the geometry in the device index buffer.
+    // The first index to draw of the geometry in the bindless device index buffer.
     uint32_t first_index_ {};
     uint32_t vertex_count_ {};
     uint32_t index_count_ {};
 
-    // Some ray-traced geometries hold a BLAS
-    // TRef<RHIAccelerationStructure> BLAS_;
+    uint32_t index_ {UINT32_MAX}; // Index of the geometry in the bindless device allocator
 
     friend StaticMeshInstance;
 
 public:
 
     friend class Geometry;
+
+    FORCEINLINE uint32_t GetIndex () const {return index_;}
+    FORCEINLINE bool IsValid () const {
+        return index_ != UINT32_MAX;
+    }
 
     FORCEINLINE uint32_t GetVertexCount () const {return vertex_count_;}
     FORCEINLINE uint32_t GetIndexCount () const {return index_count_;}
@@ -55,6 +62,7 @@ public:
     }
 };
 
+// Geometry. Can be owned by a renderer.
 class Geometry : public RefCounted<>, public NonMovable {
 protected:
     Geometry();
@@ -67,13 +75,9 @@ protected:
 
     // If the geometry is modified on host and requires a rebuild on device.
     bool dirty_ {true};
-    // If the geometry is used for ray tracing, a BLAS is maintained.
-    bool ray_traced_ {false};
-    // If the geometry is opaque.
-    bool opaque_ {false};
-    // If the geometry is dynamic, it can be updated after creation.
-    // This attribute is only set upon creation, and cannot be changed later.
-    // bool dynamic_ {false};
+    // Associated dirty tracker. If set, dirty tracker will track the dirty state of this geometry.
+    DirtyTracker<Geometry> * tracker_ {};
+
 public:
     friend class StaticMeshInstance;
     static TRef<Geometry> CreateFromVertices (
@@ -81,6 +85,10 @@ public:
         std::span<uint32_t> indices = {}
     ) ;
     FORCEINLINE static TRef<Geometry> Create () {return CreateFromVertices();}
+
+    FORCEINLINE void Associate (DirtyTracker<Geometry> * tracker) {
+        tracker_ = tracker;
+    }
 
     FORCEINLINE bool Empty () const {return vertices_.empty();}
     
@@ -101,28 +109,25 @@ public:
     FORCEINLINE bool IsDirty () const {
         return dirty_;
     }
-    FORCEINLINE bool IsRayTraced () const {
-        return ray_traced_;
-    }
-    FORCEINLINE bool IsOpaque () const {
-        return opaque_;
-    }
 
     FORCEINLINE void SetDirty (bool dirty) {
+        if (tracker_ && !dirty_ && dirty)
+            tracker_->OnObjectTurnedDirty(this);
         dirty_ = dirty;
     }
 
-    FORCEINLINE void SetOpaque (bool opaque) {
-        opaque_ = opaque;
-        SetDirty(true);
+    FORCEINLINE void GetIndexBuffer (std::vector<uint32_t> & indices) const {
+        indices = indices_;
     }
 
     void SetName (std::string_view name);
 
-    // Update on device. Manually submission and synchronization required for graphics queue.
-    void UpdateOnDevice_Async (CommonGroupedDeviceResourceAllocator * alloc);
+    // Update on device. Update commands are written to the given graphics comand queue.
+    // Manually submission and synchronization required for graphics queue.
+    void UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue);
 
-    void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * alloc);
+    // Easy to use version. Synchronized and waits for completion.
+    void UpdateOnDevice (DeviceBindlessResourceAllocator * alloc);
 
     void ReleaseHost ();
     void ReleaseDevice ();
@@ -134,6 +139,7 @@ public:
         return device_geometry_;
     }
 };
+
 
 MI_NAMESPACE_END
 #endif //MI_GEOMETRY_H

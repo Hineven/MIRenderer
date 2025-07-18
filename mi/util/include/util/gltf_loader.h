@@ -15,8 +15,8 @@ MI_NAMESPACE_BEGIN
 class GLTFLoader {
 public:
     static bool LoadGLTF (
-        std::filesystem::path path, CommonGroupedDeviceResourceAllocator & allocator,
-        RendererScene & world,
+        std::filesystem::path path, DeviceBindlessResourceAllocator & allocator,
+        Scene & scene,
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,
         std::vector<TRef<StaticMeshInstance>> & out_meshes

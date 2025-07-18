@@ -13,7 +13,7 @@
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"
 #include "core/pixel_format.h"
-#include "core/util/lockfree.h"
+#include "core/util/queue.h"
 #include "rhi_cmd.h"
 
 MI_NAMESPACE_BEGIN

@@ -7,11 +7,11 @@
 
 #include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
-Renderable::Renderable(RenderableType type, uint32_t index, RendererScene * world): type_(type), index_(index), world_(world) {
+Renderable::Renderable(RenderableType type, uint32_t index, Scene * world): type_(type), index_(index), scene_(world) {
 
 }
 
-uint32_t Renderable::AllocateRenderableIndexFromWorld (RendererScene * world) {
+uint32_t Renderable::AllocateRenderableIndexFromWorld (Scene * world) {
     return world->AllocateRenderableIndex();
 }
 
@@ -21,12 +21,12 @@ RenderableHeader Renderable::GetDeviceRenderableHeader () const {
 
 Renderable::~Renderable() {
     if (index_ != UINT32_MAX) {
-        world_->FreeRenderabeIndex(index_);
+        scene_->FreeRenderabeIndex(index_);
     }
 }
 
 void Renderable::RegisterToWorld() {
-    world_->renderables_[index_] = this;
+    scene_->renderables_[index_] = this;
 }
 
 

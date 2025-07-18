@@ -17,14 +17,12 @@
 #include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 
-DeviceMaterial::DeviceMaterial(CommonGroupedDeviceResourceAllocator *allocator) {
+DeviceMaterial::DeviceMaterial(DeviceBindlessResourceAllocator *allocator) {
     allocator_ = allocator;
 }
 
 DeviceMaterial::~DeviceMaterial() {
-    if (index_ != UINT32_MAX) {
-        allocator_->FreeMaterialSlot(index_);
-    }
+    if (IsValid()) allocator_->FreeMaterialSlot(index_);
 }
 
 Material::Material() {
@@ -69,21 +67,27 @@ MaterialHeader Material::PackMaterialHeader() const {
     return header;
 }
 
-void Material::UpdateOnDevice(CommonGroupedDeviceResourceAllocator *allocator) {
+void Material::UpdateOnDevice_Async(DeviceBindlessResourceAllocator *allocator, RHICommandQueueGraphics &queue) {
     if (dirty_) {
         if (!device_material_) {
             device_material_ = new DeviceMaterial(allocator);
+            mi_check(device_material_->IsValid(), "Failed to allocate device material slot. This may indicate that the device allocator is full.");
         }
         device_material_->index_ = allocator->AllocateMaterialSlot();
         assert(device_material_->index_ != UINT32_MAX);
         device_material_->material_header_ = PackMaterialHeader();
-        Helpers::Upload_Async(
-            allocator->material_header_buffer_->GetSpan(sizeof(MaterialHeader) * device_material_->index_, sizeof(MaterialHeader)),
-            &device_material_->material_header_, sizeof(MaterialHeader)
+        Helpers::Upload_Async(queue,
+            allocator->GetMaterialHeaderBuffer(), sizeof(MaterialHeader) * device_material_->index_,
+            device_material_->material_header_
         );
-        RHI::Get().GetGraphicsCommandQueue().WaitForIdle("Material::UpdateOnDevice " + GetName());
         dirty_ = false;
     }
+}
+
+
+void Material::UpdateOnDevice(DeviceBindlessResourceAllocator *allocator) {
+    UpdateOnDevice_Async(allocator, RHI::Get().GetGraphicsCommandQueue());
+    RHI::Get().GetGraphicsCommandQueue().WaitForIdle("Material::UpdateOnDevice " + GetName());
 }
 
 TRef<Material> Material::Create(std::string name, glm::vec4 albedo, float roughness, glm::vec3 emissive) {
@@ -91,7 +95,7 @@ TRef<Material> Material::Create(std::string name, glm::vec4 albedo, float roughn
     material->SetAlbedo(albedo);
     material->SetRoughness(roughness);
     material->SetEmissive(emissive);
-    material->name_ = name;
+    material->name_  = name;
     material->dirty_ = true;
     return {material};
 }

@@ -11,7 +11,10 @@
 MI_NAMESPACE_BEGIN
 
 enum class RenderableType {
-    kStaticMesh = 0,
+    // Static mesh + transform
+    kStaticMeshInstance = 0,
+    // Volume primitives + transform
+    kVolumePrimitivesInstance,
     kMax
 };
 

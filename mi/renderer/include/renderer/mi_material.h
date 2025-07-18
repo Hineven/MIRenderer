@@ -9,10 +9,13 @@
 
 #include <string>
 #include <glm/vec3.hpp>
-#include "core/common.h"
-#include "core/base.h"
-#include "core/refcounted.h"
-#include "renderer/mi_renderer_fwd.h"
+
+#include <core/common.h>
+#include <core/base.h>
+#include <core/refcounted.h>
+#include <rhi/rhi_cmd.h>
+#include <renderer/mi_dirty_tracker.h>
+#include <renderer/mi_renderer_fwd.h>
 #include "../../shaders/shared/SharedMaterial.hlsl"
 
 // Simple material implementation. Only uber material supported
@@ -23,11 +26,14 @@ class DeviceMaterial : public NonMovable, public RefCounted<> {
 public:
     friend class Material;
     FORCEINLINE uint32_t GetIndex () const {return index_;}
+    FORCEINLINE bool IsValid () const {
+        return index_ != UINT32_MAX;
+    }
 protected:
-    DeviceMaterial (CommonGroupedDeviceResourceAllocator * allocator);
+    DeviceMaterial (DeviceBindlessResourceAllocator * allocator);
     ~DeviceMaterial () ;
 
-    CommonGroupedDeviceResourceAllocator * allocator_ {};
+    DeviceBindlessResourceAllocator * allocator_ {};
 
     // Index of the material (assigned by the renderer)
     uint32_t index_ {UINT32_MAX};
@@ -44,27 +50,27 @@ public:
     void SetEmissiveTexture(Texture * texture);
 
     FORCEINLINE void SetAlbedo (glm::vec4 albedo) {
+        if (albedo_ != albedo) SetDirty();
         albedo_ = albedo;
-        dirty_ = true;
     }
 
     FORCEINLINE void SetRoughness (float roughness) {
+        if (roughness_ != roughness) SetDirty();
         roughness_ = roughness;
-        dirty_ = true;
     }
     FORCEINLINE void SetMetallic (float metallic) {
+        if (metallic != metallic_) SetDirty();
         metallic_ = metallic;
-        dirty_ = true;
     }
 
     FORCEINLINE void SetEmissive (glm::vec3 emissive) {
+        if (emissive_ != emissive) SetDirty();
         emissive_ = emissive;
-        dirty_ = true;
     }
 
     FORCEINLINE void SetDoubleSided (bool double_sided) {
+        if (double_sided_ != double_sided) SetDirty();
         double_sided_ = double_sided;
-        dirty_ = true;
     }
 
     FORCEINLINE bool IsDoubleSided () const {
@@ -74,6 +80,12 @@ public:
     FORCEINLINE bool IsDirty () const {
         return dirty_;
     }
+    FORCEINLINE void SetDirty (bool dirty = true) {
+        if (tracker_ && !dirty_ && dirty) {
+            tracker_->OnObjectTurnedDirty(this);
+        }
+        dirty_ = dirty;
+    }
 
     FORCEINLINE const std::string & GetName () const {
         return name_;
@@ -81,7 +93,8 @@ public:
 
     MaterialHeader PackMaterialHeader () const ;
 
-    void UpdateOnDevice (CommonGroupedDeviceResourceAllocator * allocator) ;
+    void UpdateOnDevice_Async (DeviceBindlessResourceAllocator * allocator, RHICommandQueueGraphics & queue) ;
+    void UpdateOnDevice (DeviceBindlessResourceAllocator * allocator) ;
 
     DeviceMaterial * GetDeviceMaterial () {return device_material_.Raw();}
 
@@ -93,6 +106,14 @@ public:
         return Create("unnamed", albedo, roughness, emissive);
     }
 
+    FORCEINLINE bool IsOpaque () const {
+        return opaque_;
+    }
+
+    FORCEINLINE void SetOpaque (bool opaque) {
+        if (opaque != opaque_) SetDirty(true);
+        opaque_ = opaque;
+    }
 
     static TRef<Material> Create (
         std::string name,
@@ -118,6 +139,10 @@ protected:
     TRef<Texture> emissive_texture_;
 
     bool double_sided_ {false};
+    // Opaque materials should always have alpha channel equals to 1.0f (not translucent)
+    bool opaque_ {false};
+
+    DirtyTracker<Material> * tracker_ {};
 
     bool dirty_ {true};
 

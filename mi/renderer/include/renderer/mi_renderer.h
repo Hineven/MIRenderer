@@ -35,11 +35,11 @@ public:
     static Renderer * GetPointer ();
     static void DestroySingleton () ;
 
-    void Init (CommonGroupedDeviceResourceAllocator * allocator, RDGResourcePool * pool) ;
+    void Init (DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) ;
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
-    FORCEINLINE CommonGroupedDeviceResourceAllocator * GetDeviceAllocator () {
+    FORCEINLINE DeviceBindlessResourceAllocator * GetDeviceAllocator () {
         return device_allocator_.Raw();
     }
 
@@ -87,7 +87,7 @@ protected:
         void Deinit ();
     } ctx;
 
-    TRef<CommonGroupedDeviceResourceAllocator> device_allocator_;
+    TRef<DeviceBindlessResourceAllocator> device_allocator_;
     TRef<RDGResourcePool> pool_;
 
 };
