@@ -768,31 +768,6 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
         vk_pipeline_ = result.value;
     }
 
-    // Calculate shader group counts by type
-    raygen_group_count_ = 0;
-    miss_group_count_ = 0;
-    hit_group_count_ = 0;
-    callable_group_count_ = 0;
-
-    for (const auto& group : desc.shader_groups) {
-        switch (group.type) {
-            case RHIRayTracingShaderGroupType::kRayGeneration:
-                raygen_group_count_++;
-                break;
-            case RHIRayTracingShaderGroupType::kMiss:
-                miss_group_count_++;
-                break;
-            case RHIRayTracingShaderGroupType::kTrianglesHitGroup:
-            case RHIRayTracingShaderGroupType::kProceduralHitGroup:
-                hit_group_count_++;
-                break;
-            case RHIRayTracingShaderGroupType::kCallable:
-                callable_group_count_++;
-                break;
-            default: assert(false && "Unknown ray tracing shader group type");
-        }
-    }
-
     // Calculate SBT strides based on shader group handle size and alignment
     // SBT stride = shader group handle size + user data size (aligned)
     // For now, we assume no user data, so stride = aligned handle size

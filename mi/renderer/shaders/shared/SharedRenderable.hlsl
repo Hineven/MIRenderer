@@ -10,8 +10,9 @@ struct RenderableHeader {
     float4 Metadata;
 };
 
-struct StaticMeshRenderableHeader {
-    uint NumGeometries;
+struct StaticMeshInstanceHeader {
+    // Index of the static mesh which the instance refers to.
+    uint StaticMeshIndex;
     uint Padding0;
     uint Padding1;
     uint Padding2;

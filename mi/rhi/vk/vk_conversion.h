@@ -191,7 +191,7 @@ FORCEINLINE vk::ShaderStageFlagBits GetVulkanShaderStage (RHIShaderFrequencyFlag
             return vk::ShaderStageFlagBits::eMeshEXT;
         case RHIShaderFrequencyFlagBits::kCompute:
             return vk::ShaderStageFlagBits::eCompute;
-        case RHIShaderFrequencyFlagBits::kRayGen:
+        case RHIShaderFrequencyFlagBits::kRaygen:
             return vk::ShaderStageFlagBits::eRaygenKHR;
         case RHIShaderFrequencyFlagBits::kMiss:
             return vk::ShaderStageFlagBits::eMissKHR;
@@ -229,7 +229,7 @@ FORCEINLINE vk::ShaderStageFlags GetVulkanShaderStageFlags (RHIShaderFrequencyFl
     if(frequency & RHIShaderFrequencyFlagBits::kCompute) {
         flags |= vk::ShaderStageFlagBits::eCompute;
     }
-    if(frequency & RHIShaderFrequencyFlagBits::kRayGen) {
+    if(frequency & RHIShaderFrequencyFlagBits::kRaygen) {
         flags |= vk::ShaderStageFlagBits::eRaygenKHR;
     }
     if(frequency & RHIShaderFrequencyFlagBits::kMiss) {

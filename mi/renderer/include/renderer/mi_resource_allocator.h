@@ -18,21 +18,9 @@
 #include <rhi/rhi_desc.h>
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_buffer_heap.h>
+#include "../shaders/shared/SharedStaticMesh.hlsl"
 
 MI_NAMESPACE_BEGIN
-
-
-struct StaticMeshHeader {
-    uint32_t DescriptionOffset; // Offset in the static mesh description heap, in num-entries
-    uint32_t NumGeometries; // Number of material-geometry pairs in the static mesh description
-};
-
-struct GeometryHeader {
-    uint32_t VertexOffset; // Offset in the vertex buffer heap, in num elements
-    uint32_t IndexOffset; // Offset in the index buffer heap, in num elements
-    uint32_t VertexCount; // Number of vertices in the geometry
-    uint32_t IndexCount; // Number of indices in the geometry
-};
 
 // Allocate GPU resources used for common bindless rendering (device geometries, materials, static meshes, etc)
 // Resources that does not need to be bindless, or already bindless via RHI layers (for example, textures) should

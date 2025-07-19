@@ -1,8 +1,23 @@
+#include "headers/Conventions.hlsl"
+#include "headers/BindlessTextures.hlsl"
 #include "headers/CommonSamplers.hlsl"
 #include "shared/SharedView.hlsl"
 #include "headers/Camera.hlsl"
+#include "shared/SharedMaterial.hlsl"
+#include "shared/SharedRenderable.hlsl"
+#include "shared/SharedStaticMesh.hlsl"
+#include "shared/SharedVertex.hlsl"
 
 RaytracingAccelerationStructure TLAS;
+
+StructuredBuffer<StaticMeshInstanceHeader> RenderableHeaderBuffer;
+StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
+StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
+StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
+StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
+StructuredBuffer<uint> IndexBuffer;
+StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
+
 RWTexture2D<float4> RWDebugOutput;
 TextureCube<float4> EnvironmentMap;
 SamplerState LinearSampler;
@@ -47,9 +62,45 @@ void RayTracingVisualizationMiss(inout RayPayload Payload: SV_RayPayload) {
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 
+DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, DefaultStaticMeshVertex C, float2 Barycentric) {
+    DefaultStaticMeshVertex Result;
+    float Z = (1 - Barycentric.x - Barycentric.y);
+    Result.Position = A.Position * Barycentric.x + B.Position * Barycentric.y + C.Position * Z;
+    Result.Normal = normalize(A.Normal * Barycentric.x + B.Normal * Barycentric.y + C.Normal * Z);
+    Result.UV = A.UV * Barycentric.x + B.UV * Barycentric.y + C.UV * Z;
+    return Result;
+}
+
 [shader("closesthit")]
 void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint Triangle = PrimitiveIndex();
-    uint Geometry = GeometryIndex();
+    uint Triangle          = PrimitiveIndex();
+    uint DescriptionIndex  = GeometryIndex();
+    uint Instance = InstanceID(); // Custom instance ID, not the instance index in the TLAS
+    StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
+    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+    uint GeometryIndex = GeometryMaterialPair.x;
+    uint MaterialIndex = GeometryMaterialPair.y;
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+    uint VertexOffset = Geometry.VertexOffset;
+
+    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+
+    // Interpolate the vertex
+    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+
+    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1);
+    if(IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearSampler, InterpolatedVertex.UV, 0);
+    }
+    Payload.Color = ColorOpacity;
 }

@@ -187,6 +187,8 @@ public:
     uint32_t GetHitGroupCount() const { return hit_group_count_; }
     uint32_t GetCallableGroupCount() const { return callable_group_count_; }
 
+    void Reset() override;
+
 protected:
     FORCEINLINE RHIRayTracingPipeline() : RHIPipeline(RHIPipelineType::kRayTracing) {}
     virtual ~RHIRayTracingPipeline() = default;

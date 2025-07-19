@@ -60,7 +60,41 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
 
     // We assume that the SPIRV code is compiled from HLSL
     spirv_cross::CompilerHLSL compiler_hlsl((uint32_t*)ir_, ir_size_ / 4);
+
+    // 25.7.19: specially, for ray tracing shaders, we need to set up the entry point name. Otherwise reflection
+    // is incorrect (all entry points are defaulted to Raugen)
+    if (frequency_ & RHIShaderFrequencyFlagBits::kRayTracing) {
+        auto entry_points = compiler_hlsl.get_entry_points_and_stages();
+        bool entry_set = false;
+        for (auto e : entry_points) {
+            if (e.name == entry_name_) {
+                if (e.execution_model == spv::ExecutionModelRayGenerationKHR) {
+                    mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kRaygen, "Ray tracing shader must have ray generation entry point.");
+                }
+                if (e.execution_model == spv::ExecutionModelClosestHitKHR) {
+                    mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kClosestHit, "Ray tracing shader must have closest hit entry point.");
+                }
+                if (e.execution_model == spv::ExecutionModelAnyHitKHR) {
+                    mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kAnyHit, "Ray tracing shader must have any hit entry point.");
+                }
+                if (e.execution_model == spv::ExecutionModelMissKHR) {
+                    mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kMiss, "Ray tracing shader must have miss entry point.");
+                }
+                if (e.execution_model == spv::ExecutionModelCallableKHR) {
+                    mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kCallable, "Ray tracing shader must have callable entry point.");
+                }
+                if (e.execution_model == spv::ExecutionModelIntersectionKHR) {
+                    mi_assert(frequency_ == RHIShaderFrequencyFlagBits::kIntersection, "Ray tracing shader must have intersection entry point.");
+                }
+                compiler_hlsl.set_entry_point(e.name, e.execution_model);
+                entry_set = true;
+                break;
+            }
+        }
+        mi_assert(entry_set, "Entry point {} not found in SPIRV code.", entry_name_);
+    }
     auto shader_resources = compiler_hlsl.get_shader_resources();
+
     auto ReflectResources =  [&] <typename T> (auto resources, auto & out_resources) {
         for (auto & resource : resources) {
             T desc {};

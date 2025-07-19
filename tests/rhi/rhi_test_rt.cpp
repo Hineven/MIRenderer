@@ -60,7 +60,7 @@ TEST(RHITest, RHIRayTracedTriangle) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
             }
             auto raygen_shader = RHI::Get().CreateShader(
-                    RHIShaderFrequencyFlagBits::kRayGen, "RaygenMain",
+                    RHIShaderFrequencyFlagBits::kRaygen, "RaygenMain",
                     RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte *>(raygen_bcode.data()),
                                                        raygen_bcode.size() * sizeof(uint32_t))
             );

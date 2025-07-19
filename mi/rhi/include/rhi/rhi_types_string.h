@@ -51,7 +51,7 @@ FORCEINLINE std::string ToString(RHIShaderFrequencyFlagBits bit) {
             return "Mesh";
         case RHIShaderFrequencyFlagBits::kCompute:
             return "Compute";
-        case RHIShaderFrequencyFlagBits::kRayGen:
+        case RHIShaderFrequencyFlagBits::kRaygen:
             return "RayGen";
         case RHIShaderFrequencyFlagBits::kMiss:
             return "Miss";

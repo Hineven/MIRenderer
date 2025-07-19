@@ -19,8 +19,17 @@
 #include <renderer/mi_renderer_view.h>
 #include <renderer/mi_material.h>
 
+#include "renderer/mi_cvar.h"
 
 MI_NAMESPACE_BEGIN
+
+CVar<bool> CVar_DebugVisualizeRayTraced(
+    "r.debug.visualize_ray_traced",
+    "If true, visualize ray-traced objects in the scene. "
+    "This will render the ray-traced objects in the scene using a ray tracing pass.",
+    false
+);
+
 Renderer::Renderer() {
 
 }
@@ -253,9 +262,17 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
 
-    // Draw G-Buffer to output directly for debug purposes
-    Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+    // Draw the ray-traced objects to debug buffer if enabled
+    if (CVar_DebugVisualizeRayTraced.Get()) {
+        Render_VisualizeRayTraced(view, builder);
+    }
 
+    if (true && view->debug_output_) {
+        Render_DrawToOutput(view, builder, view->debug_output_.Raw());
+    } else {
+        // Draw G-Buffer to output directly for debug purposes
+        Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+    }
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();
 

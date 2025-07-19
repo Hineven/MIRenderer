@@ -386,6 +386,8 @@ void RDGShader::RemapResourceIndexToRHIResourceSlots() {
         pipeline = graphics_pipeline_.Raw();
     } else if (class_registry_->type == RHIPipelineType::kCompute) {
         pipeline = compute_pipeline_.Raw();
+    } else if (class_registry_->type == RHIPipelineType::kRayTracing) {
+        pipeline = ray_tracing_pipeline_.Raw();
     } else {
         assert(false);
         return;
@@ -544,6 +546,7 @@ void RDGShader::UpdateOwnerForRHIResources() {
 
     if (graphics_pipeline_) graphics_pipeline_->UpdateOwner();
     if (compute_pipeline_) compute_pipeline_->UpdateOwner();
+    if (ray_tracing_pipeline_) ray_tracing_pipeline_->UpdateOwner();
 }
 
 
@@ -601,6 +604,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             return false;
         }
         shaders_.compute = shader;
+        shaders_.compute->SetSourceFilePath(class_registry_->source_location);
     }
     if(class_registry_->type == RHIPipelineType::kGraphics) {
         std::vector<uint32_t> vs_result, fs_result;
@@ -652,6 +656,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             return false;
         }
         shaders_.vertex = vertex_shader;
+        shaders_.vertex->SetSourceFilePath(class_registry_->source_location);
 
         // Create the fragment shader
         auto fs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(fs_result.data()), fs_result.size() * sizeof(uint32_t));
@@ -668,6 +673,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             return false;
         }
         shaders_.fragment = fragment_shader;
+        shaders_.vertex->SetSourceFilePath(class_registry_->source_location);
     }
 
     if(class_registry_->type == RHIPipelineType::kRayTracing) {
@@ -731,7 +737,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             shader_hash_.AddUnordered("MissShader", miss_hash);
         }
         shaders_.raygen = RHI::Get().CreateShader(
-            RHIShaderFrequencyFlagBits::kRayGen, class_registry_->raygen_entry_,
+            RHIShaderFrequencyFlagBits::kRaygen, class_registry_->raygen_entry_,
             RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(raygen_result.data()), raygen_result.size() * sizeof(uint32_t))
         );
         if (!shaders_.raygen) {
@@ -742,6 +748,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             MI_LOG(MIInfraLogType::kError, "RDGShader {}: Raygen shader reflection check failed", class_registry_->source_location);
             return false;
         }
+        shaders_.raygen->SetSourceFilePath(class_registry_->source_location);
         if (!chit_result.empty()) {
             shaders_.closest_hit = RHI::Get().CreateShader(
                 RHIShaderFrequencyFlagBits::kClosestHit, class_registry_->closest_hit_entry_,
@@ -755,6 +762,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 MI_LOG(MIInfraLogType::kError, "RDGShader {}: Closest hit shader reflection check failed", class_registry_->source_location);
                 return false;
             }
+            shaders_.closest_hit->SetSourceFilePath(class_registry_->source_location);
         }
         if (!ahit_result.empty()) {
             shaders_.any_hit = RHI::Get().CreateShader(
@@ -769,6 +777,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 MI_LOG(MIInfraLogType::kError, "RDGShader {}: Any hit shader reflection check failed", class_registry_->source_location);
                 return false;
             }
+            shaders_.any_hit->SetSourceFilePath(class_registry_->source_location);
         }
         shaders_.miss = RHI::Get().CreateShader(
             RHIShaderFrequencyFlagBits::kMiss, class_registry_->miss_entry_,
@@ -782,6 +791,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             MI_LOG(MIInfraLogType::kError, "RDGShader {}: Miss shader reflection check failed", class_registry_->source_location);
             return false;
         }
+        shaders_.miss->SetSourceFilePath(class_registry_->source_location);
     }
     return true;
 }
@@ -928,6 +938,8 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         RHIRayTracingPipelineDesc desc {};
         desc.shaders.push_back(shaders_.raygen.Raw());
         desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kRayGeneration, 0});
+        desc.shaders.push_back(shaders_.miss.Raw());
+        desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kMiss, 1});
         uint32_t closest_hit_idx = UINT32_MAX;
         uint32_t any_hit_idx = UINT32_MAX;
         uint32_t shader_idx_allocator = 2;
@@ -945,8 +957,6 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             closest_hit_idx,
             any_hit_idx
         });
-        desc.shaders.push_back(shaders_.miss.Raw());
-        desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kMiss, 1});
         desc.max_recursion_depth = pipeline_config.ray_tracing.max_recursion_depth;
         auto pipeline = RHI::Get().CreateRayTracingPipeline(desc);
         if (!pipeline) {

@@ -299,9 +299,10 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
+    // Clear debug output texture
+    debug_output_ = {};
+
     // bool world_changed = world_ != persistent_data_->prev_world_;
-
-
     // Initialize the upload context used for batching uploads
     upload_context_.Init();
 

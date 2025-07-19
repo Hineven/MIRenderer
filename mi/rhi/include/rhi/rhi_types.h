@@ -32,12 +32,13 @@ enum class RHIShaderFrequencyFlagBits : uint32_t {
     kTask = 1u<<3,
     kMesh = 1u<<4,
     kCompute = 1u<<5,
-    kRayGen = 1u<<6,
+    kRaygen = 1u<<6,
     kMiss = 1u<<7,
     kClosestHit = 1u<<8,
     kAnyHit = 1u<<9,
     kIntersection = 1u<<10,
     kCallable = 1u<<11,
+    kRayTracing = kRaygen | kMiss | kClosestHit | kAnyHit | kIntersection | kCallable,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIShaderFrequency)

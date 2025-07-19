@@ -12,6 +12,7 @@ set(SOURCES
         mi_renderer.cpp
         mi_buffer_heap.cpp
         mi_dirty_tracker.cpp
+        mi_cvar.cpp
         # Implementing the renderer
         renderer/r_draw_to_output.cpp
         renderer/r_sky.cpp
