@@ -10,7 +10,10 @@ set(HEADER_FILES
     include/core/task.h
     include/core/types.h
     include/core/util/alloc.h
-    include/core/util/lockfree.h
+    include/core/util/queue.h
+    include/core/util/segment_allocator.h
+    include/core/util/slot_allocator.h
+    include/core/util/byte_strided_span.h
 )
 
 set(SOURCE_FILES

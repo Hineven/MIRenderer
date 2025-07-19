@@ -75,7 +75,9 @@ TEST(RHITest, RHIShaderCompile) {
     GetInfra().Shutdown();
     DestroyInfra();
 }
-
+// Disable waring C4602 temporarily
+#pragma warning (push)
+#pragma warning (disable: 4602)
 TEST(RHITest, RHIThreadTasks) {
 
     if constexpr (BYPASS_RHI_THREAD) {
@@ -117,6 +119,7 @@ TEST(RHITest, RHIThreadTasks) {
     DestroyInfra();
 
 }
+#pragma warning (pop)
 
 static auto v_shader_code = "// Vertex Shader\n"
                      "RWStructuredBuffer<uint> someBuffer;"
