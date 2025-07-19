@@ -197,16 +197,31 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             RHIBufferUsageFlagBits::kAccelerationStructureScratch,
             rebuild ? build_sizes.build_scratch_size : build_sizes.update_scratch_size
         );
+        scratch_buffer->SetName("TLAS Update Scratch Buffer");
         builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
             [instance_buffer = instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            // Barrier the previous update & use of the acceleration structure
+            queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
+                RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kRayTracing,
+                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIGPUAccessFlagBits::kAccelerationStructureRW,
+                RHIGPUAccessFlagBits::kAccelerationStructureWrite
+            );
             auto as_build_info = build_info;
             as_build_info.instance_data = instance_buffer->GetRHI();
             as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
             queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
-        })->AddAS(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
-        ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead)
-        ->AddBuffer(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRW);
+            // Barrier the TLAS after building
+            queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
+                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIPipelineStageFlagBits::kRayTracing,
+                RHIGPUAccessFlagBits::kAccelerationStructureWrite,
+                RHIGPUAccessFlagBits::kAccelerationStructureRead
+            );
+        })->AddAS_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
+        ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
+        ->AddBuffer(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
     // Filter visible rendeables

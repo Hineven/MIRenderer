@@ -206,7 +206,7 @@ RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPip
     return this;
 }
 
-RDGPass *RDGPass::AddAS(RHIAccelerationStructure *as, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
+RDGPass *RDGPass::AddAS_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
     if (!as) return this; // Do nothing if the buffer is null
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_acceleration_structures.emplace_back(as);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_acceleration_structures.emplace_back(as);

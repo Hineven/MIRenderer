@@ -53,7 +53,9 @@ public:
     // Specify how are you using the buffer in the pass, with access flags. kNone for stgages will be replaced with auto-detected stages.
     RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
     // Add an acceleration structure to the pass, with access flags. kNone for stages will be replaced with auto-detected stages.
-    RDGPass * AddAS (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // NOTE: Unlike other RDG resources, this info is only used for pass dependency analysis and not used for automatic barrier placement.
+    // You still have to manually place barriers for acceleration structures inside passes.
+    RDGPass * AddAS_NoAutomaticBarrier (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
 
     FORCEINLINE void SetName (std::string name) {
         name_ = std::move(name);

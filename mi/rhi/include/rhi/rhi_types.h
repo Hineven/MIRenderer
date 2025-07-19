@@ -139,6 +139,7 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kColorAttachmentRW = kColorAttachmentRead | kColorAttachmentWrite,
     kDepthStencilRW = kDepthStencilRead | kDepthStencilWrite,
     kTransferRW = kTransferRead | kTransferWrite,
+    kAccelerationStructureRW = kAccelerationStructureRead | kAccelerationStructureWrite,
     kRW = kRead | kWrite,
     kAll = kRW
 };
