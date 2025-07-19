@@ -21,7 +21,7 @@ void RaygenMain()
 
     float3 RayOrigin = float3(0, 0, 2);
     float3 CameraUp = float3(0, 1, 0);
-    float3 CameraRight = float3(1, 0, 1);
+    float3 CameraRight = float3(1, 0, 0);
     float3 CameraForward = float3(0, 0, -1);
     float3 RayDirection = normalize(CameraForward +
                                    NDC2.x * CameraRight * AspectRatio +
