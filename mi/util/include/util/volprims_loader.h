@@ -15,7 +15,7 @@ class VolumePrimitivesLoader {
 public:
     static bool LoadPLY (
         const std::filesystem::path& path, DeviceBindlessResourceAllocator & allocator,
-        DeviceScene & world,
+        Scene & world,
         TRef<VolumePrimitives> & out_volprims
     );
 };

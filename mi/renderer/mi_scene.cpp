@@ -56,7 +56,12 @@ void Scene::RemoveRenderable (Renderable * renderable) {
     }
 }
 
-void Scene::CreateOnDevice() {}
+void Scene::CreateOnDevice() {
+    if (!device_scene_) {
+        device_scene_ = new DeviceScene();
+        mi_check(device_scene_.IsValid(), "Failed to allocate device scene.");
+    }
+}
 
 
 MI_NAMESPACE_END

@@ -78,8 +78,14 @@ protected:
 
     std::vector<TRef<Renderable>> renderables_;
 
-    FORCEINLINE uint32_t AllocateRenderableIndex () {
-        return renderable_slots_.AllocateSlot();
+    FORCEINLINE uint32_t AllocateRenderableIndex (Renderable * renderable) {
+        auto slot = renderable_slots_.AllocateSlot();
+        if (slot == UINT32_MAX) return UINT32_MAX;
+        if (renderables_.size() <= slot) {
+            renderables_.resize(slot + 1);
+        }
+        renderables_[slot] = renderable;
+        return slot;
     }
     FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
         renderable_slots_.FreeSlot(index);

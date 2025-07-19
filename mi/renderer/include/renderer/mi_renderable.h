@@ -67,16 +67,13 @@ public:
 
     virtual RenderableHeader GetDeviceRenderableHeader () const ;
 
+    FORCEINLINE bool IsValid () const {
+        return index_ != UINT32_MAX;
+    }
+
 protected:
 
-    // Register a renderable to the world. Called by childs.
-    void RegisterToWorld () ;
-
-    // Proxy for World::AllocateRenderableIndex();
-    static uint32_t AllocateRenderableIndexFromWorld (Scene * world) ;
-
-    Renderable(RenderableType type, uint32_t index, Scene * world);
-
+    Renderable(RenderableType type, Scene * scene);
     Transform transform_;
     Scene * scene_;
     uint32_t index_ {UINT32_MAX};

@@ -12,25 +12,28 @@
 
 #include <set>
 
+#include "mi_buffer_heap.h"
 #include "core/common.h"
 #include "core/infra.h"
+#include "core/util/segment_allocator.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_types.h"
 
 MI_NAMESPACE_BEGIN
 
-// Interface for resource level buffer allocator
+// Interface for resource level buffer allocator. The buffer heap is a collection of buffer blocks
+// that can allocate buffer spans and free them.
 class DeviceBufferHeapInterface : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
     friend class DeviceBufferHeapBuffer;
-    DeviceBufferHeapInterface (RHIBufferUsageFlags usage, uint32_t alignment) : usage_(usage), allocation_alignment(alignment) {}
+    DeviceBufferHeapInterface (RHIBufferUsageFlags usage, uint32_t alignment) : usage_(usage), allocation_alignment_(alignment) {}
     virtual RHIBufferSpan Allocate (uint32_t size) = 0;
     // Allocate a reference counted buffer.
     TRef<DeviceBufferHeapBuffer> AllocateRefCounted (uint32_t size) ;
     virtual void Free (RHIBufferSpan allocation) = 0;
     FORCEINLINE uint32_t GetAllocationAlignment () const {
-        return allocation_alignment;
+        return allocation_alignment_;
     }
     // Return the index of the buffer block that corresponds to the given buffer.
     virtual uint32_t GetBufferBlockIndex (RHIBuffer * buffer) const = 0;
@@ -50,6 +53,72 @@ public:
 protected:
     std::string name_ {};
     RHIBufferUsageFlags usage_;
+    uint32_t allocation_alignment_ {};
+};
+
+
+class DeviceUberBufferInterface;
+
+class DeviceUberBufferAllocation : public NonMovable, public NonCopyable, public RefCounted<> {
+public:
+    friend class DeviceUberBufferInterface;
+    // Offset in bytes
+    FORCEINLINE size_t GetOffset () const {
+        return offset_;
+    }
+    // Size in bytes
+    FORCEINLINE size_t GetSize () const {
+        return size_;
+    }
+    FORCEINLINE DeviceUberBufferInterface * GetUberBuffer () const {
+        return uber_buffer_;
+    }
+    RHIBufferSpan GetRHI () const ;
+    ~DeviceUberBufferAllocation() ;
+protected:
+    // Offset and size of the allocation in the uber buffer.
+    size_t offset_ {}, size_ {};
+    // The uber buffer interface that this allocation belongs to.
+    DeviceUberBufferInterface * uber_buffer_ {};
+};
+
+
+// A buffer heap assembled with only one buffer. Used for geometry buffers. May trigger expansion
+// when allocating a new buffer segment.
+class DeviceUberBufferInterface : public NonMovable, public NonCopyable, public RefCounted<> {
+public:
+    friend class DeviceUberBufferAllocation;
+    DeviceUberBufferInterface (RHIBufferUsageFlags usage, uint32_t alignment) : usage_(usage), allocation_alignment(alignment) {}
+    // Allocate a buffer segment from the uber buffer.
+    // Be aware that the allocation may trigger an expansion of the uber buffer.
+    virtual std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) = 0;
+    FORCEINLINE std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateRefCounted (uint32_t size, bool allow_expansion = true) {
+        auto result = Allocate(size, allow_expansion);
+        if (result.first != SIZE_MAX) return {CreateAllocation(result.first, size), true};
+        return {};
+    }
+    virtual void Free (size_t offset, size_t size) = 0;
+    FORCEINLINE void Free (DeviceUberBufferAllocation * allocation) {
+        Free(allocation->GetOffset(), allocation->GetSize());
+    }
+    FORCEINLINE uint32_t GetAllocationAlignment () const {
+        return allocation_alignment;
+    }
+    // Underlying RHI buffer.
+    virtual RHIBuffer * GetRHI () const = 0;
+    virtual ~DeviceUberBufferInterface () = default;
+
+    virtual void SetName (const std::string & name) ;
+    FORCEINLINE const std::string & GetName () const {
+        return name_;
+    }
+protected:
+
+    // Implementations of the interface can use this to create an allocation.
+    TRef<DeviceUberBufferAllocation> CreateAllocation (size_t offset, size_t size);
+
+    std::string name_ {};
+    RHIBufferUsageFlags usage_;
     uint32_t allocation_alignment {};
 };
 
@@ -65,29 +134,21 @@ public:
     FORCEINLINE RHIBufferSpan GetRHI () const {return buffer; }
 };
 
-// A very simple buffer heap for grouping up one kind of memory in buffer resource level
+// A very simple buffer heap for grouping up one kind of memory in buffer resource level.
 class SimpleDeviceBufferHeap : public DeviceBufferHeapInterface {
 protected:
     // Default size of a buffer block in bytes
     uint32_t default_buffer_block_size_ {};
     struct BufferBlock {
-        BufferBlock();
+        BufferBlock(size_t default_buffer_block_size_, size_t allocation_alignment);
         ~BufferBlock();
         TRef<RHIBuffer> buffer;
-        struct Segment {
-            size_t start_offset {};
-            // This does not affect orders so mutable.
-            mutable size_t size {};
-            FORCEINLINE bool operator < (const Segment & rhs) const {
-                return start_offset < rhs.start_offset;
-            }
-        };
-        std::set<Segment> free_segments_;
+        SegmentAllocator segments_;
     };
     std::vector<BufferBlock> buffer_blocks_;
     int FindBufferBlockIndex (RHIBuffer * buffer) const ;
 
-    void AddNewBlock (size_t block_size, size_t first_allocation_size);
+    void AddNewBlock (size_t block_size);
 
     SimpleDeviceBufferHeap (RHIBufferUsageFlags usage, uint32_t allocation_alignment, uint32_t buffer_block_size = 256 * 1024 * 1024);
 
@@ -118,11 +179,38 @@ protected:
 
     // 0 for unlimited
     uint32_t max_num_buffer_blocks_ {};
+    // TODO remove this mutex. SimpleDeviceBufferHeap should only be accessed from the render thread.
     std::mutex mutex_;
+};
+
+// A very simple uber buffer implementation.
+class SimpleDeviceUberBuffer : public DeviceUberBufferInterface {
+public:
+    SimpleDeviceUberBuffer (RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024);
+    ~SimpleDeviceUberBuffer() override;
+
+    std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) override;
+    void Free (size_t offset, size_t size) override;
+
+    RHIBuffer * GetRHI () const override;
+
+    FORCEINLINE static TRef<SimpleDeviceUberBuffer> Create (
+        RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024
+    ) {
+        return {new SimpleDeviceUberBuffer(usage, allocation_alignment, initial_size)};
+    }
+
+    void SetName(const std::string &name) override;
+
+protected:
+    TRef<RHIBuffer> uber_buffer_;
+    SegmentAllocator segments_;
 };
 
 // TODO write a better implementation for buffer heaps.
 using DefaultDeviceBufferHeap = SimpleDeviceBufferHeap;
+using DefaultDeviceUberBuffer = SimpleDeviceUberBuffer;
+
 
 MI_NAMESPACE_END
 

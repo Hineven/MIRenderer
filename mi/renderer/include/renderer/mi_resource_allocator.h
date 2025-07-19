@@ -28,8 +28,6 @@ struct StaticMeshHeader {
 };
 
 struct GeometryHeader {
-    uint32_t VertexBufferIndex; // Index of the vertex buffer in the vertex buffer heap
-    uint32_t IndexBufferIndex; // Index of the index buffer in the index buffer heap
     uint32_t VertexOffset; // Offset in the vertex buffer heap, in num elements
     uint32_t IndexOffset; // Offset in the index buffer heap, in num elements
     uint32_t VertexCount; // Number of vertices in the geometry
@@ -53,12 +51,12 @@ public:
     static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
     static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
 
-    FORCEINLINE DeviceBufferHeapInterface * GetVertexBufferHeap () const {
-        return vertex_buffer_heap_.Raw();
+    FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
+        return vertex_uber_buffer_.Raw();
     }
 
-    FORCEINLINE DeviceBufferHeapInterface * GetIndexBufferHeap () const {
-        return index_buffer_heap_.Raw();
+    FORCEINLINE DeviceUberBufferInterface * GetIndexUberBuffer () const {
+        return index_uber_buffer_.Raw();
     }
 
     FORCEINLINE void RegisterCustomBufferHeap (uint32_t index, DeviceBufferHeapInterface * heap) {
@@ -71,18 +69,11 @@ public:
     }
 
     // Allocate a vertex buffer from the vertex buffer heap.
-    FORCEINLINE RHIBufferSpan AllocateVertexBuffer (uint32_t size) {
-        return vertex_buffer_heap_->Allocate(size);
+    FORCEINLINE std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateVertexBuffer (uint32_t size, bool allow_reallocation = true) {
+        return vertex_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
     }
-    FORCEINLINE RHIBufferSpan AllocateIndexBuffer (uint32_t size) {
-        return index_buffer_heap_->Allocate(size);
-    }
-
-    FORCEINLINE void FreeVertexBuffer (RHIBufferSpan buffer) {
-        vertex_buffer_heap_->Free(buffer);
-    }
-    FORCEINLINE void FreeIndexBuffer (RHIBufferSpan buffer) {
-        index_buffer_heap_->Free(buffer);
+    FORCEINLINE std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateIndexBuffer (uint32_t size, bool allow_reallocation = true) {
+        return index_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
     }
 
     FORCEINLINE uint32_t AllocateMaterialSlot () {
@@ -112,8 +103,8 @@ public:
     FORCEINLINE RHIBuffer * GetStaticMeshHeaderBuffer() const {
         return static_mesh_header_buffer_.Raw();
     }
-    FORCEINLINE DeviceBufferHeapInterface * GetStaticMeshDescriptionBufferHeap() const {
-        return static_mesh_description_heap_.Raw();
+    FORCEINLINE DeviceUberBufferInterface * GetStaticMeshDescriptionUberBuffer() const {
+        return static_mesh_description_uber_buffer_.Raw();
     }
 
     FORCEINLINE RHIBuffer * GetMaterialHeaderBuffer() const {
@@ -132,16 +123,16 @@ protected:
     // Allocated a proper size upon construction.
     TRef<RHIBuffer> material_header_buffer_;
 
-    // Heaps for consistent geometries
-    TRef<DeviceBufferHeapInterface> vertex_buffer_heap_;
-    TRef<DeviceBufferHeapInterface> index_buffer_heap_;
+    // Uber buffers for consistent geometries
+    TRef<DeviceUberBufferInterface> vertex_uber_buffer_;
+    TRef<DeviceUberBufferInterface> index_uber_buffer_;
     // Header for geometries.
     // A geometry header holds DeviceGeometryHeader structs.
     TRef<RHIBuffer> geometry_header_buffer_;
     // A static mesh header buffer holding StaticMeshHeader structs.
     TRef<RHIBuffer> static_mesh_header_buffer_;
     // A static mesh description heap (single block buffer heap), use the offsets in static mesh header to access the descriptions.
-    TRef<DeviceBufferHeapInterface> static_mesh_description_heap_;
+    TRef<DeviceUberBufferInterface> static_mesh_description_uber_buffer_;
 
     // Custom buffer heaps for custom resources (e.g. custom renderable class)
     std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;

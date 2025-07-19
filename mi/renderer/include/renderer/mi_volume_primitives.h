@@ -31,7 +31,7 @@ public:
     void Update (RendererView * view, RenderGraphBuilder & builder);
     void SetPrimitives (const std::vector<VolumePrimitive> & primitives) ;
 
-    static TRef<VolumePrimitives> Create (DeviceScene * world, Transform transform = {}) ;
+    static TRef<VolumePrimitives> Create (Scene * scene, Transform transform = {}) ;
 
     RenderableHeader GetDeviceRenderableHeader() const override;
 
@@ -45,7 +45,7 @@ public:
 
 protected:
 
-    VolumePrimitives(uint32_t index, DeviceScene * world) ;
+    VolumePrimitives(Scene * world) ;
     ~VolumePrimitives() override;
 
     bool dirty_ {true};

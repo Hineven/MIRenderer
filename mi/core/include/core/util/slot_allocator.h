@@ -19,7 +19,7 @@ struct SlotAllocator {
     FORCEINLINE SlotAllocator(uint32_t max_num_slots)
         : max_num_slots_(max_num_slots) {
         // Initialize the free slots stack with all slots
-        for (uint32_t i = 0; i < max_num_slots; ++i) {
+        for (int i = (int)max_num_slots - 1; i >= 0; i--) {
             free_slots_.push(i);
         }
     }

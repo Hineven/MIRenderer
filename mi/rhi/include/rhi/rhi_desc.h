@@ -173,6 +173,13 @@ struct RHIPipelineParameterBufferDesc {
     // On which resource slot to bind the resource
     uint32_t slot;
 };
+
+struct RHIPipelineParameterBufferArrayDesc {
+    std::span<RHIBufferSpan> buffer_array;
+    // On which resource slot to bind the resource
+    uint32_t slot;
+};
+
 struct RHIPipelineParameterTextureDesc {
     RHITexture * texture;
     // On which resource slot to bind the resource
@@ -191,6 +198,8 @@ struct RHIBindPipelineParametersDesc {
     // Points to a segment of temporary memory allocated through the command buffer.
     std::span<RHIPipelineParameterBufferDesc> uniforms {};
     std::span<RHIPipelineParameterBufferDesc> storages {};
+    // TODO add support for storage arrays
+    // std::span<RHIPipelineParameterBufferArrayDesc> storage_arrays {};
     std::span<RHIPipelineParameterTextureDesc> uavs {};
     std::span<RHIPipelineParameterTextureDesc> srvs {};
     std::span<RHIPipelineParameterResourceDesc> samplers {};
@@ -220,7 +229,7 @@ namespace PipelineReflection {
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
-        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array of unspecified length.
         uint32_t array_size;
     };
     struct StorageBufferDesc {
@@ -229,7 +238,7 @@ namespace PipelineReflection {
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
         RHIGPUAccessFlags access_flags;
-        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
+        // Array size of an array of resources. 0 if not an array. UINT32_MAX for array of unspecified length.
         uint32_t array_size;
     };
     struct UAVDesc {

@@ -30,6 +30,8 @@ struct RendererView;
 class DeviceBindlessResourceAllocator;
 class DeviceBufferHeapInterface;
 class DeviceBufferHeapBuffer;
+class DeviceUberBufferAllocation;
+class DeviceUberBufferInterface;
 
 struct ViewCommonShaderParameters;
 

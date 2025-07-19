@@ -76,6 +76,7 @@ protected:
 
     std::unordered_map<uint32_t, RHIPipelineResourceSlot> pipeline_resource_index_;
 
+    // Reflected shader resources from spv shader bytecode
     std::vector<UniformBufferDesc> uniform_buffers_;
     std::vector<StorageBufferDesc> storage_buffers_;
     std::vector<UAVDesc> uavs_;

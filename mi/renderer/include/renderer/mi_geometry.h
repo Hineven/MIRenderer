@@ -27,8 +27,8 @@ protected:
     DeviceBindlessResourceAllocator * allocator_ {};
 
     // Device related data (manually released to the allocator)
-    RHIBufferSpan vertex_buffer_;
-    RHIBufferSpan index_buffer_;
+    TRef<DeviceUberBufferAllocation> vertex_buffer_;
+    TRef<DeviceUberBufferAllocation> index_buffer_;
     // The first index to draw of the geometry in the bindless device index buffer.
     uint32_t first_index_ {};
     uint32_t vertex_count_ {};
@@ -50,11 +50,11 @@ public:
     FORCEINLINE uint32_t GetVertexCount () const {return vertex_count_;}
     FORCEINLINE uint32_t GetIndexCount () const {return index_count_;}
 
-    FORCEINLINE RHIBufferSpan GetDeviceVertexBuffer () const {
-        return vertex_buffer_;
+    FORCEINLINE DeviceUberBufferAllocation * GetDeviceVertexBuffer () const {
+        return vertex_buffer_.Raw();
     }
-    FORCEINLINE RHIBufferSpan GetDeviceIndexBuffer () const {
-        return index_buffer_;
+    FORCEINLINE DeviceUberBufferAllocation * GetDeviceIndexBuffer () const {
+        return index_buffer_.Raw();
     }
 
     FORCEINLINE uint32_t GetDeviceFirstIndex () const {

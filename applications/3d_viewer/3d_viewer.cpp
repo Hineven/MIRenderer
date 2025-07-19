@@ -176,19 +176,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     auto pool = RDGResourcePool::Create();
 
     // Resource allocator
-    auto resource_allocator = new DeviceBindlessResourceAllocator(
-        SimpleDeviceBufferHeap::Create(
-            RHIBufferUsageFlagBits::kVertex, 256
-        ).Raw(),
-        SimpleDeviceBufferHeap::Create(
-            RHIBufferUsageFlagBits::kIndex, 256
-        ).Raw()
-    );
+    auto resource_allocator = new DeviceBindlessResourceAllocator();
 
     // Renderer
     Renderer::Get().Init(resource_allocator, pool.Raw());
 
-    auto world = std::make_unique<DeviceScene>();
+    auto scene = std::make_unique<Scene>();
     TRef<Texture> sky_cube;
 
     // Upload sky texture
@@ -205,7 +198,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *world,
+            *scene,
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -220,13 +213,17 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     sky_cube->UpdateOnDevice();
     sky_cube->ConvertToBindless();
 
-    world->SetSkyCube(sky_cube.Raw());
+    scene->SetSkyCube(sky_cube.Raw());
+
+    scene->CreateOnDevice();
+    // Update is manually performed in the renderer.
+    // scene->UpdateOnDevice();
 
     // View
     auto view = std::make_unique<RendererView>();
     view->film_width_ = cfg.window_width;
     view->film_height_ = cfg.window_height;
-    view->scene_ = world.get();
+    view->scene_ = scene.get();
 
     {
         std::future<void> previous_frame_future;
@@ -354,7 +351,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     meshes.clear();
 
-    world.reset();
+    scene.reset();
 
     sky_cube.SafeRelease();
 

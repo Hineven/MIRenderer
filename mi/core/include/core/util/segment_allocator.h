@@ -1,0 +1,113 @@
+/*
+ * Created: 2025/7/18
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef SEGMENT_ALLOCATOR_H
+#define SEGMENT_ALLOCATOR_H
+
+#include <set>
+#include <ranges>
+#include <core/common.h>
+#include <core/infra.h>
+MI_NAMESPACE_BEGIN
+
+// A simple segment allocator that allocates/frees non-overlapping segments over a fixed range of indices.
+class SimpleSegmentAllocator {
+    size_t max_num_elements_;
+    size_t alignment;
+    struct Segment {
+        mutable size_t start_index;
+        mutable size_t end_index; // Exclusive
+        FORCEINLINE bool operator < (const Segment & b) const {
+            return start_index < b.start_index;
+        }
+    };
+    std::set<Segment> free_segments_;
+public:
+    FORCEINLINE SimpleSegmentAllocator (size_t max_num_elements, size_t alignment = 1)
+        : max_num_elements_(max_num_elements), alignment(alignment) {
+        mi_assert(max_num_elements > 0, "Max number of elements must be greater than 0.");
+        free_segments_.emplace(0, max_num_elements_);
+    }
+    FORCEINLINE size_t Allocate(size_t num_elements) {
+        // Simply iterate through all free segments and find the first one that can fit the allocation.
+        Segment * found = {};
+        for (auto & segment : free_segments_) {
+            size_t aligned_start = (segment.start_index + alignment - 1) / alignment * alignment;
+            size_t aligned_end = aligned_start + num_elements;
+            if (aligned_end <= segment.end_index && aligned_end <= max_num_elements_) {
+                // Found a segment that can fit the allocation
+                found = const_cast<Segment*>(&segment);
+                break;
+            }
+        }
+        if (!found) {
+            return SIZE_MAX; // No free segment found
+        }
+        size_t start_index = (found->start_index + alignment - 1) / alignment * alignment;
+        size_t end_index = start_index + num_elements;
+        if (found->end_index != end_index) {
+            // If there is space after the allocated segment, add it back to the free segments
+            *found = {end_index, found->end_index};
+        } else {
+            free_segments_.erase(*found);
+        }
+        return start_index;
+    }
+    FORCEINLINE void Free(size_t start_index, size_t num_elements) {
+        size_t end_index = start_index + num_elements;
+        mi_assert(start_index < max_num_elements_ && end_index <= max_num_elements_, "Invalid segment range.");
+        // Find the segment that contains the start index
+        auto it = free_segments_.lower_bound(Segment{start_index, 0});
+        bool merged = false;
+        if (it != free_segments_.end()) {
+            // There is a segment that starts after the start index
+            // Check if we can merge with the successive segment
+            mi_assert(end_index <= it->start_index, "Cannot free segment that overlaps with an existing free segment.");
+            if (end_index == it->start_index) {
+                // Merge case
+                it->start_index = start_index;
+                merged = true;
+            }
+        }
+        if (it != free_segments_.begin()) {
+            // Check if we can merge with the previous segment
+            auto prev_it = std::prev(it);
+            if (prev_it->end_index == start_index) {
+                // Merge case
+                if (merged) {
+                    // If we already merged with the successor, we need to erase the previous segment
+                    // and update the current segment to the merged one
+                    it->start_index = prev_it->start_index;
+                    free_segments_.erase(prev_it);
+                } else {
+                    // Just merge with the previous segment
+                    prev_it->end_index = end_index;
+                    merged = true;
+                }
+            }
+        }
+        // If we didn't merge, we need to add a new segment
+        if (!merged) {
+            free_segments_.insert(it, {start_index, end_index});
+        }
+    }
+    FORCEINLINE size_t GetFreeSegmentCount() const {
+        return free_segments_.size();
+    }
+    FORCEINLINE size_t GetFreeSegmentSize(size_t index) const {
+        mi_assert(index < free_segments_.size(), "Index out of bounds.");
+        auto it = std::next(free_segments_.begin(), index);
+        return it->end_index - it->start_index;
+    }
+};
+
+// TODO use a better and faster allocator for segments.
+using SegmentAllocator = SimpleSegmentAllocator;
+
+MI_NAMESPACE_END
+
+
+#endif //SEGMENT_ALLOCATOR_H

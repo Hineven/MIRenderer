@@ -63,7 +63,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
     auto shader_resources = compiler_hlsl.get_shader_resources();
     auto ReflectResources =  [&] <typename T> (auto resources, auto & out_resources) {
         for (auto & resource : resources) {
-            T desc;
+            T desc {};
             desc.name = compiler_hlsl.get_name(resource.id);
             if constexpr (THasSize<T>::value) {
                 desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
@@ -94,7 +94,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
     // Manually reflect storage buffers to separate RW / R only buffers
     {
         for (auto & resource : shader_resources.storage_buffers) {
-            StorageBufferDesc desc;
+            StorageBufferDesc desc {};
             // desc.name = resource.name; <- this turns out to be the name of the OpTypeStruct!!!! not OpVariable!!!
             desc.name = compiler_hlsl.get_name(resource.id);
             compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);

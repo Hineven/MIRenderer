@@ -66,18 +66,29 @@ void Renderer::FrameContext::Deinit() {
 
 void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
-    view->InitFrame();
-
-    // Allocate and set view->view_common_params_
-    view->SetViewCommonShaderParameters(builder);
-
-    // Init frame context
-    ctx.Init();
+    struct RenderFunctionContext {
+        Renderer * r_;
+        RenderFunctionContext (Renderer * r): r_(r) {
+            r_->ctx.Init();
+        }
+        ~RenderFunctionContext() {
+            r_->ctx.Deinit();
+        }
+    } context_holder(this);
 
     if (!view->scene_) {
         MI_WARN("World is not present in the view.");
         return ;
     }
+    if (!view->scene_->GetDeviceScene()) {
+        MI_WARN("Device scene is not present in the world.");
+        return ;
+    }
+
+    view->InitFrame();
+    // Allocate and set view->view_common_params_
+    view->SetViewCommonShaderParameters(builder);
+
     mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
     auto all_renderables = view->scene_->GetRenderables();
 
@@ -188,13 +199,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         );
         builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
             [instance_buffer = instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw()]
-            (RDGPass * pass, RHICommandQueueGraphics & queue) {
+            ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             auto as_build_info = build_info;
             as_build_info.instance_data = instance_buffer->GetRHI();
             as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
             queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
         })->AddAS(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
-        ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead);
+        ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead)
+        ->AddBuffer(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRW);
     }
 
     // Filter visible rendeables
@@ -228,10 +240,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Draw G-Buffer to output directly for debug purposes
     Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
-
-
-    // Reset frame context
-    ctx.Deinit();
 
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();

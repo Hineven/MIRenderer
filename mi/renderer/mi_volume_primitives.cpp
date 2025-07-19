@@ -11,24 +11,18 @@
 
 MI_NAMESPACE_BEGIN
 
-TRef<VolumePrimitives> VolumePrimitives::Create(DeviceScene *world, Transform transform) {
-    auto index = AllocateRenderableIndexFromWorld(world);
-    if (index == UINT32_MAX) {
-        MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
-        return nullptr;
+TRef<VolumePrimitives> VolumePrimitives::Create(Scene *scene, Transform transform) {
+    auto primitives = TRef(new VolumePrimitives(scene));
+    if (primitives->IsValid()) {
+        primitives->SetTransform(transform);
+        primitives->scene_ = scene;
+        return std::move(primitives);
     }
-    auto primitives = TRef(new VolumePrimitives(index, world));
-    primitives->SetTransform(transform);
-    primitives->index_ = index;
-    primitives->scene_ = world;
-
-    primitives->RegisterToWorld();
-
-    return std::move(primitives);
+    return {};
 }
 
 RenderableHeader VolumePrimitives::GetDeviceRenderableHeader() const {
-    return ReinterpretAs<RenderableHeader>(renderable_header_);
+    return std::bit_cast<RenderableHeader>(renderable_header_);
 }
 
 void VolumePrimitives::SetPrimitives(const std::vector<VolumePrimitive> & primitives) {

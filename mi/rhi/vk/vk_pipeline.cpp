@@ -111,8 +111,15 @@ static void RelocateShaderResourceBindings (
     shader_module_keepers.emplace_back(vk_shader);
 };
 
+template<typename T>
+static auto GetResourceArraySize(T& obj) {
+    if constexpr (requires { obj.array_size; }) { return obj.array_size; }
+    else { return 0u; }
+}
+
 bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info) {
     auto device = GetVulkanRHI()->GetDevice();
+
 
     // Gather pipeline layout, align descriptor bindings
     {
@@ -127,10 +134,12 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                 if (!desc.empty()) {
                     int i = 0;
                     for (auto &res: desc) {
+                        mi_check(GetResourceArraySize(res) == 0, "Shaders must not contain any arrayed resources in bindfull mode"
+                                                      " (we do not support that).");
                         bindfull_bindings.emplace_back()
                                 .setBinding(current_binding_index)
                                 .setDescriptorType(type)
-                                .setDescriptorCount(1)
+                                .setDescriptorCount(std::max(GetResourceArraySize(res), 1u))
                                 .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
                         remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index);
                         i ++, current_binding_index ++;

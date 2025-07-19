@@ -19,6 +19,7 @@ MI_NAMESPACE_BEGIN
 
 DeviceMaterial::DeviceMaterial(DeviceBindlessResourceAllocator *allocator) {
     allocator_ = allocator;
+    index_ = allocator_->AllocateMaterialSlot();
 }
 
 DeviceMaterial::~DeviceMaterial() {

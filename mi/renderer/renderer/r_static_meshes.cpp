@@ -69,8 +69,8 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
                 header.material_index = mat->GetDeviceMaterial()->GetIndex();
                 header.world_renderable_handle = e->GetIndex();
 
-                header.vertex_buffer = dev->GetDeviceVertexBuffer();
-                header.index_buffer = dev->GetDeviceIndexBuffer();
+                header.vertex_buffer = dev->GetDeviceVertexBuffer()->GetRHI();
+                header.index_buffer = dev->GetDeviceIndexBuffer()->GetRHI();
                 header.indirect_command = cmd;
 
                 data.draw_invocation_sorting_headers.push_back(header);
@@ -183,7 +183,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
 
     // Place barriers for geometry / indirect buffers manually
     {
-        // TODO utilize CommonGroupedResourceAllocator, place less barriers.
+        // TODO utilize DeviceBindlessAllocator, place less barriers.
         std::set<RHIBuffer*> barrier_buffers;
         for (auto & e : ctx.visible_renderables) {
             if (!e->IsDirty()) continue ;
@@ -191,8 +191,8 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
                 auto mesh = mesh_instance->GetStaticMesh();
                 for (auto geom : mesh->GetGeometries()) {
                     if (auto dev = geom->GetDeviceGeometry()) {
-                        if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb.buffer);
-                        if (auto ib = dev->GetDeviceIndexBuffer()) barrier_buffers.insert(ib.buffer);
+                        if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb->GetRHI().buffer);
+                        if (auto ib = dev->GetDeviceIndexBuffer()) barrier_buffers.insert(ib->GetRHI().buffer);
                     }
                 }
             }

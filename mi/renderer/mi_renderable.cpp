@@ -7,12 +7,12 @@
 
 #include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
-Renderable::Renderable(RenderableType type, uint32_t index, Scene * world): type_(type), index_(index), scene_(world) {
-
-}
-
-uint32_t Renderable::AllocateRenderableIndexFromWorld (Scene * world) {
-    return world->AllocateRenderableIndex();
+Renderable::Renderable(RenderableType type, Scene * scene): type_(type), scene_(scene) {
+    index_ = scene->AllocateRenderableIndex(this);
+    if (!IsValid()) {
+        MI_LOG(MIInfraLogType::kError, "Failed to allocate renderable index from world."
+                                       "Potentially too many renderables in the world.");
+    }
 }
 
 RenderableHeader Renderable::GetDeviceRenderableHeader () const {
@@ -23,10 +23,6 @@ Renderable::~Renderable() {
     if (index_ != UINT32_MAX) {
         scene_->FreeRenderabeIndex(index_);
     }
-}
-
-void Renderable::RegisterToWorld() {
-    scene_->renderables_[index_] = this;
 }
 
 

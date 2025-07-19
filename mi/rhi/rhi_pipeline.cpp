@@ -60,8 +60,17 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
             } else {
                 // Check their sizes if possible
                 bool sizes_matched = CheckSize(&resource_descs[i], &pipeline_resource_descs[pipeline_slot])();
+                // Check their array sizes if possible
+                bool array_sizes_matched = true;
+                if constexpr (requires { resource_descs[i].array_size; pipeline_resource_descs[i].array_size;}) {
+                    array_sizes_matched = (resource_descs[i].array_size == pipeline_resource_descs[pipeline_slot].array_size);
+                }
                 if(!sizes_matched) {
-                    MI_LOG(MIInfraLogType::kWarning, "Resource sizes mismatch");
+                    MI_LOG(MIInfraLogType::kWarning, "Resource sizes mismatch for {}", resource_descs[i].name);
+                    return false;
+                }
+                if (!array_sizes_matched) {
+                    MI_LOG(MIInfraLogType::kWarning, "Resource array sizes mismatch for {}", resource_descs[i].name);
                     return false;
                 }
                 // Mark usage

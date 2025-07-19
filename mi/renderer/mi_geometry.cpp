@@ -19,10 +19,6 @@ DeviceGeometry::DeviceGeometry(DeviceBindlessResourceAllocator * allocator) {
 }
 
 DeviceGeometry::~DeviceGeometry() {
-    if (vertex_buffer_.buffer)
-        allocator_->FreeVertexBuffer(vertex_buffer_);
-    if (index_buffer_.buffer)
-        allocator_->FreeIndexBuffer(index_buffer_);
     if (IsValid()) allocator_->FreeGeometrySlot(index_);
 }
 
@@ -60,24 +56,22 @@ void Geometry::UpdateOnDevice_Async(DeviceBindlessResourceAllocator *alloc, RHIC
             mi_check(device_geometry_->IsValid(), "Failed to allocate device geometry slot. This may indicate that the device allocator is full.");
         }
         // Update geometries
-        if (device_geometry_->vertex_buffer_.size != GetVertexBufferSize()) {
-            device_geometry_->vertex_buffer_ = alloc->AllocateVertexBuffer((uint32_t)GetVertexBufferSize());
+        if (!device_geometry_->vertex_buffer_ || device_geometry_->vertex_buffer_->GetSize() != GetVertexBufferSize()) {
+            device_geometry_->vertex_buffer_ = alloc->AllocateVertexBuffer((uint32_t)GetVertexBufferSize()).first;
         }
-        if (device_geometry_->index_buffer_.size != GetIndexBufferSize()) {
-            device_geometry_->index_buffer_ = alloc->AllocateIndexBuffer((uint32_t)GetIndexBufferSize());
+        if (!device_geometry_->index_buffer_ || device_geometry_->index_buffer_->GetSize() != GetIndexBufferSize()) {
+            device_geometry_->index_buffer_ = alloc->AllocateIndexBuffer((uint32_t)GetIndexBufferSize()).first;
         }
-        Helpers::Upload_Async(queue, device_geometry_->vertex_buffer_, vertices_.data(), GetVertexBufferSize());
-        Helpers::Upload_Async(queue, device_geometry_->index_buffer_, indices_.data(), GetIndexBufferSize());
+        Helpers::Upload_Async(queue, device_geometry_->vertex_buffer_->GetRHI(), vertices_.data(), GetVertexBufferSize());
+        Helpers::Upload_Async(queue, device_geometry_->index_buffer_->GetRHI(), indices_.data(), GetIndexBufferSize());
         // Update geometry header
         device_geometry_->first_index_ = 0;
         device_geometry_->vertex_count_ = (int)vertices_.size();
         device_geometry_->index_count_ = (int)indices_.size();
         auto index = device_geometry_->GetIndex();
         auto geometry_header = GeometryHeader {
-            alloc->GetVertexBufferHeap()->GetBufferBlockIndex(device_geometry_->vertex_buffer_.buffer),
-            alloc->GetIndexBufferHeap()->GetBufferBlockIndex(device_geometry_->index_buffer_.buffer),
-            (uint32_t)(device_geometry_->vertex_buffer_.offset / sizeof(DefaultStaticMeshVertex)),
-            (uint32_t)(device_geometry_->index_buffer_.offset / sizeof(uint32_t)) + device_geometry_->first_index_,
+            (uint32_t)(device_geometry_->vertex_buffer_->GetOffset() / sizeof(DefaultStaticMeshVertex)),
+            (uint32_t)(device_geometry_->index_buffer_->GetOffset() / sizeof(uint32_t)) + device_geometry_->first_index_,
             device_geometry_->vertex_count_, device_geometry_->index_count_
         };
         Helpers::Upload_Async(queue, alloc->GetGeometryHeaderBuffer(), index * sizeof(GeometryHeader), geometry_header);

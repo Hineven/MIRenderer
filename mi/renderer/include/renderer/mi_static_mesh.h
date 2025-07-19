@@ -32,7 +32,7 @@ protected:
     DeviceStaticMesh (DeviceBindlessResourceAllocator * allocator) ;
     ~DeviceStaticMesh() ;
     // Store a list of material indices on the device
-    TRef<DeviceBufferHeapBuffer> geometry_material_indices_;
+    TRef<DeviceUberBufferAllocation> geometry_material_indices_;
     // If this static mesh is ray-traced, it should have a bottom-level acceleration structure.
     TRef<RHIAccelerationStructure> BLAS_;
 
@@ -126,7 +126,7 @@ public:
     }
 
 protected:
-    StaticMeshInstance(uint32_t index, Scene * world) ;
+    StaticMeshInstance(Scene * world) ;
     ~StaticMeshInstance() override;
 
     TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to

@@ -49,27 +49,27 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
         mi_check(device_static_mesh_.IsValid(), "Failed to allocate static mesh slot. Maybe too many static meshes?");
     }
     // Update geometry - material pairs
-    auto device_num_pairs = device_static_mesh_->geometry_material_indices_->GetRHI().size / (sizeof(uint32_t) * 2);
     auto desired_num_pairs = (uint32_t)geometries_.size();
-    if (device_num_pairs != geometries_.size()) {
-        device_static_mesh_->geometry_material_indices_ = alloc->GetStaticMeshDescriptionBufferHeap()->AllocateRefCounted(
+    if (!device_static_mesh_->geometry_material_indices_
+        || device_static_mesh_->geometry_material_indices_->GetRHI().size / (sizeof(uint32_t) * 2) != desired_num_pairs) {
+        device_static_mesh_->geometry_material_indices_ = alloc->GetStaticMeshDescriptionUberBuffer()->AllocateRefCounted(
             desired_num_pairs * sizeof(uint32_t) * 2
-        );
+        ).first;
     }
     std::vector<uint32_t> data;
     data.reserve(geometries_.size() * 2);
     for (int i = 0; i < (int)geometries_.size(); i++) {
         auto geom = geometries_[i];
         auto mat = materials_[i];
-        data[i * 2] = geom->GetDeviceGeometry()->GetIndex();
-        data[i * 2 + 1] = mat->GetDeviceMaterial()->GetIndex();
+        data.emplace_back(geom->GetDeviceGeometry()->GetIndex());
+        data.emplace_back(mat->GetDeviceMaterial()->GetIndex());
     }
     Helpers::Upload_Async(queue,
         device_static_mesh_->geometry_material_indices_->GetRHI(), data.data(), sizeof(uint32_t) * data.size()
     );
     // Update header
     auto header = StaticMeshHeader {
-        device_static_mesh_->geometry_material_indices_->GetRHI().offset / (2 * sizeof(uint32_t)),
+        (uint32_t)(device_static_mesh_->geometry_material_indices_->GetRHI().offset / (2 * sizeof(uint32_t))),
         (uint32_t)geometries_.size(),
     };
     Helpers::Upload_Async(queue,
@@ -86,25 +86,25 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
             device_static_mesh_->BLAS_ = {};
         } else {
             // Update acceleration structure for raytracing
-            auto geometries = queue.Allocate<RHIASGeometry>(geometries_.size());
+            auto geometries = queue.Allocate<RHIASGeometry[]>(geometries_.size());
             RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
-            build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : 0);
+            build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : RHIAccelerationStructureBuildFlagBits::kNone);
             for (auto [i, geometry] : std::views::enumerate(geometries_)) {
                 auto material = materials_[i];
-                RHIASGeometryFlags geometry_flags = material->IsOpaque() ? RHIASGeometryFlagBits::kOpaque : 0;
+                RHIASGeometryFlags geometry_flags = material->IsOpaque() ? RHIASGeometryFlagBits::kOpaque : RHIASGeometryFlagBits::kNone;
                 auto device_geom = geometry->GetDeviceGeometry();
                 geometries[i] = RHIASGeometry{
                     RHIASGeometryType::kTriangles,
                     geometry_flags,
                     {
-                        device_geom->GetDeviceVertexBuffer(),
+                        device_geom->GetDeviceVertexBuffer()->GetRHI(),
                         sizeof(DefaultStaticMeshVertex),
                         (uint32_t)device_geom->GetVertexCount(),
                         RHIVertexAttributeFormatType::k3xFp32,
                         RHIBufferSpan{
-                            device_geom->GetDeviceIndexBuffer().buffer,
-                            device_geom->GetDeviceIndexBuffer().offset + sizeof(uint32_t) * device_geom->GetDeviceFirstIndex(),
-                            device_geom->GetDeviceIndexBuffer().size
+                            device_geom->GetDeviceIndexBuffer()->GetRHI().buffer,
+                            device_geom->GetDeviceIndexBuffer()->GetRHI().offset + sizeof(uint32_t) * device_geom->GetDeviceFirstIndex(),
+                            device_geom->GetDeviceIndexBuffer()->GetRHI().size
                         },
                         (uint32_t)device_geom->GetIndexCount(),
                         RHIIndexType::kUint32
@@ -149,7 +149,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
                 device_static_mesh_->BLAS_.Raw(),
                 RHIPipelineStageFlagBits::kAccelerationStructureBuild,
                 RHIPipelineStageFlagBits::kRayTracing,
-                RHIGPUAccessFlagBits::kShaderWrite,
+                RHIGPUAccessFlagBits::kAccelerationStructureWrite,
                 RHIGPUAccessFlagBits::kAccelerationStructureRead
             );
         }
@@ -171,30 +171,25 @@ TRef<StaticMesh> StaticMesh::Create(bool is_ray_traced, bool dynamic) {
 }
 
 
-StaticMeshInstance::StaticMeshInstance(uint32_t index, Scene * scene): Renderable(RenderableType::kStaticMeshInstance, index, scene) {}
+StaticMeshInstance::StaticMeshInstance(Scene * scene): Renderable(RenderableType::kStaticMeshInstance, scene) {}
 
 StaticMeshInstance::~StaticMeshInstance() {}
 
-void StaticMeshInstance::Update(RendererView *view, RenderGraphBuilder &builder) {
+void StaticMeshInstance::Update([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
     SetDirty(false);
 }
 
 
 TRef<StaticMeshInstance> StaticMeshInstance::Create(Scene *scene, StaticMesh * static_mesh, Transform transform) {
-    auto index = AllocateRenderableIndexFromWorld(scene);
-    if (index == UINT32_MAX) {
-        MI_LOG(MIInfraLogType::kError, "Failed to allocate static mesh index from world.");
-        return nullptr;
+    auto mesh = TRef(new StaticMeshInstance(scene));
+    if (mesh->IsValid()) {
+        mesh->SetTransform(transform);
+        mesh->scene_ = scene;
+        mesh->static_mesh_ = static_mesh;;
+
+        return std::move(mesh);
     }
-    auto mesh = TRef(new StaticMeshInstance(index, scene));
-    mesh->SetTransform(transform);
-    mesh->index_ = index;
-    mesh->scene_ = scene;
-    mesh->static_mesh_ = static_mesh;
-
-    mesh->RegisterToWorld();
-
-    return std::move(mesh);
+    return {};
 }
 RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
     return  {};
