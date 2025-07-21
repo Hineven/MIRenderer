@@ -51,11 +51,12 @@ public:
     ~MicroMCChunk();
 
     // 从方块数据更新几何体
-    void UpdateGeometries(DeviceScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
+    void UpdateGeometries(Scene * world, Material * block_material, const std::vector<MCBlock>& blocks,
                          const std::unordered_map<std::string, TextureUVMapping>& uv_mappings);
 
     // 获取静态网格
-    StaticMeshInstance * GetStaticMesh() const { return static_mesh_.Raw(); }
+    StaticMesh * GetStaticMesh() const { return static_mesh_.Raw(); }
+    StaticMeshInstance * GetStaticMeshInstance() const { return static_mesh_instance_.Raw(); }
 
     // 获取几何体
     const std::vector<TRef<Geometry>> & GetGeometries() const { return geometries_; }
@@ -66,11 +67,12 @@ public:
 
 private:
     int coord_x_, coord_z_;
-    TRef<StaticMeshInstance> static_mesh_;
+    TRef<StaticMesh> static_mesh_;
+    TRef<StaticMeshInstance> static_mesh_instance_;
     std::vector<TRef<Geometry>> geometries_;
 
     // 生成立方体的顶点和索引
-    void GenerateCubeGeometry(DeviceScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
+    void GenerateCubeGeometry(Scene * world, Material * block_material, const std::vector<MCBlock>& blocks,
                              const std::unordered_map<std::string, TextureUVMapping>& uv_mappings);
 
     // 检查方块是否存在
@@ -93,7 +95,7 @@ public:
     ~MicroMCWorld();
 
     // 从目录加载MC世界
-    bool LoadFromDirectory(const std::string& world_path, const std::string& resource_pack_path, DeviceScene* scene);
+    bool LoadFromDirectory(const std::string& world_path, const std::string& resource_pack_path, Scene* scene);
 
 private:
     std::vector<std::unique_ptr<MicroMCChunk>> chunks_;

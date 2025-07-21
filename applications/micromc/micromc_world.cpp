@@ -25,16 +25,18 @@ MicroMCChunk::MicroMCChunk(int coord_x, int coord_z)
 MicroMCChunk::~MicroMCChunk() {
 }
 
-void MicroMCChunk::UpdateGeometries(DeviceScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
+void MicroMCChunk::UpdateGeometries(Scene * world, Material * block_material, const std::vector<MCBlock>& blocks,
                                    const std::unordered_map<std::string, TextureUVMapping>& uv_mappings) {
     // 生成立方体几何体
     GenerateCubeGeometry(world, block_material, blocks, uv_mappings);
+    // 更新静态网格实例
+    static_mesh_instance_ = StaticMeshInstance::Create(world, static_mesh_.Raw(), Transform::Identity());
 }
 
 #define SUB_CHUNK_HEIGHT 16 // 每个子区块的高度
 #define MAX_NUM_SUB_CHUNKS 32 // 最大子区块数量
 
-void MicroMCChunk::GenerateCubeGeometry(DeviceScene * world, Material * block_material, const std::vector<MCBlock>& blocks,
+void MicroMCChunk::GenerateCubeGeometry(Scene * world, Material * block_material, const std::vector<MCBlock>& blocks,
                                        const std::unordered_map<std::string, TextureUVMapping>& uv_mappings) {
 
     std::vector<DefaultStaticMeshVertex> vertices[MAX_NUM_SUB_CHUNKS];
@@ -111,13 +113,14 @@ void MicroMCChunk::GenerateCubeGeometry(DeviceScene * world, Material * block_ma
         }
     }
     // 重建StaticMesh
-    if (!static_mesh_) static_mesh_ = StaticMeshInstance::Create(world, Transform::Identity());
+    if (!static_mesh_) static_mesh_ = StaticMesh::Create(true, false);
     static_mesh_->ClearMeshPrimitives();
     for (int i = 0; i < MAX_NUM_SUB_CHUNKS; i++) {
         if (geometries_[i]) {
             static_mesh_->AddMeshPrimitive(geometries_[i], block_material);
         }
     }
+    static_mesh_->UpdateOnDevice(Renderer::Get().GetDeviceAllocator());
 }
 
 bool MicroMCChunk::IsBlockAt(const std::vector<MCBlock>& blocks, int x, int y, int z) const {
@@ -194,7 +197,7 @@ MicroMCWorld::MicroMCWorld() {
 MicroMCWorld::~MicroMCWorld() {
 }
 
-bool MicroMCWorld::LoadFromDirectory(const std::string& world_path, const std::string& resource_pack_path, DeviceScene* scene) {
+bool MicroMCWorld::LoadFromDirectory(const std::string& world_path, const std::string& resource_pack_path, Scene* scene) {
     // 1. 加载世界数据
     MCWorld world_data;
     if (!LoadWorldData(world_path, world_data)) {
@@ -219,7 +222,7 @@ bool MicroMCWorld::LoadFromDirectory(const std::string& world_path, const std::s
         chunk->UpdateGeometries(scene, block_material_.Raw(), chunk_data.blocks, block_uv_mappings_);
 
         // 创建StaticMesh并添加到场景
-        if (auto mesh = chunk->GetStaticMesh()) {
+        if (auto mesh = chunk->GetStaticMeshInstance()) {
             Transform transform;
             transform.position = glm::vec3(chunk_data.coord_x * 16, 0, chunk_data.coord_z * 16);
             mesh->SetTransform(transform);

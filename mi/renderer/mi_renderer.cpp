@@ -152,7 +152,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<int> visible_rt_static_mesh_renderable_indices;
     for (auto e : visible_renderable_indices) {
         if (auto static_mesh_inst = all_renderables[e]->As<StaticMeshInstance>()) {
-            if (static_mesh_inst->GetStaticMesh()->IsRayTraced())
+            if (static_mesh_inst->GetStaticMesh()->IsRayTraced() && !static_mesh_inst->GetStaticMesh()->IsEmpty())
                 visible_rt_static_mesh_renderable_indices.push_back(e);
         }
     }

@@ -44,6 +44,7 @@ void StaticMesh::ClearMeshPrimitives() {
 
 void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) {
     if (!IsDirty()) return;
+    if (IsEmpty()) return;
     if (!device_static_mesh_) {
         device_static_mesh_ = new DeviceStaticMesh(alloc);
         mi_check(device_static_mesh_.IsValid(), "Failed to allocate static mesh slot. Maybe too many static meshes?");

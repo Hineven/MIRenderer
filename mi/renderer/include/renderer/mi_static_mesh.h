@@ -76,6 +76,10 @@ public:
         return dirty_;
     }
 
+    FORCEINLINE bool IsEmpty () const {
+        return geometries_.empty();
+    }
+
     void AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) ;
     void ClearMeshPrimitives ();
 
