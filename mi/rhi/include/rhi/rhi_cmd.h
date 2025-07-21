@@ -478,6 +478,20 @@ public:
     uint32_t binding_;
 };
 
+class RHICommandMemoryBarrier : public TRHICommand<RHICommandMemoryBarrier> {
+public:
+    RHICommandMemoryBarrier(RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+                            RHIGPUAccessFlags src_accesses, RHIGPUAccessFlags dst_accesses)
+        : src_stages_(src_stages), dst_stages_(dst_stages),
+          src_accesses_(src_accesses), dst_accesses_(dst_accesses) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIPipelineStageFlags src_stages_;
+    RHIPipelineStageFlags dst_stages_;
+    RHIGPUAccessFlags src_accesses_;
+    RHIGPUAccessFlags dst_accesses_;
+};
+
 class RHICommandTextureBarrier : public TRHICommand<RHICommandTextureBarrier> {
 public:
     RHICommandTextureBarrier(
@@ -710,6 +724,13 @@ public:
     FORCEINLINE void BindVertexBuffer (uint32_t binding, RHIBufferSpan buffer) {
         // TODO switch to batched binding (bind vertex buffers)
         AddCommand(AllocateCommand<RHICommandBindVertexBuffer>(binding, buffer));
+    }
+
+    FORCEINLINE void MemoryBarrier (
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ) {
+        AddCommand(AllocateCommand<RHICommandMemoryBarrier>(src_stages, dst_stages, src_access, dst_access));
     }
 
     FORCEINLINE void TextureBarrier (

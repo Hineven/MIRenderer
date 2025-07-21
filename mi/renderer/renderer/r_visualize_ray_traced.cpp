@@ -36,7 +36,7 @@ public:
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(RayTracingVisualizationShader, "mi/renderer/shaders/RayTracingVisualization.hlsl",
                                 "RayTracingVisualizationRaygen",
-                                 "RayTracingVisualizationClosestHit", "", "RayTracingVisualizationMiss")
+                                 "RayTracingVisualizationClosestHit", "RayTracingVisualizationAnyHit", "RayTracingVisualizationMiss")
 
 void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder &builder) {
     // Simply overwrite the debug output texture with the ray-traced result.
@@ -58,9 +58,11 @@ void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder 
     builder.AddPass<RayTracingVisualizationShader>(
         {}, params,
         [shader, params, view](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            DEBUG_UBER_BARRIER;
             RDGCommandHelper::DispatchRays<RayTracingVisualizationShader>(
                 queue, pass, shader, params, view->film_width_, view->film_height_
             );
+            DEBUG_UBER_BARRIER;
         }
     );
 }

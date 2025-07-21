@@ -732,6 +732,23 @@ FORCEINLINE vk::GeometryFlagsKHR GetVulkanGeometryFlags (RHIASGeometryFlags flag
     return ret;
 }
 
+FORCEINLINE vk::GeometryInstanceFlagsKHR GetVulkanAccelerationStructureInstanceFlags (RHIASGeometryInstanceFlags flags) {
+    auto ret = vk::GeometryInstanceFlagsKHR{};
+    if (flags & RHIASGeometryInstanceFlagBits::kDisableTriangleFaceCulling) {
+        ret |= vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable;
+    }
+    if (flags & RHIASGeometryInstanceFlagBits::kFlipTriangleFacing) {
+        ret |= vk::GeometryInstanceFlagBitsKHR::eTriangleFrontCounterclockwise;
+    }
+    if (flags & RHIASGeometryInstanceFlagBits::kForceOpaque) {
+        ret |= vk::GeometryInstanceFlagBitsKHR::eForceOpaque;
+    }
+    if (flags & RHIASGeometryInstanceFlagBits::kForceNoOpaque) {
+        ret |= vk::GeometryInstanceFlagBitsKHR::eForceNoOpaque;
+    }
+    return ret;
+}
+
 MI_NAMESPACE_END
 
 #endif //MI_VK_CONVERSION_H

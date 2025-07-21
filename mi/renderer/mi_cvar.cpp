@@ -4,21 +4,45 @@
  * See LICENSE for licensing.
  */
 
-#include "include/renderer/mi_cvar.h"
 #include <sstream>
 #include <iostream>
+#include <glm/glm.hpp>
+#include <renderer/mi_cvar.h>
 
 MI_NAMESPACE_BEGIN
 
 // CVarBase implementation
-CVarBase::CVarBase(const std::string& id, const std::string& description)
-    : id_(id), description_(description), dirty_(false) {
+CVarBase::CVarBase(const std::string& id, const std::string& description, CVarType type)
+    : id_(id), description_(description), type_(type), dirty_(false) {
+}
+
+template<typename T>
+static CVarType GetType () {
+    if constexpr (std::is_same_v<T, int>) {
+        return CVarType::kInt;
+    } else if constexpr (std::is_same_v<T, float>) {
+        return CVarType::kFloat;
+    } else if constexpr (std::is_same_v<T, glm::vec2>) {
+        return CVarType::kFloat2;
+    } else if constexpr (std::is_same_v<T, glm::vec3>) {
+        return CVarType::kFloat3;
+    } else if constexpr (std::is_same_v<T, glm::vec4>) {
+        return CVarType::kFloat4;
+    } else if constexpr (std::is_same_v<T, bool>) {
+        return CVarType::kBool;
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        return CVarType::kString;
+    } else {
+        static_assert(false, "Unsupported type for CVar");
+    }
+    // return CVarType::kUnknown; // Fallback, should never be reached
 }
 
 // CVar template implementation
 template<typename T>
 CVar<T>::CVar(const std::string& id, const std::string& description, const T& default_value)
-    : CVarBase(id, description), value_(default_value), default_value_(default_value) {
+    : CVarBase(id, description, ::MI_NAMESPACE::GetType<T>()), value_(default_value), default_value_(default_value) {
+
     // Auto-register to global registry on construction
     CVarRegistry::GetInstance().RegisterCVar(this);
 }
@@ -64,6 +88,26 @@ std::string CVar<float>::ToString() const {
 }
 
 template<>
+std::string CVar<float>::GetTypeName() const {
+    return "float";
+}
+
+template<>
+std::string CVar<glm::vec2>::GetTypeName() const {
+    return "float2";
+}
+
+template<>
+std::string CVar<glm::vec3>::GetTypeName() const {
+    return "float3";
+}
+
+template<>
+std::string CVar<glm::vec4>::GetTypeName() const {
+    return "float4";
+}
+
+template<>
 bool CVar<float>::FromString(const std::string& value) {
     try {
         float newValue = std::stof(value);
@@ -75,8 +119,93 @@ bool CVar<float>::FromString(const std::string& value) {
 }
 
 template<>
-std::string CVar<float>::GetTypeName() const {
-    return "float";
+bool CVar<glm::vec2>::FromString(const std::string& value) {
+    std::istringstream iss(value);
+    std::string token;
+    std::vector<float> components;
+
+    while (std::getline(iss, token, ',') || std::getline(iss, token, ' ')) {
+        if (!token.empty()) {
+            try {
+                components.push_back(std::stof(token));
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+
+    if (components.size() == 2) {
+        Set(glm::vec2(components[0], components[1]));
+        return true;
+    }
+    return false;
+}
+
+template<>
+bool CVar<glm::vec3>::FromString(const std::string& value) {
+    std::istringstream iss(value);
+    std::string token;
+    std::vector<float> components;
+
+    while (std::getline(iss, token, ',') || std::getline(iss, token, ' ')) {
+        if (!token.empty()) {
+            try {
+                components.push_back(std::stof(token));
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+
+    if (components.size() == 3) {
+        Set(glm::vec3(components[0], components[1], components[2]));
+        return true;
+    }
+    return false;
+}
+
+template<>
+bool CVar<glm::vec4>::FromString(const std::string& value) {
+    std::istringstream iss(value);
+    std::string token;
+    std::vector<float> components;
+
+    while (std::getline(iss, token, ',') || std::getline(iss, token, ' ')) {
+        if (!token.empty()) {
+            try {
+                components.push_back(std::stof(token));
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+
+    if (components.size() == 4) {
+        Set(glm::vec4(components[0], components[1], components[2], components[3]));
+        return true;
+    }
+    return false;
+}
+
+template<>
+std::string CVar<glm::vec2>::ToString() const {
+    std::ostringstream oss;
+    oss << value_.x << "," << value_.y;
+    return oss.str();
+}
+
+template<>
+std::string CVar<glm::vec3>::ToString() const {
+    std::ostringstream oss;
+    oss << value_.x << "," << value_.y << "," << value_.z;
+    return oss.str();
+}
+
+template<>
+std::string CVar<glm::vec4>::ToString() const {
+    std::ostringstream oss;
+    oss << value_.x << "," << value_.y << "," << value_.z << "," << value_.w;
+    return oss.str();
 }
 
 template<>
@@ -209,6 +338,9 @@ bool CVarRegistry::DeserializeFromString(const std::string& data) {
 // Explicit template instantiation for common types
 template class CVar<int>;
 template class CVar<float>;
+template class CVar<glm::vec2>;
+template class CVar<glm::vec3>;
+template class CVar<glm::vec4>;
 template class CVar<bool>;
 template class CVar<std::string>;
 

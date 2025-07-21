@@ -93,7 +93,8 @@ struct RHIAccelerationStructureInstanceDesc {
     uint32_t instance_custom_index : 24;// Custom index for shader access
     uint32_t mask : 8;                  // Visibility mask
     uint32_t instance_shader_binding_table_record_offset : 24; // SBT offset
-    RHIASGeometryInstanceFlagBits flags : 8;                 // Instance flags
+    // RHIASGeometryInstanceFlags
+    uint32_t flags : 8;                 // Instance flags
     uint64_t acceleration_structure_reference; // Reference to BLAS
 };
 

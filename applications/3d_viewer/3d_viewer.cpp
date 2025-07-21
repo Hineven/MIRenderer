@@ -32,6 +32,7 @@
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_static_mesh.h"
+#include "renderer/mi_cvar.h"
 #include "util/texture_loader.h"
 #include "util/gltf_loader.h"
 
@@ -308,6 +309,55 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 if (ImGui::Button("Reload Shaders") || should_reload_shaders) {
                     RHI::Get().WaitForIdle();
                     RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
+                }
+                // CVars
+                auto & cvar_registry = CVarRegistry::GetInstance();
+                for (auto e : cvar_registry.GetAllCVars()) {
+                    if (e->GetType() == CVarType::kBool) {
+                        auto cvar = static_cast<CVar<bool>*>(e);
+                        bool value = cvar->Get();
+                        if (ImGui::Checkbox(cvar->GetId().c_str(), &value)) {
+                            cvar->Set(value);
+                        }
+                    } else if (e->GetType() == CVarType::kFloat) {
+                        auto cvar = static_cast<CVar<float>*>(e);
+                        float value = cvar->Get();
+                        if (ImGui::DragFloat(cvar->GetId().c_str(), &value, 0.01f)) {
+                            cvar->Set(value);
+                        }
+                    } else if (e->GetType() == CVarType::kFloat2) {
+                        auto cvar = static_cast<CVar<glm::vec2>*>(e);
+                        glm::vec2 value = cvar->Get();
+                        if (ImGui::DragFloat2(cvar->GetId().c_str(), &value[0], 0.01f)) {
+                            cvar->Set(value);
+                        }
+                    } else if (e->GetType() == CVarType::kFloat3) {
+                        auto cvar = static_cast<CVar<glm::vec3>*>(e);
+                        glm::vec3 value = cvar->Get();
+                        if (ImGui::DragFloat3(cvar->GetId().c_str(), &value[0], 0.01f)) {
+                            cvar->Set(value);
+                        }
+                    } else if (e->GetType() == CVarType::kFloat4) {
+                        auto cvar = static_cast<CVar<glm::vec4>*>(e);
+                        glm::vec4 value = cvar->Get();
+                        if (ImGui::DragFloat4(cvar->GetId().c_str(), &value[0], 0.01f)) {
+                            cvar->Set(value);
+                        }
+                    } else if (e->GetType() == CVarType::kInt) {
+                        auto cvar = static_cast<CVar<int>*>(e);
+                        int value = cvar->Get();
+                        if (ImGui::DragInt(cvar->GetId().c_str(), &value)) {
+                            cvar->Set(value);
+                        }
+                    } else if (e->GetType() == CVarType::kString) {
+                        auto cvar = static_cast<CVar<std::string>*>(e);
+                        std::string value = cvar->Get();
+                        char buffer[256];
+                        strncpy(buffer, value.c_str(), sizeof(buffer));
+                        if (ImGui::InputText(cvar->GetId().c_str(), buffer, sizeof(buffer))) {
+                            cvar->Set(std::string(buffer));
+                        }
+                    }
                 }
                 ImGui::End();
             }

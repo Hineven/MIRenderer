@@ -14,4 +14,10 @@
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_renderer_view.h"
 
+#ifndef NDEBUG
+#define DEBUG_UBER_BARRIER queue.MemoryBarrier(RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kAll);
+#else
+#define DEBUG_UBER_BARRIER
+#endif
+
 #endif //R_INTERNAL_COMMON_H

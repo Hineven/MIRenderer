@@ -137,13 +137,14 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             // Schedule the copy
             cmd.CopyBuffer(staging_buffer->GetSpan(), uniform_buffer_->GetRHI());
             // Insert a manual barrier
+            // 25.7.21: Do not use ShaderRead access here. Use UniformRead instead. (ShaderRead does not include UniformRead)
             cmd.BufferBarrier(uniform_buffer_->GetRHI(), RHIPipelineStageFlagBits::kTransfer,
                 // Uniform buffers are potentially used in graphics, compute and ray tracing stages.
                 RHIPipelineStageFlagBits::kAllGraphics | RHIPipelineStageFlagBits::kCompute | RHIPipelineStageFlagBits::kRayTracing,
-                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kShaderRead);
+                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kUniformRead);
             uniform_buffer_->Use(
                 RHIPipelineStageFlagBits::kAllGraphics | RHIPipelineStageFlagBits::kCompute | RHIPipelineStageFlagBits::kRayTracing,
-                RHIGPUAccessFlagBits::kShaderRead
+                RHIGPUAccessFlagBits::kUniformRead
             );
         }
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
@@ -255,6 +256,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
             }
         }
+        cmd.EnqueueTranslateAndSubmit();
         // Release the pass (and decrement the reference count of the resources its holding)
         pass.reset();
     }
@@ -271,4 +273,5 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     is_rdg_executing = false;
 }
+
 MI_NAMESPACE_END

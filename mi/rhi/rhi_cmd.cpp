@@ -141,6 +141,10 @@ void RHICommandBindVertexBuffer::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindVertexBuffer(&cmd, this);
 }
 
+void RHICommandMemoryBarrier::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIMemoryBarrier(&cmd, this);
+}
+
 void RHICommandTextureBarrier::Execute(mi::RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHITextureBarrier(&cmd, this);
 }

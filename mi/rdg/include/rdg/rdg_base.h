@@ -80,6 +80,7 @@ FORCEINLINE RDGPassType GetRDGPassType (RHIPipelineType type) {
     switch (type) {
         case RHIPipelineType::kGraphics: return RDGPassType::kGraphics;
         case RHIPipelineType::kCompute: return RDGPassType::kCompute;
+        case RHIPipelineType::kRayTracing: return RDGPassType::kRayTracing;
         default:
             assert(false && "Not implemented");
             return RDGPassType::kMax;

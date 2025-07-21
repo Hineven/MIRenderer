@@ -23,8 +23,28 @@
 // True for using vkResetCommandPool
 #define RESET_COMMAND_POOL false
 
-
 MI_NAMESPACE_BEGIN
+
+void VulkanCommandExecutor::CommandQueueState::ResetStates() {
+    // Clear bound vertex/index buffers
+    for(auto & span = bound_vertex_buffers; auto & buf : span) buf = {};
+    bound_index_buffer = {};
+    bound_index_type = RHIIndexType::kMax;
+    // Clear draw state
+    draw_state_.Reset();
+    // Clear sbt state
+    raygen_sbt = 0, hit_sbt = 0, miss_sbt = 0, callable_sbt = 0;
+    // Initialize all bind point states
+    for(auto [i, point] : std::views::enumerate(points)) {
+        point.bound_private_descriptor_set = nullptr;
+        point.bound_pipeline = nullptr;
+        point.bound_descriptor_dirty = true;
+        point.bound_pipeline_dirty = true;
+        point.parameter_table = {};
+        point.bind_point_type = (RHIBindPointType) i;
+    }
+}
+
 
 void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
     CHECK_RHI_THREAD();
@@ -39,18 +59,7 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
                         rhi->GetQueueFamilyIndex(type)
                 }
         );
-        // Clear bound vertex buffers
-        for(auto & span = bound_vertex_buffers; auto & buf : span)
-            buf = RHIBufferSpan{};
-        // Initialize all bind point states
-        for(auto [i, point] : std::views::enumerate(points)) {
-            point.bound_private_descriptor_set = nullptr;
-            point.bound_pipeline = nullptr;
-            point.bound_descriptor_dirty = true;
-            point.bound_pipeline_dirty = true;
-            point.parameter_table = {};
-            point.bind_point_type = (RHIBindPointType) i;
-        }
+        ResetStates();
         // We reset the descriptor pool every frame.
         vk::DescriptorPoolSize pool_sizes[] = {
                 {

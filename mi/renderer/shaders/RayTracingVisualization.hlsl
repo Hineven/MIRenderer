@@ -28,6 +28,7 @@ struct RayPayload {
 
 [shader("raygeneration")]
 void RayTracingVisualizationRaygen() {
+
     uint2 RayIndex = DispatchRaysIndex().xy;
     uint2 DispatchSize = DispatchRaysDimensions().xy;
 
@@ -38,9 +39,18 @@ void RayTracingVisualizationRaygen() {
         float2 UV = ((float2)RayIndex + 0.5f.xx) / (float2)DispatchSize;
         float2 NDC2 = UVToNDC2(UV);
         Ray.Direction = NDC2ToCameraDirectionUnnormalized(C, NDC2);
-        Ray.TMin = C.NearPlane;
-        Ray.TMax = C.FarPlane;
+        float DirLen = length(Ray.Direction);
+        Ray.Direction = Ray.Direction / DirLen; // Normalize direction
+        Ray.TMin = C.NearPlane * DirLen;
+        Ray.TMax = C.FarPlane * DirLen; // Scale TMin and TMax by the direction length
     }
+
+    // if(RayIndex.x == 640 && RayIndex.y == 360) {
+
+    //     printf("%f %f %f %f %f %f %f %f\n", Ray.Origin.x, Ray.Origin.y, Ray.Origin.z,
+    //            Ray.Direction.x, Ray.Direction.y, Ray.Direction.z, Ray.TMin, Ray.TMax);
+    // }
+
     RayPayload Payload = (RayPayload)0;
     TraceRay(
         TLAS,
@@ -58,11 +68,11 @@ void RayTracingVisualizationRaygen() {
 [shader("miss")]
 void RayTracingVisualizationMiss(inout RayPayload Payload: SV_RayPayload) {
     float3 RayDirection = WorldRayDirection();
-    float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearSampler, RayDirection, 0).xyz;
+    float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearSampler, -RayDirection, 0).xyz;
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 
-DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, DefaultStaticMeshVertex C, float2 Barycentric) {
+DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex C, DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, float2 Barycentric) {
     DefaultStaticMeshVertex Result;
     float Z = (1 - Barycentric.x - Barycentric.y);
     Result.Position = A.Position * Barycentric.x + B.Position * Barycentric.y + C.Position * Z;
@@ -71,12 +81,49 @@ DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex A, DefaultStat
     return Result;
 }
 
+[shader("anyhit")]
+void RayTracingVisualizationAnyHit(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    uint Triangle          = PrimitiveIndex();
+    uint DescriptionIndex  = GeometryIndex();
+    uint Instance = InstanceID(); // Custom instance ID, not the instance index in the TLAS
+    StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
+    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+    uint GeometryIndex = GeometryMaterialPair.x;
+    uint MaterialIndex = GeometryMaterialPair.y;
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+    uint VertexOffset = Geometry.VertexOffset;
+
+    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+
+    // Interpolate the vertex
+    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+
+    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1);
+    if(IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearSampler, InterpolatedVertex.UV, 0);
+    }
+	if(ColorOpacity.a < 0.1f) {
+ 		IgnoreHit();
+	}
+}
+
 [shader("closesthit")]
 void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
     uint Instance = InstanceID(); // Custom instance ID, not the instance index in the TLAS
+
     StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
     uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;

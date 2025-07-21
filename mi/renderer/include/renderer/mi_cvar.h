@@ -16,10 +16,22 @@
 
 MI_NAMESPACE_BEGIN
 
+enum class CVarType : unsigned {
+    kUnknown = 0,
+    kInt,
+    kFloat,
+    kFloat2,
+    kFloat3,
+    kFloat4,
+    kBool,
+    kString,
+    kMax
+};
+
 // Base class for all CVars
 class CVarBase : public RefCounted<true> {
 public:
-    CVarBase(const std::string& id, const std::string& description);
+    CVarBase(const std::string& id, const std::string& description, CVarType type);
     virtual ~CVarBase() = default;
 
     const std::string& GetId() const { return id_; }
@@ -30,6 +42,7 @@ public:
 
     virtual std::string ToString() const = 0;
     virtual bool FromString(const std::string& value) = 0;
+    FORCEINLINE CVarType GetType () const {return type_;}
     virtual std::string GetTypeName() const = 0;
 
 protected:
@@ -38,6 +51,7 @@ protected:
 private:
     std::string id_;
     std::string description_;
+    CVarType type_;
     bool dirty_ = false;
 };
 

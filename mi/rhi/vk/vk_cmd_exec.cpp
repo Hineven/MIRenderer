@@ -927,6 +927,23 @@ void VulkanCommandExecutor::RHITextureBarrier(RHICommandQueueBase *cmd,
 }
 
 void
+VulkanCommandExecutor::RHIMemoryBarrier(RHICommandQueueBase *cmd, RHICommandMemoryBarrier *barrier) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto memory_barrier = vk::MemoryBarrier2 {
+        GetVulkanPipelineStageFlags(barrier->src_stages_),
+        GetVulkanAccessFlags(barrier->src_accesses_),
+        GetVulkanPipelineStageFlags(barrier->dst_stages_),
+        GetVulkanAccessFlags(barrier->dst_accesses_)
+    };
+    state.cmd.pipelineBarrier2(
+        vk::DependencyInfo {{},
+            memory_barrier, {}, {}
+        }
+    );
+}
+
+void
 VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBufferBarrier *barrier) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
@@ -1024,6 +1041,8 @@ const std::string & submit_prefix,
 
     // Reset the handle to the command buffer after submission
     state.cmd = nullptr;
+    // Reset states
+    state.ResetStates();
 
     if(sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
 }

@@ -286,6 +286,7 @@ void VulkanCommandExecutor::RHIAcclerationStructureBarriers(RHICommandQueueBase 
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
     auto as = barrier->acceleration_structures_;
+
     auto vk_barriers = state.Allocate<vk::BufferMemoryBarrier2[]>(barrier->num_barriers_);
     for (const auto& [i, e] : std::views::enumerate(std::span(as, barrier->num_barriers_))) {
         vk_barriers[i].srcStageMask = GetVulkanPipelineStageFlags(barrier->src_stages_[i]);

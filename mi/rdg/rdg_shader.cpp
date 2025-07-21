@@ -524,6 +524,38 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
             if (is_valid) shader_hash.AddUnordered("FragmentShader", result);
         }
     }
+
+    if (class_registry_->type == RHIPipelineType::kRayTracing) {
+        if (!class_registry_->raygen_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("RaygenShader", result);
+        }
+        if (!class_registry_->closest_hit_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("ClosestHitShader", result);
+        }
+        if (!class_registry_->any_hit_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("AnyHitShader", result);
+        }
+        if (!class_registry_->miss_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("MissShader", result);
+        }
+    }
+
     if (shader_hash.value == 0) {
         MI_LOG(MIInfraLogType::kError, "Failed to compute shader hash: {}", class_registry_->source_location);
         return {};
@@ -708,7 +740,10 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             }
             shader_hash_.AddUnordered("ClosestHitShader", chit_hash);
         }
-        if (!class_registry_->any_hit_entry_.empty()) {
+        mi_check(!class_registry_->any_hit_entry_.empty(),
+            "Any hit shader should never be empty."
+            "Supply an any hit shader to make the pipeline valid on non-opaque geometries.");
+        {
             uint64_t ahit_hash = 0;
             std::wstring out_command;
             ahit_result = GetInfra().CompileHLSLToSPIRV(
@@ -764,7 +799,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             }
             shaders_.closest_hit->SetSourceFilePath(class_registry_->source_location);
         }
-        if (!ahit_result.empty()) {
+        {
             shaders_.any_hit = RHI::Get().CreateShader(
                 RHIShaderFrequencyFlagBits::kAnyHit, class_registry_->any_hit_entry_,
                 RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(ahit_result.data()), ahit_result.size() * sizeof(uint32_t))
@@ -829,8 +864,8 @@ RDGShader::SBTBuffers RDGShader::GetSBTBuffers(RHICommandQueueGraphics & queue) 
     // The segments of th SBT buffer is fixed.
     return {
         sbt_buffer_->GetSpan(sbt_sections_.raygen.offset, sbt_sections_.raygen.size),
-        sbt_buffer_->GetSpan(sbt_sections_.hit.offset, sbt_sections_.hit.size),
-        sbt_buffer_->GetSpan(sbt_sections_.miss.offset, sbt_sections_.miss.size)
+        sbt_buffer_->GetSpan(sbt_sections_.miss.offset, sbt_sections_.miss.size),
+        sbt_buffer_->GetSpan(sbt_sections_.hit.offset, sbt_sections_.hit.size)
     };
 }
 
@@ -967,21 +1002,45 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 
         // Arranged in the order of raygen, miss, hit, ...
         auto base_alignment = ray_tracing_pipeline_->GetShaderGroupBaseAlignment();
-        auto handle_size = RoundUp(
-            ray_tracing_pipeline_->GetShaderGroupHandleSize(),
+        auto handle_size = ray_tracing_pipeline_->GetShaderGroupHandleSize();
+        auto handle_size_aligned = RoundUp(
+            handle_size,
             ray_tracing_pipeline_->GetShaderGroupHandleAlignment()
             );
-        auto section_size = RoundUp(handle_size, base_alignment);
-        auto all_size = section_size * 3;
+
+        auto raygen_section_size = RoundUp(handle_size_aligned, base_alignment);
+        auto miss_section_size = RoundUp(handle_size_aligned, base_alignment);
+        auto hit_section_size = RoundUp(handle_size_aligned, base_alignment);
+
+        auto all_size = raygen_section_size + miss_section_size + hit_section_size;
         sbt_.resize(all_size);
-        ray_tracing_pipeline_->GetShaderGroupHandles(0, 1, sbt_.data());
-        ray_tracing_pipeline_->GetShaderGroupHandles(1, 1, sbt_.data() + section_size);
-        ray_tracing_pipeline_->GetShaderGroupHandles(2, 1, sbt_.data() + section_size * 2);
-        sbt_sections_.raygen = {0, section_size};
-        sbt_sections_.miss = {section_size, section_size};
-        sbt_sections_.hit = {section_size * 2, section_size};
+
+        // Get all handles into a temporary buffer first
+        uint32_t handle_count = 3;
+        std::vector<uint8_t> shader_handles(handle_count * handle_size);
+        ray_tracing_pipeline_->GetShaderGroupHandles(0, handle_count, shader_handles.data());
+
+        // Copy handles to the correct locations in the SBT
+        // Order: raygen, miss, hit
+        std::byte* sbt_data = sbt_.data();
+        uint64_t current_offset = 0;
+
+        // RayGen
+        memcpy(sbt_data + current_offset, shader_handles.data(), handle_size);
+        sbt_sections_.raygen = {current_offset, raygen_section_size};
+        current_offset += raygen_section_size;
+
+        // Miss
+        memcpy(sbt_data + current_offset, shader_handles.data() + handle_size, handle_size);
+        sbt_sections_.miss = {current_offset, miss_section_size};
+        current_offset += miss_section_size;
+
+        // Hit
+        memcpy(sbt_data + current_offset, shader_handles.data() + handle_size * 2, handle_size);
+        sbt_sections_.hit = {current_offset, hit_section_size};
     }
 
+    // Set the valid flag to true before remapping resource indices
     is_valid_ = true;
 
     // Remap bindings, so we can actually associate the shader parameters with RHI pipeline binding slots

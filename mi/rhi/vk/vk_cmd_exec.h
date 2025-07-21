@@ -45,6 +45,7 @@ public:
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
+    void RHIMemoryBarrier (RHICommandQueueBase * buffer, RHICommandMemoryBarrier * cmd) override ;
     void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandTextureBarrier * barrier) override ;
     void RHIBufferBarriers(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;
     void RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHICommandDebugMarkerBegin *cmd) override;
@@ -78,24 +79,32 @@ protected:
         vk::CommandPool cmd_pool {};
         vk::CommandBuffer cmd {};
         bool cmd_recording_started {};
+
+        // Internal states
         // Can bind up to 8 vertex buffers
         RHIBufferSpan bound_vertex_buffers[8] {};
         RHIBufferSpan bound_index_buffer {};
         RHIIndexType  bound_index_type {RHIIndexType::kMax};
-
         // Kept draw state.
         RHIDrawDesc draw_state_ {};
         vk::Rect2D GetScissorRect ();
         vk::Viewport GetViewport ();
         void InstallDrawState (vk::CommandBuffer cmdb);
-
         void BindIndexBuffer (RHIBufferSpan span, RHIIndexType type) ;
-
         // Ray tracing shader binding table regions (cached for dispatch rays)
         vk::StridedDeviceAddressRegionKHR raygen_sbt {};
         vk::StridedDeviceAddressRegionKHR miss_sbt {};
         vk::StridedDeviceAddressRegionKHR hit_sbt {};
         vk::StridedDeviceAddressRegionKHR callable_sbt {};
+        // Reset the above states. should be called after submitting a command buffer.
+        void ResetStates();
+        // Reset the command buffer, and reset internal states.
+        // Should be called after submitting a command buffer.
+        void Init (RHICommandQueueType type) ;
+        void Destroy () ;
+        // Clear the command buffer and descriptor sets.
+        // @param return_resources_to_system: If true, the resources allocated by the command buffer and descriptor sets
+        void Clear (bool return_resources_to_system) ;
 
         // Keep states of each bind point
         struct BindPoint {
@@ -163,12 +172,6 @@ protected:
             return ptr;
         }
 
-        // Should be initialize & destroyed on the RHI thread only
-        void Init (RHICommandQueueType type) ;
-        void Destroy () ;
-        // Clear the command buffer and descriptor sets.
-        // @param return_resources_to_system: If true, the resources allocated by the command buffer and descriptor sets
-        void Clear (bool return_resources_to_system) ;
 
         void BeginCmd ();
         bool CloseCmd ();

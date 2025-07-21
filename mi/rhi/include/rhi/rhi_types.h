@@ -119,8 +119,8 @@ enum class RHIGPUAccessFlagBits : uint32_t {
     kShaderSampledRead = 1u<<5,
     // Read acceleration structures in shader code
     kAccelerationStructureRead = 1u<<6,
-    // All possible reads in shader code, as well as build input read for acceleration structures
-    kShaderRead = kUniformRead | kShaderStorageRead | kShaderSampledRead | kAccelerationStructureRead,
+    // All possible reads in shader code EXCEPT uniform buffer read, as well as build input read for acceleration structures
+    kShaderRead = kShaderStorageRead | kShaderSampledRead | kAccelerationStructureRead,
     kTransferRead = 1u<<7,
     kDepthStencilRead = 1u<<8,
     kColorAttachmentRead = 1u<<9,

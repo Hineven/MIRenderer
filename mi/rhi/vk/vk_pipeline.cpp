@@ -560,11 +560,9 @@ bool VulkanRayTracingPipeline::GetShaderGroupHandles(uint32_t first_group, uint3
     if (!vk_pipeline_ || !data) {
         return false;
     }
-
-    size_t data_size = group_count * shader_group_handle_size_;
+    size_t data_size = group_count * GetShaderGroupHandleSize();
     auto result = GetVulkanRHI()->GetDevice().getRayTracingShaderGroupHandlesKHR(
         vk_pipeline_, first_group, group_count, data_size, data);
-
     return result == vk::Result::eSuccess;
 }
 

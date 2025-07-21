@@ -20,10 +20,10 @@
 #include <renderer/mi_material.h>
 
 #include "renderer/mi_cvar.h"
+#include "renderer/r_internal_common.h"
 
 MI_NAMESPACE_BEGIN
-
-CVar<bool> CVar_DebugVisualizeRayTraced(
+    static CVar<bool> CVar_DebugVisualizeRayTraced(
     "r.debug.visualize_ray_traced",
     "If true, visualize ray-traced objects in the scene. "
     "This will render the ray-traced objects in the scene using a ray tracing pass.",
@@ -148,37 +148,59 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_headers.size() * sizeof(RenderableHeader)
     );
 
-    // A pass to upload / rebuild TLAS
-    {
-        std::vector<int> visible_rt_static_mesh_renderable_indices;
-        for (auto e : visible_renderable_indices) {
-            if (auto static_mesh_inst = all_renderables[e]->As<StaticMeshInstance>()) {
-                if (static_mesh_inst->GetStaticMesh()->IsRayTraced())
-                    visible_rt_static_mesh_renderable_indices.push_back(e);
-            }
+    // Prepare instance data for rebuilding TLAS
+    std::vector<int> visible_rt_static_mesh_renderable_indices;
+    for (auto e : visible_renderable_indices) {
+        if (auto static_mesh_inst = all_renderables[e]->As<StaticMeshInstance>()) {
+            if (static_mesh_inst->GetStaticMesh()->IsRayTraced())
+                visible_rt_static_mesh_renderable_indices.push_back(e);
         }
-        auto instance_count = (uint32_t)visible_rt_static_mesh_renderable_indices.size();
-        auto instance_data = builder.Allocate<RHIAccelerationStructureInstanceDesc>(instance_count);
-        auto instance_data_bytesize = instance_count * sizeof(RHIAccelerationStructureInstanceDesc);
+    }
+    auto instance_count = (uint32_t)visible_rt_static_mesh_renderable_indices.size();
+    TRef<RDGBuffer> instance_buffer;
+    {
+        auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
+        auto instance_data_bytesize = instance_count * instance_size;
+        auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc>(instance_count);
+        auto instance_data = builder.Allocate(instance_data_bytesize);
         for (const auto& [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
             auto renderable = all_renderables[e]->As<StaticMeshInstance>();
             auto data = RHIAccelerationStructureInstanceDesc {};
             data.instance_custom_index = e;
             data.mask = 0xFF; // Visible to all rays
-            data.flags = RHIASGeometryInstanceFlagBits::kNone;
+            // TODO support double sided & one sided geometries.
+            data.flags = (uint32_t)RHIASGeometryInstanceFlagBits::kNone;
             data.acceleration_structure_reference = renderable->GetStaticMesh()->GetDeviceStaticMesh()->GetBLAS()->GetDeviceAddress();
             // Row major
             auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
             for (int x = 0; x < 4; x++)
                 for (int y = 0; y < 3; y++)
                     data.transform[y * 4 + x] = to_world_matrix[x][y];
-            instance_data[i] = data;
+            instance_data_raw[i] = data;
         }
-        auto instance_buffer = builder.CreateBuffer(
+        // Convert to underlying device format
+        RHI::Get().CreateAccelerationStructureInstances(instance_count, instance_data_raw, instance_data);
+        instance_buffer = builder.CreateBuffer(
             RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
             instance_data_bytesize
         );
         view->upload_context_.Add(instance_buffer.Raw(), instance_data, instance_data_bytesize);
+    }
+
+    // Filter visible rendeables
+    ctx.visible_renderables.reserve(all_renderables.size());
+    for (auto & e : all_renderables) {
+        if (e->IsVisible()) ctx.visible_renderables.push_back(e);
+    }
+
+    // Prepare static mesh draw commands
+    Render_PrepareStaticMeshes(view, builder);
+
+    // Fire batched uploads to the RDG
+    view->upload_context_.Fire(builder);
+
+    // Update TLAS
+    {
         if (!view->scene_->GetDeviceScene()->TLAS_) {
             // Create one if not exists
             view->scene_->GetDeviceScene()->TLAS_ = RHI::Get().CreateAccelerationStructure(
@@ -232,18 +254,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
         ->AddBuffer(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
-
-    // Filter visible rendeables
-    ctx.visible_renderables.reserve(all_renderables.size());
-    for (auto & e : all_renderables) {
-        if (e->IsVisible()) ctx.visible_renderables.push_back(e);
-    }
-
-    // Prepare static mesh draw commands
-    Render_PrepareStaticMeshes(view, builder);
-
-    // Fire batched uploads to the RDG
-    view->upload_context_.Fire(builder);
 
     // Ready for rendering
 

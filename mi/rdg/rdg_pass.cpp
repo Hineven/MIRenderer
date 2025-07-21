@@ -304,6 +304,18 @@ void RDGPass::Compile() {
                 // The field value is actually a pointer to a UB struct.
                 // Device ub is allocated when the graph is executed. And dependencies is
                 // generated at runtime. So, do nothing here.
+            } else if (field.type == RHIParamType::kAccelerationStructure) {
+                auto as = *static_cast<RHIAccelerationStructure* const*>(field_data);
+                if (!as) continue;
+                if (RDGParameter_IsUnsetPointer(as)) {
+                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
+                            name_, field.name);
+                    continue;
+                }
+                RHIGPUAccessFlags access_flags = field.access_flags;
+                AddAS_NoAutomaticBarrier(as, access_flags);
             } else if (field.type == RHIParamType::kRenderTarget) {
                 const RDGShaderRenderTargetParameter & render_target = *static_cast<RDGShaderRenderTargetParameter const*>(field_data);
                 if (!render_target.texture) continue ;
