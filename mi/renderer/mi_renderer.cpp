@@ -20,6 +20,7 @@
 #include <renderer/mi_material.h>
 
 #include "renderer/mi_cvar.h"
+#include "renderer/mi_volume_primitives.h"
 #include "renderer/r_internal_common.h"
 
 MI_NAMESPACE_BEGIN
@@ -60,6 +61,8 @@ void Renderer::DestroySingleton() {
 void Renderer::Init(DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) {
     device_allocator_ = allocator;
     pool_ = pool;
+    // Do some initialization related to special data structures.
+    VolumePrimitives::SetupAllocatorUberBuffer(device_allocator_.Raw());
 }
 
 void Renderer::FrameContext::Init() {
@@ -277,11 +280,12 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         Render_VisualizeRayTraced(view, builder);
     }
 
-    if (true && view->debug_output_) {
+    if (view->debug_output_) {
         Render_DrawToOutput(view, builder, view->debug_output_.Raw());
     } else {
-        // Draw G-Buffer to output directly for debug purposes
-        Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+        if (view->radiance_)
+            Render_DrawToOutput(view, builder, view->radiance_.Raw());
+        else Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
     }
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();

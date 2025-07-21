@@ -6,14 +6,23 @@
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
+#include "renderer/mi_cvar.h"
 #include "renderer/mi_renderer.h"
 MI_NAMESPACE_BEGIN
+
+CVar<float> CVar_Exposure(
+    "r.exposure",
+    "Exposure value for the final output. "
+    "This is used to adjust the brightness of the final image.",
+    0.0f
+);
 
 class DrawToOutputShader : public RDGShader {
 public:
     struct DrawToOutputUB {
         glm::vec2 InTextureDimensions;
-        glm::vec2 Padding;
+        float Exposure;
+        float Padding;
     };
     BEGIN_SHADER_PARAMETERS(Parameters)
         SHADER_UNIFORM_BUFFER(DrawToOutputUB, UB)
@@ -27,7 +36,10 @@ public:
 
 IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "mi/renderer/shaders/DrawToOutput.hlsl", "VS_Main", "PS_Main");
 
-void Renderer::Render_DrawToOutput([[maybe_unused]] RendererView * view, RenderGraphBuilder & builder, RDGTexture *texture) {
+void Renderer::Render_DrawToOutput(
+    [[maybe_unused]] RendererView * view, RenderGraphBuilder & builder,
+    RDGTexture *texture
+) {
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<DrawToOutputShader>();
     auto params = builder.Allocate<DrawToOutputShader::ShaderParameters>();
@@ -35,6 +47,7 @@ void Renderer::Render_DrawToOutput([[maybe_unused]] RendererView * view, RenderG
         params->UB = builder.Allocate<DrawToOutputShader::DrawToOutputUB>();
         auto dims = texture->GetDesc().dimensions;
         params->UB->InTextureDimensions = glm::vec2(dims.width, dims.height);
+        params->UB->Exposure = CVar_Exposure.Get();
         params->Output = builder.Import(RHI::Get().GetBackBuffer());
         params->InTexture = texture;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;

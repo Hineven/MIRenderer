@@ -28,6 +28,9 @@ public:
     FORCEINLINE bool IsValid () const {
         return index_ != UINT32_MAX;
     }
+    FORCEINLINE uint32_t GetIndex () const {
+        return index_;
+    }
 protected:
     DeviceStaticMesh (DeviceBindlessResourceAllocator * allocator) ;
     ~DeviceStaticMesh() ;

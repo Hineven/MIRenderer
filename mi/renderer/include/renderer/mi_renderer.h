@@ -66,7 +66,10 @@ protected:
     void Render_DrawVolumePrimitives (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_DrawToOutput (RendererView * view, RenderGraphBuilder & builder, RDGTexture * texture) ;
+    void Render_DrawToOutput (
+        RendererView * view, RenderGraphBuilder & builder,
+        RDGTexture * texture
+    ) ;
 
     // Render material properties from the camera using ray-tracing for debugging purposes.
     void Render_VisualizeRayTraced (RendererView * view, RenderGraphBuilder & builder) ;

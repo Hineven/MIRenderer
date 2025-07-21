@@ -8,7 +8,7 @@
 
 MI_NAMESPACE_BEGIN
 
-bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, Scene &scene, TRef<VolumePrimitives> &out_volprims) {
+bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, TRef<VolumePrimitives> &out_volprims) {
     if (path.extension() != ".ply") {
         MI_WARN("VolumePrimitivesLoader: Not a PLY file: {}", path.string());
         return false;
@@ -76,7 +76,7 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
 
     }
     // Create the volume primitives object
-    out_volprims = VolumePrimitives::Create(&scene);
+    out_volprims = VolumePrimitives::Create();
     out_volprims->SetPrimitives(data);
     return true;
 }

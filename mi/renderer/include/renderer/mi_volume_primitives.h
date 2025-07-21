@@ -25,35 +25,85 @@ struct VolumePrimitive {
     uint32_t packed_color_opacity; // RGBA color, packed into uint32_t
 };
 
-class VolumePrimitives : public Renderable {
+struct VolumePrimitivesHeader {
+    uint32_t NumPrimitives; // Number of primitives in this volume primitives
+    uint32_t PrimitiveOffset; // Offset in the volume primitives uber buffer where the primitives start.
+};
+
+class DeviceVolumePrimitives : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
-
-    void Update (RendererView * view, RenderGraphBuilder & builder);
-    void SetPrimitives (const std::vector<VolumePrimitive> & primitives) ;
-
-    static TRef<VolumePrimitives> Create (Scene * scene, Transform transform = {}) ;
-
-    RenderableHeader GetDeviceRenderableHeader() const override;
-
-    constexpr static uint32_t kVolumePrimitiveAllocatorBufferHeapIndex = 0;
-
-    // All volume primitive data are allocated in a single buffer heap with a single buffer.
-    // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
-    static void SetupAllocatorBufferHeap (DeviceBindlessResourceAllocator * allocator) ;
-
-    constexpr static RenderableType kRenderableType = RenderableType::kStaticMeshInstance;
+    friend class VolumePrimitives;
+    FORCEINLINE bool IsValid () const {
+        return index_ != UINT32_MAX;
+    }
+    FORCEINLINE uint32_t GetIndex () const {
+        return index_;
+    }
 
 protected:
+    DeviceVolumePrimitives (DeviceBindlessResourceAllocator * allocator) ;
+    ~DeviceVolumePrimitives() ;
 
-    VolumePrimitives(Scene * world) ;
-    ~VolumePrimitives() override;
+    uint32_t index_ {UINT32_MAX}; // Index of the volume primitives in the bindless device allocator
+    // Store a list of volume primitives on the device
+    TRef<DeviceUberBufferAllocation> primitive_buffer_;
+};
+
+class VolumePrimitives : public NonMovable, public NonCopyable, public RefCounted<> {
+public:
+    friend class Renderer;
+
+    void UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) ;
+    void UpdateOnDevice (DeviceBindlessResourceAllocator * alloc) ;
+    FORCEINLINE DeviceVolumePrimitives * GetDeviceVolumePrimitives () const {
+        return device_volume_primitives_.Raw();
+    }
+    static TRef<VolumePrimitives> Create () ;
+    void SetPrimitives (const std::vector<VolumePrimitive> & primitives) ;
+
+    FORCEINLINE bool IsDirty () const {
+        return dirty_;
+    }
+    void SetDirty (bool dirty = true) ;
+
+    constexpr static uint32_t kVolumePrimitiveAllocatorUberBufferIndex = 0;
+
+protected:
+    // All volume primitive data are allocated in a single buffer heap with a single buffer.
+    // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
+    static void SetupAllocatorUberBuffer (DeviceBindlessResourceAllocator * allocator) ;
+
+    TRef<DeviceVolumePrimitives> device_volume_primitives_;
+    std::vector<VolumePrimitive> primitives_;
 
     bool dirty_ {true};
 
-    std::vector<VolumePrimitive> primitives_;
-    TRef<DeviceBufferHeapBuffer> device_primitives_;
+    DirtyTracker<VolumePrimitives> * tracker_ {};
+};
 
-    VolumePrimitivesRenderableHeader renderable_header_;
+class VolumePrimitivesInstance : public Renderable {
+public:
+
+    static TRef<VolumePrimitivesInstance> Create (Scene * scene, VolumePrimitives * primitives, Transform transform = {}) ;
+
+    RenderableHeader GetDeviceRenderableHeader() const override;
+
+    constexpr static RenderableType kRenderableType = RenderableType::kVolumePrimitivesInstance;
+
+
+    FORCEINLINE VolumePrimitives * GetVolumePrimitives () const {
+        return volume_primitives_.Raw();
+    }
+
+    void Update(RendererView * view, RenderGraphBuilder & builder) override ;
+
+protected:
+
+    VolumePrimitivesInstance(Scene * world) ;
+    ~VolumePrimitivesInstance() override;
+
+    TRef<VolumePrimitives> volume_primitives_;
+
 };
 
 

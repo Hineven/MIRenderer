@@ -17,7 +17,7 @@ MI_NAMESPACE_BEGIN
 
 
 void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilder &builder) {
-    // Do nothing for now
+    
 }
 
 

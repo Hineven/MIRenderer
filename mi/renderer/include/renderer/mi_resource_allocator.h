@@ -38,6 +38,7 @@ public:
     static constexpr uint32_t kMaxNumGeometries = 64 * 1024; // 64K geometries
     static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
     static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
+    static constexpr uint32_t kMaxNumVolumePrimitives = 1024; // 1K volume primitives (assume that there're not many)
 
     FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
         return vertex_uber_buffer_.Raw();
@@ -54,6 +55,19 @@ public:
 
     FORCEINLINE DeviceBufferHeapInterface * GetCustomBufferHeap (uint32_t index) const {
         return custom_buffer_heaps_.at(index).Raw();
+    }
+
+    FORCEINLINE void RegisterCustomUberBuffer (uint32_t index, DeviceUberBufferInterface * uber_buffer) {
+        assert(custom_uber_buffers_.find(index) == custom_uber_buffers_.end() && "Custom uber buffer already registered for this index.");
+        custom_uber_buffers_[index] = uber_buffer;
+    }
+
+    FORCEINLINE DeviceUberBufferInterface * GetCustomUberBuffer (uint32_t index) const {
+        auto it = custom_uber_buffers_.find(index);
+        if (it != custom_uber_buffers_.end()) {
+            return it->second.Raw();
+        }
+        return nullptr;
     }
 
     // Allocate a vertex buffer from the vertex buffer heap.
@@ -86,6 +100,14 @@ public:
     FORCEINLINE void FreeStaticMeshSlot (uint32_t idx) {
         assert(idx < kMaxNumMaterials);
         static_mesh_slots_.FreeSlot(idx);
+    }
+
+    FORCEINLINE uint32_t AllocateVolumePrimitivesSlot () {
+        return volume_primitives_slots_.AllocateSlot();
+    }
+    FORCEINLINE void FreeVolumePrimitivesSlot (uint32_t idx) {
+        assert(idx < kMaxNumMaterials);
+        volume_primitives_slots_.FreeSlot(idx);
     }
 
     FORCEINLINE RHIBuffer * GetStaticMeshHeaderBuffer() const {
@@ -121,11 +143,16 @@ protected:
     TRef<RHIBuffer> static_mesh_header_buffer_;
     // A static mesh description heap (single block buffer heap), use the offsets in static mesh header to access the descriptions.
     TRef<DeviceUberBufferInterface> static_mesh_description_uber_buffer_;
+    // A buffer holding the volume primitives headers. (VolumePrimitivesHeader)
+    TRef<RHIBuffer> volume_primitives_header_buffer_;
 
     // Custom buffer heaps for custom resources (e.g. custom renderable class)
     std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;
+    // Custom uber buffers for custom resources (e.g. custom renderable class)
+    std::map<uint32_t, TRef<DeviceUberBufferInterface>> custom_uber_buffers_;
 
-    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_;
+    // Slot allocators for bindless resources
+    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_;
 
 };
 

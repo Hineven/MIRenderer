@@ -16,7 +16,7 @@
 MI_NAMESPACE_BEGIN
 
 DeviceBindlessResourceAllocator::DeviceBindlessResourceAllocator():
-material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_mesh_slots_(kMaxNumStaticMeshes) {
+material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_mesh_slots_(kMaxNumStaticMeshes), volume_primitives_slots_(kMaxNumVolumePrimitives) {
     vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
         128
