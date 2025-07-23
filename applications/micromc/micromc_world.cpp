@@ -213,6 +213,8 @@ bool MicroMCWorld::LoadFromDirectory(const std::string& world_path, const std::s
 
     // 3. 创建方块材质
     CreateBlockMaterial();
+    // 设置材质标志
+    block_material_->SetFlags(MaterialFlagBits::kPointSampled);
     // 上传材质到GPU
     block_material_->UpdateOnDevice(Renderer::Get().GetDeviceAllocator());
 

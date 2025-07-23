@@ -46,12 +46,14 @@ struct PS_Output {
 
 PS_Output PS_Main (VS_Output Input) : SV_TARGET {
     MaterialHeader Material = MaterialHeaders[Input.MaterialIndex];
+    bool bPointSampled = Material.Flags & MATERIAL_FLAG_POINT_SAMPLED;
     PS_Output Output = (PS_Output)0;
     Output.AlbedoAlpha = float4(Material.Albedo, 1);
     Output.Normal = float4(Input.Normal, 0);
     Output.MetallicRoughness = float4(Material.Metallic, Material.Roughness, 0, 1);
     if(IsValid(Material.AlbedoMap)) {
-        Output.AlbedoAlpha.rgb = GetBindlessSRV(Material.AlbedoMap).Sample(Sampler, Input.UV).rgb;
+        Output.AlbedoAlpha.rgb = GetBindlessSRV(Material.AlbedoMap).Sample(
+            bPointSampled ? PointSampler : Sampler, Input.UV).rgb;
     }
     if(IsValid(Material.NormalMap)) {
         // online tbn construction
@@ -63,7 +65,8 @@ PS_Output PS_Main (VS_Output Input) : SV_TARGET {
         float3 Normal = normalize(Input.Normal);
         float3 Bitangent = cross(Normal, Tangent);
 
-        float3 NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(Sampler, Input.UV).xyz * 2 - 1;
+        float3 NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(
+            bPointSampled ? PointSampler : Sampler, Input.UV).xyz * 2 - 1;
         Output.Normal.xyz = normalize(
             NormalMapSample.x * Tangent +
             NormalMapSample.y * Bitangent +
@@ -71,7 +74,8 @@ PS_Output PS_Main (VS_Output Input) : SV_TARGET {
         );
     }
     if(IsValid(Material.MetallicRoughnessMap)) {
-        float2 MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(Sampler, Input.UV).xy;
+        float2 MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(
+            bPointSampled ? PointSampler : Sampler, Input.UV).xy;
         Output.MetallicRoughness = float4(MetallicRoughness.x, MetallicRoughness.y, 0, 1);
     }
     return Output;

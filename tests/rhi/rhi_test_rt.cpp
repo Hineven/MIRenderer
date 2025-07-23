@@ -305,7 +305,7 @@ TEST(RHITest, RHIRayTracedTriangle) {
                 build_info.dst_acceleration_structure = tlas.Raw();
                 // Upload instances data
                 RHIAccelerationStructureInstanceDesc instance {};
-                instance.flags = RHIASGeometryInstanceFlagBits::kNone;
+                instance.flags = (uint32_t)RHIASGeometryInstanceFlagBits::kNone;
                 // 1 for the second texture
                 instance.instance_custom_index = 1;
                 instance.mask = 0xFF; // Visible to all rays

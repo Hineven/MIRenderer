@@ -124,6 +124,9 @@ void RHI::PostInitialize() {
         auto linear_wrap = CreateSampler(RHISamplerFilterType::kLinear, RHISamplerAddressModeType::kRepeat);
         linear_wrap->IncRef();
         global_samplers_.linear_wrap = linear_wrap.Raw();
+        auto point_wrap = CreateSampler(RHISamplerFilterType::kPoint, RHISamplerAddressModeType::kRepeat);
+        point_wrap->IncRef();
+        global_samplers_.point_wrap = point_wrap.Raw();
     }
 }
 
@@ -148,6 +151,7 @@ bool RHI::HasSingleton() {
 void RHI::PreDestruction () {
     // Release samplers
     global_samplers_.linear_wrap->DecRef();
+    global_samplers_.point_wrap->DecRef();
     // Release command queues
     graphics_command_queue_.PreDestruction();
     // Tell the bindless manager to release all resource handles it holds
