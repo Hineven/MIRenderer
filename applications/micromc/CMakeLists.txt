@@ -1,4 +1,4 @@
-add_executable(micromc micromc.cpp micromc_render.cpp micromc_world.cpp)
+add_executable(micromc micromc.cpp micromc_render.cpp micromc_world.cpp micromc_world_types.cpp)
 
 # ImGUI
 find_package(imgui)
