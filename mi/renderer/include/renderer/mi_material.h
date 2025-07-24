@@ -21,6 +21,12 @@
 // Simple material implementation. Only uber material supported
 MI_NAMESPACE_BEGIN
 
+enum class MaterialFlagBits : unsigned {
+    kNone = 0,
+    kPointSampled = 1 << 0 // Point sampled texture
+};
+
+MAKE_FLAGS(Material)
 
 class DeviceMaterial : public NonMovable, public RefCounted<> {
 public:
@@ -77,6 +83,15 @@ public:
         return double_sided_;
     }
 
+    FORCEINLINE void SetFlags (MaterialFlags flags) {
+        if (flags_ != flags) SetDirty();
+        flags_ = flags;
+    }
+
+    FORCEINLINE MaterialFlags GetFlags () const {
+        return flags_;
+    }
+
     FORCEINLINE bool IsDirty () const {
         return dirty_;
     }
@@ -128,6 +143,8 @@ protected:
     ~Material();
 
     std::string name_ {};
+
+    MaterialFlags flags_ {};
 
     glm::vec4 albedo_ {1.f};
     float roughness_ {0.5f};

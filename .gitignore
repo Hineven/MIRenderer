@@ -13,4 +13,7 @@ CTestTestfile.cmake
 .idea/
 # CMake
 cmake-build-*/
-
+# vscode
+.idea/
+build/
+.vscode/

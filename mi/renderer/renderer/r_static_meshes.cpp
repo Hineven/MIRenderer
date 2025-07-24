@@ -31,6 +31,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaders)
 
         SHADER_RESOURCE_PARAMETER(SamplerState, Sampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointSampler)
 
         SHADER_VERTEX_BUFFER(sizeof(DefaultStaticMeshVertex), VertexBuffer)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Position), RHIVertexAttributeFormatType::k3xFp32, position)
@@ -130,6 +131,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
     params->RenderableIndexAndMaterialIndex = ctx.static_meshes.d_static_mesh_draw_command_renderable_material_indices.Raw();
     params->MaterialHeaders = builder.Import(device_allocator_->material_header_buffer_.Raw());
     params->Sampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+    params->PointSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
     params->Albedo = view->G_albedo_.Raw();
     params->Normal = view->G_normal_.Raw();

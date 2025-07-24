@@ -5,6 +5,8 @@
 
 MI_SHARED_HLSL_BEGIN
 
+#define MATERIAL_FLAG_POINT_SAMPLED (0x1u)
+
 // A header of a material. Describe the material in its minimum form.
 struct MaterialHeader {
     float3 Albedo CPPONLY({0.5f});

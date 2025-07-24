@@ -57,6 +57,7 @@ void Material::SetEmissiveTexture(Texture * texture) {
 MaterialHeader Material::PackMaterialHeader() const {
     MaterialHeader header = {};
     header.Albedo = albedo_;
+    header.Flags = flags_;
     header.Emissive = emissive_;
     header.Roughness = roughness_;
     header.Metallic = metallic_;
