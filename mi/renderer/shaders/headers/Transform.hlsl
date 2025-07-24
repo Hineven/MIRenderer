@@ -9,5 +9,8 @@ float3x3 BuildRotationMatrix(float4 Quaterion) {
     );
 }
 
+float3 TransformPoint(float3x4 Transform, float3 Point) {
+    return mul(Transform, float4(Point, 1)).xyz;
+}
 
 #endif

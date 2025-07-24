@@ -5,10 +5,12 @@
  */
 #include <happly.h>
 #include "util/volprims_loader.h"
+#include "renderer/mi_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
+    struct PackedVolumePrimitive;
 
-bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, TRef<VolumePrimitives> &out_volprims) {
+    bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, TRef<VolumePrimitives> &out_volprims) {
     if (path.extension() != ".ply") {
         MI_WARN("VolumePrimitivesLoader: Not a PLY file: {}", path.string());
         return false;
@@ -24,7 +26,7 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
     assert(element.count < (1 << 24));
     int num_prims = (int)element.count;
 
-    std::vector<VolumePrimitive> data;
+    std::vector<PackedVolumePrimitive> data;
 
     // Positions
     {
@@ -33,7 +35,7 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
         auto z = element.getProperty<float>("z");
         data.resize(num_prims);
         for (int i = 0; i < num_prims; i++) {
-            data[i].position = {x[i], y[i], z[i]};
+            data[i].Position = {x[i], y[i], z[i]};
         }
     }
 
@@ -43,7 +45,7 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
         auto scale_y = element.getProperty<float>("scale_1");
         auto scale_z = element.getProperty<float>("scale_2");
         for (int i = 0; i < num_prims; i++) {
-            data[i].scale = {scale_x[i], scale_y[i], scale_z[i]};
+            data[i].Scale = {scale_x[i], scale_y[i], scale_z[i]};
         }
     }
     // Rotations
@@ -59,7 +61,7 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
             q /= len;
 			// Pack quaternion to 4xunorm8
 			uint32_t packed = (uint32_t)(glm::packSnorm4x8(glm::vec4(q.x, q.y, q.z, q.w)));
-			data[i].packed_rotation = packed;
+			data[i].PackedRotation = packed;
         }
     }
     // Opacity & color

@@ -62,4 +62,22 @@ uint PackQuaternion(float4 Value)
     return PackSnorm4x8(Value);
 }
 
+uint PackUnorm2x16(float2 Value)
+{
+    uint2 PackedUnsignedIntegers = uint2(
+        clamp(Value, 0.f, 1.f) * 65535.0f
+    );
+    return (PackedUnsignedIntegers.x & 0xFFFF) |
+           ((PackedUnsignedIntegers.y & 0xFFFF) << 16);
+}
+
+float2 UnpackUnorm2x16(uint Packed)
+{
+    uint2 PackedUnsignedIntegers = uint2(
+        Packed & 0xFFFF,
+        (Packed >> 16) & 0xFFFF
+    );
+    return PackedUnsignedIntegers.xy / 65535.0f;
+}
+
 #endif // PACKING_HLSL

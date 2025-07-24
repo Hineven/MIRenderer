@@ -25,6 +25,11 @@ T RoundUp(T value, T2 multiple) {
     return detail::RoundUpImpl<T, T2>::RoundUp(value, multiple);
 }
 
+template<typename T, typename T2>
+T DivideAndRoundUp(T value, T2 multiple) {
+    return detail::RoundUpImpl<T, T2>::RoundUp(value, multiple) / static_cast<T>(multiple);
+}
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_ROUNDING_H

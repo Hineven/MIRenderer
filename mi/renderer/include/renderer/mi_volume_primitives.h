@@ -10,25 +10,16 @@
 #include <span>
 #include <vector>
 
+#include "mi_buffer_heap.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_geometry.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_fwd.h"
+
+#include "shaders/shared/SharedVolumePrimitives.hlsl"
+
 MI_NAMESPACE_BEGIN
-
-// 32 bytes per primitive
-struct VolumePrimitive {
-    glm::vec3 position;
-    uint32_t packed_rotation;
-    glm::vec3 scale;
-    uint32_t packed_color_opacity; // RGBA color, packed into uint32_t
-};
-
-struct VolumePrimitivesHeader {
-    uint32_t NumPrimitives; // Number of primitives in this volume primitives
-    uint32_t PrimitiveOffset; // Offset in the volume primitives uber buffer where the primitives start.
-};
 
 class DeviceVolumePrimitives : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
@@ -38,6 +29,9 @@ public:
     }
     FORCEINLINE uint32_t GetIndex () const {
         return index_;
+    }
+    FORCEINLINE uint32_t GetPrimitiveOffset () const {
+        return primitive_buffer_->GetOffset() / sizeof(PackedVolumePrimitive);
     }
 
 protected:
@@ -59,7 +53,7 @@ public:
         return device_volume_primitives_.Raw();
     }
     static TRef<VolumePrimitives> Create () ;
-    void SetPrimitives (const std::vector<VolumePrimitive> & primitives) ;
+    void SetPrimitives (const std::vector<PackedVolumePrimitive> & primitives) ;
 
     FORCEINLINE bool IsDirty () const {
         return dirty_;
@@ -68,13 +62,17 @@ public:
 
     constexpr static uint32_t kVolumePrimitiveAllocatorUberBufferIndex = 0;
 
+    FORCEINLINE uint32_t GetNumPrimitives () const {
+        return (uint32_t)primitives_.size();
+    }
+
 protected:
     // All volume primitive data are allocated in a single buffer heap with a single buffer.
     // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
     static void SetupAllocatorUberBuffer (DeviceBindlessResourceAllocator * allocator) ;
 
     TRef<DeviceVolumePrimitives> device_volume_primitives_;
-    std::vector<VolumePrimitive> primitives_;
+    std::vector<PackedVolumePrimitive> primitives_;
 
     bool dirty_ {true};
 

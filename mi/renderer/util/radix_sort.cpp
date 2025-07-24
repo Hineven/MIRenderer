@@ -3,7 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include <util/radix_sort.h>
+#include <../include/renderer/util/radix_sort.h>
 #include <rdg/rdg_shader.h>
 #include <rdg/rdg_param.h>
 
@@ -43,7 +43,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScanShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortScan");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScanShader, "mi/renderer/shaders/radix_sort/RadixSort.hlsl", "RadixSortScan");
 
 class RadixSortSumShader : public RDGShader {
 public:
@@ -63,7 +63,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortSumShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortSum");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortSumShader, "mi/renderer/shaders/radix_sort/RadixSort.hlsl", "RadixSortSum");
 
 class RadixSortSumBinsShader : public RDGShader {
 public:
@@ -84,7 +84,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortSumBinsShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortSumBins");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortSumBinsShader, "mi/renderer/shaders/radix_sort/RadixSort.hlsl", "RadixSortSumBins");
 
 class RadixSortScatterShader : public RDGShader {
 public:
@@ -110,7 +110,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScatterShader, "mi/util/shaders/radix_sort/RadixSort.hlsl", "RadixSortScatter");
+IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScatterShader, "mi/renderer/shaders/radix_sort/RadixSort.hlsl", "RadixSortScatter");
 
 void RadixSort::AddRadixSort32BitsPass(
     RenderGraphBuilder &builder, uint32_t num_elements, RDGBuffer *src_keys_buffer, RDGBuffer *dst_keys_buffer,

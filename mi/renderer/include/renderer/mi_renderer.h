@@ -43,6 +43,9 @@ public:
         return device_allocator_.Raw();
     }
 
+    // 4 million at most
+    constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
+
 protected:
 
     Renderer();

@@ -35,7 +35,7 @@ void VolumePrimitives::SetDirty(bool dirty) {
     }
 }
 
-void VolumePrimitives::SetPrimitives(const std::vector<VolumePrimitive> & primitives) {
+void VolumePrimitives::SetPrimitives(const std::vector<PackedVolumePrimitive> & primitives) {
     primitives_ = primitives;
     SetDirty();
 }
@@ -62,7 +62,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
     }
 
     // Calculate required buffer size
-    auto required_size = primitives_.size() * sizeof(VolumePrimitive);
+    auto required_size = primitives_.size() * sizeof(PackedVolumePrimitive);
 
     // Allocate or reallocate buffer if needed
     if (!device_volume_primitives_->primitive_buffer_ ||
@@ -80,7 +80,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
 
     VolumePrimitivesHeader header = {
         (uint32_t)primitives_.size(),
-        (uint32_t)(device_volume_primitives_->primitive_buffer_->GetRHI().offset / sizeof(VolumePrimitive)),
+        (uint32_t)(device_volume_primitives_->primitive_buffer_->GetRHI().offset / sizeof(PackedVolumePrimitive)),
     };
 
     // Upload header to device

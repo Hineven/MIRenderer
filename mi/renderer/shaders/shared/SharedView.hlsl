@@ -15,6 +15,10 @@ struct CameraParameters {
     float3 Up;
     float  FoVY;
 
+    float TanFoVY; // tan(FoVY / 2) * 2
+    float TanFoVY_2; // tan(FoVY / 2)
+    float2 Padding;
+
     float3 Right;
     // Camera type
     uint  Type;
@@ -24,6 +28,10 @@ struct CameraParameters {
 
     // Perspective-View matrix
     float4x4 WorldToNDC;
+    // View matrix
+    float4x4 WorldToView;
+    // Projection matrix
+    float4x4 ViewToNDC;
 };
 
 struct ViewCommonShaderParameters {

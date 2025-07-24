@@ -119,6 +119,15 @@ struct RendererView {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_metallic_roughness_;
 
+    // Volume density
+    TRef<RDGTexture> G_volume_density_;
+    // Min-max values for the rendered volume segment
+    TRef<RDGTexture> G_volume_min_max_;
+    // Albedo of the volume segment
+    TRef<RDGTexture> G_volume_color_;
+    // CDF of recorded volume segment
+    TRef<RDGTexture> G_volume_cdf_;
+
     TRef<RDGTexture> radiance_;
 
     TRef<RDGTexture> debug_output_;

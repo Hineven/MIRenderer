@@ -9,7 +9,7 @@
 #include "infra_impl/infra.h"
 #include "rdg/rdg.h"
 #include "rdg/rdg_builder.h"
-#include "util/radix_sort.h"
+#include "../../mi/renderer/include/renderer/util/radix_sort.h"
 #include "rdg/rdg_pool.h"
 
 #include <exception>

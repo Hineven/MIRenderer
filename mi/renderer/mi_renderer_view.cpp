@@ -299,6 +299,16 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
 
+    G_volume_density_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_min_max_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_color_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+
     // Clear debug output texture
     debug_output_ = {};
 
@@ -354,6 +364,8 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
         camera_.fov_Y, float(film_width_) / float(film_height_), camera_.near_plane, camera_.far_plane
     );
     camera.WorldToNDC = proj_matrix * view_matrix;
+    camera.WorldToView = view_matrix;
+    camera.ViewToNDC = proj_matrix;
 }
 
 MI_NAMESPACE_END

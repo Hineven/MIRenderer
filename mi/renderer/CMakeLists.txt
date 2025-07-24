@@ -19,6 +19,7 @@ set(SOURCES
         renderer/r_static_meshes.cpp
         renderer/r_volume_primitives.cpp
         renderer/r_visualize_ray_traced.cpp
+        util/radix_sort.cpp
 )
 
 add_library(renderer ${SOURCES})
