@@ -45,7 +45,7 @@ MI_NAMESPACE_BEGIN
         auto scale_y = element.getProperty<float>("scale_1");
         auto scale_z = element.getProperty<float>("scale_2");
         for (int i = 0; i < num_prims; i++) {
-            data[i].Scale = {scale_x[i], scale_y[i], scale_z[i]};
+            data[i].Scales = {scale_x[i], scale_y[i], scale_z[i]};
         }
     }
     // Rotations
@@ -71,7 +71,7 @@ MI_NAMESPACE_BEGIN
         auto color_1 = element.getProperty<float>("color_1");
         auto color_2 = element.getProperty<float>("color_2");
         for (int i = 0; i < num_prims; i++) {
-            data[i].packed_color_opacity = glm::packUnorm4x8(
+            data[i].PackedColorOpacity = glm::packUnorm4x8(
             {color_0[i], color_1[i], color_2[i], alphas[i]}
             );
         }

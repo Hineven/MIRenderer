@@ -366,10 +366,6 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
 
 std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderInitializationInfo & ini) const {
     std::vector<std::string> extra_options;
-    auto macros = class_registry_->GetShaderDefaultMacros();
-    for (const auto & macro : macros) {
-        extra_options.emplace_back("-D" + macro);
-    }
     for (const auto & extra_macro : ini.macros) {
         extra_options.emplace_back("-D" + extra_macro);
     }
@@ -1200,6 +1196,9 @@ void RDGShaderLibrary::Init() {
         auto task = TaskGraph::Get().CreateSimpleTask([this, &shader, &cache_mutex]() {
             RDGShaderInitializationInfo ini;
             ini.macros = shader.macro_decls;
+            // Append default macros
+            auto default_macros = shader.shader_class->GetShaderDefaultMacros();
+            for (auto e : default_macros) ini.macros.push_back(e);
             auto new_shader = shader.shader_class->Creator(shader.shader_class);
             if (!new_shader->Recompile(ini)) {
                 std::string macro_decl;

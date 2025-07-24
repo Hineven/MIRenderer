@@ -36,7 +36,7 @@ public:
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceOffsets)
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
-    std::vector<std::string> GetShaderDefaultMacros () {
+    static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
@@ -62,7 +62,7 @@ public:
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveList)
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
-    std::vector<std::string> GetShaderDefaultMacros () {
+    static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize), "COLLECT_VOLUME_PRIMITIVES"};
     }
     DECLARE_SHADER()
@@ -88,7 +88,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
-    std::vector<std::string> GetShaderDefaultMacros () {
+    static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
@@ -106,7 +106,7 @@ public:
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceOffsets)
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
-    std::vector<std::string> GetShaderDefaultMacros () {
+    static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
@@ -130,7 +130,7 @@ public:
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeColor)
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
-    std::vector<std::string> GetShaderDefaultMacros () {
+    static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
@@ -202,9 +202,9 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
             }
         }
     }
-    auto active_primitive_screen_axis = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives * 2);
-    auto active_primitive_screen_axis_z_projection = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
-    auto active_primitive_center_pixel_position = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
+    // auto active_primitive_screen_axis = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives * 2);
+    // auto active_primitive_screen_axis_z_projection = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
+    // auto active_primitive_center_pixel_position = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
     auto primitive_instance_list_key = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
     auto primitive_instance_list_primitive_index = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
     {
@@ -215,9 +215,9 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->PrimitiveData = primitive_data;
         params->ActivePrimitiveCount = active_primitive_count.Raw();
         params->ActivePrimitiveList = active_primitive_list.Raw();
-        params->RWActivePrimitiveScreenAxis = active_primitive_screen_axis.Raw();
-        params->RWActivePrimitiveScreenAxisZProjection = active_primitive_screen_axis_z_projection.Raw();
-        params->RWActivePrimitiveCenterPixelPosition = active_primitive_center_pixel_position.Raw();
+        // params->RWActivePrimitiveScreenAxis = active_primitive_screen_axis.Raw();
+        // params->RWActivePrimitiveScreenAxisZProjection = active_primitive_screen_axis_z_projection.Raw();
+        // params->RWActivePrimitiveCenterPixelPosition = active_primitive_center_pixel_position.Raw();
         params->RWPrimitiveInstanceCount = primitive_instance_count.Raw();
         params->RWPrimitiveInstanceListKey = primitive_instance_list_key.Raw();
         params->RWPrimitiveInstanceListPrimitiveIndex = primitive_instance_list_primitive_index.Raw();
@@ -262,9 +262,9 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->View = view->view_common_params_;
         params->UB = common_ub;
         params->PrimitiveData = primitive_data;
-        params->ActivePrimitiveScreenAxis = active_primitive_screen_axis.Raw();
-        params->ActivePrimitiveScreenAxisZProjection = active_primitive_screen_axis_z_projection.Raw();
-        params->ActivePrimitiveCenterPixelPosition = active_primitive_center_pixel_position.Raw();
+        // params->ActivePrimitiveScreenAxis = active_primitive_screen_axis.Raw();
+        // params->ActivePrimitiveScreenAxisZProjection = active_primitive_screen_axis_z_projection.Raw();
+        // params->ActivePrimitiveCenterPixelPosition = active_primitive_center_pixel_position.Raw();
         params->PrimitiveInstanceCount = primitive_instance_count.Raw();
         params->PrimitiveInstanceListPrimitiveIndexSorted = primitive_instance_list_primitive_index_sorted.Raw();
         params->RWVolumeDensity = view->G_volume_density_.Raw();

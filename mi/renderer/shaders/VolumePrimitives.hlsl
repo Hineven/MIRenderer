@@ -24,11 +24,8 @@ struct CollectVolumePrimitivesUB {
     uint InstanceNumPrimitives;
     uint Padding;
 };
-#ifndef COLLECT_VOLUME_PRIMITIVES
 ConstantBuffer<RenderVolumePrimitivesUB> UB;
-#else
-ConstantBuffer<CollectVolumePrimitivesUB> UB;
-#endif
+ConstantBuffer<CollectVolumePrimitivesUB> UB_Collect;
 
 RWStructuredBuffer<uint> RWActivePrimitiveCount;
 RWStructuredBuffer<uint> RWTileInstanceOffsets;
@@ -58,6 +55,7 @@ VolumePrimitive LoadVolumePrimitive(StructuredBuffer<PackedVolumePrimitive> Prim
     float4 ColorOpacity = UnpackSnorm4x8(PackedPrimitive.PackedColorOpacity);
     Primitive.Color = ColorOpacity.rgb;
     Primitive.Opacity = ColorOpacity.a;
+    return Primitive;
 }
 
 uint PackRenderablePrimitiveIndex (uint InstanceIndex, uint PrimitiveIndex) {
@@ -70,23 +68,22 @@ void UnpackRenderablePrimitiveIndex(uint PackedIndex, out uint InstanceIndex, ou
     PrimitiveIndex = PackedIndex & ((1u << 20) - 1u);
 }
 
-#ifdef COLLECT_VOLUME_PRIMITIVES
 groupshared uint SharedGroupActivePrimitiveCount;
 groupshared uint SharedListOffset;
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void CollectVolumePrimitives (
     uint LocalID: SV_GroupThreadID,
-    uint DispatchID: SV_DispatchThreadID,
+    uint DispatchID: SV_DispatchThreadID
 ) {
     // Simply cull primitives whose centers are too far outside of the view frustum.
-    if (DispatchID >= UB.InstanceNumPrimitives) return;
-    uint PrimitiveIndex = DispatchID + UB.InstancePrimitiveOffset;
+    if (DispatchID >= UB_Collect.InstanceNumPrimitives) return;
+    uint PrimitiveIndex = DispatchID + UB_Collect.InstancePrimitiveOffset;
     VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveData, PrimitiveIndex);
     float3 center = Primitive.Position;
     float3 scales = Primitive.Scales;
-    float3x4 ObjectToWorld = RenderableTransforms[UB.RenderableIndex];
-    float4 WorldCenterW = mul(ObjectToWorld, float4(center, 1));
-    float4x4 NDCCenterW = mul(GetActiveCamera().WorldToNDC, WorldCenterW);
+    float3x4 ObjectToWorld = RenderableTransforms[UB_Collect.RenderableIndex];
+    float4 WorldCenterW = float4(mul(ObjectToWorld, float4(center, 1)), 1);
+    float4 NDCCenterW = mul(GetActiveCamera().WorldToNDC, WorldCenterW);
     float3 NDCCenter = NDCCenterW.xyz / NDCCenterW.w;
     // Check if the center is within the view frustum
     uint bIsActive = 1;
@@ -112,7 +109,7 @@ void CollectVolumePrimitives (
     InterlockedAdd(SharedGroupActivePrimitiveCount, bIsActive, GroupActivePrimitiveListOffset);
     GroupMemoryBarrierWithGroupSync();
     if (LocalID == 0) {
-        var GroupActiveCount = SharedGroupActivePrimitiveCount;
+        uint GroupActiveCount = SharedGroupActivePrimitiveCount;
         InterlockedAdd(RWActivePrimitiveCount[0], GroupActiveCount, ListOffset);
         SharedListOffset = ListOffset;
     }
@@ -120,10 +117,9 @@ void CollectVolumePrimitives (
     ListOffset = SharedListOffset;
     if (bIsActive != 0) {
         // Store the primitive index in the active primitive list
-        RWActivePrimitiveList[ListOffset + GroupActivePrimitiveListOffset] = PackRenderablePrimitiveIndex(UB.RenderableIndex, PrimitiveIndex);
+        RWActivePrimitiveList[ListOffset + GroupActivePrimitiveListOffset] = PackRenderablePrimitiveIndex(UB_Collect.RenderableIndex, PrimitiveIndex);
     }
 }
-#endif
 
 uint PackSortKey(uint tile_id, uint quantized_depth) {
     uint sort_key = (tile_id << 19) | quantized_depth;
@@ -135,7 +131,7 @@ void UnpackSortKey(uint sort_key, out uint tile_id, out uint quantized_depth) {
     quantized_depth = sort_key & ((1u << 19) - 1u);
 }
 
-float3 GetCovariance2DMatrix(no_diff float3x3 view_matrix, float3x4 ToWorldTransform, VolumePrimitive Primitive, out float4 ClipPosW, out uint quantized_depth) {
+float3 GetCovariance2DMatrix(float3x3 view_matrix, float3x4 ToWorldTransform, VolumePrimitive Primitive, out float4 ClipPosW, out uint quantized_depth) {
     // 1. Transform center to view and clip space, calculate depth
     float4 WorldPosW = float4(TransformPoint(ToWorldTransform, Primitive.Position), 1.0f);
     CameraParameters C = GetActiveCamera();
@@ -171,7 +167,7 @@ float3 GetCovariance2DMatrix(no_diff float3x3 view_matrix, float3x4 ToWorldTrans
     J[1] = float3(0.0f, f_y_screen * inv_zc, -f_y_screen * yc * inv_zc_sq);
 
     float3x3 Rot_s = BuildRotationMatrix(Primitive.Rotation);
-    float3x3 Scales_sq_diag = float3x3(0);
+    float3x3 Scales_sq_diag = (float3x3)0;
     Scales_sq_diag[0][0] = Primitive.Scales.x * Primitive.Scales.x;
     Scales_sq_diag[1][1] = Primitive.Scales.y * Primitive.Scales.y;
     Scales_sq_diag[2][2] = Primitive.Scales.z * Primitive.Scales.z;
@@ -206,7 +202,7 @@ groupshared uint shared_global_write_offset;
 
 [shader("compute")]
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
-void PrecomputeActivePrimitives(
+void ProjectVolumePrimitives (
     uint DispatchID: SV_DispatchThreadID,
     uint LocalID: SV_GroupThreadID
 ) {
@@ -307,7 +303,7 @@ void PrecomputeActivePrimitives(
 StructuredBuffer<uint> PrimitiveInstanceCount;
 StructuredBuffer<uint> PrimitiveInstanceListKeySorted;
 
-[numthreads(THREAD_GROUP_SIZE, 1)]
+[numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void CollectTileInstanceOffsets(
     uint DispatchID: SV_DispatchThreadID
 ) {
@@ -364,7 +360,6 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
     y_val[3] = TempFn(old_l, old_r, old_distr.density, new_l, new_r, new_distr.density, x_val[3]);
     const float TARGET = 1.f;
     float x_sol = x_val[3];
-    [MaxIters(3)]
     for (int segment = 0; segment < 3; segment++) {
         float x1 = x_val[segment];
         float x2 = x_val[segment + 1];
@@ -409,7 +404,7 @@ StructuredBuffer<uint> PrimitiveInstanceListPrimitiveIndexSorted;
 
 // Dispatch 1 group per tile, each group processes a 16x16 tile of pixels
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
-void Render(
+void DrawVolumePrimitives (
     uint2 GroupID: SV_GroupID,
     uint2 LocalID: SV_GroupThreadID
 ) {
@@ -423,18 +418,18 @@ void Render(
         CameraParameters C = GetActiveCamera();
         uint2 pixel_offset_in_tile = GroupID * TILE_SIZE + LocalID;
         uint2 pixel_index = GroupID * 16 + pixel_offset_in_tile;
-        if (all(pixel_index < C.FilmDimensions)) {
-            float3 ray_origin = C.Position;
-            float3 ray_direction = GetRayDirection(pixel_index, ub);
+        //if (all(pixel_index < C.FilmDimensions)) {
+        //    float3 ray_origin = C.Position;
+        //    float3 ray_direction = GetRayDirection(pixel_index, ub);
 
             // Per pixel weight (d final_loss / d per_pixel_loss)
-            float dl_dpixelloss = 1.0f / (float)(C.FilmDimensions.x * C.FilmDimensions.y);
+        //    float dl_dpixelloss = 1.0f / (float)(C.FilmDimensions.x * C.FilmDimensions.y);
             // Forward pass
-            float4 rendered = RenderRay_Forward(ray_origin, ray_direction,
-                                                primitive_data_ptr, forward_state_cache_buf, pixel_cache_offset,
-                                                active_instance_primitive_list_sorted_buf, instance_primitive_list_offset,
-                                                num_primitives);
-            output_texture[pixel_index] = float4(rendered_pair.p.rgb * rendered_pair.p.w, 1.f);
-        }
+        //    float4 rendered = RenderRay_Forward(ray_origin, ray_direction,
+        //                                        primitive_data_ptr, forward_state_cache_buf, pixel_cache_offset,
+        //                                        active_instance_primitive_list_sorted_buf, instance_primitive_list_offset,
+        //                                        num_primitives);
+        //    output_texture[pixel_index] = float4(rendered_pair.p.rgb * rendered_pair.p.w, 1.f);
+        //}
     }
 }

@@ -17,7 +17,7 @@
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_fwd.h"
 
-#include "shaders/shared/SharedVolumePrimitives.hlsl"
+#include "../shaders/shared/SharedVolumePrimitives.hlsl"
 
 MI_NAMESPACE_BEGIN
 
@@ -31,7 +31,7 @@ public:
         return index_;
     }
     FORCEINLINE uint32_t GetPrimitiveOffset () const {
-        return primitive_buffer_->GetOffset() / sizeof(PackedVolumePrimitive);
+        return (uint32_t)(primitive_buffer_->GetOffset() / sizeof(PackedVolumePrimitive));
     }
 
 protected:

@@ -273,7 +273,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     Render_DrawStaticMeshes(view, builder);
 
     // Volume primitives
-    Render_DrawVolumePrimitives(view, builder);
+    if (false) {
+        Render_DrawVolumePrimitives(view, builder);
+    }
 
     // Draw the ray-traced objects to debug buffer if enabled
     if (CVar_DebugVisualizeRayTraced.Get()) {

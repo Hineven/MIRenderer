@@ -30,6 +30,7 @@ class RDGShader;
 
 // Struct used to instantiate a shader of a certain class
 struct RDGShaderInitializationInfo {
+    // All macros, including the default ones and optional ones related to the shader permutation
     std::vector<std::string> macros;
     size_t GetHash () const ;
 };
@@ -218,7 +219,7 @@ struct TGetShaderDefaultMacros<T, std::void_t<decltype(T::GetShaderDefaultMacros
 
 template<typename T, typename = void>
 struct TGetShaderOptionalMacros {
-    constexpr static auto value = RDGShader::GetShaderDefaultMacros;
+    constexpr static auto value = RDGShader::GetShaderOptionalMacros;
 };
 template<typename T>
 struct TGetShaderOptionalMacros<T, std::void_t<decltype(T::GetShaderOptionalMacros)>> {
