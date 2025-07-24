@@ -46,7 +46,7 @@ StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 RWStructuredBuffer<uint> RWActivePrimitiveList;
 StructuredBuffer<float3x4> RenderableTransforms;
 
-VolumePrimitive LoadVolumePrimitive(StructuredBuffer<PackedVolumePrimitive> PrimitiveData, uint Index) {
+VolumePrimitive LoadVolumePrimitive(uint Index) {
     PackedVolumePrimitive PackedPrimitive = PrimitiveData[Index];
     VolumePrimitive Primitive;
     Primitive.Position = PackedPrimitive.Position;
@@ -78,7 +78,7 @@ void CollectVolumePrimitives (
     // Simply cull primitives whose centers are too far outside of the view frustum.
     if (DispatchID >= UB_Collect.InstanceNumPrimitives) return;
     uint PrimitiveIndex = DispatchID + UB_Collect.InstancePrimitiveOffset;
-    VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveData, PrimitiveIndex);
+    VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
     float3 center = Primitive.Position;
     float3 scales = Primitive.Scales;
     float3x4 ObjectToWorld = RenderableTransforms[UB_Collect.RenderableIndex];
@@ -219,7 +219,7 @@ void ProjectVolumePrimitives (
 
     uint RenderableIndex, PrimitiveIndex;
     UnpackRenderablePrimitiveIndex(ActivePrimitiveList[DispatchID], RenderableIndex, PrimitiveIndex);
-    VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveData, PrimitiveIndex);
+    VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
     CameraParameters C = GetActiveCamera();
     float4 clip_pos_h; uint quantized_depth;
@@ -390,7 +390,7 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
     RayVolumeDistribution result;
     // Strategy: Preserve boundaries
     result.l = min(old_l, new_l);
-    result.r = max(old_r, new_r); 
+    result.r = max(old_r, new_r);
     result.density = total_int / (result.r - result.l);
     // Blend color with special rules.
     result.color = (old_distr.color * old_int_col + new_distr.color * new_int_col) / total_int_col;

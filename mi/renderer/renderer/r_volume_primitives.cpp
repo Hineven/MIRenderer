@@ -63,7 +63,7 @@ public:
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
     static std::vector<std::string> GetShaderDefaultMacros () {
-        return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize), "COLLECT_VOLUME_PRIMITIVES"};
+        return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
     RDG_SHADER_USE_PARAMETERS(Params)
