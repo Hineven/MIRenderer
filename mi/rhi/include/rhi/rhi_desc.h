@@ -187,6 +187,8 @@ struct RHIPipelineParameterTextureDesc {
     // Array layer (if the texture is layered)
     // UINT_MAX for all layers
     uint32_t array_layer {UINT_MAX};
+    // Mip level (if the texture is mipmapped)
+    uint32_t mip_level {0};
 };
 struct RHIPipelineParameterResourceDesc {
     RHIResource * resource;

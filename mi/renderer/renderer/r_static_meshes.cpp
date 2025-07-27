@@ -19,9 +19,6 @@
 MI_NAMESPACE_BEGIN
 class DrawStaticMeshesShader : public RDGShader {
 public:
-    // struct DrawStaticMeshesUB {
-    //
-    // };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaders)
@@ -45,6 +42,13 @@ public:
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
+
+    static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+        RDGShaderPipelineConfig config {};
+        // Reversed-z depth buffer
+        config.depth_compare_op = RHIDepthCompareOpType::kGreater;
+        return config;
+    }
 };
 
 IMPLEMENT_RDG_GRAPHICS_SHADER(DrawStaticMeshesShader, "mi/renderer/shaders/DrawStaticMeshes.hlsl", "VS_Main", "PS_Main");

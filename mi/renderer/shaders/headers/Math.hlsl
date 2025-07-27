@@ -128,6 +128,9 @@ float2 saturateUp (float2 Value) {
 float  InterpolateBarycentrics (float A, float B, float C, float2 UV) {
     return A * (1 - UV.x - UV.y) + B * UV.x + C * UV.y;
 }
+float2 InterpolateBarycentrics(float2 A, float2 B, float2 C, float2 UV) {
+    return A * (1 - UV.x - UV.y) + B * UV.x + C * UV.y;
+}
 float3 InterpolateBarycentrics (float3 A, float3 B, float3 C, float2 UV) {
     return A * (1 - UV.x - UV.y) + B * UV.x + C * UV.y;
 }

@@ -950,10 +950,9 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         desc.color_attachments = color_attachments;
         desc.depth_stencil_attachment = depth_stencil;
         if (depth_stencil.format != PixelFormatType::kUnknown) {
-            // TODO support more depth-stencil ops rather than default behavior
-            desc.depth_stencil.depth_compare_op = RHIDepthCompareOpType::kLess;
-            desc.depth_stencil.depth_test_enable = true;
-            desc.depth_stencil.depth_write_enable = true;
+            desc.depth_stencil.depth_compare_op = pipeline_config.depth_compare_op;
+            desc.depth_stencil.depth_test_enable = pipeline_config.depth_test_enabled;
+            desc.depth_stencil.depth_write_enable = pipeline_config.depth_write_enabled;
         }
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, class_registry_->name.c_str()

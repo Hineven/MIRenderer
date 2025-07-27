@@ -18,8 +18,12 @@ MI_NAMESPACE_BEGIN
 class RHIGraphicsPipeline;
 class RHIComputePipeline;
 
+// Some configuration that can be used to configure the shader pipeline
 struct RDGShaderPipelineConfig {
     RHIPrimitiveTopologyType topology {};
+    RHIDepthCompareOpType depth_compare_op {RHIDepthCompareOpType::kLess}; // Depth compare operation
+    bool depth_write_enabled {true}; // Whether depth write is enabled
+    bool depth_test_enabled {true}; // Whether depth test is enabled
     // std::vector<RHIColorAttachmentDesc> color_attachments;
     struct {
         uint32_t max_recursion_depth {1}; // Maximum ray recursion depth

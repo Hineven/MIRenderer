@@ -106,23 +106,25 @@ void VulkanTexture::CreateDefaultImageViews () {
     // If the image is layered, create a view for each layer
     if (GetArrayLayers() > 1) {
         assert(vk_layer_image_views_.empty());
-        for (int i = 0; i < (int)GetArrayLayers(); i++) {
-            vk_layer_image_views_.push_back(
-                device.createImageView(vk::ImageViewCreateInfo{
-                vk::ImageViewCreateFlags{},
-                vk_image_,
-                vk::ImageViewType::e2D,
-                GetVulkanPixelFormat(GetFormat()),
-                vk::ComponentMapping{}, // identity swizzle by default
-                vk::ImageSubresourceRange{
-                        GetVulkanImageAspectFlags(GetUsage()),
-                        0,
-                        1,
-                        (uint32_t) i,
-                        1
+        for (int j = 0; j < (int)GetMipLevels(); j++) {
+            for (int i = 0; i < (int)GetArrayLayers(); i++) {
+                vk_layer_image_views_.push_back(
+                    device.createImageView(vk::ImageViewCreateInfo{
+                    vk::ImageViewCreateFlags{},
+                    vk_image_,
+                    vk::ImageViewType::e2D,
+                    GetVulkanPixelFormat(GetFormat()),
+                    vk::ComponentMapping{}, // identity swizzle by default
+                    vk::ImageSubresourceRange{
+                            GetVulkanImageAspectFlags(GetUsage()),
+                            (uint32_t)j,
+                            1,
+                            (uint32_t) i,
+                            1
+                        }
                     }
-                }
-            ));
+                ));
+            }
         }
     }
 }
@@ -172,7 +174,7 @@ void VulkanTexture::SetName(const std::string &name) {
         }
     );
     for (const auto& [i, e] : std::views::enumerate(vk_layer_image_views_)) {
-        std::string layer_name = name + "_layer_" + std::to_string(i);
+        std::string layer_name = name + "_layer_" + std::to_string(i % GetArrayLayers()) + "_mip_" + std::to_string(i / GetArrayLayers());
         GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
             vk::DebugUtilsObjectNameInfoEXT {
                 vk::ObjectType::eImageView,

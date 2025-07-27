@@ -43,6 +43,18 @@ protected:
     TRef<RHIAccelerationStructure> TLAS_;
 };
 
+// Device light structure used for light sampling. Held by the scene and organizes all lights.
+class DeviceLightStructure : public NonMovable, public NonCopyable, public RefCounted<true> {
+public:
+    TRef<DeviceUberBufferInterface> lights_uber_buffer_; // A list of all area lights
+
+};
+
+// Represent a list of area lights. Usually held by StaticMeshInstance
+class LightList : public NonCopyable, public NonMovable, public RefCounted<true> {
+    TRef<DeviceUberBufferAllocation> lights_; // A list of area lights allocated from the lights uber buffer
+};
+
 class Scene : public NonMovable, public NonCopyable {
 public:
     friend class Renderable;

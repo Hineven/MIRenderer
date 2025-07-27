@@ -49,6 +49,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
         device_static_mesh_ = new DeviceStaticMesh(alloc);
         mi_check(device_static_mesh_.IsValid(), "Failed to allocate static mesh slot. Maybe too many static meshes?");
     }
+
     // Update geometry - material pairs
     auto desired_num_pairs = (uint32_t)geometries_.size();
     if (!device_static_mesh_->geometry_material_indices_
@@ -177,6 +178,26 @@ StaticMeshInstance::StaticMeshInstance(Scene * scene): Renderable(RenderableType
 StaticMeshInstance::~StaticMeshInstance() {}
 
 void StaticMeshInstance::Update([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
+    if (IsDirty()) {
+        if (!static_mesh_) {
+            view->ScheduleReleaseLights(lights_);
+            lights_ = {};
+        } else {
+            // Update lights
+            view->ScheduleReleaseLights(lights_);
+            lights_ = {};
+            uint32_t light_count = 0;
+            for (auto [i, mat] : std::views::enumerate(static_mesh_->GetMaterials())) {
+                if (mat->IsEmissive()) {
+                    light_count += static_mesh_->GetGeometries()[i]->GetIndexCount() / 3;
+                    view->ScheduleAddLights(
+                        this, i
+                    );
+                }
+            }
+            lights_ = view->scene_->lights_.Allocate(...);
+        }
+    }
     SetDirty(false);
 }
 

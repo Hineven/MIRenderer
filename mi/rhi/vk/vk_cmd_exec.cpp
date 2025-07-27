@@ -712,9 +712,9 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
     for(auto uav : parameter_table.uavs) {
         auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
         auto image = static_cast<VulkanTexture*>(uav.texture);
-        if (uav.array_layer == UINT_MAX)
+        if (uav.array_layer == UINT_MAX && uav.mip_level == 0)
             image_info.imageView = image ? image->GetImageView() : nullptr;
-        else image_info.imageView = image ? image->GetImageViewForLayer(uav.array_layer) : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(uav.array_layer, uav.mip_level) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eGeneral;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
         if (UINT_MAX != destination.binding) {
@@ -735,7 +735,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         auto image = static_cast<VulkanTexture*>(srv.texture);
         if (srv.array_layer == UINT_MAX)
             image_info.imageView = image ? image->GetImageView() : nullptr;
-        else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer) : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer, srv.mip_level) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
         if (UINT32_MAX != destination.binding) {
@@ -744,7 +744,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
                     .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eSampledImage)
+                    .setDescriptorType(vk::DescriptorType::eSampledImage) // TODO This may not work with Texture.Load
                     .setPImageInfo(&image_info);
             writes[write_index++] = write;
         } else {

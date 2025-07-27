@@ -80,4 +80,22 @@ float2 UnpackUnorm2x16(uint Packed)
     return PackedUnsignedIntegers.xy / 65535.0f;
 }
 
+uint PackNormal (float3 Normal) {
+    // Pack normal into 10 bits per channel
+    uint Packed = 0;
+    Packed |= (uint(clamp(Normal.x, -1.f, 1.f) * 511.0f) & 0x3FF) << 22;
+    Packed |= (uint(clamp(Normal.y, -1.f, 1.f) * 511.0f) & 0x3FF) << 12;
+    Packed |= (uint(clamp(Normal.z, -1.f, 1.f) * 511.0f) & 0x3FF) << 2;
+    return Packed;
+}
+
+float3 UnpackNormal (uint Packed) {
+    // Unpack normal from 10 bits per channel
+    float3 Normal;
+    Normal.x = (float((Packed >> 22) & 0x3FF) / 511.0f) * 2.0f - 1.0f;
+    Normal.y = (float((Packed >> 12) & 0x3FF) / 511.0f) * 2.0f - 1.0f;
+    Normal.z = (float((Packed >> 2) & 0x3FF) / 511.0f) * 2.0f - 1.0f;
+    return normalize(Normal);
+}
+
 #endif // PACKING_HLSL

@@ -32,6 +32,11 @@ struct CameraParameters {
     float4x4 WorldToView;
     // Projection matrix
     float4x4 ViewToNDC;
+
+    // Perspective-View matrix with reversed Z (used for rasterization)
+    float4x4 WorldToNDC_ReversedZ;
+    // Projection matrix with reversed Z
+    float4x4 ViewToNDC_ReversedZ;
 };
 
 struct ViewCommonShaderParameters {

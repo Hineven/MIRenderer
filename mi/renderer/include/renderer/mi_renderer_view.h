@@ -128,6 +128,21 @@ struct RendererView {
     // CDF of recorded volume segment
     TRef<RDGTexture> G_volume_cdf_;
 
+    // HiZ buffer
+    TRef<RDGTexture> hzb_;
+
+    // Light sampling
+    struct {
+
+        // List of light indices in the light grids
+        TRef<RDGBuffer> light_grid_list_;
+        // Offsets of grid lights into the light grid list
+        TRef<RDGBuffer> light_grid_list_offsets_;
+        // Counts of lights in each grid cell
+        TRef<RDGBuffer> light_grid_list_counts_;
+    } light;
+
+    // Final radiance
     TRef<RDGTexture> radiance_;
 
     TRef<RDGTexture> debug_output_;

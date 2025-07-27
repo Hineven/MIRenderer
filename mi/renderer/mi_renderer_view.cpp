@@ -309,8 +309,12 @@ void RendererView::InitFrame () {
         film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
 
+    // Clear hzb
+    hzb_ = {};
+
     // Clear debug output texture
     debug_output_ = {};
+
 
     // bool world_changed = world_ != persistent_data_->prev_world_;
     // Initialize the upload context used for batching uploads
@@ -366,6 +370,14 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.WorldToNDC = proj_matrix * view_matrix;
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
+
+    auto proj_matrix_reversed_z = proj_matrix;
+    // Reverse the Z axis ([0, 1] -> [1, 0]) in the projection matrix
+    proj_matrix_reversed_z[2][2] = camera_.near_plane / (camera_.near_plane - camera_.far_plane);
+    proj_matrix_reversed_z[3][2] = -camera_.far_plane * camera_.near_plane / (camera_.near_plane - camera_.far_plane);
+
+    camera.WorldToNDC_ReversedZ = proj_matrix_reversed_z * view_matrix;
+    camera.ViewToNDC_ReversedZ = proj_matrix_reversed_z;
 }
 
 MI_NAMESPACE_END

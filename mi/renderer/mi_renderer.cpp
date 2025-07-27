@@ -24,7 +24,7 @@
 #include "renderer/r_internal_common.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<bool> CVar_DebugVisualizeRayTraced(
+static CVar<bool> CVar_DebugVisualizeRayTraced(
     "r.debug.visualize_ray_traced",
     "If true, visualize ray-traced objects in the scene. "
     "This will render the ray-traced objects in the scene using a ray tracing pass.",
@@ -263,10 +263,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Draw the sky first.
     Render_DrawSky(view, builder);
 
-    // Clear Depth buffer
+    // Clear Depth buffer to 0 (reversed-z)
     builder.AddPass("ClearDepth", {},
         [depth = view->G_depth_.Raw()]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        queue.ClearTexture(depth->GetRHI(), {1, 1, 1, 1});
+        queue.ClearTexture(depth->GetRHI(), {});
     })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite);
 
     // Static meshes
@@ -276,6 +276,12 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     if (false) {
         Render_DrawVolumePrimitives(view, builder);
     }
+
+    // Render_UpdateLights()
+
+    Render_ComputeHiZBuffer(view, builder);
+
+    Render_ComputeDirectLighting(view, builder);
 
     // Draw the ray-traced objects to debug buffer if enabled
     if (CVar_DebugVisualizeRayTraced.Get()) {

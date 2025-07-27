@@ -136,6 +136,10 @@ protected:
     StaticMeshInstance(Scene * world) ;
     ~StaticMeshInstance() override;
 
+    // A buffer storing the lights for this static mesh, used for lighting calculations.
+    // Leave empty for static meshes with no emissive materials.
+    TRef<LightList> lights_;
+
     TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to
 };
 

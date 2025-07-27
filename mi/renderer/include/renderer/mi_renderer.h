@@ -69,6 +69,12 @@ protected:
     void Render_DrawVolumePrimitives (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+    void Render_ComputeHiZBuffer (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_ComputeDirectLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
         RDGTexture * texture

@@ -19,6 +19,8 @@ set(SOURCES
         renderer/r_static_meshes.cpp
         renderer/r_volume_primitives.cpp
         renderer/r_visualize_ray_traced.cpp
+        renderer/r_hzb.cpp
+        renderer/r_direct_lighting.cpp
         util/radix_sort.cpp
 )
 

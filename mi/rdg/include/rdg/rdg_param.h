@@ -122,6 +122,8 @@ struct RDGShaderTextureParameter {
     // The layer of the texture to bind to. This is used for 3D textures and cube maps.
     // Leave UINT_MAX for whole texture arrays / defaults. And for Texture2DArray and TextureCube, this has to be UINT_MAX.
     uint32_t array_layer {UINT_MAX};
+    // The mip level of the texture to bind to. Defaults to 0. Makes no sense when the texture is only sampled.
+    uint32_t mip_level {0};
 
     FORCEINLINE RDGShaderTextureParameter(RDGTexture * tex) : texture(tex) {}
 

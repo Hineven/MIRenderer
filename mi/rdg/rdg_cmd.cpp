@@ -75,6 +75,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
             auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
             auto texture_ptr = texture_desc.texture;
             auto base_array_layer = texture_desc.array_layer;
+            auto mip_level = texture_desc.mip_level;
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced UAV texture pointer {} is unset, which should not happen.", e.info->name);
                 return std::nullopt;
@@ -82,7 +83,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
             // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
-                ret.uavs[num_active_uavs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
+                ret.uavs[num_active_uavs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer, mip_level};
             } // Otherwise potentially the shader is not using this UAV. Silently ignore it.
         }
         ret.uavs = ret.uavs.first(num_active_uavs);
@@ -95,6 +96,8 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
             auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
             auto texture_ptr = texture_desc.texture;
             auto base_array_layer = texture_desc.array_layer;
+            // Though this is not used for SRVs. We still copy the value for consistency.
+            uint32_t mip_level = texture_desc.mip_level;
             if (RDGParameter_IsUnsetPointer(texture_ptr)) {
                 MI_WARN("Referenced SRV texture pointer {} is unset, which should not happen.", e.info->name);
                 return std::nullopt;
@@ -102,7 +105,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
             uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
             // Ignore those parameters set in params but not used in the shader.
             if (slot != UINT32_MAX) {
-                ret.srvs[num_active_srvs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer};
+                ret.srvs[num_active_srvs ++] = {texture_ptr ? texture_ptr->GetRHI() : nullptr, slot, base_array_layer, mip_level};
             } // Otherwise potentially the shader is not using this SRV. Silently ignore it.
         }
         ret.srvs = ret.srvs.first(num_active_srvs);

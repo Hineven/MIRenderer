@@ -102,10 +102,11 @@ public:
         return vk_default_image_view_;
     }
 
-    FORCEINLINE vk::ImageView GetImageViewForLayer (uint32_t layer) {
+    FORCEINLINE vk::ImageView GetImageViewForLayer (uint32_t layer, uint32_t mip_level = 0) {
         assert(layer < GetArrayLayers());
-        if (GetArrayLayers() == 1) return vk_default_image_view_;
-        return vk_layer_image_views_[layer];
+        assert(mip_level < GetMipLevels());
+        if (GetArrayLayers() == 1 && GetMipLevels() == 1) return vk_default_image_view_;
+        return vk_layer_image_views_[layer + mip_level * GetArrayLayers()];
     }
 
     FORCEINLINE vk::ImageAspectFlags GetImageAspect () {

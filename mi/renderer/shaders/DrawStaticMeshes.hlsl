@@ -28,7 +28,7 @@ VS_Output VS_Main (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_Insta
     float3x3 ToWorldNormalTransform = RenderableNormalTransforms[RenderableIndex];
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
     float3 WorldNormal   = mul(ToWorldNormalTransform, Vertex.Normal);
-    float4 PositionW = mul(View.Camera.WorldToNDC, float4(WorldPosition, 1));
+    float4 PositionW = mul(View.Camera.WorldToNDC_ReversedZ, float4(WorldPosition, 1));
 
     VS_Output Output = (VS_Output)0;
     Output.Position = PositionW;

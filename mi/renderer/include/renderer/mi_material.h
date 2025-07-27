@@ -73,6 +73,9 @@ public:
         if (emissive_ != emissive) SetDirty();
         emissive_ = emissive;
     }
+    FORCEINLINE bool IsEmissive () const {
+        return emissive_texture_.IsValid() || glm::length(emissive_) > 0.f;
+    }
 
     FORCEINLINE void SetDoubleSided (bool double_sided) {
         if (double_sided_ != double_sided) SetDirty();
