@@ -132,6 +132,9 @@ public:
         return static_mesh_.Raw();
     }
 
+    // (Re)build lights_ according to current static mesh in case of geometry & material changes.
+    void UpdateLights_Async (DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue);
+
 protected:
     StaticMeshInstance(Scene * world) ;
     ~StaticMeshInstance() override;

@@ -32,4 +32,16 @@ float3 NDC2ToCameraOrigin (CameraParameters C, float2 NDC2) {
     return C.Position;
 }
 
+float2 ScreenCoordsToUV (CameraParameters C, uint2 ScreenCoords) {
+    return (ScreenCoords + 0.5f.xx) * C.InvFilmDimensions;
+}
+
+float2 PixelPositionToUV (CameraParameters C, float2 PixelPosition) {
+    return PixelPosition * C.InvFilmDimensions;
+}
+
+float2 UVToPixelPosition (CameraParameters C, float2 UV) {
+    return UV * C.FilmDimensions;
+}
+
 #endif

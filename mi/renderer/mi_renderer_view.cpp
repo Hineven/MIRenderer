@@ -352,7 +352,11 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
         camera.Direction = glm::normalize(camera_.direction);
         camera.Right = axis_right;
         camera.Up = axis_up;
+
+        camera.NormalizedRight = glm::normalize(camera_right);
+        camera.NormalizedUp = glm::normalize(camera_up);
     }
+
     camera.NearPlane = camera_.near_plane;
     camera.FarPlane = camera_.far_plane;
     camera.FoVY = camera_.fov_Y;
@@ -360,6 +364,28 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
 
     float aspect_ratio = float(film_width_) / float(film_height_);
     camera.FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
+
+    uint32_t hzb_size = 1;
+    while (hzb_size < film_width_ || hzb_size < film_height_) {
+        hzb_size *= 2;
+    }
+    camera.HZBDimensions = glm::uvec2(hzb_size);
+    float FilmViewportWorldHeight = 1;
+    float FilmViewportWorldWidth = FilmViewportWorldHeight * aspect_ratio;
+    camera.FilmPixelWorldSize = {1.0f / (FilmViewportWorldWidth * film_width_),
+        1.0f / (FilmViewportWorldHeight * film_height_)};
+
+    camera.InvFilmDimensions = {1.0f / float(film_width_), 1.0f / float(film_height_)};
+    camera.UVToHZBScale = {
+        (float)film_width_ / (float)hzb_size, (float)film_height_ / (float)hzb_size
+    };
+
+    camera.HZBBaseTexelSize = {
+        1.0f / (float)hzb_size, 1.0f / (float)hzb_size
+    };
+    camera.HZBToUVScale = {
+        (float)hzb_size / (float)film_width_, (float)hzb_size / (float)film_height_
+    };
 
     glm::mat4 view_matrix = glm::lookAt(
         camera_.position, camera_.position + camera_.direction, camera_.up
@@ -371,6 +397,18 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
 
+    {
+        glm::dmat4 prev_camera_view_matrix = glm::lookAt(
+            persistent_data_->prev_camera.position, persistent_data_->prev_camera.position + persistent_data_->prev_camera.direction,
+            persistent_data_->prev_camera.up
+        );
+        glm::dmat4 prev_camera_proj_matrix = glm::perspective(
+            persistent_data_->prev_camera.fov_Y, float(film_width_) / float(film_height_),
+            persistent_data_->prev_camera.near_plane, persistent_data_->prev_camera.far_plane
+        );
+        auto PrevWorldToNDC = prev_camera_proj_matrix * prev_camera_view_matrix;
+        camera.Reprojection = glm::mat4(PrevWorldToNDC * glm::inverse(glm::dmat4(camera.WorldToNDC)));
+    }
     auto proj_matrix_reversed_z = proj_matrix;
     // Reverse the Z axis ([0, 1] -> [1, 0]) in the projection matrix
     proj_matrix_reversed_z[2][2] = camera_.near_plane / (camera_.near_plane - camera_.far_plane);

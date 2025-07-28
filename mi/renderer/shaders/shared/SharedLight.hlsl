@@ -7,14 +7,21 @@ MI_SHARED_HLSL_BEGIN
 
 #define LIGHT_FLAG_DIRTY (0x1u << 31)
 #define LIGHT_FLAG_HASH_MASK (0x7f000000u)
-struct Light {
+struct RawLight {
     // LightData
     // Data.x: Renderable index (uint)
     // Data.y: Static mesh Geopmetry-Material pari descriptor index (uint)
     // Data.z: Primitive index (uint)
     // Data.w: Flags (uint)
-    // Low end | dirty(1bit) | Hash(7bit) | Unused(24bit) | High end
+    // Low end | dirty(1bit) | Hash(31bit) | High end
     uint4 Data0;
+};
+
+struct AreaLight {
+    uint RenderableIndex;
+    uint StaticMeshDescriptionIndex;
+    uint PrimitiveIndex;
+    uint Flags;
 };
 
 MI_SHARED_HLSL_END

@@ -1,5 +1,5 @@
-#ifndef BINDLESS_TEXTURES_HLSL
-#define BINDLESS_TEXTURES_HLSL
+#ifndef BINDLESS_TEXTURE_RESOURCES_HLSL
+#define BINDLESS_TEXTURE_RESOURCES_HLSL
 
 Texture2D __internal__BindlessIndicesBuffer_Texture[];
 

@@ -98,4 +98,12 @@ float3 UnpackNormal (uint Packed) {
     return normalize(Normal);
 }
 
+uint PackUint2x16 (uint2 Value) {
+    return (Value.x << 16) | Value.y;
+}
+
+uint2 UnpackUint2x16 (uint Value) {
+    return uint2(Value >> 16, Value & 0xFFFF);
+}
+
 #endif // PACKING_HLSL

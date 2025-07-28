@@ -17,6 +17,8 @@
 #include "renderer/mi_resource_allocator.h"
 #include "rhi/rhi_as.h"
 
+#include "shaders/shared/SharedLight.hlsl"
+
 MI_NAMESPACE_BEGIN
 
 DeviceStaticMesh::DeviceStaticMesh(DeviceBindlessResourceAllocator * in_allocator) {
@@ -178,27 +180,34 @@ StaticMeshInstance::StaticMeshInstance(Scene * scene): Renderable(RenderableType
 StaticMeshInstance::~StaticMeshInstance() {}
 
 void StaticMeshInstance::Update([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
-    if (IsDirty()) {
-        if (!static_mesh_) {
-            view->ScheduleReleaseLights(lights_);
-            lights_ = {};
-        } else {
-            // Update lights
-            view->ScheduleReleaseLights(lights_);
-            lights_ = {};
-            uint32_t light_count = 0;
-            for (auto [i, mat] : std::views::enumerate(static_mesh_->GetMaterials())) {
-                if (mat->IsEmissive()) {
-                    light_count += static_mesh_->GetGeometries()[i]->GetIndexCount() / 3;
-                    view->ScheduleAddLights(
-                        this, i
-                    );
-                }
+    SetDirty(false);
+}
+
+void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue) {
+    lights_.SafeRelease();
+    if (!static_mesh_ || static_mesh_->IsEmpty()) return ;
+    if (!static_mesh_->GetDeviceStaticMesh()) {
+        MI_WARN("Can not update lights for static mesh instance. static mesh is not updated on device.");
+        return ;
+    }
+    auto & geometries = static_mesh_->GetGeometries();
+    auto & materials = static_mesh_->GetMaterials();
+    std::vector<RawLight> lights;
+    auto rng32 =
+    for (int i = 0; i < (int)geometries.size(); i++) {
+        if (materials[i]->IsEmissive()) {
+            // Emissive material found, insert all primitives as lights to the light buffer
+            // TODO better optimization
+            auto & geom = geometries[i];
+            for (int j = 0; j * 3 < geom->GetIndexCount(); j++) {
+                RawLight light {};
+                light.Data0.x = GetIndex();
+                light.Data0.y = (float)i; // Geometry index
+                light.Data0.z = (float)j; // Primitive index
+                light.Data0.w = CRC32()
             }
-            lights_ = view->scene_->lights_.Allocate(...);
         }
     }
-    SetDirty(false);
 }
 
 

@@ -52,6 +52,9 @@ public:
 
 // Represent a list of area lights. Usually held by StaticMeshInstance
 class LightList : public NonCopyable, public NonMovable, public RefCounted<true> {
+public:
+    friend class StaticMeshInstance;
+protected:
     TRef<DeviceUberBufferAllocation> lights_; // A list of area lights allocated from the lights uber buffer
 };
 

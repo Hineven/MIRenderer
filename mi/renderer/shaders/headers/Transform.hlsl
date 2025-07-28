@@ -13,4 +13,17 @@ float3 TransformPoint(float3x4 Transform, float3 Point) {
     return mul(Transform, float4(Point, 1)).xyz;
 }
 
+float3 TransformPoint(float4x4 Transform, float3 Point) {
+    float4 PointW = mul(Transform, float4(Point, 1));
+    return PointW.xyz / PointW.w;
+}
+
+float3 TransformVector(float3x4 Transform, float3 Vector) {
+    return mul(Transform, float4(Vector, 0)).xyz;
+}
+
+float3 TransformVector(float3x3 Transform, float3 Vector) {
+    return mul(Transform, Vector);
+}
+
 #endif

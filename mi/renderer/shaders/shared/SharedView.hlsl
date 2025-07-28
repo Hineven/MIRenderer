@@ -23,8 +23,27 @@ struct CameraParameters {
     // Camera type
     uint  Type;
 
-    uint2   FilmDimensions;
-    float2  FilmAspectRatioAndInvAspectRatio;
+    float3 NormalizedRight;
+    float Padding0;
+
+    float3 NormalizedUp;
+    float Padding1;
+
+    uint2  FilmDimensions;
+    // Aspect ratio is the viewport width / height
+    float2 FilmAspectRatioAndInvAspectRatio;
+
+    uint2 HZBDimensions;
+    // Film pixel size in world space (on the LinearDepth == 1 plane).
+    // It shold have two identical values if the viewport is not stretched. 
+    // (i.e. aspect ratio == FilmDimensions.x / FilmDimensions.y)
+    float2 FilmPixelWorldSize;
+
+    float2 InvFilmDimensions;
+    float2 UVToHZBScale;
+
+    float2 HZBBaseTexelSize; // 1 / HZBDimensions
+    float2 HZBToUVScale;
 
     // Perspective-View matrix
     float4x4 WorldToNDC;
@@ -37,6 +56,8 @@ struct CameraParameters {
     float4x4 WorldToNDC_ReversedZ;
     // Projection matrix with reversed Z
     float4x4 ViewToNDC_ReversedZ;
+
+    float4x4 Reprojection; // current NDC -> previous frame NDC
 };
 
 struct ViewCommonShaderParameters {
