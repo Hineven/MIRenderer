@@ -20,6 +20,7 @@ class RHICommandExecutorInterface {
 public:
     virtual ~RHICommandExecutorInterface() = default;
     virtual void RHIClearTexture (RHICommandQueueBase * buffer, RHICommandClearTexture * cmd) = 0;
+    virtual void RHIClearBuffer (RHICommandQueueBase * buffer, RHICommandClearBuffer * cmd) = 0;
     virtual void RHICopyBufferToTexture (RHICommandQueueBase * buffer, RHICommandCopyBufferToTexture * cmd) = 0;
     virtual void RHICopyTextureToBuffer (RHICommandQueueBase * buffer, RHICommandCopyTextureToBuffer * cmd) = 0;
     virtual void RHICopyBuffer (RHICommandQueueBase * buffer, RHICommandCopyBuffer * cmd) = 0;

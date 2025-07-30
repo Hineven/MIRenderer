@@ -232,6 +232,11 @@ RHIBuffer *SimpleDeviceUberBuffer::GetRHI() const {
     return uber_buffer_.Raw();
 }
 
+size_t SimpleDeviceUberBuffer::GetAllocationLimitByteOffset() const {
+    return segments_.GetMaxAllocationEndOffset();
+}
+
+
 void SimpleDeviceUberBuffer::SetName(const std::string &name) {
     DeviceUberBufferInterface::SetName(name);
     if (uber_buffer_) {

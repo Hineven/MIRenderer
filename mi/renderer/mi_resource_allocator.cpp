@@ -41,7 +41,12 @@ material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_me
     static_mesh_header_buffer_->SetName("StaticMeshHeaderBuffer");
     static_mesh_description_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kStorage,
-        1, sizeof(uint2) * kMaxNumStaticMeshGeometryMaterialPairs
+        1, 16 * 1024
+    );
+    static_mesh_description_uber_buffer_->SetName("StaticMeshDescriptionUberBuffer");
+    area_lights_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        1, 16 * 1024
     );
 }
 

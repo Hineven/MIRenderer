@@ -37,7 +37,7 @@ void Renderer::Render_ComputeHiZBuffer(
         view->film_width_, view->film_height_
     );
     uint32_t hiz_levels = 0;
-    while ((1 << hiz_levels) < max_resolution) hiz_levels ++;
+    while ((1u << hiz_levels) < max_resolution) hiz_levels ++;
     view->hzb_ = RDGTexture::Create(
         RHITextureDesc {
             RHITextureType::k2D, RHITextureDimensions {1u << hiz_levels, 1u << hiz_levels, 1u},

@@ -50,6 +50,10 @@ void RHICommandClearTexture::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIClearTexture(&cmd, this);
 }
 
+void RHICommandClearBuffer::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIClearBuffer(&cmd, this);
+}
+
 void RHICommandCopyBufferToTexture::Execute(RHICommandQueueBase &cmd) {
     if(dst_tex_width_ == 0) {
         dst_tex_width_ = texture_->GetWidth();

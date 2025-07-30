@@ -7,6 +7,7 @@
 #ifndef MI_RENDERABLE_H
 #define MI_RENDERABLE_H
 
+#include "mi_aabb.h"
 #include "../../shaders/shared/SharedRenderable.hlsl"
 
 #include "mi_scene.h"
@@ -71,12 +72,18 @@ public:
         return index_ != UINT32_MAX;
     }
 
+    FORCEINLINE const AABB & GetAABB () const {
+        return aabb_;
+    }
+
 protected:
 
     Renderable(RenderableType type, Scene * scene);
     Transform transform_;
     Scene * scene_;
     uint32_t index_ {UINT32_MAX};
+
+    AABB aabb_ {}; // Axis-aligned bounding box of the renderable, used for culling & bounds calculation
 
     // Invisible renderables wont be rendered.
     bool visible_ {true};

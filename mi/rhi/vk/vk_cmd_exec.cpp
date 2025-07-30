@@ -83,6 +83,17 @@ void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommand
     }
 }
 
+void VulkanCommandExecutor::RHIClearBuffer(RHICommandQueueBase *cmd, RHICommandClearBuffer *clear_buffer) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto buffer = static_cast<VulkanBuffer*>(clear_buffer->buffer_.buffer);
+    state.cmd.fillBuffer(
+        buffer->GetBuffer(), clear_buffer->buffer_.offset, clear_buffer->buffer_.size,
+        clear_buffer->clear_value_
+    );
+}
+
+
 void VulkanCommandExecutor::RHICopyBufferToTexture(RHICommandQueueBase *cmd,
                                                    RHICommandCopyBufferToTexture *copy_buffer_to_texture) {
     CHECK_RHI_THREAD();

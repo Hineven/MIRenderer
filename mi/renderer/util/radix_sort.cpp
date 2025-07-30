@@ -118,7 +118,7 @@ void RadixSort::AddRadixSort32BitsPass(
 ) {
     auto &lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo{};
-    if (count_buffer) ini.macros.push_back(kIndirectMacro);
+    if (count_buffer) ini.optional_macros.push_back(kIndirectMacro);
     auto scan_shader = lib.GetShader<RadixSortScanShader>(ini);
     auto sum_shader = lib.GetShader<RadixSortSumShader>(ini);
     auto sum_bins_shader = lib.GetShader<RadixSortSumBinsShader>(ini);

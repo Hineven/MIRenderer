@@ -3,7 +3,7 @@
 #include "shared/SharedVertex.hlsl"
 #include "shared/SharedMaterial.hlsl"
 #include "headers/Conventions.hlsl"
-#include "headers/BindlessTextures.hlsl"
+#include "resources/BindlessTextureResources.hlsl"
 
 StructuredBuffer<RenderableHeader> RenderableHeaders;
 StructuredBuffer<float3x4>         RenderableTransforms;

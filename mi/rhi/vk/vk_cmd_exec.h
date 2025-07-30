@@ -27,6 +27,7 @@ public:
     virtual ~VulkanCommandExecutor() override ;
 
     void RHIClearTexture(RHICommandQueueBase * cmd, RHICommandClearTexture * clear_texture) override ;
+    void RHIClearBuffer(RHICommandQueueBase * cmd, RHICommandClearBuffer * clear_buffer) override ;
     void RHICopyBuffer(RHICommandQueueBase * cmd, RHICommandCopyBuffer * copy_buffer) override ;
     void RHICopyBufferToTexture(RHICommandQueueBase * cmd, RHICommandCopyBufferToTexture * copy_buffer_to_texture) override ;
     void RHICopyTextureToBuffer(RHICommandQueueBase * cmd, RHICommandCopyTextureToBuffer * copy_texture_to_buffer) override ;

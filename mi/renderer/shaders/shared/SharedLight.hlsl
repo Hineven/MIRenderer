@@ -24,5 +24,19 @@ struct AreaLight {
     uint Flags;
 };
 
+// Precompute lights, making it easier to estiamte their contributions
+struct PrecomputedLight {
+    float3 V0, V1, V2; // Triangle vertices
+    float3 Normal;     // Triangle normal
+    float Intensity;
+    bool bInvalid;
+};
+
+struct PackedPrecomputedLight {
+    float3 V0, V1, V2; // Triangle vertices
+    uint Normal;       // Triangle normal
+    float Intensity;
+};
+
 MI_SHARED_HLSL_END
 #endif

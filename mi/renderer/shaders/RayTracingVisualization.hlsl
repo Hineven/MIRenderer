@@ -1,12 +1,12 @@
 #include "headers/Conventions.hlsl"
-#include "headers/BindlessTextures.hlsl"
-#include "headers/CommonSamplers.hlsl"
 #include "shared/SharedView.hlsl"
 #include "headers/Camera.hlsl"
 #include "shared/SharedMaterial.hlsl"
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedStaticMesh.hlsl"
 #include "shared/SharedVertex.hlsl"
+#include "resources/BindlessTextureResources.hlsl"
+#include "resources/CommonSamplerResources.hlsl"
 
 RaytracingAccelerationStructure TLAS;
 

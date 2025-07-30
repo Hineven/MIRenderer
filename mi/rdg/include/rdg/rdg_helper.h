@@ -7,7 +7,9 @@
 #ifndef RDG_HELPER_H
 #define RDG_HELPER_H
 
+#include "rdg_builder.h"
 #include "rdg/rdg.h"
+#include "rdg/rdg_cmd.h"
 MI_NAMESPACE_BEGIN
 
 // Simple helpers for easily adding commonly used RDG passes. As well as invoking raw RHI commands.
@@ -15,6 +17,24 @@ class Helpers {
 public:
     // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);
+
+    template<CShaderType T>
+    FORCEINLINE static RDGPass * DispatchComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) {
+        return builder.AddPass<T>({}, params,
+            [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::Dispatch<T>(queue, pass, shader, params, x, y, z);
+            }
+        );
+    }
+
+    template<CShaderType T>
+    FORCEINLINE static RDGPass * DispatchIndirectComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer) {
+        return builder.AddPass<T>({}, params,
+            [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::DispatchIndirect<T>(queue, pass, shader, params, indirect_buffer);
+            }
+        )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
 
     // Enqueue upload commands to the RHI graphics command queue and place barriers.
     // If you want that happen immediately, launch a submit on the queue and wait idle.
@@ -41,6 +61,9 @@ public:
 
     // Add a RDG pass to upload data to a buffer.
     static void UploadWithRDGUsingStagingBuffer (RenderGraphBuilder & builder, RHIBufferSpan buffer, RHIBufferSpan staging_buffer, const void * data, size_t size) ;
+
+    // Clear a buffer asynchronously to a 4-byte clear value.
+    static void Clear_Async (RHICommandQueueGraphics & queue, RHIBufferSpan buffer, uint32_t clear_value = 0) ;
 };
 
 MI_NAMESPACE_END

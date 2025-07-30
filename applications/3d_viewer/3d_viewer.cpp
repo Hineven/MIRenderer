@@ -353,7 +353,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                         auto cvar = static_cast<CVar<std::string>*>(e);
                         std::string value = cvar->Get();
                         char buffer[256];
-                        strncpy(buffer, value.c_str(), sizeof(buffer));
+                        strncpy_s(buffer, value.c_str(), sizeof(buffer));
                         if (ImGui::InputText(cvar->GetId().c_str(), buffer, sizeof(buffer))) {
                             cvar->Set(std::string(buffer));
                         }

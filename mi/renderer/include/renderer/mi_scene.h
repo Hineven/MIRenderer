@@ -17,9 +17,10 @@
 
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_renderable.h>
-MI_NAMESPACE_BEGIN
 
-// Integrated class managing the rendering world. This class is not for general use and should only be used
+#include "mi_aabb.h"
+MI_NAMESPACE_BEGIN
+    // Integrated class managing the rendering world. This class is not for general use and should only be used
 // for rendering. Scene management is not its responsibility.
 // It is responsible for holding renderables and rendering resources of a scene.
 class DeviceScene : public NonCopyable, public NonMovable, public RefCounted<true> {
@@ -48,14 +49,6 @@ class DeviceLightStructure : public NonMovable, public NonCopyable, public RefCo
 public:
     TRef<DeviceUberBufferInterface> lights_uber_buffer_; // A list of all area lights
 
-};
-
-// Represent a list of area lights. Usually held by StaticMeshInstance
-class LightList : public NonCopyable, public NonMovable, public RefCounted<true> {
-public:
-    friend class StaticMeshInstance;
-protected:
-    TRef<DeviceUberBufferAllocation> lights_; // A list of area lights allocated from the lights uber buffer
 };
 
 class Scene : public NonMovable, public NonCopyable {
@@ -87,7 +80,15 @@ public:
     // updated in the renderer. See renderer implementation for details.
     void CreateOnDevice () ;
 
+    FORCEINLINE const AABB & GetAABB () const {
+        return aabb_;
+    }
+
+    void UpdateAABB () ;
+
 protected:
+
+    AABB aabb_;
 
     TRef<Texture> sky_cube_;
 

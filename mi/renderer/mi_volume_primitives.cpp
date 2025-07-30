@@ -68,7 +68,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
     if (!device_volume_primitives_->primitive_buffer_ ||
         device_volume_primitives_->primitive_buffer_->GetRHI().size < required_size) {
         device_volume_primitives_->primitive_buffer_ = alloc->GetCustomUberBuffer(kVolumePrimitiveAllocatorUberBufferIndex)
-            ->AllocateRefCounted(required_size).first;
+            ->AllocateRefCounted((uint32_t)required_size).first;
     }
 
     // Upload primitive data

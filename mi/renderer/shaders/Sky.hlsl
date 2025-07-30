@@ -1,4 +1,4 @@
-#include "headers/CommonSamplers.hlsl"
+#include "resources/CommonSamplerResources.hlsl"
 #include "shared/SharedView.hlsl"
 #include "headers/Camera.hlsl"
 

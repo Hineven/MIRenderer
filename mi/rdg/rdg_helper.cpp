@@ -180,5 +180,14 @@ void Helpers::Readback(RHICommandQueueGraphics & queue, RHIBufferSpan buffer, vo
     readback_buffer->Unmap();
 }
 
+void Helpers::Clear_Async(RHICommandQueueGraphics &queue, RHIBufferSpan buffer, uint32_t clear_value) {
+    queue.BufferBarrier(buffer,
+        RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kAll, RHIGPUAccessFlagBits::kTransferWrite);
+    queue.ClearBuffer(buffer, clear_value);
+    queue.BufferBarrier(buffer, RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kAll);
+}
+
 
 MI_NAMESPACE_END

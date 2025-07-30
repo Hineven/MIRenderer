@@ -3,7 +3,7 @@
 #include "Transform.hlsl"
 #include "Conventions.hlsl"
 #include "GeometryBuffers.hlsl"
-#include "CommonSamplers.hlsl"
+#include "../resources/CommonSamplerResources.hlsl"
 
 Texture2D<float> HiZBuffer;
 

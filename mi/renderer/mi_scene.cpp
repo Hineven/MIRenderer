@@ -63,5 +63,18 @@ void Scene::CreateOnDevice() {
     }
 }
 
+void Scene::UpdateAABB() {
+    aabb_ = {};
+    for (const auto & renderable : renderables_) {
+        if (renderable) {
+            auto aabb = renderable->GetAABB();
+            if (aabb.IsValid()) {
+                aabb_.min = glm::min(aabb_.min, aabb.min);
+                aabb_.max = glm::max(aabb_.max, aabb.max);
+            }
+        }
+    }
+}
+
 
 MI_NAMESPACE_END

@@ -28,6 +28,10 @@ class Random
 {
     uint rngState;
 
+    Random (uint inSeed) {
+        rngState = inSeed;
+    }
+
     /**
      * Generate a random uint.
      * @return The new random number (range  [0, 2^32)).

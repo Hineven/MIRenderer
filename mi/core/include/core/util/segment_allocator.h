@@ -102,6 +102,12 @@ public:
         auto it = std::next(free_segments_.begin(), index);
         return it->end_index - it->start_index;
     }
+    // Get the byte offset of the highest allocated bit + 1
+    FORCEINLINE size_t GetMaxAllocationEndOffset () const {
+        auto last_free_segment = free_segments_.rbegin();
+        if (last_free_segment == free_segments_.rend()) return max_num_elements_;
+        return last_free_segment->start_index;
+    }
 };
 
 // TODO use a better and faster allocator for segments.

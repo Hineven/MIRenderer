@@ -96,11 +96,17 @@ public:
 
     static TRef<StaticMesh> Create (bool is_ray_traced = true, bool dynamic = false);
 
+    FORCEINLINE const AABB & GetAABB () const {
+        return aabb_;
+    }
+
 protected:
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
 
     StaticMeshHeader header_ {};
+
+    AABB aabb_ {};
 
     TRef<DeviceStaticMesh> device_static_mesh_;
 
@@ -141,7 +147,7 @@ protected:
 
     // A buffer storing the lights for this static mesh, used for lighting calculations.
     // Leave empty for static meshes with no emissive materials.
-    TRef<LightList> lights_;
+    TRef<DeviceUberBufferAllocation> lights_;
 
     TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to
 };

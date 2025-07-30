@@ -26,7 +26,7 @@ MI_NAMESPACE_BEGIN
 #ifndef NDEBUG
     std::vector<uint64_t> hashes;
 #endif
-    for (const auto & macro : macros) {
+    for (const auto & macro : optional_macros) {
         auto curr_hash_value = XXH64(macro.c_str(), macro.size(), 12312321);
         final_hash ^= curr_hash_value;
 #ifndef NDEBUG
@@ -36,7 +36,7 @@ MI_NAMESPACE_BEGIN
 #ifndef NDEBUG
     std::sort(hashes.begin(), hashes.end());
     for (int i = 1; i < (int)hashes.size(); i++) {
-        mi_assert(hashes[i] != hashes[i - 1], "Shader macro '{}' is duplicated. Must be a bug somewhere!", macros[i]);
+        mi_assert(hashes[i] != hashes[i - 1], "Shader macro '{}' is duplicated. Must be a bug somewhere!", optional_macros[i]);
     }
 #endif
     return final_hash;
@@ -366,7 +366,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
 
 std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderInitializationInfo & ini) const {
     std::vector<std::string> extra_options;
-    for (const auto & extra_macro : ini.macros) {
+    for (const auto & extra_macro : ini.optional_macros) {
         extra_options.emplace_back("-D" + extra_macro);
     }
     return extra_options;
@@ -603,6 +603,11 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
 
     // Stack macros
     std::vector<std::string> extra_options = GetExtraCompilerOptions(ini);
+    // Insert default macros
+    auto default_macros = class_registry_->GetShaderDefaultMacros();
+    for (const auto & macro : default_macros) {
+        extra_options.emplace_back("-D" + macro);
+    }
 
     if(class_registry_->type == RHIPipelineType::kCompute) {
         uint64_t cs_hash = 0;
@@ -1194,10 +1199,7 @@ void RDGShaderLibrary::Init() {
     for (auto & shader : shaders_to_compile) {
         auto task = TaskGraph::Get().CreateSimpleTask([this, &shader, &cache_mutex]() {
             RDGShaderInitializationInfo ini;
-            ini.macros = shader.macro_decls;
-            // Append default macros
-            auto default_macros = shader.shader_class->GetShaderDefaultMacros();
-            for (auto e : default_macros) ini.macros.push_back(e);
+            ini.optional_macros = shader.macro_decls;
             auto new_shader = shader.shader_class->Creator(shader.shader_class);
             if (!new_shader->Recompile(ini)) {
                 std::string macro_decl;
@@ -1208,7 +1210,6 @@ void RDGShaderLibrary::Init() {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} with optional macros: {}",
                        shader.shader_class->name, macro_decl);
             }
-
             {
                 std::lock_guard<std::mutex> lock(cache_mutex);
                 cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);

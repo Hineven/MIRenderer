@@ -49,24 +49,24 @@ struct RayToTrace {
 };
 
 RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
-    RayToTrace RayToTrace = (RayToTrace)0;
-    RayToTrace.Origin = RWRayToTraceOriginBuffer[RayIndex];
-    RayToTrace.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
-    RayToTrace.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
+    RayToTrace Ray = (RayToTrace)0;
+    Ray.Origin = RWRayToTraceOriginBuffer[RayIndex];
+    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
+    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
     uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
-    RayToTrace.TMax = TMax;
-    RayToTrace.TCurrent = UnpackRayToTraceState(RayToTraceState, RayToTrace.bHit);
-    return RayToTrace;
+    Ray.TMax = TMax;
+    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
+    return Ray;
 }
 
 RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
-    RayToTrace RayToTrace = (RayToTrace)0;
-    RayToTrace.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
-    RayToTrace.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
+    RayToTrace Ray = (RayToTrace)0;
+    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
+    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
     uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
-    RayToTrace.TMax = TMax;
-    RayToTrace.TCurrent = UnpackRayToTraceState(RayToTraceState, RayToTrace.bHit);
-    return RayToTrace;
+    Ray.TMax = TMax;
+    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
+    return Ray;
 }
 
 #endif

@@ -4,6 +4,7 @@
  * See LICENSE for licensing.
  */
 #include <ranges>
+#include <random>
 #include "renderer/mi_static_mesh.h"
 
 #include <gtest/internal/gtest-port.h>
@@ -34,6 +35,7 @@ void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     assert(mat->GetDeviceMaterial() && "Material must have a device material. Call UpdateOnDevice() on the material first.");
     geometries_.push_back(geom);
     materials_.push_back(mat);
+    aabb_ = AABB::Merge(aabb_, geom->GetAABB());
     SetDirty(true);
 }
 
@@ -41,6 +43,7 @@ void StaticMesh::ClearMeshPrimitives() {
     geometries_.clear();
     materials_.clear();
     device_static_mesh_ = {};
+    aabb_ = {};
     SetDirty(true);
 }
 
@@ -180,11 +183,15 @@ StaticMeshInstance::StaticMeshInstance(Scene * scene): Renderable(RenderableType
 StaticMeshInstance::~StaticMeshInstance() {}
 
 void StaticMeshInstance::Update([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
+    aabb_ = static_mesh_ ? static_mesh_->GetAABB() : AABB::Empty();
     SetDirty(false);
 }
 
 void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue) {
-    lights_.SafeRelease();
+    if (lights_) {
+        Helpers::Clear_Async(queue, lights_->GetRHI());
+        lights_.SafeRelease();
+    }
     if (!static_mesh_ || static_mesh_->IsEmpty()) return ;
     if (!static_mesh_->GetDeviceStaticMesh()) {
         MI_WARN("Can not update lights for static mesh instance. static mesh is not updated on device.");
@@ -193,20 +200,33 @@ void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *all
     auto & geometries = static_mesh_->GetGeometries();
     auto & materials = static_mesh_->GetMaterials();
     std::vector<RawLight> lights;
-    auto rng32 =
+    auto rng32 = std::mt19937(std::random_device{}());
     for (int i = 0; i < (int)geometries.size(); i++) {
         if (materials[i]->IsEmissive()) {
             // Emissive material found, insert all primitives as lights to the light buffer
-            // TODO better optimization
+            // TODO better optimization only upload lights that are actually lit
             auto & geom = geometries[i];
-            for (int j = 0; j * 3 < geom->GetIndexCount(); j++) {
+            for (int j = 0; j * 3 < (int)geom->GetIndexCount(); j++) {
                 RawLight light {};
                 light.Data0.x = GetIndex();
-                light.Data0.y = (float)i; // Geometry index
-                light.Data0.z = (float)j; // Primitive index
-                light.Data0.w = CRC32()
+                light.Data0.y = i; // Geometry index
+                light.Data0.z = j; // Primitive index
+                // Dirty + random seed for the light, 0 is invalid
+                light.Data0.w = std::max(0x80000000u | (rng32() & 0x7fffffffu), 1u);
+                lights.emplace_back(light);
             }
         }
+    }
+    if (lights.empty()) return ;
+    auto result = alloc->GetAreaLightsUberBuffer()->AllocateRefCounted(
+        (uint32_t)(lights.size() * sizeof(RawLight))
+    );
+    if (result.second) {
+        lights_ = result.first;
+        Helpers::Upload_Async(queue, lights_->GetRHI(), lights.data(), lights.size() * sizeof(RawLight));
+    } else {
+        MI_WARN("Failed to allocate area lights buffer for static mesh instance {}. Maybe too many lights?", GetIndex());
+        lights_ = {};
     }
 }
 

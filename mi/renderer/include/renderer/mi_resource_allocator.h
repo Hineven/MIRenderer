@@ -37,7 +37,7 @@ public:
     static constexpr uint32_t kMaxNumMaterials = 1024;
     static constexpr uint32_t kMaxNumGeometries = 64 * 1024; // 64K geometries
     static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
-    static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
+    // static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
     static constexpr uint32_t kMaxNumVolumePrimitives = 1024; // 1K volume primitives (assume that there're not many)
 
     FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
@@ -124,6 +124,10 @@ public:
         return geometry_header_buffer_.Raw();
     }
 
+    FORCEINLINE DeviceUberBufferInterface * GetAreaLightsUberBuffer() const {
+        return area_lights_uber_buffer_.Raw();
+    }
+
 
 protected:
 
@@ -132,6 +136,7 @@ protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
     TRef<RHIBuffer> material_header_buffer_;
+
 
     // Uber buffers for consistent geometries
     TRef<DeviceUberBufferInterface> vertex_uber_buffer_;
@@ -145,6 +150,9 @@ protected:
     TRef<DeviceUberBufferInterface> static_mesh_description_uber_buffer_;
     // A buffer holding the volume primitives headers. (VolumePrimitivesHeader)
     TRef<RHIBuffer> volume_primitives_header_buffer_;
+
+    // A buffer holding all area lights (RawLight structs).
+    TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;
 
     // Custom buffer heaps for custom resources (e.g. custom renderable class)
     std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;

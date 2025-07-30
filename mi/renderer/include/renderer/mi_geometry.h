@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "mi_aabb.h"
 #include "mi_dirty_tracker.h"
 #include "mi_renderer.h"
 #include "core/base.h"
@@ -71,6 +72,8 @@ protected:
     std::vector<DefaultStaticMeshVertex> vertices_;
     std::vector<uint32_t> indices_;
 
+    AABB aabb_ {};
+
     TRef<DeviceGeometry> device_geometry_;
 
     // If the geometry is modified on host and requires a rebuild on device.
@@ -118,6 +121,10 @@ public:
 
     FORCEINLINE void GetIndexBuffer (std::vector<uint32_t> & indices) const {
         indices = indices_;
+    }
+
+    FORCEINLINE const AABB & GetAABB () const {
+        return aabb_;
     }
 
     void SetName (std::string_view name);

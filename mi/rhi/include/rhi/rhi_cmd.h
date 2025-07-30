@@ -231,6 +231,16 @@ public:
     uint32_t base_layer_;
     uint32_t layer_count_;
 };
+
+class RHICommandClearBuffer : public TRHICommand<RHICommandClearBuffer> {
+public:
+    RHICommandClearBuffer(RHIBufferSpan buffer, uint32_t clear_value)
+        : buffer_(buffer), clear_value_(clear_value) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    RHIBufferSpan buffer_;
+    uint32_t clear_value_;
+};
+
 class RHICommandCopyBufferToTexture : public TRHICommand<RHICommandCopyBufferToTexture> {
 public:
     RHICommandCopyBufferToTexture(RHIBufferSpan buffer, RHITexture * texture,
@@ -647,6 +657,9 @@ public:
     FORCEINLINE void ClearTexture (RHITexture * texture, std::array<float, 4> clear_value = {0, 0, 0, 1},
                                    uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t layer_count = 1) {
         AddCommand(AllocateCommand<RHICommandClearTexture>(texture, clear_value, mip_level, base_layer, layer_count));
+    }
+    FORCEINLINE void ClearBuffer (RHIBufferSpan buffer, uint32_t clear_value = 0) {
+        AddCommand(AllocateCommand<RHICommandClearBuffer>(buffer, clear_value));
     }
     // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
     // in the buffer

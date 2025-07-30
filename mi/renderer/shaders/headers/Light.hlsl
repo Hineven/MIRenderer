@@ -11,20 +11,6 @@
 #include "../resources/BindlessTextureResources.hlsl"
 #include "../resources/GeometryResources.hlsl"
 
-// Precompute lights, making it easier to estiamte their contributions
-struct PrecomputedLight {
-    float3 V0, V1, V2; // Triangle vertices
-    float3 Normal;     // Triangle normal
-    float Intensity;
-    bool bInvalid;
-};
-
-struct PackedPrecomputedLight {
-    float3 V0, V1, V2; // Triangle vertices
-    uint Normal;       // Triangle normal
-    float Intensity;
-};
-
 PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
     PackedPrecomputedLight P = (PackedPrecomputedLight)0;
     P.V0 = L.V0;

@@ -1,4 +1,4 @@
-#include "headers/CommonSamplers.hlsl"
+#include "resources/CommonSamplerResources.hlsl"
 
 struct DrawToOutputUB {
     float2 InTextureDimensions;

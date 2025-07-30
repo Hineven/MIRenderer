@@ -34,8 +34,8 @@ class RDGShader;
 
 // Struct used to instantiate a shader of a certain class
 struct RDGShaderInitializationInfo {
-    // All macros, including the default ones and optional ones related to the shader permutation
-    std::vector<std::string> macros;
+    // Optional macros, the default ones are not included.
+    std::vector<std::string> optional_macros;
     size_t GetHash () const ;
 };
 

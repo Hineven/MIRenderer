@@ -44,6 +44,14 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     // geom->dynamic_ = dynamic;
     std::copy(vertices.begin(), vertices.end(), geom->vertices_.begin());
     std::copy(indices.begin(), indices.end(), geom->indices_.begin());
+    // Calculate AABB
+
+    geom->aabb_ = {};
+    for (auto e : geom->vertices_) {
+        geom->aabb_.min = glm::min(geom->aabb_.min, e.Position);
+        geom->aabb_.max = glm::max(geom->aabb_.max, e.Position);
+    }
+
     return geom;
 }
 

@@ -112,6 +112,9 @@ public:
     FORCEINLINE const std::string & GetName () const {
         return name_;
     }
+    // Get the byte offset of the last byte allocated + 1
+    virtual size_t GetAllocationLimitByteOffset () const = 0;
+
 protected:
 
     // Implementations of the interface can use this to create an allocation.
@@ -199,6 +202,8 @@ public:
     ) {
         return {new SimpleDeviceUberBuffer(usage, allocation_alignment, initial_size)};
     }
+
+    size_t GetAllocationLimitByteOffset() const override;
 
     void SetName(const std::string &name) override;
 
