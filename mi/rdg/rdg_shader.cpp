@@ -502,6 +502,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
             class_registry_->source_location, extra_options, is_valid
         );
         if (is_valid) shader_hash.AddUnordered("ComputeShader", result);
+        else MI_WARN("Failed to compute compute shader hash.");
     }
 
     if (class_registry_->type == RHIPipelineType::kGraphics) {
@@ -511,6 +512,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
                 class_registry_->source_location, extra_options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("VertexShader", result);
+            else MI_WARN("Failed to compute vertex shader hash.");
         }
         if (!class_registry_->fragment_entry_.empty()) {
             bool is_valid {false};
@@ -518,6 +520,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
                 class_registry_->source_location, extra_options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("FragmentShader", result);
+            else MI_WARN("Failed to compute fragment shader hash.");
         }
     }
 
@@ -528,6 +531,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
                 class_registry_->source_location, extra_options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("RaygenShader", result);
+            else MI_WARN("Failed to compute raygen shader hash.");
         }
         if (!class_registry_->closest_hit_entry_.empty()) {
             bool is_valid {false};
@@ -535,6 +539,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
                 class_registry_->source_location, extra_options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("ClosestHitShader", result);
+            else MI_WARN("Failed to compute closest hit shader hash.");
         }
         if (!class_registry_->any_hit_entry_.empty()) {
             bool is_valid {false};
@@ -542,6 +547,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
                 class_registry_->source_location, extra_options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("AnyHitShader", result);
+            else MI_WARN("Failed to compute any hit shader hash.");
         }
         if (!class_registry_->miss_entry_.empty()) {
             bool is_valid {false};
@@ -549,6 +555,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
                 class_registry_->source_location, extra_options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("MissShader", result);
+            else MI_WARN("Failed to compute miss shader hash.");
         }
     }
 
@@ -1102,6 +1109,14 @@ static uint64_t HashCompiledShader (uint64_t type_hash, const RDGShaderInitializ
 
 void RDGShaderLibrary::Init() {
     MI_LOG(MIInfraLogType::kInfo, "Initializing RDGShaderLibrary");
+
+    // Enumerate all registered shaders, call their parameter structs' InitShaderParamStructInfo
+    // in case two or more shaders share the same parameter struct and found a race condition
+    // in the following multi-threading compilation.
+    for (const auto & shader_class : registered_shader_classes_) {
+        shader_class.second->InitShaderParamStructInfo();
+    }
+
     // Pre-compile shaders. Cache them to prevent sudden lagging when switching
     // rendering operations.
     struct ShaderToCompile {

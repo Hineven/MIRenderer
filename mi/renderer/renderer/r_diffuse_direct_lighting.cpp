@@ -132,7 +132,7 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(Texture2D, DirectLightingRadianceEstimateTexture)
 END_SHADER_PARAMETERS()
 
-
+IMPLEMENT_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
 class ClearLightGridShader : public RDGShader {
 public:
@@ -146,7 +146,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(ClearLightGridShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ClearLightGrid");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearLightGridShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ClearLightGrid");
 
 class PrecomputeLightsShader : public RDGShader {
 public:
@@ -160,7 +160,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(PrecomputeLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "PrecomputeLights");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrecomputeLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "PrecomputeLights");
 
 class InjectLightsShader : public RDGShader {
 public:
@@ -174,7 +174,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(InjectLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "InjectLights");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "InjectLights");
 
 class SpawnLightSamplesShader : public RDGShader {
 public:
@@ -188,7 +188,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(SpawnLightSamplesShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "SpawnLightSamples");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnLightSamplesShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "SpawnLightSamples");
 
 class ScreenSpaceTraceForDirectLightingShader : public RDGShader {
 public:
@@ -202,7 +202,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(ScreenSpaceTraceForDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ScreenSpaceTraceForDirectLighting");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScreenSpaceTraceForDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ScreenSpaceTraceForDirectLighting");
 
 class RenderDiffuseDirectLightingShader : public RDGShader {
 public:
@@ -216,7 +216,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(RenderDiffuseDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderDiffuseDirectLighting");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(RenderDiffuseDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderDiffuseDirectLighting");
 
 static RDGShaderInitializationInfo GetDirectLightingShaderInitializationInfo() {
     RDGShaderInitializationInfo ini {};

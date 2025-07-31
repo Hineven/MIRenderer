@@ -61,6 +61,7 @@ struct RDGShaderClassRegistry {
     // Note: for macros with a value (e.g. "PASS_NUMBER=1"), all possible values of the macro will be automatically
     // collected and enumerated.
     std::vector<std::string> (*GetShaderOptionalMacros)();
+    void (*InitShaderParamStructInfo)();
     const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)();
     RDGShaderPipelineConfig (*GetShaderPipelineConfig)();
 };
@@ -257,19 +258,35 @@ public: \
         EntryPoint_Miss \
     ); \
     RDGPassType ClassName::GetRDGPassType () {return ::MI_NAMESPACE::GetRDGPassType(Type);} \
-    const char * ClassName::GetShaderTypeName () {return #ClassName;}
+    const char * ClassName::GetShaderTypeName () {return #ClassName;} \
 
 // Compute
 #define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, EntryPoint_CS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "")
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "") \
+    IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // Graphics
 #define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS, "", "", "", "")
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS, "", "", "", "") \
+    IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // Ray tracing
 #define IMPLEMENT_RDG_RAY_TRACING_SHADER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss)
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+    IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
+
+// For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
+#define IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_CS) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "") \
+
+// For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
+#define IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS, "", "", "", "") \
+
+// For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
+#define IMPLEMENT_RDG_RAY_TRACING_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
 public: \
@@ -356,6 +373,7 @@ public:
             RDGShaderClassRegistrator<T>::zzShaderFactoryFunction,
             TGetShaderDefaultMacros<T>::value,
             TGetShaderOptionalMacros<T>::value,
+            T::ShaderParameters::InitParamStructInfo,
             T::GetShaderParamStructInfo,
             TGetShaderPipelineConfig<T>::value
         };

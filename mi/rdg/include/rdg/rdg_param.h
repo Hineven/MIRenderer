@@ -341,23 +341,23 @@ private: \
 #define END_SHADER_PARAMETERS() \
     zzzLastParam_PrevTypeID; \
     typedef zzFuncPtr (*zzMemberFunc)(zzzFirstParam_TypeID, std::vector<RDGShaderParamInfo> *);\
+protected: \
+    static RDGShaderParamStructAndSizeInfo * params_struct_info_; \
 public: \
-    static const RDGShaderParamStructAndSizeInfo * GetParamStructInfo () \
-	{ \
-        static RDGShaderParamStructAndSizeInfo * params_struct_info_ {}; \
-        if (params_struct_info_) return params_struct_info_; \
-		std::vector<RDGShaderParamInfo> params; \
-		zzFuncPtr (*LastFunc)(zzzLastParam_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
-		LastFunc = zz_AppendParamAndGetPrevFuncPtr; \
-		zzFuncPtr func_ptr = (zzFuncPtr) LastFunc; \
-		do { func_ptr = reinterpret_cast<zzMemberFunc>(func_ptr)(zzzFirstParam_TypeID(), &params); } \
-		while (func_ptr); \
-		std::reverse(params.begin(), params.end()); \
-		bool success = details::zzFinalizeParams(params); \
+    static void InitParamStructInfo() { \
+        if(params_struct_info_) return ; \
+        std::vector<RDGShaderParamInfo> params; \
+        zzFuncPtr (*LastFunc)(zzzLastParam_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
+        LastFunc = zz_AppendParamAndGetPrevFuncPtr; \
+        zzFuncPtr func_ptr = (zzFuncPtr) LastFunc; \
+        do { func_ptr = reinterpret_cast<zzMemberFunc>(func_ptr)(zzzFirstParam_TypeID(), &params); } \
+        while (func_ptr); \
+        std::reverse(params.begin(), params.end()); \
+        bool success = details::zzFinalizeParams(params); \
         if(!success) { \
             MI_LOG(MIInfraLogType::kError, "Failed to finalize shader parameters"); \
             params_struct_info_ = new RDGShaderParamStructAndSizeInfo {}; \
-            return params_struct_info_; \
+            return ; \
         } \
         auto params_mem = new RDGShaderParamInfo[params.size()]; \
         std::copy(params.begin(), params.end(), params_mem); \
@@ -372,9 +372,17 @@ public: \
         params_struct_info_->cpp_members = cpp_params_span; \
         params_struct_info_->cpp_member_index_map = cpp_member_index_map; \
         details::zzFinalizeTopLevelParamsStructInfo(params_struct_info_); \
+    } \
+    static const RDGShaderParamStructAndSizeInfo * GetParamStructInfo () \
+	{ \
         return params_struct_info_; \
 	} \
 };
+
+// Only externally defined shader parameter structs (that may be shared among multiple shaders)
+// requires this macro for implementing its static class members.
+#define IMPLEMENT_SHADER_PARAMETERS(Name) \
+    RDGShaderParamStructAndSizeInfo * Name::params_struct_info_; \
 
 MI_NAMESPACE_END
 
