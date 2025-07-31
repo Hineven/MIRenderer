@@ -95,6 +95,18 @@ public:
     ) {
         DispatchRays(queue, pass, ray_tracing_shader, T::GetShaderParamStructInfo(), params, width, height, depth);
     }
+
+    static void DispatchRaysIndirect (
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader,
+        const RDGShaderParamStructAndSizeInfo * info, const void * params, RDGBuffer * indirect_buffer
+    ) ;
+    template<CShaderType T>
+    FORCEINLINE static void DispatchRaysIndirect (
+        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader, const typename T::ShaderParameters * params,
+        RDGBuffer * indirect_buffer
+    ) {
+        DispatchRaysIndirect(queue, pass, ray_tracing_shader, T::GetShaderParamStructInfo(), params, indirect_buffer);
+    }
 };
 
 MI_NAMESPACE_END

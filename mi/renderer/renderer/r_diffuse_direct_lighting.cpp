@@ -82,6 +82,7 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructured_UB)
     SHADER_UNIFORM_BUFFER(DirectLightingUB, DirectLighting_UB)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrecomputedActiveLightBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrecomputedActiveLightBuffer)
@@ -100,6 +101,35 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_GridLightListLengthBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RayToTraceCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceListAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceDirectionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceStateBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceOriginScreenCoordBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadowRayToTraceTMaxBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTMaxBuffer)
+
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_NormalTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_HiZBuffer)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_HistoryDepth)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDiffuseDirectLightingTexture)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDirectLightingRayIndexTexture)
+
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDirectLightingRadianceEstimateTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, DirectLightingRadianceEstimateTexture)
 END_SHADER_PARAMETERS()
 
 
@@ -234,9 +264,36 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
 
+    uint32_t max_num_shadow_rays = view->film_width_ * view->film_height_;
+
     auto ray_to_trace_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));
+    auto ray_to_trace_list_allocator = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
+    );
+    auto ray_to_trace_list = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(uint32_t)
+    );
+    auto ray_to_trace_direction = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(glm::vec3)
+    );
+    auto ray_to_trace_state = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(uint32_t)
+    );
+    auto ray_to_trace_origin_screen_coords = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(glm::uvec2)
+    );
 
+    auto direct_lighting_radiance_estimate_texture = builder.CreateTexture(
+    RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
+        1, 1, PixelFormatType::kR16G16B16A16_FLOAT, RHITextureUsageFlagBits::kUnorderedAccess});
+    auto direct_lighting_ray_index_texture = builder.CreateTexture(
+    RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
+1, 1, PixelFormatType::kR32_UINT, RHITextureUsageFlagBits::kUnorderedAccess}
+    );
 
+    auto shadow_ray_to_trace_tmax = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(float)
+    );
     {
         params->View = view->view_common_params_;
         auto L_UB = builder.Allocate<LightStructureUB>();
@@ -293,7 +350,36 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         params->RWLightGrid_GridLightListLengthBuffer = light_grid_grid_light_list_length_buffer.Raw();
         params->RWLightGrid_BloomFilterBuffer = light_grid_bloom_filter_buffer.Raw();
 
+        params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+        params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+        params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());
+        params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
+        params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
+        params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
+        params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+
+        params->RWRayToTraceCount = ray_to_trace_count.Raw();
+        params->RayToTraceCount = ray_to_trace_count.Raw();
+        params->RWRayToTraceListAllocator = ray_to_trace_list_allocator.Raw();
+        params->RWRayToTraceListBuffer = ray_to_trace_list.Raw();
+        params->RWRayToTraceDirectionBuffer = ray_to_trace_direction.Raw();
+        params->RWRayToTraceStateBuffer = ray_to_trace_state.Raw();
+        params->RWRayToTraceOriginScreenCoordBuffer = ray_to_trace_origin_screen_coords.Raw();
+
+        params->RWShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
+        params->ShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
+
+        params->G_DepthTexture = view->G_depth_.Raw();
+        params->G_NormalTexture = view->G_normal_.Raw();
+        params->G_HiZBuffer = view->hzb_.Raw();
+        params->G_HistoryDepth = view->persistent_data_->prev_G_depth.Raw();
+        params->RWDiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
+        params->RWDirectLightingRayIndexTexture = direct_lighting_ray_index_texture.Raw();
+        params->RWDirectLightingRadianceEstimateTexture = direct_lighting_radiance_estimate_texture.Raw();
+        params->DirectLightingRadianceEstimateTexture = direct_lighting_radiance_estimate_texture.Raw();
+
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+        params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
     }
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     // 1. Clear counters
@@ -336,7 +422,17 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         );
     }
     {
-        // HWRT...
+        // HWRT
+        Render_HardwareShadowRayTracing(
+            view, builder,
+            ray_to_trace_list_allocator.Raw(),
+            ray_to_trace_list.Raw(),
+            ray_to_trace_direction.Raw(),
+            ray_to_trace_state.Raw(),
+            ray_to_trace_origin_screen_coords.Raw(),
+            nullptr,
+            shadow_ray_to_trace_tmax.Raw()
+        );
     }
     {
         auto shader = lib.GetShader<RenderDiffuseDirectLightingShader>(ini);

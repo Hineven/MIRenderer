@@ -27,5 +27,58 @@ void SpawnDispatchIndirectCommand1D () {
     Cmd.ThreadGroupCountY = 1;
     Cmd.ThreadGroupCountZ = 1;
     Command[0] = Cmd;
-    printf("SpawnDispatchIndirectCommand1D: %d\n", Cmd.ThreadGroupCountX);
+}
+
+struct SpawnTraceRaysIndirectCommand1DUB {
+    uint64_t RaygenAddr;
+    uint64_t RaygenSize;
+    uint64_t MissAddr;
+    uint64_t MissSize;
+    uint64_t MissStride;
+    uint64_t HitAddr;
+    uint64_t HitSize;
+    uint64_t HitStride;
+};
+
+#if GRAPHICS_API == 0
+struct TraceRaysIndirectCommand {
+    uint64_t RaygenAddr;
+    uint64_t RaygenSize;
+    uint64_t MissAddr;
+    uint64_t MissSize;
+    uint64_t MissStride;
+    uint64_t HitAddr;
+    uint64_t HitSize;
+    uint64_t HitStride;
+    uint64_t CallableAddr;
+    uint64_t CallableSize;
+    uint64_t CallableStride;
+    uint32_t Width;
+    uint32_t Height;
+    uint32_t Depth;
+};
+#else
+#error "Unsupported graphics API for TraceRaysIndirectCommand"
+#endif
+
+ConstantBuffer<SpawnTraceRaysIndirectCommand1DUB> SpawnTraceRaysIndirectCommand1D_UB;
+
+RWStructuredBuffer<TraceRaysIndirectCommand> SpawnTraceRaysIndirectCommand1D_Command;
+
+[numthreads(1, 1, 1)]
+void SpawnTraceRaysIndirectCommand1D() {
+    TraceRaysIndirectCommand Cmd = (TraceRaysIndirectCommand)0;
+    Cmd.RaygenAddr = SpawnTraceRaysIndirectCommand1D_UB.RaygenAddr;
+    Cmd.RaygenSize = SpawnTraceRaysIndirectCommand1D_UB.RaygenSize;
+    Cmd.MissAddr = SpawnTraceRaysIndirectCommand1D_UB.MissAddr;
+    Cmd.MissSize = SpawnTraceRaysIndirectCommand1D_UB.MissSize;
+    Cmd.MissStride = SpawnTraceRaysIndirectCommand1D_UB.MissStride;
+    Cmd.HitAddr = SpawnTraceRaysIndirectCommand1D_UB.HitAddr;
+    Cmd.HitSize = SpawnTraceRaysIndirectCommand1D_UB.HitSize;
+    Cmd.HitStride = SpawnTraceRaysIndirectCommand1D_UB.HitStride;
+    // No callables for now
+    Cmd.Width = Count[0];
+    Cmd.Height = 1;
+    Cmd.Depth = 1;
+    SpawnTraceRaysIndirectCommand1D_Command[0] = Cmd;
 }

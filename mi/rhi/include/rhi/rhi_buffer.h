@@ -37,6 +37,8 @@ public:
 
     FORCEINLINE RHIBufferDesc GetDesc () const {return desc_;}
 
+    virtual uint64_t GetDeviceAddress () const = 0;
+
 protected:
     RHIBufferDesc desc_;
     bool is_mapped_ {false};

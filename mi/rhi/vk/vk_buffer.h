@@ -26,7 +26,7 @@ public:
 
     void SetName(const std::string & name) override;
 
-    vk::DeviceAddress GetDeviceAddress() const ;
+    uint64_t GetDeviceAddress() const override ;
 
 protected:
     vk::Buffer vk_buffer_;

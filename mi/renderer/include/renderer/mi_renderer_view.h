@@ -131,16 +131,8 @@ struct RendererView {
     // HiZ buffer
     TRef<RDGTexture> hzb_;
 
-    // Light sampling
-    struct {
-
-        // List of light indices in the light grids
-        TRef<RDGBuffer> light_grid_list_;
-        // Offsets of grid lights into the light grid list
-        TRef<RDGBuffer> light_grid_list_offsets_;
-        // Counts of lights in each grid cell
-        TRef<RDGBuffer> light_grid_list_counts_;
-    } light;
+    // Diffuse direct lighting
+    TRef<RDGTexture> diffuse_direct_lighting_;
 
     // Final radiance
     TRef<RDGTexture> radiance_;

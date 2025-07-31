@@ -618,7 +618,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         );
         if (result.empty()) {
             MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
-            MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+            MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
             return false;
         }
         shader_hash_.AddUnordered("ComputeShader", cs_hash);
@@ -652,7 +652,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             );
             if (vs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
-                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
             shader_hash_.AddUnordered("VertexShader", vs_hash);
@@ -668,7 +668,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             );
             if (fs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
-                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
             shader_hash_.AddUnordered("FragmentShader", fs_hash);
@@ -722,7 +722,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             );
             if (raygen_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile raygen shader: {}", errmsg);
-                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
             shader_hash_.AddUnordered("RaygenShader", raygen_hash);
@@ -736,7 +736,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             );
             if (chit_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile closest hit shader: {}", errmsg);
-                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
             shader_hash_.AddUnordered("ClosestHitShader", chit_hash);
@@ -753,7 +753,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             );
             if (ahit_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile any hit shader: {}", errmsg);
-                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
             shader_hash_.AddUnordered("AnyHitShader", ahit_hash);
@@ -767,7 +767,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             );
             if (miss_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile miss shader: {}", errmsg);
-                MI_LOG(MIInfraLogType::kError, "Imaginary compile command: {}", wstring_to_utf8(out_command));
+                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
             shader_hash_.AddUnordered("MissShader", miss_hash);
@@ -862,11 +862,14 @@ RDGShader::SBTBuffers RDGShader::GetSBTBuffers(RHICommandQueueGraphics & queue) 
             RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kShaderBindingTableRead
         );
     }
+    auto miss_stride = ray_tracing_pipeline_->GetMissSBTStride();
+    auto hit_stride = ray_tracing_pipeline_->GetHitSBTStride();
     // The segments of th SBT buffer is fixed.
     return {
         sbt_buffer_->GetSpan(sbt_sections_.raygen.offset, sbt_sections_.raygen.size),
         sbt_buffer_->GetSpan(sbt_sections_.miss.offset, sbt_sections_.miss.size),
-        sbt_buffer_->GetSpan(sbt_sections_.hit.offset, sbt_sections_.hit.size)
+        sbt_buffer_->GetSpan(sbt_sections_.hit.offset, sbt_sections_.hit.size),
+        miss_stride, hit_stride
     };
 }
 

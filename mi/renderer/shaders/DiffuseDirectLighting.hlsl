@@ -27,6 +27,8 @@
 #define NUM_LIGHT_SAMPELR_SAMPLES 8
 #endif
 
+RWStructuredBuffer<uint> RWRayToTraceCount;
+
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
 RWStructuredBuffer<PackedPrecomputedLight> RWPrecomputedActiveLightBuffer;
@@ -97,6 +99,49 @@ struct DirectLightingUB {
 };
 
 ConstantBuffer<DirectLightingUB> DirectLighting_UB;
+
+// Sometimes when involving ray compaction / continuation, allocate new rays on this buffer
+RWStructuredBuffer<uint> RWRayToTraceListAllocator;
+RWStructuredBuffer<uint> RWRayToTraceListBuffer;
+
+RWStructuredBuffer<uint> RWRayToTraceDirectionBuffer;
+RWStructuredBuffer<uint> RWRayToTraceStateBuffer;
+
+// Optional (when the starting point is exactly on a pixel center)
+RWStructuredBuffer<uint> RWRayToTraceOriginScreenCoordBuffer;
+
+// Optional (when the ray origin is in world space)
+RWStructuredBuffer<float3> RWRayToTraceOriginBuffer;
+
+struct HybridTracingUB {
+    float SSRT_RelativeTexelThickness;
+    float RayContinuationBackwardBiasFactor;
+    float DefaultTMax;
+    uint Unused2;
+};
+ConstantBuffer<HybridTracingUB> HybridTracing_UB;
+
+RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
+    RayToTrace Ray = (RayToTrace)0;
+    Ray.Origin = RWRayToTraceOriginBuffer[RayIndex];
+    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
+    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
+    uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
+    Ray.TMax = TMax;
+    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
+    return Ray;
+}
+
+RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
+    RayToTrace Ray = (RayToTrace)0;
+    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
+    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
+    uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
+    Ray.TMax = TMax;
+    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
+    return Ray;
+}
+
 
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
@@ -382,11 +427,14 @@ LightSample SampleLightDiffuseWithCosineWeight(float3 Position, float3 Normal, E
 Texture2D<float> G_DepthTexture;
 Texture2D<float4> G_NormalTexture;
 
+RWStructuredBuffer<float> RWShadowRayToTraceTMaxBuffer;
+StructuredBuffer<float> ShadowRayToTraceTMaxBuffer;
+
+
 // Direction (Normal uint packed), Length (float)
 RWTexture2D<uint> RWDirectLightingRayIndexTexture; // Specify the shadow ray index in the following hybrid tracing process
 RWTexture2D<float4> RWDirectLightingRadianceEstimateTexture; // Output buffer for direct lighting radiance estimates
 
-Texture2D<uint2> DirectLightingSampleTexture;
 Texture2D<float> G_HiZBuffer;
 Texture2D<float> G_HistoryDepth;
 
@@ -398,7 +446,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
 
     float2 PixelUV = (PixelIndex + 0.5f) / float2(View.Camera.FilmDimensions);
-    float ReversedZDepth = G_DepthTexture.SampleLevel(PointWrapSampler, PixelUV, 0);
+    float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
     if (ReversedZDepth == 0) {
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
         return; // Skip empty pixels
@@ -497,6 +545,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         RWRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
         RWRayToTraceOriginScreenCoordBuffer[RayIndex] = PackUint2x16(PixelIndex);
         RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0, false);
+        RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance;
         
         RWDirectLightingRayIndexTexture[PixelIndex] = RayIndex;
     }
@@ -515,7 +564,7 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     if(RayListIndex >= RayToTraceCount[0]) {
         return; // No rays to trace
     }
-    RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, DirectLighting_UB.ShadowRayTMax);
+    RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, min(DirectLighting_UB.ShadowRayTMax, ShadowRayToTraceTMaxBuffer[RayIndex]));
 
     uint2 PixelIndex = RayToTrace.OriginScreenCoord;
     float ReversedZDepth = G_DepthTexture.Load(uint3(PixelIndex, 0));
@@ -541,9 +590,8 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
         WorldPosition += OffsetLength * Normal;
     }
 
-    uint2 PackedDirectLightingSample = DirectLightingSampleTexture.Load(uint3(PixelIndex, 0));
-    float3 TraceDirection = UnpackNormal(PackedDirectLightingSample.x);
-    float TraceTMax = asfloat(PackedDirectLightingSample.y) * DirectLighting_UB.ShadowRayLengthMultiplier;
+    float3 TraceDirection = RayToTrace.Direction;
+    float TraceTMax = RayToTrace.TMax * DirectLighting_UB.ShadowRayLengthMultiplier;
     bool bHit = false;
     float3 HitUVZ = 0, LastVisibleUVZ = 0;
     float HitTileZ = 0;

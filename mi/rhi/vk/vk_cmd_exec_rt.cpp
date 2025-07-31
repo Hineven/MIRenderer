@@ -278,7 +278,7 @@ void VulkanCommandExecutor::RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RH
     vk::DeviceAddress indirect_device_address = indirect_buffer->GetDeviceAddress() + dispatch_rays_indirect->indirect_buffer_.offset;
 
     // Use SBT regions from state (set by RHIBindShaderBindingTable)
-    cmdb.traceRaysIndirectKHR(state.raygen_sbt, state.miss_sbt, state.hit_sbt, state.callable_sbt, indirect_device_address);
+    cmdb.traceRaysIndirect2KHR(indirect_device_address);
 }
 
 void VulkanCommandExecutor::RHIAcclerationStructureBarriers(RHICommandQueueBase *cmd, RHICommandAccelerationStructureBarrier *barrier) {

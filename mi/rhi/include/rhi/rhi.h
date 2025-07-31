@@ -142,7 +142,9 @@ public:
 
     struct GlobalSamplers {
         RHISampler * linear_wrap;
+        RHISampler * linear_clamp;
         RHISampler * point_wrap;
+        RHISampler * point_clamp;
     };
 
     FORCEINLINE GlobalSamplers GetGlobalSamplers () const {

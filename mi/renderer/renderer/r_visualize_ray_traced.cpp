@@ -58,11 +58,9 @@ void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder 
     builder.AddPass<RayTracingVisualizationShader>(
         {}, params,
         [shader, params, view](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            DEBUG_UBER_BARRIER;
             RDGCommandHelper::DispatchRays<RayTracingVisualizationShader>(
                 queue, pass, shader, params, view->film_width_, view->film_height_
             );
-            DEBUG_UBER_BARRIER;
         }
     );
 }

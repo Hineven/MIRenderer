@@ -139,6 +139,8 @@ public:
         RHIBufferSpan raygen;
         RHIBufferSpan miss;
         RHIBufferSpan hit;
+        uint64_t miss_stride;
+        uint64_t hit_stride;
     };
 
     SBTBuffers GetSBTBuffers (RHICommandQueueGraphics & queue) ;

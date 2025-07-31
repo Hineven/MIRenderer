@@ -300,5 +300,12 @@ void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics &queue, RDGPass *pas
     }
 }
 
+void RDGCommandHelper::DispatchRaysIndirect(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params, RDGBuffer *indirect_buffer) {
+    if (BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
+        queue.DispatchRaysIndirect(indirect_buffer->GetRHI());
+    }
+}
+
+
 
 MI_NAMESPACE_END

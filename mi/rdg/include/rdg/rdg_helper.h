@@ -18,6 +18,9 @@ public:
     // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);
 
+    // Spawn a pass that creates a trace rays indirect command for 1D ray tracing.
+    static TRef<RDGBuffer> SpawnTraceRaysIndirectCommand1D (RenderGraphBuilder & builder, RDGShader * ray_tracing_shader, RDGBuffer * count_buffer) ;
+
     template<CShaderType T>
     FORCEINLINE static RDGPass * DispatchComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) {
         return builder.AddPass<T>({}, params,

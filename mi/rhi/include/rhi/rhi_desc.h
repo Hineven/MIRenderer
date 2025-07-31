@@ -491,6 +491,23 @@ struct RHIDispatchIndirectCommand {
     uint32_t padding;
 };
 
+struct RHITraceRaysIndirectCommand {
+    uint32_t x;
+    uint32_t y;
+    uint32_t z;
+    uint64_t raygen_sbt_address {UINT64_MAX};
+    uint64_t raygen_sbt_size {UINT64_MAX};
+    uint64_t miss_sbt_address {UINT64_MAX};
+    uint64_t miss_sbt_size {UINT64_MAX};
+    uint64_t miss_sbt_stride {UINT64_MAX};
+    uint64_t hit_sbt_address {UINT64_MAX};
+    uint64_t hit_sbt_size {UINT64_MAX};
+    uint64_t hit_sbt_stride {UINT64_MAX};
+    uint64_t callable_sbt_address {UINT64_MAX};
+    uint64_t callable_sbt_size {UINT64_MAX};
+    uint64_t callable_sbt_stride {UINT64_MAX};
+};
+
 MI_NAMESPACE_END
 
 #endif //MI_RHI_DESC_H

@@ -80,7 +80,7 @@ void VulkanBuffer::SetName(const std::string & name) {
     }
 }
 
-vk::DeviceAddress VulkanBuffer::GetDeviceAddress() const {
+uint64_t VulkanBuffer::GetDeviceAddress() const {
     return GetVulkanRHI()->GetDevice().getBufferAddress(vk_buffer_);
 }
 

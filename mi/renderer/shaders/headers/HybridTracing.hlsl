@@ -3,30 +3,6 @@
 
 #include "Packing.hlsl"
 
-RWStructuredBuffer<uint> RWRayToTraceCount;
-
-// Sometimes when involving ray compaction / continuation, allocate new rays on this buffer
-RWStructuredBuffer<uint> RWRayToTraceListAllocator;
-RWStructuredBuffer<uint> RWRayToTraceListBuffer;
-
-
-RWStructuredBuffer<uint> RWRayToTraceDirectionBuffer;
-RWStructuredBuffer<uint> RWRayToTraceStateBuffer;
-
-// Optional (when the starting point is exactly on a pixel center)
-RWStructuredBuffer<uint> RWRayToTraceOriginScreenCoordBuffer;
-
-// Optional (when the ray origin is in world space)
-RWStructuredBuffer<float3> RWRayToTraceOriginBuffer;
-
-struct HybridTracingUB {
-    float SSRT_RelativeTexelThickness;
-    float RayContinuationBackwardBiasFactor;
-    float DefaultTMax;
-    uint Unused2;
-};
-ConstantBuffer<HybridTracingUB> HybridTracing_UB;
-
 uint PackRayToTraceState (float RayTCurrent, bool bHit) {
     // Use sign bit to encode hit
     return asuint(RayTCurrent) | (bHit ? 0x80000000u : 0u);
@@ -47,26 +23,5 @@ struct RayToTrace {
     float TMax;
     bool bHit;
 };
-
-RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
-    RayToTrace Ray = (RayToTrace)0;
-    Ray.Origin = RWRayToTraceOriginBuffer[RayIndex];
-    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
-    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
-    uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
-    Ray.TMax = TMax;
-    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
-    return Ray;
-}
-
-RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
-    RayToTrace Ray = (RayToTrace)0;
-    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
-    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
-    uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
-    Ray.TMax = TMax;
-    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
-    return Ray;
-}
 
 #endif

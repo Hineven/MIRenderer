@@ -51,6 +51,75 @@ TRef<RDGBuffer> Helpers::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &buil
     return command;
 }
 
+class SpawnTraceRaysIndirectCommand1DShader : public RDGShader {
+public:
+    struct SpawnTraceRaysIndirectCommand1DUB {
+        uint64_t RaygenAddr;
+        uint64_t RaygenSize;
+        uint64_t MissAddr;
+        uint64_t MissSize;
+        uint64_t MissStride;
+        uint64_t HitAddr;
+        uint64_t HitSize;
+        uint64_t HitStride;
+    };
+    BEGIN_SHADER_PARAMETERS(SpawnTraceRaysIndirectCommand1DShaderParameters)
+        SHADER_UNIFORM_BUFFER(SpawnTraceRaysIndirectCommand1DUB, SpawnTraceRaysIndirectCommand1D_UB)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, SpawnTraceRaysIndirectCommand1D_Command)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(SpawnTraceRaysIndirectCommand1DShaderParameters)
+    DECLARE_SHADER()
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {"GRAPHICS_API=0"}; // Graphics apis, 0 for vulkan
+    }
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER(SpawnTraceRaysIndirectCommand1DShader, "mi/rdg/shaders/Helpers.hlsl", "SpawnTraceRaysIndirectCommand1D");
+
+
+TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &builder, RDGShader * ray_tracing_shader, RDGBuffer *count_buffer) {
+    if (!ray_tracing_shader || !ray_tracing_shader->IsValid()) {
+        MI_WARN("Can not spawn trace rays indirect command for invalid ray tracing shaders.");
+        return nullptr;
+    }
+    auto command = RDGBuffer::Create(
+        RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage,
+        sizeof(RHITraceRaysIndirectCommand)
+    );
+    command->SetName("TraceRaysIndirectCommand1D");
+    auto ini = RDGShaderInitializationInfo{};
+    if (RHI::Get().GetType() == RHIType::kVulkan) {
+        ini.optional_macros.push_back("GRAPHICS_API=0");
+    } else {
+        assert(false);
+    }
+    auto shader = RDGShaderLibrary::Get().GetShader<SpawnTraceRaysIndirectCommand1DShader>(ini);
+    auto sbt = ray_tracing_shader->GetSBTBuffers(RHI::Get().GetGraphicsCommandQueue());
+
+    auto params = builder.Allocate<SpawnTraceRaysIndirectCommand1DShader::SpawnTraceRaysIndirectCommand1DShaderParameters>();
+    params->SpawnTraceRaysIndirectCommand1D_Command = command.Raw();
+    params->Count = count_buffer;
+    {
+        auto UB = builder.Allocate<SpawnTraceRaysIndirectCommand1DShader::SpawnTraceRaysIndirectCommand1DUB>();
+        UB->RaygenAddr = sbt.raygen.buffer->GetDeviceAddress() + sbt.raygen.offset;
+        UB->RaygenSize = sbt.raygen.size;
+        UB->MissAddr = sbt.miss.buffer->GetDeviceAddress() + sbt.miss.offset;
+        UB->MissSize = sbt.miss.size;
+        UB->MissStride = sbt.miss_stride;
+        UB->HitAddr = sbt.hit.buffer->GetDeviceAddress() + sbt.hit.offset;
+        UB->HitSize = sbt.hit.size;
+        UB->HitStride = sbt.hit_stride;
+        params->SpawnTraceRaysIndirectCommand1D_UB = UB;
+    }
+    builder.AddPass<SpawnTraceRaysIndirectCommand1DShader>({}, params,
+        [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            RDGCommandHelper::Dispatch<SpawnTraceRaysIndirectCommand1DShader>(queue, pass, shader, params);
+        }
+    );
+    return command;
+}
+
 
 void Helpers::Upload_Async(RHICommandQueueGraphics &queue, RHIBufferSpan buffer, const void *data, size_t size) {
     auto & rhi = RHI::Get();

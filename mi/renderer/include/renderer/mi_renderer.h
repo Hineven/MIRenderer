@@ -80,6 +80,17 @@ protected:
         RDGTexture * texture
     ) ;
 
+    void Render_HardwareShadowRayTracing (
+        RendererView * view, RenderGraphBuilder & builder,
+        RDGBuffer * ray_to_trace_list_length,
+        RDGBuffer * ray_to_trace_list,
+        RDGBuffer * ray_to_trace_direction,
+        RDGBuffer * ray_to_trace_state,
+        RDGBuffer * ray_to_trace_origin_screen_coords,
+        RDGBuffer * ray_to_trace_origin,
+        RDGBuffer * ray_to_trace_tmax
+    );
+
     // Render material properties from the camera using ray-tracing for debugging purposes.
     void Render_VisualizeRayTraced (RendererView * view, RenderGraphBuilder & builder) ;
 

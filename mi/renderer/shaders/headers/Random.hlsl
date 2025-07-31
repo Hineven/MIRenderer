@@ -28,10 +28,6 @@ class Random
 {
     uint rngState;
 
-    Random (uint inSeed) {
-        rngState = inSeed;
-    }
-
     /**
      * Generate a random uint.
      * @return The new random number (range  [0, 2^32)).
@@ -93,10 +89,8 @@ class Random
  */
 Random MakeRandom(uint seed)
 {
-    Random ret =
-    {
-        seed * 747796405U + 2891336453u
-    };
+    Random ret;
+    ret.rngState = seed * 747796405U + 2891336453u;
     return ret;
 }
 
@@ -109,10 +103,8 @@ Random MakeRandom(uint seed)
 Random MakeRandom(uint seed, uint frame)
 {
     const uint inc = (frame << 1) | 1U;
-    Random ret =
-    {
-        (seed + inc) * 747796405U + inc
-    };
+    Random ret;
+    ret.rngState = (seed + inc) * 747796405U + inc;
     return ret;
 }
 
