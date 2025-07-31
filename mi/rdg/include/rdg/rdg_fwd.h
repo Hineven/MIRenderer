@@ -83,6 +83,8 @@ template<typename T> concept CPointerType = std::is_pointer_v<T>;
 // Check if the render thread is in a rdg pass lambda.
 bool RDG_IsInRDGExecution () ;
 
+class RDGShader;
+
 MI_NAMESPACE_END
 
 #endif //RDG_FWD_H

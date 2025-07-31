@@ -8,6 +8,7 @@
 #include "rhi/rhi_pipeline.h"
 #include "core/crc.h"
 #include "core/infra.h"
+#include "rhi/rhi_type_helpers.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -150,11 +151,19 @@ void RHIPipeline::Reset() {
     ResetRHI();
 }
 
+static RHIGPUAccessFlags GetAccessFlags (auto elem) {
+    if constexpr(requires{elem.access_flags;}) {
+        return elem.access_flags;
+    }
+    return RHIGPUAccessFlagBits::kNone;
+}
+
 void RHIPipeline::BuildPipelineResourceIndex() {
     auto Register = [&] (RHIPipelineResourceType type, const auto & arr) {
         for(int i = 0; i < arr.size(); ++i) {
             pipeline_resource_index_[arr[i].name_crc] = {
                 type,
+                GetAccessFlags(arr[i]),
                 arr[i].frequency_bits,
                 i
             };

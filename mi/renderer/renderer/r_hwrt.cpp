@@ -101,7 +101,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
     builder.AddPass<TraceShadowRaysShader>(
-    {}, params,
+    {}, shader, params,
     [shader, params, view, in_cmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
         RDGCommandHelper::DispatchRaysIndirect<TraceShadowRaysShader>(
             queue, pass, shader, params, in_cmd

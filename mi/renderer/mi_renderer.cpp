@@ -31,6 +31,15 @@ static CVar<bool> CVar_DebugVisualizeRayTraced(
     false
 );
 
+static CVar<int> CVar_FinalOutputType(
+    "r.debug.final_output_type",
+    "Final output on screen.\n"
+    "0 - Radiance\n"
+    "1 - Albedo\n"
+    "2 - Direct lighting\n",
+    2
+);
+
 Renderer::Renderer() {
 
 }
@@ -253,9 +262,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 RHIGPUAccessFlagBits::kAccelerationStructureWrite,
                 RHIGPUAccessFlagBits::kAccelerationStructureRead
             );
-        })->AddAS_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
-        ->AddBuffer(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
-        ->AddBuffer(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
+        })->AddASH_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
+        ->AddBufferH(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
+        ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
     // Ready for rendering
@@ -267,7 +276,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     builder.AddPass("ClearDepth", {},
         [depth = view->G_depth_.Raw()]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
         queue.ClearTexture(depth->GetRHI(), {});
-    })->AddTexture(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite);
+    })->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite);
 
     // Static meshes
     Render_DrawStaticMeshes(view, builder);
@@ -291,9 +300,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     if (view->debug_output_) {
         Render_DrawToOutput(view, builder, view->debug_output_.Raw());
     } else {
-        if (view->radiance_)
+        auto type = CVar_FinalOutputType.Get();
+        if (type == 0)
             Render_DrawToOutput(view, builder, view->radiance_.Raw());
-        else Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+        else if (type == 1)
+            Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+        else if (type == 2)
+            Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
+        else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();

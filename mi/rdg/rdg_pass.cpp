@@ -117,7 +117,7 @@ static RHITextureLayoutType GetTextureLayoutFromUsage (RDGTextureUsageType usage
     }
 }
 
-RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage, RHIPipelineStageFlags stages) {
+RDGPass * RDGPass::AddTextureH(RDGTexture *texture, RDGTextureUsageType usage, RHIPipelineStageFlags stages) {
     if (!texture) return this; // Do nothing if the texture is null
     if (usage == RDGTextureUsageType::kNone) {
         // If the usage is kNone, we don't care about the texture.
@@ -136,9 +136,10 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RDGTextureUsageType usage, RH
 RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
     RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
     if (!texture) return this; // Do nothing if the texture is null
+    if (stages == RHIPipelineStageFlagBits::kNone || access == RHIGPUAccessFlagBits::kNone)
+        return this; // If no access or stages are specified, do not add the texture.
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_textures.emplace_back(texture);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_textures.emplace_back(texture);
-    assert(stages != RHIPipelineStageFlagBits::kNone);
     compiled_.used_textures.emplace_back(layout, access, stages, texture);
     if (access & RHIGPUAccessFlagBits::kRead) {
         compiled_.in_textures.emplace_back(texture);
@@ -149,11 +150,8 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
     return this;
 }
 
-
-RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
+RDGPass * RDGPass::AddBufferH(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
     if (!buffer) return this; // Do nothing if the buffer is null
-    if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
-    if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
     RHIPipelineStageFlags stages = usage_stages;
     if (stages == RHIPipelineStageFlagBits::kNone) {
         // If the usage stages are not specified, auto-detect them.
@@ -196,6 +194,16 @@ RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPip
             assert(false && "Unsupported RDGPassType for buffer.");
         }
     }
+    return AddBuffer(buffer, access, stages);
+}
+
+RDGPass *RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
+    if (access == RHIGPUAccessFlagBits::kNone || stages == RHIPipelineStageFlagBits::kNone) {
+        // If the access is kNone, we don't care about the buffer.
+        return this;
+    }
+    if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
+    if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
     compiled_.used_buffers.emplace_back(access, stages, buffer);
     if (access & RHIGPUAccessFlagBits::kRead) {
         compiled_.in_buffers.emplace_back(buffer);
@@ -206,8 +214,13 @@ RDGPass * RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPip
     return this;
 }
 
-RDGPass *RDGPass::AddAS_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
+
+RDGPass *RDGPass::AddASH_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
     if (!as) return this; // Do nothing if the buffer is null
+    if (access == RHIGPUAccessFlagBits::kNone || usage_stages == RHIPipelineStageFlagBits::kNone) {
+        // If the access is kNone, we don't care about the acceleration structure.
+        return this;
+    }
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_acceleration_structures.emplace_back(as);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_acceleration_structures.emplace_back(as);
     RHIPipelineStageFlags stages = usage_stages;
@@ -236,15 +249,28 @@ RDGPass *RDGPass::AddAS_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPUA
 
 void RDGPass::Compile() {
 
-
-    // TODO: It is possible to reflect more accurate shader stages for the textures and buffers.
-
     assert(!is_compiled_ && "Each pass may only be compiled once.");
     // No need to compile as we have no shader parameters present
     if (shader_param_struct_info_) {
         assert(shader_param_data_);
         // Iterate through all shader parameters using reflection
         for (const auto & field : shader_param_struct_info_->cpp_members) {
+            RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone;
+            RHIGPUAccessFlags access = RHIGPUAccessFlagBits::kNone;
+            // Initialize access flags with the shader reflection data
+            if (shader_) {
+                if (field.type == RHIParamType::kStorageBuffer
+                    || field.type == RHIParamType::kSRVTexture
+                    || field.type == RHIParamType::kSRVTextureArray
+                    || field.type == RHIParamType::kUAVTexture
+                    || field.type == RHIParamType::kUAVTextureArray
+                    || field.type == RHIParamType::kAccelerationStructure
+                    || field.type == RHIParamType::kSampler) {
+                    auto shader_access = shader_->QueryShaderAccess(field.name);
+                    stages = shader_access.stages;
+                    access = shader_access.access;
+                }
+            }
             const void* field_data = static_cast<const char*>(shader_param_data_) + field.cpp_offset;
             // Check resource type
             if (field.type == RHIParamType::kSRVTexture || field.type == RHIParamType::kSRVTextureArray) { // SRV
@@ -257,7 +283,12 @@ void RDGPass::Compile() {
                             name_, field.name);
                     continue;
                 }
-                AddTexture(texture, RDGTextureUsageType::kShaderRead);
+                AddTexture(texture,
+                    RHITextureLayoutType::kShaderReadOnlyOptimal,
+                    // Sometimes there are storage read access (texture.Load())
+                    RHIGPUAccessFlagBits::kShaderRead | access,
+                    stages
+                );
             }
             else if (field.type == RHIParamType::kUAVTexture || field.type == RHIParamType::kUAVTextureArray) { // UAV
                 RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
@@ -269,7 +300,10 @@ void RDGPass::Compile() {
                             name_, field.name);
                     continue;
                 }
-                AddTexture(texture, RDGTextureUsageType::kShaderReadWrite);
+                AddTexture(texture, RHITextureLayoutType::kGeneral,
+                    access,
+                    stages
+                );
             } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
                 RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
                 if (!buffer) continue;
@@ -280,7 +314,7 @@ void RDGPass::Compile() {
                             name_, field.name);
                     continue;
                 }
-                AddBuffer(buffer, field.access_flags);
+                AddBuffer(buffer, field.access_flags & access, stages);
             }
             else if (field.type == RHIParamType::kVertexBuffer
                 || field.type == RHIParamType::kIndexBuffer
@@ -294,15 +328,14 @@ void RDGPass::Compile() {
                             name_, field.name);
                     continue;
                 }
-                RHIGPUAccessFlags access_flags = field.access_flags;
-                AddBuffer(buffer, access_flags);
+                AddBufferH(buffer, field.access_flags);
             } else if (field.type == RHIParamType::kVertexAttribute) {
                 // Do nothing
             } else if (field.type == RHIParamType::kSampler) {
                 // Do nothing
             } else if (field.type == RHIParamType::kUniformBuffer) {
                 // The field value is actually a pointer to a UB struct.
-                // Device ub is allocated when the graph is executed. And dependencies is
+                // Device ub is allocated when the graph is executed. And dependencies are
                 // generated at runtime. So, do nothing here.
             } else if (field.type == RHIParamType::kAccelerationStructure) {
                 auto as = *static_cast<RHIAccelerationStructure* const*>(field_data);
@@ -314,8 +347,7 @@ void RDGPass::Compile() {
                             name_, field.name);
                     continue;
                 }
-                RHIGPUAccessFlags access_flags = field.access_flags;
-                AddAS_NoAutomaticBarrier(as, access_flags);
+                AddASH_NoAutomaticBarrier(as, field.access_flags & access, stages);
             } else if (field.type == RHIParamType::kRenderTarget) {
                 const RDGShaderRenderTargetParameter & render_target = *static_cast<RDGShaderRenderTargetParameter const*>(field_data);
                 if (!render_target.texture) continue ;
@@ -339,12 +371,12 @@ void RDGPass::Compile() {
                         continue;
                     }
                     if (read && write) {
-                        AddTexture(render_target.texture, RDGTextureUsageType::kDepthStencilAttachment);
+                        AddTextureH(render_target.texture, RDGTextureUsageType::kDepthStencilAttachment);
                     } else if (read) {
-                        AddTexture(render_target.texture, RDGTextureUsageType::kReadonlyDepthStencilAttachment);
+                        AddTextureH(render_target.texture, RDGTextureUsageType::kReadonlyDepthStencilAttachment);
                     } else {
                         // TODO add a new type for the overwrite case
-                        AddTexture(render_target.texture, RDGTextureUsageType::kDepthStencilAttachment);
+                        AddTextureH(render_target.texture, RDGTextureUsageType::kDepthStencilAttachment);
                     }
                 } else {
                     bool read = false, write = false;
@@ -358,9 +390,9 @@ void RDGPass::Compile() {
                         continue;
                     }
                     if (read) {
-                        AddTexture(render_target.texture, RDGTextureUsageType::kOutputAttachment);
+                        AddTextureH(render_target.texture, RDGTextureUsageType::kOutputAttachment);
                     } else {
-                        AddTexture(render_target.texture, RDGTextureUsageType::kOverwriteOutputAttachment);
+                        AddTextureH(render_target.texture, RDGTextureUsageType::kOverwriteOutputAttachment);
                     }
                 }
             } else {

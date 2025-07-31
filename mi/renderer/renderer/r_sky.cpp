@@ -38,7 +38,7 @@ void Renderer::Render_DrawSky(RendererView *view, RenderGraphBuilder &builder) {
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }
     builder.AddPass<SkyShader>(
-        {}, params,
+        {}, shader, params,
         [shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
             RDGCommandHelper::Draw<SkyShader>(queue, pass, shader, params, 3);
         }

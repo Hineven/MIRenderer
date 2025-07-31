@@ -184,9 +184,9 @@ TEST(RDGTest, RDGSimpleComputeShader) {
                 dst_span.offset = 128;
                 dst_span.size = 64;
                 queue.CopyBuffer(src_span, dst_span);
-            })->AddTexture(test_texture.Raw(), RDGTextureUsageType::kTransferRead)
-              ->AddBuffer(out_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
-              ->AddBuffer(storage_buffer_ref.Raw(), RHIGPUAccessFlagBits::kRead);
+            })->AddTextureH(test_texture.Raw(), RDGTextureUsageType::kTransferRead)
+              ->AddBufferH(out_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
+              ->AddBufferH(storage_buffer_ref.Raw(), RHIGPUAccessFlagBits::kRead);
             auto rdg = builder.Compile();
             auto pool = RDGResourcePool::Create();
             rdg->Execute(pool.Raw());
@@ -293,7 +293,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
                 [staging = staging_buffer.Raw(), vb = vertex_buffer.Raw()]
                 ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
                     queue.CopyBuffer(staging->GetSpan(), vb->GetRHI());
-            })->AddBuffer(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
+            })->AddBufferH(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
             // Draw
             builder.AddPass("SimpleShader", RDGPassType::kGraphics, {},
                 TestShader2::GetShaderParamStructInfo(), params,
@@ -307,8 +307,8 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
                 [ttex = test_texture.Raw(), obuf = readback_buffer.Raw()]
                 ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
                 queue.CopyTextureToBuffer(ttex->GetRHI(), obuf->GetRHI().buffer);
-            })->AddTexture(test_texture.Raw(), RDGTextureUsageType::kTransferRead)
-              ->AddBuffer(readback_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
+            })->AddTextureH(test_texture.Raw(), RDGTextureUsageType::kTransferRead)
+              ->AddBufferH(readback_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
             auto rdg = builder.Compile();
             auto pool = RDGResourcePool::Create();
             auto sync = RHI::Get().CreateSyncPoint();

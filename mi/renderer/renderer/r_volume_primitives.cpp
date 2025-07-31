@@ -55,7 +55,7 @@ public:
     };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
-        SHADER_UNIFORM_BUFFER(CollectVolumePrimitivesUB, UB)
+        SHADER_UNIFORM_BUFFER(CollectVolumePrimitivesUB, UB_Collect)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveCount)
@@ -168,7 +168,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWActivePrimitiveCount = active_primitive_count.Raw();
         params->RWTileInstanceOffsets = tile_instance_offset.Raw();
         params->RWPrimitiveInstanceCount = primitive_instance_count.Raw();
-        builder.AddPass<VolumePrimitivesClearCountersShader>({}, params, [shader, params, groups] (RDGPass *pass, RHICommandQueueGraphics &queue) {
+        builder.AddPass<VolumePrimitivesClearCountersShader>({}, shader, params, [shader, params, groups] (RDGPass *pass, RHICommandQueueGraphics &queue) {
             RDGCommandHelper::Dispatch<VolumePrimitivesClearCountersShader>(queue, pass, shader, params, groups);
         });
     }
@@ -184,7 +184,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
                     UB->RenderableIndex = inst->GetIndex();
                     UB->InstancePrimitiveOffset = vol->GetDeviceVolumePrimitives()->GetPrimitiveOffset();
                     UB->InstanceNumPrimitives = vol->GetNumPrimitives();
-                    params->UB = UB;
+                    params->UB_Collect = UB;
                     params->View = view->view_common_params_;
                     params->PrimitiveData = primitive_data;
                     params->RenderableTransforms = renderable_transforms;
@@ -193,7 +193,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
                     if (UB->RenderableIndex >= 4 * 1024 || UB->InstanceNumPrimitives + UB->InstancePrimitiveOffset >= 1024 * 1024) {
                         assert(false && "Overflowing (RenderableIndex, PrimitiveIndex) packing. See shader for details.");
                     }
-                    builder.AddPass<CollectVolumePrimitivesShader>({},
+                    builder.AddPass<CollectVolumePrimitivesShader>({}, shader,
                         params,  [shader, params, threads = vol->GetNumPrimitives()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
                             auto groups = DivideAndRoundUp(threads, 128);
                             RDGCommandHelper::Dispatch<CollectVolumePrimitivesShader>(queue, pass, shader, params, groups);
@@ -223,7 +223,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWPrimitiveInstanceListPrimitiveIndex = primitive_instance_list_primitive_index.Raw();
         params->RenderableTransforms = renderable_transforms;
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_primitive_count.Raw(), ProjectVolumePrimitivesShader::kThreadGroupSize);
-        builder.AddPass<ProjectVolumePrimitivesShader>({}, params, [shader, params, indirect = cmd.Raw()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
+        builder.AddPass<ProjectVolumePrimitivesShader>({}, shader, params, [shader, params, indirect = cmd.Raw()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
             RDGCommandHelper::DispatchIndirect<ProjectVolumePrimitivesShader>(queue, pass, shader, params, indirect);
         });
     }
@@ -248,7 +248,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->PrimitiveInstanceCount = primitive_instance_count.Raw();
         params->PrimitiveInstanceListKeySorted = primitive_instance_key_sorted.Raw();
         params->RWTileInstanceOffsets = tile_instance_offset.Raw();
-        builder.AddPass<CollectTileInstanceOffsetsShader>({}, params,
+        builder.AddPass<CollectTileInstanceOffsetsShader>({}, shader, params,
             [shader, params, cmd = instance_indirect_buffer.Raw()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
             RDGCommandHelper::DispatchIndirect<CollectTileInstanceOffsetsShader>(
                 queue, pass, shader, params, cmd
@@ -270,7 +270,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWVolumeDensity = view->G_volume_density_.Raw();
         params->RWVolumeMinMax = view->G_volume_min_max_.Raw();
         params->RWVolumeColor = view->G_volume_color_.Raw();
-        builder.AddPass<DrawVolumePrimitivesShader>({}, params,
+        builder.AddPass<DrawVolumePrimitivesShader>({}, shader, params,
             [shader, params, tile_dimensions] (RDGPass *pass, RHICommandQueueGraphics &queue) {
                 RDGCommandHelper::Dispatch<DrawVolumePrimitivesShader>(queue, pass, shader, params, tile_dimensions.x, tile_dimensions.y);
         });

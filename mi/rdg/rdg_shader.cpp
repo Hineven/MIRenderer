@@ -357,6 +357,30 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     return passed_checking;
 }
 
+RHIPipelineResourceSlot RDGShader::ReflectResourceSlot(std::string_view name) const {
+    return ReflectResourceSlot(CRC32(name.data(), name.size()));
+}
+
+RHIPipelineResourceSlot RDGShader::ReflectResourceSlot(uint32_t name_crc) const {
+    if (class_registry_->type == RHIPipelineType::kCompute) return compute_pipeline_->ReflectResourceSlot(name_crc);
+    if (class_registry_->type == RHIPipelineType::kGraphics) return graphics_pipeline_->ReflectResourceSlot(name_crc);
+    if (class_registry_->type == RHIPipelineType::kRayTracing) return ray_tracing_pipeline_->ReflectResourceSlot(name_crc);
+    assert(false && "Invalid shader type for RDGShader::ReflectResourceSlot");
+    return {RHIPipelineResourceType::kMax, {}, {}};
+}
+
+bool RDGShader::HasResourceSlot(std::string_view name) const {
+    return HasResourceSlot(CRC32(name.data(), name.size()));
+}
+
+bool RDGShader::HasResourceSlot(uint32_t name_crc) const {
+    if (class_registry_->type == RHIPipelineType::kCompute) return compute_pipeline_->HasResourceSlot(name_crc);
+    if (class_registry_->type == RHIPipelineType::kGraphics) return graphics_pipeline_->HasResourceSlot(name_crc);
+    if (class_registry_->type == RHIPipelineType::kRayTracing) return ray_tracing_pipeline_->HasResourceSlot(name_crc);
+    assert(false && "Invalid shader type for RDGShader::HasResourceSlot");
+    return false;
+}
+
 std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderInitializationInfo & ini) const {
     std::vector<std::string> extra_options;
     for (const auto & extra_macro : ini.optional_macros) {
@@ -870,6 +894,18 @@ RDGShader::SBTBuffers RDGShader::GetSBTBuffers(RHICommandQueueGraphics & queue) 
         sbt_buffer_->GetSpan(sbt_sections_.miss.offset, sbt_sections_.miss.size),
         sbt_buffer_->GetSpan(sbt_sections_.hit.offset, sbt_sections_.hit.size),
         miss_stride, hit_stride
+    };
+}
+
+RDGShaderResourceAccess RDGShader::QueryShaderAccess(uint32_t crc32) const {
+    auto param_struct_info = class_registry_->GetShaderParamStructInfo();
+    auto cpp_index_it = param_struct_info->GetCppMemberIndex(crc32);
+    if (cpp_index_it == -1) return {};
+    if (!HasResourceSlot(crc32)) return {};
+    auto pipeline_slot = ReflectResourceSlot(crc32);
+    return {
+        pipeline_slot.access_flags,
+        GetStageFlagsFromShaderFrequencies(pipeline_slot.used_shaders)
     };
 }
 

@@ -145,7 +145,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
     auto shader = RDGShaderLibrary::Get().GetShader<DrawStaticMeshesShader>();
 
     // Rasterize static meshes with batched drawing
-    auto raster_pass = builder.AddPass<DrawStaticMeshesShader>({}, params,
+    auto raster_pass = builder.AddPass<DrawStaticMeshesShader>({}, shader, params,
         [params, shader, data = ctx.static_meshes, rdg_draw_cmd = ctx.static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             if (RDGCommandHelper::BindGraphicsShader<DrawStaticMeshesShader>(
@@ -205,14 +205,14 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
         }
         for (auto e : barrier_buffers) {
             // Destructors of temporaries created in one line of code will destruct after the line
-            raster_pass->AddBuffer(
+            raster_pass->AddBufferH(
                 builder.Import(e, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer),
                 RHIGPUAccessFlagBits::kVertexAttributeRead | RHIGPUAccessFlagBits::kIndexRead
             );
         }
 
         // Indirect command
-        raster_pass->AddBuffer(ctx.static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead);
+        raster_pass->AddBufferH(ctx.static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead);
     }
 }
 

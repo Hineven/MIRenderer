@@ -79,7 +79,7 @@ void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
             allocated = AllocateBufferBlock(desc);
         }
     }
-    if (!buffer->name_.empty()) {
+    if (!buffer->name_.empty() && buffer->dedicated_) {
         allocated.buffer->SetName(buffer->name_);
     }
     buffer->rhi_buffer_span_ = {allocated.buffer, 0, requested_size};
@@ -122,9 +122,9 @@ void RDGResourcePool::AllocateResource(RDGTexture *texture) {
         // Allocate a new texture
         auto desc = texture->GetDesc();
         auto rhi_texture = RHI.CreateTexture(desc);
+        rhi_texture->SetName("RDGResourcePoolTexture #" + std::to_string(rhi_texture_references_.size()));
         allocated = {rhi_texture.Raw(), {}, {}, {}};
         total_device_memory_usage_ += rhi_texture->GetSize();
-
         rhi_texture_references_.emplace_back(std::move(rhi_texture));
     }
     else {

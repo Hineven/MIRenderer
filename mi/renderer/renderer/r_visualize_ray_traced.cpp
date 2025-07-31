@@ -56,7 +56,7 @@ void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder 
     params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     params->LinearSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     builder.AddPass<RayTracingVisualizationShader>(
-        {}, params,
+        {}, shader, params,
         [shader, params, view](RDGPass * pass, RHICommandQueueGraphics & queue) {
             RDGCommandHelper::DispatchRays<RayTracingVisualizationShader>(
                 queue, pass, shader, params, view->film_width_, view->film_height_

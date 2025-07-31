@@ -31,6 +31,7 @@ public:
         const char *name,
         RDGPassType pass_type,
         RDGPassFlags pass_flags,
+        RDGShader * shader,
         // Accessed parameters (meta and data)
         const RDGShaderParamStructAndSizeInfo * shader_param_struct_info,
         void * parameter_struct,
@@ -44,6 +45,7 @@ public:
         return AddPass(
             name,
             RDGPassType::kGeneric, pass_flags,
+            nullptr,
             nullptr, nullptr,
             std::move(pass)
         );
@@ -57,6 +59,7 @@ public:
         return AddPass(
             "<anonymous generic pass>",
             RDGPassType::kGeneric, pass_flags,
+            nullptr,
             nullptr, nullptr,
             std::move(pass)
         );
@@ -66,13 +69,17 @@ public:
     template<typename T>
     FORCEINLINE RDGPass * AddPass (
         RDGPassFlags pass_flags,
+        T * shader,
         typename T::ShaderParameters * parameter_struct,
         RDGPassLambda && pass
     ) {
+        assert(shader != nullptr && "Shader must not be null");
         return AddPass(
             T::GetShaderTypeName(),
             T::GetRDGPassType(), pass_flags,
-            T::GetShaderParamStructInfo(), parameter_struct,
+            shader,
+            T::GetShaderParamStructInfo(),
+            parameter_struct,
             std::move(pass)
         );
     }

@@ -45,6 +45,7 @@ void Renderer::Render_ComputeHiZBuffer(
             RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource
         }
     );
+    view->hzb_->SetName("HiZBuffer");
     for (uint32_t level = 0; level < hiz_levels; level++) {
         auto params = builder.Allocate<ComputeHiZBufferShader::ShaderParameters>();
         params->RWInHiZBuffer = level == 0 ? view->G_depth_.Raw() : view->hzb_.Raw();
@@ -56,7 +57,7 @@ void Renderer::Render_ComputeHiZBuffer(
             DivideAndRoundUp(1 << (hiz_levels - level - 1), ComputeHiZBufferShader::kTileSize)
         );
         builder.AddPass<ComputeHiZBufferShader>(
-            {}, params,
+            {}, shader, params,
             [shader, params, groups](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::Dispatch<ComputeHiZBufferShader>(queue, pass, shader, params, groups.x, groups.y);
             }

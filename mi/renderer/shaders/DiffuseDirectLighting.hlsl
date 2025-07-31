@@ -445,7 +445,8 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
     if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
 
-    float2 PixelUV = (PixelIndex + 0.5f) / float2(View.Camera.FilmDimensions);
+    CameraParameters C = GetActiveCamera();
+    float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
     float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
     if (ReversedZDepth == 0) {
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
@@ -454,7 +455,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
 
     float LinearDepth = ReversedZDepthToLinearDepth(GetActiveCamera(), ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(GetActiveCamera(), PixelIndex, LinearDepth);
-    float3 WorldNormal = normalize(G_NormalTexture.Load(uint3(PixelIndex, 0)).xyz - 0.5f.xxx);
+    float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
 
@@ -566,18 +567,19 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     }
     RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, min(DirectLighting_UB.ShadowRayTMax, ShadowRayToTraceTMaxBuffer[RayIndex]));
 
+    CameraParameters C = GetActiveCamera();
     uint2 PixelIndex = RayToTrace.OriginScreenCoord;
-    float ReversedZDepth = G_DepthTexture.Load(uint3(PixelIndex, 0));
+    float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
+    float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
     // Screen space ray trace
     float3 Estimate = RWDirectLightingRadianceEstimateTexture[PixelIndex].rgb;
-    CameraParameters C = GetActiveCamera();
     // Shadow ray trace
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(GetActiveCamera(), PixelIndex, LinearDepth);
     float3 OffsetedWorldPosition = WorldPosition;
     {
         // Offset the origin a bit, but do not step outside the pixel. (25%)
-        float3 Normal = normalize(G_NormalTexture.Load(uint3(PixelIndex, 0)).xyz - 0.5f.xxx);
+        float3 Normal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
         float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
         float MaxOffsetLength = LinearDepth * 1e-4f;
         float2 PixelSize = GetPixelWorldSize(C, LinearDepth);

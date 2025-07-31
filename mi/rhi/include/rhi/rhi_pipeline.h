@@ -21,8 +21,10 @@ MI_NAMESPACE_BEGIN
 struct RHIPipelineResourceSlot {
     // The type of the resource
     RHIPipelineResourceType resource_type;
-    // In which stages the resource is used
-    RHIShaderFrequencyFlags available_stages;
+    // Combined access flags for this resource
+    RHIGPUAccessFlags access_flags;
+    // In which shaders the resource is used
+    RHIShaderFrequencyFlags used_shaders;
     // The index of the resource within the list of the same typed ones
     // Used to specify the slot when binding resources to the slot.
     int slot_index;

@@ -11,10 +11,10 @@
 #include "rhi/rhi_buffer.h"
 
 #include "rdg/rdg.h"
+#include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-
-RenderGraphBuilder::RenderGraphBuilder () {
+    RenderGraphBuilder::RenderGraphBuilder () {
     allocator_ = std::make_unique<TOneTimeLinearAllocator<>>();
 }
 
@@ -25,6 +25,7 @@ RDGPass * RenderGraphBuilder::AddPass(
     const char *name,
     RDGPassType pass_type,
     RDGPassFlags pass_flags,
+    RDGShader * shader,
     const RDGShaderParamStructAndSizeInfo *shader_param_struct_info,
     void *parameter_struct,
     RDGPassLambda && pass_lambda
@@ -36,6 +37,7 @@ RDGPass * RenderGraphBuilder::AddPass(
             pass_flags,
             std::move(pass_lambda)
     );
+    ptr->shader_ = shader;
     ptr->shader_param_struct_info_ = shader_param_struct_info;
     ptr->shader_param_data_ = parameter_struct;
 #ifndef NDEBUG
@@ -299,6 +301,33 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
     }
 #ifndef NDEBUG
     param_struct_ptr_to_data_crc.clear();
+    // Check resource aliasing
+    for (auto & pass : graph->passes_) {
+        {
+            std::set<void*> buffer_ptrs;
+            for (auto buffer : pass->compiled_.used_buffers) {
+                if (!buffer_ptrs.insert(buffer.buffer.Raw()).second) {
+                    MI_WARN("Found shader buffer aliasing in pass '{}', buffer '{}' is assigned to multiple shader parameters and actively used.",
+                        pass->GetName(), buffer.buffer->GetName());
+                }
+            }
+            std::set<void*> texture_ptrs;
+            for (auto texture : pass->compiled_.used_textures) {
+                if (!texture_ptrs.insert(texture.texture.Raw()).second) {
+                    MI_WARN("Found shader texture aliasing in pass '{}', texture '{}' is assigned to multiple shader parameters and actively used.",
+                        pass->GetName(), texture.texture->GetName());
+                }
+            }
+            std::set<void*> as_ptrs;
+            for (auto as : pass->compiled_.used_acceleration_structures) {
+                if (!as_ptrs.insert(as.as).second) {
+                    MI_WARN("Found shader acceleration structure aliasing in pass '{}', AS '{}' is assigned to multiple shader parameters and actively used.",
+                        pass->GetName(), as.as->GetName());
+                }
+            }
+        }
+
+    }
 #endif
     return graph;
 }

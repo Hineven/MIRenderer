@@ -725,7 +725,9 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
         auto image = static_cast<VulkanTexture*>(uav.texture);
         if (uav.array_layer == UINT_MAX && uav.mip_level == 0)
             image_info.imageView = image ? image->GetImageView() : nullptr;
-        else image_info.imageView = image ? image->GetImageViewForLayer(uav.array_layer, uav.mip_level) : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(
+            uav.array_layer == UINT_MAX ? 0 : uav.array_layer, uav.mip_level
+        ) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eGeneral;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
         if (UINT_MAX != destination.binding) {

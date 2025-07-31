@@ -59,7 +59,10 @@ private:
 template<typename T>
 class CVar : public CVarBase {
 public:
-    CVar(const std::string& id, const std::string& description, const T& default_value);
+    CVar(
+        const std::string& id, const std::string& description,
+        const T& default_value
+    );
 
     const T& Get() const { return value_; }
     void Set(const T& value);

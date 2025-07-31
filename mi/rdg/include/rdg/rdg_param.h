@@ -73,7 +73,7 @@ struct RDGShaderParamStructInfo : public RHIParamStructInfo {
     std::span<RDGShaderParamInfo> cpp_members {};
     // Whether this struct describes a renderpass. A renderpass should only be described via a series of render targets.
     bool CanBeRenderpass () const;
-    std::map<uint32_t /*CRC*/, int> cpp_member_index_map;
+    std::map<uint32_t /*name CRC*/, int> cpp_member_index_map;
     // Get the index of the member within all members (cpp_members). (Including pseudo-members such as vertex attributes)
     FORCEINLINE int GetCppMemberIndex(uint32_t crc) const {
         auto it = cpp_member_index_map.find(crc);

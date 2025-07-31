@@ -76,11 +76,18 @@ struct DirectLightingUB {
     float ShadowRayLengthMultiplier;
     uint32_t Unused;
 };
+struct HybridTracingUB {
+    float SSRT_RelativeTexelThickness;
+    float RayContinuationBackwardBiasFactor;
+    float DefaultTMax;
+    uint32_t Unused2;
+};
 
 BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
-    SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructured_UB)
+    SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
     SHADER_UNIFORM_BUFFER(DirectLightingUB, DirectLighting_UB)
+    SHADER_UNIFORM_BUFFER(HybridTracingUB, HybridTracing_UB)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
@@ -237,63 +244,82 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     auto precomputed_active_light_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_lights * sizeof(PackedPrecomputedLight)
     );
+    precomputed_active_light_buffer->SetName("PrecomputedActiveLightBuffer");
     auto active_light_list_count = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
+    active_light_list_count->SetName("ActiveLightListCount");
     auto active_light_list_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_lights * sizeof(uint32_t)
     );
+    active_light_list_buffer->SetName("ActiveLightListBuffer");
     auto max_num_light_grid_entries = CVar_MaxNumLightGridEntries.Get();
     auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
     auto light_grid_list_light_index_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_light_grid_entries * sizeof(uint32_t)
     );
+    light_grid_list_light_index_buffer->SetName("LightGrid_ListLightIndexBuffer");
     auto light_grid_grid_light_list_offset_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_light_grids * sizeof(uint32_t)
     );
+    light_grid_grid_light_list_offset_buffer->SetName("LightGrid_GridLightListOffsetBuffer");
     auto light_grid_grid_light_list_cdf_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_light_grids * sizeof(float)
     );
+    light_grid_grid_light_list_cdf_buffer->SetName("LightGrid_GridLightListCdfBuffer");
     auto light_grid_grid_light_list_length_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_light_grids * sizeof(uint32_t)
     );
+    light_grid_grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
     auto light_grid_bloom_filter_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_light_grid_entries * sizeof(uint32_t) * 4
     );
+    light_grid_bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
     auto light_grid_list_allocator_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
+    light_grid_list_allocator_buffer->SetName("LightGrid_ListAllocatorBuffer");
 
     uint32_t max_num_shadow_rays = view->film_width_ * view->film_height_;
 
-    auto ray_to_trace_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));
+    auto ray_to_trace_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));\
+    ray_to_trace_count->SetName("RayToTraceCount");
+
     auto ray_to_trace_list_allocator = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
+    ray_to_trace_list_allocator->SetName("RayToTraceListAllocator");
     auto ray_to_trace_list = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(uint32_t)
     );
+    ray_to_trace_list->SetName("RayToTraceList");
     auto ray_to_trace_direction = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(glm::vec3)
     );
+    ray_to_trace_direction->SetName("RayToTraceDirection");
     auto ray_to_trace_state = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(uint32_t)
     );
+    ray_to_trace_state->SetName("RayToTraceState");
     auto ray_to_trace_origin_screen_coords = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(glm::uvec2)
     );
+    ray_to_trace_origin_screen_coords->SetName("RayToTraceOriginScreenCoord");
 
     auto direct_lighting_radiance_estimate_texture = builder.CreateTexture(
     RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
-        1, 1, PixelFormatType::kR16G16B16A16_FLOAT, RHITextureUsageFlagBits::kUnorderedAccess});
+        1, 1, PixelFormatType::kR16G16B16A16_FLOAT, RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource});
+    direct_lighting_radiance_estimate_texture->SetName("DirectLightingRadianceEstimateTexture");
     auto direct_lighting_ray_index_texture = builder.CreateTexture(
     RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
-1, 1, PixelFormatType::kR32_UINT, RHITextureUsageFlagBits::kUnorderedAccess}
+1, 1, PixelFormatType::kR32_UINT, RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource}
     );
+    direct_lighting_ray_index_texture->SetName("DirectLightingRayIndexTexture");
 
     auto shadow_ray_to_trace_tmax = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(float)
     );
+    shadow_ray_to_trace_tmax->SetName("ShadowRayToTraceTMaxBuffer");
     {
         params->View = view->view_common_params_;
         auto L_UB = builder.Allocate<LightStructureUB>();
@@ -323,7 +349,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             L_UB->FrameIndex = view->persistent_data_->view_index;
             L_UB->MaxNumLights = (uint32_t)max_num_lights;
         }
-        params->LightStructured_UB = L_UB;
+        params->LightStructure_UB = L_UB;
         auto DI_UB = builder.Allocate<DirectLightingUB>();
         {
             DI_UB->FrameIndex = view->persistent_data_->view_index;
@@ -331,6 +357,13 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             DI_UB->ShadowRayLengthMultiplier = CVar_ShadowRayLengthMultiplier.Get();
         }
         params->DirectLighting_UB = DI_UB;
+        auto HT_UB = builder.Allocate<HybridTracingUB>();
+        {
+            HT_UB->SSRT_RelativeTexelThickness = 1e-4f;
+            HT_UB->RayContinuationBackwardBiasFactor = 1e-3f;
+            HT_UB->DefaultTMax = view->camera_.far_plane;
+        }
+        params->HybridTracing_UB = HT_UB;
         params->LightBuffer = light_buffer;
         params->RWPrecomputedActiveLightBuffer = precomputed_active_light_buffer.Raw();
         params->PrecomputedActiveLightBuffer = precomputed_active_light_buffer.Raw();
@@ -436,6 +469,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     }
     {
         auto shader = lib.GetShader<RenderDiffuseDirectLightingShader>(ini);
+        Helpers::Clear(builder, view->diffuse_direct_lighting_.Raw());
         Helpers::DispatchIndirectComputePass<RenderDiffuseDirectLightingShader>(
             builder, shader, params, cmd.Raw()
         );

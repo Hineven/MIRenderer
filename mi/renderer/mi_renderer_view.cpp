@@ -198,7 +198,7 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     }
 #endif
 
-    auto pass = builder.AddPass("BatchedUploadBuffers", RDGPassType::kGeneric, {}, nullptr, nullptr,
+    auto pass = builder.AddPass("BatchedUploadBuffers", RDGPassType::kGeneric, {}, {}, nullptr, nullptr,
         [staging = staging_buffer.Raw(), pending_rhi = std::move(pending_uploads_), pending_rdg = std::move(pending_rdg_uploads_)](
             [[maybe_unused]] RDGPass *pass, RHICommandQueueGraphics & queue
         ) {
@@ -223,13 +223,13 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     );
     // Add RDG buffer dependencies
     for (auto e : rdg_upload_buffers) {
-        pass->AddBuffer(e, RHIGPUAccessFlagBits::kWrite);
+        pass->AddBufferH(e, RHIGPUAccessFlagBits::kWrite);
     }
     // Add extra barriers
     std::sort(extra_barriers_.begin(), extra_barriers_.end());
     extra_barriers_.erase(std::unique(extra_barriers_.begin(), extra_barriers_.end()), extra_barriers_.end());
     for (auto e : extra_barriers_) {
-        pass->AddBuffer(e, RHIGPUAccessFlagBits::kWrite);
+        pass->AddBufferH(e, RHIGPUAccessFlagBits::kWrite);
     }
 }
 
@@ -286,28 +286,47 @@ void RendererView::InitFrame () {
         film_width_, film_height_, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
+    G_depth_->SetName("GBuffer Depth");
 
     G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
+    G_albedo_->SetName("GBuffer Albedo");
 
     G_normal_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
+    G_normal_->SetName("GBuffer Normal");
 
     G_metallic_roughness_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
+    G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
     G_volume_density_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_density_->SetName("GBuffer Volume Density");
     G_volume_min_max_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_min_max_->SetName("GBuffer Volume Min Max");
     G_volume_color_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_color_->SetName("GBuffer Volume Color");
+
+    radiance_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kRenderTarget);
+    radiance_->SetName("Radiance");
+
+    diffuse_direct_lighting_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kRenderTarget);
+    diffuse_direct_lighting_->SetName("Diffuse Direct Lighting");
 
     // Clear hzb
     hzb_ = {};

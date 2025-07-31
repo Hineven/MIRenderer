@@ -82,7 +82,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
             params->UB = builder.Allocate<MappingShader::MappingShaderUB>();
             params->UB->TextureDimensions = {face_resolution, face_resolution};
             params->UB->ViewProjectionInverse = view_proj_inv;
-            builder.AddPass<MappingShader>(RDGPassFlagBits::kNeverCull, params, [
+            builder.AddPass<MappingShader>(RDGPassFlagBits::kNeverCull, mapping_shader, params, [
                 params, mapping_shader
             ](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::Draw<MappingShader>(queue, pass, mapping_shader, params, 3);

@@ -220,7 +220,7 @@ bool RDGCommandHelper::BindGraphicsShader (
 bool RDGCommandHelper::BindComputeShader (
     RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) {
-    if (!compute_shader->IsValid()) {
+    if (!compute_shader || !compute_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid shader. Dispatch cancelled.",
             compute_shader->class_registry_->name);
         return false;

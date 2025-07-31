@@ -53,7 +53,7 @@ void Renderer::Render_DrawToOutput(
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }
     builder.AddPass<DrawToOutputShader>(
-        {}, params,
+        {}, shader, params,
         [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
             RDGCommandHelper::Draw<DrawToOutputShader>(queue, pass, shader, params, 3);
         }

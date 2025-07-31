@@ -82,8 +82,8 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & cmd) {
         cmd.CopyBuffer(vertex_staging_raw->GetSpan(), vertex_raw->GetRHI());
         cmd.CopyBuffer(index_staging_raw->GetSpan(), index_raw->GetRHI());
-    })->AddBuffer(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
-    ->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
+    })->AddBufferH(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
+    ->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
 
     // Collect all ImDrawCmd
     std::vector<ImDrawCmd> draw_cmds;
@@ -99,10 +99,10 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     }
 
     // Draw
-    builder.AddPass<ImGuiRenderShader>({}, params, [
-        index_raw = index_buffer.Raw(), draw_cmds, params
+    auto shader = RDGShaderLibrary::Get().GetShader<ImGuiRenderShader>();
+    builder.AddPass<ImGuiRenderShader>({}, shader, params, [
+        index_raw = index_buffer.Raw(), draw_cmds, params, shader
     ](RDGPass * pass, RHICommandQueueGraphics & cmd) {
-        auto shader = RDGShaderLibrary::Get().GetShader<ImGuiRenderShader>();
         RDGCommandHelper::BindGraphicsShader(cmd, pass, shader, params);
         cmd.BeginRendering();
         int vertex_offset = 0;
@@ -130,7 +130,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
             vertex_offset += draw_cmd.UserCallbackDataOffset;
         }
         cmd.EndRendering();
-    })->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
+    })->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }
 
 void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
@@ -143,10 +143,10 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
     // Clear backbuffer
     {
-        builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {},
+        builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
             [bf = backbuffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.ClearTexture(bf->GetRHI(), {0, 0, 0, 1});
-        })->AddTexture(backbuffer, RDGTextureUsageType::kTransferWrite);
+        })->AddTextureH(backbuffer, RDGTextureUsageType::kTransferWrite);
     }
 
     auto & renderer = Renderer::Get();

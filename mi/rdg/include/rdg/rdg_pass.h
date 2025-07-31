@@ -7,7 +7,7 @@
 #ifndef RDG_PASS_H
 #define RDG_PASS_H
 #include "rdg_resource.h"
-#include "rdg/rdg_base.h"
+#include "rdg/rdg_fwd.h"
 MI_NAMESPACE_BEGIN
 struct RDGShaderParamStructAndSizeInfo;
 
@@ -45,17 +45,19 @@ protected:
     );
 public:
 
-    // Add a texture to the pass, with layout and access flags. kNone for stages will be replaced with auto-detected stages.
-    RDGPass * AddTexture (RDGTexture * texture, RHITextureLayoutType layout, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) ;
     // Specify how are you using the texture in the pass. kNone for stgages will be replaced with auto-detected stages.
-    // This is a function mostly for convenience. Using AddTexture(texture, layout, ...) can achieve the same result.
-    RDGPass * AddTexture (RDGTexture * texture, RDGTextureUsageType usage, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // This is a function mostly for convenience. Using AddTexture(texture, layout, ...) for precise controls.
+    RDGPass * AddTextureH (RDGTexture * texture, RDGTextureUsageType usage, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // Describe how are you using the texture in the pass, without any heuristics
+    RDGPass * AddTexture (RDGTexture * texture, RHITextureLayoutType layout, RHIGPUAccessFlags access, RHIPipelineStageFlags stages);
     // Specify how are you using the buffer in the pass, with access flags. kNone for stgages will be replaced with auto-detected stages.
-    RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    RDGPass * AddBufferH (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // Describe how are you using the buffer in the pass, without any heuristics
+    RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) ;
     // Add an acceleration structure to the pass, with access flags. kNone for stages will be replaced with auto-detected stages.
     // NOTE: Unlike other RDG resources, this info is only used for pass dependency analysis and not used for automatic barrier placement.
     // You still have to manually place barriers for acceleration structures inside passes.
-    RDGPass * AddAS_NoAutomaticBarrier (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    RDGPass * AddASH_NoAutomaticBarrier (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
 
     FORCEINLINE void SetName (std::string name) {
         name_ = std::move(name);
@@ -105,6 +107,7 @@ protected:
 
     // Only make sense for non-generic passes
     const RDGShaderParamStructAndSizeInfo * shader_param_struct_info_ {};
+    const RDGShader * shader_ {};
     // Only make sense for non-generic passes
     const void * shader_param_data_ {};
 

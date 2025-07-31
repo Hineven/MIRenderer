@@ -87,8 +87,8 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & cmd) {
         cmd.CopyBuffer(vertex_staging_raw->GetSpan(), vertex_raw->GetRHI());
         cmd.CopyBuffer(index_staging_raw->GetSpan(), index_raw->GetRHI());
-    })->AddBuffer(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
-    ->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
+    })->AddBufferH(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite)
+    ->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
 
     // Collect all ImDrawCmd
     std::vector<ImDrawCmd> draw_cmds;
@@ -135,7 +135,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
             vertex_offset += draw_cmd.UserCallbackDataOffset;
         }
         cmd.EndRendering();
-    })->AddBuffer(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
+    })->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }
 
 void MicroMCRenderFrame(RendererView * view_state, RDGResourcePool * pool) {

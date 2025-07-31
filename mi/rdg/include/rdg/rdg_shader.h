@@ -13,9 +13,9 @@
 
 #include "rdg/rdg_base.h"
 #include "rdg/rdg_param.h"
+#include "rhi/rhi_pipeline.h"
 MI_NAMESPACE_BEGIN
-
-class RHIGraphicsPipeline;
+    class RHIGraphicsPipeline;
 class RHIComputePipeline;
 
 // Some configuration that can be used to configure the shader pipeline
@@ -80,6 +80,12 @@ struct RDGShaderHash {
     RDGShaderHash & AddUnordered (const char * marker, uint64_t v);
 };
 
+struct RDGShaderResourceAccess {
+    // kNone means that the resource is not used in the shader.
+    RHIGPUAccessFlags access {};
+    RHIPipelineStageFlags stages {};
+};
+
 class RDGShader : public RefCounted<true> {
 protected:
     RDGShader (const RDGShaderClassRegistry * class_registry) ;
@@ -90,6 +96,17 @@ public:
     friend class RDGShaderClassRegistrator;
     friend class RDGShaderLibrary;
     friend class RDGCommandHelper;
+
+    // Query the access of a shader resource by its name's crc32 hash.
+    // Note: Shader resources include textures, buffers, uniform buffers, samplers.
+    // vertex buffers, index buffers, render targets, ... are not shader resources.
+    RDGShaderResourceAccess QueryShaderAccess (uint32_t crc32) const ;
+    FORCEINLINE RDGShaderResourceAccess QueryShaderAccess (const std::string & resource_name) const {
+        return QueryShaderAccess(CRC32(resource_name.c_str(), resource_name.size()));
+    }
+
+    bool HasResourceSlot (std::string_view name) const;
+    bool HasResourceSlot (uint32_t name_crc) const;
 
     bool Recompile (RDGShaderInitializationInfo ini) ;
 
@@ -161,6 +178,11 @@ protected:
     // (the last element in the vector)
     std::vector<uint32_t> cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kMax];
 
+    // Shortcut
+    // Get the resource slot by the name of the resource reflected from shaders
+    RHIPipelineResourceSlot ReflectResourceSlot (std::string_view name) const;
+    RHIPipelineResourceSlot ReflectResourceSlot (uint32_t name_crc) const;
+
     // Get the extra compiler options for the shader with the given initialization info
     std::vector<std::string> GetExtraCompilerOptions (const RDGShaderInitializationInfo & ini) const;
 
@@ -191,7 +213,6 @@ protected:
         TRef<RHIShader> closest_hit {};
         TRef<RHIShader> any_hit {};
         TRef<RHIShader> callable {};
-
     } shaders_;
     // SBT buffer only available for ray tracing shaders.
     // They are generated on-the fly when requested for the first time.

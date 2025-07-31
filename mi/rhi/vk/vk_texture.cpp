@@ -104,7 +104,7 @@ void VulkanTexture::CreateDefaultImageViews () {
             }
     });
     // If the image is layered, create a view for each layer
-    if (GetArrayLayers() > 1) {
+    if (GetArrayLayers() > 1 || GetMipLevels() > 1) {
         assert(vk_layer_image_views_.empty());
         for (int j = 0; j < (int)GetMipLevels(); j++) {
             for (int i = 0; i < (int)GetArrayLayers(); i++) {
