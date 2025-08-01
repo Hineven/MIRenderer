@@ -330,7 +330,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             auto dist_to_max = scene_aabb.max - camera_pos;
             auto maxv = glm::max(glm::abs(dist_to_min), glm::abs(dist_to_max));
             auto hmaxv = std::max(maxv.x, std::max(maxv.y, maxv.z));
-            float grid_cell_size = float(double(hmaxv) / pow(2, kLightGridNumCascades) / kLightGridSize);
+            float grid_cell_size = 4.01f * float(double(hmaxv) / pow(2, kLightGridNumCascades) / kLightGridSize);
             L_UB->LightGridSize = glm::uvec3(kLightGridSize);
             L_UB->LightGridCellSize = grid_cell_size;
             L_UB->LightGridCenter = camera_pos;
@@ -341,8 +341,8 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             L_UB->LightGridNumGrids = L_UB->LightGridNumCascadeGrids * L_UB->LighGridNumCascadesUsed;
             L_UB->LightInjectionIntensityThreshold = CVar_LightInjectionIntensityThreshold.Get();
             for (int i = 0; i < kLightGridNumCascades; i++) {
-                auto min = camera_pos + 0.5f * glm::vec3(-grid_cell_size, -grid_cell_size, -grid_cell_size) * float(1 << i);
-                auto max = camera_pos + 0.5f * glm::vec3(grid_cell_size, grid_cell_size, grid_cell_size) * float(1 << i);
+                auto min = camera_pos + 0.5f * glm::vec3(-grid_cell_size, -grid_cell_size, -grid_cell_size) * float(kLightGridSize << i);
+                auto max = camera_pos + 0.5f * glm::vec3(grid_cell_size, grid_cell_size, grid_cell_size) * float(kLightGridSize << i);
                 L_UB->LightGridCascadeMin[i] = glm::vec4(min, 1.0f);
                 L_UB->LightGridCascadeMax[i] = glm::vec4(max, 1.0f);
             }

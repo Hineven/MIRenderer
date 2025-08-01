@@ -259,6 +259,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         enabled_features.shaderInt64 = VK_TRUE;
         enabled_features.vertexPipelineStoresAndAtomics = VK_TRUE;
         enabled_features.tessellationShader = VK_TRUE;
+        enabled_features.multiDrawIndirect = VK_TRUE;
+        enabled_features.drawIndirectFirstInstance = VK_TRUE;
 
         // 25.5.1: DO NOT use vk::PhysicalDeviceVulkan1xFeatures to replace the structs,
         // they trigger false positives in validation layers, potentially due to Vulkan SDK bugs.

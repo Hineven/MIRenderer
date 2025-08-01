@@ -50,7 +50,7 @@ StructuredBuffer<uint4> LightGrid_BloomFilterBuffer;
 RWStructuredBuffer<uint> RWLightGrid_ListAllocatorBuffer;
 
 RWStructuredBuffer<uint> RWLightGrid_ListLightIndexBuffer;
-RWStructuredBuffer<uint> RWLightGrid_GridLightListCdfBuffer;
+RWStructuredBuffer<float> RWLightGrid_GridLightListCdfBuffer;
 RWStructuredBuffer<uint> RWLightGrid_GridLightListOffsetBuffer;
 RWStructuredBuffer<uint> RWLightGrid_GridLightListLengthBuffer;
 RWStructuredBuffer<uint> RWLightGrid_BloomFilterBuffer;
@@ -125,7 +125,6 @@ RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
     RayToTrace Ray = (RayToTrace)0;
     Ray.Origin = RWRayToTraceOriginBuffer[RayIndex];
     Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
-    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
     uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
     Ray.TMax = TMax;
     Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
@@ -134,7 +133,7 @@ RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
 
 RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
     RayToTrace Ray = (RayToTrace)0;
-    Ray.OriginScreenCoord = RWRayToTraceOriginScreenCoordBuffer[RayIndex];
+    Ray.OriginScreenCoord = UnpackUint2x16(RWRayToTraceOriginScreenCoordBuffer[RayIndex]);
     Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
     uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
     Ray.TMax = TMax;
@@ -148,6 +147,8 @@ void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
     if(DispatchID == 0) {
         RWLightGrid_ListAllocatorBuffer[0] = 0;
         RWActiveLightListCount[0] = 0;
+        RWRayToTraceCount[0] = 0;
+        RWRayToTraceListAllocator[0] = 0;
     }
     uint Index = DispatchID;
     if (Index >= LightStructure_UB.LighGridNumCascadesUsed * LightStructure_UB.LightGridNumGrids) {
@@ -193,13 +194,15 @@ uint4 LightGrid_GetGridIndex(float3 Position) {
 }
 
 uint LightGrid_GetGridIndex1 (uint4 GridIndex) {
-    return GridIndex.x + GridIndex.y * LightStructure_UB.LightGridSize.x + GridIndex.z * LightStructure_UB.LightGridSize.x * LightStructure_UB.LightGridSize.y + GridIndex.w * LightStructure_UB.LightGridNumCascadeGrids;
+    return GridIndex.x + GridIndex.y * LightStructure_UB.LightGridSize.x 
+    + GridIndex.z * LightStructure_UB.LightGridSize.x * LightStructure_UB.LightGridSize.y 
+    + GridIndex.w * LightStructure_UB.LightGridNumCascadeGrids;
 }
 
 uint4 LightGrid_GetGridIndex(uint GridIndex1) {
     uint4 GridIndex = uint4(
         GridIndex1 % LightStructure_UB.LightGridSize.x,
-        GridIndex1 / LightStructure_UB.LightGridNumGrids % LightStructure_UB.LightGridSize.y,
+        GridIndex1 / LightStructure_UB.LightGridSize.x % LightStructure_UB.LightGridSize.y,
         GridIndex1 / (LightStructure_UB.LightGridSize.x * LightStructure_UB.LightGridSize.y) % LightStructure_UB.LightGridSize.z,
         GridIndex1 / LightStructure_UB.LightGridNumCascadeGrids
     );
@@ -301,8 +304,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
             WriteLocation++, NumGridLights++;
             if (WriteLocation == CandidateOffset + MAX_NUM_GRID_LIGHTS) {
                 // Overflow, time to select which group to keep
-                float Sum = SumSampledWeights + SumCandidateWeights;
-                float P = SumCandidateWeights / max(Sum, 1e-6f);
+                float P = SumCandidateWeights / max(SumWeights, 1e-6f);
                 if (U < P) { // Replace the group with the candidate group
                     uint Temp = SampledOffset;
                     SampledOffset = CandidateOffset;
@@ -321,8 +323,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     uint NumSampledLights = min(NumGridLights, MAX_NUM_GRID_LIGHTS);
     if (WriteLocation != CandidateOffset) {
         // Final swapping
-        float Sum = SumSampledWeights + SumCandidateWeights;
-        float P = SumCandidateWeights / (Sum + 1e-6f);
+        float P = SumCandidateWeights / (SumWeights + 1e-6f);
         if (U < P) { // Replace the group with the candidate group
             uint Temp = SampledOffset;
             SampledOffset = CandidateOffset;
@@ -397,18 +398,20 @@ struct LightSample {
     }
 };
 
-float3 SampleAreaLightArea(float3 V0, float3 V1, float3 V2, float2 u, out float AreaPdf) {
+float3 SampleAreaLightArea(float3 V0, float3 V1, float3 V2, float2 u, out float Area, out float AreaPdf) {
     if (u.x + u.y > 1.f) {
         u = 1.f - u;
     }
     float3 Position = InterpolateBarycentrics(V0, V1, V2, u);
-    AreaPdf = 2.f / length(cross(V1 - V0, V2 - V0));
+    Area = length(cross(V1 - V0, V2 - V0)) / 2.f;
+    AreaPdf = 2.f / max(Area, 1e-5f);
     return Position;
 }
 
 LightSample SampleLightDiffuseWithCosineWeight(float3 Position, float3 Normal, EvaluatedLight Evaluated, float2 u2) {
     LightSample Result = (LightSample)0;
-    Result.Position = SampleAreaLightArea(Evaluated.V0, Evaluated.V1, Evaluated.V2, u2, Result.Pdf);
+    float Area = 0.f;
+    Result.Position = SampleAreaLightArea(Evaluated.V0, Evaluated.V1, Evaluated.V2, u2, Area, Result.Pdf);
     float2 UV = InterpolateBarycentrics(Evaluated.UV0, Evaluated.UV1, Evaluated.UV2, u2);
     // Convert area pdf to solid angle pdf
     float Distance = length(Result.Position - Position);
@@ -416,7 +419,7 @@ LightSample SampleLightDiffuseWithCosineWeight(float3 Position, float3 Normal, E
     float3 LightNormal = normalize(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0));
     float Cosine = dot(LightNormal, -Direction);
     float ReceiverCosine = dot(Direction, Normal);
-    Result.Pdf *= Distance * Distance / saturate(Cosine);
+    Result.Pdf *= Distance * Distance / max(abs(Cosine), 1e-4f);
     float3 EvaluatedEmission = Evaluated.Emission;
     if (IsValid(Evaluated.EmissionTextureIndex))
         EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
@@ -447,10 +450,6 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
     if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
 
-    // if(all(PixelIndex == 0)) {
-    //     printf("frame id: %d\n", LightStructure_UB.FrameIndex);
-    // }
-
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
     float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
@@ -463,6 +462,10 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float3 WorldPosition = RecoverWorldPositionPixelCoords(GetActiveCamera(), PixelIndex, LinearDepth);
     float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
+    if (!IsValid(GridIndex.x)) {
+        RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+        return; // Out of light grid
+    }
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
 
     Random R = MakeRandom(PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
@@ -533,13 +536,12 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     // RWDiffuseDirectLightingTexture[PixelIndex] = float4(1.f, 0.f, 0.f, 0.f);
     if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
         // Final sample acquired, prepare visibility trace
-        float3 RadianceEstimation = ListCdf * ReservedSample.Radiance / ReservedSample.Pdf;
+        float3 RadianceEstimation = ReservedSample.Radiance / (ReservedSample.Pdf * ListCdf);
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
         TraceDirection /= TraceDistance;
         // Write to the direct lighting sample buffer
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = float4(RadianceEstimation, 1.f);
-        // Allocate rays for tracing
         bool bPrimaryThread = WaveIsFirstLane();
         uint WaveRayCount = WaveActiveCountBits(true);
         uint WaveRayOffset = 0;
@@ -547,7 +549,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
             InterlockedAdd(RWRayToTraceCount[0], WaveRayCount, WaveRayOffset);
         }
         WaveRayOffset = WaveReadLaneFirst(WaveRayOffset);
-        uint WaveLocalRayOffset = WavePrefixCountBits(true) + 1;
+        uint WaveLocalRayOffset = WavePrefixCountBits(true);
         uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
         // Write ray trace data
         RWRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
@@ -673,7 +675,7 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWRayToTraceCount[0]) return;
     RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, 0);
-    if (!RayToTrace.bHit) {
+    if (true || !RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();
         uint2 PixelIndex = RayToTrace.OriginScreenCoord;
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
