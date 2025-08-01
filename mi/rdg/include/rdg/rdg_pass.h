@@ -92,10 +92,12 @@ public:
 
 protected:
 
+    bool is_pre_compiled_ {};
+    void PreCompile () ;
+
     bool is_compiled_ {};
-    // Passes are compiled prior to RDG compilation (by the builder).
+    // Passes are pre compiled prior to RDG compilation (by the builder).
     // Gather resources accessed by the shader, initialize in/out resources and detailed resource usage
-    // Also, initialize reference holders to relating resources
     void Compile () ;
 
     std::string name_;
@@ -120,13 +122,21 @@ protected:
         std::vector<RDGBuffer*> in_buffers;
         std::vector<RHIAccelerationStructure*> in_acceleration_structures;
 
-        // Details of each resource access, and reference holding
-        std::vector<RDGTextureUsage> used_textures;
-        // Details of each resource access, and reference holding
-        std::vector<RDGBufferUsage> used_buffers;
-        // Details of each acceleration structure access
-        std::vector<RDGASUsage> used_acceleration_structures;
+        // Details of each resource access after compilation and alias binning, and reference holding
+        std::vector<RDGTextureUsage> textures;
+        // Details of each resource access after compilation and alias binning, and reference holding
+        std::vector<RDGBufferUsage> buffers;
+        // Details of each acceleration structure access after compilation and alias binning
+        std::vector<RDGASUsage> acceleration_structures;
     } compiled_; // Generated after compilation
+
+
+    // Keep references for resources used in the pass prior to compilation.
+    std::vector<RDGTextureUsage> used_textures;
+    // Keep references for resources used in the pass prior to compilation.
+    std::vector<RDGBufferUsage> used_buffers;
+    // Keep references for resources used in the pass prior to compilation.
+    std::vector<RDGASUsage> used_acceleration_structures;
 
     // This is filled up by the RDG builder upon spawning the pass
     std::vector<RDGPass*> successive_passes_;

@@ -106,8 +106,8 @@ void Renderer::Render_HardwareShadowRayTracing(
         RDGCommandHelper::DispatchRaysIndirect<TraceShadowRaysShader>(
             queue, pass, shader, params, in_cmd
         );
-    }
-);
+        }
+    )->AddBuffer(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
 }
 
 

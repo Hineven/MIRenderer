@@ -19,6 +19,7 @@ FORCEINLINE explicit operator unsigned () const { return flags; }               
 FORCEINLINE FlagName##Flags operator ~ () const { return ~flags; }                        \
 FORCEINLINE bool operator==(FlagName##Flags other) const { return flags == other.flags; } \
 FORCEINLINE bool operator!=(FlagName##Flags other) const { return flags != other.flags; } \
+FORCEINLINE FlagName##Flags & operator|=(FlagName##Flags other) { flags |= other.flags; return * this; } \
 }; \
 FORCEINLINE FlagName##Flags operator|(FlagName##FlagBits a, FlagName##FlagBits b) { \
 return static_cast<FlagName##Flags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \

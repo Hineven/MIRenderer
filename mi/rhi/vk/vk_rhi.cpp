@@ -284,6 +284,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDeviceTimelineSemaphoreFeatures,
                 vk::PhysicalDeviceFloat16Int8FeaturesKHR,
                 vk::PhysicalDevice8BitStorageFeaturesKHR,
+                vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR,
                 vk::PhysicalDeviceHostQueryResetFeatures,
                 vk::PhysicalDeviceRayQueryFeaturesKHR
         > extended_features;
@@ -328,7 +329,10 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         storage_8bit.storageBuffer8BitAccess = VK_TRUE;
         storage_8bit.uniformAndStorageBuffer8BitAccess = VK_TRUE;
 
-        auto & host_query_reset = std::get<22>(extended_features);
+        auto & rt_maintence1 = std::get<22>(extended_features);
+        rt_maintence1.rayTracingPipelineTraceRaysIndirect2 = true;
+
+        auto & host_query_reset = std::get<23>(extended_features);
         host_query_reset.hostQueryReset = VK_TRUE;
 
         auto & RT_features = std::get<1>(extended_features);
@@ -368,7 +372,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         sync2.synchronization2 = VK_TRUE;
 
         #ifndef NDEBUG
-        auto & rayqry = std::get<23>(extended_features);
+        auto & rayqry = std::get<24>(extended_features);
         rayqry.rayQuery = VK_TRUE;
         #endif
 

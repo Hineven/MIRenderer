@@ -248,6 +248,7 @@ namespace PipelineReflection {
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
         std::string name;
+        RHIGPUAccessFlags access_flags;
         // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
         uint32_t array_size;
     };
@@ -314,9 +315,10 @@ namespace ShaderReflection {
         IRBindingDecorationLocation locations;
         uint32_t name_crc;
         std::string name;
+        RHIGPUAccessFlags access_flags;
         uint32_t array_size;
         FORCEINLINE PipelineReflection::UAVDesc ToPipelineDesc() const {
-            return {name_crc, 0, name, array_size};
+            return {name_crc, 0, name,  access_flags, array_size};
         }
     };
     struct SRVDesc {

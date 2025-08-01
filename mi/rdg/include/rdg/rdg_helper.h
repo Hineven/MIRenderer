@@ -25,6 +25,7 @@ public:
 
     template<CShaderType T>
     FORCEINLINE static RDGPass * DispatchComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) {
+        if (!shader) return nullptr;
         return builder.AddPass<T>({}, shader, params,
             [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::Dispatch<T>(queue, pass, shader, params, x, y, z);
@@ -34,6 +35,7 @@ public:
 
     template<CShaderType T>
     FORCEINLINE static RDGPass * DispatchIndirectComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer) {
+        if (!shader || !indirect_buffer) return nullptr;
         return builder.AddPass<T>({}, shader, params,
             [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::DispatchIndirect<T>(queue, pass, shader, params, indirect_buffer);

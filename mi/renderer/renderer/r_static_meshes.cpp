@@ -15,9 +15,10 @@
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_static_mesh.h"
+#include "rhi/rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
-class DrawStaticMeshesShader : public RDGShader {
+    class DrawStaticMeshesShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -61,11 +62,14 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
     for (auto & e : ctx.visible_renderables) {
         if (auto mesh_instance = e->As<StaticMeshInstance>()) {
             auto mesh = mesh_instance->GetStaticMesh();
-            for (auto [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
+            for (const auto& [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
                 auto dev = geom->GetDeviceGeometry();
                 RHIDrawIndexedIndirectCommand cmd {};
-                cmd.first_instance = 0;
-                cmd.first_index = dev->GetDeviceFirstIndex();
+                cmd.first_instance = e->GetIndex();
+                // The offset within its index uber buffer
+                cmd.first_index = (uint32_t)(dev->GetDeviceIndexBuffer()->GetOffset() / sizeof(uint32_t));
+                // The offset within its vertex uber buffer
+                cmd.vertex_offset = (uint32_t)(dev->GetDeviceVertexBuffer()->GetOffset() / sizeof(DefaultStaticMeshVertex));
                 cmd.instance_count = 1;
                 cmd.index_count = geom->GetIndexCount();
 
@@ -74,8 +78,8 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
                 header.material_index = mat->GetDeviceMaterial()->GetIndex();
                 header.world_renderable_handle = e->GetIndex();
 
-                header.vertex_buffer = dev->GetDeviceVertexBuffer()->GetRHI();
-                header.index_buffer = dev->GetDeviceIndexBuffer()->GetRHI();
+                header.vertex_buffer = dev->GetDeviceVertexBuffer()->GetRHI().buffer;
+                header.index_buffer = dev->GetDeviceIndexBuffer()->GetRHI().buffer;
                 header.indirect_command = cmd;
 
                 data.draw_invocation_sorting_headers.push_back(header);
@@ -100,8 +104,8 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
         // Sort the headers, batch draw calls with the same vertex & index buffer
         std::sort(data.draw_invocation_sorting_headers.begin(), data.draw_invocation_sorting_headers.end(),
             [](const DrawInvocationSortingHeader & a, const DrawInvocationSortingHeader & b) {
-                if (a.vertex_buffer.buffer != b.vertex_buffer.buffer) return a.vertex_buffer.buffer < b.vertex_buffer.buffer;
-                return a.index_buffer.buffer < b.index_buffer.buffer;
+                if (a.vertex_buffer != b.vertex_buffer) return a.vertex_buffer < b.vertex_buffer;
+                return a.index_buffer < b.index_buffer;
             }
         );
         // Generate and upload indirect commands & extra buffers for draw
@@ -152,25 +156,24 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
                 queue, pass, shader, params, true
             )) {
                 queue.BeginRendering();
-                RHIBufferSpan last_vertex_buffer {};
-                RHIBufferSpan last_index_buffer {};
+                RHIBuffer * last_vertex_buffer {};
+                RHIBuffer * last_index_buffer {};
                 RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
                 for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
-                    // auto & cmd = indirect_commands[i];
                     auto & hdr = data.draw_invocation_sorting_headers[i];
                     if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
                         if (i > 0) {
                             // Batch submit previous commands sharing the same vertex & index buffer settings.
                             auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
                             queue.DrawIndexedIndirect(
-                                data.draw_invocation_sorting_headers[i-1].index_buffer,
+                                data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
                                 cmd_span,  i - first_cmd
                             );
                             cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                         }
                         last_vertex_buffer = hdr.vertex_buffer;
                         last_index_buffer = hdr.index_buffer;
-                        queue.BindVertexBuffer(0, hdr.vertex_buffer);
+                        queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
                     }
                 }
                 // Submit last batch if not empty
@@ -179,7 +182,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
                     // Batch submit previous commands sharing the same vertex & index buffer settings.
                     auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
                     queue.DrawIndexedIndirect(
-                        data.draw_invocation_sorting_headers[i-1].index_buffer,
+                        data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
                         cmd_span,  i - first_cmd);
                 }
                 queue.EndRendering();

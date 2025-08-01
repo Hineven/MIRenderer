@@ -98,7 +98,8 @@ TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &bui
         return nullptr;
     }
     auto command = RDGBuffer::Create(
-        RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage,
+        RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kShaderDeviceAddress, // cmdTraceRaysIndirect requires the address of the indirect commandfer
         sizeof(RHITraceRaysIndirectCommand)
     );
     command->SetName("TraceRaysIndirectCommand1D");

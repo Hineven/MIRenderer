@@ -32,7 +32,6 @@ bool GLTFLoader::LoadGLTF(
     std::vector<TRef<Material> > &out_materials,
     std::vector<TRef<StaticMeshInstance> > &out_meshes
 ) {
-    assert(out_geometries.empty() && out_materials.empty() && out_meshes.empty() && "Outputs should be empty");
     assert(!path.empty());
     cgltf_options options = {};
     cgltf_data *gltf_model = nullptr;
@@ -355,7 +354,7 @@ bool GLTFLoader::LoadGLTF(
     cgltf_scene const &gltf_scene = gltf_model->scene != nullptr ? *gltf_model->scene : gltf_model->scenes[0];
     for(size_t i = 0; i < gltf_scene.nodes_count; ++i)
         VisitNode(gltf_scene.nodes[i], glm::mat4(1.0));
-    out_meshes = mesh_instances;
+    out_meshes.insert(out_meshes.end(), mesh_instances.begin(), mesh_instances.end());
     for (auto e : materials) {
         out_materials.push_back(e.second);
     }

@@ -205,8 +205,25 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
         } else {
             for (auto e : meshes) {
-                e->EditTransform().scale *= 0.1f; // Scale down the model
+                e->EditTransform().scale *= 0.02f; // Scale down the model
             }
+        }
+        model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/triangle_light/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene,
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+            for (auto e : meshes) {
+                e->EditTransform().scale *= 1; // Scale down the model
+            }
+        }
+        auto & r = Renderer::Get();
+        for (auto e : meshes) {
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
     }
 

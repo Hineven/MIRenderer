@@ -499,7 +499,8 @@ FORCEINLINE vk::BufferUsageFlags GetVulkanBufferUsage (RHIBufferUsageFlags usage
     if(usage & (RHIBufferUsageFlagBits::kAccelerationStructureStorage |
                 RHIBufferUsageFlagBits::kAccelerationStructureBuildInput |
                 RHIBufferUsageFlagBits::kShaderBindingTable |
-                RHIBufferUsageFlagBits::kAccelerationStructureScratch)) {
+                RHIBufferUsageFlagBits::kAccelerationStructureScratch |
+                RHIBufferUsageFlagBits::kShaderDeviceAddress)) {
         vk_usage |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
     }
 

@@ -140,13 +140,13 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
         return this; // If no access or stages are specified, do not add the texture.
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_textures.emplace_back(texture);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_textures.emplace_back(texture);
-    compiled_.used_textures.emplace_back(layout, access, stages, texture);
-    if (access & RHIGPUAccessFlagBits::kRead) {
-        compiled_.in_textures.emplace_back(texture);
-    }
-    if (access & RHIGPUAccessFlagBits::kWrite) {
-        compiled_.out_textures.emplace_back(texture);
-    }
+    used_textures.emplace_back(layout, access, stages, texture);
+    // if (access & RHIGPUAccessFlagBits::kRead) {
+    //     compiled_.in_textures.emplace_back(texture);
+    // }
+    // if (access & RHIGPUAccessFlagBits::kWrite) {
+    //     compiled_.out_textures.emplace_back(texture);
+    // }
     return this;
 }
 
@@ -204,13 +204,13 @@ RDGPass *RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipe
     }
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
-    compiled_.used_buffers.emplace_back(access, stages, buffer);
-    if (access & RHIGPUAccessFlagBits::kRead) {
-        compiled_.in_buffers.emplace_back(buffer);
-    }
-    if (access & RHIGPUAccessFlagBits::kWrite) {
-        compiled_.out_buffers.emplace_back(buffer);
-    }
+    used_buffers.emplace_back(access, stages, buffer);
+    // if (access & RHIGPUAccessFlagBits::kRead) {
+    //     compiled_.in_buffers.emplace_back(buffer);
+    // }
+    // if (access & RHIGPUAccessFlagBits::kWrite) {
+    //     compiled_.out_buffers.emplace_back(buffer);
+    // }
     return this;
 }
 
@@ -242,14 +242,14 @@ RDGPass *RDGPass::AddASH_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPU
             assert(false && "Unsupported RDGPassType for acceleration structure.");
         }
     }
-    compiled_.used_acceleration_structures.emplace_back(access, stages, as);
+    used_acceleration_structures.emplace_back(access, stages, as);
     return this;
 }
 
 
-void RDGPass::Compile() {
+void RDGPass::PreCompile() {
 
-    assert(!is_compiled_ && "Each pass may only be compiled once.");
+    assert(!is_pre_compiled_ && "Each pass may only be pre compiled once.");
     // No need to compile as we have no shader parameters present
     if (shader_param_struct_info_) {
         assert(shader_param_data_);
@@ -286,7 +286,7 @@ void RDGPass::Compile() {
                 AddTexture(texture,
                     RHITextureLayoutType::kShaderReadOnlyOptimal,
                     // Sometimes there are storage read access (texture.Load())
-                    RHIGPUAccessFlagBits::kShaderRead | access,
+                    RHIGPUAccessFlagBits::kShaderSampledRead | access,
                     stages
                 );
             }
@@ -400,7 +400,103 @@ void RDGPass::Compile() {
             }
         }
     }
+    is_pre_compiled_ = true;
+}
+
+void RDGPass::Compile() {
+    assert(!is_compiled_);
+    // Detect resource aliasing for textures and spawn final relations
+    // Textures
+    {
+        std::map<void*, RDGTextureUsage*> combined_textures;
+        for (auto & e : used_textures) {
+            auto it = combined_textures.find(e.texture.Raw());
+            if (it != combined_textures.end()) {
+                // If the texture is already in the map, merge the usage
+                it->second->access |= e.access;
+                it->second->stages |= e.stages;
+                // Detect layout.
+                if (it->second->access & RHIGPUAccessFlagBits::kShaderSampledRead
+                && it->second->access & RHIGPUAccessFlagBits::kShaderStorageRW) {
+                    // Downgrade to general layout to keep compatible with sampled read and storage rw
+                    it->second->layout = RHITextureLayoutType::kGeneral;
+                }
+            } else {
+                // Otherwise, insert a new entry
+                combined_textures[e.texture.Raw()] = &e;
+            }
+        }
+        // Add to compiled
+        for (auto e : combined_textures) {
+            auto & usage = *e.second;
+            compiled_.textures.emplace_back(usage);
+            if (usage.access & RHIGPUAccessFlagBits::kRead) {
+                compiled_.in_textures.emplace_back(usage.texture.Raw());
+            }
+            if (usage.access & RHIGPUAccessFlagBits::kWrite) {
+                compiled_.out_textures.emplace_back(usage.texture.Raw());
+            }
+            if (usage.access & RHIGPUAccessFlagBits::kShaderSampledRead
+                && usage.access & RHIGPUAccessFlagBits::kShaderStorageRW) {
+                // It's suggested to avoid using both sampled read and storage rw on the same texture.
+                // Pop a warning
+                MI_WARN("Pass {}, Texture {}: Using both sampled read and storage read/write on the same texture is not recommended. "
+                        "This may cause performance downgrade.",
+                        name_, usage.texture->GetName());
+            }
+        }
+        used_textures.clear();
+    }
+    // Buffers
+    {
+        std::map<void*, RDGBufferUsage*> combined_buffers;
+        for (auto & e : used_buffers) {
+            auto it = combined_buffers.find(e.buffer.Raw());
+            if (it != combined_buffers.end()) {
+                it->second->access |= e.access;
+                it->second->stages |= e.stages;
+            } else {
+                combined_buffers[e.buffer.Raw()] = &e;
+            }
+        }
+        for (auto e : combined_buffers) {
+            auto & usage = *e.second;
+            compiled_.buffers.emplace_back(usage);
+            if (usage.access & RHIGPUAccessFlagBits::kRead) {
+                compiled_.in_buffers.emplace_back(usage.buffer.Raw());
+            }
+            if (usage.access & RHIGPUAccessFlagBits::kWrite) {
+                compiled_.out_buffers.emplace_back(usage.buffer.Raw());
+            }
+        }
+        used_buffers.clear();
+    }
+    // AS
+    {
+        std::map<void*, RDGASUsage*> combined_acceleration_structures;
+        for (auto & e : used_acceleration_structures) {
+            auto it = combined_acceleration_structures.find(e.as);
+            if (it != combined_acceleration_structures.end()) {
+                it->second->access |= e.access;
+                it->second->stages |= e.stages;
+            } else {
+                combined_acceleration_structures[e.as] = &e;
+            }
+        }
+        for (auto e : combined_acceleration_structures) {
+            auto & usage = *e.second;
+            compiled_.acceleration_structures.emplace_back(usage);
+            if (usage.access & RHIGPUAccessFlagBits::kRead) {
+                compiled_.in_acceleration_structures.emplace_back(usage.as);
+            }
+            if (usage.access & RHIGPUAccessFlagBits::kWrite) {
+                compiled_.out_acceleration_structures.emplace_back(usage.as);
+            }
+        }
+        used_acceleration_structures.clear();
+    }
     is_compiled_ = true;
 }
+
 
 MI_NAMESPACE_END

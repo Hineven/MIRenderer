@@ -346,13 +346,13 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
                 L_UB->LightGridCascadeMin[i] = glm::vec4(min, 1.0f);
                 L_UB->LightGridCascadeMax[i] = glm::vec4(max, 1.0f);
             }
-            L_UB->FrameIndex = view->persistent_data_->view_index;
+            L_UB->FrameIndex = view->persistent_data_->frame_index_;
             L_UB->MaxNumLights = (uint32_t)max_num_lights;
         }
         params->LightStructure_UB = L_UB;
         auto DI_UB = builder.Allocate<DirectLightingUB>();
         {
-            DI_UB->FrameIndex = view->persistent_data_->view_index;
+            DI_UB->FrameIndex = view->persistent_data_->frame_index_;
             DI_UB->ShadowRayTMax = view->camera_.far_plane;
             DI_UB->ShadowRayLengthMultiplier = CVar_ShadowRayLengthMultiplier.Get();
         }

@@ -205,6 +205,17 @@ static uint64_t PreprocessAndComputeHash(
         hash_value = XXH64(preprocessed_code->GetBufferPointer(), preprocessed_code->GetBufferSize(), 0);
         
         preprocessed_code->Release();
+    } else {
+        // 如果预处理失败，获取错误信息
+        IDxcBlobEncoding *error_blob;
+        preprocess_result->GetErrorBuffer(&error_blob);
+        if (error_blob) {
+            std::string error_message(static_cast<const char*>(error_blob->GetBufferPointer()), error_blob->GetBufferSize() - 1);
+            MI_LOG(MIInfraLogType::kError, "HLSL Preprocessing Error: {}", error_message);
+            error_blob->Release();
+        } else {
+            MI_LOG(MIInfraLogType::kError, "HLSL Preprocessing Failed with unknown error.");
+        }
     }
     
     preprocess_result->Release();
@@ -361,9 +372,16 @@ uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
     for (size_t i = 0; i < w_options.size(); i++) {
         w_options_cstr[i] = w_options[i].c_str();
     }
-    
+
+    uint64_t hash_value = 0;
+
+    // Include extra options in the hash
+    for (const auto& e : options) {
+        hash_value = XXH64(e.c_str(), e.size() * sizeof(char), hash_value);
+    }
+
     // 计算预处理后代码的哈希值
-    uint64_t hash_value = PreprocessAndComputeHash(
+    hash_value ^= PreprocessAndComputeHash(
         dxc_compiler, 
         ctx->include_handler, 
         hlsl_blob, 

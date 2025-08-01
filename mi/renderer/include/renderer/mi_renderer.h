@@ -54,8 +54,8 @@ protected:
     struct DrawInvocationSortingHeader {
         uint32_t material_index;
         uint32_t world_renderable_handle;
-        RHIBufferSpan vertex_buffer;
-        RHIBufferSpan index_buffer;
+        RHIBuffer * vertex_buffer;
+        RHIBuffer * index_buffer;
         RHIDrawIndexedIndirectCommand indirect_command;
     };
 

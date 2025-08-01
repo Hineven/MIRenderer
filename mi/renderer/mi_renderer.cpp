@@ -120,6 +120,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         }
     }
 
+    // Update scene AABB
+    view->scene_->UpdateAABB();
+
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
     std::vector<glm::mat3x3> renderable_normal_transforms;
@@ -173,7 +176,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     {
         auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
         auto instance_data_bytesize = instance_count * instance_size;
-        auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc>(instance_count);
+
+        auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc[]>(instance_count);
+
         auto instance_data = builder.Allocate(instance_data_bytesize);
         for (const auto& [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
             auto renderable = all_renderables[e]->As<StaticMeshInstance>();

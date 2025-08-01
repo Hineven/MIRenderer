@@ -98,6 +98,8 @@ enum class RHIBufferUsageFlagBits : uint32_t {
     kAccelerationStructureBuildInput = 1u<<9,
     kShaderBindingTable = 1u<<10,
     kAccelerationStructureScratch = 1u<<11,
+    // The buffer can have an address in shaders
+    kShaderDeviceAddress = 1u<<12,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIBufferUsage)

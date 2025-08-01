@@ -510,6 +510,11 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         return {};
     }
     std::vector<std::string> extra_options = GetExtraCompilerOptions(ini_);
+    // Insert default macros
+    auto default_macros = class_registry_->GetShaderDefaultMacros();
+    for (const auto & macro : default_macros) {
+        extra_options.emplace_back("-D" + macro);
+    }
 
     RDGShaderHash shader_hash {};
 

@@ -66,7 +66,7 @@ RDGPass * RenderGraphBuilder::AddPass(
 #endif
     auto pass = std::unique_ptr<RDGPass>(ptr);
     // Compile the pass, to keep references to RDG resources alive
-    pass->Compile();
+    pass->PreCompile();
     // Add to the pass list
     passes_.push_back(std::move(pass));
     return ptr;
@@ -132,7 +132,10 @@ RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RHITextureLayoutT
 
 
 TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
-
+    // Compile all passes first
+    for (auto & e : passes_) {
+        e->Compile();
+    }
     std::map<void*, std::vector<RDGPass*>> in_resource_pass_map;
     std::map<void*, std::vector<RDGPass*>> out_resource_pass_map;
     std::vector<std::unique_ptr<RDGPass>> culled_passes;
@@ -301,25 +304,26 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
     }
 #ifndef NDEBUG
     param_struct_ptr_to_data_crc.clear();
-    // Check resource aliasing
+    // Check resource aliasing. Aliased resources should have been dealt with when compiling the passes.
     for (auto & pass : graph->passes_) {
         {
             std::set<void*> buffer_ptrs;
-            for (auto buffer : pass->compiled_.used_buffers) {
+            for (auto buffer : pass->compiled_.buffers) {
                 if (!buffer_ptrs.insert(buffer.buffer.Raw()).second) {
                     MI_WARN("Found shader buffer aliasing in pass '{}', buffer '{}' is assigned to multiple shader parameters and actively used.",
                         pass->GetName(), buffer.buffer->GetName());
                 }
             }
             std::set<void*> texture_ptrs;
-            for (auto texture : pass->compiled_.used_textures) {
-                if (!texture_ptrs.insert(texture.texture.Raw()).second) {
+            for (auto texture : pass->compiled_.textures) {
+                auto result = texture_ptrs.insert(texture.texture.Raw());
+                if (!result.second) {
                     MI_WARN("Found shader texture aliasing in pass '{}', texture '{}' is assigned to multiple shader parameters and actively used.",
                         pass->GetName(), texture.texture->GetName());
                 }
             }
             std::set<void*> as_ptrs;
-            for (auto as : pass->compiled_.used_acceleration_structures) {
+            for (auto as : pass->compiled_.acceleration_structures) {
                 if (!as_ptrs.insert(as.as).second) {
                     MI_WARN("Found shader acceleration structure aliasing in pass '{}', AS '{}' is assigned to multiple shader parameters and actively used.",
                         pass->GetName(), as.as->GetName());

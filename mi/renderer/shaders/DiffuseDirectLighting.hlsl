@@ -438,12 +438,18 @@ RWTexture2D<float4> RWDirectLightingRadianceEstimateTexture; // Output buffer fo
 Texture2D<float> G_HiZBuffer;
 Texture2D<float> G_HistoryDepth;
 
+Texture2D<float4> DirectLightingRadianceEstimateTexture;
+RWTexture2D<float4> RWDiffuseDirectLightingTexture;
 
 // Dispatch a thread for each grid
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
     uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
     if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
+
+    // if(all(PixelIndex == 0)) {
+    //     printf("frame id: %d\n", LightStructure_UB.FrameIndex);
+    // }
 
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
@@ -524,6 +530,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
             }
         }
     }
+    // RWDiffuseDirectLightingTexture[PixelIndex] = float4(1.f, 0.f, 0.f, 0.f);
     if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
         // Final sample acquired, prepare visibility trace
         float3 RadianceEstimation = ListCdf * ReservedSample.Radiance / ReservedSample.Pdf;
@@ -657,9 +664,6 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 }
 
 // HWRT...
-
-Texture2D<float4> DirectLightingRadianceEstimateTexture;
-RWTexture2D<float4> RWDiffuseDirectLightingTexture;
 
 // Render diffuse direct lighting using trace results
 // 1 thread per ray

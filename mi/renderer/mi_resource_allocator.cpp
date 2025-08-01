@@ -48,6 +48,7 @@ material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_me
         RHIBufferUsageFlagBits::kStorage,
         1, 16 * 1024
     );
+    area_lights_uber_buffer_->SetName("AreaLightsUberBuffer");
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {

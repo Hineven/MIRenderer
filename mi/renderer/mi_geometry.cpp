@@ -73,13 +73,12 @@ void Geometry::UpdateOnDevice_Async(DeviceBindlessResourceAllocator *alloc, RHIC
         Helpers::Upload_Async(queue, device_geometry_->vertex_buffer_->GetRHI(), vertices_.data(), GetVertexBufferSize());
         Helpers::Upload_Async(queue, device_geometry_->index_buffer_->GetRHI(), indices_.data(), GetIndexBufferSize());
         // Update geometry header
-        device_geometry_->first_index_ = 0;
         device_geometry_->vertex_count_ = (int)vertices_.size();
         device_geometry_->index_count_ = (int)indices_.size();
         auto index = device_geometry_->GetIndex();
         auto geometry_header = GeometryHeader {
             (uint32_t)(device_geometry_->vertex_buffer_->GetOffset() / sizeof(DefaultStaticMeshVertex)),
-            (uint32_t)(device_geometry_->index_buffer_->GetOffset() / sizeof(uint32_t)) + device_geometry_->first_index_,
+            (uint32_t)(device_geometry_->index_buffer_->GetOffset() / sizeof(uint32_t)),
             device_geometry_->vertex_count_, device_geometry_->index_count_
         };
         Helpers::Upload_Async(queue, alloc->GetGeometryHeaderBuffer(), index * sizeof(GeometryHeader), geometry_header);

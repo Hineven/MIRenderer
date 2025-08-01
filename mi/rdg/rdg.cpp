@@ -61,10 +61,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     // Prepare resource counters
     for (auto & e : passes_) {
-        for (auto & texture : e->compiled_.used_textures) {
+        for (auto & texture : e->compiled_.textures) {
             texture.texture->execution_ref_counter ++;
         }
-        for (auto & buffer : e->compiled_.used_buffers) {
+        for (auto & buffer : e->compiled_.buffers) {
             buffer.buffer->execution_ref_counter ++;
         }
         // for (auto & as : e->compiled_.used_acceleration_structures) {
@@ -157,11 +157,11 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         ready_passes.pop();
         auto &pass = passes_[pass_index];
         // printf("Pass: %s\n", pass->name_.c_str());
-        // Get resources ready
-        for (const auto& texture_use : pass->compiled_.used_textures) {
+        // Get resources ready in the pool
+        for (const auto& texture_use : pass->compiled_.textures) {
             texture_use.texture->RequestRHI(pool);
         }
-        for (const auto & buffer_use : pass->compiled_.used_buffers) {
+        for (const auto & buffer_use : pass->compiled_.buffers) {
             buffer_use.buffer->RequestRHI(pool);
         }
         // Add debug marker, group the passes with the same names
@@ -183,7 +183,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         // Place resource barriers.
         // RHIPipelineStageFlags current_stages = pass->GetStageFlags();
         {
-            auto num_barriers = pass->compiled_.used_textures.size();
+            auto num_barriers = pass->compiled_.textures.size();
             uint32_t num_barriers_used = 0;
             auto textures = cmd.Allocate<RHITexture*[]>(num_barriers);
             auto layouts = cmd.Allocate<RHITextureLayoutType[]>(num_barriers);
@@ -191,7 +191,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            for (const auto & texture_use : pass->compiled_.used_textures) {
+            for (const auto & texture_use : pass->compiled_.textures) {
                 if (texture_use.texture->GetRHI()) {
                     textures[num_barriers_used] = texture_use.texture->GetRHI();
                     src_accesses[num_barriers_used] = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
@@ -208,14 +208,14 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             if (num_barriers_used) cmd.TextureBarriers(num_barriers_used, textures, layouts, src_stages, dst_stages, src_accesses, dst_accesses);
         }
         {
-            auto num_barriers = pass->compiled_.used_buffers.size();
+            auto num_barriers = pass->compiled_.buffers.size();
             auto num_barriers_used = 0;
             auto buffers = cmd.Allocate<RHIBufferSpan[]>(num_barriers);
             auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
             auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            for (const auto & buffer_use: pass->compiled_.used_buffers) {
+            for (const auto & buffer_use: pass->compiled_.buffers) {
                 if (buffer_use.buffer->GetRHI()) {
                     buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
                     src_stages[num_barriers_used] = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
@@ -240,7 +240,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             }
         }
         // Release resource counters
-        for (auto & texture_use : pass->compiled_.used_textures) {
+        for (auto & texture_use : pass->compiled_.textures) {
             if (texture_use.texture->GetRHI()) {
                 texture_use.texture->execution_ref_counter --;
                 if (texture_use.texture->execution_ref_counter == 0) {
@@ -248,7 +248,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
             }
         }
-        for (auto & buffer_use : pass->compiled_.used_buffers) {
+        for (auto & buffer_use : pass->compiled_.buffers) {
             if (buffer_use.buffer->GetRHI()) {
                 buffer_use.buffer->execution_ref_counter --;
                 if (buffer_use.buffer->execution_ref_counter == 0) {

@@ -30,8 +30,6 @@ protected:
     // Device related data (manually released to the allocator)
     TRef<DeviceUberBufferAllocation> vertex_buffer_;
     TRef<DeviceUberBufferAllocation> index_buffer_;
-    // The first index to draw of the geometry in the bindless device index buffer.
-    uint32_t first_index_ {};
     uint32_t vertex_count_ {};
     uint32_t index_count_ {};
 
@@ -56,10 +54,6 @@ public:
     }
     FORCEINLINE DeviceUberBufferAllocation * GetDeviceIndexBuffer () const {
         return index_buffer_.Raw();
-    }
-
-    FORCEINLINE uint32_t GetDeviceFirstIndex () const {
-        return first_index_;
     }
 };
 

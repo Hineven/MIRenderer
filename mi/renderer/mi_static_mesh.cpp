@@ -110,7 +110,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
                         RHIVertexAttributeFormatType::k3xFp32,
                         RHIBufferSpan{
                             device_geom->GetDeviceIndexBuffer()->GetRHI().buffer,
-                            device_geom->GetDeviceIndexBuffer()->GetRHI().offset + sizeof(uint32_t) * device_geom->GetDeviceFirstIndex(),
+                            device_geom->GetDeviceIndexBuffer()->GetRHI().offset,
                             device_geom->GetDeviceIndexBuffer()->GetRHI().size
                         },
                         (uint32_t)device_geom->GetIndexCount(),
@@ -243,7 +243,9 @@ TRef<StaticMeshInstance> StaticMeshInstance::Create(Scene *scene, StaticMesh * s
     return {};
 }
 RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
-    return  {};
+    return std::bit_cast<RenderableHeader>(StaticMeshInstanceHeader{
+        GetStaticMesh()->GetDeviceStaticMesh()->GetIndex(), 0, 0, 0
+    });
 }
 
 

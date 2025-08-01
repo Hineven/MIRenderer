@@ -155,6 +155,10 @@ static RHIGPUAccessFlags GetAccessFlags (auto elem) {
     if constexpr(requires{elem.access_flags;}) {
         return elem.access_flags;
     }
+    // specially, for srv, it is always shader sampled read
+    if constexpr(std::is_same_v<std::remove_cvref_t<decltype(elem)>, PipelineReflection::SRVDesc>) {
+        return RHIGPUAccessFlagBits::kShaderSampledRead;
+    }
     return RHIGPUAccessFlagBits::kNone;
 }
 

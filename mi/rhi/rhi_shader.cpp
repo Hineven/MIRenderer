@@ -159,10 +159,41 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             storage_buffers_.push_back(desc);
         }
     }
-    ReflectResources.operator()<UAVDesc>( shader_resources.storage_images, uavs_);
+    // Manually reflect storage textures to separate RW / R only textures
+    {
+        for (auto & resource : shader_resources.storage_images) {
+            UAVDesc desc {};
+            desc.name = compiler_hlsl.get_name(resource.id);
+            if constexpr (THasArraySize<UAVDesc>::value) {
+                auto type = compiler_hlsl.get_type(resource.type_id);
+                if (type.array.size() > 0) {
+                    if (type.array.size() != 1 || !type.array_size_literal[0]) {
+                        MI_WARN("Shader {}: Resource {} is multi-dimensional array ({} dimensions) or its size is not a literal."
+                                "We only support 1 dimension array.", GetEntryName(), desc.name, type.array.size());
+                        continue ;
+                    }
+                    desc.array_size = type.array[0];
+                    if (!desc.array_size) desc.array_size = UINT32_MAX; // Unknown bound is reflected to 0, in our implementation we use UINT32_MAX
+                } else {
+                    // If the resource is not an array, we set the array size to 0.
+                    desc.array_size = 0;
+                }
+            }
+
+            compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationBinding, desc.locations.binding_offset);
+            compiler_hlsl.get_binary_offset_for_decoration(resource.id, spv::DecorationDescriptorSet, desc.locations.set_offset);
+            desc.name_crc = CRC32(desc.name.data(), desc.name.size());
+
+            // TODO analyse the read-write access for storage images
+            // now defaults to RW
+            desc.access_flags = RHIGPUAccessFlagBits::kShaderStorageRW;
+
+            uavs_.push_back(desc);
+        }
+    }
     ReflectResources.operator()<SRVDesc>( shader_resources.separate_images, srvs_);
-    ReflectResources.operator()<SamplerDesc>( shader_resources.separate_samplers, samplers_);
     ReflectResources.operator()<AccelerationStructureDesc>( shader_resources.acceleration_structures, acceleration_structures_);
+    ReflectResources.operator()<SamplerDesc>(shader_resources.separate_samplers, samplers_);
     for (auto & resource : shader_resources.push_constant_buffers) {
         CommandConstantDesc desc;
         desc.name = resource.name;

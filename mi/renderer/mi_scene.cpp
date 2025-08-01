@@ -18,8 +18,11 @@ MI_NAMESPACE_BEGIN
 DeviceScene::DeviceScene () {
     auto & rhi = RHI::Get();
     d_renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_transforms_->SetName("RenderableTransforms");
     d_renderable_normal_transforms_ = rhi.CreateBuffer(sizeof(glm::mat3x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_normal_transforms_->SetName("RenderableNormalTransforms");
     d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_headers_->SetName("RenderableHeaders");
 }
 
 DeviceScene::~DeviceScene() {
@@ -65,13 +68,31 @@ void Scene::CreateOnDevice() {
 
 void Scene::UpdateAABB() {
     aabb_ = {};
+    auto update = [&](glm::vec3 p, glm::mat4 transform) {
+        auto world_pw = transform * glm::vec4(p, 1.0f);
+        auto world_p = glm::vec3(world_pw.x, world_pw.y, world_pw.z) / world_pw.w;
+        aabb_.min = glm::min(aabb_.min, world_p);
+        aabb_.max = glm::max(aabb_.max, world_p);
+    };
     for (const auto & renderable : renderables_) {
         if (renderable) {
             auto aabb = renderable->GetAABB();
             if (aabb.IsValid()) {
-                aabb_.min = glm::min(aabb_.min, aabb.min);
-                aabb_.max = glm::max(aabb_.max, aabb.max);
+                auto transform = renderable->GetTransform().GetToWorldTransformMatrix();
+                update(aabb.min, transform);
+                update(aabb.max, transform);
+                update(glm::vec3(aabb.min.x, aabb.min.y, aabb.max.z), transform);
+                update(glm::vec3(aabb.min.x, aabb.max.y, aabb.min.z), transform);
+                update(glm::vec3(aabb.min.x, aabb.max.y, aabb.max.z), transform);
+                update(glm::vec3(aabb.max.x, aabb.min.y, aabb.min.z), transform);
+                update(glm::vec3(aabb.max.x, aabb.min.y, aabb.max.z), transform);
+                update(glm::vec3(aabb.max.x, aabb.max.y, aabb.min.z), transform);
             }
+#ifndef NDEBUG
+            if (glm::any(glm::isnan(aabb_.min)) || glm::any(glm::isnan(aabb_.max))) {
+                MI_WARN("Scene AABB for renderable {} contains NaN values.", renderable->GetIndex());
+            }
+#endif
         }
     }
 }

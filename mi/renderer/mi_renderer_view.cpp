@@ -319,13 +319,13 @@ void RendererView::InitFrame () {
     radiance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kRenderTarget);
+        | RHITextureUsageFlagBits::kTransfer);
     radiance_->SetName("Radiance");
 
     diffuse_direct_lighting_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kRenderTarget);
+        | RHITextureUsageFlagBits::kTransfer);
     diffuse_direct_lighting_->SetName("Diffuse Direct Lighting");
 
     // Clear hzb

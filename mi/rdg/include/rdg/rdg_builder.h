@@ -94,13 +94,23 @@ public:
 
     // Allocate temporary memory that lives up to the end of the graph execution.
     // Useful for trasfering data to pass lambdas
-    template<CMemTrivial T>
-    FORCEINLINE T * Allocate (bool zero_before_construction = true) {
+    template<CMemTrivial T, typename BoolType = bool>
+    FORCEINLINE T * Allocate (BoolType zero_before_construction = true) {
+        static_assert(std::is_same_v<BoolType, bool>, "The parameter to Allocate must be a bool "
+                                                      "(zero_before_construction), this may be confusing with other Allocate() functions.");
         auto ptr = static_cast<T*>(Allocate(sizeof(T)));
         if (zero_before_construction) {
             memset(ptr, 0, sizeof(T));
         }
         new (ptr) T();
+        return ptr;
+    }
+
+    template<CAOUB T>
+    FORCEINLINE std::remove_extent_t<T> * Allocate (uint32_t num_elements) {
+        using elem_type = std::remove_extent_t<T>;
+        auto ptr = static_cast<elem_type*>(Allocate(sizeof(elem_type) * num_elements));
+        for (uint32_t i = 0; i < num_elements; i++) new (ptr + i) elem_type();
         return ptr;
     }
 
