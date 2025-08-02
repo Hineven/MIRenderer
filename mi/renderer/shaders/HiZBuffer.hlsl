@@ -3,29 +3,53 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include "headers/Camera.hlsl"
+ #include "resources/CommonSamplerResources.hlsl"
 
 #ifndef TILE_SIZE
 // This can be overridden by compiler options.
 #define TILE_SIZE 16
 #endif
 
+Texture2D<float> InDepthBuffer;
 RWTexture2D<float> RWInHiZBuffer;
 RWTexture2D<float> RWOutHiZBuffer;
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
-void ComputeHiZBuffer(uint3 DispatchID : SV_DispatchThreadID)
+void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
 {
-    uint2 TexCoords = DispatchID.xy;
+    uint2 TexCoords = DispatchID;
 
     // Each thread computes one pixel in the output mip.
     // This corresponds to a 2x2 region in the input mip.
     uint2 InTexCoords = TexCoords * 2;
-
+#ifndef DEPTH_AS_INPUT
     float D0 = RWInHiZBuffer[InTexCoords + uint2(0, 0)];
     float D1 = RWInHiZBuffer[InTexCoords + uint2(1, 0)];
     float D2 = RWInHiZBuffer[InTexCoords + uint2(0, 1)];
     float D3 = RWInHiZBuffer[InTexCoords + uint2(1, 1)];
+#else
+    uint2 Dimensions, DepthDimensions;
+    RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
+    InDepthBuffer.GetDimensions(DepthDimensions.x, DepthDimensions.y);
+    float2 HZB_UV = (TexCoords + 0.25f) / Dimensions;
+    CameraParameters C = GetActiveCamera();
+    float2 Depth_UV = HZB_UV * C.HZBToUVScale;
+    float2 DeltaDepth_UV = C.HZBBaseTexelSize * C.HZBToUVScale * 0.5f;
+    float2 P0 = Depth_UV;
+    float2 P1 = Depth_UV + float2(DeltaDepth_UV.x, 0);
+    float2 P2 = Depth_UV + float2(0, DeltaDepth_UV.y);
+    float2 P3 = Depth_UV + DeltaDepth_UV;
 
+    float D0 = InDepthBuffer.SampleLevel(PointClampSampler, P0, 0);
+    float D1 = InDepthBuffer.SampleLevel(PointClampSampler, P1, 0);
+    float D2 = InDepthBuffer.SampleLevel(PointClampSampler, P2, 0);
+    float D3 = InDepthBuffer.SampleLevel(PointClampSampler, P3, 0);
+    if(any(D0 >= 1.f)) D0 = 0.f;
+    if(any(D1 >= 1.f)) D1 = 0.f;
+    if(any(D2 >= 1.f)) D2 = 0.f;
+    if(any(D3 >= 1.f)) D3 = 0.f;
+#endif
     // We want the max depth (furthest away).
     // In many depth buffer setups (like reversed-Z), this means the maximum float value.
     float MaxDepth = max(max(D0, D1), max(D2, D3));
