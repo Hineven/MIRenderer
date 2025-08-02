@@ -32,12 +32,11 @@ public:
         free_segments_.emplace(0, max_num_elements_);
     }
     FORCEINLINE size_t Allocate(size_t num_elements) {
+        num_elements = (num_elements + alignment - 1) / alignment * alignment; // Align the number of elements to the alignment
         // Simply iterate through all free segments and find the first one that can fit the allocation.
         Segment * found = {};
         for (auto & segment : free_segments_) {
-            size_t aligned_start = (segment.start_index + alignment - 1) / alignment * alignment;
-            size_t aligned_end = aligned_start + num_elements;
-            if (aligned_end <= segment.end_index && aligned_end <= max_num_elements_) {
+            if (segment.end_index >= segment.start_index + num_elements) {
                 // Found a segment that can fit the allocation
                 found = const_cast<Segment*>(&segment);
                 break;
@@ -57,6 +56,7 @@ public:
         return start_index;
     }
     FORCEINLINE void Free(size_t start_index, size_t num_elements) {
+        num_elements = (num_elements + alignment - 1) / alignment * alignment; // Align the number of elements to the alignment
         size_t end_index = start_index + num_elements;
         mi_assert(start_index < max_num_elements_ && end_index <= max_num_elements_, "Invalid segment range.");
         // Find the segment that contains the start index
