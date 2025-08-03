@@ -59,18 +59,18 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     mi_assert(RDG_IsInRDGExecution() == false, "Cannot execute RDG graph while another graph is executing. (which should be impossible!)");
     is_rdg_executing = true;
 
+    std::set<RDGResource*> rdg_resources;
+
     // Prepare resource counters
     for (auto & e : passes_) {
         for (auto & texture : e->compiled_.textures) {
+            rdg_resources.insert(texture.texture.Raw());
             texture.texture->execution_ref_counter ++;
         }
         for (auto & buffer : e->compiled_.buffers) {
+            rdg_resources.insert(buffer.buffer.Raw());
             buffer.buffer->execution_ref_counter ++;
         }
-        // for (auto & as : e->compiled_.used_acceleration_structures) {
-            // AccelerationStructure doesn't have ref counter like RDG resources,
-            // but we track usage for barrier generation
-        // }
     }
 
     // Directly use the graphics queue.
@@ -244,6 +244,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             if (texture_use.texture->GetRHI()) {
                 texture_use.texture->execution_ref_counter --;
                 if (texture_use.texture->execution_ref_counter == 0) {
+                    assert(!(texture_use.texture->GetFlags() & RDGResourceFlagBits::kExport));
                     texture_use.texture->ReleaseRHI();
                 }
             }
@@ -252,6 +253,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             if (buffer_use.buffer->GetRHI()) {
                 buffer_use.buffer->execution_ref_counter --;
                 if (buffer_use.buffer->execution_ref_counter == 0) {
+                    assert(!(buffer_use.buffer->GetFlags() & RDGResourceFlagBits::kExport));
                     buffer_use.buffer->ReleaseRHI();
                 }
             }

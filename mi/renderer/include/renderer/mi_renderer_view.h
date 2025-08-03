@@ -80,6 +80,8 @@ struct RendererViewPersistentData {
     TRef<RDGTexture> prev_G_normal;
     TRef<RDGTexture> prev_G_roughness;
 
+    TRef<RDGTexture> prev_radiance_;
+
     Camera prev_camera;
     uint32_t view_index {};
     uint32_t frame_index_ {};

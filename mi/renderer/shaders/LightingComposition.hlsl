@@ -5,12 +5,22 @@
 #define TILE_SIZE 16
 #endif
 
+struct LightingCompositionUB {
+    uint EnableAccumulation;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
+};
+
+ConstantBuffer<LightingCompositionUB> UB;
+
 Texture2D<float4> DiffuseDirectLightingTexture;
 //Texture2D<float4> HistoryDiffuseDirectLightingTexture;
 
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
 
+Texture2D<float4> HistoryRadiance;
 RWTexture2D<float4> RWRadiance;
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
@@ -32,5 +42,12 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
 
     Radiance += DiffuseDirectLighting * AlbedoAlpha.rgb;
 
-    RWRadiance[PixelIndex] = float4(Radiance, 1.0f);
+    float3 OldRadiance = HistoryRadiance.SampleLevel(PointClampSampler, UV, 0).rgb;
+    float LerpFactor = 0.01f;
+    if(UB.EnableAccumulation == 0) {
+        OldRadiance = 0;
+        LerpFactor = 1;
+    }
+
+    RWRadiance[PixelIndex] = float4(lerp(OldRadiance, Radiance, LerpFactor), 1.0f);
 }

@@ -19,14 +19,28 @@ static CVar<float> CVar_Exposure(
     0.0f
 );
 
+static CVar<bool> CVar_EnableAccumulation(
+    "r.enable_accumulation",
+    "Enable accumulation for final radiance across frames",
+    false
+);
+
+
+
 class LightingCompositionShader : public RDGShader {
 public:
+    struct LightingCompositionUB {
+        uint32_t EnableAccumulation;
+        uint32_t Padding[3]; // Padding to make it 16 bytes aligned
+    };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_UNIFORM_BUFFER(LightingCompositionUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, IndirectDiffuseLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
+        SHADER_RESOURCE_PARAMETER(Texture2D, HistoryRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
     END_SHADER_PARAMETERS()
@@ -47,15 +61,21 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     auto shader = lib.GetShader<LightingCompositionShader>();
     auto params = builder.Allocate<LightingCompositionShader::ShaderParameters>();
     params->View = view->view_common_params_;
+    auto UB = builder.Allocate<LightingCompositionShader::LightingCompositionUB>();
+    {
+        UB->EnableAccumulation = CVar_EnableAccumulation.Get() ? 1 : 0;
+    }
+    params->UB = UB;
     params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
     params->IndirectDiffuseLightingTexture = nullptr;
     params->G_Albedo = view->G_albedo_.Raw();
     params->G_Emission = view->G_emission_.Raw();
+    params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
     params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
     auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);
     auto groups_y = DivideAndRoundUp(view->film_height_, LightingCompositionShader::kTileSize);
-    Helpers::DispatchComputePass(builder, shader, params, groups_x, groups_y);
+    Helpers::DispatchComputePass(builder, shader, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);
 }
 
 

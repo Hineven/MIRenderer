@@ -36,8 +36,9 @@ static CVar<int> CVar_FinalOutputType(
     "Final output on screen.\n"
     "0 - Radiance\n"
     "1 - Albedo\n"
-    "2 - Direct lighting\n",
-    2
+    "2 - Direct lighting\n"
+    "3 - Prev Radiance\n",
+    0
 );
 
 Renderer::Renderer() {
@@ -312,6 +313,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
         else if (type == 2)
             Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
+        else if (type == 3)
+            Render_DrawToOutput(view, builder, view->persistent_data_->prev_radiance_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
     // Update persistent data using current frame for next frame use

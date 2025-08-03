@@ -95,7 +95,7 @@ RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags pr
     buffer->write_access_ = prev_access & RHIGPUAccessFlagBits::kWrite;
     buffer->read_stages_ = (prev_access & RHIGPUAccessFlagBits::kRead) ? prev_stages : RHIPipelineStageFlagBits::kNone;
     buffer->write_stages_ = (prev_access & RHIGPUAccessFlagBits::kWrite) ? prev_stages : RHIPipelineStageFlagBits::kNone;
-    buffer->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport;
+    buffer->flags_ = RDGResourceFlagBits::kImported;
     {
         auto original_name = resource->GetName();
         if (original_name) buffer->SetName(original_name);
@@ -120,7 +120,7 @@ RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RHITextureLayoutT
     texture->read_stages_ = (prev_access & RHIGPUAccessFlagBits::kRead) ? prev_stages : RHIPipelineStageFlagBits::kNone;
     texture->write_stages_ = (prev_access & RHIGPUAccessFlagBits::kWrite) ? prev_stages : RHIPipelineStageFlagBits::kNone;
     texture->current_layout_ = prev_layout;
-    texture->flags_ = RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport;
+    texture->flags_ = RDGResourceFlagBits::kImported;
     {
         auto original_name = resource->GetName();
         if (original_name) texture->SetName(original_name);

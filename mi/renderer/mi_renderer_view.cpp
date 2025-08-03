@@ -264,6 +264,8 @@ void RendererViewPersistentData::Update(RendererView *view) {
     prev_G_albedo = view->G_albedo_;
     prev_G_roughness = view->G_metallic_roughness_;
 
+    prev_radiance_ = view->radiance_;
+
     prev_scene_ = view->scene_;
 
     frame_index_ ++;
@@ -287,6 +289,7 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
     G_depth_->SetName("GBuffer Depth");
+    G_depth_->SetExport();
 
     G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
@@ -326,6 +329,7 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     radiance_->SetName("Radiance");
+    radiance_->SetExport();
 
     diffuse_direct_lighting_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,

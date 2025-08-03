@@ -273,27 +273,32 @@ float EstimateLightGridContribution(PrecomputedLight L, float3 GridMin, float Gr
 
 // A coarse estimtion used for light -> point contribution
 float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal) {
-	return L.Intensity;
- // FIXME: bug
+	float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
+    float3 ToLightCenter = LightCenter - Position;
+    float DistanceSq = dot(ToLightCenter, ToLightCenter);
 
-    float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
-    float3 ToLight = LightCenter - Position;
+    float3 ToV0 = L.V0 - Position;
+    float3 ToV1 = L.V1 - Position;
+    float3 ToV2 = L.V2 - Position;
+
+    float w0 = saturate(dot(Normal, normalize(ToV0)));
+    float w1 = saturate(dot(Normal, normalize(ToV1)));
+    float w2 = saturate(dot(Normal, normalize(ToV2)));
+
+    float TotalWeight = w0 + w1 + w2;
+
+    float3 ToLightDirection = normalize(ToV0 * w0 + ToV1 * w1 + ToV2 * w2);
+
+    if (dot(L.Normal, -ToLightDirection) <= 0.0f) {
+        return 0.0f;
+    }
+
     float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
     float LightRadiusSq = LightArea / PI;
-    float DistanceSq = dot(ToLight, ToLight);
-    float3 ToLightDirection = normalize(ToLight);
 
-    float CosineLight = saturate(dot(L.Normal, -ToLightDirection));
-
-    // Lambertian
-    float CosineSurface = saturate(dot(Normal, ToLightDirection));
-
-
-    float Attenuation = 1.0f / (DistanceSq + LightRadiusSq);
-
-    return (L.Intensity / LightArea) * CosineLight * CosineSurface * Attenuation;
+    float SolidAngle = PI * LightRadiusSq / (DistanceSq + LightRadiusSq);
+    return L.Intensity * SolidAngle / PI * TotalWeight;
 }
-
 // Dispatch a thread for each grid
 groupshared uint SharedListElementsRequired, SharedListOffsetBase;
 groupshared uint SharedGridLightListIndices[WAVE_SIZE * MAX_NUM_GRID_LIGHTS * 2];
@@ -400,7 +405,7 @@ void AddLightToSampler(inout LightSampler LS, float Weight, uint Index) {
     LS.SumWeight += Weight;
     for (uint i = 0; i < NUM_LIGHT_SAMPELR_SAMPLES; i++) {
         bool bSelect = false;
-        if (LS.ActiveLightListIndex[i] == INVALID_UINT || U > LS.SampleU[i]) bSelect = true;
+        if (U > LS.SampleU[i]) bSelect = true;
         if (bSelect) {
             LS.ActiveLightListIndex[i] = Index;
             LS.SampleU[i] = LS.SampleU[i] / U;
@@ -427,7 +432,7 @@ float3 SampleAreaLightArea(float3 V0, float3 V1, float3 V2, float2 u, out float 
     }
     float3 Position = InterpolateBarycentrics(V0, V1, V2, u);
     Area = length(cross(V1 - V0, V2 - V0)) / 2.f;
-    AreaPdf = 2.f / max(Area, 1e-5f);
+    AreaPdf = 1.f / max(Area, 1e-5f);
     return Position;
 }
 
@@ -501,12 +506,16 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     uint GridLightListOffset = LightGrid_GridLightListOffsetBuffer[GridIndex1];
     float ListCdf = LightGrid_GridLightListCdfBuffer[GridIndex1];
     
+    uint NumNonZeroGridLights = 0;
     if (bUniformGrid) {
         for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
             uint ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
             PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
             float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
-            AddLightToSampler(LS, Weight, ActiveLightListIndex);
+            if(Weight > 0.f) {
+                AddLightToSampler(LS, Weight, ActiveLightListIndex);
+                NumNonZeroGridLights ++;
+            }
         }
     } else {
         // Process the light with the minimum index in the grid
@@ -520,48 +529,61 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
             if (WaveMinLightIndex == ActiveLightListIndex) {
                 PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
                 float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
-                AddLightToSampler(LS, Weight, ActiveLightListIndex);
+                if (Weight > 0.f) {
+                    // Add the light to the sampler
+                    AddLightToSampler(LS, Weight, ActiveLightListIndex);
+                    NumNonZeroGridLights ++;
+                }
                 LightListIndex++;
             }
             Iteration++;
         }
     }
-    float SumResampleWeights = 0.f, ReservedSampleResampleWeight = 0.f;
+    float SumResampleWeights = 0.f, SumTargetWeigts = 0.f;
     float U = R.rand();
+    uint NumValidSamples = 0;
+    float3 SumResampleWeights3 = 0.f;
     LightSample ReservedSample = (LightSample)0;
     // Spawn 1 sample for each light, and resample from the samples
     for (int SamplerLightListIndex = 0; SamplerLightListIndex < NUM_LIGHT_SAMPELR_SAMPLES; SamplerLightListIndex++) {
         uint ActiveLightListIndex = LS.ActiveLightListIndex[SamplerLightListIndex];
-        uint LightIndex = ActiveLightListBuffer[ActiveLightListIndex];
-        EvaluatedLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
-        float2 u2 = R.rand2();
-        LightSample Sample = SampleLightDiffuseWithCosineWeight(WorldPosition, WorldNormal, Evaluated, u2);
-        // Clip samples with low pdf (potential fireflies)
-        if (Sample.IsValid() && Sample.Pdf > 0.01f) {
-            float CandidateWeight = LS.Weights[SamplerLightListIndex] / LS.SumWeight;
-            // Perception based weight (log (x + c))
-            float TargetSampleWeight = dot(Sample.Radiance / Sample.Pdf, 1.f.xxx);
-// FIXME
-			TargetSampleWeight = 1.f;
-            // RIS
-            float ResampleWeight = TargetSampleWeight / max(CandidateWeight, 1e-7f);
-            if (ResampleWeight > 1e-4f) {
-                float NewSumResampleWeights = SumResampleWeights + ResampleWeight;
-                float CurrentLightU = ResampleWeight / NewSumResampleWeights;
-                if (CurrentLightU > U) {
-                    U /= CurrentLightU;
-                    ReservedSample = Sample;
-                    ReservedSampleResampleWeight = ResampleWeight;
-                } else {
-                    U = (U - CurrentLightU) / max(1 - CurrentLightU, 1e-7f);
+		if(IsValid(ActiveLightListIndex)) {
+            uint LightIndex = ActiveLightListBuffer[ActiveLightListIndex];
+            EvaluatedLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
+            float2 u2 = R.rand2();
+            LightSample Sample = SampleLightDiffuseWithCosineWeight(WorldPosition, WorldNormal, Evaluated, u2);
+            // Clip samples with low pdf (potential fireflies)
+            if (Sample.IsValid() && Sample.Pdf > 0.001f) {
+                NumValidSamples ++;
+                float LightCdf = LS.Weights[SamplerLightListIndex] / LS.SumWeight;
+                // Pdf of the proposal distribution (hemisphere)
+                float ProposedPdf = LightCdf * Sample.Pdf;
+                // Target pdf (light contribution)
+                float3 TargetPdf3Unnormalized = Sample.Radiance / Sample.Pdf;
+                float TargetPdfUnnormalized = dot(TargetPdf3Unnormalized, 1.f.xxx);
+                // RIS
+                float3 ResampleWeight3 = TargetPdf3Unnormalized / ProposedPdf;
+                float ResampleWeight = TargetPdfUnnormalized / max(ProposedPdf, 1e-7f);
+                if (ResampleWeight > 1e-4f) {
+                    float CurrentLightU = ResampleWeight / (SumResampleWeights + ResampleWeight);
+                    SumResampleWeights3 += ResampleWeight3;
+                    SumResampleWeights += ResampleWeight;
+                    if (CurrentLightU > U) {
+                        U /= CurrentLightU;
+                        ReservedSample = Sample;
+                    } else {
+                        U = (U - CurrentLightU) / max(1 - CurrentLightU, 1e-7f);
+                    }
                 }
-                SumResampleWeights = NewSumResampleWeights;
             }
-        }
+		}
     }
     if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
         // Final sample acquired, prepare visibility trace
-        float3 RadianceEstimation = ReservedSample.Radiance / (ReservedSample.Pdf * ListCdf) * NumGridLights;
+        // Estimate the radiance from a single light.
+        float3 RadianceEstimation = SumResampleWeights3 / NumValidSamples;
+        // Account for overflowing lights that have not been injected into the grid.
+        RadianceEstimation /= ListCdf;
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
         TraceDirection /= TraceDistance;
@@ -579,8 +601,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         // Write ray trace data
         RWRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
         RWRayToTraceOriginScreenCoordBuffer[RayIndex] = PackUint2x16(PixelIndex);
-        // FIXME
-        RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.1f, false);
+        RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
         RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
         
         RWDirectLightingRayIndexTexture[PixelIndex] = RayIndex;
@@ -704,19 +725,5 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float3 Estimate = DirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
         RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate, 1.f);
-
-        if(false) {
-            float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
-            float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
-            if (ReversedZDepth == 0) {
-                RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
-                return; // Skip empty pixels
-            }
-
-            float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-            float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
-            float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
-            RWDiffuseDirectLightingTexture[PixelIndex] = float4(WorldNormal, 1.f);
-        }
     }
 }

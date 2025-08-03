@@ -32,11 +32,16 @@ public:
     FORCEINLINE bool IsImported () const {return flags_ & RDGResourceFlagBits::kImported;}
 
     // This should never be called internally by the RDG or in pass lambdas!
-    FORCEINLINE void SetExport () {
-        assert(!RDG_IsInRDGExecution() && execution_ref_counter < 1);
-        flags_ = flags_ | RDGResourceFlagBits::kExport;
-        // Set the execution_ref_counter to 1, so that the resource will not be evicted from the pool.
-        execution_ref_counter = 1;
+    FORCEINLINE void SetExport (bool should_export = true) {
+        assert(!RDG_IsInRDGExecution() && execution_ref_counter <= 1);
+        if (should_export) {
+            flags_ = flags_ | RDGResourceFlagBits::kExport;
+            // Set the execution_ref_counter to 1, so that the resource will not be evicted from the pool.
+            execution_ref_counter = 1;
+        } else {
+            flags_ = flags_ & ~RDGResourceFlagBits::kExport;
+            execution_ref_counter = 0;
+        }
     }
     FORCEINLINE RDGResourceFlags GetFlags () const {return flags_;}
 

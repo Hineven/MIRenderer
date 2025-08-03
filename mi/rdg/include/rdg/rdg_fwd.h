@@ -25,6 +25,7 @@ MAKE_FLAGS(RDGPass);
 enum class RDGResourceFlagBits : unsigned {
     kNone = 0,
     // The resource is used for exportation (for presentation, etc.), making passes writing to it never culled.
+    // Also, make sure that the resource is not released till the end of execution of graphs.
     kExport = 1 << 0,
     // Whether the resource is imported from external RHI resource. (thus should not be related to the pool)
     // Imported resources are also created with kExport flag.

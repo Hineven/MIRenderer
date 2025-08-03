@@ -24,9 +24,9 @@ public:
     static TRef<RDGBuffer> SpawnTraceRaysIndirectCommand1D (RenderGraphBuilder & builder, RDGShader * ray_tracing_shader, RDGBuffer * count_buffer) ;
 
     template<CShaderType T>
-    FORCEINLINE static RDGPass * DispatchComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) {
+    FORCEINLINE static RDGPass * DispatchComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
         if (!shader) return nullptr;
-        return builder.AddPass<T>({}, shader, params,
+        return builder.AddPass<T>(flags, shader, params,
             [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::Dispatch<T>(queue, pass, shader, params, x, y, z);
             }
