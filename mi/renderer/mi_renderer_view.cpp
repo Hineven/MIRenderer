@@ -298,6 +298,11 @@ void RendererView::InitFrame () {
         |RHITextureUsageFlagBits::kRenderTarget);
     G_normal_->SetName("GBuffer Normal");
 
+    G_emission_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        |RHITextureUsageFlagBits::kRenderTarget);
+    G_emission_->SetName("GBuffer Emission");
+
     G_metallic_roughness_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);
@@ -328,7 +333,7 @@ void RendererView::InitFrame () {
         | RHITextureUsageFlagBits::kTransfer);
     diffuse_direct_lighting_->SetName("Diffuse Direct Lighting");
 
-    // Clear hzb
+    // Clear hzb, this is later created
     hzb_ = {};
 
     // Clear debug output texture
@@ -388,6 +393,7 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     while (hzb_size < film_width_ || hzb_size < film_height_) {
         hzb_size *= 2;
     }
+    hzb_size /= 2;
     camera.HZBDimensions = glm::uvec2(hzb_size);
     float FilmViewportWorldHeight = 1;
     float FilmViewportWorldWidth = FilmViewportWorldHeight * aspect_ratio;
@@ -396,20 +402,20 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
 
     camera.InvFilmDimensions = {1.0f / float(film_width_), 1.0f / float(film_height_)};
     camera.UVToHZBScale = {
-        (float)film_width_ / (float)hzb_size, (float)film_height_ / (float)hzb_size
+        (float)film_width_ / (2 * (float)hzb_size), (float)film_height_ / (2 * (float)hzb_size)
     };
 
     camera.HZBBaseTexelSize = {
         1.0f / (float)hzb_size, 1.0f / (float)hzb_size
     };
     camera.HZBToUVScale = {
-        (float)hzb_size / (float)film_width_, (float)hzb_size / (float)film_height_
+        2 * (float)hzb_size / (float)film_width_, 2 * (float)hzb_size / (float)film_height_
     };
 
     glm::mat4 view_matrix = glm::lookAt(
         camera_.position, camera_.position + camera_.direction, camera_.up
     );
-    glm::mat4 proj_matrix = glm::perspective(
+    glm::mat4 proj_matrix = glm::perspectiveRH_ZO(
         camera_.fov_Y, float(film_width_) / float(film_height_), camera_.near_plane, camera_.far_plane
     );
     camera.WorldToNDC = proj_matrix * view_matrix;
@@ -421,7 +427,7 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
             persistent_data_->prev_camera.position, persistent_data_->prev_camera.position + persistent_data_->prev_camera.direction,
             persistent_data_->prev_camera.up
         );
-        glm::dmat4 prev_camera_proj_matrix = glm::perspective(
+        glm::dmat4 prev_camera_proj_matrix = glm::perspectiveRH_ZO(
             persistent_data_->prev_camera.fov_Y, float(film_width_) / float(film_height_),
             persistent_data_->prev_camera.near_plane, persistent_data_->prev_camera.far_plane
         );
