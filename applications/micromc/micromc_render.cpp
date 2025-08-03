@@ -104,10 +104,10 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     }
 
     // Draw
-    builder.AddPass<ImGuiRenderShader>({}, params, [
-        index_raw = index_buffer.Raw(), draw_cmds, params
+    auto shader = RDGShaderLibrary::Get().GetShader<ImGuiRenderShader>();
+    builder.AddPass<ImGuiRenderShader>({}, shader, params, [
+        index_raw = index_buffer.Raw(), draw_cmds, params, shader
     ](RDGPass * pass, RHICommandQueueGraphics & cmd) {
-        auto shader = RDGShaderLibrary::Get().GetShader<ImGuiRenderShader>();
         RDGCommandHelper::BindGraphicsShader(cmd, pass, shader, params);
         cmd.BeginRendering();
         int vertex_offset = 0;
@@ -146,10 +146,10 @@ void MicroMCRenderFrame(RendererView * view_state, RDGResourcePool * pool) {
 
     // Clear backbuffer
     {
-        builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {},
+        builder.AddPass("ClearBackBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
             [bf = backbuffer]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.ClearTexture(bf->GetRHI(), {0, 0, 0, 1});
-        })->AddTexture(backbuffer, RDGTextureUsageType::kTransferWrite);
+        })->AddTextureH(backbuffer, RDGTextureUsageType::kTransferWrite);
     }
 
     auto & renderer = Renderer::Get();

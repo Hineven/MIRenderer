@@ -45,10 +45,10 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     float D1 = InDepthBuffer.SampleLevel(PointClampSampler, P1, 0);
     float D2 = InDepthBuffer.SampleLevel(PointClampSampler, P2, 0);
     float D3 = InDepthBuffer.SampleLevel(PointClampSampler, P3, 0);
-    if(any(D0 >= 1.f)) D0 = 0.f;
-    if(any(D1 >= 1.f)) D1 = 0.f;
-    if(any(D2 >= 1.f)) D2 = 0.f;
-    if(any(D3 >= 1.f)) D3 = 0.f;
+    if(any(P0 >= 1.f)) D0 = 1.f;
+    if(any(P1 >= 1.f)) D1 = 1.f;
+    if(any(P2 >= 1.f)) D2 = 1.f;
+    if(any(P3 >= 1.f)) D3 = 1.f;
 #endif
     // We want the max depth (furthest away).
     // In many depth buffer setups (like reversed-Z), this means the maximum float value.

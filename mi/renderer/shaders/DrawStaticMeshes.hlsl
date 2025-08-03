@@ -27,7 +27,7 @@ VS_Output VS_Main (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_Insta
     float3x4 ToWorldTransform = RenderableTransforms[RenderableIndex];
     float3x3 ToWorldNormalTransform = RenderableNormalTransforms[RenderableIndex];
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
-    float3 WorldNormal   = mul(ToWorldNormalTransform, Vertex.Normal);
+    float3 WorldNormal   = normalize(mul(ToWorldNormalTransform, Vertex.Normal));
     float4 PositionW = mul(View.Camera.WorldToNDC_ReversedZ, float4(WorldPosition, 1));
 
     VS_Output Output = (VS_Output)0;
@@ -42,7 +42,8 @@ VS_Output VS_Main (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_Insta
 struct PS_Output {
     float4 AlbedoAlpha : SV_TARGET0;
     float4 Normal : SV_TARGET1;
-    float4 MetallicRoughness : SV_TARGET2;
+    float4 Emission : SV_TARGET2;
+    float4 MetallicRoughness : SV_TARGET3;
 };
 
 PS_Output PS_Main (VS_Output Input) {
@@ -51,6 +52,7 @@ PS_Output PS_Main (VS_Output Input) {
     PS_Output Output = (PS_Output)0;
     Output.AlbedoAlpha = float4(Material.Albedo, 1);
     Output.Normal = float4(Input.Normal, 0);
+    Output.Emission = float4(Material.Emissive, 1);
     Output.MetallicRoughness = float4(Material.Metallic, Material.Roughness, 0, 1);
     if(IsValid(Material.AlbedoMap)) {
         if (bPointSampled) {
@@ -81,6 +83,13 @@ PS_Output PS_Main (VS_Output Input) {
             NormalMapSample.z * Normal
         );
     }
+    if(IsValid(Material.EmissiveMap)) {
+        if (bPointSampled) {
+            Output.Emission = GetBindlessSRV(Material.EmissiveMap).Sample(PointSampler, Input.UV);
+        } else {
+            Output.Emission = GetBindlessSRV(Material.EmissiveMap).Sample(Sampler, Input.UV);
+        }
+    }
     if(IsValid(Material.MetallicRoughnessMap)) {
         float2 MetallicRoughness;
         if (bPointSampled) {
@@ -90,5 +99,7 @@ PS_Output PS_Main (VS_Output Input) {
         }
         Output.MetallicRoughness = float4(MetallicRoughness.x, MetallicRoughness.y, 0, 1);
     }
+    // Squash normal to [0,1]
+    Output.Normal.xyz = (Output.Normal.xyz * 0.5f) + 0.5f;
     return Output;
 }

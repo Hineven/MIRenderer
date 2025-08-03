@@ -150,12 +150,12 @@ bool GLTFLoader::LoadGLTF(
         materials[&gltf_material] = material_ref;
     }
     typedef std::pair<TRef<Geometry>, TRef<Material>> geometry_material_pair;
-    std::map<cgltf_mesh const *, std::vector<geometry_material_pair>> mesh_map;
+    std::map<cgltf_mesh const *, TRef<StaticMesh>> mesh_map;
     std::map<cgltf_accessor const *, TRef<Geometry>> geometry_map;
     for(size_t i = 0; i < gltf_model->meshes_count; ++i)
     {
         cgltf_mesh const &gltf_mesh = gltf_model->meshes[i];
-        std::vector<geometry_material_pair> &geometry_material_pair_list = mesh_map[&gltf_mesh];
+        std::vector<geometry_material_pair> geometry_material_pair_list;
         for(size_t j = 0; j < gltf_mesh.primitives_count; ++j)
         {
             cgltf_primitive const &gltf_primitive = gltf_mesh.primitives[j];
@@ -313,6 +313,13 @@ bool GLTFLoader::LoadGLTF(
             }
             geometry_material_pair_list.push_back(std::make_pair(current_geometry, material));
         }
+        auto mesh = StaticMesh::Create();
+        for (auto pair : geometry_material_pair_list) {
+            pair.second->UpdateOnDevice(&allocator);
+            mesh->AddMeshPrimitive(pair.first, pair.second);
+        }
+        mesh->UpdateOnDevice(&allocator);
+        mesh_map[&gltf_mesh] = mesh.Raw();
     }
     std::vector<TRef<StaticMeshInstance>> mesh_instances;
     std::function<void (cgltf_node const *gltf_node, glm::mat4 const &parent_transform)> VisitNode
@@ -332,18 +339,12 @@ bool GLTFLoader::LoadGLTF(
         {
             auto it = mesh_map.find(gltf_node->mesh);
             if(it != mesh_map.end())
-                for(size_t i = 0; i < (*it).second.size(); ++i)
-                {
-                    auto mesh = StaticMesh::Create();
-                    TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(&world, mesh.Raw(), Transform::Identity());
-                    mesh_instances.push_back(instance_ref);
-                    for (auto e : (it->second)) {
-                        e.second->UpdateOnDevice(&allocator);
-                        mesh->AddMeshPrimitive(e.first, e.second);
-                    }
-                    mesh->UpdateOnDevice(&allocator);
-                    instance_ref->SetTransform(Transform::FromMatrix(transform));
-                }
+            {
+                auto mesh = it->second;
+                TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(&world, mesh.Raw(), Transform::Identity());
+                mesh_instances.push_back(instance_ref);
+                instance_ref->SetTransform(Transform::FromMatrix(transform));
+            }
         }
 
         for(size_t i = 0; i < gltf_node->children_count; ++i)

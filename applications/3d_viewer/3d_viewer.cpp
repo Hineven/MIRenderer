@@ -195,7 +195,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/scene.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
@@ -204,23 +204,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
         } else {
-            for (auto e : meshes) {
-                e->EditTransform().scale *= 0.02f; // Scale down the model
-            }
-        }
-        model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/triangle_light/scene.gltf");
-        if (!GLTFLoader::LoadGLTF(
-            model_path,
-            *resource_allocator,
-            *scene,
-            geometries, materials, meshes
-        )) {
-            MI_WARN("Failed to load GLTF model {}.", model_path.string());
-        } else {
-            for (auto e : meshes) {
-                e->EditTransform().scale *= 2.5; // Scale up the model
-                e->EditTransform().rotation.x = 0.6f;
-            }
         }
         auto & r = Renderer::Get();
         for (auto e : meshes) {

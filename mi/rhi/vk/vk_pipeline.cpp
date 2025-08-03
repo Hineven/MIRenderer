@@ -404,6 +404,27 @@ void VulkanGraphicsPipeline::SetName(const std::string& name) {
             GetName()
         });
     }
+    if (vk_pipeline_layout_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::ePipelineLayout,
+            (uint64_t)(VkPipelineLayout)vk_pipeline_layout_,
+            (GetName() + std::string("_layout")).c_str()
+        });
+    }
+    if (vk_render_pass_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::eRenderPass,
+            (uint64_t)(VkRenderPass)vk_render_pass_,
+            (GetName() + std::string("_render_pass")).c_str()
+        });
+    }
+    if (vk_private_descriptor_set_layout_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::eDescriptorSetLayout,
+            (uint64_t)(VkDescriptorSetLayout)vk_private_descriptor_set_layout_,
+            (GetName() + std::string("_private_desc_set_layout")).c_str()
+        });
+    }
 #endif
 }
 
@@ -540,6 +561,20 @@ void VulkanComputePipeline::SetName(const std::string& name) {
             GetName()
         });
     }
+    if (vk_pipeline_layout_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::ePipelineLayout,
+            (uint64_t)(VkPipelineLayout)vk_pipeline_layout_,
+            (GetName() + std::string("_layout")).c_str()
+        });
+    }
+    if (vk_private_descriptor_set_layout_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::eDescriptorSetLayout,
+            (uint64_t)(VkDescriptorSetLayout)vk_private_descriptor_set_layout_,
+            (GetName() + std::string("_private_desc_set_layout")).c_str()
+        });
+    }
 #endif
 }
 
@@ -599,6 +634,20 @@ void VulkanRayTracingPipeline::SetName(const std::string& name) {
             vk::ObjectType::ePipeline,
             (uint64_t)(VkPipeline)vk_pipeline_,
             GetName()
+        });
+    }
+    if (vk_pipeline_layout_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::ePipelineLayout,
+            (uint64_t)(VkPipelineLayout)vk_pipeline_layout_,
+            (GetName() + std::string("_layout")).c_str()
+        });
+    }
+    if (vk_private_descriptor_set_layout_) {
+        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
+            vk::ObjectType::eDescriptorSetLayout,
+            (uint64_t)(VkDescriptorSetLayout)vk_private_descriptor_set_layout_,
+            (GetName() + std::string("_private_desc_set_layout")).c_str()
         });
     }
 #endif

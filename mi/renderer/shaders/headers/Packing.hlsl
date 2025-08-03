@@ -1,6 +1,8 @@
 #ifndef PACKING_HLSL
 #define PACKING_HLSL
 
+#include "Math.hlsl"
+
 float4 UnpackSnorm4x8(uint Packed)
 {
     int4 PackedSignedIntegers = int4(
@@ -83,18 +85,19 @@ float2 UnpackUnorm2x16(uint Packed)
 uint PackNormal (float3 Normal) {
     // Pack normal into 10 bits per channel
     uint Packed = 0;
-    Packed |= (uint(clamp(Normal.x, -1.f, 1.f) * 511.0f) & 0x3FF) << 22;
-    Packed |= (uint(clamp(Normal.y, -1.f, 1.f) * 511.0f) & 0x3FF) << 12;
-    Packed |= (uint(clamp(Normal.z, -1.f, 1.f) * 511.0f) & 0x3FF) << 2;
+    float3 U = saturateDown(Normal * 0.5f + 0.5f);
+    Packed |= (uint(U.x * 1023) & 0x3FF) << 22;
+    Packed |= (uint(U.y * 1023) & 0x3FF) << 12;
+    Packed |= (uint(U.z * 1023) & 0x3FF) << 2;
     return Packed;
 }
 
 float3 UnpackNormal (uint Packed) {
     // Unpack normal from 10 bits per channel
     float3 Normal;
-    Normal.x = (float((Packed >> 22) & 0x3FF) / 511.0f) * 2.0f - 1.0f;
-    Normal.y = (float((Packed >> 12) & 0x3FF) / 511.0f) * 2.0f - 1.0f;
-    Normal.z = (float((Packed >> 2) & 0x3FF) / 511.0f) * 2.0f - 1.0f;
+    Normal.x = (float((Packed >> 22) & 0x3FF) / 1023.0f) * 2.0f - 1.0f;
+    Normal.y = (float((Packed >> 12) & 0x3FF) / 1023.0f) * 2.0f - 1.0f;
+    Normal.z = (float((Packed >> 2) & 0x3FF) / 1023.0f) * 2.0f - 1.0f;
     return normalize(Normal);
 }
 

@@ -291,11 +291,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         Render_DrawVolumePrimitives(view, builder);
     }
 
-    // Render_UpdateLights()
-
     Render_ComputeHiZBuffer(view, builder);
 
     Render_ComputeDirectLighting(view, builder);
+
+    Render_LightingComposition(view, builder);
 
     // Draw the ray-traced objects to debug buffer if enabled
     if (CVar_DebugVisualizeRayTraced.Get()) {

@@ -43,9 +43,6 @@ struct RayPayload {
 
 [shader("raygeneration")]
 void TraceShadowRaysRaygen() {
-
-    return;
-
     uint RayListIndex = DispatchRaysIndex().x;
     uint RayIndex = RayToTraceListBuffer[RayListIndex];
     

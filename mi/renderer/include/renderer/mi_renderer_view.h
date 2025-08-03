@@ -117,6 +117,7 @@ struct RendererView {
     TRef<RDGTexture> G_depth_;
     TRef<RDGTexture> G_albedo_;
     TRef<RDGTexture> G_normal_;
+    TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
 
     // Volume density

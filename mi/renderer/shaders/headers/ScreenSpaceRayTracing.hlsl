@@ -90,7 +90,7 @@ void ScreenSpaceRayTrace(
     float CurrentT = 0; // Ray T
     float3 CurrentUVZ = RayStartUVZ;
 
-    // Step out of current tile (HZB texel) without hit test to avoid self-intersection
+    // Step out of current tile (pixel / hzb pixel) without hit test to avoid self-intersection
     bool bStepOutOfCurrentTile = true;
 
     if (bStepOutOfCurrentTile)

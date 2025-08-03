@@ -906,6 +906,7 @@ RDGShaderResourceAccess RDGShader::QueryShaderAccess(uint32_t crc32) const {
     auto param_struct_info = class_registry_->GetShaderParamStructInfo();
     auto cpp_index_it = param_struct_info->GetCppMemberIndex(crc32);
     if (cpp_index_it == -1) return {};
+    if (!IsValid()) return {};
     if (!HasResourceSlot(crc32)) return {};
     auto pipeline_slot = ReflectResourceSlot(crc32);
     return {
@@ -923,6 +924,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     // Clear legacy resources
     graphics_pipeline_ = {};
     compute_pipeline_ = {};
+    ray_tracing_pipeline_ = {};
     shaders_ = {};
     // Clear SBT related resources
     sbt_sections_ = {};

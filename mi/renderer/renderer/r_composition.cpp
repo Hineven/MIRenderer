@@ -8,14 +8,56 @@
 #include "rdg/rdg_cmd.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_renderer.h"
+#include "r_view_common.h"
+#include "rdg/rdg_helper.h"
 MI_NAMESPACE_BEGIN
 
-CVar<float> CVar_Exposure(
+static CVar<float> CVar_Exposure(
     "r.exposure",
     "Exposure value for the final output. "
     "This is used to adjust the brightness of the final image.",
     0.0f
 );
+
+class LightingCompositionShader : public RDGShader {
+public:
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseDirectLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, IndirectDiffuseLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Params)
+    DECLARE_SHADER()
+    constexpr static uint32_t kTileSize = 16; // 16x16 tiles
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        return {
+            "TILE_SIZE=" + std::to_string(kTileSize)
+        };
+    }
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER(LightingCompositionShader, "mi/renderer/shaders/LightingComposition.hlsl", "LightingComposition");
+
+void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder &builder) {
+    auto & lib = RDGShaderLibrary::Get();
+    auto shader = lib.GetShader<LightingCompositionShader>();
+    auto params = builder.Allocate<LightingCompositionShader::ShaderParameters>();
+    params->View = view->view_common_params_;
+    params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
+    params->IndirectDiffuseLightingTexture = nullptr;
+    params->G_Albedo = view->G_albedo_.Raw();
+    params->G_Emission = view->G_emission_.Raw();
+    params->RWRadiance = view->radiance_.Raw();
+    params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+    auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);
+    auto groups_y = DivideAndRoundUp(view->film_height_, LightingCompositionShader::kTileSize);
+    Helpers::DispatchComputePass(builder, shader, params, groups_x, groups_y);
+}
+
 
 class DrawToOutputShader : public RDGShader {
 public:

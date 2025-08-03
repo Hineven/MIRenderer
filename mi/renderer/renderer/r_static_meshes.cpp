@@ -38,6 +38,7 @@ public:
 
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Albedo)
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Normal)
+        SHADER_RENDER_TARGET(PixelFormatType::kR16G16B16A16_FLOAT, Emission)
         SHADER_RENDER_TARGET(PixelFormatType::kR8G8_UNORM, MetallicRoughness)
         SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
     END_SHADER_PARAMETERS()
@@ -65,7 +66,7 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
             for (const auto& [geom, mat] : std::views::zip(mesh->GetGeometries(), mesh->GetMaterials())) {
                 auto dev = geom->GetDeviceGeometry();
                 RHIDrawIndexedIndirectCommand cmd {};
-                cmd.first_instance = e->GetIndex();
+                cmd.first_instance = 0; // Filled after sorting
                 // The offset within its index uber buffer
                 cmd.first_index = (uint32_t)(dev->GetDeviceIndexBuffer()->GetOffset() / sizeof(uint32_t));
                 // The offset within its vertex uber buffer
@@ -113,6 +114,8 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
             data.draw_indirect_commands.reserve(data.draw_invocation_sorting_headers.size());
             auto draw_indirect_renderable_and_material_indices = (uint32_t*)view->temp_allocator_.Allocate(data.draw_invocation_sorting_headers.size() * sizeof(uint32_t) * 2);
             for (auto [i, e] : std::views::enumerate(data.draw_invocation_sorting_headers)) {
+                // Fill the first instance of each draw
+                e.indirect_command.first_instance = (uint32_t)i;
                 data.draw_indirect_commands.push_back(e.indirect_command);
                 draw_indirect_renderable_and_material_indices[i * 2] = e.world_renderable_handle;
                 draw_indirect_renderable_and_material_indices[i * 2 + 1] = e.material_index;
@@ -143,6 +146,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
 
     params->Albedo = view->G_albedo_.Raw();
     params->Normal = view->G_normal_.Raw();
+    params->Emission = view->G_emission_.Raw();
     params->MetallicRoughness = view->G_metallic_roughness_.Raw();
     params->Depth = view->G_depth_.Raw();
 

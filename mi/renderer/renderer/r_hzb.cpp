@@ -54,11 +54,12 @@ void Renderer::Render_ComputeHiZBuffer(
     for (uint32_t level = 0; level < hiz_levels; level++) {
         auto ini = RDGShaderInitializationInfo{};
         if (level == 0) ini.optional_macros.push_back("DEPTH_AS_INPUT");
-        auto shader = lib.GetShader<ComputeHiZBufferShader>();
+        auto shader = lib.GetShader<ComputeHiZBufferShader>(ini);
         auto params = builder.Allocate<ComputeHiZBufferShader::ShaderParameters>();
         params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+        params->View = view->view_common_params_;
         params->InDepthBuffer = view->G_depth_.Raw();
-        params->RWInHiZBuffer = level == 0 ? view->G_depth_.Raw() : view->hzb_.Raw();
+        params->RWInHiZBuffer = level == 0 ? nullptr : view->hzb_.Raw();
         params->RWInHiZBuffer.mip_level = level == 0 ? 0 : (level - 1);
         params->RWOutHiZBuffer = view->hzb_.Raw();
         params->RWOutHiZBuffer.mip_level = level;

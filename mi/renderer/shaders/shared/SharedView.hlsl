@@ -13,7 +13,7 @@ struct CameraParameters {
     float  FarPlane;
 
     float3 Up;
-    float  FoVY;
+    float  FoVY; // Radians
 
     float TanFoVY; // tan(FoVY / 2) * 2
     float TanFoVY_2; // tan(FoVY / 2)

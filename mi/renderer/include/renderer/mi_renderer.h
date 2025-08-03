@@ -75,6 +75,10 @@ protected:
     void Render_ComputeDirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+
+    void Render_LightingComposition (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
         RDGTexture * texture

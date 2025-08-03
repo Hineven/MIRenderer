@@ -271,6 +271,29 @@ float EstimateLightGridContribution(PrecomputedLight L, float3 GridMin, float Gr
     return L.Intensity * SolidAngle;
 }
 
+// A coarse estimtion used for light -> point contribution
+float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal) {
+	return L.Intensity;
+ // FIXME: bug
+
+    float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
+    float3 ToLight = LightCenter - Position;
+    float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
+    float LightRadiusSq = LightArea / PI;
+    float DistanceSq = dot(ToLight, ToLight);
+    float3 ToLightDirection = normalize(ToLight);
+
+    float CosineLight = saturate(dot(L.Normal, -ToLightDirection));
+
+    // Lambertian
+    float CosineSurface = saturate(dot(Normal, ToLightDirection));
+
+
+    float Attenuation = 1.0f / (DistanceSq + LightRadiusSq);
+
+    return (L.Intensity / LightArea) * CosineLight * CosineSurface * Attenuation;
+}
+
 // Dispatch a thread for each grid
 groupshared uint SharedListElementsRequired, SharedListOffsetBase;
 groupshared uint SharedGridLightListIndices[WAVE_SIZE * MAX_NUM_GRID_LIGHTS * 2];
@@ -284,7 +307,6 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     float3 GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
     // TODO use multi level injection for a large number of lights
     uint NumActiveLights = ActiveLightListCount[0];
-    bool bOverflow = false;
     uint NumGridLights = 0, WriteLocation = 0;
     uint SampledOffset = 0, CandidateOffset = MAX_NUM_GRID_LIGHTS;
     Random R = MakeRandom(17419142u + DispatchID, LightStructure_UB.FrameIndex);
@@ -361,13 +383,14 @@ struct LightSampler {
     uint ActiveLightListIndex[NUM_LIGHT_SAMPELR_SAMPLES];
 };
 
-LightSampler InitLightSampler(Random R) {
+LightSampler InitLightSampler(inout Random R) {
     LightSampler LS = (LightSampler)0;
     // Scatter samples
     for (int i = 0; i < NUM_LIGHT_SAMPELR_SAMPLES; i++) {
         float Step = (1.f / NUM_LIGHT_SAMPELR_SAMPLES);
         LS.SampleU[i] = saturateDown((R.rand() + i) * Step);
         LS.ActiveLightListIndex[i] = INVALID_UINT;
+        LS.Weights[i] = 0.f;
     }
     return LS;
 }
@@ -377,13 +400,13 @@ void AddLightToSampler(inout LightSampler LS, float Weight, uint Index) {
     LS.SumWeight += Weight;
     for (uint i = 0; i < NUM_LIGHT_SAMPELR_SAMPLES; i++) {
         bool bSelect = false;
-        if (LS.ActiveLightListIndex[i] == INVALID_UINT || U <= LS.SampleU[i]) bSelect = true;
+        if (LS.ActiveLightListIndex[i] == INVALID_UINT || U > LS.SampleU[i]) bSelect = true;
         if (bSelect) {
             LS.ActiveLightListIndex[i] = Index;
-            LS.SampleU[i] = saturateDown((LS.SampleU[i] - U) / (1.f - U));
+            LS.SampleU[i] = LS.SampleU[i] / U;
             LS.Weights[i] = Weight;
         } else {
-            LS.SampleU[i] = LS.SampleU[i] / U;
+            LS.SampleU[i] = saturateDown((LS.SampleU[i] - U) / (1.f - U));
         }
     }
 }
@@ -458,8 +481,8 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         return; // Skip empty pixels
     }
 
-    float LinearDepth = ReversedZDepthToLinearDepth(GetActiveCamera(), ReversedZDepth);
-    float3 WorldPosition = RecoverWorldPositionPixelCoords(GetActiveCamera(), PixelIndex, LinearDepth);
+    float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     if (!IsValid(GridIndex.x)) {
@@ -482,28 +505,28 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
             uint ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
             PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
-            float Weight = EstimateLightGridContribution(L, GridMin, GridSize);
+            float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
             AddLightToSampler(LS, Weight, ActiveLightListIndex);
         }
     } else {
         // Process the light with the minimum index in the grid
         uint LightListIndex = 0, Iteration = 0;
         // TODO remove Iteration (used to prevent driver timeouts)
-        // TODO add a noisy occlusion modifier to the target distribution
+        // TODO add a noisy occlusion modifier based on history cache to the target distribution
         while(LightListIndex < NumGridLights && Iteration < 256) {
             uint ActiveLightListIndex = INVALID_UINT;
-            if (LightListIndex < NumGridLights) ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
+            ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
             uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
             if (WaveMinLightIndex == ActiveLightListIndex) {
                 PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
-                float Weight = EstimateLightGridContribution(L, GridMin, GridSize);
+                float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
                 AddLightToSampler(LS, Weight, ActiveLightListIndex);
                 LightListIndex++;
             }
             Iteration++;
         }
     }
-    float SumResampleWeights = 0.f;
+    float SumResampleWeights = 0.f, ReservedSampleResampleWeight = 0.f;
     float U = R.rand();
     LightSample ReservedSample = (LightSample)0;
     // Spawn 1 sample for each light, and resample from the samples
@@ -515,9 +538,11 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         LightSample Sample = SampleLightDiffuseWithCosineWeight(WorldPosition, WorldNormal, Evaluated, u2);
         // Clip samples with low pdf (potential fireflies)
         if (Sample.IsValid() && Sample.Pdf > 0.01f) {
-            float CandidateWeight = LS.Weights[SamplerLightListIndex];;
+            float CandidateWeight = LS.Weights[SamplerLightListIndex] / LS.SumWeight;
             // Perception based weight (log (x + c))
             float TargetSampleWeight = dot(Sample.Radiance / Sample.Pdf, 1.f.xxx);
+// FIXME
+			TargetSampleWeight = 1.f;
             // RIS
             float ResampleWeight = TargetSampleWeight / max(CandidateWeight, 1e-7f);
             if (ResampleWeight > 1e-4f) {
@@ -526,6 +551,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
                 if (CurrentLightU > U) {
                     U /= CurrentLightU;
                     ReservedSample = Sample;
+                    ReservedSampleResampleWeight = ResampleWeight;
                 } else {
                     U = (U - CurrentLightU) / max(1 - CurrentLightU, 1e-7f);
                 }
@@ -533,10 +559,9 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
             }
         }
     }
-    // RWDiffuseDirectLightingTexture[PixelIndex] = float4(1.f, 0.f, 0.f, 0.f);
     if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
         // Final sample acquired, prepare visibility trace
-        float3 RadianceEstimation = ReservedSample.Radiance / (ReservedSample.Pdf * ListCdf);
+        float3 RadianceEstimation = ReservedSample.Radiance / (ReservedSample.Pdf * ListCdf) * NumGridLights;
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
         TraceDirection /= TraceDistance;
@@ -554,8 +579,9 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         // Write ray trace data
         RWRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
         RWRayToTraceOriginScreenCoordBuffer[RayIndex] = PackUint2x16(PixelIndex);
-        RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0, false);
-        RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance;
+        // FIXME
+        RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.1f, false);
+        RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
         
         RWDirectLightingRayIndexTexture[PixelIndex] = RayIndex;
     }
@@ -570,11 +596,14 @@ StructuredBuffer<uint> RayToTraceCount;
 [numthreads(WAVE_SIZE, 1, 1)]
 void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadID) {
     uint RayIndex = DispatchThreadID;
-    uint RayListIndex = RayIndex; // Before compaction, RayIndex == RayListIndex
-    if(RayListIndex >= RayToTraceCount[0]) {
+    if(RayIndex >= RayToTraceCount[0]) {
         return; // No rays to trace
     }
-    RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, min(DirectLighting_UB.ShadowRayTMax, ShadowRayToTraceTMaxBuffer[RayIndex]));
+
+    RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(
+        RayIndex,
+        min(DirectLighting_UB.ShadowRayTMax, ShadowRayToTraceTMaxBuffer[RayIndex])
+    );
 
     CameraParameters C = GetActiveCamera();
     uint2 PixelIndex = RayToTrace.OriginScreenCoord;
@@ -584,17 +613,15 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     float3 Estimate = RWDirectLightingRadianceEstimateTexture[PixelIndex].rgb;
     // Shadow ray trace
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-    float3 WorldPosition = RecoverWorldPositionPixelCoords(GetActiveCamera(), PixelIndex, LinearDepth);
-    float3 OffsetedWorldPosition = WorldPosition;
+    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     {
-        // Offset the origin a bit, but do not step outside the pixel. (25%)
+        // Offset the origin a bit, but at most 1 pixel (100%)
         float3 Normal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
-        float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-        float MaxOffsetLength = LinearDepth * 1e-4f;
+        float MaxOffsetLength = LinearDepth * 1e-3f;
         float2 PixelSize = GetPixelWorldSize(C, LinearDepth);
         float ProjectionX = abs(dot(C.NormalizedRight, Normal));
         float ProjectionY = abs(dot(C.NormalizedUp, Normal));
-        float Fraction = 0.25f;
+        float Fraction = 1.f;
         float MaxX = Fraction * PixelSize.x / max(ProjectionX, 1e-4f);
         float MaxY = Fraction * PixelSize.y / max(ProjectionY, 1e-4f);
         float OffsetLength = min(MaxOffsetLength, min(MaxX, MaxY));
@@ -602,21 +629,22 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     }
 
     float3 TraceDirection = RayToTrace.Direction;
-    float TraceTMax = RayToTrace.TMax * DirectLighting_UB.ShadowRayLengthMultiplier;
+    float TraceTMax = RayToTrace.TMax;
     bool bHit = false;
     float3 HitUVZ = 0, LastVisibleUVZ = 0;
     float HitTileZ = 0;
     ScreenSpaceRayTrace(
         C, G_DepthTexture, G_HiZBuffer,
         WorldPosition, TraceDirection, TraceTMax,
-        20, HybridTracing_UB.SSRT_RelativeTexelThickness, 0,
+        40, HybridTracing_UB.SSRT_RelativeTexelThickness, 0,
         bHit, HitUVZ, LastVisibleUVZ, HitTileZ
     );
 
     float3 HitWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(HitUVZ.xy), ZDepthToLinearDepth(C, HitUVZ.z));
     float HitDistance = min(length(HitWorldPosition - WorldPosition), TraceTMax);
 
-    if (bHit) {
+    // FIXME
+    if (false && bHit) {
         // Double checking using history buffer
         float3 PreviousUVZ = ReprojectToPreviousUVZFromUVZ(C, HitUVZ);
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
@@ -626,24 +654,20 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
             float PrevZDepth = PreviousUVZ.z;
 
             // Lookup the actual depth at the same screen position last frame
-            float HistoryZDepth = G_HistoryDepth.SampleLevel(PointClampSampler, PreviousUVZ.xy, 0).x;
+            float ReversedHistoryZDepth = G_HistoryDepth.SampleLevel(PointClampSampler, PreviousUVZ.xy, 0).x;
+            float HistoryZDepth = 1.f - ReversedHistoryZDepth;
 
             bHit = abs(HistoryZDepth - PrevZDepth) < HybridTracing_UB.SSRT_RelativeTexelThickness * 0.5f * lerp(.5f, 2.0f, Noise);
         }
     }
 
-    if (bHit) {
-        // Occluded, mark and exit
-        RWDirectLightingRadianceEstimateTexture[PixelIndex] = float4(Estimate.rgb, -1);
-        return; 
-    }
-    // Not occluded, prepare for world trace.
-
-    // If not hit, backward the ray a little from the last visible position for ray continuation
     if (!bHit) {
+        // Not occluded, prepare for world trace.
+        // Backward the ray a little from the last visible position for ray continuation
         float LinearDepth = ZDepthToLinearDepth(C, LastVisibleUVZ.z);
         float3 LastVisibleWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(LastVisibleUVZ.xy), LinearDepth);
         HitDistance = min(length(LastVisibleWorldPosition - WorldPosition), TraceTMax);
+
         float Bias = min(LinearDepth * HybridTracing_UB.RayContinuationBackwardBiasFactor, HitDistance * 0.5f);
         HitDistance = max(HitDistance - Bias, 0);
 
@@ -659,7 +683,6 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
         RWRayToTraceListBuffer[RayListIndex] = RayIndex;
     }
     // Remember to reduce the texel relative thickness on SSRT if there're too many false hits.
-
     // Write back ray data
     uint RayToTraceState = PackRayToTraceState(HitDistance, bHit);
     RWRayToTraceStateBuffer[RayIndex] = RayToTraceState;
@@ -675,11 +698,25 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWRayToTraceCount[0]) return;
     RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, 0);
-    if (true || !RayToTrace.bHit) {
+    if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();
         uint2 PixelIndex = RayToTrace.OriginScreenCoord;
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float3 Estimate = DirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
         RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate, 1.f);
+
+        if(false) {
+            float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
+            float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
+            if (ReversedZDepth == 0) {
+                RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+                return; // Skip empty pixels
+            }
+
+            float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+            float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
+            float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
+            RWDiffuseDirectLightingTexture[PixelIndex] = float4(WorldNormal, 1.f);
+        }
     }
 }
