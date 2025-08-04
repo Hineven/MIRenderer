@@ -71,7 +71,8 @@ public:
 
     RHICommandExecutorInterface * GetCommandExecutor() override;
 
-    void ResetPipelineCache() override;
+    // Reset the pipeline cache if the cache size exceeds the given limit (bytes).
+    void ResetPipelineCache (uint32_t size_limit = 0) override;
 
     void WaitForIdle (bool host_only = false) override;
 
@@ -136,7 +137,7 @@ protected:
 
     bool InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t width, uint32_t height, uint32_t * out_swapchain_size) override;
 
-    void InvalidateDiskPipelineCache () ;
+    void InvalidateDiskPipelineCache (uint32_t size_limit = 0) ;
     void LoadPipelineCache ();
 
     VulkanCommandExecutor * command_executor_ {};

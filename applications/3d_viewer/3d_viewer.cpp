@@ -94,6 +94,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             info.extra_instance_extension_count = extension_count;
             info.extra_instance_extensions = extra_extensions;
             RHI::InitializeSingleton(RHIType::kVulkan, &info);
+            RHI::Get().ResetPipelineCache(4 * 1024 * 1024); // Reset pipeline cache (at most 4MB)
         } else {
             throw std::runtime_error("Failed to get required instance extensions");
         }

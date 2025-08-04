@@ -94,7 +94,8 @@ public:
         const RHIRayTracingPipelineDesc & desc, const char * name = "unnamed"
     ) = 0;
 
-    virtual void ResetPipelineCache () = 0;
+    // Reset the pipeline cache if the cache size exceeds the given limit (bytes).
+    virtual void ResetPipelineCache (uint32_t size_limit = 0) = 0;
 
     virtual RHIBindlessSupportInfo QueryRHIBindlessSupportInfo () = 0;
 

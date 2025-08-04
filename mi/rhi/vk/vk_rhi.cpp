@@ -440,14 +440,23 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
 static const char* PIPELINE_CACHE_FILE_PATH = "pipeline_cache.bin";
 
-void VulkanRHI::InvalidateDiskPipelineCache() {
-    if (std::remove(PIPELINE_CACHE_FILE_PATH) == 0) {
-        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache file '{}' deleted.", PIPELINE_CACHE_FILE_PATH);
-    } else {
-        // It's okay if the file doesn't exist, so only log actual errors if needed,
-        // or just ignore if std::remove returns non-zero for "file not found".
-        // perror can give more info on std::remove failure.
-        // MI_LOG(MIInfraLogType::kWarning, "Error deleting pipeline cache file '{}'.", PIPELINE_CACHE_FILE_PATH);
+void VulkanRHI::InvalidateDiskPipelineCache(uint32_t size_limit) {
+    // If the file size exceeds the limit, delete it
+    std::ifstream cache_file(PIPELINE_CACHE_FILE_PATH, std::ios::binary | std::ios::ate);
+    if (cache_file.is_open()) {
+        auto file_size = cache_file.tellg();
+        cache_file.close();
+        MI_LOG(MIInfraLogType::kInfo, "Pipeline cache file '{}' size: {} KB.", PIPELINE_CACHE_FILE_PATH, file_size / 1024);
+        if (file_size > size_limit) {
+            MI_LOG(MIInfraLogType::kWarning,
+                "Pipeline cache file '{}' exceeds size limit of {} KB. Deleting it.",
+                PIPELINE_CACHE_FILE_PATH, size_limit / 1024);
+            if (std::remove(PIPELINE_CACHE_FILE_PATH) == 0) {
+                MI_LOG(MIInfraLogType::kInfo, "Pipeline cache file '{}' deleted.", PIPELINE_CACHE_FILE_PATH);
+            } else {
+                MI_LOG(MIInfraLogType::kWarning, "Error deleting pipeline cache file '{}'.", PIPELINE_CACHE_FILE_PATH);
+            }
+        }
     }
 }
 
@@ -738,9 +747,9 @@ RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracing
 }
 
 
-void VulkanRHI::ResetPipelineCache() {
+void VulkanRHI::ResetPipelineCache(uint32_t size_limit) {
     device_.destroy(pipeline_cache_);
-    InvalidateDiskPipelineCache();
+    InvalidateDiskPipelineCache(size_limit);
     LoadPipelineCache();
 }
 
