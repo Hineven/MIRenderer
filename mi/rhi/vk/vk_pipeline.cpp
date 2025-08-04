@@ -429,7 +429,7 @@ void VulkanGraphicsPipeline::SetName(const std::string& name) {
 }
 
 VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
-    ResetRHI();
+    VulkanGraphicsPipeline::ResetRHI();
 }
 
 void *VulkanGraphicsPipeline::GetAPIHandle() const {
@@ -579,7 +579,7 @@ void VulkanComputePipeline::SetName(const std::string& name) {
 }
 
 VulkanComputePipeline::~VulkanComputePipeline() {
-    ResetRHI();
+    VulkanComputePipeline::ResetRHI();
 }
 
 void *VulkanComputePipeline::GetAPIHandle() const {
@@ -654,7 +654,7 @@ void VulkanRayTracingPipeline::SetName(const std::string& name) {
 }
 
 VulkanRayTracingPipeline::~VulkanRayTracingPipeline() {
-    ResetRHI();
+    VulkanRayTracingPipeline::ResetRHI();
 }
 
 void* VulkanRayTracingPipeline::GetAPIHandle() const {
