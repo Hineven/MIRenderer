@@ -322,39 +322,34 @@ bool GLTFLoader::LoadGLTF(
         mesh_map[&gltf_mesh] = mesh.Raw();
     }
     std::vector<TRef<StaticMeshInstance>> mesh_instances;
-    std::function<void (cgltf_node const *gltf_node, glm::mat4 const &parent_transform)> VisitNode
-        = [&](cgltf_node const *gltf_node, glm::mat4 const &parent_transform)
+    std::function<void (cgltf_node const *gltf_node)> VisitNode
+        = [&](cgltf_node const *gltf_node)
     {
         if(gltf_node == nullptr)
             return ;   // out of bounds
-        glm::vec3 T(0.0), S(1.0);
-        glm::quat R(1.0, 0.0, 0.0, 0.0);
-        if(gltf_node->has_translation) T = glm::make_vec3(gltf_node->translation);
-        if(gltf_node->has_scale)       S = glm::make_vec3(gltf_node->scale);
-        if(gltf_node->has_rotation)    R = glm::make_quat(gltf_node->rotation);
-        glm::mat4 local_transform(1.0); // default to identity
-        cgltf_node_transform_local(gltf_node, (float*)&local_transform);
-        glm::mat4 const transform = parent_transform * local_transform;
+        glm::mat4 world_transform(1.0);
+        cgltf_node_transform_world(gltf_node, (float*)&world_transform);
         if(gltf_node->mesh != nullptr)
         {
             auto it = mesh_map.find(gltf_node->mesh);
             if(it != mesh_map.end())
             {
                 auto mesh = it->second;
-                TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(&world, mesh.Raw(), Transform::Identity());
+                TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(
+                    &world, mesh.Raw(), Transform::FromMatrix(world_transform)
+                );
                 mesh_instances.push_back(instance_ref);
-                instance_ref->SetTransform(Transform::FromMatrix(transform));
             }
         }
 
         for(size_t i = 0; i < gltf_node->children_count; ++i)
         {
-            VisitNode(gltf_node->children[i], transform);
+            VisitNode(gltf_node->children[i]);
         }
     };
     cgltf_scene const &gltf_scene = gltf_model->scene != nullptr ? *gltf_model->scene : gltf_model->scenes[0];
     for(size_t i = 0; i < gltf_scene.nodes_count; ++i)
-        VisitNode(gltf_scene.nodes[i], glm::mat4(1.0));
+        VisitNode(gltf_scene.nodes[i]);
     out_meshes.insert(out_meshes.end(), mesh_instances.begin(), mesh_instances.end());
     for (auto e : materials) {
         out_materials.push_back(e.second);
