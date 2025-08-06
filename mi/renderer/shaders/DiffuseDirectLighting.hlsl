@@ -715,9 +715,12 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 // 1 thread per ray
 [numthreads(WAVE_SIZE, 1, 1)]
 void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
-{ 
+{
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWRayToTraceCount[0]) return;
+    //if(RayIndex == 0) {
+    //    printf("qwq");
+    //}
     RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, 0);
     if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();

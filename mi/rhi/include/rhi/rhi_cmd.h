@@ -398,6 +398,14 @@ public:
     float max_depth_;
 };
 
+class RHICommandSetCullMode : public TRHICommand<RHICommandSetCullMode> {
+public:
+    RHICommandSetCullMode(RHICullModeType cull_mode): cull_mode_(cull_mode) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHICullModeType cull_mode_;
+};
+
 class RHICommandDrawIndexedPrimitive : public TRHICommand<RHICommandDrawIndexedPrimitive> {
 public:
     RHICommandDrawIndexedPrimitive(RHIBufferSpan index_buffer, uint32_t index_count_,
@@ -721,6 +729,9 @@ public:
     }
     FORCEINLINE void SetViewport (float x, float y, float width, float height, float min_depth = 0.f, float max_depth = 1.f) {
         AddCommand(AllocateCommand<RHICommandSetViewport>(x, y, width, height, min_depth, max_depth));
+    }
+    FORCEINLINE void SetCullMode (RHICullModeType cull_mode) {
+        AddCommand(AllocateCommand<RHICommandSetCullMode>(cull_mode));
     }
 
     FORCEINLINE void Dispatch (uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) {

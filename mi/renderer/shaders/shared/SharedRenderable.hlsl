@@ -18,6 +18,14 @@ struct StaticMeshInstanceHeader {
     uint Padding2;
 };
 
+struct VolumePrimitivesInstanceHeader {
+    // Index of the volume primitives which the instance refers to.
+    uint VolumePrimitivesIndex;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
+};
+
 MI_SHARED_HLSL_END
 
 #endif // MI_RENDERER_SHADERS_SHARED_RENDERABLE_HLSL

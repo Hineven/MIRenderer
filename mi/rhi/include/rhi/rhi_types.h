@@ -405,10 +405,10 @@ enum class RHIDepthCompareOpType {
     kMax
 };
 
-enum class RHICullModeType {
-    kNone,
-    kFront,
-    kBack,
+enum class RHICullModeType : uint32_t {
+    kNone = 0, // No culling
+    kFront, // Keep front
+    kBack, // Keep back
     kMax
 };
 

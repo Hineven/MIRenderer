@@ -206,6 +206,16 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
         } else {
         }
+        model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/nezha/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene,
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+        }
         auto & r = Renderer::Get();
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());

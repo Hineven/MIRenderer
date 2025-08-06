@@ -36,6 +36,7 @@ public:
     // This is the super-set for scissor update, .... etc
     virtual void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandSetScissor * set_scissor) = 0;
     virtual void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandSetViewport * set_viewport) = 0;
+    virtual void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandSetCullMode * set_cull_mode) = 0;
     virtual void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandUpdateDrawState * update_draw_state) = 0;
     virtual void RHIBindComputePipeline (RHICommandQueueBase * buffer, RHICommandBindComputePipeline * cmd) = 0;
     virtual void RHIBindPipelineParameters (RHICommandQueueBase * buffer, RHICommandBindPipelineParameters * cmd) = 0;

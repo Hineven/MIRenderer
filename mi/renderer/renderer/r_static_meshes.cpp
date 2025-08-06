@@ -160,6 +160,7 @@ void Renderer::Render_DrawStaticMeshes(RendererView *view, RenderGraphBuilder &b
                 queue, pass, shader, params, true
             )) {
                 queue.BeginRendering();
+                queue.SetCullMode(RHICullModeType::kFront);
                 RHIBuffer * last_vertex_buffer {};
                 RHIBuffer * last_index_buffer {};
                 RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();

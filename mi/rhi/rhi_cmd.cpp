@@ -120,6 +120,11 @@ void RHICommandSetViewport::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIUpdateDrawState(&cmd, this);
 }
 
+void RHICommandSetCullMode::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIUpdateDrawState(&cmd, this);
+}
+
+
 void RHICommandDispatch::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDispatch(&cmd, this);
 }

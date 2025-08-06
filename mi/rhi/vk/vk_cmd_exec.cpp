@@ -333,6 +333,12 @@ void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHIComm
     };
 }
 
+void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetCullMode *set_cull_mode) {
+    CHECK_RHI_THREAD();
+    state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.cull_mode = set_cull_mode->cull_mode_;
+}
+
+
 void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) {
     CHECK_RHI_THREAD();
     state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.viewport = {
@@ -585,6 +591,7 @@ void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffe
     vk::Viewport viewport = GetViewport();
     cmdb.setViewportWithCount(viewport);
     cmdb.setScissorWithCount(rect);
+    cmdb.setCullMode(GetVulkanCullMode(draw_state_.cull_mode));
 }
 
 bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {

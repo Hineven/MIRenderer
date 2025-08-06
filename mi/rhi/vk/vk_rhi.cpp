@@ -27,6 +27,21 @@
 
 MI_NAMESPACE_BEGIN
 
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
+    [[maybe_unused]] vk::DebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+    [[maybe_unused]] vk::DebugUtilsMessageTypeFlagsEXT             messageType,
+    const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData,
+    [[maybe_unused]] void                                       *pUserData)
+{
+    if (strcmp(pCallbackData->pMessageIdName, "WARNING-DEBUG-PRINTF") == 0)
+    {
+        // Validation messages are a bit verbose, but we only want the text from the shader, so we cut off everything before the first word from the shader message
+        printf("%s\n", pCallbackData->pMessage);
+    }
+    return VK_FALSE;
+}
+
 VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init();
@@ -39,14 +54,13 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         vk::InstanceCreateInfo instance_info({}, &app_info);
 
 
-#if false
-        std::array enabled_layer_names = {
+#ifndef NDEBUG
+        std::array<const char *, 1> enabled_layer_names = {
                 "VK_LAYER_KHRONOS_validation"
         };
 #else
         std::array<const char *, 0> enabled_layer_names = {};
 #endif
-
         // Enable extensions
         std::vector enabled_extension_names = {
                 // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
@@ -124,6 +138,19 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         instance_info.enabledExtensionCount = (uint32_t)enabled_extension_names.size();
         instance_info.ppEnabledLayerNames = enabled_layer_names.data();
         instance_info.enabledLayerCount = (uint32_t)enabled_layer_names.size();
+
+#ifndef NDEBUG
+        // Shader printf is a feature of the validation layers that needs to be enabled
+        std::vector<vk::ValidationFeatureEnableEXT> validation_feature_enables = {
+            vk::ValidationFeatureEnableEXT::eDebugPrintf,
+            vk::ValidationFeatureEnableEXT::eGpuAssisted,
+            vk::ValidationFeatureEnableEXT::eSynchronizationValidation
+        };
+
+        auto validation_features = vk::ValidationFeaturesEXT {};
+        validation_features.setEnabledValidationFeatures(validation_feature_enables);
+        instance_info.pNext = &validation_features;
+#endif
 
         instance_ = vk::createInstance(instance_info);
     }
@@ -210,7 +237,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 // Descriptor indexing (bindless supoort)
                 // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
                 // Descriptor buffer (bindless support)
-                VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+                // VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
                 // more dynamic states
                 VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
                 // Ray tracing maintenance 1
@@ -363,6 +390,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
         auto & descb = std::get<8>(extended_features);
         descb.descriptorBuffer = VK_TRUE;
+        // descb.descriptorBuffer = VK_FALSE;
 
         auto & dyrend = std::get<9>(extended_features);
         dyrend.dynamicRendering = VK_TRUE;
@@ -401,6 +429,17 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         rhi_device_properties_.max_ray_recursion_depth = rt_props.maxRayRecursionDepth;
         rhi_device_properties_.max_shader_group_stride = rt_props.maxShaderGroupStride;
     }
+
+#ifndef NDEBUG
+    // Debug messenger
+    {
+        vk::DebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info{};
+        debug_utils_messenger_create_info.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo;
+        debug_utils_messenger_create_info.messageType     = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
+        debug_utils_messenger_create_info.pfnUserCallback = DebugUtilsMessageCallback;
+        debug_utils_messenger_ = instance_.createDebugUtilsMessengerEXT(debug_utils_messenger_create_info);
+    }
+#endif
 
     // Device resources
     {
@@ -540,6 +579,11 @@ VulkanRHI::~VulkanRHI() {
     EnqueueRHIThreadTask([this](){
         RecycleRHIResourcesPendingForDeletion_RHIThread(true);
     }).wait();
+
+#ifndef NDEBUG
+    // debug messenger
+    instance_.destroy(debug_utils_messenger_);
+#endif
 
     // We can safely destroy device resources now
     vma_.destroy();
@@ -759,7 +803,7 @@ RHIBindlessSupportInfo VulkanRHI::QueryRHIBindlessSupportInfo() {
     info.max_num_resource_slots = descriptor_props.maxResourceDescriptorBufferBindings;
     // info.max_num_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
     // info.max_num_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
-    info.descriptor_buffer_offset_alignment   = (uint32_t)descriptor_props.descriptorBufferOffsetAlignment;
+    // info.descriptor_buffer_offset_alignment   = (uint32_t)descriptor_props.descriptorBufferOffsetAlignment;
     return info;
 }
 

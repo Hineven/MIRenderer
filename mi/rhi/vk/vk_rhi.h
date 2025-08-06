@@ -158,6 +158,8 @@ protected:
     std::vector<vk::Semaphore> vk_swapchain_image_available_semaphores_;
     std::vector<vk::Semaphore> vk_swapchain_render_finished_semaphores_;
 
+    vk::DebugUtilsMessengerEXT debug_utils_messenger_ {};
+
     std::mutex pipeline_cache_mutex_ {};
     vk::PipelineCache pipeline_cache_ {};
 

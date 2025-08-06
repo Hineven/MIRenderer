@@ -151,6 +151,9 @@ void RHIPipeline::Reset() {
     ResetRHI();
 }
 
+// disable C4702
+#pragma warning(push)
+#pragma warning(disable:4702) // unreachable code
 static RHIGPUAccessFlags GetAccessFlags (auto elem) {
     if constexpr(requires{elem.access_flags;}) {
         return elem.access_flags;
@@ -161,6 +164,7 @@ static RHIGPUAccessFlags GetAccessFlags (auto elem) {
     }
     return RHIGPUAccessFlagBits::kNone;
 }
+#pragma warning(pop)
 
 void RHIPipeline::BuildPipelineResourceIndex() {
     auto Register = [&] (RHIPipelineResourceType type, const auto & arr) {

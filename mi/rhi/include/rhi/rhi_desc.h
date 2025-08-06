@@ -55,7 +55,7 @@ struct RHIBindlessSupportInfo {
     // uint32_t max_num_sampler_slots;
     // uint32_t max_num_immutable_sampler_slots;
     // Alignment for btb table
-    uint32_t descriptor_buffer_offset_alignment;
+    // uint32_t descriptor_buffer_offset_alignment;
 };
 
 struct RHIVertexInputBindingDesc {
@@ -386,6 +386,8 @@ struct RHIDrawDesc {
     std::array<float, 4> depth_stencil_clear_value {};
     RHILoadOpType depth_stencil_load_op {};
     RHIStoreOpType depth_stencil_store_op {};
+
+    RHICullModeType cull_mode {};
 
     FORCEINLINE void SetClearValues(std::array<float, 4> in_clear_values[C::kRHIMaxNumFramebufferAttachments]) {
         for(int i = 0; i < C::kRHIMaxNumFramebufferAttachments; ++i) {

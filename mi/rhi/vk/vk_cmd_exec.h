@@ -42,6 +42,7 @@ public:
     void RHIBindGraphicsPipeline(RHICommandQueueBase * cmd, RHICommandBindGraphicsPipeline * bind_graphics_pipeline) override ;
     void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) override;
     void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetScissor *set_scissor) override;
+    void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetCullMode *set_cull_mode) override;
     void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandUpdateDrawState * update_draw_state) override ;
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
     void RHIBindPipelineParameters(RHICommandQueueBase * cmd, RHICommandBindPipelineParameters * bind_pipeline_parameters) override ;
