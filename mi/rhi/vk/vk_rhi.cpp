@@ -25,7 +25,12 @@
 #include "vk_conversion.h"
 #include "rhi/rhi_thread.h"
 
-// #define ENABLE_VALIDATION_LAYER
+#ifndef NDEBUG
+#define ENABLE_VALIDATION_LAYER
+#endif
+
+// 25.8.7: this must be defined. Otherwise driver panics when validation layer is on
+#define USE_DESCRIPTOR_BUFFER
 
 MI_NAMESPACE_BEGIN
 
@@ -237,8 +242,11 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 VK_EXT_MESH_SHADER_EXTENSION_NAME,
                 // Descriptor indexing (bindless supoort)
                 // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+#ifdef USE_DESCRIPTOR_BUFFER
                 // Descriptor buffer (bindless support)
-                // VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+                // 25.8.7: this extension must be present, otherwise the device panics with validation layer
+                VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+#endif
                 // more dynamic states
                 VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
                 // Ray tracing maintenance 1
@@ -300,7 +308,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT,
                 vk::PhysicalDeviceIndexTypeUint8FeaturesEXT,
                 vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT,
+#ifdef USE_DESCRIPTOR_BUFFER
                 vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
+#endif
                 vk::PhysicalDeviceDynamicRenderingFeatures,
                 vk::PhysicalDeviceMaintenance4Features,
                 vk::PhysicalDeviceSynchronization2Features,
@@ -324,86 +334,87 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         device_create_info.setPEnabledExtensionNames(enabled_extension_names);
         device_create_info.setPEnabledFeatures(&enabled_features);
 
-        auto & shader_draw_parameters = std::get<12>(extended_features);
+        auto & shader_draw_parameters = std::get<vk::PhysicalDeviceShaderDrawParametersFeatures>(extended_features);
         shader_draw_parameters.shaderDrawParameters = VK_TRUE;
 
-        auto & multiview_features = std::get<13>(extended_features);
+        auto & multiview_features = std::get<vk::PhysicalDeviceMultiviewFeatures>(extended_features);
         multiview_features.multiview = VK_TRUE;
 
-        auto & storage_16bit = std::get<14>(extended_features);
+        auto & storage_16bit = std::get<vk::PhysicalDevice16BitStorageFeatures>(extended_features);
         storage_16bit.storageBuffer16BitAccess = VK_TRUE;
         storage_16bit.uniformAndStorageBuffer16BitAccess = VK_TRUE;
 
-        auto & buffer_device_address = std::get<15>(extended_features);
+        auto & buffer_device_address = std::get<vk::PhysicalDeviceBufferDeviceAddressFeatures>(extended_features);
         buffer_device_address.bufferDeviceAddress = VK_TRUE;
 
-        auto & descriptor_indexing = std::get<16>(extended_features);
+        auto & descriptor_indexing = std::get<vk::PhysicalDeviceDescriptorIndexingFeatures>(extended_features);
         descriptor_indexing.descriptorBindingPartiallyBound = VK_TRUE;
         descriptor_indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
         descriptor_indexing.runtimeDescriptorArray = VK_TRUE;
 
-        auto & scalar_block_layout = std::get<17>(extended_features);
+        auto & scalar_block_layout = std::get<vk::PhysicalDeviceScalarBlockLayoutFeatures>(extended_features);
         scalar_block_layout.scalarBlockLayout = VK_TRUE;
 
-        auto & imageless_framebuffer = std::get<18>(extended_features);
+        auto & imageless_framebuffer = std::get<vk::PhysicalDeviceImagelessFramebufferFeatures>(extended_features);
         imageless_framebuffer.imagelessFramebuffer = VK_TRUE;
 
-        auto & timeline_semaphore = std::get<19>(extended_features);
+        auto & timeline_semaphore = std::get<vk::PhysicalDeviceTimelineSemaphoreFeatures>(extended_features);
         timeline_semaphore.timelineSemaphore = VK_TRUE;
 
-        auto & float16_int8 = std::get<20>(extended_features);
+        auto & float16_int8 = std::get<vk::PhysicalDeviceFloat16Int8FeaturesKHR>(extended_features);
         float16_int8.shaderFloat16 = VK_TRUE;
         float16_int8.shaderInt8 = VK_TRUE;
 
-        auto & storage_8bit = std::get<21>(extended_features);
+        auto & storage_8bit = std::get<vk::PhysicalDevice8BitStorageFeaturesKHR>(extended_features);
         storage_8bit.storageBuffer8BitAccess = VK_TRUE;
         storage_8bit.uniformAndStorageBuffer8BitAccess = VK_TRUE;
 
-        auto & rt_maintence1 = std::get<22>(extended_features);
+        auto & rt_maintence1 = std::get<vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR>(extended_features);
         rt_maintence1.rayTracingPipelineTraceRaysIndirect2 = true;
 
-        auto & host_query_reset = std::get<23>(extended_features);
+        auto & host_query_reset = std::get<vk::PhysicalDeviceHostQueryResetFeatures>(extended_features);
         host_query_reset.hostQueryReset = VK_TRUE;
 
-        auto & RT_features = std::get<1>(extended_features);
+        auto & RT_features = std::get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(extended_features);
         RT_features.rayTracingPipeline = VK_TRUE;
 
-        auto & mesh_shader_features = std::get<2>(extended_features);
+        auto & mesh_shader_features = std::get<vk::PhysicalDeviceMeshShaderFeaturesEXT>(extended_features);
         mesh_shader_features.taskShader = VK_TRUE;
         mesh_shader_features.meshShader = VK_TRUE;
 
-        auto & accel_features = std::get<3>(extended_features);
+        auto & accel_features = std::get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(extended_features);
         accel_features.accelerationStructure = VK_TRUE;
 
-        auto & robustness_features = std::get<4>(extended_features);
+        auto & robustness_features = std::get<vk::PhysicalDeviceRobustness2FeaturesEXT>(extended_features);
         robustness_features.nullDescriptor = VK_TRUE;
         robustness_features.robustBufferAccess2 = VK_TRUE;
 
-        auto & dynamic_state_features = std::get<5>(extended_features);
+        auto & dynamic_state_features = std::get<vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT>(extended_features);
         dynamic_state_features.extendedDynamicState3DepthClampEnable = VK_TRUE;
         dynamic_state_features.extendedDynamicState3PolygonMode = VK_TRUE;
 
-        auto & index8 = std::get<6>(extended_features);
+        auto & index8 = std::get<vk::PhysicalDeviceIndexTypeUint8FeaturesEXT>(extended_features);
         index8.indexTypeUint8 = VK_TRUE;
 
-        auto & fpatomic = std::get<7>(extended_features);
+        auto & fpatomic = std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(extended_features);
         fpatomic.shaderBufferFloat32AtomicAdd = VK_TRUE;
 
-        auto & descb = std::get<8>(extended_features);
-        // descb.descriptorBuffer = VK_TRUE;
-        descb.descriptorBuffer = VK_FALSE;
+#ifdef USE_DESCRIPTOR_BUFFER
+        auto & descb = std::get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>(extended_features);
+        descb.descriptorBuffer = VK_TRUE;
+#endif
 
-        auto & dyrend = std::get<9>(extended_features);
+        auto & dyrend = std::get<vk::PhysicalDeviceDynamicRenderingFeatures>(extended_features);
         dyrend.dynamicRendering = VK_TRUE;
 
-        auto & maint4 = std::get<10>(extended_features);
+        auto & maint4 = std::get<vk::PhysicalDeviceMaintenance4Features>(extended_features);
         maint4.maintenance4 = VK_TRUE;
 
-        auto & sync2 = std::get<11>(extended_features);
+        auto & sync2 = std::get<vk::PhysicalDeviceSynchronization2Features>(extended_features);
         sync2.synchronization2 = VK_TRUE;
 
         #ifndef NDEBUG
-        auto & rayqry = std::get<24>(extended_features);
+        auto & rayqry = std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(extended_features);
         rayqry.rayQuery = VK_TRUE;
         #endif
 
@@ -801,7 +812,11 @@ void VulkanRHI::ResetPipelineCache(uint32_t size_limit) {
 RHIBindlessSupportInfo VulkanRHI::QueryRHIBindlessSupportInfo() {
     auto descriptor_props = physical_device_properties_.descriptor_buffer;
     RHIBindlessSupportInfo info {};
-    info.max_num_resource_slots = 1024;//descriptor_props.maxResourceDescriptorBufferBindings;
+#ifdef USE_DESCRIPTOR_BUFFER
+    info.max_num_resource_slots = descriptor_props.maxResourceDescriptorBufferBindings;
+#else
+    info.max_num_resource_slots = 1024;
+#endif
     // info.max_num_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
     // info.max_num_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
     // info.descriptor_buffer_offset_alignment   = (uint32_t)descriptor_props.descriptorBufferOffsetAlignment;
