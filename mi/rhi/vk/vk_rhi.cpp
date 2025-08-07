@@ -25,8 +25,9 @@
 #include "vk_conversion.h"
 #include "rhi/rhi_thread.h"
 
-MI_NAMESPACE_BEGIN
+// #define ENABLE_VALIDATION_LAYER
 
+MI_NAMESPACE_BEGIN
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
     [[maybe_unused]] vk::DebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
@@ -54,7 +55,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         vk::InstanceCreateInfo instance_info({}, &app_info);
 
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYER
         std::array<const char *, 1> enabled_layer_names = {
                 "VK_LAYER_KHRONOS_validation"
         };
@@ -139,7 +140,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         instance_info.ppEnabledLayerNames = enabled_layer_names.data();
         instance_info.enabledLayerCount = (uint32_t)enabled_layer_names.size();
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYER
         // Shader printf is a feature of the validation layers that needs to be enabled
         std::vector<vk::ValidationFeatureEnableEXT> validation_feature_enables = {
             vk::ValidationFeatureEnableEXT::eDebugPrintf,
@@ -389,8 +390,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         fpatomic.shaderBufferFloat32AtomicAdd = VK_TRUE;
 
         auto & descb = std::get<8>(extended_features);
-        descb.descriptorBuffer = VK_TRUE;
-        // descb.descriptorBuffer = VK_FALSE;
+        // descb.descriptorBuffer = VK_TRUE;
+        descb.descriptorBuffer = VK_FALSE;
 
         auto & dyrend = std::get<9>(extended_features);
         dyrend.dynamicRendering = VK_TRUE;
@@ -430,7 +431,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         rhi_device_properties_.max_shader_group_stride = rt_props.maxShaderGroupStride;
     }
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYER
     // Debug messenger
     {
         vk::DebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info{};
@@ -580,7 +581,7 @@ VulkanRHI::~VulkanRHI() {
         RecycleRHIResourcesPendingForDeletion_RHIThread(true);
     }).wait();
 
-#ifndef NDEBUG
+#ifdef ENABLE_VALIDATION_LAYER
     // debug messenger
     instance_.destroy(debug_utils_messenger_);
 #endif
@@ -800,7 +801,7 @@ void VulkanRHI::ResetPipelineCache(uint32_t size_limit) {
 RHIBindlessSupportInfo VulkanRHI::QueryRHIBindlessSupportInfo() {
     auto descriptor_props = physical_device_properties_.descriptor_buffer;
     RHIBindlessSupportInfo info {};
-    info.max_num_resource_slots = descriptor_props.maxResourceDescriptorBufferBindings;
+    info.max_num_resource_slots = 1024;//descriptor_props.maxResourceDescriptorBufferBindings;
     // info.max_num_sampler_slots  = descriptor_props.maxSamplerDescriptorBufferBindings;
     // info.max_num_immutable_sampler_slots = descriptor_props.maxEmbeddedImmutableSamplers;
     // info.descriptor_buffer_offset_alignment   = (uint32_t)descriptor_props.descriptorBufferOffsetAlignment;

@@ -195,6 +195,7 @@ bool VulkanCommandExecutor::CommandQueueState::CloseCmd () {
 
 void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() const {
     // TODO provide a way to dynamically set these values
+    cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
     cmd.setCullMode(vk::CullModeFlagBits::eNone);
     cmd.setDepthBiasEnable(false);
     cmd.setPolygonModeEXT(vk::PolygonMode::eFill);

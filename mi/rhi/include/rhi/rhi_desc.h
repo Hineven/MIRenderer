@@ -409,6 +409,7 @@ struct RHIDrawDesc {
         num_framebuffer_attachments_ = 0;
         viewport = {};
         scissor = {};
+        cull_mode = {};
         for(auto & v : clear_values) {
             v=  {0, 0, 0, 1};
         }
