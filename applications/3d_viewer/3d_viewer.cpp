@@ -35,6 +35,7 @@
 #include "renderer/mi_cvar.h"
 #include "util/texture_loader.h"
 #include "util/gltf_loader.h"
+#include "util/volprims_loader.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -178,10 +179,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     auto pool = RDGResourcePool::Create();
 
     // Resource allocator
-    auto resource_allocator = new DeviceBindlessResourceAllocator();
+    auto resource_allocator = std::make_unique<DeviceBindlessResourceAllocator>();
 
     // Renderer
-    Renderer::Get().Init(resource_allocator, pool.Raw());
+    Renderer::Get().Init(resource_allocator.get(), pool.Raw());
 
     auto scene = std::make_unique<Scene>();
     TRef<Texture> sky_cube;
@@ -193,20 +194,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     std::vector<TRef<StaticMeshInstance>> meshes;
     // Load default model
-    {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/cornell_box/scene.gltf");
-        if (!GLTFLoader::LoadGLTF(
-            model_path,
-            *resource_allocator,
-            *scene,
-            geometries, materials, meshes
-        )) {
-            MI_WARN("Failed to load GLTF model {}.", model_path.string());
-        } else {
-        }
-        model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/nezha/scene.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
@@ -219,6 +210,19 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         auto & r = Renderer::Get();
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+        }
+    }
+
+
+    if (true) {
+        TRef<VolumePrimitives> volprims;
+        VolumePrimitivesLoader::LoadPLY(
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+            *resource_allocator, volprims
+        );
+        if (volprims) {
+            volprims->UpdateOnDevice(resource_allocator.get());
+            auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
         }
     }
 
@@ -403,6 +407,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 // Submit commands recorded for this frame, and switch to next frame
                 previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
             }
+            fflush(stdout);
         }
     }
 
@@ -421,6 +426,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     assert(pool.GetRefCount() == 1);
     pool.SafeRelease();
+
+    resource_allocator.release();
 
     RDGShaderLibrary::Get().Deinit();
 

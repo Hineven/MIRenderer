@@ -27,23 +27,47 @@ struct RenderVolumePrimitivesUB {
     glm::uvec3 Padding;
 };
 
+
+BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
+    SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(RenderVolumePrimitivesUB, UB)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableInverseTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActivePrimitiveCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveCount)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActivePrimitiveListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveListBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceListKeyBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceListSortedBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceListKeySortedBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, TileInstanceOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, TileInstanceCountBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceCountBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDensity)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeMinMax)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeColor)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeCdfAttenuation)
+END_SHADER_PARAMETERS()
+
+IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
+
 class VolumePrimitivesClearCountersShader : public RDGShader {
 public:
-    BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_UNIFORM_BUFFER(RenderVolumePrimitivesUB, UB)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveCount)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceCount)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceOffsets)
-    END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
     static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
-    RDG_SHADER_USE_PARAMETERS(Params)
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(VolumePrimitivesClearCountersShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "VolumePrimitivesClearCounters");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(VolumePrimitivesClearCountersShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "VolumePrimitivesClearCounters");
 
 class CollectVolumePrimitivesShader : public RDGShader {
 public:
@@ -57,9 +81,9 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(CollectVolumePrimitivesUB, UB_Collect)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveCount)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveList)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveListBuffer)
     END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
     static std::vector<std::string> GetShaderDefaultMacros () {
@@ -73,71 +97,52 @@ IMPLEMENT_RDG_COMPUTE_SHADER(CollectVolumePrimitivesShader, "mi/renderer/shaders
 
 class ProjectVolumePrimitivesShader : public RDGShader {
 public:
-    BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
-        SHADER_UNIFORM_BUFFER(RenderVolumePrimitivesUB, UB)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActivePrimitiveCount)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActivePrimitiveList)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveScreenAxis) // uint2 packed 2 screen vectors
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveScreenAxisZProjection) // uint packed fp16x2
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActivePrimitiveCenterPixelPosition) // uint32 packed
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceCount)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceListKey)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrimitiveInstanceListPrimitiveIndex)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
-    END_SHADER_PARAMETERS()
+
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
     static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
-    RDG_SHADER_USE_PARAMETERS(Params)
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(ProjectVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "ProjectVolumePrimitives");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ProjectVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "ProjectVolumePrimitives");
 
 class CollectTileInstanceOffsetsShader : public RDGShader {
 public:
-    BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_UNIFORM_BUFFER(RenderVolumePrimitivesUB, UB)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceCount)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceListKeySorted)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceOffsets)
-    END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
     static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
-    RDG_SHADER_USE_PARAMETERS(Params)
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(CollectTileInstanceOffsetsShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "CollectTileInstanceOffsets");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(CollectTileInstanceOffsetsShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "CollectTileInstanceOffsets");
+
+class CountTileInstancesShader : public RDGShader {
+public:
+    constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
+    static std::vector<std::string> GetShaderDefaultMacros () {
+        return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
+    }
+    DECLARE_SHADER()
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(CountTileInstancesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "CountTileInstances");
 
 class DrawVolumePrimitivesShader : public RDGShader {
 public:
-    BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
-        SHADER_UNIFORM_BUFFER(RenderVolumePrimitivesUB, UB)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceCount)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, TileInstanceOffsets)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceListKeySorted)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveInstanceListPrimitiveIndexSorted)
-        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDensity)
-        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeMinMax)
-        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeColor)
-    END_SHADER_PARAMETERS()
     constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
     static std::vector<std::string> GetShaderDefaultMacros () {
         return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
     }
     DECLARE_SHADER()
-    RDG_SHADER_USE_PARAMETERS(Params)
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(DrawVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "DrawVolumePrimitives");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DrawVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "DrawVolumePrimitives");
 
 constexpr static uint32_t kTileSize = 16;
 
@@ -154,126 +159,104 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     auto active_primitive_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));
     auto active_primitive_list = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
     auto primitive_instance_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));
+    auto primitive_instance_list_key = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
+    auto primitive_instance_list_value = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
+    auto primitive_instance_key_sorted = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives
+    );
+    auto primitive_instance_list_value_sorted = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives
+    );
+    auto tile_instance_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * num_tiles);
     auto tile_instance_offset = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * num_tiles);
     auto common_ub = builder.Allocate<RenderVolumePrimitivesUB>();
+    auto renderable_transforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+    auto renderable_inverse_transforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_inverse_transforms_.Raw());
     common_ub->ExpandFactor = 1.f;
     common_ub->NumTiles = num_tiles;
     common_ub->MaxNumPrimitiveInstances = kMaxNumActiveVolumePrimitives;
     common_ub->TileDimensions = tile_dimensions;
+    auto params = builder.Allocate<VolumePrimitivesShaderParameters>();
+    {
+        params->View = view->view_common_params_;
+        params->UB = common_ub;
+        params->PrimitiveData = primitive_data;
+        params->RenderableTransformBuffer = renderable_transforms;
+        params->RenderableInverseTransformBuffer = renderable_inverse_transforms;
+        params->ActivePrimitiveCount = active_primitive_count.Raw();
+        params->RWActivePrimitiveCount = active_primitive_count.Raw();
+        params->ActivePrimitiveListBuffer = active_primitive_list.Raw();
+        params->RWActivePrimitiveListBuffer = active_primitive_list.Raw();
+        params->PrimitiveInstanceCount = primitive_instance_count.Raw();
+        params->RWPrimitiveInstanceCount = primitive_instance_count.Raw();
+        params->RWPrimitiveInstanceListBuffer = primitive_instance_list_value.Raw();
+        params->RWPrimitiveInstanceListKeyBuffer = primitive_instance_list_key.Raw();
+        params->PrimitiveInstanceListSortedBuffer = primitive_instance_list_value_sorted.Raw();
+        params->PrimitiveInstanceListKeySortedBuffer = primitive_instance_key_sorted.Raw();
+        params->TileInstanceOffsetBuffer = tile_instance_offset.Raw();
+        params->RWTileInstanceOffsetBuffer = tile_instance_offset.Raw();
+        params->TileInstanceCountBuffer = tile_instance_count.Raw();
+        params->RWTileInstanceCountBuffer = tile_instance_count.Raw();
+        params->RWVolumeDensity = view->G_volume_density_.Raw();
+        params->RWVolumeMinMax = view->G_volume_min_max_.Raw();
+        params->RWVolumeColor = view->G_volume_color_.Raw();
+        params->RWVolumeCdfAttenuation = view->G_volume_cdf_attenuation_.Raw();
+    }
     {
         auto shader = RDGShaderLibrary::Get().GetShader<VolumePrimitivesClearCountersShader>();
-        auto params = builder.Allocate<VolumePrimitivesClearCountersShader::Params>();
         auto groups = DivideAndRoundUp(num_tiles, VolumePrimitivesClearCountersShader::kThreadGroupSize);
-        params->UB = common_ub;
-        params->RWActivePrimitiveCount = active_primitive_count.Raw();
-        params->RWTileInstanceOffsets = tile_instance_offset.Raw();
-        params->RWPrimitiveInstanceCount = primitive_instance_count.Raw();
-        builder.AddPass<VolumePrimitivesClearCountersShader>({}, shader, params, [shader, params, groups] (RDGPass *pass, RHICommandQueueGraphics &queue) {
-            RDGCommandHelper::Dispatch<VolumePrimitivesClearCountersShader>(queue, pass, shader, params, groups);
-        });
+        Helpers::DispatchComputePass(builder, shader, params, groups);
     }
-    auto renderable_transforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
     {
         auto shader = RDGShaderLibrary::Get().GetShader<CollectVolumePrimitivesShader>();
         for (auto e : ctx.visible_renderables) {
             if (auto inst = e->As<VolumePrimitivesInstance>()) {
                 auto vol = inst->GetVolumePrimitives();
                 if (vol) {
-                    auto params = builder.Allocate<CollectVolumePrimitivesShader::ShaderParameters>();
+                    auto collect_params = builder.Allocate<CollectVolumePrimitivesShader::ShaderParameters>();
                     auto UB = builder.Allocate<CollectVolumePrimitivesShader::CollectVolumePrimitivesUB>();\
                     UB->RenderableIndex = inst->GetIndex();
                     UB->InstancePrimitiveOffset = vol->GetDeviceVolumePrimitives()->GetPrimitiveOffset();
                     UB->InstanceNumPrimitives = vol->GetNumPrimitives();
-                    params->UB_Collect = UB;
-                    params->View = view->view_common_params_;
-                    params->PrimitiveData = primitive_data;
-                    params->RenderableTransforms = renderable_transforms;
-                    params->RWActivePrimitiveCount = active_primitive_count.Raw();
-                    params->RWActivePrimitiveList = active_primitive_list.Raw();
+                    collect_params->UB_Collect = UB;
+                    collect_params->View = view->view_common_params_;
+                    collect_params->PrimitiveData = primitive_data;
+                    collect_params->RenderableTransformBuffer = renderable_transforms;
+                    collect_params->RWActivePrimitiveCount = active_primitive_count.Raw();
+                    collect_params->RWActivePrimitiveListBuffer = active_primitive_list.Raw();
                     if (UB->RenderableIndex >= 4 * 1024 || UB->InstanceNumPrimitives + UB->InstancePrimitiveOffset >= 1024 * 1024) {
                         assert(false && "Overflowing (RenderableIndex, PrimitiveIndex) packing. See shader for details.");
                     }
-                    builder.AddPass<CollectVolumePrimitivesShader>({}, shader,
-                        params,  [shader, params, threads = vol->GetNumPrimitives()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
-                            auto groups = DivideAndRoundUp(threads, 128);
-                            RDGCommandHelper::Dispatch<CollectVolumePrimitivesShader>(queue, pass, shader, params, groups);
-                    });
+                    auto groups = DivideAndRoundUp(vol->GetNumPrimitives(), 128);
+                    Helpers::DispatchComputePass(builder, shader, collect_params, groups);
                 }
             }
         }
     }
-    // auto active_primitive_screen_axis = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives * 2);
-    // auto active_primitive_screen_axis_z_projection = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
-    // auto active_primitive_center_pixel_position = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
-    auto primitive_instance_list_key = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
-    auto primitive_instance_list_primitive_index = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives);
     {
         auto shader = RDGShaderLibrary::Get().GetShader<ProjectVolumePrimitivesShader>();
-        auto params = builder.Allocate<ProjectVolumePrimitivesShader::ShaderParameters>();
-        params->View = view->view_common_params_;
-        params->UB = common_ub;
-        params->PrimitiveData = primitive_data;
-        params->ActivePrimitiveCount = active_primitive_count.Raw();
-        params->ActivePrimitiveList = active_primitive_list.Raw();
-        // params->RWActivePrimitiveScreenAxis = active_primitive_screen_axis.Raw();
-        // params->RWActivePrimitiveScreenAxisZProjection = active_primitive_screen_axis_z_projection.Raw();
-        // params->RWActivePrimitiveCenterPixelPosition = active_primitive_center_pixel_position.Raw();
-        params->RWPrimitiveInstanceCount = primitive_instance_count.Raw();
-        params->RWPrimitiveInstanceListKey = primitive_instance_list_key.Raw();
-        params->RWPrimitiveInstanceListPrimitiveIndex = primitive_instance_list_primitive_index.Raw();
-        params->RenderableTransforms = renderable_transforms;
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_primitive_count.Raw(), ProjectVolumePrimitivesShader::kThreadGroupSize);
-        builder.AddPass<ProjectVolumePrimitivesShader>({}, shader, params, [shader, params, indirect = cmd.Raw()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
-            RDGCommandHelper::DispatchIndirect<ProjectVolumePrimitivesShader>(queue, pass, shader, params, indirect);
-        });
+        Helpers::DispatchIndirectComputePass(builder, shader, params, cmd.Raw());
     }
-    auto primitive_instance_key_sorted = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives
-    );
-    auto primitive_instance_list_primitive_index_sorted = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * kMaxNumActiveVolumePrimitives
-    );
     RadixSort::AddRadixSort32BitsPass(builder, kMaxNumActiveVolumePrimitives,
-        primitive_instance_list_key.Raw(), primitive_instance_list_primitive_index.Raw(),
-        primitive_instance_key_sorted.Raw(), primitive_instance_list_primitive_index_sorted.Raw(),
+        primitive_instance_list_key.Raw(), primitive_instance_key_sorted.Raw(),
+        primitive_instance_list_value.Raw(), primitive_instance_list_value_sorted.Raw(),
         primitive_instance_count.Raw()
     );
-    auto tile_instance_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t) * num_tiles);
     auto instance_indirect_buffer = Helpers::SpawnDispatchIndirectCommand1D(
         builder, primitive_instance_count.Raw(), CollectTileInstanceOffsetsShader::kThreadGroupSize);
     {
         auto shader = RDGShaderLibrary::Get().GetShader<CollectTileInstanceOffsetsShader>();
-        auto params = builder.Allocate<CollectTileInstanceOffsetsShader::ShaderParameters>();
-        params->UB = common_ub;
-        params->PrimitiveInstanceCount = primitive_instance_count.Raw();
-        params->PrimitiveInstanceListKeySorted = primitive_instance_key_sorted.Raw();
-        params->RWTileInstanceOffsets = tile_instance_offset.Raw();
-        builder.AddPass<CollectTileInstanceOffsetsShader>({}, shader, params,
-            [shader, params, cmd = instance_indirect_buffer.Raw()] (RDGPass *pass, RHICommandQueueGraphics &queue) {
-            RDGCommandHelper::DispatchIndirect<CollectTileInstanceOffsetsShader>(
-                queue, pass, shader, params, cmd
-            );
-        });
+        Helpers::DispatchIndirectComputePass(builder, shader, params, instance_indirect_buffer.Raw());
     }
 
     {
-        auto shader = RDGShaderLibrary::Get().GetShader<DrawVolumePrimitivesShader>();
-        auto params = builder.Allocate<DrawVolumePrimitivesShader::ShaderParameters>();
-        params->View = view->view_common_params_;
-        params->UB = common_ub;
-        params->PrimitiveData = primitive_data;
-        // params->ActivePrimitiveScreenAxis = active_primitive_screen_axis.Raw();
-        // params->ActivePrimitiveScreenAxisZProjection = active_primitive_screen_axis_z_projection.Raw();
-        // params->ActivePrimitiveCenterPixelPosition = active_primitive_center_pixel_position.Raw();
-        params->PrimitiveInstanceCount = primitive_instance_count.Raw();
-        params->PrimitiveInstanceListPrimitiveIndexSorted = primitive_instance_list_primitive_index_sorted.Raw();
-        params->RWVolumeDensity = view->G_volume_density_.Raw();
-        params->RWVolumeMinMax = view->G_volume_min_max_.Raw();
-        params->RWVolumeColor = view->G_volume_color_.Raw();
-        builder.AddPass<DrawVolumePrimitivesShader>({}, shader, params,
-            [shader, params, tile_dimensions] (RDGPass *pass, RHICommandQueueGraphics &queue) {
-                RDGCommandHelper::Dispatch<DrawVolumePrimitivesShader>(queue, pass, shader, params, tile_dimensions.x, tile_dimensions.y);
-        });
+        auto shader = RDGShaderLibrary::Get().GetShader<CountTileInstancesShader>();
+        Helpers::DispatchComputePass(builder, shader, params, DivideAndRoundUp(num_tiles, CountTileInstancesShader::kThreadGroupSize));
+    }
+
+    {
+        auto shader = RDGShaderLibrary::Get().GetShader<DrawVolumePrimitivesShader>();Helpers::DispatchComputePass(builder, shader, params, tile_dimensions.x, tile_dimensions.y);
     }
 }
 

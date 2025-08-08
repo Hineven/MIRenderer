@@ -39,6 +39,17 @@ struct Transform {
         return glm::mat4x3(transform);
     }
 
+    FORCEINLINE glm::mat4x3 GetToLocalTransformMatrix() const {
+        glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.0f), 1.f / scale);
+        glm::mat4 rotationMatrix = glm::mat4(1.0f);
+        rotationMatrix = glm::rotate(rotationMatrix, -rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+        rotationMatrix = glm::rotate(rotationMatrix, -rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+        rotationMatrix = glm::rotate(rotationMatrix, -rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+        glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), -position);
+        glm::mat4 transform = scaleMatrix * rotationMatrix * translationMatrix;
+        return glm::mat4x3(transform);
+    }
+
     FORCEINLINE static Transform Identity () {
         return Transform();
     }

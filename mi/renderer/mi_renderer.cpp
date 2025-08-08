@@ -126,16 +126,20 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
+    std::vector<glm::mat4x3> renderable_inverse_transforms;
     std::vector<glm::mat3x3> renderable_normal_transforms;
     std::vector<RenderableHeader> renderable_headers;
     std::vector<int> visible_renderable_indices;
     {
         renderable_transforms.reserve(all_renderables.size());
+        renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
         for (auto & e : all_renderables) {
             if (e) {
                 auto to_world = e->GetTransform().GetToWorldTransformMatrix();
+                auto to_local = e->GetTransform().GetToLocalTransformMatrix();
                 renderable_transforms.push_back(to_world);
+                renderable_inverse_transforms.push_back(to_local);
                 auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
                 renderable_normal_transforms.push_back(normal_transform);
                 renderable_headers.push_back(e->GetDeviceRenderableHeader());
@@ -151,6 +155,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_transforms.data(),
         renderable_transforms.size() * sizeof(glm::mat4x3));
+    view->upload_context_.Add(
+        builder.Import(view->scene_->GetDeviceScene()->d_renderable_inverse_transforms_.Raw(),
+            RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
+        renderable_inverse_transforms.data(),
+        renderable_inverse_transforms.size() * sizeof(glm::mat4x3));
     view->upload_context_.Add(
         builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw(),
             RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
@@ -174,7 +183,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
     auto instance_count = (uint32_t)visible_rt_static_mesh_renderable_indices.size();
     TRef<RDGBuffer> instance_buffer;
-    {
+    if (instance_count > 0){
         auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
         auto instance_data_bytesize = instance_count * instance_size;
 
@@ -258,7 +267,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 RHIGPUAccessFlagBits::kAccelerationStructureWrite
             );
             auto as_build_info = build_info;
-            as_build_info.instance_data = instance_buffer->GetRHI();
+            as_build_info.instance_data = instance_buffer ? instance_buffer->GetRHI() : RHIBufferSpan{};
             as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
             queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
             // Barrier the TLAS after building
@@ -288,9 +297,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     Render_DrawStaticMeshes(view, builder);
 
     // Volume primitives
-    if (false) {
-        Render_DrawVolumePrimitives(view, builder);
-    }
+    Render_DrawVolumePrimitives(view, builder);
 
     Render_ComputeHiZBuffer(view, builder);
 
@@ -315,6 +322,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
         else if (type == 3)
             Render_DrawToOutput(view, builder, view->persistent_data_->prev_radiance_.Raw());
+        else if (type == 4)
+            Render_DrawToOutput(view, builder, view->G_volume_density_.Raw());
+        else if (type == 5)
+            Render_DrawToOutput(view, builder, view->G_volume_min_max_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
     // Update persistent data using current frame for next frame use

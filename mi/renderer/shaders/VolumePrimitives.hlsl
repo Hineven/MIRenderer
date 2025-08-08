@@ -27,9 +27,38 @@ struct CollectVolumePrimitivesUB {
 ConstantBuffer<RenderVolumePrimitivesUB> UB;
 ConstantBuffer<CollectVolumePrimitivesUB> UB_Collect;
 
+
+StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
+StructuredBuffer<float3x4> RenderableTransformBuffer;
+StructuredBuffer<float3x4> RenderableInverseTransformBuffer;
+
+StructuredBuffer<uint> ActivePrimitiveCount;
 RWStructuredBuffer<uint> RWActivePrimitiveCount;
-RWStructuredBuffer<uint> RWTileInstanceOffsets;
+// Stores packed renderable index & primitive index
+StructuredBuffer<uint> ActivePrimitiveListBuffer;
+RWStructuredBuffer<uint> RWActivePrimitiveListBuffer;
+
+StructuredBuffer<uint> PrimitiveInstanceCount;
 RWStructuredBuffer<uint> RWPrimitiveInstanceCount;
+// Stores packed renderable index & primitive index
+RWStructuredBuffer<uint> RWPrimitiveInstanceListBuffer;
+RWStructuredBuffer<uint> RWPrimitiveInstanceListKeyBuffer;
+StructuredBuffer<uint> PrimitiveInstanceListSortedBuffer;
+StructuredBuffer<uint> PrimitiveInstanceListKeySortedBuffer;
+
+StructuredBuffer<uint> TileInstanceOffsetBuffer;
+RWStructuredBuffer<uint> RWTileInstanceOffsetBuffer;
+StructuredBuffer<uint> TileInstanceCountBuffer;
+RWStructuredBuffer<uint> RWTileInstanceCountBuffer;
+
+
+
+
+// Final output
+RWTexture2D<float> RWVolumeDensity;
+RWTexture2D<float2> RWVolumeMinMax;
+RWTexture2D<float4> RWVolumeColor;
+RWTexture2D<float2> RWVolumeCdfAttenuation;
 
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void VolumePrimitivesClearCounters(uint DispatchID: SV_DispatchThreadID) {
@@ -38,33 +67,37 @@ void VolumePrimitivesClearCounters(uint DispatchID: SV_DispatchThreadID) {
         RWPrimitiveInstanceCount[0] = 0;
     }
     if(DispatchID < UB.NumTiles) {
-        RWTileInstanceOffsets[DispatchID] = 0;
+        RWTileInstanceOffsetBuffer[DispatchID] = 0;
+        RWTileInstanceCountBuffer[DispatchID] = 0;
     }
 }
-
-StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
-RWStructuredBuffer<uint> RWActivePrimitiveList;
-StructuredBuffer<float3x4> RenderableTransforms;
 
 VolumePrimitive LoadVolumePrimitive(uint Index) {
     PackedVolumePrimitive PackedPrimitive = PrimitiveData[Index];
     VolumePrimitive Primitive;
     Primitive.Position = PackedPrimitive.Position;
-    float4 Rotation = normalize(UnpackSnorm4x8(PackedPrimitive.PackedRotation));
+    float3 Rotation_xyz = UnpackSnorm4x8(PackedPrimitive.PackedRotation_OpacityHi).xyz;
+    float Rotation_w = sqrt(max(1.0f - dot(Rotation_xyz, Rotation_xyz), 0.0f));
+    float4 Rotation = float4(Rotation_xyz, Rotation_w);
+    Primitive.Rotation = Rotation;
     Primitive.Scales = PackedPrimitive.Scales;
-    float4 ColorOpacity = UnpackSnorm4x8(PackedPrimitive.PackedColorOpacity);
-    Primitive.Color = ColorOpacity.rgb;
-    Primitive.Opacity = ColorOpacity.a;
+    float3 Color = UnpackUnorm4x8(PackedPrimitive.PackedColor_OpacityLo).rgb;
+    Primitive.Color = Color;
+    float Opacity = f16tof32(
+        ((PackedPrimitive.PackedRotation_OpacityHi >> 24) << 8) |
+        (PackedPrimitive.PackedColor_OpacityLo >> 24)
+    );
+    Primitive.Opacity = Opacity;
     return Primitive;
 }
 
-uint PackRenderablePrimitiveIndex (uint InstanceIndex, uint PrimitiveIndex) {
+uint PackRenderablePrimitiveIndex (uint RenderableIndex, uint PrimitiveIndex) {
     // 12 bits for instance index, 20 bits for primitive index
-    return (InstanceIndex << 20) | PrimitiveIndex;
+    return (RenderableIndex << 20) | PrimitiveIndex;
 }
 
-void UnpackRenderablePrimitiveIndex(uint PackedIndex, out uint InstanceIndex, out uint PrimitiveIndex) {
-    InstanceIndex = PackedIndex >> 20;
+void UnpackRenderablePrimitiveIndex(uint PackedIndex, out uint RenderableIndex, out uint PrimitiveIndex) {
+    RenderableIndex = PackedIndex >> 20;
     PrimitiveIndex = PackedIndex & ((1u << 20) - 1u);
 }
 
@@ -79,10 +112,10 @@ void CollectVolumePrimitives (
     if (DispatchID >= UB_Collect.InstanceNumPrimitives) return;
     uint PrimitiveIndex = DispatchID + UB_Collect.InstancePrimitiveOffset;
     VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
-    float3 center = Primitive.Position;
-    float3 scales = Primitive.Scales;
-    float3x4 ObjectToWorld = RenderableTransforms[UB_Collect.RenderableIndex];
-    float4 WorldCenterW = float4(mul(ObjectToWorld, float4(center, 1)), 1);
+    float3 Center = Primitive.Position;
+    float3 Scales = Primitive.Scales;
+    float3x4 ObjectToWorld = RenderableTransformBuffer[UB_Collect.RenderableIndex];
+    float4 WorldCenterW = float4(mul(ObjectToWorld, float4(Center, 1)), 1);
     float4 NDCCenterW = mul(GetActiveCamera().WorldToNDC, WorldCenterW);
     float3 NDCCenter = NDCCenterW.xyz / NDCCenterW.w;
     // Check if the center is within the view frustum
@@ -91,8 +124,8 @@ void CollectVolumePrimitives (
         // Outside of the view frustum, skip this primitive
         bIsActive = 0;
     }
-    float volume = scales.x * scales.y * scales.z;
-    if (volume < 1e-6f) {
+    float Volume = Scales.x * Scales.y * Scales.z;
+    if (Volume < 1e-9f) {
         // Skip degenerate primitives (too small)
         bIsActive = 0;
     }
@@ -117,21 +150,21 @@ void CollectVolumePrimitives (
     ListOffset = SharedListOffset;
     if (bIsActive != 0) {
         // Store the primitive index in the active primitive list
-        RWActivePrimitiveList[ListOffset + GroupActivePrimitiveListOffset] = PackRenderablePrimitiveIndex(UB_Collect.RenderableIndex, PrimitiveIndex);
+        RWActivePrimitiveListBuffer[ListOffset + GroupActivePrimitiveListOffset] = PackRenderablePrimitiveIndex(UB_Collect.RenderableIndex, PrimitiveIndex);
     }
 }
 
-uint PackSortKey(uint tile_id, uint quantized_depth) {
-    uint sort_key = (tile_id << 19) | quantized_depth;
-    return sort_key;
+uint PackSortKey(uint TileIndex, uint QuantizedDepth) {
+    uint SortKey = (TileIndex << 19) | QuantizedDepth;
+    return SortKey;
 }
 
-void UnpackSortKey(uint sort_key, out uint tile_id, out uint quantized_depth) {
-    tile_id = sort_key >> 19;
-    quantized_depth = sort_key & ((1u << 19) - 1u);
+void UnpackSortKey(uint SortKey, out uint TileIndex, out uint QuantizedDepth) {
+    TileIndex = SortKey >> 19;
+    QuantizedDepth = SortKey & ((1u << 19) - 1u);
 }
 
-float3 GetCovariance2DMatrix(float3x3 view_matrix, float3x4 ToWorldTransform, VolumePrimitive Primitive, out float4 ClipPosW, out uint quantized_depth) {
+float3 GetCovariance2DMatrix(float3x4 ToWorldTransform, VolumePrimitive Primitive, out float4 ClipPosW, out uint QuantizedDepth, uint DispatchID) {
     // 1. Transform center to view and clip space, calculate depth
     float4 WorldPosW = float4(TransformPoint(ToWorldTransform, Primitive.Position), 1.0f);
     CameraParameters C = GetActiveCamera();
@@ -140,8 +173,8 @@ float3 GetCovariance2DMatrix(float3x3 view_matrix, float3x4 ToWorldTransform, Vo
 
     // Depth is guaranteed to be in [0,1] for centers of active primitives, as per user spec (0.1 to 1).
     // And ClipPosW.w > 0 is also implied.
-    float depth01 = ClipPosW.z / ClipPosW.w;
-    quantized_depth = (uint)(clamp(depth01, 0.0f, 1.0f) * ((1u << 19) - 1u)); // Clamp for safety
+    float Depth01 = ClipPosW.z / ClipPosW.w;
+    QuantizedDepth = (uint)(clamp(Depth01, 0.0f, 1.0f) * ((1u << 19) - 1u)); // Clamp for safety
 
     // 2. EWA-like projection: Compute 2D screen-space covariance matrix (Sigma_2D)
     float tan_fov_y_half = C.TanFoVY_2;
@@ -151,7 +184,7 @@ float3 GetCovariance2DMatrix(float3x3 view_matrix, float3x4 ToWorldTransform, Vo
 
     float xc = ViewPosW.x;
     float yc = ViewPosW.y;
-    float zc = ViewPosW.z;
+    float zc = -ViewPosW.z;
 
     // Assume that the positive z-axis is aligned with view direction (left-handed view-space)
     if (zc <= 0.001f) // Primitive too close or behind camera (extra safety, though FilterActivePrimitives should handle)
@@ -190,13 +223,8 @@ float3 GetCovariance2DMatrix(float3x3 view_matrix, float3x4 ToWorldTransform, Vo
     return float3(s00, s01, s11);
 }
 
-StructuredBuffer<uint> ActivePrimitiveCount;
-StructuredBuffer<uint> ActivePrimitiveList;
-RWStructuredBuffer<uint> RWPrimitiveInstanceListKey;
-RWStructuredBuffer<uint> RWPrimitiveInstanceListPrimitiveIndex;
-
-groupshared uint shared_num_sort_keys_compacted;
-groupshared uint shared_global_write_offset;
+groupshared uint SharedNumSortKeysCompacted;
+groupshared uint SharedGlobalWriteOffset;
 
 #define K_SQ_ELLIPSE_BOUNDARY 1
 
@@ -212,36 +240,42 @@ void ProjectVolumePrimitives (
 
     // Each thread processes one active primitive from the input list.
     // active_primitive_count[0] stores the number of active primitives from FilterActivePrimitives pass.
-    if (DispatchID >= ActivePrimitiveCount[0])
+    uint ActivePrimitiveIndex = DispatchID;
+    if (ActivePrimitiveIndex >= ActivePrimitiveCount[0])
     {
         return;
     }
 
     uint RenderableIndex, PrimitiveIndex;
-    UnpackRenderablePrimitiveIndex(ActivePrimitiveList[DispatchID], RenderableIndex, PrimitiveIndex);
+    uint RenderablePrimitiveIndex = ActivePrimitiveListBuffer[ActivePrimitiveIndex];
+    UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
     VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
     CameraParameters C = GetActiveCamera();
-    float4 clip_pos_h; uint quantized_depth;
+    float4 ClipPosW; uint QuantizedDepth;
 
-    float3 cov2d = GetCovariance2DMatrix(To3x3(C.WorldToView), RenderableTransforms[RenderableIndex], Primitive, clip_pos_h, quantized_depth);
+    float3 Covariance2D = GetCovariance2DMatrix(RenderableTransformBuffer[RenderableIndex], Primitive, ClipPosW, QuantizedDepth, DispatchID);
 
     // 3. Determine screen space bounding box of the projected 2D ellipse
     // For uniform distributions, K_SQ_ELLIPSE_BOUNDARY == 1
-    float radius_x_approx = sqrt(K_SQ_ELLIPSE_BOUNDARY * max(0.0f, cov2d.x));
-    float radius_y_approx = sqrt(K_SQ_ELLIPSE_BOUNDARY * max(0.0f, cov2d.z));
+    float RadiusXApproax = sqrt(K_SQ_ELLIPSE_BOUNDARY * max(0.0f, Covariance2D.x));
+    float RadiusYApproax = sqrt(K_SQ_ELLIPSE_BOUNDARY * max(0.0f, Covariance2D.z));
 
-    float ndc_center_x = clip_pos_h.x / clip_pos_h.w;
-    float ndc_center_y = clip_pos_h.y / clip_pos_h.w;
+    float ndc_center_x = ClipPosW.x / ClipPosW.w;
+    float ndc_center_y = ClipPosW.y / ClipPosW.w;
 
     float screen_center_x = (ndc_center_x * 0.5f + 0.5f) * float(C.FilmDimensions.x);
     float screen_center_y = ((1.0f - ndc_center_y) * 0.5f) * float(C.FilmDimensions.y);
     float2 ellipse_screen_center = float2(screen_center_x, screen_center_y);
 
-    float min_sx_bb = screen_center_x - radius_x_approx;
-    float max_sx_bb = screen_center_x + radius_x_approx;
-    float min_sy_bb = screen_center_y - radius_y_approx;
-    float max_sy_bb = screen_center_y + radius_y_approx;
+    // if(DispatchID == 0) {
+    //     printf("Approax: %f %f\n", RadiusXApproax, RadiusYApproax);
+    // }
+
+    float min_sx_bb = screen_center_x - RadiusXApproax;
+    float max_sx_bb = screen_center_x + RadiusXApproax;
+    float min_sy_bb = screen_center_y - RadiusYApproax;
+    float max_sy_bb = screen_center_y + RadiusYApproax;
 
     // 4. Determine overlapping tiles based on the bounding box
 
@@ -251,7 +285,7 @@ void ProjectVolumePrimitives (
     int tile_max_y = clamp((int)floor(min(float(C.FilmDimensions.y) - 1.0f, max_sy_bb) / 16.0f), 0, UB.TileDimensions.y - 1);
 
     if (LocalID == 0) {
-        shared_num_sort_keys_compacted = 0;
+        SharedNumSortKeysCompacted = 0;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -259,49 +293,38 @@ void ProjectVolumePrimitives (
     int coarse_allocation = (tile_max_x - tile_min_x + 1) * (tile_max_y - tile_min_y + 1);
 
 
-    uint group_write_offset = 0;
-    InterlockedAdd(shared_num_sort_keys_compacted, (uint)coarse_allocation, group_write_offset);
+    uint GroupWriteOffset = 0;
+    InterlockedAdd(SharedNumSortKeysCompacted, (uint)coarse_allocation, GroupWriteOffset);
     GroupMemoryBarrierWithGroupSync();
-    uint write_offset = 0;
+    uint WriteOffset = 0;
     if (LocalID == 0) {
-        InterlockedAdd(RWPrimitiveInstanceCount[0], shared_num_sort_keys_compacted, write_offset);
-        shared_global_write_offset = write_offset;
+        InterlockedAdd(RWPrimitiveInstanceCount[0], SharedNumSortKeysCompacted, WriteOffset);
+        SharedGlobalWriteOffset = WriteOffset;
     }
     GroupMemoryBarrierWithGroupSync();
-    write_offset = shared_global_write_offset + group_write_offset;
+    WriteOffset = SharedGlobalWriteOffset + GroupWriteOffset;
 
-    uint num_sort_keys_compacted = 0;
+    uint NumSortKeysCompacted = 0;
 
     // 5. For each candidate tile, perform precise intersection test and generate instance data
     for (int ty = tile_min_y; ty <= tile_max_y; ++ty)
     {
         for (int tx = tile_min_x; tx <= tile_max_x; ++tx)
         {
-
-            float4 tile_rect_pixels = float4(
-                float(tx * 16),       // min_x
-                float(ty * 16),       // min_y
-                float((tx + 1) * 16), // max_x
-                float((ty + 1) * 16)  // max_y
-            );
-
             uint tile_id = (uint)tx + (uint)ty * UB.TileDimensions.x;
             if (tile_id >= (1u << 13)) continue;
 
-            uint sort_key = PackSortKey(tile_id, quantized_depth);
+            uint SortKey = PackSortKey(tile_id, QuantizedDepth);
             // Write directly, bypass the cache for compaction.
-            uint write_index = write_offset + num_sort_keys_compacted;
-            if (write_index < UB.MaxNumPrimitiveInstances) {
-                RWPrimitiveInstanceListKey[write_index] = sort_key;
-                RWPrimitiveInstanceListPrimitiveIndex[write_index] = PrimitiveIndex;
-                num_sort_keys_compacted++;
+            uint WriteIndex = WriteOffset + NumSortKeysCompacted;
+            if (WriteIndex < UB.MaxNumPrimitiveInstances) {
+                RWPrimitiveInstanceListKeyBuffer[WriteIndex] = SortKey;
+                RWPrimitiveInstanceListBuffer[WriteIndex] = RenderablePrimitiveIndex;
+                NumSortKeysCompacted++;
             }
         }
     }
 }
-
-StructuredBuffer<uint> PrimitiveInstanceCount;
-StructuredBuffer<uint> PrimitiveInstanceListKeySorted;
 
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void CollectTileInstanceOffsets(
@@ -312,23 +335,48 @@ void CollectTileInstanceOffsets(
     }
 
     // Each thread processes one active primitive sort key
-    uint sort_key = PrimitiveInstanceListKeySorted[DispatchID];
+    uint sort_key = PrimitiveInstanceListKeySortedBuffer[DispatchID];
     uint prev_sort_key = 0;
-    if (DispatchID > 0) prev_sort_key = PrimitiveInstanceListKeySorted[DispatchID - 1];
+    if (DispatchID > 0) prev_sort_key = PrimitiveInstanceListKeySortedBuffer[DispatchID - 1];
     else prev_sort_key = 0xffffffff; // Use a sentinel value for the first element
     uint current_tile = 0, prev_tile = 0, current_quant_depth = 0, prev_quant_depth = 0;
     UnpackSortKey(sort_key, current_tile, current_quant_depth);
     UnpackSortKey(prev_sort_key, prev_tile, prev_quant_depth);
     if (current_tile != prev_tile) {
-        RWTileInstanceOffsets[current_tile] = DispatchID;
+        RWTileInstanceOffsetBuffer[current_tile] = DispatchID;
     }
+}
+
+[numthreads(THREAD_GROUP_SIZE, 1, 1)]
+void CountTileInstances(
+    uint DispatchID: SV_DispatchThreadID
+) {
+    if (DispatchID >= UB.NumTiles) {
+        return;
+    }
+    uint TileIndex = DispatchID;
+    uint Offset = TileInstanceOffsetBuffer[TileIndex];
+    uint InstanceCount = PrimitiveInstanceCount[0];
+    uint TileInstanceCount = 0;
+    while(true) {
+        uint SortKey = PrimitiveInstanceListKeySortedBuffer[Offset + TileInstanceCount];
+        uint UnpackedTileIndex, QuantizedDepth;
+        UnpackSortKey(SortKey, UnpackedTileIndex, QuantizedDepth);
+        if(UnpackedTileIndex != TileIndex) {
+            break; // Reached the end of this tile's instances
+        }
+        TileInstanceCount ++;
+        if (Offset + TileInstanceCount >= InstanceCount) {
+            break; // Prevent out-of-bounds access
+        }
+    }
+    RWTileInstanceCountBuffer[TileIndex] = TileInstanceCount;
 }
 
 struct RayVolumeDistribution {
     float l, r;
-    float density;
-    float3 color;
-    float cdf;
+    float Density;
+    float3 Color;
 };
 
 float TempFn(float l1, float r1, float s1, float l2, float r2, float s2, float x) {
@@ -336,8 +384,12 @@ float TempFn(float l1, float r1, float s1, float l2, float r2, float s2, float x
            (max(x - l2, 0) - max(x - r2, 0)) * s2;
 }
 
-RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_distr, RayVolumeDistribution new_distr)
+RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_distr, RayVolumeDistribution new_distr, inout float Cdf, inout float attenuation)
 {
+    // TODO
+    Cdf = 1.f;
+    attenuation = 1.f;
+
     float old_l = old_distr.l;
     float old_r = old_distr.r;
     float new_l = new_distr.l;
@@ -354,10 +406,10 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
         x_val[1] = tmp;
     }
     float y_val[4];
-    y_val[0] = TempFn(old_l, old_r, old_distr.density, new_l, new_r, new_distr.density, x_val[0]);
-    y_val[1] = TempFn(old_l, old_r, old_distr.density, new_l, new_r, new_distr.density, x_val[1]);
-    y_val[2] = TempFn(old_l, old_r, old_distr.density, new_l, new_r, new_distr.density, x_val[2]);
-    y_val[3] = TempFn(old_l, old_r, old_distr.density, new_l, new_r, new_distr.density, x_val[3]);
+    y_val[0] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[0]);
+    y_val[1] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[1]);
+    y_val[2] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[2]);
+    y_val[3] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[3]);
     const float TARGET = 1.f;
     float x_sol = x_val[3];
     for (int segment = 0; segment < 3; segment++) {
@@ -380,25 +432,94 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
     }
     float old_r_1 = min(old_r, x_sol);
     float new_r_1 = min(new_r, x_sol);
-    float old_int_col = max(old_r_1 - old_l, 0) * old_distr.density;
-    float new_int_col = max(new_r_1 - new_l, 0) * new_distr.density;
+    float old_int_col = max(old_r_1 - old_l, 0) * old_distr.Density;
+    float new_int_col = max(new_r_1 - new_l, 0) * new_distr.Density;
     float total_int_col = max(1e-5, old_int_col + new_int_col);
-    float old_int = (old_r - old_l) * old_distr.density;
-    float new_int = (new_r - new_l) * new_distr.density;
+    float old_int = (old_r - old_l) * old_distr.Density;
+    float new_int = (new_r - new_l) * new_distr.Density;
     float total_int = max(1e-5, old_int + new_int);
 
     RayVolumeDistribution result;
     // Strategy: Preserve boundaries
     result.l = min(old_l, new_l);
     result.r = max(old_r, new_r);
-    result.density = total_int / (result.r - result.l);
+    result.Density = total_int / (result.r - result.l);
     // Blend color with special rules.
-    result.color = (old_distr.color * old_int_col + new_distr.color * new_int_col) / total_int_col;
+    result.Color = (old_distr.Color * old_int_col + new_distr.Color * new_int_col) / total_int_col;
     return result;
 }
 
-StructuredBuffer<uint> TileInstanceOffsets;
-StructuredBuffer<uint> PrimitiveInstanceListPrimitiveIndexSorted;
+bool RayIntersect(float3 Origin, float3 Direction, VolumePrimitive Primitive, float3x4 ToObject, inout float2 intersection_t, inout float std_dist_t) {
+    float3x3 RotationMatrix = BuildRotationMatrix(Primitive.Rotation);
+    RotationMatrix = transpose(RotationMatrix); // Transform from local-to-object rotation matrix to object-to-local
+    float3 ObjectLocalOrigin = TransformPoint(ToObject, Origin);
+    float3 ObjectLocalDirection = TransformVector(ToObject, Direction);
+    float3 LocalOrigin = mul(RotationMatrix, ObjectLocalOrigin - Primitive.Position) / Primitive.Scales;
+    float3 LocalDirection = mul(RotationMatrix, ObjectLocalDirection) / Primitive.Scales;
+    float a = dot(LocalDirection, LocalDirection);
+    float b = 2 * dot(LocalOrigin, LocalDirection);
+    float c = dot(LocalOrigin, LocalOrigin) - 1.0f;
+    float D = b * b - 4 * a * c;
+    if (D < 0) {
+        // No intersection
+        intersection_t = 0;
+        return false;
+    }
+    float sqrt_D = sqrt(D);
+    float t1 = (-b - sqrt_D) / (2 * a);
+    float t2 = (-b + sqrt_D) / (2 * a);
+    intersection_t = float2(t1, t2);
+    float3 Ortho = cross(LocalOrigin, LocalDirection);
+    float3 ProjectedAxis = normalize(cross(LocalDirection, Ortho));
+    // Minimum distance of line-to-origin
+    std_dist_t = abs(dot(ProjectedAxis, LocalOrigin));
+    return true;
+}
+
+RayVolumeDistribution RenderRay(
+    float3 RayOrigin,
+    float3 RayDirection,
+    uint TileInstanceOffset,
+    uint NumTilePrimitiveInstances,
+    inout float Cdf,
+    inout float Attenuation
+) {
+    RayVolumeDistribution Result;
+    Result.l = 0.f;
+    Result.r = 0.f;
+    Result.Density = 0.f;
+    Result.Color = float3(0.f, 0.f, 0.f);
+    Cdf = 1.f;
+    for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
+        uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
+        uint PrimitiveIndex, RenderableIndex;
+        UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
+        VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
+
+        // Transform the primitive to world space
+        float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
+        
+        // Calculate intersection with the primitive
+        float2 lr; float Dist;
+        bool bIntersected = RayIntersect(
+            RayOrigin, RayDirection, Primitive, ToObjectTransform,
+            lr, Dist
+        );
+        if(bIntersected && lr.y > 0.f) {
+            RayVolumeDistribution Intersection;
+            Intersection.Color = Primitive.Color;
+            Intersection.Density = Primitive.Opacity;
+            Intersection.l = max(lr.x, 0);
+            Intersection.r = max(lr.y, 0);
+
+            // Update the result distribution
+            Result = UpdateRayVolumeDistribution(Result, Intersection, Cdf, Attenuation);
+        }
+
+    }
+    return Result;
+}
+
 
 #define TILE_SIZE 16
 
@@ -408,28 +529,22 @@ void DrawVolumePrimitives (
     uint2 GroupID: SV_GroupID,
     uint2 LocalID: SV_GroupThreadID
 ) {
-    uint tile_index = GroupID.x + GroupID.y * UB.TileDimensions.x;
-    uint instance_primitive_list_offset = TileInstanceOffsets[tile_index];
-    if(!IsValid(instance_primitive_list_offset)) {
-        // No primitives in this tile, skip rendering
-        return;
-    }
+    uint TileIndex = GroupID.x + GroupID.y * UB.TileDimensions.x;
+    uint TileInstanceOffset = TileInstanceOffsetBuffer[TileIndex];
+    uint NumTilePrimitiveInstances = TileInstanceCountBuffer[TileIndex];
     {
         CameraParameters C = GetActiveCamera();
-        uint2 pixel_offset_in_tile = GroupID * TILE_SIZE + LocalID;
-        uint2 pixel_index = GroupID * 16 + pixel_offset_in_tile;
-        //if (all(pixel_index < C.FilmDimensions)) {
-        //    float3 ray_origin = C.Position;
-        //    float3 ray_direction = GetRayDirection(pixel_index, ub);
-
-            // Per pixel weight (d final_loss / d per_pixel_loss)
-        //    float dl_dpixelloss = 1.0f / (float)(C.FilmDimensions.x * C.FilmDimensions.y);
-            // Forward pass
-        //    float4 rendered = RenderRay_Forward(ray_origin, ray_direction,
-        //                                        primitive_data_ptr, forward_state_cache_buf, pixel_cache_offset,
-        //                                        active_instance_primitive_list_sorted_buf, instance_primitive_list_offset,
-        //                                        num_primitives);
-        //    output_texture[pixel_index] = float4(rendered_pair.p.rgb * rendered_pair.p.w, 1.f);
-        //}
+        uint2 PixelOffsetInTile = LocalID;
+        uint2 PixelIndex = GroupID * TILE_SIZE + PixelOffsetInTile;
+        if (all(PixelIndex < C.FilmDimensions)) {
+            float3 RayOrigin = C.Position;
+            float3 RayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(ScreenCoordsToUV(C, PixelIndex)));
+            float Cdf = 1.f, Attenuation = 1.f;
+            RayVolumeDistribution Rendered = RenderRay(RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances, Cdf, Attenuation);
+            RWVolumeDensity[PixelIndex] = Rendered.Density;
+            RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
+            RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
+            RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
+        }
     }
 }

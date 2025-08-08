@@ -38,7 +38,7 @@ static CVar<int> CVar_MaxNumLightGridEntries(
 static CVar<float> CVar_MinLightGridSize(
     "r.lightgrid.min_size",
     "Minimum size of the light grid in world units.",
-    0.4f
+    0.15f
 );
 
 static CVar<float> CVar_ShadowRayLengthMultiplier(
@@ -331,6 +331,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             auto maxv = glm::max(glm::abs(dist_to_min), glm::abs(dist_to_max));
             auto hmaxv = std::max(maxv.x, std::max(maxv.y, maxv.z));
             float grid_cell_size = 4.01f * float(double(hmaxv) / pow(2, kLightGridNumCascades) / kLightGridSize);
+            grid_cell_size = std::max(grid_cell_size, CVar_MinLightGridSize.Get());
             L_UB->LightGridSize = glm::uvec3(kLightGridSize);
             L_UB->LightGridCellSize = grid_cell_size;
             L_UB->LightGridCenter = camera_pos;

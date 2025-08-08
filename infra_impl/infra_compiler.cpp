@@ -157,6 +157,8 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-Zi");
         add_option(L"-fspv-reflect");
         add_option(L"-fspv-debug=vulkan-with-source");
+        // Warnings as errors
+        add_option(L"-WX");
         // Debug printf (automatically used , no need to add it)
         // add_option(L"-fspv-extension=SPV_KHR_non_semantic_info");
     }

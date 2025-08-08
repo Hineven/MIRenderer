@@ -8,9 +8,9 @@ MI_SHARED_HLSL_BEGIN
 // 32 bytes per primitive
 struct PackedVolumePrimitive {
     float3 Position;
-    uint32_t PackedRotation; // Quaternion rotation, snorm4x8
+    uint32_t PackedRotation_OpacityHi; // Quaternion rotation (xyz), snorm3x8 + opacity high 8 bits
     float3 Scales;
-    uint32_t PackedColorOpacity; // RGBA color, packed into uint32_t
+    uint32_t PackedColor_OpacityLo; // RGBA color, unorm 3x8 + opacity low 8 bits
 };
 
 struct VolumePrimitive {

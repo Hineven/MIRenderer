@@ -26,7 +26,8 @@
 #include "rhi/rhi_thread.h"
 
 #ifndef NDEBUG
-#define ENABLE_VALIDATION_LAYER
+//25.8.8: enabling validation layer in the application is buggy currently. Use vulkan configurator instead.
+// #define ENABLE_VALIDATION_LAYER
 #endif
 
 // 25.8.7: this must be defined. Otherwise driver panics when validation layer is on
@@ -56,7 +57,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                                      VK_MAKE_VERSION(MI_APPLICATION_VERSION_MAJOR, MI_APPLICATION_VERSION_MINOR, 0),
                                      MI_ENGINE_NAME,
                                      VK_MAKE_VERSION(MI_ENGINE_VERSION_MAJOR, MI_ENGINE_VERSION_MINOR, 0),
-                                     VK_API_VERSION_1_3);
+                                     VK_API_VERSION_1_4);
         vk::InstanceCreateInfo instance_info({}, &app_info);
 
 

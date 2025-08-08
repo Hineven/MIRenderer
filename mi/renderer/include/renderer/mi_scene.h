@@ -36,7 +36,8 @@ protected:
     ~DeviceScene();
 
     // Indexed with renderable index.
-    TRef<RHIBuffer> d_renderable_transforms_; // Array of float3x4 matrices
+    TRef<RHIBuffer> d_renderable_transforms_; // Array of float3x4 matrices (to world)
+    TRef<RHIBuffer> d_renderable_inverse_transforms_; // Array of float3x4 matrices (to local)
     TRef<RHIBuffer> d_renderable_normal_transforms_;
     TRef<RHIBuffer> d_renderable_headers_;
 

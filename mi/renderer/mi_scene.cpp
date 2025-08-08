@@ -19,6 +19,8 @@ DeviceScene::DeviceScene () {
     auto & rhi = RHI::Get();
     d_renderable_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     d_renderable_transforms_->SetName("RenderableTransforms");
+    d_renderable_inverse_transforms_ = rhi.CreateBuffer(sizeof(glm::mat4x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
+    d_renderable_inverse_transforms_->SetName("RenderableInverseTransforms");
     d_renderable_normal_transforms_ = rhi.CreateBuffer(sizeof(glm::mat3x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     d_renderable_normal_transforms_->SetName("RenderableNormalTransforms");
     d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);

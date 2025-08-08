@@ -145,9 +145,10 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
         vk::AccelerationStructureGeometryKHR vk_geometry;
         vk_geometry.setGeometryType(vk::GeometryTypeKHR::eInstances);
 
-        vk::AccelerationStructureGeometryInstancesDataKHR instance_data;
+        vk::AccelerationStructureGeometryInstancesDataKHR instance_data {};
         instance_data.setArrayOfPointers(false);
-        instance_data.setData(instance_buffer->GetDeviceAddress() + build_info.instance_data.offset);
+        if (instance_buffer)
+            instance_data.setData(instance_buffer->GetDeviceAddress() + build_info.instance_data.offset);
 
         vk_geometry.geometry.setInstances(instance_data);
         geometries = cmd->Allocate<vk::AccelerationStructureGeometryKHR[]>(1);

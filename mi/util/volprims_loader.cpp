@@ -8,9 +8,9 @@
 #include "renderer/mi_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
-    struct PackedVolumePrimitive;
+struct PackedVolumePrimitive;
 
-    bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, TRef<VolumePrimitives> &out_volprims) {
+bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, TRef<VolumePrimitives> &out_volprims) {
     if (path.extension() != ".ply") {
         MI_WARN("VolumePrimitivesLoader: Not a PLY file: {}", path.string());
         return false;
@@ -27,13 +27,13 @@ MI_NAMESPACE_BEGIN
     int num_prims = (int)element.count;
 
     std::vector<PackedVolumePrimitive> data;
+    data.resize(num_prims);
 
     // Positions
     {
         auto x = element.getProperty<float>("x");
         auto y = element.getProperty<float>("y");
         auto z = element.getProperty<float>("z");
-        data.resize(num_prims);
         for (int i = 0; i < num_prims; i++) {
             data[i].Position = {x[i], y[i], z[i]};
         }
@@ -55,25 +55,29 @@ MI_NAMESPACE_BEGIN
         auto rotation_x = element.getProperty<float>("rot_1");
         auto rotation_y = element.getProperty<float>("rot_2");
         auto rotation_z = element.getProperty<float>("rot_3");
+        auto opacities = element.getProperty<float>("opacity");
         for (int i = 0; i < num_prims; i++) {
             auto q = glm::vec4(rotation_x[i], rotation_y[i], rotation_z[i], rotation_w[i]);
+            if (q.w < 0) q = -q;
             float len = sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
             q /= len;
 			// Pack quaternion to 4xunorm8
 			uint32_t packed = (uint32_t)(glm::packSnorm4x8(glm::vec4(q.x, q.y, q.z, q.w)));
-			data[i].PackedRotation = packed;
+            auto opacity = glm::packHalf2x16({opacities[i], 0});
+			data[i].PackedRotation_OpacityHi = (packed & 0x00FFFFFFu) | ((opacity & 0xFF00) << 16);
         }
     }
     // Opacity & color
     {
-        auto alphas = element.getProperty<float>("opacity");
         auto color_0 = element.getProperty<float>("color_0");
         auto color_1 = element.getProperty<float>("color_1");
         auto color_2 = element.getProperty<float>("color_2");
+        auto opacities = element.getProperty<float>("opacity");
         for (int i = 0; i < num_prims; i++) {
-            data[i].PackedColorOpacity = glm::packUnorm4x8(
-            {color_0[i], color_1[i], color_2[i], alphas[i]}
-            );
+            auto opacity = glm::packHalf2x16({opacities[i], 0});
+            data[i].PackedColor_OpacityLo = (glm::packUnorm4x8(
+            {color_0[i], color_1[i], color_2[i], 0}
+            ) & 0x00FFFFFFu) | ((opacity & 0x00FF) << 24);
         }
 
     }

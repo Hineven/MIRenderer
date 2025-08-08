@@ -129,7 +129,7 @@ struct RendererView {
     // Albedo of the volume segment
     TRef<RDGTexture> G_volume_color_;
     // CDF of recorded volume segment
-    TRef<RDGTexture> G_volume_cdf_;
+    TRef<RDGTexture> G_volume_cdf_attenuation_;
 
     // HiZ buffer
     TRef<RDGTexture> hzb_;

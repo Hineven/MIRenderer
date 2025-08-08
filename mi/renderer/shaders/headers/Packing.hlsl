@@ -13,7 +13,7 @@ float4 UnpackSnorm4x8(uint Packed)
         (int)(Packed) >> 24
     );
 
-    float4 result = max(PackedSignedIntegers / 127.0f, -1.0f);
+    float4 result = clamp((float4)PackedSignedIntegers / 127.0f, -1, 1);
 
     return result;
 }
@@ -102,11 +102,11 @@ float3 UnpackNormal (uint Packed) {
 }
 
 uint PackUint2x16 (uint2 Value) {
-    return (Value.x << 16) | Value.y;
+    return Value.x | (Value.y << 16);
 }
 
 uint2 UnpackUint2x16 (uint Value) {
-    return uint2(Value >> 16, Value & 0xFFFF);
+    return uint2(Value & 0xFFFF, Value >> 16);
 }
 
 #endif // PACKING_HLSL

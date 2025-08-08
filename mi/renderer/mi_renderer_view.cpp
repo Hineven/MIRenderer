@@ -323,6 +323,10 @@ void RendererView::InitFrame () {
         film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
     G_volume_color_->SetName("GBuffer Volume Color");
+    G_volume_cdf_attenuation_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_cdf_attenuation_->SetName("GBuffer Volume CDF Attenuation");
 
     radiance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
@@ -388,6 +392,11 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.NearPlane = camera_.near_plane;
     camera.FarPlane = camera_.far_plane;
     camera.FoVY = camera_.fov_Y;
+    camera.TanFoVY_2 = tan(camera_.fov_Y / 2.0f);
+    camera.TanFoVY = camera.TanFoVY_2 * 2.f;
+
+    camera.Type = 0;
+
     camera.FilmDimensions = {film_width_, film_height_};
 
     float aspect_ratio = float(film_width_) / float(film_height_);
