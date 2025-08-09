@@ -472,7 +472,7 @@ Texture2D<float> G_HistoryDepth;
 Texture2D<float4> DirectLightingRadianceEstimateTexture;
 RWTexture2D<float4> RWDiffuseDirectLightingTexture;
 
-// Dispatch a thread for each grid
+// Dispatch a thread for each tile
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
     uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
@@ -730,3 +730,30 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate, 1.f);
     }
 }
+
+Texture2D<float>  VolumeDensity;
+Texture2D<float2> VolumeMinMax;
+Texture2D<float4> VolumeColor;
+Texture2D<float2> VolumeCdfAttenuation;
+
+struct PixelVolume {
+    float Min, Max;
+    float Density;
+    float3 Color;
+    float Cdf;
+    float Attenuation;
+};
+
+PixelVolume FetchVolume(float2 UV) {
+    float2 MinMax = VolumeMinMax.SampleLevel(PointClampSampler, UV, 0).xy;
+    PixelVolume Volume;
+    Volume.Min = MinMax.x;
+    Volume.Max = MinMax.y;
+    Volume.Density = VolumeDensity.SampleLevel(PointClampSampler, UV, 0).x;
+    Volume.Color = VolumeColor.SampleLevel(PointClampSampler, UV, 0).xyz;
+    float2 CdfAndAttenuation = VolumeCdfAttenuation.SampleLevel(PointClampSampler, UV, 0).xy;
+    Volume.Cdf = CdfAndAttenuation.x;
+    Volume.Attenuation = CdfAndAttenuation.y;
+    return Volume;
+}
+

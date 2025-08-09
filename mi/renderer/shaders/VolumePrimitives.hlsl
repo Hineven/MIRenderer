@@ -5,6 +5,7 @@
 #include "shared/SharedView.hlsl"
 #include "shared/SharedVolumePrimitives.hlsl"
 #include "headers/Transform.hlsl"
+#include "headers/Random.hlsl"
 
 #ifndef THREAD_GROUP_SIZE
 #define THREAD_GROUP_SIZE 128
@@ -481,6 +482,11 @@ RayVolumeDistribution RenderRay(
     float3 RayDirection,
     uint TileInstanceOffset,
     uint NumTilePrimitiveInstances,
+    inout Random rng,
+    inout float3 SampleTransmittance,
+    inout float3 SampleColor,
+    inout float SampleDepth,
+    inout float SamplePdf,
     inout float Cdf,
     inout float Attenuation
 ) {
@@ -490,6 +496,7 @@ RayVolumeDistribution RenderRay(
     Result.Density = 0.f;
     Result.Color = float3(0.f, 0.f, 0.f);
     Cdf = 1.f;
+    SampleDepth = 1e9f;
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
         uint PrimitiveIndex, RenderableIndex;
@@ -506,20 +513,34 @@ RayVolumeDistribution RenderRay(
             lr, Dist
         );
         if(bIntersected && lr.y > 0.f) {
+
             RayVolumeDistribution Intersection;
             Intersection.Color = Primitive.Color;
             Intersection.Density = Primitive.Opacity;
             Intersection.l = max(lr.x, 0);
             Intersection.r = max(lr.y, 0);
 
+            // Sample with decomposition tracking
+            float u = rng.rand();
+            float CurrentSampledDepth = SampleRayVolumeDistribution(Intersection, u);
+            if(CurrentSampledDepth < SampleDepth) {
+                // Update the sample depth
+                SampleDepth = CurrentSampledDepth;
+                SampleTransmittance = Intersection.Color * Intersection.Density;
+            }
+
             // Update the result distribution
             Result = UpdateRayVolumeDistribution(Result, Intersection, Cdf, Attenuation);
         }
-
     }
+
+    // Iterate again and calculate sample pdf
+
     return Result;
 }
 
+RWTexture2D<float4> RWVolumeSampleColorAndLinearDepth;
+RWTexture2D<float4> RWVolumeSampleTransmittanceAndPdf;
 
 #define TILE_SIZE 16
 
@@ -540,7 +561,12 @@ void DrawVolumePrimitives (
             float3 RayOrigin = C.Position;
             float3 RayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(ScreenCoordsToUV(C, PixelIndex)));
             float Cdf = 1.f, Attenuation = 1.f;
-            RayVolumeDistribution Rendered = RenderRay(RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances, Cdf, Attenuation);
+            float3 SampleColor = 0, SampleTransmittance = 0;
+            float SampleDepth = 0, SamplePdf = 0;
+            RayVolumeDistribution Rendered = RenderRay(
+                RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
+                SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
+                 Cdf, Attenuation);
             RWVolumeDensity[PixelIndex] = Rendered.Density;
             RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
             RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);

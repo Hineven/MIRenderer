@@ -234,6 +234,29 @@ static RDGShaderInitializationInfo GetDirectLightingShaderInitializationInfo() {
     return ini;
 }
 
+BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+    SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
+    SHADER_UNIFORM_BUFFER(DirectLightingUB, DirectLighting_UB)
+    SHADER_UNIFORM_BUFFER(HybridTracingUB, HybridTracing_UB)
+    SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrecomputedActiveLightBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListCount)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_ListLightIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListCdfBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeDensity)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeMinMax)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeColor)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeCdfAttenuation)
+END_SHADER_PARAMETERS()
+
 void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
     auto & lib = RDGShaderLibrary::Get();
     auto ini = GetDirectLightingShaderInitializationInfo();
