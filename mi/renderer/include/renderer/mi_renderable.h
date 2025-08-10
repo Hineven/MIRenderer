@@ -32,8 +32,19 @@ public:
     FORCEINLINE void SetVisible(bool visible) { visible_ = visible; }
     // Dirty means that the renderer will make a call to Update before rendering.
     FORCEINLINE bool IsDirty () const { return dirty_; }
-    // TODO add dirty renderables to a list every frame for better performance!
-    FORCEINLINE void SetDirty (bool dirty) { dirty_ = dirty; }
+    FORCEINLINE void SetDirty (bool dirty = true) { dirty_ = dirty; }
+
+    FORCEINLINE bool IsRayTraced () const { return ray_traced_; }
+    FORCEINLINE void SetRayTraced (bool ray_traced) { ray_traced_ = ray_traced; SetDirty(); }
+
+    // Override the functions if the renderable can be ray-traced.
+    virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
+    constexpr static uint32_t kInvalidRenderableInde = 0xFFFFFFFFu;
+    // Note that the renderable index is at most 24 bits
+    virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableInde; }
+
+    virtual bool IsEmpty () const ;
+
     FORCEINLINE bool IsTransformDirty () const { return transform_dirty_; }
     FORCEINLINE void SetTransformDirty (bool dirty) { transform_dirty_ = dirty; }
     FORCEINLINE RenderableType GetType() const { return type_; }
@@ -87,8 +98,16 @@ protected:
 
     // Invisible renderables wont be rendered.
     bool visible_ {true};
+
+    // Dirty means the data associated with the renderable (except transform) needs to be updated on device.
     bool dirty_ {true};
+
+    // Transform dirty means the transform has changed.
     bool transform_dirty_ {true};
+
+    // If the renderable is ray-traced. Ray traced renderbles must override GetBLAS() and GetInstanceCustomIndex() methods
+    bool ray_traced_ {true};
+
     RenderableType type_ {RenderableType::kStaticMeshInstance};
 
 };

@@ -72,7 +72,7 @@ void TraceShadowRaysRaygen() {
     Payload.HitDistance = Ray.TMax; // Default to TMax, will be updated in closest hit
     TraceRay(
         TLAS,
-        RAY_FLAG_NONE,
+        RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
         0xFF, // Ray mask
         0,    // SBT offset
         0,    // SBT stride
@@ -103,35 +103,40 @@ void TraceShadowRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint Instance = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
-    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
-    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
-    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
-    uint GeometryIndex = GeometryMaterialPair.x;
-    uint MaterialIndex = GeometryMaterialPair.y;
-    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
-    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
-    uint VertexOffset = Geometry.VertexOffset;
+    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
+    uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    if(InstanceFlags == 0) {
+        // Static mesh instance
+        StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
+        uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+        uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+        uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+        uint GeometryIndex = GeometryMaterialPair.x;
+        uint MaterialIndex = GeometryMaterialPair.y;
+        GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+        uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+        uint VertexOffset = Geometry.VertexOffset;
 
-    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
-    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
-    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
-    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
-    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
-    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+        uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+        uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+        uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+        DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+        DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+        DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
 
-    // Interpolate the vertex
-    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+        // Interpolate the vertex
+        DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
 
-    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
-    float4 ColorOpacity = float4(Material.Albedo, 1);
-    if(IsValid(Material.AlbedoMap)) {
-        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+        MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+        float4 ColorOpacity = float4(Material.Albedo, 1);
+        if(IsValid(Material.AlbedoMap)) {
+            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+        }
+	    if(ColorOpacity.a < 0.1f) {
+ 		    IgnoreHit();
+	    }
     }
-	if(ColorOpacity.a < 0.1f) {
- 		IgnoreHit();
-	}
 }
 
 [shader("closesthit")]
@@ -139,32 +144,12 @@ void TraceShadowRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint Instance = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-
-    StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
-    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
-    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
-    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
-    uint GeometryIndex = GeometryMaterialPair.x;
-    uint MaterialIndex = GeometryMaterialPair.y;
-    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
-    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
-    uint VertexOffset = Geometry.VertexOffset;
-
-    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
-    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
-    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
-    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
-    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
-    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
-
-    // Interpolate the vertex
-    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
-
-    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
-    float4 ColorOpacity = float4(Material.Albedo, 1);
-    if(IsValid(Material.AlbedoMap)) {
-        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
+    uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    if(InstanceFlags == 0) {
+        Payload.HitDistance = RayTCurrent();
+    } else {
+        Payload.HitDistance = RayTCurrent();
     }
-    Payload.HitDistance = RayTCurrent();
 }

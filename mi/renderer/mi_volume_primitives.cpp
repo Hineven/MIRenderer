@@ -9,10 +9,10 @@
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_resource_allocator.h"
+#include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-
-// DeviceVolumePrimitives implementation
+    // DeviceVolumePrimitives implementation
 DeviceVolumePrimitives::DeviceVolumePrimitives(DeviceBindlessResourceAllocator * allocator) {
     index_ = allocator->AllocateVolumePrimitivesSlot();
 }
@@ -50,6 +50,28 @@ void VolumePrimitives::SetupAllocatorUberBuffer(DeviceBindlessResourceAllocator 
             DefaultDeviceUberBuffer::Create(RHIBufferUsageFlagBits::kStorage, 16).Raw()
         );
     }
+}
+
+static VolumePrimitive UnpackPrimitive(PackedVolumePrimitive packed) {
+    VolumePrimitive prim;
+    prim.Position = packed.Position;
+    prim.Scales = packed.Scales;
+    prim.Rotation = glm::unpackSnorm4x8(packed.PackedRotation_OpacityHi);
+    prim.Rotation.w = sqrt(glm::max(0.f, 1.0f - glm::dot(glm::vec3(prim.Rotation), glm::vec3(prim.Rotation)))); // Reconstruct W
+    prim.Color = glm::vec3(glm::unpackUnorm4x8(packed.PackedColor_OpacityLo));
+    prim.Opacity = glm::unpackHalf2x16(
+        ((packed.PackedRotation_OpacityHi & 0xFF000000u) >> 16)
+    | ((packed.PackedColor_OpacityLo & 0xFF000000u) >> 24)).x;
+    return prim;
+}
+
+static glm::mat3 EvaluateRotationMatrix(const glm::vec4 & quat) {
+    float x = quat.x, y = quat.y, z = quat.z, w = quat.w;
+    return glm::mat3(
+        1 - 2 * (y * y + z * z), 2 * (x * y - w * z),     2 * (x * z + w * y),
+        2 * (y * x + w * z),     1 - 2 * (x * x + z * z), 2 * (y * z - w * x),
+        2 * (z * x - w * y),     2 * (z * y + w * x),     1 - 2 * (x * x + y * y)
+    );
 }
 
 void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) {
@@ -90,7 +112,177 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
         header
     );
 
-    dirty_ = false;
+    // Update BLAS if needed
+    if (!IsRayTraced()) {
+        device_volume_primitives_->BLAS_ = {};
+    } else {
+        if (primitives_.empty()) {
+            // No geometries, release BLAS. NullDescriptorSet feature will take care of this case.
+            device_volume_primitives_->BLAS_ = {};
+        } else {
+            // Update acceleration structure for raytracing
+            RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
+            build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : RHIAccelerationStructureBuildFlagBits::kNone);
+
+            RHIASGeometryFlags geometry_flags =
+                // We rely on any-hit to accumulate transmittance
+                RHIASGeometryFlagBits::kNoDuplicateAnyHitInvocation;
+            // Spawn and upload buffers
+
+            std::vector<uint32_t> index_data;
+            std::vector<glm::vec3> vertex_data;
+            index_data.resize(primitives_.size() * 60); // 20 faces, 3 indices each
+            vertex_data.resize(primitives_.size() * 12); // 12 vertices per icosahedron
+            for (auto [prim_index, packed_prim] : primitives_ | std::views::enumerate) {
+                auto prim = UnpackPrimitive(packed_prim);
+                float4x4 ToWorld = 0;
+	            {
+		            float3x3 MS = float3x3(
+			            float3(prim.Scales.x, 0, 0),
+			            float3(0, prim.Scales.y, 0),
+			            float3(0, 0, prim.Scales.z)
+		            );
+		            float3x3 MR = EvaluateRotationMatrix(prim.Rotation);
+		            float3x3 M = MR * MS;
+
+		            ToWorld = float4x4(
+			            float4(M[0], prim.Position.x),
+			            float4(M[1], prim.Position.y),
+			            float4(M[2], prim.Position.z),
+			            float4(0, 0, 0, 1)
+		            );
+	            }
+
+	            // Magic scaling number
+	            float MagicScale = 1.f;
+
+	            const float3 IcoVertices[12] = {
+		            float3(0.000000, -1.000000, 0.000000),
+		            float3(0.723600, -0.447215, 0.525720),
+		            float3(-0.276385, -0.447215, 0.850640),
+		            float3(-0.894425, -0.447215, 0.000000),
+		            float3(-0.276385, -0.447215, -0.850640),
+		            float3(0.723600, -0.447215, -0.525720),
+		            float3(0.276385, 0.447215, 0.850640),
+		            float3(-0.723600, 0.447215, 0.525720),
+		            float3(-0.723600, 0.447215, -0.525720),
+		            float3(0.276385, 0.447215, -0.850640),
+		            float3(0.894425, 0.447215, 0.000000),
+		            float3(0.000000, 1.000000, 0.000000)
+	            };
+	            const int3 IcoFaces[20] = {
+		            int3(0, 1, 2),
+		            int3(1, 0, 5),
+		            int3(0, 2, 3),
+		            int3(0, 3, 4),
+		            int3(0, 4, 5),
+		            int3(1, 5, 10),
+		            int3(2, 1, 6),
+		            int3(3, 2, 7),
+		            int3(4, 3, 8),
+		            int3(5, 4, 9),
+		            int3(1, 10, 6),
+		            int3(2, 6, 7),
+		            int3(3, 7, 8),
+		            int3(4, 8, 9),
+		            int3(5, 9, 10),
+		            int3(6, 10, 11),
+		            int3(7, 6, 11),
+		            int3(8, 7, 11),
+		            int3(9, 8, 11),
+		            int3(10, 9, 11)
+	            };
+
+	            // Emit the vertices
+	            auto VertexBase = (uint32_t)(prim_index * 12);
+	            for(int i = 0; i < 12; i++) {
+		            float3 Vertex = glm::vec3(ToWorld * float4(IcoVertices[i] * MagicScale, 1));
+		            vertex_data[VertexBase + i] = Vertex;
+	            }
+	            // Emit the indices
+	            auto IndexBase = (uint32_t)(prim_index * 60);
+	            auto IndexOffset = (uint32_t)(prim_index * 12);
+	            for(int i = 0; i < 20; i++) {
+		            int3 Face = IcoFaces[i];
+		            index_data[IndexBase + i * 3 + 0] = Face.x + IndexOffset;
+	                // Crucial: Flip the face winding order to make the faces flipped.
+	                // Thus, the rays will only hit the 'back faces'
+	                // Often we trace rays within volume primitives and ends up outside of the primitives.
+	                // Hitting back faces make transmittance estimation from such traces more accurate.
+		            index_data[IndexBase + i * 3 + 1] = Face.z + IndexOffset;
+		            index_data[IndexBase + i * 3 + 2] = Face.y + IndexOffset;
+	            }
+            }
+            auto device_vertex_buffer = RHI::Get().CreateBuffer(
+                (uint32_t)(vertex_data.size() * sizeof(glm::vec3)),
+                RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
+            );
+            auto device_index_buffer = RHI::Get().CreateBuffer(
+                (uint32_t)(index_data.size() * sizeof(uint32_t)),
+                RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
+            );
+            Helpers::Upload_Async(queue, device_vertex_buffer->GetSpan(), vertex_data.data(), vertex_data.size() * sizeof(glm::vec3));
+            Helpers::Upload_Async(queue, device_index_buffer->GetSpan(), index_data.data(), index_data.size() * sizeof(uint32_t));
+            // Build BLAS
+            auto as_geom = queue.Allocate<RHIASGeometry>();
+            *as_geom = RHIASGeometry{
+                RHIASGeometryType::kTriangles,
+                geometry_flags,
+                {
+                    device_vertex_buffer->GetSpan(),
+                    sizeof(glm::vec3),
+                    (uint32_t)vertex_data.size(),
+                    RHIVertexAttributeFormatType::k3xFp32,
+                    device_index_buffer->GetSpan(),
+                    (uint32_t)index_data.size(),
+                    RHIIndexType::kUint32
+                }
+            };
+            if (!device_volume_primitives_->BLAS_) {
+                // Create
+                device_volume_primitives_->BLAS_ = RHI::Get().CreateAccelerationStructure(
+                    RHIAccelerationStructureType::kBottomLevel
+                );
+            }
+            auto build_info = RHIAccelerationStructureBuildGeometryInfo{
+                RHIAccelerationStructureType::kBottomLevel,
+                build_flags,
+                RHIAccelerationStructureBuildMode::kUpdate,
+                device_volume_primitives_->BLAS_.Raw(),
+                device_volume_primitives_->BLAS_.Raw(),
+                {as_geom, 1}, {}, {}
+            };
+            auto sizes = device_volume_primitives_->BLAS_->GetBuildSizes(build_info);
+            bool updated = false;
+            // Try to update
+            if (dynamic_ && sizes.acceleration_structure_size <= device_volume_primitives_->BLAS_->GetSize()) {
+                auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
+                queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
+                updated = true;
+            }
+            if (!updated) {
+                // Need rebuild
+                // Re-create
+                device_volume_primitives_->BLAS_->Create(sizes.acceleration_structure_size);
+                // Build
+                build_info.mode = RHIAccelerationStructureBuildMode::kBuild;
+                build_info.src_acceleration_structure = {};
+                build_info.dst_acceleration_structure = device_volume_primitives_->BLAS_.Raw();
+                auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
+                queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
+            }
+            // Barrier
+            queue.AccelerationStructureBarrier(
+                device_volume_primitives_->BLAS_.Raw(),
+                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIPipelineStageFlagBits::kRayTracing,
+                RHIGPUAccessFlagBits::kAccelerationStructureWrite,
+                RHIGPUAccessFlagBits::kAccelerationStructureRead
+            );
+        }
+    }
+
+    SetDirty(false);
 }
 
 void VolumePrimitives::UpdateOnDevice(DeviceBindlessResourceAllocator * alloc) {
@@ -126,6 +318,20 @@ RenderableHeader VolumePrimitivesInstance::GetDeviceRenderableHeader() const {
     return std::bit_cast<RenderableHeader>(VolumePrimitivesInstanceHeader{
         GetVolumePrimitives()->GetDeviceVolumePrimitives()->GetIndex(), 0, 0, 0
     });
+}
+
+RHIAccelerationStructure *VolumePrimitivesInstance::GetBLAS() const {
+    if (volume_primitives_) return volume_primitives_->GetDeviceVolumePrimitives()->GetBLAS();
+    return nullptr;
+}
+
+uint32_t VolumePrimitivesInstance::GetInstanceCustomIndex() const {
+    // Return the index of the instance with a custom flag indicating the type of renderable
+    return GetIndex() | INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES;
+}
+
+bool VolumePrimitivesInstance::IsEmpty() const {
+    return !volume_primitives_ || volume_primitives_->IsEmpty();
 }
 
 MI_NAMESPACE_END

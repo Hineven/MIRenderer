@@ -24,7 +24,8 @@ struct RenderVolumePrimitivesUB {
     float ExpandFactor;
     uint32_t NumTiles;
     uint32_t MaxNumPrimitiveInstances;
-    glm::uvec3 Padding;
+    uint32_t FrameIndex;
+    glm::uvec2 Padding;
 };
 
 
@@ -53,6 +54,8 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeMinMax)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeColor)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeCdfAttenuation)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleColorAndLinearDepth)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleTransmittanceAndPdf)
 END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
@@ -172,10 +175,11 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     auto common_ub = builder.Allocate<RenderVolumePrimitivesUB>();
     auto renderable_transforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
     auto renderable_inverse_transforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_inverse_transforms_.Raw());
+    common_ub->TileDimensions = tile_dimensions;
     common_ub->ExpandFactor = 1.f;
     common_ub->NumTiles = num_tiles;
     common_ub->MaxNumPrimitiveInstances = kMaxNumActiveVolumePrimitives;
-    common_ub->TileDimensions = tile_dimensions;
+    common_ub->FrameIndex = view->persistent_data_->frame_index_;
     auto params = builder.Allocate<VolumePrimitivesShaderParameters>();
     {
         params->View = view->view_common_params_;
@@ -201,6 +205,8 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWVolumeMinMax = view->G_volume_min_max_.Raw();
         params->RWVolumeColor = view->G_volume_color_.Raw();
         params->RWVolumeCdfAttenuation = view->G_volume_cdf_attenuation_.Raw();
+        params->RWVolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
+        params->RWVolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();
     }
     {
         auto shader = RDGShaderLibrary::Get().GetShader<VolumePrimitivesClearCountersShader>();

@@ -16,7 +16,8 @@ struct RenderVolumePrimitivesUB {
     float ExpandFactor;
     uint NumTiles;
     uint MaxNumPrimitiveInstances;
-    uint3 Padding;
+    uint FrameIndex;
+    uint2 Padding;
 };
 
 struct CollectVolumePrimitivesUB {
@@ -60,6 +61,9 @@ RWTexture2D<float> RWVolumeDensity;
 RWTexture2D<float2> RWVolumeMinMax;
 RWTexture2D<float4> RWVolumeColor;
 RWTexture2D<float2> RWVolumeCdfAttenuation;
+
+RWTexture2D<float4> RWVolumeSampleColorAndLinearDepth;
+RWTexture2D<float2> RWVolumeSampleTransmittanceAndPdf;
 
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void VolumePrimitivesClearCounters(uint DispatchID: SV_DispatchThreadID) {
@@ -477,13 +481,27 @@ bool RayIntersect(float3 Origin, float3 Direction, VolumePrimitive Primitive, fl
     return true;
 }
 
+float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
+    // Sample free flight length from the distribution using inversion method
+    float l = Distribution.l;
+    float r = Distribution.r;
+    float Density = Distribution.Density;
+    float FreeFlightLength = - log(1 - u) / max(Density, 1e-6f);
+    float Sample = l + FreeFlightLength;
+    if(Sample > r) {
+        // Sampled is out of bounds, return a large value
+        return 1e9f;
+    }
+    return Sample;
+}
+
 RayVolumeDistribution RenderRay(
     float3 RayOrigin,
     float3 RayDirection,
     uint TileInstanceOffset,
     uint NumTilePrimitiveInstances,
     inout Random rng,
-    inout float3 SampleTransmittance,
+    inout float  SampleTransmittance,
     inout float3 SampleColor,
     inout float SampleDepth,
     inout float SamplePdf,
@@ -503,7 +521,6 @@ RayVolumeDistribution RenderRay(
         UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
         VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
-        // Transform the primitive to world space
         float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
         
         // Calculate intersection with the primitive
@@ -526,7 +543,6 @@ RayVolumeDistribution RenderRay(
             if(CurrentSampledDepth < SampleDepth) {
                 // Update the sample depth
                 SampleDepth = CurrentSampledDepth;
-                SampleTransmittance = Intersection.Color * Intersection.Density;
             }
 
             // Update the result distribution
@@ -534,13 +550,44 @@ RayVolumeDistribution RenderRay(
         }
     }
 
+    SamplePdf = 1.f;
+    SampleTransmittance = 1.f;
+    bool bSampled = false;
     // Iterate again and calculate sample pdf
+    for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
+        uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
+        uint PrimitiveIndex, RenderableIndex;
+        UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
+        VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
+        // Transform the primitive to world space
+        float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
+
+        // Calculate intersection with the primitive
+        float2 lr; float Dist;
+        bool bIntersected = RayIntersect(
+            RayOrigin, RayDirection, Primitive, ToObjectTransform,
+            lr, Dist
+        );
+        if(bIntersected && lr.y > 0.f) {
+            float TMax = min(SampleDepth, lr.y);
+            float TMin = max(lr.x, 0.f);
+            float Transmittance = exp(-Result.Density * (TMax - TMin));
+            // Calculate the sample pdf (derived by differentating 1 - transmittance)
+            if(lr.y <= SampleDepth) SamplePdf *= Transmittance;
+            else {
+                bSampled = true;
+                SamplePdf = SamplePdf * Transmittance + SampleTransmittance * -Result.Density * Transmittance;
+            }
+            SampleTransmittance *= Transmittance;
+        }
+    }
+    if(!bSampled) {
+        // The sample have not falled into any primitive. No valid sample.
+        SamplePdf = 0.f;
+    }
     return Result;
 }
-
-RWTexture2D<float4> RWVolumeSampleColorAndLinearDepth;
-RWTexture2D<float4> RWVolumeSampleTransmittanceAndPdf;
 
 #define TILE_SIZE 16
 
@@ -561,16 +608,21 @@ void DrawVolumePrimitives (
             float3 RayOrigin = C.Position;
             float3 RayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(ScreenCoordsToUV(C, PixelIndex)));
             float Cdf = 1.f, Attenuation = 1.f;
-            float3 SampleColor = 0, SampleTransmittance = 0;
+            float3 SampleColor = 0;
+            float SampleTransmittance = 0;
             float SampleDepth = 0, SamplePdf = 0;
+            Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
             RayVolumeDistribution Rendered = RenderRay(
                 RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
+                rng,
                 SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
                  Cdf, Attenuation);
             RWVolumeDensity[PixelIndex] = Rendered.Density;
             RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
             RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
             RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
+            RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
+            RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
         }
     }
 }

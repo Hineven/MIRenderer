@@ -328,6 +328,15 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
     G_volume_cdf_attenuation_->SetName("GBuffer Volume CDF Attenuation");
 
+    volume_sample_color_and_linear_depth_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    volume_sample_color_and_linear_depth_->SetName("Volume Sample Color and Linear Depth");
+    volume_sample_transmittance_and_pdf_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    volume_sample_transmittance_and_pdf_->SetName("Volume Sample Transmittance and PDF");
+
     radiance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess

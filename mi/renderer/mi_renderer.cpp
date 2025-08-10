@@ -174,14 +174,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     );
 
     // Prepare instance data for rebuilding TLAS
-    std::vector<int> visible_rt_static_mesh_renderable_indices;
+    std::vector<int> visible_rt_renderable_indices;
     for (auto e : visible_renderable_indices) {
-        if (auto static_mesh_inst = all_renderables[e]->As<StaticMeshInstance>()) {
-            if (static_mesh_inst->GetStaticMesh()->IsRayTraced() && !static_mesh_inst->GetStaticMesh()->IsEmpty())
-                visible_rt_static_mesh_renderable_indices.push_back(e);
+        if (auto renderable = all_renderables[e]) {
+            if (renderable->IsRayTraced() && renderable->IsVisible() && !renderable->IsEmpty())
+                visible_rt_renderable_indices.push_back(e);
         }
     }
-    auto instance_count = (uint32_t)visible_rt_static_mesh_renderable_indices.size();
+    auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
     TRef<RDGBuffer> instance_buffer;
     if (instance_count > 0){
         auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
@@ -190,14 +190,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc[]>(instance_count);
 
         auto instance_data = builder.Allocate(instance_data_bytesize);
-        for (const auto& [i, e] : std::views::enumerate(visible_rt_static_mesh_renderable_indices)) {
-            auto renderable = all_renderables[e]->As<StaticMeshInstance>();
+        for (const auto& [i, e] : std::views::enumerate(visible_rt_renderable_indices)) {
+            auto renderable = all_renderables[e];
             auto data = RHIAccelerationStructureInstanceDesc {};
-            data.instance_custom_index = e;
+            data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
             data.mask = 0xFF; // Visible to all rays
             // TODO support double sided & one sided geometries.
             data.flags = (uint32_t)RHIASGeometryInstanceFlagBits::kNone;
-            data.acceleration_structure_reference = renderable->GetStaticMesh()->GetDeviceStaticMesh()->GetBLAS()->GetDeviceAddress();
+            data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
             // Row major
             auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
             for (int x = 0; x < 4; x++)

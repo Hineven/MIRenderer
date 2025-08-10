@@ -25,6 +25,9 @@ Renderable::~Renderable() {
     }
 }
 
+bool Renderable::IsEmpty() const {
+    return false; // Default implementation, can be overridden
+}
 
 
 MI_NAMESPACE_END

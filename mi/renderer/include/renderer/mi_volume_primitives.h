@@ -34,6 +34,10 @@ public:
         return (uint32_t)(primitive_buffer_->GetOffset() / sizeof(PackedVolumePrimitive));
     }
 
+    FORCEINLINE RHIAccelerationStructure * GetBLAS () const {
+        return BLAS_.Raw();
+    }
+
 protected:
     DeviceVolumePrimitives (DeviceBindlessResourceAllocator * allocator) ;
     ~DeviceVolumePrimitives() ;
@@ -41,6 +45,8 @@ protected:
     uint32_t index_ {UINT32_MAX}; // Index of the volume primitives in the bindless device allocator
     // Store a list of volume primitives on the device
     TRef<DeviceUberBufferAllocation> primitive_buffer_;
+
+    TRef<RHIAccelerationStructure> BLAS_; // Bottom level acceleration structure for the volume primitives
 };
 
 class VolumePrimitives : public NonMovable, public NonCopyable, public RefCounted<> {
@@ -66,6 +72,30 @@ public:
         return (uint32_t)primitives_.size();
     }
 
+    FORCEINLINE bool IsEmpty () const {
+        return primitives_.empty();
+    }
+
+    FORCEINLINE bool IsRayTraced () const {
+        return ray_traced_;
+    }
+    FORCEINLINE void SetRayTraced (bool ray_traced) {
+        if (ray_traced != ray_traced_) {
+            ray_traced_ = ray_traced;
+            SetDirty();
+        }
+    }
+
+    FORCEINLINE bool IsDynamic () const {
+        return dynamic_;
+    }
+    FORCEINLINE void SetDynamic (bool dynamic) {
+        if (dynamic != dynamic_) {
+            dynamic_ = dynamic;
+            SetDirty();
+        }
+    }
+
 protected:
     // All volume primitive data are allocated in a single buffer heap with a single buffer.
     // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
@@ -75,6 +105,10 @@ protected:
     std::vector<PackedVolumePrimitive> primitives_;
 
     bool dirty_ {true};
+
+    bool ray_traced_ {true}; // Whether the volume primitives are used for ray tracing.
+
+    bool dynamic_ {false}; // Whether the volume primitives are dynamic (can be updated frequently)
 
     DirtyTracker<VolumePrimitives> * tracker_ {};
 };
@@ -94,6 +128,12 @@ public:
     }
 
     void Update(RendererView * view, RenderGraphBuilder & builder) override ;
+
+    RHIAccelerationStructure * GetBLAS () const override ;
+
+    uint32_t GetInstanceCustomIndex () const override ;
+
+    bool IsEmpty() const override;
 
 protected:
 

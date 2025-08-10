@@ -248,5 +248,18 @@ RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
     });
 }
 
+RHIAccelerationStructure *StaticMeshInstance::GetBLAS() const {
+    if (static_mesh_) return static_mesh_->GetDeviceStaticMesh()->GetBLAS();
+    return nullptr;
+}
+
+uint32_t StaticMeshInstance::GetInstanceCustomIndex() const {
+    // Simply return the index of the instance
+    return GetIndex();
+}
+
+bool StaticMeshInstance::IsEmpty() const {
+    return !static_mesh_ || static_mesh_->IsEmpty();
+}
 
 MI_NAMESPACE_END

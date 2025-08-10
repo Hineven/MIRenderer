@@ -141,6 +141,11 @@ public:
     // (Re)build lights_ according to current static mesh in case of geometry & material changes.
     void UpdateLights_Async (DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue);
 
+    RHIAccelerationStructure * GetBLAS() const override ;
+    uint32_t GetInstanceCustomIndex() const override;
+
+    bool IsEmpty() const override;
+
 protected:
     StaticMeshInstance(Scene * world) ;
     ~StaticMeshInstance() override;

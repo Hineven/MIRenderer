@@ -131,6 +131,9 @@ struct RendererView {
     // CDF of recorded volume segment
     TRef<RDGTexture> G_volume_cdf_attenuation_;
 
+    TRef<RDGTexture> volume_sample_color_and_linear_depth_;
+    TRef<RDGTexture> volume_sample_transmittance_and_pdf_;
+
     // HiZ buffer
     TRef<RDGTexture> hzb_;
 
