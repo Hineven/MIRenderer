@@ -151,6 +151,6 @@ void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
         }
         Payload.Color = ColorOpacity;
     } else {
-        Payload.Color = float4(1.0f, 0.0f, 0.0f, 1.0f); // Red color for volume primitives
+        Payload.Color = float4(1.0f, 1.0f, 0.0f, 1.0f); // Red color for volume primitives
     }
 }

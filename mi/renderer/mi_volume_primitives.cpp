@@ -67,11 +67,12 @@ static VolumePrimitive UnpackPrimitive(PackedVolumePrimitive packed) {
 
 static glm::mat3 EvaluateRotationMatrix(const glm::vec4 & quat) {
     float x = quat.x, y = quat.y, z = quat.z, w = quat.w;
-    return glm::mat3(
+    auto mat = glm::mat3(
         1 - 2 * (y * y + z * z), 2 * (x * y - w * z),     2 * (x * z + w * y),
         2 * (y * x + w * z),     1 - 2 * (x * x + z * z), 2 * (y * z - w * x),
         2 * (z * x - w * y),     2 * (z * y + w * x),     1 - 2 * (x * x + y * y)
     );
+    return glm::transpose(mat); // glm is col major.
 }
 
 void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) {
@@ -133,7 +134,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
             std::vector<glm::vec3> vertex_data;
             index_data.resize(primitives_.size() * 60); // 20 faces, 3 indices each
             vertex_data.resize(primitives_.size() * 12); // 12 vertices per icosahedron
-            for (auto [prim_index, packed_prim] : primitives_ | std::views::enumerate) {
+            for (const auto& [prim_index, packed_prim] : primitives_ | std::views::enumerate) {
                 auto prim = UnpackPrimitive(packed_prim);
                 float4x4 ToWorld = 0;
 	            {
@@ -151,6 +152,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
 			            float4(M[2], prim.Position.z),
 			            float4(0, 0, 0, 1)
 		            );
+                    ToWorld = glm::transpose(ToWorld);
 	            }
 
 	            // Magic scaling number
@@ -201,16 +203,15 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
 	            }
 	            // Emit the indices
 	            auto IndexBase = (uint32_t)(prim_index * 60);
-	            auto IndexOffset = (uint32_t)(prim_index * 12);
 	            for(int i = 0; i < 20; i++) {
 		            int3 Face = IcoFaces[i];
-		            index_data[IndexBase + i * 3 + 0] = Face.x + IndexOffset;
+		            index_data[IndexBase + i * 3 + 0] = Face.x + VertexBase;
 	                // Crucial: Flip the face winding order to make the faces flipped.
 	                // Thus, the rays will only hit the 'back faces'
 	                // Often we trace rays within volume primitives and ends up outside of the primitives.
 	                // Hitting back faces make transmittance estimation from such traces more accurate.
-		            index_data[IndexBase + i * 3 + 1] = Face.z + IndexOffset;
-		            index_data[IndexBase + i * 3 + 2] = Face.y + IndexOffset;
+		            index_data[IndexBase + i * 3 + 1] = Face.z + VertexBase;
+		            index_data[IndexBase + i * 3 + 2] = Face.y + VertexBase;
 	            }
             }
             auto device_vertex_buffer = RHI::Get().CreateBuffer(

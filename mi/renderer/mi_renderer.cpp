@@ -326,6 +326,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->G_volume_density_.Raw());
         else if (type == 5)
             Render_DrawToOutput(view, builder, view->G_volume_min_max_.Raw());
+        else if (type == 6)
+            Render_DrawToOutput(view, builder, view->volume_sample_transmittance_and_pdf_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
     // Update persistent data using current frame for next frame use

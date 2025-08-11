@@ -498,6 +498,36 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             builder, shader, params, cmd.Raw()
         );
     }
+
+    // Volume Direct Lighting
+    // {
+    //     auto shader = lib.GetShader<VolumePrimitivesSpawnLightSamplesShader>(ini);
+    //     auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
+    //     auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
+    //     Helpers::DispatchComputePass<VolumePrimitivesSpawnLightSamplesShader>(
+    //         builder, shader, params, num_groups_x, num_groups_y
+    //     );
+    // }
+    // cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, volume_ray_to_trace_count.Raw(), wave_size);
+    // {
+    //     // HWRT
+    //     Render_HardwareTransmittanceRayTracing(
+    //         view, builder,
+    //         volume_ray_to_trace_list_allocator.Raw(),
+    //         volume_ray_to_trace_list.Raw(),
+    //         volume_ray_to_trace_direction.Raw(),
+    //         volume_ray_to_trace_state.Raw(),
+    //         volume_ray_to_trace_origins.Raw(),
+    //         volume_ray_to_trace_tmax.Raw()
+    //     );
+    // }
+    // {
+    //     auto shader = lib.GetShader<VolumePrimitivesDirectLightingShader>(ini);
+    //     Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
+    //     Helpers::DispatchIndirectComputePass<VolumePrimitivesDirectLightingShader>(
+    //         builder, shader, params, cmd.Raw()
+    //     );
+    // }
 }
 
 
