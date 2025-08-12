@@ -349,6 +349,11 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     diffuse_direct_lighting_->SetName("Diffuse Direct Lighting");
+    volume_direct_lighting_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
+    volume_direct_lighting_->SetName("Volume Direct Lighting");
 
     // Clear hzb, this is later created
     hzb_ = {};

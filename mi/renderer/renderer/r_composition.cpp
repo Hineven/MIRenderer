@@ -37,9 +37,11 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(LightingCompositionUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseDirectLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, IndirectDiffuseLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Transmittance)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
@@ -67,9 +69,11 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     }
     params->UB = UB;
     params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
+    params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
     params->IndirectDiffuseLightingTexture = nullptr;
     params->G_Albedo = view->G_albedo_.Raw();
     params->G_Emission = view->G_emission_.Raw();
+    params->G_Transmittance = view->G_transmittance_.Raw();
     params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
     params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;

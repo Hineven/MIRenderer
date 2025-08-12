@@ -139,6 +139,8 @@ struct RendererView {
 
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;
+    // Volume direct lighting
+    TRef<RDGTexture> volume_direct_lighting_;
 
     // Final radiance
     TRef<RDGTexture> radiance_;

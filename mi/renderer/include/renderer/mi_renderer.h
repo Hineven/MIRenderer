@@ -90,9 +90,22 @@ protected:
         RDGBuffer * ray_to_trace_list,
         RDGBuffer * ray_to_trace_direction,
         RDGBuffer * ray_to_trace_state,
+        // Either ray_to_trace_origin_screen_coords or ray_to_trace_origin should be used. The
+        // other one should be nullptr.
         RDGBuffer * ray_to_trace_origin_screen_coords,
         RDGBuffer * ray_to_trace_origin,
         RDGBuffer * ray_to_trace_tmax
+    );
+
+    void Render_HardwareTransmittanceRayTracing (
+        RendererView * view, RenderGraphBuilder & builder,
+        RDGBuffer * ray_to_trace_list_length,
+        RDGBuffer * ray_to_trace_list,
+        RDGBuffer * ray_to_trace_direction,
+        RDGBuffer * ray_to_trace_state,
+        RDGBuffer * ray_to_trace_origin,
+        RDGBuffer * ray_to_trace_tmax,
+        RDGBuffer * ray_to_trace_transmittance
     );
 
     // Render material properties from the camera using ray-tracing for debugging purposes.

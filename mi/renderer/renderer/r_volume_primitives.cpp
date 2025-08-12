@@ -56,6 +56,9 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeCdfAttenuation)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleColorAndLinearDepth)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleTransmittanceAndPdf)
+
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
 END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
@@ -207,6 +210,9 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWVolumeCdfAttenuation = view->G_volume_cdf_attenuation_.Raw();
         params->RWVolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
         params->RWVolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();
+
+        params->G_Depth = view->G_depth_.Raw();
+        params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
     }
     {
         auto shader = RDGShaderLibrary::Get().GetShader<VolumePrimitivesClearCountersShader>();

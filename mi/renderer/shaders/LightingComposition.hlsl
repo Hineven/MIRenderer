@@ -15,10 +15,12 @@ struct LightingCompositionUB {
 ConstantBuffer<LightingCompositionUB> UB;
 
 Texture2D<float4> DiffuseDirectLightingTexture;
+Texture2D<float4> VolumeDirectLightingTexture;
 //Texture2D<float4> HistoryDiffuseDirectLightingTexture;
 
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
+Texture2D<float>  G_Transmittance;
 
 Texture2D<float4> HistoryRadiance;
 RWTexture2D<float4> RWRadiance;
@@ -38,9 +40,18 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     float3 Emission = G_Emission.SampleLevel(PointClampSampler, UV, 0).rgb;
     if(AlbedoAlpha.w == 0.f) Emission = 0;
 
-    float3 Radiance = Emission;
+    float3 SurfaceRadiance = Emission;
 
-    Radiance += DiffuseDirectLighting * AlbedoAlpha.rgb;
+    SurfaceRadiance += DiffuseDirectLighting * AlbedoAlpha.rgb;
+
+    // Color is premultiplied.
+    float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
+
+    float3 VolumeRadiance = VolumeDirectLighting;
+
+    float Transmittance = G_Transmittance.SampleLevel(PointClampSampler, UV, 0);
+
+    float3 Radiance = SurfaceRadiance * Transmittance + VolumeRadiance;
 
     float3 OldRadiance = HistoryRadiance.SampleLevel(PointClampSampler, UV, 0).rgb;
     float LerpFactor = 0.01f;

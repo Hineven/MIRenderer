@@ -6,6 +6,8 @@
 #include "shared/SharedVolumePrimitives.hlsl"
 #include "headers/Transform.hlsl"
 #include "headers/Random.hlsl"
+#include "headers/GeometryBuffers.hlsl"
+#include "resources/CommonSamplerResources.hlsl"
 
 #ifndef THREAD_GROUP_SIZE
 #define THREAD_GROUP_SIZE 128
@@ -500,6 +502,7 @@ RayVolumeDistribution RenderRay(
     float3 RayDirection,
     uint TileInstanceOffset,
     uint NumTilePrimitiveInstances,
+    float MaxLinearDepth,
     inout Random rng,
     inout float  SampleTransmittance,
     inout float3 SampleColor,
@@ -529,7 +532,9 @@ RayVolumeDistribution RenderRay(
             RayOrigin, RayDirection, Primitive, ToObjectTransform,
             lr, Dist
         );
-        if(bIntersected && lr.y > 0.f) {
+        // Clamp volumes to the nearest seen surface
+        lr.y = min(lr.y, MaxLinearDepth);
+        if(bIntersected && lr.y > max(0.f, lr.x)) {
 
             RayVolumeDistribution Intersection;
             Intersection.Color = Primitive.Color;
@@ -591,6 +596,8 @@ RayVolumeDistribution RenderRay(
 
 #define TILE_SIZE 16
 
+Texture2D<float> G_Depth;
+
 // Dispatch 1 group per tile, each group processes a 16x16 tile of pixels
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void DrawVolumePrimitives (
@@ -606,7 +613,10 @@ void DrawVolumePrimitives (
         uint2 PixelIndex = GroupID * TILE_SIZE + PixelOffsetInTile;
         if (all(PixelIndex < C.FilmDimensions)) {
             float3 RayOrigin = C.Position;
-            float3 RayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(ScreenCoordsToUV(C, PixelIndex)));
+            float2 UV = ScreenCoordsToUV(C, PixelIndex);
+            float3 RayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(UV));
+            float ReversedZDepth = G_Depth.SampleLevel(PointClampSampler, UV, 0);
+            float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float Cdf = 1.f, Attenuation = 1.f;
             float3 SampleColor = 0;
             float SampleTransmittance = 0;
@@ -614,6 +624,7 @@ void DrawVolumePrimitives (
             Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
             RayVolumeDistribution Rendered = RenderRay(
                 RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
+                LinearDepth,
                 rng,
                 SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
                  Cdf, Attenuation);

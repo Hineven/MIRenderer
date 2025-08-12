@@ -272,33 +272,87 @@ float EstimateLightGridContribution(PrecomputedLight L, float3 GridMin, float Gr
 }
 
 // A coarse estimtion used for light -> point contribution
-float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal) {
-	float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
-    float3 ToLightCenter = LightCenter - Position;
-    float DistanceSq = dot(ToLightCenter, ToLightCenter);
+float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal, bool bVolume = false) {
+    if(bVolume) {
+        // Position is from a sample of volume scattering media. Normal is the view direction. 
+        float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
+        float3 ToLightCenter = LightCenter - Position;
+        float DistanceSq = dot(ToLightCenter, ToLightCenter);
 
-    float3 ToV0 = L.V0 - Position;
-    float3 ToV1 = L.V1 - Position;
-    float3 ToV2 = L.V2 - Position;
+        // The the light is not facing the sampled position. Cull it out.
+        if (dot(ToLightCenter, L.Normal) >= 0.0f) {
+            return 0.0f;
+        }
+        
+        float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
+        float3 CenterToV0 = L.V0 - LightCenter;
+        float3 CenterToV1 = L.V1 - LightCenter;
+        float3 CenterToV2 = L.V2 - LightCenter;
+        float3 LightVertexDistancesSq = float3(
+            dot(CenterToV0, CenterToV0),
+            dot(CenterToV1, CenterToV1),
+            dot(CenterToV2, CenterToV2)
+        );
+        float MaxLightRadiusSq = max(LightVertexDistancesSq.x, max(LightVertexDistancesSq.y, LightVertexDistancesSq.z));
+        
+        float CosineBias = 0;
+        {
+            // The light is big & close enough (distance < 2 * max light radius), reduce the effect from CosineFactor
+            CosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
+        }
+        // Regarding the nature of volume scattering, lights that the sample is not facing towards will still have a lower
+        // effect on the sample. So a constant bias of 1.5 and a scaling factor of 0.4 are applied.
+        float CosineFactor = saturate(CosineBias + (1.5f + dot(-Normal, ToLightCenter)) * 0.4f);
+        // TODO take account of different parameterizations of HG phase function
 
-    float w0 = saturate(dot(Normal, normalize(ToV0)));
-    float w1 = saturate(dot(Normal, normalize(ToV1)));
-    float w2 = saturate(dot(Normal, normalize(ToV2)));
+        float SolidAngle = LightArea / (DistanceSq + LightArea);
+        return L.Intensity * SolidAngle * CosineBias / PI;
+    } else {
+        float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
+        float3 ToLightCenter = LightCenter - Position;
+        float DistanceSq = dot(ToLightCenter, ToLightCenter);
 
-    float TotalWeight = w0 + w1 + w2;
+        float3 ToV0 = L.V0 - Position;
+        float3 ToV1 = L.V1 - Position;
+        float3 ToV2 = L.V2 - Position;
 
-    float3 ToLightDirection = normalize(ToV0 * w0 + ToV1 * w1 + ToV2 * w2);
+        // The the light is not facing the sampled position. Cull it out.
+        if (dot(ToLightCenter, L.Normal) >= 0.0f) {
+            return 0.0f;
+        }
 
-    if (dot(L.Normal, -ToLightDirection) <= 0.0f) {
-        return 0.0f;
+        float k0 = saturate(dot(Normal, ToV0));
+        float k1 = saturate(dot(Normal, ToV1));
+        float k2 = saturate(dot(Normal, ToV2));
+        // the sampled surface is not facing the light. Cull it out.
+        if (all(float3(k0, k1, k2) <= 0.0f)) {
+            return 0.0f;
+        }
+        
+        float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
+        float3 CenterToV0 = L.V0 - LightCenter;
+        float3 CenterToV1 = L.V1 - LightCenter;
+        float3 CenterToV2 = L.V2 - LightCenter;
+        float3 LightVertexDistancesSq = float3(
+            dot(CenterToV0, CenterToV0),
+            dot(CenterToV1, CenterToV1),
+            dot(CenterToV2, CenterToV2)
+        );
+        float MaxLightRadiusSq = max(LightVertexDistancesSq.x, max(LightVertexDistancesSq.y, LightVertexDistancesSq.z));
+        
+        float CosineBias = 0;
+        {
+            // The light is big & close enough (distance < 2 * max light radius), reduce the effect from CosineFactor
+            CosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
+        }
+
+        float CosineFactor = saturate(CosineBias + dot(Normal, ToLightCenter));
+
+        float SolidAngle = LightArea / (DistanceSq + LightArea);
+        return L.Intensity * SolidAngle * CosineBias / PI;
     }
-
-    float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
-    float LightRadiusSq = LightArea / PI;
-
-    float SolidAngle = PI * LightRadiusSq / (DistanceSq + LightRadiusSq);
-    return L.Intensity * SolidAngle / PI * TotalWeight;
 }
+
 // Dispatch a thread for each grid
 groupshared uint SharedListElementsRequired, SharedListOffsetBase;
 groupshared uint SharedGridLightListIndices[WAVE_SIZE * MAX_NUM_GRID_LIGHTS * 2];
@@ -436,7 +490,7 @@ float3 SampleAreaLightArea(float3 V0, float3 V1, float3 V2, float2 u, out float 
     return Position;
 }
 
-LightSample SampleLightDiffuseWithCosineWeight(float3 Position, float3 Normal, EvaluatedLight Evaluated, float2 u2) {
+LightSample SampleLightDiffuseWithPreMultipliedCosine(float3 Position, float3 Normal, EvaluatedLight Evaluated, float2 u2) {
     LightSample Result = (LightSample)0;
     float Area = 0.f;
     Result.Position = SampleAreaLightArea(Evaluated.V0, Evaluated.V1, Evaluated.V2, u2, Area, Result.Pdf);
@@ -452,6 +506,66 @@ LightSample SampleLightDiffuseWithCosineWeight(float3 Position, float3 Normal, E
     if (IsValid(Evaluated.EmissionTextureIndex))
         EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
     Result.Radiance = EvaluatedEmission * saturate(Cosine) * saturate(ReceiverCosine);
+    return Result;
+}
+
+float HenyeyGreensteinPhaseFunction(float Cosine, float g) {
+    // Henyey-Greenstein phase function
+    float g2 = g * g;
+    float denom_term = 1.f + g2 + 2.f * g * Cosine;
+    return (1.f - g2) / (4.f * PI * denom_term * sqrt(denom_term));
+}
+
+// Samples a direction based on the Henyey-Greenstein phase function.
+// g: anisotropy parameter, in [-1, 1].
+// u: 2D uniform random sample.
+// pdf: output spherical PDF for the sampled direction.
+// Returns a sampled direction in a local coordinate system (around Z-axis).
+float3 SampleHenyeyGreenstein(float g, float2 u, out float Pdf) {
+    float CosTheta;
+    // Handle the isotropic case (g=0) to avoid division by zero and for precision.
+    if (abs(g) < 1e-4f) {
+        CosTheta = 1.f - 2.f * u.x;
+    } else {
+        float g2 = g * g;
+        float term = (1.f - g2) / (1.f - g + 2.f * g * u.x);
+        CosTheta = (1.f / (2.f * g)) * (1.f + g2 - term * term);
+    }
+
+    // Convert spherical coordinates to a Cartesian direction vector.
+    float SinTheta = sqrt(max(0.f, 1.f - CosTheta * CosTheta));
+    float Phi = 2.f * PI * u.y;
+    
+    float3 sample_dir = float3(
+        cos(Phi) * SinTheta,
+        sin(Phi) * SinTheta,
+        CosTheta
+    );
+
+    // The PDF of this sample is the HG function itself.
+    Pdf = HenyeyGreensteinPhaseFunction(CosTheta, g);
+
+    return sample_dir;
+}
+
+LightSample SampleLightWithPreMultipliedPhaseFunction(
+    float3 Position, float3 ViewDirection, EvaluatedLight Evaluated, float g, float2 u2
+) {
+    LightSample Result = (LightSample)0;
+    float Area = 0.f;
+    Result.Position = SampleAreaLightArea(Evaluated.V0, Evaluated.V1, Evaluated.V2, u2, Area, Result.Pdf);
+    float2 UV = InterpolateBarycentrics(Evaluated.UV0, Evaluated.UV1, Evaluated.UV2, u2);
+    // Convert area pdf to solid angle pdf
+    float Distance = length(Result.Position - Position);
+    float3 Direction = normalize(Result.Position - Position);
+    float3 LightNormal = normalize(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0));
+    float Cosine = dot(LightNormal, -Direction);
+    float ReceiverCosine = dot(Direction, ViewDirection);
+    Result.Pdf *= Distance * Distance / max(abs(Cosine), 1e-4f);
+    float3 EvaluatedEmission = Evaluated.Emission;
+    if (IsValid(Evaluated.EmissionTextureIndex))
+        EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
+    Result.Radiance = EvaluatedEmission * saturate(Cosine) * HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
     return Result;
 }
 
@@ -496,7 +610,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     }
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
 
-    Random R = MakeRandom(PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
+    Random R = MakeRandom(32618420u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
     LightSampler LS = InitLightSampler(R);
 
     bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
@@ -551,7 +665,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
             uint LightIndex = ActiveLightListBuffer[ActiveLightListIndex];
             EvaluatedLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
             float2 u2 = R.rand2();
-            LightSample Sample = SampleLightDiffuseWithCosineWeight(WorldPosition, WorldNormal, Evaluated, u2);
+            LightSample Sample = SampleLightDiffuseWithPreMultipliedCosine(WorldPosition, WorldNormal, Evaluated, u2);
             // Clip samples with low pdf (potential fireflies)
             if (Sample.IsValid() && Sample.Pdf > 0.001f) {
                 NumValidSamples ++;
@@ -731,10 +845,11 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     }
 }
 
-Texture2D<float>  VolumeDensity;
-Texture2D<float2> VolumeMinMax;
-Texture2D<float4> VolumeColor;
-Texture2D<float2> VolumeCdfAttenuation;
+Texture2D<float>  VolumeDensityTexture;
+Texture2D<float2> VolumeMinMaxTexture;
+Texture2D<float4> VolumeColorTexture;
+Texture2D<float2> VolumeCdfAttenuationTexture;
+
 
 struct PixelVolume {
     float Min, Max;
@@ -745,15 +860,214 @@ struct PixelVolume {
 };
 
 PixelVolume FetchVolume(float2 UV) {
-    float2 MinMax = VolumeMinMax.SampleLevel(PointClampSampler, UV, 0).xy;
+    float2 MinMax = VolumeMinMaxTexture.SampleLevel(PointClampSampler, UV, 0).xy;
     PixelVolume Volume;
     Volume.Min = MinMax.x;
     Volume.Max = MinMax.y;
-    Volume.Density = VolumeDensity.SampleLevel(PointClampSampler, UV, 0).x;
-    Volume.Color = VolumeColor.SampleLevel(PointClampSampler, UV, 0).xyz;
-    float2 CdfAndAttenuation = VolumeCdfAttenuation.SampleLevel(PointClampSampler, UV, 0).xy;
+    Volume.Density = VolumeDensityTexture.SampleLevel(PointClampSampler, UV, 0).x;
+    Volume.Color = VolumeColorTexture.SampleLevel(PointClampSampler, UV, 0).xyz;
+    float2 CdfAndAttenuation = VolumeCdfAttenuationTexture.SampleLevel(PointClampSampler, UV, 0).xy;
     Volume.Cdf = CdfAndAttenuation.x;
     Volume.Attenuation = CdfAndAttenuation.y;
     return Volume;
 }
 
+// Volume samples
+Texture2D<float4> VolumeSampleColorAndLinearDepth;
+Texture2D<float2> VolumeSampleTransmittanceAndPdf;
+
+// DI textures
+RWTexture2D<float4> RWVolumeDirectLightingRadianceEstimateTexture;
+Texture2D<float4> VolumeDirectLightingRadianceEstimateTexture;
+
+// Volume rays
+RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
+RWStructuredBuffer<uint> RWVolumeRayToTraceDirectionBuffer;
+RWStructuredBuffer<uint> RWVolumeRayToTraceStateBuffer;
+RWStructuredBuffer<float3> RWVolumeRayToTraceOriginBuffer;
+RWStructuredBuffer<float> RWVolumeRayToTraceTMaxBuffer;
+
+RWStructuredBuffer<uint> RWVolumeRayToTracePixelIndexBuffer;
+
+// Trace results
+StructuredBuffer<float> VolumeRayToTraceTransmittanceBuffer;
+
+// Output lighting
+RWTexture2D<float4> RWVolumeDirectLightingTexture;
+
+
+// Dispatch a thread for each tile
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
+    uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
+    if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
+
+    CameraParameters C = GetActiveCamera();
+    float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
+    float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
+    if (ReversedZDepth == 0) {
+        RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+        return; // Skip empty pixels
+    }
+
+    float4 ColorAndLinearDepth = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, PixelUV, 0);
+    float2 TransmittanceAndPdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, PixelUV, 0);
+    if(TransmittanceAndPdf.y == 0) {
+        // No valid volume sample found. No need to spawn light samples for it.
+        RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+        return ;
+    }
+    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, ColorAndLinearDepth.w);
+    float3 ViewDirection = WorldPosition - C.Position;
+    uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
+    if (!IsValid(GridIndex.x)) {
+        RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+        return; // Out of light grid
+    }
+    uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
+
+    Random R = MakeRandom(46315198u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
+    LightSampler LS = InitLightSampler(R);
+
+    bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
+    float GridSize = 0;
+    float3 GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
+    uint NumGridLights = LightGrid_GridLightListLengthBuffer[GridIndex1];
+    uint GridLightListOffset = LightGrid_GridLightListOffsetBuffer[GridIndex1];
+    float ListCdf = LightGrid_GridLightListCdfBuffer[GridIndex1];
+    
+    uint NumNonZeroGridLights = 0;
+    if (bUniformGrid) {
+        for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
+            uint ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
+            PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
+            float Weight = EstimateLightContribution(L, WorldPosition, ViewDirection, true);
+            if(Weight > 0.f) {
+                AddLightToSampler(LS, Weight, ActiveLightListIndex);
+                NumNonZeroGridLights ++;
+            }
+        }
+    } else {
+        // Process the light with the minimum index in the grid
+        uint LightListIndex = 0, Iteration = 0;
+        // TODO remove Iteration (used to prevent driver timeouts)
+        // TODO add a noisy occlusion modifier based on history cache to the target distribution
+        while(LightListIndex < NumGridLights && Iteration < 256) {
+            uint ActiveLightListIndex = INVALID_UINT;
+            ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
+            uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
+            if (WaveMinLightIndex == ActiveLightListIndex) {
+                PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
+                float Weight = EstimateLightContribution(L, WorldPosition, ViewDirection, true);
+                if (Weight > 0.f) {
+                    // Add the light to the sampler
+                    AddLightToSampler(LS, Weight, ActiveLightListIndex);
+                    NumNonZeroGridLights ++;
+                }
+                LightListIndex++;
+            }
+            Iteration++;
+        }
+    }
+    float SumResampleWeights = 0.f, SumTargetWeigts = 0.f;
+    float U = R.rand();
+    uint NumValidSamples = 0;
+    float3 SumResampleWeights3 = 0.f;
+    LightSample ReservedSample = (LightSample)0;
+    // Simply assume all volumes have the same isotropic parameter g
+    float g = 0.5f;
+    // Spawn 1 sample for each light, and resample from the samples
+    for (int SamplerLightListIndex = 0; SamplerLightListIndex < NUM_LIGHT_SAMPELR_SAMPLES; SamplerLightListIndex++) {
+        uint ActiveLightListIndex = LS.ActiveLightListIndex[SamplerLightListIndex];
+		if(IsValid(ActiveLightListIndex)) {
+            uint LightIndex = ActiveLightListBuffer[ActiveLightListIndex];
+            EvaluatedLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
+            float2 u2 = R.rand2();
+            LightSample Sample = SampleLightWithPreMultipliedPhaseFunction(
+                WorldPosition, ViewDirection, Evaluated, g, u2
+            );
+            // Clip samples with low pdf (potential fireflies)
+            if (Sample.IsValid() && Sample.Pdf > 0.001f) {
+                NumValidSamples ++;
+                float LightCdf = LS.Weights[SamplerLightListIndex] / LS.SumWeight;
+                // Pdf of the proposal distribution (hemisphere)
+                float ProposedPdf = LightCdf * Sample.Pdf;
+                // Target pdf (light contribution)
+                float3 TargetPdf3Unnormalized = Sample.Radiance / Sample.Pdf;
+                float TargetPdfUnnormalized = dot(TargetPdf3Unnormalized, 1.f.xxx);
+                // RIS
+                float3 ResampleWeight3 = TargetPdf3Unnormalized / ProposedPdf;
+                float ResampleWeight = TargetPdfUnnormalized / max(ProposedPdf, 1e-7f);
+                if (ResampleWeight > 1e-4f) {
+                    float CurrentLightU = ResampleWeight / (SumResampleWeights + ResampleWeight);
+                    SumResampleWeights3 += ResampleWeight3;
+                    SumResampleWeights += ResampleWeight;
+                    if (CurrentLightU > U) {
+                        U /= CurrentLightU;
+                        ReservedSample = Sample;
+                    } else {
+                        U = (U - CurrentLightU) / max(1 - CurrentLightU, 1e-7f);
+                    }
+                }
+            }
+		}
+    }
+    if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
+        // Final sample acquired, prepare visibility trace
+        // Estimate the radiance from a single light.
+        float3 RadianceEstimation = SumResampleWeights3 / NumValidSamples;
+        // Account for overflowing lights that have not been injected into the grid.
+        RadianceEstimation /= ListCdf;
+        float3 TraceDirection = ReservedSample.Position - WorldPosition;
+        float TraceDistance = length(TraceDirection);
+        TraceDirection /= TraceDistance;
+        // Write to the direct lighting sample buffer
+        RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = float4(RadianceEstimation, 1.f);
+        bool bPrimaryThread = WaveIsFirstLane();
+        uint WaveRayCount = WaveActiveCountBits(true);
+        uint WaveRayOffset = 0;
+        if (bPrimaryThread) {
+            InterlockedAdd(RWVolumeRayToTraceCount[0], WaveRayCount, WaveRayOffset);
+        }
+        WaveRayOffset = WaveReadLaneFirst(WaveRayOffset);
+        uint WaveLocalRayOffset = WavePrefixCountBits(true);
+        uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
+        // Write ray trace data
+        RWVolumeRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
+        RWVolumeRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
+        RWVolumeRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
+        
+        // Specify the pixel index for each transmittance ray
+        RWVolumeRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
+    }
+    else {
+        RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+    }
+}
+
+// HWRT transmittance ray tracing...
+
+
+// Render direct lighting for volume primitives using trace results
+[numthreads(WAVE_SIZE, 1, 1)]
+void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
+{
+    uint RayIndex = DispatchThreadID;
+    if(RayIndex >= RWVolumeRayToTraceCount[0]) return;
+    RayToTrace RayToTrace = FetchRayToTraceWithWorldOrigin(RayIndex, 0); 
+    float RayTransmittance = VolumeRayToTraceTransmittanceBuffer[RayIndex];
+    if (!RayToTrace.bHit) {
+        CameraParameters C = GetActiveCamera();
+        uint2 PixelIndex = UnpackUint2x16(RWVolumeRayToTracePixelIndexBuffer[RayIndex]);
+        float2 UV = ScreenCoordsToUV(C, PixelIndex);
+        float3 Estimate = VolumeDirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
+        float3 Radiance = RayTransmittance * Estimate;
+        // Resemble volume sampling
+        float3 VolumeSampleColor = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, UV, 0).rgb;
+        float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, UV, 0);
+        float  VolumeSampleTransmittance = VolumeSampleTransmittancePdf.x;
+        float  VolumeSamplePdf = VolumeSampleTransmittancePdf.y;
+        Radiance = Radiance * VolumeSampleColor * VolumeSampleTransmittance / VolumeSamplePdf;
+        RWVolumeDirectLightingTexture[PixelIndex] = float4(Radiance, 1.f);
+    }
+}

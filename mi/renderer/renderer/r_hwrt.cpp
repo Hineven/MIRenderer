@@ -110,5 +110,89 @@ void Renderer::Render_HardwareShadowRayTracing(
     )->AddBuffer(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
 }
 
+class TraceTransmittanceRaysShader : public RDGShader {
+public:
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceListLengthBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceListBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceDirectionBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceStateBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceOriginBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceTMaxBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RWRayToTraceTransmittanceBuffer)
+
+        SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Params)
+    DECLARE_SHADER()
+
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {
+            "USE_SCREEN_COORDS", // This shader can be compiled with or without origins as screen coordinates
+            "USE_RAY_TMAX_BUFFER" // Sometimes the shader allows extra input to specify the TMax values for rays
+        };
+    }
+};
+
+IMPLEMENT_RDG_RAY_TRACING_SHADER(TraceTransmittanceRaysShader, "mi/renderer/shaders/TraceTransmittanceRays.hlsl",
+    "TraceTransmittanceRaysRaygen", "TraceTransmittanceRaysClosestHit", "TraceTransmittanceRaysAnyHit", "TraceTransmittanceRaysMiss");
+
+void Renderer::Render_HardwareTransmittanceRayTracing(
+    RendererView *view, RenderGraphBuilder &builder,
+    RDGBuffer *ray_to_trace_list_length, RDGBuffer *ray_to_trace_list,
+    RDGBuffer *ray_to_trace_direction, RDGBuffer *ray_to_trace_state,
+    RDGBuffer *ray_to_trace_origin, RDGBuffer *ray_to_trace_tmax,
+    RDGBuffer *ray_to_trace_transmittance) {
+    auto & lib = RDGShaderLibrary::Get();
+    auto ini = RDGShaderInitializationInfo {};
+    if (ray_to_trace_tmax) ini.optional_macros.push_back("USE_RAY_TMAX_BUFFER");
+    auto shader = lib.GetShader<TraceTransmittanceRaysShader>(ini);
+    auto params = builder.Allocate<TraceTransmittanceRaysShader::Params>();
+    params->View = view->view_common_params_;
+    params->RayToTraceListLengthBuffer = ray_to_trace_list_length;
+    params->RayToTraceListBuffer = ray_to_trace_list;
+    params->RayToTraceDirectionBuffer = ray_to_trace_direction;
+    params->RWRayToTraceStateBuffer = ray_to_trace_state;
+    params->RayToTraceOriginBuffer = ray_to_trace_origin;
+    params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
+    params->RWRayToTraceTransmittanceBuffer = ray_to_trace_transmittance;
+
+    params->G_DepthTexture = view->G_depth_.Raw();
+    params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+    params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+
+    params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+    params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+    params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
+    params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
+    params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());
+    params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
+    params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+    params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+
+    auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
+
+    builder.AddPass<TraceTransmittanceRaysShader>(
+    {}, shader, params,
+    [shader, params, view, in_cmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
+        RDGCommandHelper::DispatchRaysIndirect<TraceTransmittanceRaysShader>(
+            queue, pass, shader, params, in_cmd
+        );
+        }
+    )->AddBuffer(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+}
+
 
 MI_NAMESPACE_END

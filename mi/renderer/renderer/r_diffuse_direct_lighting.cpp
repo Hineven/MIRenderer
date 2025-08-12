@@ -251,11 +251,48 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListLengthBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_BloomFilterBuffer)
 
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeDensity)
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeMinMax)
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeColor)
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, VolumeCdfAttenuation)
+    SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleColorAndLinearDepth)
+    SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleTransmittanceAndPdf)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDirectLightingRadianceEstimateTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingRadianceEstimateTexture)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceDirectionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceStateBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceOriginBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceTMaxBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTracePixelIndexBuffer)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeRayToTraceTransmittanceBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDirectLightingTexture)
 END_SHADER_PARAMETERS()
+
+class VolumePrimitivesSpawnLightSamplesShader : public RDGShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+    DECLARE_SHADER()
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        return {
+            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+        };
+    }
+};
+
+class VolumePrimitivesDirectLightingShader : public RDGShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+    DECLARE_SHADER()
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        return {
+            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+        };
+    }
+};
 
 void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
     auto & lib = RDGShaderLibrary::Get();
@@ -303,7 +340,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     );
     light_grid_list_allocator_buffer->SetName("LightGrid_ListAllocatorBuffer");
 
-    uint32_t max_num_shadow_rays = view->film_width_ * view->film_height_;
+    uint32_t num_screen_pixels = view->film_width_ * view->film_height_;
 
     auto ray_to_trace_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));\
     ray_to_trace_count->SetName("RayToTraceCount");
@@ -313,19 +350,19 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     );
     ray_to_trace_list_allocator->SetName("RayToTraceListAllocator");
     auto ray_to_trace_list = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(uint32_t)
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
     );
     ray_to_trace_list->SetName("RayToTraceList");
     auto ray_to_trace_direction = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(glm::vec3)
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::vec3)
     );
     ray_to_trace_direction->SetName("RayToTraceDirection");
     auto ray_to_trace_state = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(uint32_t)
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
     );
     ray_to_trace_state->SetName("RayToTraceState");
     auto ray_to_trace_origin_screen_coords = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(glm::uvec2)
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::uvec2)
     );
     ray_to_trace_origin_screen_coords->SetName("RayToTraceOriginScreenCoord");
 
@@ -340,7 +377,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     direct_lighting_ray_index_texture->SetName("DirectLightingRayIndexTexture");
 
     auto shadow_ray_to_trace_tmax = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_shadow_rays * sizeof(float)
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
     );
     shadow_ray_to_trace_tmax->SetName("ShadowRayToTraceTMaxBuffer");
     {
@@ -499,35 +536,104 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         );
     }
 
+    auto volprims_params = builder.Allocate<VolumePrimitivesDirectLightingShaderParameters>();
+    volprims_params->View = view->view_common_params_;
+    volprims_params->LightStructure_UB = params->LightStructure_UB;
+    volprims_params->DirectLighting_UB = params->DirectLighting_UB;
+    volprims_params->HybridTracing_UB = params->HybridTracing_UB;
+    volprims_params->LightBuffer = params->LightBuffer;
+    volprims_params->PrecomputedActiveLightBuffer = params->PrecomputedActiveLightBuffer;
+    auto volume_ray_to_trace_count = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
+    );
+    auto volume_ray_to_trace_list_allocator = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
+    );
+    auto volume_ray_to_trace_list = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
+    );
+    auto volume_ray_to_trace_direction = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::vec3)
+    );
+    auto volume_ray_to_trace_origins = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::uvec2)
+    );
+    auto volume_ray_to_trace_state = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint)
+    );
+    auto volume_ray_to_trace_tmax = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
+    );
+    volprims_params->ActiveLightListCount = params->ActiveLightListCount;
+    volprims_params->ActiveLightListBuffer = params->ActiveLightListBuffer;
+    volprims_params->LightGrid_ListLightIndexBuffer = params->LightGrid_ListLightIndexBuffer;
+    volprims_params->LightGrid_GridLightListOffsetBuffer = params->LightGrid_GridLightListOffsetBuffer;
+    volprims_params->LightGrid_GridLightListCdfBuffer = params->LightGrid_GridLightListCdfBuffer;
+    volprims_params->LightGrid_GridLightListLengthBuffer = params->LightGrid_GridLightListLengthBuffer;
+    volprims_params->LightGrid_BloomFilterBuffer = params->LightGrid_BloomFilterBuffer;
+
+    volprims_params->VolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
+    volprims_params->VolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();
+    auto volume_di_radiance_estimate_texture = builder.CreateTexture(
+        RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
+            1, 1, PixelFormatType::kR16G16B16A16_FLOAT,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource}
+    );
+
+    volprims_params->RWVolumeDirectLightingRadianceEstimateTexture = volume_di_radiance_estimate_texture.Raw();
+    volprims_params->VolumeDirectLightingRadianceEstimateTexture = volume_di_radiance_estimate_texture.Raw();
+
+    volprims_params->RWVolumeRayToTraceCount = volume_ray_to_trace_count.Raw();
+    volprims_params->RWVolumeRayToTraceListBuffer = volume_ray_to_trace_list.Raw();
+    volprims_params->RWVolumeRayToTraceDirectionBuffer = volume_ray_to_trace_direction.Raw();
+    volprims_params->RWVolumeRayToTraceStateBuffer = volume_ray_to_trace_state.Raw();
+    volprims_params->RWVolumeRayToTraceOriginBuffer = volume_ray_to_trace_origins.Raw();
+    volprims_params->RWVolumeRayToTraceTMaxBuffer = volume_ray_to_trace_tmax.Raw();
+
+    auto volume_ray_to_trace_pixel_index = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
+    );
+    volprims_params->RWVolumeRayToTracePixelIndexBuffer = volume_ray_to_trace_pixel_index.Raw();
+    auto volume_ray_to_trace_transmittance = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
+    );
+    volprims_params->VolumeRayToTraceTransmittanceBuffer = volume_ray_to_trace_transmittance.Raw();
+
+    volprims_params->RWVolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
+
     // Volume Direct Lighting
-    // {
-    //     auto shader = lib.GetShader<VolumePrimitivesSpawnLightSamplesShader>(ini);
-    //     auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
-    //     auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
-    //     Helpers::DispatchComputePass<VolumePrimitivesSpawnLightSamplesShader>(
-    //         builder, shader, params, num_groups_x, num_groups_y
-    //     );
-    // }
-    // cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, volume_ray_to_trace_count.Raw(), wave_size);
-    // {
-    //     // HWRT
-    //     Render_HardwareTransmittanceRayTracing(
-    //         view, builder,
-    //         volume_ray_to_trace_list_allocator.Raw(),
-    //         volume_ray_to_trace_list.Raw(),
-    //         volume_ray_to_trace_direction.Raw(),
-    //         volume_ray_to_trace_state.Raw(),
-    //         volume_ray_to_trace_origins.Raw(),
-    //         volume_ray_to_trace_tmax.Raw()
-    //     );
-    // }
-    // {
-    //     auto shader = lib.GetShader<VolumePrimitivesDirectLightingShader>(ini);
-    //     Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
-    //     Helpers::DispatchIndirectComputePass<VolumePrimitivesDirectLightingShader>(
-    //         builder, shader, params, cmd.Raw()
-    //     );
-    // }
+    {
+        auto shader = lib.GetShader<VolumePrimitivesSpawnLightSamplesShader>(ini);
+        auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
+        auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
+        Helpers::DispatchComputePass<VolumePrimitivesSpawnLightSamplesShader>(
+            builder, shader, volprims_params, num_groups_x, num_groups_y
+        );
+    }
+
+    {
+        // HWRT
+        Render_HardwareTransmittanceRayTracing(
+            view, builder,
+            volume_ray_to_trace_list_allocator.Raw(),
+            volume_ray_to_trace_list.Raw(),
+            volume_ray_to_trace_direction.Raw(),
+            volume_ray_to_trace_state.Raw(),
+            volume_ray_to_trace_origins.Raw(),
+            volume_ray_to_trace_tmax.Raw(),
+            volume_ray_to_trace_transmittance.Raw()
+        );
+    }
+
+    cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, volume_ray_to_trace_count.Raw(), wave_size);
+
+    {
+        auto shader = lib.GetShader<VolumePrimitivesDirectLightingShader>(ini);
+        Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
+        Helpers::DispatchIndirectComputePass<VolumePrimitivesDirectLightingShader>(
+            builder, shader, volprims_params, cmd.Raw()
+        );
+    }
 }
 
 
