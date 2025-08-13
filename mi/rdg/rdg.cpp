@@ -15,6 +15,9 @@
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_pool.h"
 
+// Instantly start a command buffer submit after the execution of each pass.
+#define INSTANT_SUBMIT_FOR_EACH_PASS
+
 MI_NAMESPACE_BEGIN
 
 static bool is_rdg_executing = false;
@@ -193,16 +196,24 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & texture_use : pass->compiled_.textures) {
                 if (texture_use.texture->GetRHI()) {
-                    textures[num_barriers_used] = texture_use.texture->GetRHI();
-                    src_accesses[num_barriers_used] = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
-                    src_stages[num_barriers_used] = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
-                    auto current_access = texture_use.access;
-                    dst_accesses[num_barriers_used] = current_access;
-                    dst_stages[num_barriers_used] = texture_use.stages;
-                    auto current_layout = texture_use.layout;
-                    layouts[num_barriers_used] = current_layout;
-                    texture_use.texture->Use(texture_use.stages, current_access, current_layout);
-                    num_barriers_used ++;
+                    auto prev_stages = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
+                    auto curr_stages = texture_use.stages;
+                    auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
+                    auto curr_usage = texture_use.access;
+                    auto prev_layout = texture_use.texture->GetCurrentLayout();
+                    auto curr_layout = texture_use.layout;
+                    if (prev_layout != curr_layout || (prev_stages && (
+                        curr_usage & RHIGPUAccessFlagBits::kWrite
+                        || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite))))) {
+                        textures[num_barriers_used] = texture_use.texture->GetRHI();
+                        src_accesses[num_barriers_used] = prev_usage;
+                        src_stages[num_barriers_used] = prev_stages;
+                        dst_accesses[num_barriers_used] = curr_usage;
+                        dst_stages[num_barriers_used] = curr_stages;
+                        layouts[num_barriers_used] = curr_layout;
+                        num_barriers_used ++;
+                    }
+                    texture_use.texture->Use(texture_use.stages, curr_usage, curr_layout);
                 }
             }
             if (num_barriers_used) cmd.TextureBarriers(num_barriers_used, textures, layouts, src_stages, dst_stages, src_accesses, dst_accesses);
@@ -216,15 +227,24 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & buffer_use: pass->compiled_.buffers) {
+                printf("Barrier (RDG): %s\n", buffer_use.buffer->GetName().c_str());
                 if (buffer_use.buffer->GetRHI()) {
-                    buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
-                    src_stages[num_barriers_used] = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
-                    auto new_stages = buffer_use.stages;
-                    dst_stages[num_barriers_used] = new_stages;
-                    src_accesses[num_barriers_used] = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
-                    dst_accesses[num_barriers_used] = buffer_use.access;
-                    buffer_use.buffer->Use(new_stages, buffer_use.access);
-                    num_barriers_used ++;
+                    auto prev_stages = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
+                    auto curr_stages = buffer_use.stages;
+                    auto prev_usage = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
+                    auto curr_usage = buffer_use.access;
+                    printf("Barrrier buffer %s: %x %x\n", buffer_use.buffer->GetRHI().buffer->GetName(), (unsigned)prev_usage, (unsigned)curr_usage);
+                    if (prev_stages && (
+                        (curr_usage & RHIGPUAccessFlagBits::kWrite)
+                        || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite)))) {
+                        buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
+                        src_stages[num_barriers_used] = prev_stages;
+                        dst_stages[num_barriers_used] = curr_stages;
+                        src_accesses[num_barriers_used] = prev_usage;
+                        dst_accesses[num_barriers_used] = curr_usage;
+                        num_barriers_used ++;
+                    }
+                    buffer_use.buffer->Use(curr_stages, curr_usage);
                 }
             }
             if (num_barriers_used) cmd.BufferBarriers(num_barriers_used, buffers, src_stages, dst_stages, src_accesses, dst_accesses);
@@ -258,7 +278,9 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
             }
         }
-        cmd.EnqueueTranslateAndSubmit();
+#ifdef INSTANT_SUBMIT_FOR_EACH_PASS
+        cmd.EnqueueTranslateAndSubmit(nullptr, pass->GetName());
+#endif
         // Release the pass (and decrement the reference count of the resources its holding)
         pass.reset();
     }

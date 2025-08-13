@@ -101,6 +101,7 @@ void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
         buffer->write_stages_,
         buffer->read_access_ | buffer->write_access_
     );
+    printf("Recycle %s with access: %x %x\n", buffer->GetRHI().buffer->GetName(), buffer->read_access_, buffer->write_access_);
     buffer->rhi_buffer_span_ = {};
     buffer->read_access_ = {};
     buffer->write_access_ = {};

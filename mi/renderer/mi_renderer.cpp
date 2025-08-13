@@ -328,6 +328,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
         else if (type == 6)
             Render_DrawToOutput(view, builder, view->volume_sample_transmittance_and_pdf_.Raw());
+        else if (type == 7)
+            Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
+        else if (type == 8)
+            Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
     // Update persistent data using current frame for next frame use

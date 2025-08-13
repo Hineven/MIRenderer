@@ -42,6 +42,8 @@ public:
         }
     }
 
+    FORCEINLINE RHITextureLayoutType GetCurrentLayout () const { return current_layout_; }
+
     FORCEINLINE bool IsImportedFrom (RHITexture * texture) {
         mi_assert(IsImported(), "This should be an imported texture to call RDGTexture::IsImportedFrom().");
         return rhi_texture_ == texture;

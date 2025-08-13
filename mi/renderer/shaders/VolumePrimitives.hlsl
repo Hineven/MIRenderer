@@ -365,7 +365,7 @@ void CountTileInstances(
     uint Offset = TileInstanceOffsetBuffer[TileIndex];
     uint InstanceCount = PrimitiveInstanceCount[0];
     uint TileInstanceCount = 0;
-    while(true) {
+    while(Offset + TileInstanceCount < InstanceCount) {
         uint SortKey = PrimitiveInstanceListKeySortedBuffer[Offset + TileInstanceCount];
         uint UnpackedTileIndex, QuantizedDepth;
         UnpackSortKey(SortKey, UnpackedTileIndex, QuantizedDepth);
@@ -373,9 +373,6 @@ void CountTileInstances(
             break; // Reached the end of this tile's instances
         }
         TileInstanceCount ++;
-        if (Offset + TileInstanceCount >= InstanceCount) {
-            break; // Prevent out-of-bounds access
-        }
     }
     RWTileInstanceCountBuffer[TileIndex] = TileInstanceCount;
 }
@@ -396,6 +393,9 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
     // TODO
     Cdf = 1.f;
     attenuation = 1.f;
+
+    // If the old distribution is zero, use the new one
+    if(old_distr.Density == 0) return new_distr;
 
     float old_l = old_distr.l;
     float old_r = old_distr.r;
@@ -496,6 +496,7 @@ RayVolumeDistribution RenderRay(
     Result.Color = float3(0.f, 0.f, 0.f);
     Cdf = 1.f;
     SampleDepth = 1e9f;
+    SampleColor = 0;
     TotalTransmittance = 1.f;
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
@@ -513,6 +514,7 @@ RayVolumeDistribution RenderRay(
         );
         // Clamp volumes to the nearest seen surface
         lr.y = min(lr.y, MaxLinearDepth);
+        float u = rng.rand();
         if(bIntersected && lr.y > max(0.f, lr.x)) {
             TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Primitive.Opacity);
             RayVolumeDistribution Intersection;
@@ -520,9 +522,8 @@ RayVolumeDistribution RenderRay(
             Intersection.Density = Primitive.Opacity;
             Intersection.l = max(lr.x, 0);
             Intersection.r = max(lr.y, 0);
-
             // Sample with decomposition tracking
-            float u = rng.rand();
+
             float CurrentSampledDepth = SampleRayVolumeDistribution(Intersection, u);
             if(CurrentSampledDepth < SampleDepth) {
                 // Update the sample depth
@@ -538,7 +539,7 @@ RayVolumeDistribution RenderRay(
     SampleTransmittance = 1.f;
     // Used to compute the pdf
     float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
-    bool bSampled = false;
+    float SumDensity = 0.f;
     // Iterate again and calculate sample pdf
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
@@ -561,25 +562,28 @@ RayVolumeDistribution RenderRay(
 
             float TMax = min(SampleDepth, lr.y);
             float TMin = max(lr.x, 0.f);
-            float Transmittance = exp(-Result.Density * max(TMax - TMin, 0));
+            float Transmittance = exp(-Primitive.Opacity * max(TMax - TMin, 0));
             // Calculate the sample pdf (derived by differentating 1 - transmittance)
             if(lr.y <= SampleDepth) {
                 // The intersection is before the sampled depth.
                 Pdf_C *= Transmittance;
             } else if(lr.x <= SampleDepth) {
                 // Sample falls into the primitive.
-                bSampled = true;
-                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Result.Density * Transmittance;
+                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Primitive.Opacity * Transmittance;
                 Pdf_Prod *= Transmittance;
+                // Calculate the sample color
+                SampleColor += Primitive.Opacity * Primitive.Color;
+                SumDensity += Primitive.Opacity;
             }
             SampleTransmittance *= Transmittance;
         }
     }
-    if(!bSampled) {
+    if(SumDensity > 0) {
+        SampleColor /= max(SumDensity, 1e-6f);
+        SamplePdf = Pdf_C * Pdf_Sigma;
+    } else {
         // The sample have not falled into any primitive. No valid sample.
         SamplePdf = 0.f;
-    } else {
-        SamplePdf = Pdf_C * Pdf_Sigma;
     }
     return Result;
 }

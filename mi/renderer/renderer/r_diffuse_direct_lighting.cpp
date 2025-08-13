@@ -268,7 +268,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceCount)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceListBuffer)
+    // SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceListBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceDirectionBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceStateBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceOriginBuffer)
@@ -574,12 +574,6 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
 
     volprims_params->LightBuffer = params->LightBuffer;
     volprims_params->PrecomputedActiveLightBuffer = params->PrecomputedActiveLightBuffer;
-    auto volume_ray_to_trace_list_allocator = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
-    auto volume_ray_to_trace_list = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
-    );
     auto volume_ray_to_trace_direction = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::vec3)
     );
@@ -622,7 +616,6 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     volprims_params->G_DepthTexture = view->G_depth_.Raw();
 
     volprims_params->RWVolumeRayToTraceCount = volume_ray_to_trace_count.Raw();
-    volprims_params->RWVolumeRayToTraceListBuffer = volume_ray_to_trace_list.Raw();
     volprims_params->RWVolumeRayToTraceDirectionBuffer = volume_ray_to_trace_direction.Raw();
     volprims_params->RWVolumeRayToTraceStateBuffer = volume_ray_to_trace_state.Raw();
     volprims_params->RWVolumeRayToTraceOriginBuffer = volume_ray_to_trace_origins.Raw();
@@ -653,8 +646,8 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         // HWRT
         Render_HardwareTransmittanceRayTracing(
             view, builder,
-            volume_ray_to_trace_list_allocator.Raw(),
-            volume_ray_to_trace_list.Raw(),
+            volume_ray_to_trace_count.Raw(),
+            nullptr,
             volume_ray_to_trace_direction.Raw(),
             volume_ray_to_trace_state.Raw(),
             nullptr,
@@ -668,7 +661,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
 
     {
         auto shader = lib.GetShader<RenderVolumeDirectLightingShader>(ini);
-        Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
+        // Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
         Helpers::DispatchIndirectComputePass<RenderVolumeDirectLightingShader>(
             builder, shader, volprims_params, cmd.Raw()
         );

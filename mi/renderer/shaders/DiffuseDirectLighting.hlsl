@@ -899,6 +899,8 @@ RWTexture2D<float4> RWVolumeDirectLightingTexture;
 void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
     uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
     if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
+    
+    RWVolumeDirectLightingTexture[PixelIndex] = 0.f.xxxx; // Initialize the output texture
 
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
@@ -1063,19 +1065,21 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWVolumeRayToTraceCount[0]) return;
     RayToTrace RayToTrace = FetchVolumeRayToTraceWithWorldOrigin(RayIndex, 0); 
-    float RayTransmittance = VolumeRayToTraceTransmittanceBuffer[RayIndex];
+    uint2 PixelIndex = UnpackUint2x16(RWVolumeRayToTracePixelIndexBuffer[RayIndex]);
+    float RayTransmittance = 1;//VolumeRayToTraceTransmittanceBuffer[RayIndex];
     if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();
-        uint2 PixelIndex = UnpackUint2x16(RWVolumeRayToTracePixelIndexBuffer[RayIndex]);
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float3 Estimate = VolumeDirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
-        float3 Radiance = RayTransmittance * Estimate;
+        // FIXME
+        float3 Radiance = RayTransmittance * 0.1f;// * Estimate;
         // Resemble volume sampling
         float3 VolumeSampleColor = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, UV, 0).rgb;
         float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, UV, 0);
         float  VolumeSampleTransmittance = VolumeSampleTransmittancePdf.x;
         float  VolumeSamplePdf = VolumeSampleTransmittancePdf.y;
-        Radiance = Radiance * VolumeSampleColor * VolumeSampleTransmittance / VolumeSamplePdf;
+        // FIXME
+        Radiance = Radiance;// * VolumeSampleColor;// * VolumeSampleTransmittance / VolumeSamplePdf;
         RWVolumeDirectLightingTexture[PixelIndex] = float4(Radiance, 1.f);
     }
 }

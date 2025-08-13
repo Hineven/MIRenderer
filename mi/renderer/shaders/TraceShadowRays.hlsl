@@ -22,7 +22,7 @@ StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
 
 Texture2D<float> G_DepthTexture;
 
-StructuredBuffer<uint> RayToTraceListLength;
+StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;
 
 StructuredBuffer<uint> RayToTraceDirectionBuffer;
@@ -43,9 +43,12 @@ struct RayPayload {
 
 [shader("raygeneration")]
 void TraceShadowRaysRaygen() {
+#ifdef USE_RAY_LIST
     uint RayListIndex = DispatchRaysIndex().x;
     uint RayIndex = RayToTraceListBuffer[RayListIndex];
-    
+#else
+    uint RayIndex = DispatchRaysIndex().x;
+#endif
     RayDesc Ray = (RayDesc)0;
     {
         CameraParameters C = GetActiveCamera();

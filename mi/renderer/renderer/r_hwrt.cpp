@@ -18,7 +18,7 @@
 #include "renderer/mi_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
-    class TraceShadowRaysShader : public RDGShader {
+class TraceShadowRaysShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -49,7 +49,8 @@ public:
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {
             "USE_SCREEN_COORDS", // This shader can be compiled with or without origins as screen coordinates
-            "USE_RAY_TMAX_BUFFER" // Sometimes the shader allows extra input to specify the TMax values for rays
+            "USE_RAY_TMAX_BUFFER", // Sometimes the shader allows extra input to specify the TMax values for rays
+            "USE_RAY_LIST" // Sometimes the rays are not compact, ray indices are stored in a list to be traced
         };
     }
 };
@@ -70,10 +71,12 @@ void Renderer::Render_HardwareShadowRayTracing(
     if (!ray_to_trace_origin && !ray_to_trace_origin_screen_coords) {
         mi_assert(false, "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided.");
     }
+    mi_assert(ray_to_trace_list_length && ray_to_trace_direction && ray_to_trace_state, "Essential tracing buffers must be provided.");
     auto & lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo {};
     if (ray_to_trace_origin_screen_coords) ini.optional_macros.push_back("USE_SCREEN_COORDS");
     if (ray_to_trace_tmax) ini.optional_macros.push_back("USE_RAY_TMAX_BUFFER");
+    if (ray_to_trace_list) ini.optional_macros.push_back("USE_RAY_LIST");
     auto shader = lib.GetShader<TraceShadowRaysShader>(ini);
     auto params = builder.Allocate<TraceShadowRaysShader::Params>();
     params->View = view->view_common_params_;
@@ -144,7 +147,8 @@ public:
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {
             "USE_SCREEN_COORDS", // This shader can be compiled with or without origins as screen coordinates
-            "USE_RAY_TMAX_BUFFER" // Sometimes the shader allows extra input to specify the TMax values for rays
+            "USE_RAY_TMAX_BUFFER", // Sometimes the shader allows extra input to specify the TMax values for rays
+            "USE_RAY_LIST" // Sometimes the rays are not compact, ray indices are stored in a list to be traced
         };
     }
 };
@@ -162,13 +166,16 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     RDGBuffer *ray_to_trace_origin_screen_coords, RDGBuffer *ray_to_trace_origin,
     RDGBuffer *ray_to_trace_tmax,
     RDGBuffer *ray_to_trace_transmittance) {
+    mi_assert(ray_to_trace_list_length && ray_to_trace_direction && ray_to_trace_state, "Essential tracing buffers must be provided.");
     auto & lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo {};
     mi_assert(ray_to_trace_origin || ray_to_trace_origin_screen_coords,
         "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided.");
     mi_assert(!(ray_to_trace_origin_screen_coords && !ray_to_trace_origin),
         "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided, not both.");
+    if (ray_to_trace_origin_screen_coords) ini.optional_macros.push_back("USE_SCREEN_COORDS");
     if (ray_to_trace_tmax) ini.optional_macros.push_back("USE_RAY_TMAX_BUFFER");
+    if (ray_to_trace_list) ini.optional_macros.push_back("USE_RAY_LIST");
     auto shader = lib.GetShader<TraceTransmittanceRaysShader>(ini);
     auto params = builder.Allocate<TraceTransmittanceRaysShader::Params>();
     params->View = view->view_common_params_;
