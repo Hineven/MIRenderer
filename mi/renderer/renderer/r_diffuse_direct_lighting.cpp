@@ -118,7 +118,8 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceCount)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RayToTraceCount)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceCount)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceListAllocator)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceListBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceDirectionBuffer)
@@ -256,6 +257,16 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDirectLightingRadianceEstimateTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingRadianceEstimateTexture)
 
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
+
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceCount)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceListBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceDirectionBuffer)
@@ -270,6 +281,8 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDirectLightingTexture)
 END_SHADER_PARAMETERS()
 
+IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+
 class VolumePrimitivesSpawnLightSamplesShader : public RDGShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
@@ -282,7 +295,11 @@ public:
     }
 };
 
-class VolumePrimitivesDirectLightingShader : public RDGShader {
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+    VolumePrimitivesSpawnLightSamplesShader,
+    "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "VolumePrimitivesSpawnLightSamples");
+
+class RenderVolumeDirectLightingShader : public RDGShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     DECLARE_SHADER()
@@ -293,6 +310,10 @@ public:
         };
     }
 };
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+    RenderVolumeDirectLightingShader,
+    "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderVolumeDirectLighting");
 
 void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
     auto & lib = RDGShaderLibrary::Get();
@@ -365,6 +386,11 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::uvec2)
     );
     ray_to_trace_origin_screen_coords->SetName("RayToTraceOriginScreenCoord");
+
+    auto volume_ray_to_trace_count = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
+    );
+    volume_ray_to_trace_count->SetName("VolumeRayToTraceCount");
 
     auto direct_lighting_radiance_estimate_texture = builder.CreateTexture(
     RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
@@ -454,6 +480,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
 
         params->RWRayToTraceCount = ray_to_trace_count.Raw();
         params->RayToTraceCount = ray_to_trace_count.Raw();
+        params->RWVolumeRayToTraceCount = volume_ray_to_trace_count.Raw();
         params->RWRayToTraceListAllocator = ray_to_trace_list_allocator.Raw();
         params->RWRayToTraceListBuffer = ray_to_trace_list.Raw();
         params->RWRayToTraceDirectionBuffer = ray_to_trace_direction.Raw();
@@ -541,11 +568,12 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     volprims_params->LightStructure_UB = params->LightStructure_UB;
     volprims_params->DirectLighting_UB = params->DirectLighting_UB;
     volprims_params->HybridTracing_UB = params->HybridTracing_UB;
+
+    volprims_params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+    volprims_params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+
     volprims_params->LightBuffer = params->LightBuffer;
     volprims_params->PrecomputedActiveLightBuffer = params->PrecomputedActiveLightBuffer;
-    auto volume_ray_to_trace_count = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
     auto volume_ray_to_trace_list_allocator = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
@@ -583,6 +611,16 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     volprims_params->RWVolumeDirectLightingRadianceEstimateTexture = volume_di_radiance_estimate_texture.Raw();
     volprims_params->VolumeDirectLightingRadianceEstimateTexture = volume_di_radiance_estimate_texture.Raw();
 
+    volprims_params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+    volprims_params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+    volprims_params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());
+    volprims_params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
+    volprims_params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
+    volprims_params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
+    volprims_params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+
+    volprims_params->G_DepthTexture = view->G_depth_.Raw();
+
     volprims_params->RWVolumeRayToTraceCount = volume_ray_to_trace_count.Raw();
     volprims_params->RWVolumeRayToTraceListBuffer = volume_ray_to_trace_list.Raw();
     volprims_params->RWVolumeRayToTraceDirectionBuffer = volume_ray_to_trace_direction.Raw();
@@ -619,6 +657,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             volume_ray_to_trace_list.Raw(),
             volume_ray_to_trace_direction.Raw(),
             volume_ray_to_trace_state.Raw(),
+            nullptr,
             volume_ray_to_trace_origins.Raw(),
             volume_ray_to_trace_tmax.Raw(),
             volume_ray_to_trace_transmittance.Raw()
@@ -628,9 +667,9 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, volume_ray_to_trace_count.Raw(), wave_size);
 
     {
-        auto shader = lib.GetShader<VolumePrimitivesDirectLightingShader>(ini);
+        auto shader = lib.GetShader<RenderVolumeDirectLightingShader>(ini);
         Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
-        Helpers::DispatchIndirectComputePass<VolumePrimitivesDirectLightingShader>(
+        Helpers::DispatchIndirectComputePass<RenderVolumeDirectLightingShader>(
             builder, shader, volprims_params, cmd.Raw()
         );
     }

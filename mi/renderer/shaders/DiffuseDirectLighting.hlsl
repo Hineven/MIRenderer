@@ -28,6 +28,7 @@
 #endif
 
 RWStructuredBuffer<uint> RWRayToTraceCount;
+RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
@@ -149,6 +150,7 @@ void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
         RWActiveLightListCount[0] = 0;
         RWRayToTraceCount[0] = 0;
         RWRayToTraceListAllocator[0] = 0;
+        RWVolumeRayToTraceCount[0] = 0;
     }
     uint Index = DispatchID;
     if (Index >= LightStructure_UB.LighGridNumCascadesUsed * LightStructure_UB.LightGridNumGrids) {
@@ -306,7 +308,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         // TODO take account of different parameterizations of HG phase function
 
         float SolidAngle = LightArea / (DistanceSq + LightArea);
-        return L.Intensity * SolidAngle * CosineBias / PI;
+        return L.Intensity * SolidAngle * CosineFactor / PI;
     } else {
         float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
         float3 ToLightCenter = LightCenter - Position;
@@ -349,7 +351,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         float CosineFactor = saturate(CosineBias + dot(Normal, ToLightCenter));
 
         float SolidAngle = LightArea / (DistanceSq + LightArea);
-        return L.Intensity * SolidAngle * CosineBias / PI;
+        return L.Intensity * SolidAngle * CosineFactor / PI;
     }
 }
 
@@ -832,9 +834,6 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
 {
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWRayToTraceCount[0]) return;
-    //if(RayIndex == 0) {
-    //    printf("qwq");
-    //}
     RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, 0);
     if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();
@@ -881,7 +880,6 @@ RWTexture2D<float4> RWVolumeDirectLightingRadianceEstimateTexture;
 Texture2D<float4> VolumeDirectLightingRadianceEstimateTexture;
 
 // Volume rays
-RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
 RWStructuredBuffer<uint> RWVolumeRayToTraceDirectionBuffer;
 RWStructuredBuffer<uint> RWVolumeRayToTraceStateBuffer;
 RWStructuredBuffer<float3> RWVolumeRayToTraceOriginBuffer;
@@ -1048,13 +1046,23 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
 // HWRT transmittance ray tracing...
 
 
+RayToTrace FetchVolumeRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
+    RayToTrace Ray = (RayToTrace)0;
+    Ray.Origin = RWVolumeRayToTraceOriginBuffer[RayIndex];
+    Ray.Direction = UnpackNormal(RWVolumeRayToTraceDirectionBuffer[RayIndex]);
+    uint RayToTraceState = RWVolumeRayToTraceStateBuffer[RayIndex];
+    Ray.TMax = TMax;
+    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
+    return Ray;
+}
+
 // Render direct lighting for volume primitives using trace results
 [numthreads(WAVE_SIZE, 1, 1)]
 void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
 {
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWVolumeRayToTraceCount[0]) return;
-    RayToTrace RayToTrace = FetchRayToTraceWithWorldOrigin(RayIndex, 0); 
+    RayToTrace RayToTrace = FetchVolumeRayToTraceWithWorldOrigin(RayIndex, 0); 
     float RayTransmittance = VolumeRayToTraceTransmittanceBuffer[RayIndex];
     if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();

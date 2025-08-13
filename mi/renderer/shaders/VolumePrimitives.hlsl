@@ -3,8 +3,7 @@
 #include "headers/Packing.hlsl"
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedView.hlsl"
-#include "shared/SharedVolumePrimitives.hlsl"
-#include "headers/Transform.hlsl"
+#include "headers/VolumePrimitivesLib.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
@@ -66,6 +65,7 @@ RWTexture2D<float2> RWVolumeCdfAttenuation;
 
 RWTexture2D<float4> RWVolumeSampleColorAndLinearDepth;
 RWTexture2D<float2> RWVolumeSampleTransmittanceAndPdf;
+RWTexture2D<float>  RWTransmittance;
 
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void VolumePrimitivesClearCounters(uint DispatchID: SV_DispatchThreadID) {
@@ -456,33 +456,6 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
     return result;
 }
 
-bool RayIntersect(float3 Origin, float3 Direction, VolumePrimitive Primitive, float3x4 ToObject, inout float2 intersection_t, inout float std_dist_t) {
-    float3x3 RotationMatrix = BuildRotationMatrix(Primitive.Rotation);
-    RotationMatrix = transpose(RotationMatrix); // Transform from local-to-object rotation matrix to object-to-local
-    float3 ObjectLocalOrigin = TransformPoint(ToObject, Origin);
-    float3 ObjectLocalDirection = TransformVector(ToObject, Direction);
-    float3 LocalOrigin = mul(RotationMatrix, ObjectLocalOrigin - Primitive.Position) / Primitive.Scales;
-    float3 LocalDirection = mul(RotationMatrix, ObjectLocalDirection) / Primitive.Scales;
-    float a = dot(LocalDirection, LocalDirection);
-    float b = 2 * dot(LocalOrigin, LocalDirection);
-    float c = dot(LocalOrigin, LocalOrigin) - 1.0f;
-    float D = b * b - 4 * a * c;
-    if (D < 0) {
-        // No intersection
-        intersection_t = 0;
-        return false;
-    }
-    float sqrt_D = sqrt(D);
-    float t1 = (-b - sqrt_D) / (2 * a);
-    float t2 = (-b + sqrt_D) / (2 * a);
-    intersection_t = float2(t1, t2);
-    float3 Ortho = cross(LocalOrigin, LocalDirection);
-    float3 ProjectedAxis = normalize(cross(LocalDirection, Ortho));
-    // Minimum distance of line-to-origin
-    std_dist_t = abs(dot(ProjectedAxis, LocalOrigin));
-    return true;
-}
-
 float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
     // Sample free flight length from the distribution using inversion method
     float l = Distribution.l;
@@ -497,6 +470,10 @@ float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
     return Sample;
 }
 
+float ComputeTransmittance (float Depth, float Density) {
+    return exp(-Density * Depth);
+}
+
 RayVolumeDistribution RenderRay(
     float3 RayOrigin,
     float3 RayDirection,
@@ -504,6 +481,7 @@ RayVolumeDistribution RenderRay(
     uint NumTilePrimitiveInstances,
     float MaxLinearDepth,
     inout Random rng,
+    inout float TotalTransmittance,
     inout float  SampleTransmittance,
     inout float3 SampleColor,
     inout float SampleDepth,
@@ -518,6 +496,7 @@ RayVolumeDistribution RenderRay(
     Result.Color = float3(0.f, 0.f, 0.f);
     Cdf = 1.f;
     SampleDepth = 1e9f;
+    TotalTransmittance = 1.f;
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
         uint PrimitiveIndex, RenderableIndex;
@@ -535,7 +514,7 @@ RayVolumeDistribution RenderRay(
         // Clamp volumes to the nearest seen surface
         lr.y = min(lr.y, MaxLinearDepth);
         if(bIntersected && lr.y > max(0.f, lr.x)) {
-
+            TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Primitive.Opacity);
             RayVolumeDistribution Intersection;
             Intersection.Color = Primitive.Color;
             Intersection.Density = Primitive.Opacity;
@@ -557,6 +536,8 @@ RayVolumeDistribution RenderRay(
 
     SamplePdf = 1.f;
     SampleTransmittance = 1.f;
+    // Used to compute the pdf
+    float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
     bool bSampled = false;
     // Iterate again and calculate sample pdf
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
@@ -574,15 +555,22 @@ RayVolumeDistribution RenderRay(
             RayOrigin, RayDirection, Primitive, ToObjectTransform,
             lr, Dist
         );
-        if(bIntersected && lr.y > 0.f) {
+        // Clamp volumes to the nearest seen surface
+        lr.y = min(lr.y, MaxLinearDepth);
+        if(bIntersected && lr.y > max(0.f, lr.x)) {
+
             float TMax = min(SampleDepth, lr.y);
             float TMin = max(lr.x, 0.f);
-            float Transmittance = exp(-Result.Density * (TMax - TMin));
+            float Transmittance = exp(-Result.Density * max(TMax - TMin, 0));
             // Calculate the sample pdf (derived by differentating 1 - transmittance)
-            if(lr.y <= SampleDepth) SamplePdf *= Transmittance;
-            else {
+            if(lr.y <= SampleDepth) {
+                // The intersection is before the sampled depth.
+                Pdf_C *= Transmittance;
+            } else if(lr.x <= SampleDepth) {
+                // Sample falls into the primitive.
                 bSampled = true;
-                SamplePdf = SamplePdf * Transmittance + SampleTransmittance * -Result.Density * Transmittance;
+                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Result.Density * Transmittance;
+                Pdf_Prod *= Transmittance;
             }
             SampleTransmittance *= Transmittance;
         }
@@ -590,6 +578,8 @@ RayVolumeDistribution RenderRay(
     if(!bSampled) {
         // The sample have not falled into any primitive. No valid sample.
         SamplePdf = 0.f;
+    } else {
+        SamplePdf = Pdf_C * Pdf_Sigma;
     }
     return Result;
 }
@@ -621,12 +611,13 @@ void DrawVolumePrimitives (
             float3 SampleColor = 0;
             float SampleTransmittance = 0;
             float SampleDepth = 0, SamplePdf = 0;
+            float TotalTransmittance = 1.f;
             Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
             RayVolumeDistribution Rendered = RenderRay(
                 RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                 LinearDepth,
                 rng,
-                SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
+                TotalTransmittance, SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
                  Cdf, Attenuation);
             RWVolumeDensity[PixelIndex] = Rendered.Density;
             RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
@@ -634,6 +625,7 @@ void DrawVolumePrimitives (
             RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
             RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
             RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
+            RWTransmittance[PixelIndex] = TotalTransmittance;
         }
     }
 }

@@ -170,7 +170,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         int index = FindIndex(info.storage_buffers_, sb.name);
         if (index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
-                   "Shader '{}:{}' uses storage buffer '{}' which is not defined in shader parameters",
+                   "Shader '{}:{}' uses storage buffer '{}' which is not defined among shader storage buffers",
                    class_registry_->source_location, entry, sb.name);
             passed_checking = false;
         } else {

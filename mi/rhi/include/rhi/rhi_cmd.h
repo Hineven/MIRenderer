@@ -871,21 +871,27 @@ public:
     }
 
     FORCEINLINE void BeginDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
+#ifndef NDEBUG
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);
         AddCommand(AllocateCommand<RHICommandDebugMarkerBegin>(name_copy, color));
+#endif
     }
 
     FORCEINLINE void EndDebugMarker() {
+#ifndef NDEBUG
         AddCommand(AllocateCommand<RHICommandDebugMarkerEnd>());
+#endif
     }
 
     FORCEINLINE void InsertDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
+#ifndef NDEBUG
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);
         AddCommand(AllocateCommand<RHICommandDebugMarkerInsert>(name_copy, color));
+#endif
     }
 
 };

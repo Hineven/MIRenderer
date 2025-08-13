@@ -200,7 +200,11 @@ void RHIWorkerThread::Run() {
                 RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(
                         task.queue,
                         task.param.submit.sync_point,
+#ifndef NDEBUG
                         task.name,
+#else
+                        "",
+#endif
                         task.param.submit.recycle
                 );
                 // Notify the task is finished

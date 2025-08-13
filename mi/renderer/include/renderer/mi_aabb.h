@@ -34,6 +34,13 @@ struct AABB {
             glm::max(a.max, b.max)
         );
     }
+
+    FORCEINLINE static AABB FromCenterAndHalfSize(const glm::vec3 &center, const glm::vec3 &half_size) {
+        return AABB(
+            center - half_size,
+            center + half_size
+        );
+    }
 };
 
 MI_NAMESPACE_END

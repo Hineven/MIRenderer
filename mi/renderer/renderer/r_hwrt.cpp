@@ -15,10 +15,10 @@
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_static_mesh.h"
+#include "renderer/mi_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
-
-class TraceShadowRaysShader : public RDGShader {
+    class TraceShadowRaysShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -118,9 +118,10 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceListBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceDirectionBuffer)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceStateBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceOriginScreenCoordBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceOriginBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceTMaxBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RWRayToTraceTransmittanceBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceTransmittanceBuffer)
 
         SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
@@ -130,6 +131,8 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
@@ -149,14 +152,22 @@ public:
 IMPLEMENT_RDG_RAY_TRACING_SHADER(TraceTransmittanceRaysShader, "mi/renderer/shaders/TraceTransmittanceRays.hlsl",
     "TraceTransmittanceRaysRaygen", "TraceTransmittanceRaysClosestHit", "TraceTransmittanceRaysAnyHit", "TraceTransmittanceRaysMiss");
 
+// More than shadow rays, transmittance rays can evaluate the transmittance from 0 and TMax.
+// NOTE: if the transmittance ray hits an opaque object and early terminates, the evaluated
+// transmittance is always 0.
 void Renderer::Render_HardwareTransmittanceRayTracing(
     RendererView *view, RenderGraphBuilder &builder,
     RDGBuffer *ray_to_trace_list_length, RDGBuffer *ray_to_trace_list,
     RDGBuffer *ray_to_trace_direction, RDGBuffer *ray_to_trace_state,
-    RDGBuffer *ray_to_trace_origin, RDGBuffer *ray_to_trace_tmax,
+    RDGBuffer *ray_to_trace_origin_screen_coords, RDGBuffer *ray_to_trace_origin,
+    RDGBuffer *ray_to_trace_tmax,
     RDGBuffer *ray_to_trace_transmittance) {
     auto & lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo {};
+    mi_assert(ray_to_trace_origin || ray_to_trace_origin_screen_coords,
+        "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided.");
+    mi_assert(!(ray_to_trace_origin_screen_coords && !ray_to_trace_origin),
+        "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided, not both.");
     if (ray_to_trace_tmax) ini.optional_macros.push_back("USE_RAY_TMAX_BUFFER");
     auto shader = lib.GetShader<TraceTransmittanceRaysShader>(ini);
     auto params = builder.Allocate<TraceTransmittanceRaysShader::Params>();
@@ -165,6 +176,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->RayToTraceListBuffer = ray_to_trace_list;
     params->RayToTraceDirectionBuffer = ray_to_trace_direction;
     params->RWRayToTraceStateBuffer = ray_to_trace_state;
+    params->RayToTraceOriginScreenCoordBuffer = ray_to_trace_origin_screen_coords;
     params->RayToTraceOriginBuffer = ray_to_trace_origin;
     params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
     params->RWRayToTraceTransmittanceBuffer = ray_to_trace_transmittance;
@@ -181,6 +193,10 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+    params->VolumePrimitivesHeaderBuffer = builder.Import(device_allocator_->GetVolumePrimitivesHeaderBuffer());
+    params->PrimitiveData = builder.Import(
+        device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
+    );
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 

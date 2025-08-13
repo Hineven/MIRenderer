@@ -94,7 +94,9 @@ protected:
     Scene * scene_;
     uint32_t index_ {UINT32_MAX};
 
-    AABB aabb_ {}; // Axis-aligned bounding box of the renderable, used for culling & bounds calculation
+    // Axis-aligned bounding box of the renderable in object space, used for culling & bounds calculation
+    // Should be updated in Update() method.
+    AABB aabb_ {};
 
     // Invisible renderables wont be rendered.
     bool visible_ {true};

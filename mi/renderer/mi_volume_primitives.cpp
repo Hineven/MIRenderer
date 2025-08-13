@@ -37,6 +37,17 @@ void VolumePrimitives::SetDirty(bool dirty) {
 
 void VolumePrimitives::SetPrimitives(const std::vector<PackedVolumePrimitive> & primitives) {
     primitives_ = primitives;
+    // Update AABB
+    aabb_ = AABB::Empty();
+    for (const auto & prim : primitives_) {
+        // TODO more precise AABB calculation
+        float max_scale = glm::max(glm::max(prim.Scales.x, prim.Scales.y), prim.Scales.z);
+        AABB primitive_aabb = AABB::FromCenterAndHalfSize(
+            prim.Position,
+            glm::vec3(max_scale)
+        );
+        aabb_ = AABB::Merge(aabb_, primitive_aabb);
+    }
     SetDirty();
 }
 
@@ -108,7 +119,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
 
     // Upload header to device
     Helpers::Upload_Async(queue,
-        alloc->GetCustomUberBuffer(kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI(),
+        alloc->GetVolumePrimitivesHeaderBuffer(),
         sizeof(VolumePrimitivesHeader) * device_volume_primitives_->index_,
         header
     );
@@ -312,6 +323,7 @@ TRef<VolumePrimitivesInstance> VolumePrimitivesInstance::Create(Scene * scene, V
 }
 
 void VolumePrimitivesInstance::Update([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
+    aabb_ = volume_primitives_ ? volume_primitives_->GetAABB() : AABB::Empty();
     SetDirty(false);
 }
 

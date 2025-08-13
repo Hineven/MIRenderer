@@ -96,6 +96,10 @@ public:
         }
     }
 
+    FORCEINLINE AABB GetAABB () const {
+        return aabb_;
+    }
+
 protected:
     // All volume primitive data are allocated in a single buffer heap with a single buffer.
     // (Registered at kVolumePrimitiveAllocatorBufferHeapIndex)
@@ -103,6 +107,8 @@ protected:
 
     TRef<DeviceVolumePrimitives> device_volume_primitives_;
     std::vector<PackedVolumePrimitive> primitives_;
+
+    AABB aabb_ {}; // Axis-aligned bounding box of the volume primitives
 
     bool dirty_ {true};
 

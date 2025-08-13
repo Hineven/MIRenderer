@@ -163,6 +163,10 @@ public:
 
     SBTBuffers GetSBTBuffers (RHICommandQueueGraphics & queue) ;
 
+    FORCEINLINE const std::string & GetName () const {
+        return class_registry_->name;
+    }
+
 protected:
 
     // Shader initialization info (default, given in constructor)

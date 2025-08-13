@@ -999,7 +999,9 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
+#ifndef NDEBUG
     state.debug_marker_stack.push(cmd->marker_name_);
+#endif
 }
 
 void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[maybe_unused]] RHICommandDebugMarkerEnd *cmd) {
@@ -1009,7 +1011,9 @@ void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[may
     state.BeginCmd();
     state.cmd.endDebugUtilsLabelEXT();
     mi_assert(!state.debug_marker_stack.empty(), "Potential mismatch between begin and end debug markers");
+#ifndef NDEBUG
     state.debug_marker_stack.pop();
+#endif
 }
 
 void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) {

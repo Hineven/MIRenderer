@@ -128,6 +128,10 @@ public:
         return area_lights_uber_buffer_.Raw();
     }
 
+    FORCEINLINE RHIBuffer * GetVolumePrimitivesHeaderBuffer() const {
+        return volume_primitives_header_buffer_.Raw();
+    }
+
 
 protected:
 

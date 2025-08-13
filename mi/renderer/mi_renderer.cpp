@@ -38,7 +38,7 @@ static CVar<int> CVar_FinalOutputType(
     "1 - Albedo\n"
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
-    0
+    6
 );
 
 Renderer::Renderer() {
@@ -323,9 +323,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         else if (type == 3)
             Render_DrawToOutput(view, builder, view->persistent_data_->prev_radiance_.Raw());
         else if (type == 4)
-            Render_DrawToOutput(view, builder, view->G_volume_density_.Raw());
+            Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
         else if (type == 5)
-            Render_DrawToOutput(view, builder, view->G_volume_min_max_.Raw());
+            Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
         else if (type == 6)
             Render_DrawToOutput(view, builder, view->volume_sample_transmittance_and_pdf_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());

@@ -36,7 +36,7 @@ TEST(UtilTest, UtilRadixSort) {
     {
         RenderGraphBuilder builder;
         auto pool = RDGResourcePool::Create();
-        uint32_t num_elements = 819103;
+        uint32_t num_elements = 1819103;
         auto src_keys = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
         src_keys->SetName("SrcKeysBuffer");
         auto src_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
@@ -70,6 +70,10 @@ TEST(UtilTest, UtilRadixSort) {
         Helpers::UploadWithRDG(builder, src_values.Raw(), host_values.data(), host_values.size() * sizeof(uint32_t));
 
         RadixSort::AddRadixSort32BitsPass(builder, num_elements, src_keys.Raw(), dst_keys.Raw(), src_values.Raw(), dst_values.Raw());
+        RadixSort::AddRadixSort32BitsPass(builder, num_elements, dst_keys.Raw(), src_keys.Raw(), dst_values.Raw(), src_values.Raw());
+        RadixSort::AddRadixSort32BitsPass(builder, num_elements, src_keys.Raw(), dst_keys.Raw(), src_values.Raw(), dst_values.Raw());
+
+
 
         auto readback_values = RHI::Get().CreateBuffer(num_elements * sizeof(uint32_t), RHIBufferUsageFlagBits::kReadback);
         auto readback_keys = RHI::Get().CreateBuffer(num_elements * sizeof(uint32_t), RHIBufferUsageFlagBits::kReadback);
@@ -181,6 +185,8 @@ TEST(UtilTest, UtilRadixSortIndirect) {
         Helpers::UploadWithRDG(builder, src_values.Raw(), host_values.data(), host_values.size() * sizeof(uint32_t));
         Helpers::UploadWithRDG(builder, count_buffer.Raw(), &num_sort_elements, sizeof(uint32_t));
 
+        RadixSort::AddRadixSort32BitsPass(builder, num_elements, src_keys.Raw(), dst_keys.Raw(), src_values.Raw(), dst_values.Raw(), count_buffer.Raw());
+        RadixSort::AddRadixSort32BitsPass(builder, num_elements, dst_keys.Raw(), src_keys.Raw(), dst_values.Raw(), src_values.Raw(), count_buffer.Raw());
         RadixSort::AddRadixSort32BitsPass(builder, num_elements, src_keys.Raw(), dst_keys.Raw(), src_values.Raw(), dst_values.Raw(), count_buffer.Raw());
 
         auto readback_values = RHI::Get().CreateBuffer(num_elements * sizeof(uint32_t), RHIBufferUsageFlagBits::kReadback);

@@ -11,6 +11,7 @@
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_bindless.h"
 #include "shaders/shared/SharedMaterial.hlsl"
+#include "shaders/shared/SharedVolumePrimitives.hlsl"
 
 
 MI_NAMESPACE_BEGIN
@@ -49,6 +50,11 @@ material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_me
         1, 16 * 1024
     );
     area_lights_uber_buffer_->SetName("AreaLightsUberBuffer");
+    volume_primitives_header_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(VolumePrimitivesHeader) * kMaxNumVolumePrimitives, RHIBufferUsageFlagBits::kStorage}
+    );
+    volume_primitives_header_buffer_->SetName("VolumePrimitivesHeaderBuffer");
+
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {

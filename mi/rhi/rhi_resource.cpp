@@ -32,8 +32,9 @@ void RHIResource::QueueForDeletion() {
 }
 
 void RHIResource::SetName([[maybe_unused]] const std::string & name) {
+#ifndef NDEBUG
     name_ = name;
-    // Do nothing
+#endif
 }
 
 

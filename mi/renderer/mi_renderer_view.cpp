@@ -328,6 +328,11 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
     G_volume_cdf_attenuation_->SetName("GBuffer Volume CDF Attenuation");
 
+    G_transmittance_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR8_UNORM,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_transmittance_->SetName("GBuffer Transmittance");
+
     volume_sample_color_and_linear_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
@@ -461,10 +466,10 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
         auto PrevWorldToNDC = prev_camera_proj_matrix * prev_camera_view_matrix;
         camera.Reprojection = glm::mat4(PrevWorldToNDC * glm::inverse(glm::dmat4(camera.WorldToNDC)));
     }
-    auto proj_matrix_reversed_z = proj_matrix;
     // Reverse the Z axis ([0, 1] -> [1, 0]) in the projection matrix
-    proj_matrix_reversed_z[2][2] = camera_.near_plane / (camera_.near_plane - camera_.far_plane);
-    proj_matrix_reversed_z[3][2] = -camera_.far_plane * camera_.near_plane / (camera_.near_plane - camera_.far_plane);
+    auto proj_matrix_reversed_z = proj_matrix;
+    proj_matrix_reversed_z[2][2] = camera_.near_plane / (camera_.far_plane - camera_.near_plane);
+    proj_matrix_reversed_z[3][2] = camera_.far_plane * camera_.near_plane / (camera_.far_plane - camera_.near_plane);
 
     camera.WorldToNDC_ReversedZ = proj_matrix_reversed_z * view_matrix;
     camera.ViewToNDC_ReversedZ = proj_matrix_reversed_z;
