@@ -24,6 +24,7 @@ set(SOURCE_FILES
 )
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})
+target_link_libraries(core PUBLIC glm::glm)
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Output an identity file to specify the root path of the project for executables

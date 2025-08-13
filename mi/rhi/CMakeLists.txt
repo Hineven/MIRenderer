@@ -1,3 +1,45 @@
+# Function to create SPIRV library targets
+function(create_spirv_targets)
+    # Get Vulkan library directory
+    get_filename_component(VULKAN_LIB_DIR ${Vulkan_LIBRARY} DIRECTORY)
+
+    # List of SPIRV libraries we want to link
+    set(SPIRV_LIBS
+        spirv-cross-core
+        spirv-cross-glsl
+        spirv-cross-hlsl
+        spirv-cross-cpp
+        SPIRV-Tools-opt
+    )
+
+    # Create imported targets for each SPIRV library
+    foreach(SPIRV_LIB ${SPIRV_LIBS})
+        # Determine library filename based on build type
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(LIB_FILENAME "${SPIRV_LIB}d.lib")
+        else()
+            set(LIB_FILENAME "${SPIRV_LIB}.lib")
+        endif()
+
+        set(LIB_PATH "${VULKAN_LIB_DIR}/${LIB_FILENAME}")
+
+        # Check if library exists
+        if(EXISTS ${LIB_PATH})
+            # Create imported target
+            add_library(SPIRV::${SPIRV_LIB} STATIC IMPORTED)
+            set_target_properties(SPIRV::${SPIRV_LIB} PROPERTIES
+                IMPORTED_LOCATION ${LIB_PATH}
+            )
+            message(STATUS "Found SPIRV library: ${LIB_PATH}")
+        else()
+            message(WARNING "SPIRV library not found: ${LIB_PATH}")
+        endif()
+    endforeach()
+endfunction()
+
+# Create SPIRV targets
+create_spirv_targets()
+
 set(SOURCE_FILES
     rhi_thread.cpp
     rhi_shader.cpp
@@ -43,6 +85,8 @@ set(HEADER_FILES
 add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})
 target_include_directories(rhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+
+
 list(
     APPEND
     EXTERNAL_LIBRARIES
@@ -52,13 +96,13 @@ list(
     GPUOpen::VulkanMemoryAllocator
     ${VMA_HPP_TARGET_NAME}
     # Reflection
-    spirv-cross-core
-    spirv-cross-glsl
-    spirv-cross-hlsl
-    spirv-cross-cpp
+    SPIRV::spirv-cross-core
+    SPIRV::spirv-cross-glsl
+    SPIRV::spirv-cross-hlsl
+    SPIRV::spirv-cross-cpp
     # SPV processing
-    SPIRV-Tools-static
-    SPIRV-Tools-opt
+    Vulkan::SPIRV-Tools
+    SPIRV::SPIRV-Tools-opt
 
     #    SPIRV-Tools-reduce
 )

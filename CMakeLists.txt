@@ -61,19 +61,19 @@ endif()
 message(STATUS "Found Vulkan Memory Allocator version: ${VulkanMemoryAllocator_VERSION}")
 find_package(glm REQUIRED GLOBAL)
 
-find_package(Vulkan REQUIRED GLOBAL COMPONENTS dxc GLOBAL)
+find_package(Vulkan REQUIRED GLOBAL COMPONENTS dxc SPIRV-Tools GLOBAL)
 
 # Emit found Vulkan SDK version
 message(STATUS "Found Vulkan SDK version: ${Vulkan_VERSION}")
 
-find_package(spirv_cross_core REQUIRED GLOBAL)
+#find_package(spirv_cross_core REQUIRED GLOBAL)
 # spirv_cross_glsl is required for spirv_cross_hlsl
-find_package(spirv_cross_glsl REQUIRED GLOBAL)
-find_package(spirv_cross_hlsl REQUIRED GLOBAL)
-find_package(spirv_cross_cpp REQUIRED GLOBAL)
+#find_package(spirv_cross_glsl REQUIRED GLOBAL)
+#find_package(spirv_cross_hlsl REQUIRED GLOBAL)
+#find_package(spirv_cross_cpp REQUIRED GLOBAL)
 
-find_package(SPIRV-Tools CONFIG REQUIRED)
-find_package(SPIRV-Tools-opt CONFIG REQUIRED)
+#find_package(SPIRV-Tools CONFIG REQUIRED)
+#find_package(SPIRV-Tools-opt CONFIG REQUIRED)
 # this is buggy
 #find_package(SPIRV-Tools-reduce CONFIG REQUIRED)
 

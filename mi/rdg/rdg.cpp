@@ -278,6 +278,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
             }
         }
+        // fflush(stdout);
 #ifdef INSTANT_SUBMIT_FOR_EACH_PASS
         cmd.EnqueueTranslateAndSubmit(nullptr, pass->GetName());
 #endif

@@ -2,16 +2,12 @@
 A set of CG libraries.
 ### Extenal Dependencies
 * `Vulkan SDK`: https://vulkan.lunarg.com/
+* 需要包含SPIR-V反编译相关工具库
 ### Vcpkg Dependencies
 * `glm`
 * `imgui[glfw-binding]`
-* `spirv-cross`
-* `spirv-reflect`
-* `spirv-headers`
-* `spirv-tools`
 * `vulkan-memory-allocator`
 * `vulkan-memory-allocator-hpp`
-* `vulkan`
 * `directx-dxc`
 * `stb`
 * `gtest`

@@ -327,7 +327,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDevice8BitStorageFeaturesKHR,
                 vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR,
                 vk::PhysicalDeviceHostQueryResetFeatures,
-                vk::PhysicalDeviceRayQueryFeaturesKHR
+                vk::PhysicalDeviceRayQueryFeaturesKHR,
+                vk::PhysicalDeviceVulkanMemoryModelFeatures,
+                vk::PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR
         > extended_features;
 
         auto & device_create_info = std::get<0>(extended_features);
@@ -400,9 +402,11 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         auto & fpatomic = std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(extended_features);
         fpatomic.shaderBufferFloat32AtomicAdd = VK_TRUE;
 
-#ifdef USE_DESCRIPTOR_BUFFER
         auto & descb = std::get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>(extended_features);
+#ifdef USE_DESCRIPTOR_BUFFER
         descb.descriptorBuffer = VK_TRUE;
+#else
+        descb.descriptorBuffer = VK_FALSE;
 #endif
 
         auto & dyrend = std::get<vk::PhysicalDeviceDynamicRenderingFeatures>(extended_features);
@@ -414,10 +418,20 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         auto & sync2 = std::get<vk::PhysicalDeviceSynchronization2Features>(extended_features);
         sync2.synchronization2 = VK_TRUE;
 
-        #ifndef NDEBUG
         auto & rayqry = std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(extended_features);
+        #ifndef NDEBUG
         rayqry.rayQuery = VK_TRUE;
+        #else
+        rayqry.rayQuery = VK_FALSE;
         #endif
+
+        auto & vulkan_memory_model = std::get<vk::PhysicalDeviceVulkanMemoryModelFeatures>(extended_features);
+        vulkan_memory_model.vulkanMemoryModel = VK_TRUE;
+        vulkan_memory_model.vulkanMemoryModelDeviceScope = VK_TRUE;
+        vulkan_memory_model.vulkanMemoryModelAvailabilityVisibilityChains = VK_TRUE;
+
+        auto & relaxed_ext_inst = std::get<vk::PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR>(extended_features);
+        relaxed_ext_inst.shaderRelaxedExtendedInstruction = VK_TRUE;
 
         device_ = physical_device_.createDevice(extended_features.get());
         // Initialize the Vulkan-HPP dispatcher
