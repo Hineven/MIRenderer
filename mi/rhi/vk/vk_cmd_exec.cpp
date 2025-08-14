@@ -492,6 +492,13 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         // Thus the completion of this command buffer will mark the end of the whole frame.
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eNone,
             {}, {}, {}, {});
+        // 25.8.14: Vulkan validation layer synchronization false positive. Adding a mega barrier for now.
+        // FIXME this should not be necessary. Remove it when the validation layer is fixed.
+        state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
+            {}, vk::MemoryBarrier{
+                vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
+                vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
+            }, {}, {});
         // 3. end and submit command buffer.
         state.CloseCmd();
         vk::Semaphore present_ready_sem = vk_rhi->vk_swapchain_render_finished_semaphores_[
@@ -977,6 +984,12 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
             ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->src_accesses_[i]);
         vk_barriers[i].dstAccessMask = (barrier->dst_stages_[i] == RHIPipelineStageFlagBits::kNone)
             ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->dst_accesses_[i]);
+        // printf("Buffer: %s, stages: %s -> %s, accesses: %s -> %s\n",
+        //        e.buffer->GetName(),
+        //        vk::to_string(vk_barriers[i].srcStageMask).c_str(),
+        //        vk::to_string(vk_barriers[i].dstStageMask).c_str(),
+        //        vk::to_string(vk_barriers[i].srcAccessMask).c_str(),
+        //        vk::to_string(vk_barriers[i].dstAccessMask).c_str());
         vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].buffer = ((VulkanBuffer*)buffers[i].buffer)->GetBuffer();

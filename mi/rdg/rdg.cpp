@@ -14,6 +14,7 @@
 
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_pool.h"
+#include "rhi/rhi_types_string.h"
 
 // Instantly start a command buffer submit after the execution of each pass.
 #define INSTANT_SUBMIT_FOR_EACH_PASS
@@ -159,7 +160,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         int pass_index = ready_passes.front();
         ready_passes.pop();
         auto &pass = passes_[pass_index];
-        // printf("Pass: %s\n", pass->name_.c_str());
+        // printf("================ Pass ================: %s\n", pass->name_.c_str());
         // Get resources ready in the pool
         for (const auto& texture_use : pass->compiled_.textures) {
             texture_use.texture->RequestRHI(pool);
@@ -227,16 +228,17 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
             for (const auto & buffer_use: pass->compiled_.buffers) {
-                printf("Barrier (RDG): %s\n", buffer_use.buffer->GetName().c_str());
+                // printf("Barrier (RDG): %s\n", buffer_use.buffer->GetName().c_str());
                 if (buffer_use.buffer->GetRHI()) {
                     auto prev_stages = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
                     auto curr_stages = buffer_use.stages;
                     auto prev_usage = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
                     auto curr_usage = buffer_use.access;
-                    printf("Barrrier buffer %s: %x %x\n", buffer_use.buffer->GetRHI().buffer->GetName(), (unsigned)prev_usage, (unsigned)curr_usage);
+                    // printf("Barrrier buffer %s: %x %x\n", buffer_use.buffer->GetRHI().buffer->GetName(), (unsigned)prev_usage, (unsigned)curr_usage);
                     if (prev_stages && (
                         (curr_usage & RHIGPUAccessFlagBits::kWrite)
                         || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite)))) {
+                        // printf("Actual barrier: %s %s %s %s\n", ToString(prev_stages).c_str(), ToString(curr_stages).c_str(), ToString(prev_usage).c_str(), ToString(curr_usage).c_str());
                         buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
                         src_stages[num_barriers_used] = prev_stages;
                         dst_stages[num_barriers_used] = curr_stages;
@@ -278,7 +280,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
             }
         }
-        // fflush(stdout);
+        fflush(stdout);
 #ifdef INSTANT_SUBMIT_FOR_EACH_PASS
         cmd.EnqueueTranslateAndSubmit(nullptr, pass->GetName());
 #endif

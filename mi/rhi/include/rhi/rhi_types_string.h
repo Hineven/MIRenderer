@@ -59,6 +59,12 @@ FORCEINLINE std::string ToString(RHIShaderFrequencyFlagBits bit) {
             return "ClosestHit";
         case RHIShaderFrequencyFlagBits::kAnyHit:
             return "AnyHit";
+        case RHIShaderFrequencyFlagBits::kIntersection:
+            return "Intersection";
+        case RHIShaderFrequencyFlagBits::kCallable:
+            return "Callable";
+        case RHIShaderFrequencyFlagBits::kRayTracing:
+            return "RayTracing";
         case RHIShaderFrequencyFlagBits::kAll:
             return "All";
         default:
@@ -97,20 +103,32 @@ FORCEINLINE std::string ToString(RHIPipelineStageFlagBits bit) {
     switch (bit) {
         case RHIPipelineStageFlagBits::kNone:
             return "None";
+        case RHIPipelineStageFlagBits::kVertex:
+            return "Vertex";
+        case RHIPipelineStageFlagBits::kGeometry:
+            return "Geometry";
+        case RHIPipelineStageFlagBits::kTess:
+            return "Tess";
+        case RHIPipelineStageFlagBits::kFragment:
+            return "Fragment";
+        case RHIPipelineStageFlagBits::kFramebufferOutput:
+            return "FramebufferOutput";
         case RHIPipelineStageFlagBits::kOrdinaryGraphics:
             return "OrdinaryGraphics";
-        case RHIPipelineStageFlagBits::kCompute:
-            return "Compute";
-        case RHIPipelineStageFlagBits::kRayTracing:
-            return "RayTracing";
         case RHIPipelineStageFlagBits::kTaskMesh:
             return "TaskMesh";
+        case RHIPipelineStageFlagBits::kAllGraphics:
+            return "AllGraphics";
+        case RHIPipelineStageFlagBits::kCompute:
+            return "Compute";
+        case RHIPipelineStageFlagBits::kAccelerationStructureBuild:
+            return "AccelerationStructureBuild";
+        case RHIPipelineStageFlagBits::kRayTracing:
+            return "RayTracing";
         case RHIPipelineStageFlagBits::kTransfer:
             return "Transfer";
         case RHIPipelineStageFlagBits::kIndirect:
             return "Indirect";
-        case RHIPipelineStageFlagBits::kAccelerationStructureBuild:
-            return "AccelerationStructureBuild";
         case RHIPipelineStageFlagBits::kAll:
             return "All";
         default:
@@ -163,6 +181,16 @@ FORCEINLINE std::string ToString(RHIBufferUsageFlagBits bit) {
             return "Staging";
         case RHIBufferUsageFlagBits::kTransferSrc:
             return "TransferSrc";
+        case RHIBufferUsageFlagBits::kAccelerationStructureStorage:
+            return "AccelerationStructureStorage";
+        case RHIBufferUsageFlagBits::kAccelerationStructureBuildInput:
+            return "AccelerationStructureBuildInput";
+        case RHIBufferUsageFlagBits::kShaderBindingTable:
+            return "ShaderBindingTable";
+        case RHIBufferUsageFlagBits::kAccelerationStructureScratch:
+            return "AccelerationStructureScratch";
+        case RHIBufferUsageFlagBits::kShaderDeviceAddress:
+            return "ShaderDeviceAddress";
         case RHIBufferUsageFlagBits::kAll:
             return "All";
         default:
@@ -612,6 +640,23 @@ FORCEINLINE std::string ToString(RHICommandQueueType type) {
     }
 }
 
+// RHIRayTracingShaderGroupType
+FORCEINLINE std::string ToString(RHIRayTracingShaderGroupType type) {
+    switch (type) {
+        case RHIRayTracingShaderGroupType::kRayGeneration:
+            return "RayGeneration";
+        case RHIRayTracingShaderGroupType::kMiss:
+            return "Miss";
+        case RHIRayTracingShaderGroupType::kTrianglesHitGroup:
+            return "TrianglesHitGroup";
+        case RHIRayTracingShaderGroupType::kProceduralHitGroup:
+            return "ProceduralHitGroup";
+        case RHIRayTracingShaderGroupType::kCallable:
+            return "Callable";
+        default:
+            return "Unknown";
+    }
+}
 MI_NAMESPACE_END
 
 #endif //MIRENDERERDEV_RHI_TYPES_STRING_H
