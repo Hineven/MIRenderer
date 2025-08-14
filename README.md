@@ -30,6 +30,7 @@ A set of CG libraries.
 * `rdg`：渲染图框架。
 * `renderer`：渲染器实现。
 * `util`：一些实用工具，比如模型加载。
+* `micromc`：小玩具，用这个渲染器渲染几个mc区块。
 ### Vulkan Validation Layer配置
 如果使用Vulkan Validation Layer，请禁用08742号警告（SPIRV字节码扩展能力不支持），此警告不影响程序正确性。
 ### 线程关系备注
