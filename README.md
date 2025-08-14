@@ -23,6 +23,7 @@ A set of CG libraries.
 * `happly`
 * `nlohmann-json`
 # 使用
+请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表
 * `3d_viewer`：一个简单的3D模型查看器，目前功能较为匮乏，是主要的测试程序，可以编辑其代码来加载不同模型。
 * `core`：核心库。
