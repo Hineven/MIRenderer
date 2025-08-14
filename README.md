@@ -34,6 +34,12 @@ A set of CG libraries.
 * `micromc`：小玩具，用这个渲染器渲染几个mc区块。
 ### Vulkan Validation Layer配置
 如果使用Vulkan Validation Layer，请禁用08742号警告（SPIRV字节码扩展能力不支持），此警告不影响程序正确性。
+### 调试
+* 请使用`Debug Build`，目前版本`Release Build`会编译错误。
+* 在使用`Vulkan Configurator`时，可以开启`Vulkan Validation Layer`与`Break on Validation Error`选项，此时，出现问题时程序会自动中断，你可以用IDE查看栈帧。
+  * 开启`Vulkan Validation Layer`后性能下降是正常的。
+* 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。
+* 你可以在Shader中使用`printf`函数进行调试输出，此时，请开启`Vulkan Validation Layer`，并开启`Debug Printf`选项，输出会显示在控制台中。
 ### 线程关系备注
 * 线程分四类别：RHI线程、渲染线程、工作线程、主线程
 * **只有**RHI线程负责与图形API交互，RHI线程只有一个
