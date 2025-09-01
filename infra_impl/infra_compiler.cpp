@@ -150,13 +150,13 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-spirv");
         add_option(L"-fspv-target-env=universal1.5"); // Highest version
         // Compatibility
-        add_option(L"-fvk-use-dx-layout");
-        add_option(L"-fspv-use-vulkan-memory-model");
+        add_option(L"-fvk-use-dx-layout"); // Use struct memory layouts specified in DirectX
+        add_option(L"-fspv-use-vulkan-memory-model"); // Use Vulkan memory model (see that in Vulkan spec)
         add_option(L"-Ges"); // Strict mode
         // Debugging flag
-        add_option(L"-Zi");
-        add_option(L"-fspv-reflect");
-        add_option(L"-fspv-debug=vulkan-with-source");
+        add_option(L"-Zi"); // Generate debug information
+        // add_option(L"-fspv-reflect");
+        // add_option(L"-fspv-debug=vulkan-with-source");
         // Warnings as errors
         add_option(L"-WX");
         // Debug printf (automatically used , no need to add it)

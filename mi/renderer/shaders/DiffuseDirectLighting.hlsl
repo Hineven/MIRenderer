@@ -285,6 +285,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         if (dot(ToLightCenter, L.Normal) >= 0.0f) {
             return 0.0f;
         }
+        float3 ToLightDirection = normalize(ToLightCenter);
         
         float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
         float3 CenterToV0 = L.V0 - LightCenter;
@@ -304,7 +305,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         }
         // Regarding the nature of volume scattering, lights that the sample is not facing towards will still have a lower
         // effect on the sample. So a constant bias of 1.5 and a scaling factor of 0.4 are applied.
-        float CosineFactor = saturate(CosineBias + (1.5f + dot(-Normal, ToLightCenter)) * 0.4f);
+        float CosineFactor = saturate(CosineBias + (1.5f + dot(Normal, ToLightDirection)) * 0.4f);
         // TODO take account of different parameterizations of HG phase function
 
         float SolidAngle = LightArea / (DistanceSq + LightArea);
@@ -904,11 +905,6 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
 
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
-    float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
-    if (ReversedZDepth == 0) {
-        RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
-        return; // Skip empty pixels
-    }
 
     float4 ColorAndLinearDepth = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, PixelUV, 0);
     float2 TransmittanceAndPdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, PixelUV, 0);
@@ -918,7 +914,7 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
         return ;
     }
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, ColorAndLinearDepth.w);
-    float3 ViewDirection = WorldPosition - C.Position;
+    float3 ViewDirection = normalize(C.Position - WorldPosition);
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     if (!IsValid(GridIndex.x)) {
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
@@ -1067,12 +1063,13 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     RayToTrace RayToTrace = FetchVolumeRayToTraceWithWorldOrigin(RayIndex, 0); 
     uint2 PixelIndex = UnpackUint2x16(RWVolumeRayToTracePixelIndexBuffer[RayIndex]);
     float RayTransmittance = 1;//VolumeRayToTraceTransmittanceBuffer[RayIndex];
+
     if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float3 Estimate = VolumeDirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
         // FIXME
-        float3 Radiance = RayTransmittance * 0.1f;// * Estimate;
+        float3 Radiance = 1.f;//RayTransmittance * 0.1f;// * Estimate;
         // Resemble volume sampling
         float3 VolumeSampleColor = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, UV, 0).rgb;
         float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, UV, 0);

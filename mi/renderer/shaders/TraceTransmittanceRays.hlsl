@@ -55,6 +55,7 @@ void TraceTransmittanceRaysRaygen() {
 #else
     uint RayIndex = DispatchRaysIndex().x;
 #endif
+
     RayDesc Ray = (RayDesc)0;
     {
         CameraParameters C = GetActiveCamera();
@@ -78,10 +79,13 @@ void TraceTransmittanceRaysRaygen() {
     }
 
     RayPayload Payload = (RayPayload)0;
-    Payload.HitDistance = Ray.TMax; // Default to TMax, will be updated in closest hit on meshes
-    Payload.Transmittance = 1.0f; // Default transmittance value, will be updated in any hit
+    Payload.HitDistance = Ray.TMax; // Default to TMax, will only be updated in a closest hit on meshes
+    Payload.Transmittance = 1.0f; // Default transmittance value, will be updated in any hits
     TraceRay(
         TLAS,
+        // Proxy geometries of the volume primitives are built face-flipped. So culling back faces
+        // means culling real front faces for volume primitives. Only real back faces from volume
+        // primitives are hit when tracing the ray.
         RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
         0xFF, // Ray mask
         0,    // SBT offset
@@ -146,7 +150,7 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
         }
         // Semi-transparent surfaces
-        Payload.Transmittance *= 1.f - ColorOpacity.a;
+        Payload.Transmittance *= saturate(1.f - ColorOpacity.a);
 	    if(ColorOpacity.a < 0.99f) {
  		    IgnoreHit();
 	    }
@@ -186,6 +190,7 @@ void TraceTransmittanceRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
     if(InstanceFlags == 0) {
+        // Found a static mesh instance. Return the hit distance.
         Payload.HitDistance = RayTCurrent();
         Payload.Transmittance = 0;
     }
