@@ -12,9 +12,7 @@ A set of CG libraries.
 安装vcpkg包管理器，并使用包管理器与`CMake`集成，然后安装以下依赖：
 * `glm`
 * `imgui[glfw-binding]`：必须安装`glfw-binding`特性！
-* `vulkan-memory-allocator`
 * `vulkan-memory-allocator-hpp`
-* `directx-dxc`
 * `stb`
 * `gtest`
 * `cpptrace`
@@ -22,6 +20,7 @@ A set of CG libraries.
 * `cgltf`
 * `happly`
 * `nlohmann-json`
+* `glfw3`
 # 使用
 请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表
