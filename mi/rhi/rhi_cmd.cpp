@@ -194,6 +194,10 @@ void RHICommandDispatchRaysIndirect::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDispatchRaysIndirect(&cmd, this);
 }
 
+void RHICommandDispatchRaysIndirect2::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDispatchRaysIndirect2(&cmd, this);
+}
+
 void RHICommandBindShaderBindingTable::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindShaderBindingTable(&cmd, this);
 }

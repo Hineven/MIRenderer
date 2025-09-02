@@ -112,6 +112,10 @@ public:
 
     FORCEINLINE bool IsValid () const {return is_valid_;}
 
+    FORCEINLINE RHIPipelineType GetPipelineType () const {
+        return class_registry_->type;
+    }
+
     // Convert the parameter resource index (within its kind) to pipeline slot used for RHI resource binding
     // Returns UINT32_MAX if the index is invalid (e.g. not used in the shader).
     template<RHIParamType type>

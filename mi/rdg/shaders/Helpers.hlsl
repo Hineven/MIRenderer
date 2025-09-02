@@ -42,6 +42,12 @@ struct SpawnTraceRaysIndirectCommand1DUB {
 
 #if GRAPHICS_API == 0
 struct TraceRaysIndirectCommand {
+    uint32_t Width;
+    uint32_t Height;
+    uint32_t Depth;
+    uint32_t Padding;
+};
+struct TraceRaysIndirectCommand2 {
     uint64_t RaygenAddr;
     uint64_t RaygenSize;
     uint64_t MissAddr;
@@ -63,11 +69,15 @@ struct TraceRaysIndirectCommand {
 
 ConstantBuffer<SpawnTraceRaysIndirectCommand1DUB> SpawnTraceRaysIndirectCommand1D_UB;
 
+#ifdef TRACE_RAYS_2
+RWStructuredBuffer<TraceRaysIndirectCommand2> SpawnTraceRaysIndirectCommand1D_Command;
+#else
 RWStructuredBuffer<TraceRaysIndirectCommand> SpawnTraceRaysIndirectCommand1D_Command;
-
+#endif
 [numthreads(1, 1, 1)]
 void SpawnTraceRaysIndirectCommand1D() {
-    TraceRaysIndirectCommand Cmd = (TraceRaysIndirectCommand)0;
+#ifdef TRACE_RAYS_2
+    TraceRaysIndirectCommand2 Cmd = (TraceRaysIndirectCommand2)0;
     Cmd.RaygenAddr = SpawnTraceRaysIndirectCommand1D_UB.RaygenAddr;
     Cmd.RaygenSize = SpawnTraceRaysIndirectCommand1D_UB.RaygenSize;
     Cmd.MissAddr = SpawnTraceRaysIndirectCommand1D_UB.MissAddr;
@@ -76,6 +86,9 @@ void SpawnTraceRaysIndirectCommand1D() {
     Cmd.HitAddr = SpawnTraceRaysIndirectCommand1D_UB.HitAddr;
     Cmd.HitSize = SpawnTraceRaysIndirectCommand1D_UB.HitSize;
     Cmd.HitStride = SpawnTraceRaysIndirectCommand1D_UB.HitStride;
+#else
+    TraceRaysIndirectCommand Cmd = (TraceRaysIndirectCommand)0;
+#endif
     // No callables for now
     Cmd.Width = Count[0];
     Cmd.Height = 1;

@@ -79,7 +79,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
     auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);
     auto groups_y = DivideAndRoundUp(view->film_height_, LightingCompositionShader::kTileSize);
-    Helpers::DispatchComputePass(builder, shader, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);
+    Helpers::AddComputePass(builder, shader, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);
 }
 
 

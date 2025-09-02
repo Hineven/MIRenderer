@@ -647,7 +647,26 @@ public:
 
 class RHICommandDispatchRaysIndirect : public TRHICommand<RHICommandDispatchRaysIndirect> {
 public:
-    RHICommandDispatchRaysIndirect(RHIBufferSpan indirect_buffer)
+    RHICommandDispatchRaysIndirect(
+        RHIBufferSpan raygen,
+        RHIBufferSpan miss, uint64_t miss_stride,
+        RHIBufferSpan hit, uint64_t hit_stride,
+        RHIBufferSpan indirect_buffer
+    ): raygen_(raygen), miss_(miss), miss_stride_(miss_stride), hit_(hit), hit_stride_(hit_stride),
+        indirect_buffer_(indirect_buffer) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIBufferSpan raygen_;
+    RHIBufferSpan miss_;
+    uint64_t miss_stride_;
+    RHIBufferSpan hit_;
+    uint64_t hit_stride_;
+    RHIBufferSpan indirect_buffer_;
+};
+
+class RHICommandDispatchRaysIndirect2 : public TRHICommand<RHICommandDispatchRaysIndirect2> {
+public:
+    RHICommandDispatchRaysIndirect2(RHIBufferSpan indirect_buffer)
         : indirect_buffer_(indirect_buffer) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
@@ -866,8 +885,12 @@ public:
         AddCommand(AllocateCommand<RHICommandDispatchRays>(width, height, depth));
     }
 
-    FORCEINLINE void DispatchRaysIndirect(RHIBufferSpan indirect_buffer) {
-        AddCommand(AllocateCommand<RHICommandDispatchRaysIndirect>(indirect_buffer));
+    FORCEINLINE void DispatchRaysIndirect(RHIBufferSpan raygen, RHIBufferSpan miss, uint64_t miss_stride, RHIBufferSpan hit, uint64_t hit_stride, RHIBufferSpan indirect_buffer) {
+        AddCommand(AllocateCommand<RHICommandDispatchRaysIndirect>(raygen, miss, miss_stride, hit, hit_stride, indirect_buffer));
+    }
+
+    FORCEINLINE void DispatchRaysIndirect2(RHIBufferSpan indirect_buffer) {
+        AddCommand(AllocateCommand<RHICommandDispatchRaysIndirect2>(indirect_buffer));
     }
 
     FORCEINLINE void BeginDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {

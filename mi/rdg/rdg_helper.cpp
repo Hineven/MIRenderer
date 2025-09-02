@@ -85,14 +85,17 @@ public:
     RDG_SHADER_USE_PARAMETERS(SpawnTraceRaysIndirectCommand1DShaderParameters)
     DECLARE_SHADER()
     static std::vector<std::string> GetShaderOptionalMacros() {
-        return {"GRAPHICS_API=0"}; // Graphics apis, 0 for vulkan
+        return {
+            "TRACE_RAYS_2", // If we should spawn indirect commands including sbt addresses.
+            "GRAPHICS_API=0"// Graphics apis, 0 for vulkan.
+        };
     }
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER(SpawnTraceRaysIndirectCommand1DShader, "mi/rdg/shaders/Helpers.hlsl", "SpawnTraceRaysIndirectCommand1D");
 
 
-TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &builder, RDGShader * ray_tracing_shader, RDGBuffer *count_buffer) {
+TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &builder, RDGShader * ray_tracing_shader, RDGBuffer *count_buffer, bool trace_rays_2) {
     if (!ray_tracing_shader || !ray_tracing_shader->IsValid()) {
         MI_WARN("Can not spawn trace rays indirect command for invalid ray tracing shaders.");
         return nullptr;
@@ -100,7 +103,7 @@ TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &bui
     auto command = RDGBuffer::Create(
         RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage
         | RHIBufferUsageFlagBits::kShaderDeviceAddress, // cmdTraceRaysIndirect requires the address of the indirect commandfer
-        sizeof(RHITraceRaysIndirectCommand)
+        sizeof(RHITraceRaysIndirectCommand2)
     );
     command->SetName("TraceRaysIndirectCommand1D");
     auto ini = RDGShaderInitializationInfo{};
@@ -108,6 +111,9 @@ TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &bui
         ini.optional_macros.push_back("GRAPHICS_API=0");
     } else {
         assert(false);
+    }
+    if (trace_rays_2) {
+        ini.optional_macros.push_back("TRACE_RAYS_2");
     }
     auto shader = RDGShaderLibrary::Get().GetShader<SpawnTraceRaysIndirectCommand1DShader>(ini);
     auto sbt = ray_tracing_shader->GetSBTBuffers(RHI::Get().GetGraphicsCommandQueue());

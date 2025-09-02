@@ -21,11 +21,13 @@ public:
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);
 
     // Spawn a pass that creates a trace rays indirect command for 1D ray tracing.
-    static TRef<RDGBuffer> SpawnTraceRaysIndirectCommand1D (RenderGraphBuilder & builder, RDGShader * ray_tracing_shader, RDGBuffer * count_buffer) ;
+    // @param trace_rays_2 Whether to use DispatchRays2 (with a modified dispatch command structure and a newer graphics API)
+    static TRef<RDGBuffer> SpawnTraceRaysIndirectCommand1D (RenderGraphBuilder & builder, RDGShader * ray_tracing_shader, RDGBuffer * count_buffer, bool trace_rays_2 = false) ;
 
     template<CShaderType T>
-    FORCEINLINE static RDGPass * DispatchComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
+    FORCEINLINE static RDGPass * AddComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
         if (!shader) return nullptr;
+        mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported in DispatchComputePass.");
         return builder.AddPass<T>(flags, shader, params,
             [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::Dispatch<T>(queue, pass, shader, params, x, y, z);
@@ -34,14 +36,38 @@ public:
     }
 
     template<CShaderType T>
-    FORCEINLINE static RDGPass * DispatchIndirectComputePass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer) {
+    FORCEINLINE static RDGPass * AddComputeIndirectPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer) {
         if (!shader || !indirect_buffer) return nullptr;
+        mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported in DispatchIndirectComputePass.");
         return builder.AddPass<T>({}, shader, params,
             [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
                 RDGCommandHelper::DispatchIndirect<T>(queue, pass, shader, params, indirect_buffer);
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
+
+    template<CShaderType T>
+    FORCEINLINE static RDGPass * AddTraceRaysPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
+        if (!shader) return nullptr;
+        mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchRayTracingPass.");
+        return builder.AddPass<T>(flags, shader, params,
+            [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::DispatchRays<T>(queue, pass, shader, params, x, y, z);
+            }
+        );
+    }
+
+    template<CShaderType T>
+    FORCEINLINE static RDGPass * AddTraceRaysIndirectPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer) {
+        if (!shader || !indirect_buffer) return nullptr;
+        mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchIndirectRayTracingPass.");
+        return builder.AddPass<T>({}, shader, params,
+            [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::DispatchRaysIndirect<T>(queue, pass, shader, params, indirect_buffer);
+            }
+        )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
+
 
     // Enqueue upload commands to the RHI graphics command queue and place barriers.
     // If you want that happen immediately, launch a submit on the queue and wait idle.

@@ -9,6 +9,7 @@
 #include "rdg/rdg_shader.h"
 #include "renderer/mi_renderer.h"
 #include "r_view_common.h"
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
@@ -55,14 +56,7 @@ void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder 
     params->RWDebugOutput = view->debug_output_.Raw();
     params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     params->LinearSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
-    builder.AddPass<RayTracingVisualizationShader>(
-        {}, shader, params,
-        [shader, params, view](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            RDGCommandHelper::DispatchRays<RayTracingVisualizationShader>(
-                queue, pass, shader, params, view->film_width_, view->film_height_
-            );
-        }
-    );
+    Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
 }
 
 MI_NAMESPACE_END

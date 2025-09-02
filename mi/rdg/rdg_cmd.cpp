@@ -313,7 +313,8 @@ void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics &queue, RDGPass *pas
 
 void RDGCommandHelper::DispatchRaysIndirect(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params, RDGBuffer *indirect_buffer) {
     if (BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
-        queue.DispatchRaysIndirect(indirect_buffer->GetRHI());
+        auto sbt = ray_tracing_shader->GetSBTBuffers(queue);
+        queue.DispatchRaysIndirect(sbt.raygen, sbt.miss, sbt.miss_stride, sbt.hit, sbt.hit_stride, indirect_buffer->GetRHI());
     }
 }
 

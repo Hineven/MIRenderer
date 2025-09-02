@@ -279,6 +279,53 @@ void VulkanCommandExecutor::RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RH
     vk::DeviceAddress indirect_device_address = indirect_buffer->GetDeviceAddress() + dispatch_rays_indirect->indirect_buffer_.offset;
 
     // Use SBT regions from state (set by RHIBindShaderBindingTable)
+    auto raygen_buffer = static_cast<VulkanBuffer*>(dispatch_rays_indirect->raygen_.buffer);
+    auto raygen_device_address = raygen_buffer->GetDeviceAddress() + dispatch_rays_indirect->raygen_.offset;
+    auto raygen_sbt = vk::StridedDeviceAddressRegionKHR{
+        raygen_device_address,
+        dispatch_rays_indirect->raygen_.size,
+        dispatch_rays_indirect->raygen_.size
+    };
+    auto miss_buffer = static_cast<VulkanBuffer*>(dispatch_rays_indirect->miss_.buffer);
+    auto miss_device_address = miss_buffer->GetDeviceAddress() + dispatch_rays_indirect->miss_.offset;
+    auto miss_sbt = vk::StridedDeviceAddressRegionKHR{
+        miss_device_address,
+        dispatch_rays_indirect->miss_stride_,
+        dispatch_rays_indirect->miss_.size
+    };
+    auto hit_buffer = static_cast<VulkanBuffer*>(dispatch_rays_indirect->hit_.buffer);
+    auto hit_device_address = hit_buffer->GetDeviceAddress() + dispatch_rays_indirect->hit_.offset;
+    auto hit_sbt = vk::StridedDeviceAddressRegionKHR{
+        hit_device_address,
+        dispatch_rays_indirect->hit_stride_,
+        dispatch_rays_indirect->hit_.size
+    };
+    cmdb.traceRaysIndirectKHR(
+        raygen_sbt,
+        miss_sbt,
+        hit_sbt,
+        {},
+        indirect_device_address
+    );
+}
+
+void VulkanCommandExecutor::RHIDispatchRaysIndirect2(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect2 *dispatch_rays_indirect) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & cmdb = state.cmd;
+
+    // Flush ray tracing bind point state before dispatching
+    FlushBindPointState(cmd, RHIBindPointType::kRayTracing, vk::ShaderStageFlagBits::eRaygenKHR |
+                                                            vk::ShaderStageFlagBits::eMissKHR |
+                                                            vk::ShaderStageFlagBits::eClosestHitKHR |
+                                                            vk::ShaderStageFlagBits::eAnyHitKHR |
+                                                            vk::ShaderStageFlagBits::eIntersectionKHR |
+                                                            vk::ShaderStageFlagBits::eCallableKHR);
+
+    auto indirect_buffer = static_cast<VulkanBuffer*>(dispatch_rays_indirect->indirect_buffer_.buffer);
+    vk::DeviceAddress indirect_device_address = indirect_buffer->GetDeviceAddress() + dispatch_rays_indirect->indirect_buffer_.offset;
+
+    // Use SBT regions from state (set by RHIBindShaderBindingTable)
     cmdb.traceRaysIndirect2KHR(indirect_device_address);
 }
 

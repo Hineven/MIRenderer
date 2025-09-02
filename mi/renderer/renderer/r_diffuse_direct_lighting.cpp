@@ -507,7 +507,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     {
         auto shader = lib.GetShader<ClearLightGridShader>(ini);
         auto num_groups = DivideAndRoundUp(num_light_grids, kThreadGroupSize);
-        Helpers::DispatchComputePass<ClearLightGridShader>(
+        Helpers::AddComputePass<ClearLightGridShader>(
             builder, shader, params, num_groups
         );
     }
@@ -515,14 +515,14 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     {
         auto shader = lib.GetShader<PrecomputeLightsShader>(ini);
         auto num_groups = DivideAndRoundUp(max_num_lights, kThreadGroupSize);
-        Helpers::DispatchComputePass<PrecomputeLightsShader>(
+        Helpers::AddComputePass<PrecomputeLightsShader>(
             builder, shader, params, (uint32_t)num_groups
         );
     }
     {
         auto shader = lib.GetShader<InjectLightsShader>(ini);
         auto num_groups = DivideAndRoundUp(num_light_grids, wave_size);
-        Helpers::DispatchComputePass<InjectLightsShader>(
+        Helpers::AddComputePass<InjectLightsShader>(
             builder, shader, params, num_groups
         );
     }
@@ -531,14 +531,14 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         auto shader = lib.GetShader<SpawnLightSamplesShader>(ini);
         auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
         auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
-        Helpers::DispatchComputePass<SpawnLightSamplesShader>(
+        Helpers::AddComputePass<SpawnLightSamplesShader>(
             builder, shader, params, num_groups_x, num_groups_y
         );
     }
     auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, ray_to_trace_count.Raw(), wave_size);
     {
         auto shader = lib.GetShader<ScreenSpaceTraceForDirectLightingShader>(ini);
-        Helpers::DispatchIndirectComputePass<ScreenSpaceTraceForDirectLightingShader>(
+        Helpers::AddComputeIndirectPass<ScreenSpaceTraceForDirectLightingShader>(
             builder, shader, params, cmd.Raw()
         );
     }
@@ -558,7 +558,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     {
         auto shader = lib.GetShader<RenderDiffuseDirectLightingShader>(ini);
         Helpers::Clear(builder, view->diffuse_direct_lighting_.Raw());
-        Helpers::DispatchIndirectComputePass<RenderDiffuseDirectLightingShader>(
+        Helpers::AddComputeIndirectPass<RenderDiffuseDirectLightingShader>(
             builder, shader, params, cmd.Raw()
         );
     }
@@ -637,7 +637,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         auto shader = lib.GetShader<VolumePrimitivesSpawnLightSamplesShader>(ini);
         auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
         auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
-        Helpers::DispatchComputePass<VolumePrimitivesSpawnLightSamplesShader>(
+        Helpers::AddComputePass<VolumePrimitivesSpawnLightSamplesShader>(
             builder, shader, volprims_params, num_groups_x, num_groups_y
         );
     }
@@ -662,7 +662,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     {
         auto shader = lib.GetShader<RenderVolumeDirectLightingShader>(ini);
         // Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
-        Helpers::DispatchIndirectComputePass<RenderVolumeDirectLightingShader>(
+        Helpers::AddComputeIndirectPass<RenderVolumeDirectLightingShader>(
             builder, shader, volprims_params, cmd.Raw()
         );
     }

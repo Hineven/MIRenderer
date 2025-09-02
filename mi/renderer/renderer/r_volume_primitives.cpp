@@ -219,7 +219,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     {
         auto shader = RDGShaderLibrary::Get().GetShader<VolumePrimitivesClearCountersShader>();
         auto groups = DivideAndRoundUp(num_tiles, VolumePrimitivesClearCountersShader::kThreadGroupSize);
-        Helpers::DispatchComputePass(builder, shader, params, groups);
+        Helpers::AddComputePass(builder, shader, params, groups);
     }
     {
         auto shader = RDGShaderLibrary::Get().GetShader<CollectVolumePrimitivesShader>();
@@ -242,7 +242,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
                         assert(false && "Overflowing (RenderableIndex, PrimitiveIndex) packing. See shader for details.");
                     }
                     auto groups = DivideAndRoundUp(vol->GetNumPrimitives(), 128);
-                    Helpers::DispatchComputePass(builder, shader, collect_params, groups);
+                    Helpers::AddComputePass(builder, shader, collect_params, groups);
                 }
             }
         }
@@ -250,7 +250,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     {
         auto shader = RDGShaderLibrary::Get().GetShader<ProjectVolumePrimitivesShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_primitive_count.Raw(), ProjectVolumePrimitivesShader::kThreadGroupSize);
-        Helpers::DispatchIndirectComputePass(builder, shader, params, cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
     RadixSort::AddRadixSort32BitsPass(builder, kMaxNumActiveVolumePrimitives,
         primitive_instance_list_key.Raw(), primitive_instance_key_sorted.Raw(),
@@ -261,17 +261,17 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         builder, primitive_instance_count.Raw(), CollectTileInstanceOffsetsShader::kThreadGroupSize);
     {
         auto shader = RDGShaderLibrary::Get().GetShader<CollectTileInstanceOffsetsShader>();
-        Helpers::DispatchIndirectComputePass(builder, shader, params, instance_indirect_buffer.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, instance_indirect_buffer.Raw());
     }
 
     {
         auto shader = RDGShaderLibrary::Get().GetShader<CountTileInstancesShader>();
-        Helpers::DispatchComputePass(builder, shader, params, DivideAndRoundUp(num_tiles, CountTileInstancesShader::kThreadGroupSize));
+        Helpers::AddComputePass(builder, shader, params, DivideAndRoundUp(num_tiles, CountTileInstancesShader::kThreadGroupSize));
     }
 
     {
         auto shader = RDGShaderLibrary::Get().GetShader<DrawVolumePrimitivesShader>();
-        Helpers::DispatchComputePass(builder, shader, params, tile_dimensions.x, tile_dimensions.y);
+        Helpers::AddComputePass(builder, shader, params, tile_dimensions.x, tile_dimensions.y);
     }
 }
 

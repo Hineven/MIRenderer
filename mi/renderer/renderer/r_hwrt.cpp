@@ -102,15 +102,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
-
-    builder.AddPass<TraceShadowRaysShader>(
-    {}, shader, params,
-    [shader, params, view, in_cmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
-        RDGCommandHelper::DispatchRaysIndirect<TraceShadowRaysShader>(
-            queue, pass, shader, params, in_cmd
-        );
-        }
-    )->AddBuffer(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    Helpers::AddTraceRaysIndirectPass(builder, shader, params, cmd.Raw());
 }
 
 class TraceTransmittanceRaysShader : public RDGShader {
@@ -207,14 +199,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
-    builder.AddPass<TraceTransmittanceRaysShader>(
-    {}, shader, params,
-    [shader, params, view, in_cmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
-        RDGCommandHelper::DispatchRaysIndirect<TraceTransmittanceRaysShader>(
-            queue, pass, shader, params, in_cmd
-        );
-        }
-    )->AddBuffer(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    Helpers::AddTraceRaysIndirectPass(builder, shader, params, cmd.Raw());
 }
 
 

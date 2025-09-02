@@ -20,7 +20,7 @@
 #include "rhi/rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
-    size_t RDGShaderInitializationInfo::GetHash() const {
+size_t RDGShaderInitializationInfo::GetHash() const {
     size_t final_hash = 0;
     // Order inreleavnt hashing.
 #ifndef NDEBUG

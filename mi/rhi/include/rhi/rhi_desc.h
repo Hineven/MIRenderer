@@ -500,6 +500,13 @@ struct RHITraceRaysIndirectCommand {
     uint32_t x;
     uint32_t y;
     uint32_t z;
+    uint32_t padding;
+};
+
+struct RHITraceRaysIndirectCommand2 {
+    uint32_t x;
+    uint32_t y;
+    uint32_t z;
     uint64_t raygen_sbt_address {UINT64_MAX};
     uint64_t raygen_sbt_size {UINT64_MAX};
     uint64_t miss_sbt_address {UINT64_MAX};
