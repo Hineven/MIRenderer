@@ -16,6 +16,8 @@ FORCEINLINE vk::Format GetVulkanPixelFormat (PixelFormatType format) {
     switch(format) {
         case PixelFormatType::kR8_UNORM:
             return vk::Format::eR8Unorm;
+        case PixelFormatType::kR8_UINT:
+            return vk::Format::eR8Uint;
         case PixelFormatType::kR8G8_UNORM:
             return vk::Format::eR8G8Unorm;
         case PixelFormatType::kB8G8R8A8_UNORM:

@@ -16,6 +16,7 @@ MI_NAMESPACE_BEGIN
 
 enum class PixelFormatType {
     kUnknown = 0,
+    kR8_UINT,
     kR8_UNORM,
     kR8G8_UNORM,
     kB8G8R8A8_UNORM,
@@ -68,6 +69,7 @@ FORCEINLINE PixelFormatDataType GetPixelFormatDataType (PixelFormatType type) {
         case PixelFormatType::kR32G32B32A32_UINT:
         case PixelFormatType::kR32G32_UINT:
         case PixelFormatType::kR32_UINT:
+        case PixelFormatType::kR8_UINT:
             return PixelFormatDataType::kUINT;
 
         default:
@@ -79,6 +81,7 @@ FORCEINLINE PixelFormatDataType GetPixelFormatDataType (PixelFormatType type) {
 FORCEINLINE uint32_t GetPixelFormatNumBytesPerChannel(PixelFormatType type) {
     switch (type) {
         case PixelFormatType::kR8_UNORM:
+        case PixelFormatType::kR8_UINT:
         case PixelFormatType::kR8G8_UNORM:
         case PixelFormatType::kB8G8R8A8_UNORM:
         case PixelFormatType::kB8G8R8A8_SRGB:
@@ -109,6 +112,7 @@ FORCEINLINE uint32_t GetPixelFormatNumBytesPerChannel(PixelFormatType type) {
 FORCEINLINE uint32_t GetPixelFormatNumChannels (PixelFormatType type) {
     switch (type) {
         case PixelFormatType::kR8_UNORM:
+        case PixelFormatType::kR8_UINT:
         case PixelFormatType::kR32_FLOAT:
         case PixelFormatType::kD32_FLOAT:
         case PixelFormatType::kR32_UINT:
@@ -146,6 +150,8 @@ FORCEINLINE const char * GetPixelFormatName (PixelFormatType type) {
     switch (type) {
         case PixelFormatType::kUnknown:
             return "Unknown";
+        case PixelFormatType::kR8_UINT:
+            return "R8_UINT";
         case PixelFormatType::kR8_UNORM:
             return "R8_UNORM";
         case PixelFormatType::kR8G8_UNORM:
