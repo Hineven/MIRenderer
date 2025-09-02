@@ -13,9 +13,10 @@
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
+#include "renderer/mi_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
-class RayTracingVisualizationShader : public RDGShader {
+    class RayTracingVisualizationShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -27,6 +28,8 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutput)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearSampler)
@@ -53,6 +56,10 @@ void Renderer::Render_VisualizeRayTraced(RendererView *view, RenderGraphBuilder 
     params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+    params->VolumePrimitivesHeaderBuffer = builder.Import(device_allocator_->GetVolumePrimitivesHeaderBuffer());
+    params->PrimitiveData = builder.Import(
+        device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
+    );
     params->RWDebugOutput = view->debug_output_.Raw();
     params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     params->LinearSampler = RHI::Get().GetGlobalSamplers().linear_wrap;

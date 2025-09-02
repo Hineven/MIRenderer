@@ -81,20 +81,7 @@ void VolumePrimitivesClearCounters(uint DispatchID: SV_DispatchThreadID) {
 
 VolumePrimitive LoadVolumePrimitive(uint Index) {
     PackedVolumePrimitive PackedPrimitive = PrimitiveData[Index];
-    VolumePrimitive Primitive;
-    Primitive.Position = PackedPrimitive.Position;
-    float3 Rotation_xyz = UnpackSnorm4x8(PackedPrimitive.PackedRotation_OpacityHi).xyz;
-    float Rotation_w = sqrt(max(1.0f - dot(Rotation_xyz, Rotation_xyz), 0.0f));
-    float4 Rotation = float4(Rotation_xyz, Rotation_w);
-    Primitive.Rotation = Rotation;
-    Primitive.Scales = PackedPrimitive.Scales;
-    float3 Color = UnpackUnorm4x8(PackedPrimitive.PackedColor_OpacityLo).rgb;
-    Primitive.Color = Color;
-    float Opacity = f16tof32(
-        ((PackedPrimitive.PackedRotation_OpacityHi >> 24) << 8) |
-        (PackedPrimitive.PackedColor_OpacityLo >> 24)
-    );
-    Primitive.Opacity = Opacity;
+    VolumePrimitive Primitive = UnpackVolumePrimitive(PackedPrimitive);
     return Primitive;
 }
 
@@ -592,6 +579,8 @@ RayVolumeDistribution RenderRay(
 
 Texture2D<float> G_Depth;
 
+RWTexture2D<uint> RWFlags;
+
 // Dispatch 1 group per tile, each group processes a 16x16 tile of pixels
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void DrawVolumePrimitives (
@@ -630,6 +619,10 @@ void DrawVolumePrimitives (
             RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
             RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
             RWTransmittance[PixelIndex] = TotalTransmittance;
+            // Mark the pixel as invalid for SSRT if it overlaps with a volume
+            uint OldFlags = RWFlags[PixelIndex];
+            if(Rendered.Density > 0.f) OldFlags |= FLAG_BITS_TEXTURE_VALID_FOR_SSRT;
+            RWFlags[PixelIndex] = OldFlags;
         }
     }
 }

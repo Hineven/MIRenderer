@@ -35,6 +35,9 @@ void ScreenSpaceRayTrace(
     CameraParameters C,
     Texture2D<float> ReversedZDepthTexture,
     Texture2D<float> NearReversedZHZBTexture,
+    // Detect invalid pixels when performing screen space ray tracing
+    Texture2D<uint> FlagsTexture,
+    Texture2D<uint> OrFlagsTexture,
     float3 RayWorldOrigin,
     float3 RayWorldDirection,
     float MaxTraceDistance,
@@ -44,7 +47,8 @@ void ScreenSpaceRayTrace(
     inout bool bHit, // If a trustworthy hit is found
     inout float3 OutHitUVZ,
     inout float3 OutLastVisibleUVZ,
-    inout float OutHitTileZ
+    inout float OutHitTileZ,
+    inout float3 OutLastValidUVZ
 ) {
     float3 RayStartUVZ;
     {
@@ -116,6 +120,8 @@ void ScreenSpaceRayTrace(
     OutHitTileZ = 0;
 
     float LastAboveSurfaceT = CurrentT;
+    float LastValidT = CurrentT;
+
 
     // Stackless HZB traversal
     while (MipLevel >= -1
@@ -136,15 +142,21 @@ void ScreenSpaceRayTrace(
         XYPlane = XYPlane * CurrentMipTexelSize + UVOffset;
 
         float TileZ;
+        uint Flags;
 
         if (MipLevel < 0) {
             // Sample from full resolution depth buffer
             float2 FullResUV = CurrentUVZ.xy * C.HZBToUVScale;
             TileZ = 1.f - ReversedZDepthTexture.SampleLevel(PointClampSampler, FullResUV, 0).r;
+            uint2 FullResPixel = uint2(FullResUV * C.FilmDimensions);
+            Flags = FlagsTexture.Load(uint3(FullResPixel, 0)).r;
         } else {
             // Sample from HZB
             TileZ = 1.f - NearReversedZHZBTexture.SampleLevel(PointClampSampler, CurrentUVZ.xy, MipLevel).r;
+            uint2 HiZPixel = uint2(CurrentUVZ.xy * CurrentMipResolution);
+            Flags = OrFlagsTexture.Load(uint3(HiZPixel, MipLevel)).r;
         }
+        bool bValidForSSRT = 0 != (Flags & FLAG_BITS_TEXTURE_VALID_FOR_SSRT);
 
         float3 BoundaryPlanes = float3(XYPlane, TileZ);
 
@@ -162,7 +174,11 @@ void ScreenSpaceRayTrace(
 
         if (bSkippedTile) {
             LastAboveSurfaceT = saturate(UpdateT);
+            if(bValidForSSRT) {
+                LastValidT = saturate(UpdateT);
+            }
         }
+
 
         CurrentT = bAboveSurface ? UpdateT : CurrentT;
         CurrentUVZ = RayStartUVZ + min(CurrentT, 1.0f) * RayDirectionUVZ;
@@ -193,7 +209,9 @@ void ScreenSpaceRayTrace(
     }
 
     OutHitUVZ = float3(CurrentUVZ.xy * C.HZBToUVScale, CurrentUVZ.z);
-    float3 LastVisibleUVW = RayStartUVZ + LastAboveSurfaceT * RayDirectionUVZ;
-    OutLastVisibleUVZ = float3(LastVisibleUVW.xy * C.HZBToUVScale, LastVisibleUVW.z);
+    float3 LastVisibleUVZ = RayStartUVZ + LastAboveSurfaceT * RayDirectionUVZ;
+    float3 LastValidUVZ = RayStartUVZ + LastValidT * RayDirectionUVZ;
+    OutLastVisibleUVZ = float3(LastVisibleUVZ.xy * C.HZBToUVScale, LastVisibleUVZ.z);
+    OutLastValidUVZ = float3(LastValidUVZ.xy * C.HZBToUVScale, LastValidUVZ.z);
 }
 

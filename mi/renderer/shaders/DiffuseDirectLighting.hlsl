@@ -577,6 +577,7 @@ Texture2D<float4> G_NormalTexture;
 
 RWStructuredBuffer<float> RWShadowRayToTraceTMaxBuffer;
 StructuredBuffer<float> ShadowRayToTraceTMaxBuffer;
+StructuredBuffer<float> ShadowRayToTraceTransmittanceBuffer;
 
 
 // Direction (Normal uint packed), Length (float)
@@ -584,7 +585,7 @@ RWTexture2D<uint> RWDirectLightingRayIndexTexture; // Specify the shadow ray ind
 RWTexture2D<float4> RWDirectLightingRadianceEstimateTexture; // Output buffer for direct lighting radiance estimates
 
 Texture2D<float> G_HiZBuffer;
-Texture2D<float> G_HistoryDepth;
+Texture2D<float> G_HistoryDepthTexture;
 
 Texture2D<float4> DirectLightingRadianceEstimateTexture;
 RWTexture2D<float4> RWDiffuseDirectLightingTexture;
@@ -730,6 +731,9 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
 
 StructuredBuffer<uint> RayToTraceCount;
 
+Texture2D<uint> G_FlagsTexture;
+Texture2D<uint> OrFlagsTexture;
+
 // Trace rays with SSRT
 [numthreads(WAVE_SIZE, 1, 1)]
 void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadID) {
@@ -771,11 +775,12 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     bool bHit = false;
     float3 HitUVZ = 0, LastVisibleUVZ = 0;
     float HitTileZ = 0;
+    float3 LastValidUVZ = 0;
     ScreenSpaceRayTrace(
-        C, G_DepthTexture, G_HiZBuffer,
+        C, G_DepthTexture, G_HiZBuffer, G_FlagsTexture, OrFlagsTexture,
         WorldPosition, TraceDirection, TraceTMax,
         40, HybridTracing_UB.SSRT_RelativeTexelThickness, 0,
-        bHit, HitUVZ, LastVisibleUVZ, HitTileZ
+        bHit, HitUVZ, LastVisibleUVZ, HitTileZ, LastValidUVZ
     );
 
     float3 HitWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(HitUVZ.xy), ZDepthToLinearDepth(C, HitUVZ.z));
@@ -792,7 +797,7 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
             float PrevZDepth = PreviousUVZ.z;
 
             // Lookup the actual depth at the same screen position last frame
-            float ReversedHistoryZDepth = G_HistoryDepth.SampleLevel(PointClampSampler, PreviousUVZ.xy, 0).x;
+            float ReversedHistoryZDepth = G_HistoryDepthTexture.SampleLevel(PointClampSampler, PreviousUVZ.xy, 0).x;
             float HistoryZDepth = 1.f - ReversedHistoryZDepth;
 
             bHit = abs(HistoryZDepth - PrevZDepth) < HybridTracing_UB.SSRT_RelativeTexelThickness * 0.5f * lerp(.5f, 2.0f, Noise);
@@ -800,11 +805,11 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     }
 
     if (!bHit) {
-        // Not occluded, prepare for world trace.
-        // Backward the ray a little from the last visible position for ray continuation
-        float LinearDepth = ZDepthToLinearDepth(C, LastVisibleUVZ.z);
-        float3 LastVisibleWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(LastVisibleUVZ.xy), LinearDepth);
-        HitDistance = min(length(LastVisibleWorldPosition - WorldPosition), TraceTMax);
+        // Not occluded, prepare for world trace and transmittance calculation.
+        // Backward the ray a little from the last valid (and visible) position for ray continuation
+        float LinearDepth = ZDepthToLinearDepth(C, LastValidUVZ.z);
+        float3 LastValidWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(LastValidUVZ.xy), LinearDepth);
+        HitDistance = min(length(LastValidWorldPosition - WorldPosition), TraceTMax);
 
         float Bias = min(LinearDepth * HybridTracing_UB.RayContinuationBackwardBiasFactor, HitDistance * 0.5f);
         HitDistance = max(HitDistance - Bias, 0);
@@ -841,7 +846,8 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         uint2 PixelIndex = RayToTrace.OriginScreenCoord;
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float3 Estimate = DirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
-        RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate, 1.f);
+        float Transmittance = ShadowRayToTraceTransmittanceBuffer[RayIndex];
+        RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate * Transmittance, 1.f);
     }
 }
 

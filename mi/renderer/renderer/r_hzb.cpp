@@ -16,8 +16,11 @@ public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_RESOURCE_PARAMETER(Texture2D, InDepthBuffer)
+        SHADER_RESOURCE_PARAMETER(Texture2D, InFlagsBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWInHiZBuffer)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWInOrFlagsBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutHiZBuffer)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutOrFlagsBuffer)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -51,6 +54,15 @@ void Renderer::Render_ComputeHiZBuffer(
         }
     );
     view->hzb_->SetName("HiZBuffer");
+    view->or_flags_ = RDGTexture::Create(
+        RHITextureDesc {
+            RHITextureType::k2D, RHITextureDimensions {hiz_dimensions, hiz_dimensions, 1u},
+            hiz_levels, 1u, PixelFormatType::kR8_UINT,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource
+        }
+    );
+    view->or_flags_->SetName("OrFlags");
+
     for (uint32_t level = 0; level < hiz_levels; level++) {
         auto ini = RDGShaderInitializationInfo{};
         if (level == 0) ini.optional_macros.push_back("DEPTH_AS_INPUT");
@@ -59,10 +71,15 @@ void Renderer::Render_ComputeHiZBuffer(
         params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
         params->View = view->view_common_params_;
         params->InDepthBuffer = view->G_depth_.Raw();
+        params->InFlagsBuffer = view->G_flags_.Raw();
         params->RWInHiZBuffer = level == 0 ? nullptr : view->hzb_.Raw();
         params->RWInHiZBuffer.mip_level = level == 0 ? 0 : (level - 1);
+        params->RWInOrFlagsBuffer = level == 0 ? nullptr : view->or_flags_.Raw();
+        params->RWInOrFlagsBuffer.mip_level = level == 0 ? 0 : (level - 1);
         params->RWOutHiZBuffer = view->hzb_.Raw();
         params->RWOutHiZBuffer.mip_level = level;
+        params->RWOutOrFlagsBuffer = view->or_flags_.Raw();
+        params->RWOutOrFlagsBuffer.mip_level = level;
         auto groups = glm::uvec2(
             DivideAndRoundUp(1 << (hiz_levels - level - 1), ComputeHiZBufferShader::kTileSize),
             DivideAndRoundUp(1 << (hiz_levels - level - 1), ComputeHiZBufferShader::kTileSize)

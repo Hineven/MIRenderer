@@ -59,6 +59,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWTransmittance)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWFlags)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
 END_SHADER_PARAMETERS()
 
@@ -214,6 +215,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWTransmittance = view->G_transmittance_.Raw();
 
         params->G_Depth = view->G_depth_.Raw();
+        params->RWFlags = view->G_flags_.Raw();
         params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
     }
     {

@@ -15,6 +15,10 @@ Texture2D<float> InDepthBuffer;
 RWTexture2D<float> RWInHiZBuffer;
 RWTexture2D<float> RWOutHiZBuffer;
 
+Texture2D<uint> InFlagsBuffer;
+RWTexture2D<uint> RWInOrFlagsBuffer;
+RWTexture2D<uint> RWOutOrFlagsBuffer;
+
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
 {
@@ -28,6 +32,10 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     float D1 = RWInHiZBuffer[InTexCoords + uint2(1, 0)];
     float D2 = RWInHiZBuffer[InTexCoords + uint2(0, 1)];
     float D3 = RWInHiZBuffer[InTexCoords + uint2(1, 1)];
+    uint F0 = RWInOrFlagsBuffer[InTexCoords + uint2(0, 0)];
+    uint F1 = RWInOrFlagsBuffer[InTexCoords + uint2(1, 0)];
+    uint F2 = RWInOrFlagsBuffer[InTexCoords + uint2(0, 1)];
+    uint F3 = RWInOrFlagsBuffer[InTexCoords + uint2(1, 1)];
 #else
     uint2 Dimensions, DepthDimensions;
     RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
@@ -49,10 +57,22 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     if(any(P1 >= 1.f)) D1 = 1.f;
     if(any(P2 >= 1.f)) D2 = 1.f;
     if(any(P3 >= 1.f)) D3 = 1.f;
+    uint2 P0u = uint2(P0 * DepthDimensions);
+    uint2 P1u = uint2(P1 * DepthDimensions);
+    uint2 P2u = uint2(P2 * DepthDimensions);
+    uint2 P3u = uint2(P3 * DepthDimensions);
+    uint F0 = InFlagsBuffer.Load(uint3(P0u, 0)).r;
+    uint F1 = InFlagsBuffer.Load(uint3(P1u, 0)).r;
+    uint F2 = InFlagsBuffer.Load(uint3(P2u, 0)).r;
+    uint F3 = InFlagsBuffer.Load(uint3(P3u, 0)).r;
 #endif
     // We want the max depth (furthest away).
     // In many depth buffer setups (like reversed-Z), this means the maximum float value.
     float MaxDepth = max(max(D0, D1), max(D2, D3));
 
     RWOutHiZBuffer[TexCoords] = MaxDepth;
+
+    // We want the bitwise OR of the flags.
+    uint OrFlags = F0 | F1 | F2 | F3;
+    RWOutOrFlagsBuffer[TexCoords] = OrFlags;
 }

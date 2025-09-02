@@ -311,6 +311,10 @@ void RendererView::InitFrame () {
         |RHITextureUsageFlagBits::kRenderTarget);
     G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
+    G_flags_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        |RHITextureUsageFlagBits::kRenderTarget);
+
     G_volume_density_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
@@ -362,6 +366,7 @@ void RendererView::InitFrame () {
 
     // Clear hzb, this is later created
     hzb_ = {};
+    or_flags_ = {};
 
     // Clear debug output texture
     debug_output_ = {};

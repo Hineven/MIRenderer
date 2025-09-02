@@ -2,38 +2,24 @@
 #define VOLUME_PRIMITIVE_HLSL
 
 #include "Packing.hlsl"
+#include "../shared/SharedVolumePrimitives.hlsl"
 
-struct PackedVolumePrimitive {
-    float3 Position;
-    // Snorm4x8 packed quaterion
-    uint PackedRotation;
-    float3 Scales;
-    // Unorm4x8 packed color and opacity
-    uint PackedColorOpacity;
-};
-
-struct VolumePrimitive {
-    float3 Position;
-    float4 Rotation; // Quaternion
-    float3 Scales;
-    float3 Color;
-    float Opacity;
-};
-
-VolumePrimitive UnpackVolumePrimitive(PackedVolumePrimitive Packed) {
-    VolumePrimitive Result;
-    Result.Position = Packed.Position;
-    Result.Rotation = UnpackQuaternion(Packed.PackedRotation);
-    Result.Scales = Packed.Scales;
-    float4 ColorOpacity = UnpackUnorm4x8(Packed.PackedColorOpacity);
-    Result.Color = ColorOpacity.xyz;
-    Result.Opacity = ColorOpacity.w;
-    return Result;
-}
-
-VolumePrimitive LoadVolumePrimitive(StructuredBuffer<PackedVolumePrimitive> Buffer, uint Index) {
-    PackedVolumePrimitive Packed = Buffer[Index];
-    return UnpackVolumePrimitive(Packed);
+VolumePrimitive UnpackVolumePrimitive(PackedVolumePrimitive PackedPrimitive) {
+    VolumePrimitive Primitive;
+    Primitive.Position = PackedPrimitive.Position;
+    float3 Rotation_xyz = UnpackSnorm4x8(PackedPrimitive.PackedRotation_OpacityHi).xyz;
+    float Rotation_w = sqrt(max(1.0f - dot(Rotation_xyz, Rotation_xyz), 0.0f));
+    float4 Rotation = float4(Rotation_xyz, Rotation_w);
+    Primitive.Rotation = Rotation;
+    Primitive.Scales = PackedPrimitive.Scales;
+    float3 Color = UnpackUnorm4x8(PackedPrimitive.PackedColor_OpacityLo).rgb;
+    Primitive.Color = Color;
+    float Opacity = f16tof32(
+        ((PackedPrimitive.PackedRotation_OpacityHi >> 24) << 8) |
+        (PackedPrimitive.PackedColor_OpacityLo >> 24)
+    );
+    Primitive.Opacity = Opacity;
+    return Primitive;
 }
 
 #endif // VOLUME_PRIMITIVE_HLSL

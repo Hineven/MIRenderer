@@ -122,6 +122,9 @@ struct RendererView {
     TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
 
+    // Flags (R8Uint)
+    TRef<RDGTexture> G_flags_;
+
     // Volume density
     TRef<RDGTexture> G_volume_density_;
     // Min-max values for the rendered volume segment
@@ -138,6 +141,8 @@ struct RendererView {
 
     // HiZ buffer
     TRef<RDGTexture> hzb_;
+    // or flags
+    TRef<RDGTexture> or_flags_;
 
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;

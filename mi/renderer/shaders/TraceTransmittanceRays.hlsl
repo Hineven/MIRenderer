@@ -21,7 +21,7 @@ StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
 StructuredBuffer<uint> IndexBuffer;
 StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
-StructuredBuffer<VolumePrimitive> PrimitiveData;
+StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 
 Texture2D<float> G_DepthTexture;
@@ -161,16 +161,15 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
         uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
-        VolumePrimitive Primitive = PrimitiveData[PrimitiveIndex];
+        VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
         float3x4 ToObject = WorldToObject3x4();
         float2 lr = 0;
         float Dist = 0;
         bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
         if(bIntersected) {
             float TMin = RayTMin();
-            float TCurr = RayTCurrent();
-            lr.x = clamp(lr.x, TMin, TCurr);
-            lr.y = clamp(lr.y, TMin, TCurr);
+            lr.x = max(lr.x, TMin);
+            lr.y = max(lr.y, TMin);
             float Length = max(lr.y - lr.x, 0);
             // Multiply to transmittance
             float Transmittance = exp(-Length * Primitive.Opacity);

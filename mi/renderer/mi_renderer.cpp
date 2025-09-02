@@ -287,11 +287,23 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Draw the sky first.
     Render_DrawSky(view, builder);
 
-    // Clear Depth buffer to 0 (reversed-z)
-    builder.AddPass("ClearDepth", {},
-        [depth = view->G_depth_.Raw()]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        queue.ClearTexture(depth->GetRHI(), {});
-    })->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite);
+    // Clear G buffers
+    builder.AddPass("ClearBuffers", {},
+        [view]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+        queue.ClearTexture(view->G_depth_->GetRHI(), {});
+        queue.ClearTexture(view->G_normal_->GetRHI(), {});
+        queue.ClearTexture(view->G_albedo_->GetRHI(), {});
+        queue.ClearTexture(view->G_metallic_roughness_->GetRHI(), {});
+        queue.ClearTexture(view->G_emission_->GetRHI(), {});
+        queue.ClearTexture(view->G_flags_->GetRHI(), {});
+        queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
+    })->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->G_emission_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->G_flags_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite);
 
     // Static meshes
     Render_DrawStaticMeshes(view, builder);

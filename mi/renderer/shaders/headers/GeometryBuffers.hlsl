@@ -38,4 +38,6 @@ float3 ReprojectToPreviousUVZFromUVZ(CameraParameters C, float3 UVZ) {
     return float3(NDC2ToUV(ReprojectedNDC.xy), ReprojectedNDC.z);
 }
 
+#define FLAG_BITS_TEXTURE_VALID_FOR_SSRT 0x1
+
 #endif

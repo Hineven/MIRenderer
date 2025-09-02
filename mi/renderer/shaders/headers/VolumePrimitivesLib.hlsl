@@ -2,7 +2,7 @@
 
 #include "Transform.hlsl"
 #include "Math.hlsl"
-#include "../shared/SharedVolumePrimitives.hlsl"
+#include "VolumePrimitive.hlsl"
 
 bool RayIntersect(float3 Origin, float3 Direction, VolumePrimitive Primitive, float3x4 ToObject, inout float2 intersection_t, inout float std_dist_t) {
     float3x3 RotationMatrix = BuildRotationMatrix(Primitive.Rotation);

@@ -128,11 +128,14 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadowRayToTraceTMaxBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTMaxBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTransmittanceBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_NormalTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_HiZBuffer)
-    SHADER_RESOURCE_PARAMETER(Texture2D, G_HistoryDepth)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_HistoryDepthTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_FlagsTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, OrFlagsTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDiffuseDirectLightingTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDirectLightingRayIndexTexture)
 
@@ -406,6 +409,10 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
     );
     shadow_ray_to_trace_tmax->SetName("ShadowRayToTraceTMaxBuffer");
+    auto shadow_ray_to_trace_transmittance = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
+    );
+    shadow_ray_to_trace_transmittance->SetName("ShadowRayToTraceTransmittanceBuffer");
     {
         params->View = view->view_common_params_;
         auto L_UB = builder.Allocate<LightStructureUB>();
@@ -489,11 +496,14 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
 
         params->RWShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
         params->ShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
+        params->ShadowRayToTraceTransmittanceBuffer = shadow_ray_to_trace_transmittance.Raw();
 
         params->G_DepthTexture = view->G_depth_.Raw();
         params->G_NormalTexture = view->G_normal_.Raw();
         params->G_HiZBuffer = view->hzb_.Raw();
-        params->G_HistoryDepth = view->persistent_data_->prev_G_depth.Raw();
+        params->G_HistoryDepthTexture = view->persistent_data_->prev_G_depth.Raw();
+        params->G_FlagsTexture = view->G_flags_.Raw();
+        params->OrFlagsTexture = view->or_flags_.Raw();
         params->RWDiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
         params->RWDirectLightingRayIndexTexture = direct_lighting_ray_index_texture.Raw();
         params->RWDirectLightingRadianceEstimateTexture = direct_lighting_radiance_estimate_texture.Raw();
@@ -542,9 +552,11 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             builder, shader, params, cmd.Raw()
         );
     }
+
+    // Continue the rays that does not hit anything or went through volumes using HWRT
     {
         // HWRT
-        Render_HardwareShadowRayTracing(
+        Render_HardwareTransmittanceRayTracing(
             view, builder,
             ray_to_trace_list_allocator.Raw(),
             ray_to_trace_list.Raw(),
@@ -552,7 +564,8 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
             ray_to_trace_state.Raw(),
             ray_to_trace_origin_screen_coords.Raw(),
             nullptr,
-            shadow_ray_to_trace_tmax.Raw()
+            shadow_ray_to_trace_tmax.Raw(),
+            shadow_ray_to_trace_transmittance.Raw()
         );
     }
     {

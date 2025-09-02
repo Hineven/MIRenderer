@@ -163,7 +163,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     auto ini = RDGShaderInitializationInfo {};
     mi_assert(ray_to_trace_origin || ray_to_trace_origin_screen_coords,
         "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided.");
-    mi_assert(!(ray_to_trace_origin_screen_coords && !ray_to_trace_origin),
+    mi_assert(!(ray_to_trace_origin_screen_coords && ray_to_trace_origin),
         "Either ray_to_trace_origin or ray_to_trace_origin_screen_coords must be provided, not both.");
     if (ray_to_trace_origin_screen_coords) ini.optional_macros.push_back("USE_SCREEN_COORDS");
     if (ray_to_trace_tmax) ini.optional_macros.push_back("USE_RAY_TMAX_BUFFER");

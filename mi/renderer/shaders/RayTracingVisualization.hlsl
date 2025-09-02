@@ -7,6 +7,7 @@
 #include "shared/SharedVertex.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
+#include "headers/VolumePrimitivesLib.hlsl"
 
 RaytracingAccelerationStructure TLAS;
 
@@ -17,6 +18,8 @@ StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
 StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
 StructuredBuffer<uint> IndexBuffer;
 StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
+StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
+StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 RWTexture2D<float4> RWDebugOutput;
 TextureCube<float4> EnvironmentMap;
@@ -24,6 +27,9 @@ SamplerState LinearSampler;
 
 struct RayPayload {
     float4 Color;
+    float Transmittance; // For volume primitives
+    float THit;
+    bool bSurfaceHit;
 };
 
 [shader("raygeneration")]
@@ -46,17 +52,22 @@ void RayTracingVisualizationRaygen() {
     }
 
     RayPayload Payload = (RayPayload)0;
-    TraceRay(
-        TLAS,
-        RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
-        0xFF, // Ray mask
-        0,    // SBT offset
-        0,    // SBT stride
-        0,    // Miss shader index
-        Ray,
-        Payload
-    );
-    RWDebugOutput[RayIndex] = Payload.Color;
+    Payload.Transmittance = 1.0f;
+    for(int i = 0; i < 100; i++) {
+        TraceRay(
+            TLAS,
+            RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+            0xFF, // Ray mask
+            0,    // SBT offset
+            0,    // SBT stride
+            0,    // Miss shader index
+            Ray,
+            Payload
+        );
+        Ray.TMin = Payload.THit + 1e-4f;
+        if(Payload.bSurfaceHit) break;
+    }
+    RWDebugOutput[RayIndex] = Payload.Color * Payload.Transmittance;
 }
 
 [shader("miss")]
@@ -109,9 +120,11 @@ void RayTracingVisualizationAnyHit(inout RayPayload Payload: SV_RayPayload,
         if(IsValid(Material.AlbedoMap)) {
             ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearSampler, InterpolatedVertex.UV, 0);
         }
-	    if(ColorOpacity.a < 0.1f) {
- 		    IgnoreHit();
+        if(ColorOpacity.a < 0.01f) {
+            IgnoreHit();
 	    }
+    } else {
+        
     }
 }
 
@@ -150,7 +163,28 @@ void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
             ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearSampler, InterpolatedVertex.UV, 0);
         }
         Payload.Color = ColorOpacity;
+        Payload.bSurfaceHit = true;
     } else {
-        Payload.Color = float4(1.0f, 1.0f, 0.0f, 1.0f); // Red color for volume primitives
+        float3 RayOrigin = WorldRayOrigin();
+        float3 RayDirection = WorldRayDirection();
+        // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry)
+        uint InstanceVolPrimitiveIndex = Triangle / 20;
+        uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        uint PrimitiveIndex = VolPrimitiveOffset + InstanceVolPrimitiveIndex;
+        VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
+        float3x4 ToObject = WorldToObject3x4();
+        float2 lr = 0;
+        float Dist = 0;
+        bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
+        if(bIntersected) {
+            float TMin = RayTMin();
+            lr.x = max(lr.x, TMin);
+            lr.y = max(lr.y, TMin);
+            float Length = max(lr.y - lr.x, 0);
+            // Multiply to transmittance
+            float Transmittance = exp(-Length * Primitive.Opacity);
+            Payload.Transmittance *= Transmittance;
+        }
     }
+    Payload.THit = RayTCurrent();
 }
