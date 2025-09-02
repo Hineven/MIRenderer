@@ -175,6 +175,10 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             // Multiply to transmittance
             float Transmittance = exp(-Length * Primitive.Opacity);
             Payload.Transmittance *= Transmittance;
+            if(Payload.Transmittance < 0.001f) {
+                // Early termination if transmittance is too small
+                AcceptHitAndEndSearch();
+            }
         }
         // Always ignore hits on volume primitives
         IgnoreHit();
@@ -192,6 +196,10 @@ void TraceTransmittanceRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
     if(InstanceFlags == 0) {
         // Found a static mesh instance. Return the hit distance.
         Payload.HitDistance = RayTCurrent();
+        Payload.Transmittance = 0;
+    } else {
+        // Otherwise the ray is early terminated in anyhit shader.
+        // Simply set the transmittance to 0 and return.
         Payload.Transmittance = 0;
     }
 }

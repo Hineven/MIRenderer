@@ -971,7 +971,7 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
     float3 SumResampleWeights3 = 0.f;
     LightSample ReservedSample = (LightSample)0;
     // Simply assume all volumes have the same isotropic parameter g
-    float g = 0.5f;
+    float g = 0.f;
     // Spawn 1 sample for each light, and resample from the samples
     for (int SamplerLightListIndex = 0; SamplerLightListIndex < NUM_LIGHT_SAMPELR_SAMPLES; SamplerLightListIndex++) {
         uint ActiveLightListIndex = LS.ActiveLightListIndex[SamplerLightListIndex];
@@ -1075,8 +1075,9 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, UV, 0);
         float  VolumeSampleTransmittance = VolumeSampleTransmittancePdf.x;
         float  VolumeSamplePdf = VolumeSampleTransmittancePdf.y;
-        // FIXME
-        Radiance = Radiance;// * VolumeSampleColor * VolumeSampleTransmittance / VolumeSamplePdf;
+        Radiance = Radiance * VolumeSampleColor;
+        // Pdf canceled out with transmittance and scattering coefficient. No need to divide it here.
+        // VolumeSampleTransmittance / VolumeSamplePdf;
         RWVolumeDirectLightingTexture[PixelIndex] = float4(Radiance, 1.f);
     }
 }

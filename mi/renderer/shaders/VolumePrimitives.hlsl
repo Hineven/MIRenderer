@@ -627,6 +627,8 @@ void DrawVolumePrimitives (
             RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
             RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
             RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
+            // FIXME
+            SampleColor = 1.f.xxx;
             RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
             RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
             RWTransmittance[PixelIndex] = TotalTransmittance;
