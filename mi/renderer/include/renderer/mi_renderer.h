@@ -52,7 +52,7 @@ protected:
     ~Renderer();
 
     struct DrawInvocationSortingHeader {
-        uint32_t material_index;
+        uint32_t descriptor_index;
         uint32_t world_renderable_handle;
         RHIBuffer * vertex_buffer;
         RHIBuffer * index_buffer;
@@ -123,7 +123,7 @@ protected:
             // Indirect draw commands (device side)
             TRef<RDGBuffer> d_static_draw_commands;
             // Used to index the renderable & material for draw commands, used for viewport rasterization
-            TRef<RDGBuffer> d_static_mesh_draw_command_renderable_material_indices;
+            TRef<RDGBuffer> d_static_mesh_draw_command_renderable_descriptor_indices;
         } static_meshes;
 
         void Init ();

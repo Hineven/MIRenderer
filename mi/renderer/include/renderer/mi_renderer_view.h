@@ -116,6 +116,11 @@ struct RendererView {
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
 
+    // Visibility buffer
+    // 0: Renderable index, 1: Descriptor Index (8bits) + Primitive Index (24bits)
+    // 2, 3: Barycentrics
+    TRef<RDGTexture> G_visibility_;
+
     TRef<RDGTexture> G_depth_;
     TRef<RDGTexture> G_albedo_;
     TRef<RDGTexture> G_normal_;
