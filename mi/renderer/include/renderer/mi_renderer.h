@@ -63,7 +63,7 @@ protected:
     void Render_PrepareStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
     );
-    void Render_DrawStaticMeshes (
+    void Render_DrawDeferredStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
     void Render_DrawVolumePrimitives (
@@ -82,6 +82,10 @@ protected:
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
         RDGTexture * texture
+    ) ;
+
+    void Render_DrawForwardStaticMeshes (
+        RendererView * view, RenderGraphBuilder & builder
     ) ;
 
     void Render_HardwareShadowRayTracing (
@@ -124,7 +128,7 @@ protected:
             TRef<RDGBuffer> d_static_draw_commands;
             // Used to index the renderable & material for draw commands, used for viewport rasterization
             TRef<RDGBuffer> d_static_mesh_draw_command_renderable_descriptor_indices;
-        } static_meshes;
+        } deferred_static_meshes, forward_static_meshes;
 
         void Init ();
         void Deinit ();

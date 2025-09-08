@@ -134,9 +134,6 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
 }
 
 void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
-
-
-
     RenderGraphBuilder builder;
 
     auto backbuffer = builder.Import(RHI::Get().GetBackBuffer());

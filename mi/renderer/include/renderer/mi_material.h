@@ -140,6 +140,10 @@ public:
         glm::vec3 emissive = {0.f, 0.f, 0.f}
     );
 
+    FORCEINLINE bool IsForward () const {
+        return forward_;
+    }
+
 protected:
 
     Material();
@@ -161,6 +165,9 @@ protected:
     bool double_sided_ {false};
     // Opaque materials should always have alpha channel equals to 1.0f (not translucent)
     bool opaque_ {false};
+
+    // If the material is a simple forward material.
+    bool forward_ {false};
 
     DirtyTracker<Material> * tracker_ {};
 

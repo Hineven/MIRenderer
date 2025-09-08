@@ -56,7 +56,13 @@ class Scene : public NonMovable, public NonCopyable {
 public:
     friend class Renderable;
 
+    // Visibility buffer reserved 24 bits for renderable index.
+    constexpr static uint32_t kMaxNumRenderablesMax = 1 << 24;
+    // Limit to a smaller number for memory efficiency. This can be increased if needed.
     constexpr static uint32_t kMaxNumRenderables = 4096;
+
+    static_assert(kMaxNumRenderables <= kMaxNumRenderablesMax,
+        "Max number of renderables exceeds visibility buffer design limit.");
 
     Scene();
     ~Scene();

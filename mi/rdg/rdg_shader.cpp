@@ -987,8 +987,16 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         if (!params->render_targets_.empty()) {
             for (auto & e : params->render_targets_) {
                 if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
-                    // TODO support more blending operations
                     RHIColorAttachmentBlendDesc blend {};
+                    if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
+                        // TODO support more blending operations
+                        blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
+                        blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
+                        blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
+                        blend.alpha_blend_op = RHIBlendOpType::kBlendAdd;
+                        blend.src_alpha_blend_factor = RHIBlendFactorType::kOne;
+                        blend.dst_alpha_blend_factor = RHIBlendFactorType::kOneMinusSrcAlpha;
+                    }
                     color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
                 } else {
                     // Enable depth testing

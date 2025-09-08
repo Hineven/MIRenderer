@@ -17,6 +17,8 @@ message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     # Warning as error
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+    # __VA_OPT__ support
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor")
 elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # ...
 else()

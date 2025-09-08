@@ -27,6 +27,7 @@
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
 #include "core/task.h"
+#include "rdg/rdg_resource.h"
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
@@ -193,6 +194,32 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
 
     std::vector<TRef<StaticMeshInstance>> meshes;
+
+    // Load internal models
+    TRef<StaticMesh> arrow_mesh;
+    // FIXME wip
+    {
+        // arrow
+        {
+            std::vector<TRef<Geometry>> geometries;
+            std::vector<TRef<Material>> materials;
+            auto model_path = GetInfra().TranslateResPathToFilePath("assets/models/arrow/scene.gltf");
+            if (!GLTFLoader::LoadGLTF(
+                model_path,
+                *resource_allocator,
+                *scene,
+                geometries, materials, meshes
+            )) {
+                MI_WARN("Failed to load GLTF model {}.", model_path.string());
+            } else {
+            }
+            auto & r = Renderer::Get();
+            for (auto e : meshes) {
+                e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+            }
+        }
+    }
+
     // Load default model
     if (false) {
         std::vector<TRef<Geometry>> geometries;
@@ -259,6 +286,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     view->film_height_ = cfg.window_height;
     view->scene_ = scene.get();
 
+    // Keep track of selected renderable & primitive
+    uint selected_renderable_index = UINT32_MAX;
+    uint selected_primitive_index = UINT32_MAX;
+    uint selected_descriptor_rank = UINT32_MAX;
+    glm::vec2 selected_uv = {0.0f, 0.0f};
+
     {
         std::future<void> previous_frame_future;
         TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
@@ -276,7 +309,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // Camera control
             {
                 // 相机移动参数
-                const float move_speed = 0.05f;
+                const float move_speed = 0.02f;
                 const float mouse_sensitivity = 0.002f;
                 glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
                 // 获取键盘输入控制移动
@@ -338,7 +371,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // UI
             {
                 ImGui::Begin("Rendering");
-                ImGui::Text("Hello");
                 if (ImGui::Button("Reload Shaders") || should_reload_shaders) {
                     RHI::Get().WaitForIdle();
                     RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
@@ -398,6 +430,59 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             {
                 RenderFrame(view.get(), pool.Raw());
             }
+
+            // Click select
+            auto & io = ImGui::GetIO();
+            if (io.MouseClicked[0] && !io.WantCaptureMouse) {
+                float mouse_x = io.MousePos.x;
+                float mouse_y = io.MousePos.y;
+                // 手动拷回Visibility
+                auto rhi_visibility = view->G_visibility_->GetRHI();
+                auto readback_buffer = rhi.CreateBuffer(
+                    rhi_visibility->GetWidth() * rhi_visibility->GetHeight() * sizeof(uint32_t) * 4,
+                    RHIBufferUsageFlagBits::kReadback
+                );
+                auto & queue = RHI::Get().GetGraphicsCommandQueue();
+                // 管它丫儿地直接全部barrier
+                queue.MemoryBarrier();
+                // 转换layout
+                queue.TextureBarrier(rhi_visibility, RHITextureLayoutType::kTransferSrcOptimal,
+                    RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+                // 拷贝
+                queue.CopyTextureToBuffer(rhi_visibility, readback_buffer.Raw());
+                // 因为这个纹理是RDG里面搞到的，得更新资源追踪
+                view->G_visibility_->Use(
+                    RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
+                    RHITextureLayoutType::kTransferSrcOptimal
+                );
+                // 以防万一（后面如果又有裸的CommandQueue调用），再Barrier一下
+                queue.MemoryBarrier();
+                // 等待
+                queue.WaitForIdle("Readback Visibility");
+                // 搞到buffer
+                auto ptr = (glm::uvec4*)readback_buffer->Map();
+                glm::uvec4 pixel = ptr[(int(mouse_y) * rhi_visibility->GetWidth() + int(mouse_x))];
+                float uv_x = std::bit_cast<float>(pixel.z);
+                float uv_y = std::bit_cast<float>(pixel.w);
+                auto descriptor_rank = pixel.x >> 24;
+                auto renderable_index = pixel.x & 0xFFFF;
+                auto primitive_index = pixel.y;
+                glm::vec2 uv = {uv_x, uv_y};
+                if (selected_renderable_index != renderable_index) {
+                    if (renderable_index == UINT32_MAX) {
+                        // Add a
+                    }
+                }
+                selected_descriptor_rank = descriptor_rank;
+                selected_renderable_index = renderable_index;
+                selected_primitive_index = primitive_index;
+                selected_uv = uv;
+                MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
+                    selected_renderable_index, selected_primitive_index, selected_descriptor_rank, selected_uv.x, selected_uv.y
+                );
+            }
+
             if (rhi.GetFrameIndex() % 1000 == 0) {
                 printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
                 fflush(stdout);

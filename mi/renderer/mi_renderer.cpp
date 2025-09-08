@@ -82,7 +82,8 @@ void Renderer::FrameContext::Init() {
 
 void Renderer::FrameContext::Deinit() {
     visible_renderables.clear();
-    static_meshes = {};
+    deferred_static_meshes = {};
+    forward_static_meshes = {};
 }
 
 
@@ -290,14 +291,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Clear G buffers
     builder.AddPass("ClearBuffers", {},
         [view]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        queue.ClearTexture(view->G_depth_->GetRHI(), {});
+        // queue.ClearTexture(view->G_depth_->GetRHI(), {});
         queue.ClearTexture(view->G_normal_->GetRHI(), {});
         queue.ClearTexture(view->G_albedo_->GetRHI(), {});
         queue.ClearTexture(view->G_metallic_roughness_->GetRHI(), {});
         queue.ClearTexture(view->G_emission_->GetRHI(), {});
         queue.ClearTexture(view->G_flags_->GetRHI(), {});
         queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
-    })->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
+    })//->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
@@ -306,7 +307,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite);
 
     // Static meshes
-    Render_DrawStaticMeshes(view, builder);
+    Render_DrawDeferredStaticMeshes(view, builder);
 
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
@@ -346,6 +347,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
+
+    // Extra pass for forward rendering
+    Render_DrawForwardStaticMeshes(view, builder);
+
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();
 

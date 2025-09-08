@@ -33,6 +33,7 @@ DeviceStaticMesh::~DeviceStaticMesh() {
 
 void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     assert(mat->GetDeviceMaterial() && "Material must have a device material. Call UpdateOnDevice() on the material first.");
+    assert(geometries_.size() < kMaxNumGeometries && "Exceeded maximum number of geometries per static mesh.");
     geometries_.push_back(geom);
     materials_.push_back(mat);
     aabb_ = AABB::Merge(aabb_, geom->GetAABB());

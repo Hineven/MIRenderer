@@ -53,7 +53,7 @@ public:
 #ifndef NDEBUG
         return name_.c_str();
 #else
-        return nullptr;
+        return "";
 #endif
     }
 

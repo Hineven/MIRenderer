@@ -233,9 +233,9 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         // Validate the vertex input using reflection
         if(pipeline_info.stages.vertex_shader) {
             const auto & inputs = pipeline_info.stages.vertex_shader->GetVertexInputDesc();
-            if(inputs.size() != vertex_attributes.size()) {
-                MI_LOG(MIInfraLogType::kWarning, "Vertex input count mismatch.");
-                return false;
+            if(inputs.size() < vertex_attributes.size()) {
+                MI_LOG(MIInfraLogType::kWarning, "Pipeline {}: There're fewer vertex inputs "
+                                                 "used than specified in the pipeline configuration.", GetName());
             }
             for(int i = 0; i < (int)vertex_attributes.size(); ++i) {
                 bool found = false;
@@ -243,7 +243,8 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                     if(inputs[j].location == vertex_attributes[i].location) {
                         found = true;
                         if(inputs[j].format != GetRHIVertexAttributeFormat(vertex_attributes[i].format)) {
-                            MI_LOG(MIInfraLogType::kWarning, "Vertex input format mismatch for vertex shader.");
+                            MI_LOG(MIInfraLogType::kWarning, "Pipeline {}: Vertex input format mismatch for vertex shader.",
+                                GetName());
                             return false;
                         }
                         break;
