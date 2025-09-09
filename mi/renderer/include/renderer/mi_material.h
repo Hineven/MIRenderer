@@ -23,7 +23,9 @@ MI_NAMESPACE_BEGIN
 
 enum class MaterialFlagBits : unsigned {
     kNone = 0,
-    kPointSampled = 1 << 0 // Point sampled texture
+    kPointSampled = 1 << 0, // Point sampled texture
+    kForward = 1 << 1, // Simple forward material
+    kDoubleSided = 1 << 2, // Double-sided material
 };
 
 MAKE_FLAGS(Material)
@@ -78,12 +80,13 @@ public:
     }
 
     FORCEINLINE void SetDoubleSided (bool double_sided) {
-        if (double_sided_ != double_sided) SetDirty();
-        double_sided_ = double_sided;
+        if (IsDoubleSided() != double_sided) SetDirty();
+        if (double_sided) flags_ |= MaterialFlagBits::kDoubleSided;
+        else flags_ = flags_ & MaterialFlags(~double_sided);
     }
 
     FORCEINLINE bool IsDoubleSided () const {
-        return double_sided_;
+        return bool(flags_ & MaterialFlagBits::kDoubleSided);
     }
 
     FORCEINLINE void SetFlags (MaterialFlags flags) {
@@ -141,7 +144,13 @@ public:
     );
 
     FORCEINLINE bool IsForward () const {
-        return forward_;
+        return bool(flags_ & MaterialFlagBits::kForward) ;
+    }
+
+    FORCEINLINE void SetForward (bool forward) {
+        if (IsForward() != forward) SetDirty();
+        if (forward) flags_ |= MaterialFlagBits::kForward;
+        else flags_ = flags_ & MaterialFlags(~MaterialFlagBits::kForward);
     }
 
 protected:
@@ -162,12 +171,9 @@ protected:
     TRef<Texture> metallic_roughness_texture_;
     TRef<Texture> emissive_texture_;
 
-    bool double_sided_ {false};
     // Opaque materials should always have alpha channel equals to 1.0f (not translucent)
     bool opaque_ {false};
 
-    // If the material is a simple forward material.
-    bool forward_ {false};
 
     DirtyTracker<Material> * tracker_ {};
 

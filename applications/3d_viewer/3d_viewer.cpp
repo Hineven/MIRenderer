@@ -196,8 +196,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     std::vector<TRef<StaticMeshInstance>> meshes;
 
     // Load internal models
-    TRef<StaticMesh> arrow_mesh;
-    // FIXME wip
+    TRef<StaticMeshInstance> arrow_mesh_instance;
     {
         // arrow
         {
@@ -214,9 +213,13 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             } else {
             }
             auto & r = Renderer::Get();
-            for (auto e : meshes) {
-                e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
-            }
+            arrow_mesh_instance = meshes.back();
+            // Switch to forward material
+            auto & arrow_mats = arrow_mesh_instance->GetStaticMesh()->GetMaterials();
+            assert(arrow_mats.size() == 1);
+            auto arrow_mat = arrow_mats[0];
+            arrow_mat->SetForward(true);
+            arrow_mat->UpdateOnDevice(r.GetDeviceAllocator());
         }
     }
 
