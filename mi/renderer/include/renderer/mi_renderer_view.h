@@ -127,6 +127,8 @@ struct RendererView {
     TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
 
+    TRef<RDGTexture> forward_depth_;
+
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
 

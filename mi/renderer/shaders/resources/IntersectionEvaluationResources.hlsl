@@ -1,0 +1,131 @@
+#ifndef INTERSECTION_EVALUATION_RESOURCES_HLSL
+#define INTERSECTION_EVALUATION_RESOURCES_HLSL
+
+#include "../headers/Conventions.hlsl"
+#include "../headers/Intersection.hlsl"
+#include "../shared/SharedStaticMesh.hlsl"
+#include "../headers/Transform.hlsl"
+#include "RenderableResources.hlsl"
+#include "CommonSamplerResources.hlsl"
+#include "StaticMeshResources.hlsl"
+#include "BindlessTextureResources.hlsl"
+
+StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
+
+IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
+    uint RenderableIndex, // Renderable index, must be a static mesh renderable
+    uint DescriptorRank, // Descriptor rank of the static mesh this renderable refers to
+    uint PrimitiveIndex, // Triangle index of the geometry
+    float2 Barycentrics // Intersection triangle barycentrics
+) {
+    IntersectionMaterial Intersection = (IntersectionMaterial)0;
+
+    StaticMeshInstanceHeader InstanceHeader = (StaticMeshInstanceHeader)RenderableHeaderBuffer[RenderableIndex];
+    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptorRank];
+    uint GeometryIndex = GeometryMaterialPair.x;
+    uint MaterialIndex = GeometryMaterialPair.y;
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+    uint IndexOffset = Geometry.IndexOffset + PrimitiveIndex * 3;
+    uint VertexOffset = Geometry.VertexOffset;
+
+    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+
+    // Interpolate the vertex
+    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Barycentrics);
+
+    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+
+    bool bPointSampled = Material.Flags & MATERIAL_FLAG_POINT_SAMPLED;
+
+    Intersection.Albedo = Material.Albedo;
+    Intersection.Opacity = 1;
+    Intersection.MetallicRoughness = float2(Material.Metallic, Material.Roughness);
+    Intersection.Emission = Material.Emissive;
+
+    // Albedo texture
+    if(IsValid(Material.AlbedoMap)) {
+        float4 AlbedoOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+        Intersection.Albedo = AlbedoOpacity.rgb;
+        Intersection.Opacity = AlbedoOpacity.a;
+    }
+    
+    // Reconstruct shading normal
+    Intersection.Normal = InterpolatedVertex.Normal;
+    if(IsValid(Material.NormalMap)) {
+        float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
+        float3x3 NormalTransform  = RenderableNormalTransformBuffer[RenderableIndex];
+        float3 PosA = TransformPoint(ToWorldTransform, VertexA.Position);
+        float3 PosB = TransformPoint(ToWorldTransform, VertexB.Position);
+        float3 PosC = TransformPoint(ToWorldTransform, VertexC.Position);
+        float2 UV_A = VertexA.UV;
+        float2 UV_B = VertexB.UV;
+        float2 UV_C = VertexC.UV;
+
+        // 2. 计算世界空间和 UV 空间的边。
+        float3 EdgePos1 = PosB - PosA;
+        float3 EdgePos2 = PosC - PosA;
+        float2 EdgeUV1 = UV_B - UV_A;
+        float2 EdgeUV2 = UV_C - UV_A;
+
+        // 3. 计算 TBN 矩阵。
+        //    参考 http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-13-normal-mapping/
+        float r = 1.0f / (EdgeUV1.x * EdgeUV2.y - EdgeUV1.y * EdgeUV2.x);
+        float3 Tangent   = normalize((EdgePos1 * EdgeUV2.y - EdgePos2 * EdgeUV1.y) * r);
+        float3 Bitangent = normalize((EdgePos2 * EdgeUV1.x - EdgePos1 * EdgeUV2.x) * r);
+        
+        // 4. 修正切线空间，使其与插值后的法线正交 (Gram-Schmidt process)。
+        Intersection.Normal = normalize(mul(NormalTransform, Intersection.Normal)); // 确保法线已经被正确变换
+        Tangent = normalize(Tangent - dot(Tangent, Intersection.Normal) * Intersection.Normal);
+        
+        // 5. 计算 Bitangent 的handedness，并修正 Bitangent。
+        float handedness = dot(cross(Intersection.Normal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
+        Bitangent = cross(Intersection.Normal, Tangent) * handedness;
+
+        // 6. 采样法线贴图并变换法线。
+        float3 NormalMapSample;
+        if (bPointSampled) {
+            NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(PointWrapSampler, InterpolatedVertex.UV).xyz * 2.0f - 1.0f;
+        } else {
+            NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(LinearWrapSampler, InterpolatedVertex.UV).xyz * 2.0f - 1.0f;
+        }
+        
+        Intersection.Normal = normalize(
+            NormalMapSample.x * Tangent +
+            NormalMapSample.y * Bitangent +
+            NormalMapSample.z * Intersection.Normal
+        );
+    }
+
+    // Emission texture
+    if(IsValid(Material.EmissiveMap)) {
+        float4 EmissionA;
+        if (bPointSampled) {
+            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(PointWrapSampler, UV);
+        } else {
+            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(LinearWrapSampler, UV);
+        }
+        // For A channel, we assume it's a exponential multiplier (2 base)
+        Intersection.Emission = EmissionA.rgb * pow(2.0f, EmissionA.a * 255);
+    }
+
+    // MetallicRoughness texture
+    if(IsValid(Material.MetallicRoughnessMap)) {
+        if (bPointSampled) {
+            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(PointWrapSampler, UV).xy;
+        } else {
+            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(LinearWrapSampler, UV).xy;
+        }
+    }
+    return Intersection;
+    
+}
+
+
+#endif

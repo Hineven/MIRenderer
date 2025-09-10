@@ -89,6 +89,10 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
     if (!IsRayTraced()) {
         device_static_mesh_->BLAS_ = {};
     } else {
+        // All materials must be deferred
+        for (auto mat : materials_) {
+            mi_assert(!mat->IsForward(), "All materials in a ray-traced static mesh must be deferred materials.");
+        }
         if (geometries_.empty()) {
             // No geometries, release BLAS. NullDescriptorSet feature will take care of this case.
             device_static_mesh_->BLAS_ = {};

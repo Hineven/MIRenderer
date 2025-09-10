@@ -364,12 +364,6 @@ void CountTileInstances(
     RWTileInstanceCountBuffer[TileIndex] = TileInstanceCount;
 }
 
-struct RayVolumeDistribution {
-    float l, r;
-    float Density;
-    float3 Color;
-};
-
 float TempFn(float l1, float r1, float s1, float l2, float r2, float s2, float x) {
     return (max(x - l1, 0) - max(x - r1, 0)) * s1 +
            (max(x - l2, 0) - max(x - r2, 0)) * s2;
@@ -441,20 +435,6 @@ RayVolumeDistribution UpdateRayVolumeDistribution(RayVolumeDistribution old_dist
     // Blend color with special rules.
     result.Color = (old_distr.Color * old_int_col + new_distr.Color * new_int_col) / total_int_col;
     return result;
-}
-
-float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
-    // Sample free flight length from the distribution using inversion method
-    float l = Distribution.l;
-    float r = Distribution.r;
-    float Density = Distribution.Density;
-    float FreeFlightLength = - log(1 - u) / max(Density, 1e-6f);
-    float Sample = l + FreeFlightLength;
-    if(Sample > r) {
-        // Sampled is out of bounds, return a large value
-        return 1e9f;
-    }
-    return Sample;
 }
 
 float ComputeTransmittance (float Depth, float Density) {

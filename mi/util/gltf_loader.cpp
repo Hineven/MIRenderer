@@ -28,11 +28,14 @@ MI_NAMESPACE_BEGIN
 bool GLTFLoader::LoadGLTF(
     std::filesystem::path path, DeviceBindlessResourceAllocator &allocator,
     Scene &world,
+    Material * default_material,
     std::vector<TRef<Geometry> > &out_geometries,
     std::vector<TRef<Material> > &out_materials,
     std::vector<TRef<StaticMeshInstance> > &out_meshes
 ) {
     assert(!path.empty());
+    if (default_material) default_material->UpdateOnDevice(&allocator);
+
     cgltf_options options = {};
     cgltf_data *gltf_model = nullptr;
     // TODO : use Infra resource ops to open file
@@ -314,8 +317,13 @@ bool GLTFLoader::LoadGLTF(
             geometry_material_pair_list.push_back(std::make_pair(current_geometry, material));
         }
         auto mesh = StaticMesh::Create();
-        for (auto pair : geometry_material_pair_list) {
-            pair.second->UpdateOnDevice(&allocator);
+        for (auto & pair : geometry_material_pair_list) {
+            if (!pair.second) pair.second = default_material;
+            if (pair.second) pair.second->UpdateOnDevice(&allocator);
+            else {
+                MI_WARN("GLTFLoader: Mesh {} has a primitive with no material, and no default material is provided.",
+                    gltf_mesh.name ? gltf_mesh.name : "unnamed");
+            }
             mesh->AddMeshPrimitive(pair.first, pair.second);
         }
         mesh->UpdateOnDevice(&allocator);

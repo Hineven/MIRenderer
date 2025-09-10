@@ -82,7 +82,7 @@ public:
     FORCEINLINE void SetDoubleSided (bool double_sided) {
         if (IsDoubleSided() != double_sided) SetDirty();
         if (double_sided) flags_ |= MaterialFlagBits::kDoubleSided;
-        else flags_ = flags_ & MaterialFlags(~double_sided);
+        else flags_ = flags_ & MaterialFlagBits::kDoubleSided;
     }
 
     FORCEINLINE bool IsDoubleSided () const {

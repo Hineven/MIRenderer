@@ -77,15 +77,6 @@ void RayTracingVisualizationMiss(inout RayPayload Payload: SV_RayPayload) {
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 
-DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex C, DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, float2 Barycentric) {
-    DefaultStaticMeshVertex Result;
-    float Z = (1 - Barycentric.x - Barycentric.y);
-    Result.Position = A.Position * Barycentric.x + B.Position * Barycentric.y + C.Position * Z;
-    Result.Normal = normalize(A.Normal * Barycentric.x + B.Normal * Barycentric.y + C.Normal * Z);
-    Result.UV = A.UV * Barycentric.x + B.UV * Barycentric.y + C.UV * Z;
-    return Result;
-}
-
 [shader("anyhit")]
 void RayTracingVisualizationAnyHit(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {

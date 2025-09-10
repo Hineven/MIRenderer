@@ -334,6 +334,9 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(
 );
 
 void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBuilder &builder) {
+
+    Helpers::Clear(builder, view->forward_depth_.Raw(), {});
+
     {
         auto params = builder.Allocate<DrawForwardStaticMeshesShader::Params>();
         params->View = view->view_common_params_;
@@ -351,7 +354,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         params->Visibility = view->G_visibility_.Raw();
         params->Color = builder.Import(RHI::Get().GetBackBuffer());
         params->Color.load_op = RHILoadOpType::kLoad;
-        params->Depth = view->G_depth_.Raw();
+        params->Depth = view->forward_depth_.Raw();
         auto shader = RDGShaderLibrary::Get().GetShader<DrawForwardStaticMeshesShader>();
 
         // Rasterize static meshes with batched drawing

@@ -48,6 +48,9 @@ typedef glm::ivec4 int4;
 #define SHADER_PARAMETER(type, name) type name;
 #define SHADER_PARAMETER_STRUCT_NESTED(type, name) type name;
 
+// Mark that this is a shader
+#define MI_SHADER
+
 #endif
 
 

@@ -22,4 +22,26 @@ VolumePrimitive UnpackVolumePrimitive(PackedVolumePrimitive PackedPrimitive) {
     return Primitive;
 }
 
+struct RayVolumeDistribution {
+    float l, r;
+    // Extinction coefficient. We assume that extinction coefficient equals
+    // to the scattering coefficient
+    float Density;
+    float3 Color;
+};
+
+float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
+    // Sample free flight length from the distribution using inversion method
+    float l = Distribution.l;
+    float r = Distribution.r;
+    float Density = Distribution.Density;
+    float FreeFlightLength = - log(1 - u) / max(Density, 1e-6f);
+    float Sample = l + FreeFlightLength;
+    if(Sample > r) {
+        // Sampled is out of bounds, return a large value
+        return 1e9f;
+    }
+    return Sample;
+}
+
 #endif // VOLUME_PRIMITIVE_HLSL

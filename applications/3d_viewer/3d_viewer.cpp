@@ -193,6 +193,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
     }
 
+    auto default_mat = Material::Create("default_mat", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
+
     std::vector<TRef<StaticMeshInstance>> meshes;
 
     // Load internal models
@@ -202,11 +204,11 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         {
             std::vector<TRef<Geometry>> geometries;
             std::vector<TRef<Material>> materials;
-            auto model_path = GetInfra().TranslateResPathToFilePath("assets/models/arrow/scene.gltf");
+            auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/internal/arrow.gltf");
             if (!GLTFLoader::LoadGLTF(
                 model_path,
                 *resource_allocator,
-                *scene,
+                *scene, default_mat.Raw(),
                 geometries, materials, meshes
             )) {
                 MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -214,12 +216,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             auto & r = Renderer::Get();
             arrow_mesh_instance = meshes.back();
+            arrow_mesh_instance->GetStaticMesh()->SetRayTraced(false);
             // Switch to forward material
             auto & arrow_mats = arrow_mesh_instance->GetStaticMesh()->GetMaterials();
             assert(arrow_mats.size() == 1);
             auto arrow_mat = arrow_mats[0];
             arrow_mat->SetForward(true);
             arrow_mat->UpdateOnDevice(r.GetDeviceAllocator());
+            arrow_mesh_instance->GetStaticMesh()->UpdateOnDevice(r.GetDeviceAllocator());
         }
     }
 
@@ -231,7 +235,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *scene,
+            *scene, nullptr,
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -251,7 +255,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *scene,
+            *scene, nullptr,
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -469,12 +473,18 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 float uv_x = std::bit_cast<float>(pixel.z);
                 float uv_y = std::bit_cast<float>(pixel.w);
                 auto descriptor_rank = pixel.x >> 24;
-                auto renderable_index = pixel.x & 0xFFFF;
+                auto renderable_index = pixel.x & 0xFFFFFF;
                 auto primitive_index = pixel.y;
                 glm::vec2 uv = {uv_x, uv_y};
                 if (selected_renderable_index != renderable_index) {
-                    if (renderable_index == UINT32_MAX) {
-                        // Add a
+                    if (renderable_index == 0xFFFFFF) {
+                        // Cancel selection, hide the arrow mesh
+                        arrow_mesh_instance->SetVisible(false);
+                    } else if (renderable_index != arrow_mesh_instance->GetIndex()) {
+                        // Snap the arrow renderable to the selected renderable
+                        auto renderable = scene->GetRenderables()[renderable_index].Raw();
+                        arrow_mesh_instance->EditTransform().position = renderable->GetTransform().position;
+                        arrow_mesh_instance->SetVisible(true);
                     }
                 }
                 selected_descriptor_rank = descriptor_rank;
@@ -518,6 +528,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
 
     RHI::Get().WaitForIdle();
+
+    default_mat.SafeRelease();
+    arrow_mesh_instance.SafeRelease();
 
     view.reset();
 

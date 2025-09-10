@@ -292,6 +292,11 @@ void RendererView::InitFrame () {
     // Often used anywhere
     G_depth_->SetExport();
 
+    forward_depth_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kD32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
+
     G_visibility_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR32G32B32A32_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget);

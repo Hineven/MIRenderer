@@ -17,6 +17,7 @@ public:
     static bool LoadGLTF (
         std::filesystem::path path, DeviceBindlessResourceAllocator & allocator,
         Scene & scene,
+        Material * default_material,
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,
         std::vector<TRef<StaticMeshInstance>> & out_meshes

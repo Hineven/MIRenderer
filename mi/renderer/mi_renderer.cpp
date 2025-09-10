@@ -178,8 +178,15 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<int> visible_rt_renderable_indices;
     for (auto e : visible_renderable_indices) {
         if (auto renderable = all_renderables[e]) {
-            if (renderable->IsRayTraced() && renderable->IsVisible() && !renderable->IsEmpty())
+            if (renderable->IsRayTraced()
+                && renderable->IsVisible()
+                && !renderable->IsEmpty()
+                // Some ray-traced renderables have no ray-tracing enabled geometry
+                // we have to check for that here.
+                && renderable->GetBLAS()
+                ) {
                 visible_rt_renderable_indices.push_back(e);
+            }
         }
     }
     auto instance_count = (uint32_t)visible_rt_renderable_indices.size();

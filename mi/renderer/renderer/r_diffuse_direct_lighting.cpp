@@ -5,7 +5,6 @@
  */
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
-#include "rdg/rdg_cmd.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_renderer.h"
 #include "r_view_common.h"
@@ -55,6 +54,7 @@ static CVar<float> CVar_LightInjectionIntensityThreshold(
 
 static constexpr uint32_t kThreadGroupSize = 128;
 
+// Must be consistent with the struct in LightGrid.hlsl
 struct LightStructureUB {
     glm::uvec3 LightGridSize;
     float LightGridCellSize;
