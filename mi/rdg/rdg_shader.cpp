@@ -646,7 +646,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
-            MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
+            MI_LOG(MIInfraLogType::kError, "Failed to compile compute shader for entry {}: {}", class_registry_->compute_entry_, errmsg);
             MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
             return false;
         }

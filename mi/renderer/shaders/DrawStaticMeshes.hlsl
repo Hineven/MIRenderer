@@ -100,6 +100,7 @@ struct DrawForwardStaticMeshesVSOut {
     float4 Position : SV_POSITION;
     uint   DescriptorRenderableIndex : TEXCOORD0; // Packed DescriptorIndex (8bits) RenderableIndex (24bits)
     uint   MaterialIndex : TEXCOORD1;
+    float2 UV : TEXCOORD2;
 };
 
 DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID) {
@@ -112,14 +113,15 @@ DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (DefaultStaticMeshVertex 
 
     DrawForwardStaticMeshesVSOut Output = (DrawForwardStaticMeshesVSOut)0;
     Output.Position = PositionW;
-    Output.UV = Vertex.UV;
     Output.DescriptorRenderableIndex = DescriptorIndex << 24 | RenderableIndex;
-    uint StaticMeshIndex = RenderableHeaderBuffer[RenderableIndex].StaticMeshIndex;
+    uint StaticMeshIndex = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]).StaticMeshIndex;
     StaticMeshHeader StaticMeshHeader = StaticMeshHeaderBuffer[StaticMeshIndex];
     // Compute the global descriptor index
     uint  GlobalDescriptorIndex = StaticMeshHeader.DescriptionOffset + DescriptorIndex;
     uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[GlobalDescriptorIndex];
     Output.MaterialIndex = GeometryMaterialPair.y;
+    // Here we use the faster path to interpolate UVs rather than decoding full visibility in fragment shader.
+    Output.UV = Vertex.UV;
     return Output;
 }
 
@@ -143,13 +145,19 @@ DrawForwardStaticMeshesPSOut DrawForwardStaticMeshesPS (
     );
 
     // Decode visibility
-    IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial(
-        Input.DescriptorRenderableIndex & 0xFFFFFF, 
-        (Input.DescriptorRenderableIndex >> 24) & 0xFF, 
-        PrimitiveIndex,
-        Barycentrics
-    );
+    // IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial(
+    //     Input.DescriptorRenderableIndex & 0xFFFFFF, 
+    //     (Input.DescriptorRenderableIndex >> 24) & 0xFF, 
+    //     PrimitiveIndex,
+    //     Barycentrics
+    // );
 
-    Output.ColorAlpha = float4(Intersection.Albedo, Intersection.Opacity);
+    MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1);
+    if(IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV);
+    }
+
+    Output.ColorAlpha = ColorOpacity;
     return Output;
 }

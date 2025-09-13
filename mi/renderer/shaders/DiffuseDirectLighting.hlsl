@@ -16,6 +16,7 @@
 
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/LightGrid.hlsl"
+#include "resources/LightEvaluation.hlsl"
 #include "resources/LightGridSampling.hlsl"
 
 // Input macros
@@ -71,15 +72,6 @@ RWStructuredBuffer<uint> RWLightGrid_BloomFilterBuffer;
 #ifndef WAVE_SIZE
 #define WAVE_SIZE 32
 #endif
-
-struct DirectLightingUB {
-    uint FrameIndex;
-    float ShadowRayTMax;
-    float ShadowRayLengthMultiplier;
-    uint Unused;
-};
-
-ConstantBuffer<DirectLightingUB> DirectLighting_UB;
 
 // Sometimes when involving ray compaction / continuation, allocate new rays on this buffer
 RWStructuredBuffer<uint> RWRayToTraceListAllocator;

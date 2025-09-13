@@ -9,8 +9,7 @@
 #include "CommonSamplerResources.hlsl"
 #include "StaticMeshResources.hlsl"
 #include "BindlessTextureResources.hlsl"
-
-StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
+#include "MaterialResources.hlsl"
 
 IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     uint RenderableIndex, // Renderable index, must be a static mesh renderable
@@ -20,7 +19,7 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 ) {
     IntersectionMaterial Intersection = (IntersectionMaterial)0;
 
-    StaticMeshInstanceHeader InstanceHeader = (StaticMeshInstanceHeader)RenderableHeaderBuffer[RenderableIndex];
+    StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]);
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
     uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
     uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptorRank];
@@ -39,6 +38,10 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
     // Interpolate the vertex
     DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Barycentrics);
+    
+    // Transform to world space
+    float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
+    Intersection.WorldPosition = TransformPoint(ToWorldTransform, InterpolatedVertex.Position);
 
     MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
 
@@ -59,7 +62,6 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     // Reconstruct shading normal
     Intersection.Normal = InterpolatedVertex.Normal;
     if(IsValid(Material.NormalMap)) {
-        float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
         float3x3 NormalTransform  = RenderableNormalTransformBuffer[RenderableIndex];
         float3 PosA = TransformPoint(ToWorldTransform, VertexA.Position);
         float3 PosB = TransformPoint(ToWorldTransform, VertexB.Position);
@@ -107,9 +109,9 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     if(IsValid(Material.EmissiveMap)) {
         float4 EmissionA;
         if (bPointSampled) {
-            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(PointWrapSampler, UV);
+            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(PointWrapSampler, InterpolatedVertex.UV);
         } else {
-            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(LinearWrapSampler, UV);
+            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(LinearWrapSampler, InterpolatedVertex.UV);
         }
         // For A channel, we assume it's a exponential multiplier (2 base)
         Intersection.Emission = EmissionA.rgb * pow(2.0f, EmissionA.a * 255);
@@ -118,9 +120,9 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     // MetallicRoughness texture
     if(IsValid(Material.MetallicRoughnessMap)) {
         if (bPointSampled) {
-            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(PointWrapSampler, UV).xy;
+            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(PointWrapSampler, InterpolatedVertex.UV).xy;
         } else {
-            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(LinearWrapSampler, UV).xy;
+            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(LinearWrapSampler, InterpolatedVertex.UV).xy;
         }
     }
     return Intersection;

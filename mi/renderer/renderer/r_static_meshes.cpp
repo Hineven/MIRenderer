@@ -297,7 +297,6 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndDescriptorIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
-        // SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)

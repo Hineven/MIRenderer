@@ -5,19 +5,19 @@
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedStaticMesh.hlsl"
 #include "shared/SharedVertex.hlsl"
+#include "headers/VolumePrimitivesLib.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
-#include "headers/VolumePrimitivesLib.hlsl"
+#include "resources/MaterialResources.hlsl"
 
 RaytracingAccelerationStructure TLAS;
 
-StructuredBuffer<StaticMeshInstanceHeader> RenderableHeaderBuffer;
+StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
 StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
 StructuredBuffer<uint> IndexBuffer;
-StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
@@ -86,7 +86,7 @@ void RayTracingVisualizationAnyHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
     if(InstanceFlags == 0) {
-        StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
+        StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
         uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
         uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
@@ -128,7 +128,7 @@ void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
     if(InstanceFlags == 0) {
-        StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
+        StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
         uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
         uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
@@ -156,11 +156,12 @@ void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
         Payload.Color = ColorOpacity;
         Payload.bSurfaceHit = true;
     } else {
+        RenderableHeader InstanceHeader = RenderableHeaderBuffer[Instance];
         float3 RayOrigin = WorldRayOrigin();
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry)
         uint InstanceVolPrimitiveIndex = Triangle / 20;
-        uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[asuint(InstanceHeader.Metadata.x)].PrimitiveOffset;
         uint PrimitiveIndex = VolPrimitiveOffset + InstanceVolPrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
         float3x4 ToObject = WorldToObject3x4();

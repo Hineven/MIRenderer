@@ -147,4 +147,16 @@ uint hadd (uint4 Value) {
     return Value.x + Value.y + Value.z + Value.w;
 }
 
+float hmin (float2 Value) {
+    return min(Value.x, Value.y);
+}
+
+float hmin (float3 Value) {
+    return min(min(Value.x, Value.y), Value.z);
+}
+
+float hmin (float4 Value) {
+    return min(min(min(Value.x, Value.y), Value.z), Value.w);
+}
+
 #endif

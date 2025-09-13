@@ -30,6 +30,7 @@ struct RayVolumeDistribution {
     float3 Color;
 };
 
+// Return the sampled ray distance
 float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
     // Sample free flight length from the distribution using inversion method
     float l = Distribution.l;

@@ -18,7 +18,7 @@ struct VolumePrimitive {
     float4 Rotation;
     float3 Scales;
     float3 Color;
-    float  Opacity;
+    float  Opacity; // Volume density, actually. Ranging from 0.0 to infinity
 };
 
 struct VolumePrimitivesHeader {

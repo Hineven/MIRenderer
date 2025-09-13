@@ -2,7 +2,13 @@
 #define LIGHT_GRID_SAMPLING_HLSL
 
 #include "LightGrid.hlsl"
+#include "../headers/Random.hlsl"
 #include "../headers/Scattering.hlsl"
+
+#ifndef NUM_LIGHT_SAMPELR_SAMPLES
+#define NUM_LIGHT_SAMPELR_SAMPLES 6
+// #error NUM_LIGHT_SAMPELR_SAMPLES must be defined for this header
+#endif
 
 struct LightSampler {
     float SumWeight;

@@ -1,6 +1,10 @@
 #ifndef LIGHT_GRID_HLSL
 #define LIGHT_GRID_HLSL
 
+#include "../headers/Conventions.hlsl"
+#include "../headers/Math.hlsl"
+#include "../headers/Light.hlsl"
+
 #ifndef LIGHT_GRID_NUM_CASCADES
 #define LIGHT_GRID_NUM_CASCADES 6
 #endif
@@ -9,6 +13,8 @@
 #if LIGHT_GRID_NUM_CASCADES > MAX_NUM_LIGHT_CASCADES
 #error "LIGHT_GRID_NUM_CASCADES must be less than or equal to MAX_NUM_LIGHT_CASCADES"
 #endif
+
+
 
 struct LightStructureUB {
     uint3 LightGridSize;
