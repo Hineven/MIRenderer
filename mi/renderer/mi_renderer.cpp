@@ -38,7 +38,7 @@ static CVar<int> CVar_FinalOutputType(
     "1 - Albedo\n"
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
-    6
+    0
 );
 
 Renderer::Renderer() {
@@ -330,6 +330,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         Render_VisualizeRayTraced(view, builder);
     }
 
+    // Path tracing pass
+
     if (view->debug_output_) {
         Render_DrawToOutput(view, builder, view->debug_output_.Raw());
     } else {
@@ -352,8 +354,12 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
         else if (type == 8)
             Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
-        else Render_DrawToOutput(view, builder, view->radiance_.Raw());
+        else if (type == 9) {
+            Render_PathTracing(view, builder);
+            Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+        } else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
+
 
     // Extra pass for forward rendering
     Render_DrawForwardStaticMeshes(view, builder);

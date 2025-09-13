@@ -22,6 +22,7 @@ set(SOURCES
         renderer/r_hzb.cpp
         renderer/r_hwrt.cpp
         renderer/r_diffuse_direct_lighting.cpp
+        renderer/r_path_tracing.cpp
         util/radix_sort.cpp
 )
 

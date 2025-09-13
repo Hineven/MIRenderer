@@ -10,12 +10,14 @@
 #include "StaticMeshResources.hlsl"
 #include "BindlessTextureResources.hlsl"
 #include "MaterialResources.hlsl"
+#include "../headers/TextureSampling.hlsl"
 
 IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     uint RenderableIndex, // Renderable index, must be a static mesh renderable
     uint DescriptorRank, // Descriptor rank of the static mesh this renderable refers to
     uint PrimitiveIndex, // Triangle index of the geometry
-    float2 Barycentrics // Intersection triangle barycentrics
+    float2 Barycentrics, // Intersection triangle barycentrics
+    float LOD = -1 // LOD level, -1 means automatic LOD selection (only works in PS)
 ) {
     IntersectionMaterial Intersection = (IntersectionMaterial)0;
 
@@ -54,7 +56,12 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
     // Albedo texture
     if(IsValid(Material.AlbedoMap)) {
-        float4 AlbedoOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+        float4 AlbedoOpacity = 0;
+        if(bPointSampled) {
+            AlbedoOpacity = SampleTexture(GetBindlessSRV(Material.AlbedoMap), PointWrapSampler, InterpolatedVertex.UV, LOD);
+        } else {
+            AlbedoOpacity = SampleTexture(GetBindlessSRV(Material.AlbedoMap), LinearWrapSampler, InterpolatedVertex.UV, LOD);
+        }
         Intersection.Albedo = AlbedoOpacity.rgb;
         Intersection.Opacity = AlbedoOpacity.a;
     }
@@ -92,11 +99,13 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
         // 6. 采样法线贴图并变换法线。
         float3 NormalMapSample;
-        if (bPointSampled) {
-            NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(PointWrapSampler, InterpolatedVertex.UV).xyz * 2.0f - 1.0f;
-        } else {
-            NormalMapSample = GetBindlessSRV(Material.NormalMap).Sample(LinearWrapSampler, InterpolatedVertex.UV).xyz * 2.0f - 1.0f;
-        }
+        if(LOD == -1) {
+            if (bPointSampled) {
+                NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), PointWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
+            } else {
+                NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), LinearWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
+            }
+        } 
         
         Intersection.Normal = normalize(
             NormalMapSample.x * Tangent +
@@ -109,9 +118,9 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     if(IsValid(Material.EmissiveMap)) {
         float4 EmissionA;
         if (bPointSampled) {
-            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(PointWrapSampler, InterpolatedVertex.UV);
+            EmissionA = SampleTexture(GetBindlessSRV(Material.EmissiveMap), PointWrapSampler, InterpolatedVertex.UV, LOD);
         } else {
-            EmissionA = GetBindlessSRV(Material.EmissiveMap).Sample(LinearWrapSampler, InterpolatedVertex.UV);
+            EmissionA = SampleTexture(GetBindlessSRV(Material.EmissiveMap), LinearWrapSampler, InterpolatedVertex.UV, LOD);
         }
         // For A channel, we assume it's a exponential multiplier (2 base)
         Intersection.Emission = EmissionA.rgb * pow(2.0f, EmissionA.a * 255);
@@ -120,9 +129,9 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     // MetallicRoughness texture
     if(IsValid(Material.MetallicRoughnessMap)) {
         if (bPointSampled) {
-            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(PointWrapSampler, InterpolatedVertex.UV).xy;
+            Intersection.MetallicRoughness = SampleTexture(GetBindlessSRV(Material.MetallicRoughnessMap), PointWrapSampler, InterpolatedVertex.UV, LOD).xy;
         } else {
-            Intersection.MetallicRoughness = GetBindlessSRV(Material.MetallicRoughnessMap).Sample(LinearWrapSampler, InterpolatedVertex.UV).xy;
+            Intersection.MetallicRoughness = SampleTexture(GetBindlessSRV(Material.MetallicRoughnessMap), LinearWrapSampler, InterpolatedVertex.UV, LOD).xy;
         }
     }
     return Intersection;

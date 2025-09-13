@@ -23,24 +23,11 @@
 #ifndef MAX_NUM_GRID_LIGHTS
 #define MAX_NUM_GRID_LIGHTS 32
 #endif
-#ifndef LIGHT_GRID_NUM_CASCADES
-#define LIGHT_GRID_NUM_CASCADES 6
-#endif
-
-#ifndef NUM_LIGHT_SAMPELR_SAMPLES
-#define NUM_LIGHT_SAMPELR_SAMPLES 8
-#endif
-
-RWStructuredBuffer<uint> RWRayToTraceCount;
-RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
-RWStructuredBuffer<PackedPrecomputedLight> RWPrecomputedActiveLightBuffer;
 StructuredBuffer<PackedPrecomputedLight> PrecomputedActiveLightBuffer;
 
-RWStructuredBuffer<uint> RWActiveLightListCount;
-RWStructuredBuffer<uint> RWActiveLightListBuffer;
 StructuredBuffer<uint> ActiveLightListCount;
 StructuredBuffer<uint> ActiveLightListBuffer;
 
@@ -52,35 +39,22 @@ StructuredBuffer<uint> LightGrid_GridLightListLengthBuffer;
 // Record the combination of light encodings that successfully illuminated geometries in the grid
 StructuredBuffer<uint4> LightGrid_BloomFilterBuffer;
 
-RWStructuredBuffer<uint> RWLightGrid_ListAllocatorBuffer;
-
-RWStructuredBuffer<uint> RWLightGrid_ListLightIndexBuffer;
-RWStructuredBuffer<float> RWLightGrid_GridLightListCdfBuffer;
-RWStructuredBuffer<uint> RWLightGrid_GridLightListOffsetBuffer;
-RWStructuredBuffer<uint> RWLightGrid_GridLightListLengthBuffer;
-RWStructuredBuffer<uint> RWLightGrid_BloomFilterBuffer;
-
-Texture2D<float4> EnvironmentMap;
+TextureCube<float4> EnvironmentMap;
 
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 
-
 // Top level AS
 RaytracingAccelerationStructure TLAS;
 
-#ifndef TILE_SIZE
-// Defaults to a smaller tile size for better thread coherency
-#define TILE_SIZE 8
-#endif
+struct ReferencePathTracerUB {
+    uint FrameIndex;
+    uint EnableAccumulation;
+    uint Padding0;
+    uint Padding1;
+};
 
-#ifndef THREAD_GROUP_SIZE
-#define THREAD_GROUP_SIZE 128
-#endif
-
-#ifndef WAVE_SIZE
-#define WAVE_SIZE 32
-#endif
+ConstantBuffer<ReferencePathTracerUB> UB;
 
 struct RayPayload {
     bool bIsSurfaceHit; // True if hit a surface, false if miss or hit a volume
@@ -114,7 +88,7 @@ void ReferencePathTracerRaygen() {
         Ray.TMax = C.FarPlane * DirLen; // Scale TMin and TMax by the direction length
     }
 
-    Random rng = MakeRandom(61937141 + RayIndex.x * 6183 + RayIndex.y);
+    Random rng = MakeRandom(61937141 + (RayIndex.x * 6183 + RayIndex.y) * UB.FrameIndex);
 
     // Initialize trace state
     float3 Radiance = 0;
@@ -135,7 +109,7 @@ void ReferencePathTracerRaygen() {
         // Trace surface ray first
         TraceRay(
             TLAS,
-            RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+            0,
             0xFF, // Ray mask
             0,    // Suface ray
             0,    // SBT stride
@@ -143,15 +117,39 @@ void ReferencePathTracerRaygen() {
             Ray,
             Payload
         );
-        // First case: miss witout volume intersection
-        if(Payload.TCurrent >= Ray.TMax && Payload.TCurrent < VolumeSampledRayDistance) {
+        bool bScatter = false;
+        if(Payload.TCurrent >= VolumeSampledRayDistance) // Hits something (or nothing), stepping over the volume sample
+        {
+            // Volume intersection detected.
+            // Ray hit a surface or hits nothing, overpassing the current volume sample.
+            // Scatter the ray at the current volume sample position.
+            float Pdf;
+            float3 LocalSampledDirection = SampleHenyeyGreenstein(0.5, rng.rand2(), Pdf);
+            // We do not need to take account of the value and pdf because of perfect sampling
+            
+            // Forward and restart the ray
+            Ray.Origin = Ray.Origin + Ray.Direction * VolumeSampledRayDistance;
+            float3 Tangent, Bitangent;
+            GetOrthoVectors(Ray.Direction, Tangent, Bitangent);
+            Ray.Direction = 
+                LocalSampledDirection.x * Tangent 
+                + LocalSampledDirection.y * Bitangent
+                + LocalSampledDirection.z * Ray.Direction;
+            Ray.TMin = 1e-4f;
+            Ray.TMax = C.FarPlane;
+
+            Throughput *= VolumeSampledColor;
+
+            // This is a scattering event;
+            bScatter = true;
+        } else if(Payload.TCurrent >= Ray.TMax) { // Miss
             // No hits, accumulate environment lighting and terminate
-            float3 RayDirection = Ray.Direction;
-            float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+            float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -Ray.Direction, 0).xyz;
             Radiance += Throughput * EnvironmentColor;
+            // Terminate directly
             break;
-        } else if(Payload.bIsSurfaceHit && Payload.TCurrent < VolumeSampledRayDistance) {
-            // Surface hit.
+        } else if(Payload.bIsSurfaceHit) { // Hits a mesh surface
+            // Second case: Surface hit (ray hit a surface before passing through the volume sample).
             if(Payload.bIsFrontFace) {
                 // The surface hit is closer than the volume hit. Spawn a surface hit
                 
@@ -161,7 +159,8 @@ void ReferencePathTracerRaygen() {
                     InstanceIndex,
                     Payload.HitGeometryIndex,
                     Payload.HitPrimitiveIndex,
-                    Payload.HitBarycentrics
+                    Payload.HitBarycentrics,
+                    0
                 );
                 // Sample outgoing ray direction
                 ShadingMaterial M = GetShadingMaterial(Intersection);
@@ -180,108 +179,103 @@ void ReferencePathTracerRaygen() {
                 // Update throughput
                 Throughput *= EvaluateBSDF(M, -Ray.Direction, SampledDirection) * abs(dot(M.Normal, SampledDirection)) / max(Pdf, 1e-5f);
 
-                BounceIndex ++;
+                {
+                    // Clear current volume sample
+                    VolumeSampledRayDistance = Infinity;
+                    VolumeSampledColor = 0;
+                    // FIXME resample volume
+                }
+
+                // This is a scattring event
+                bScatter = true;
             } else {
                 // Ignore backface hits for surfaces
                 // Advance ray to next hit
                 Ray.TMin = Payload.TCurrent + 1e-4f;
             }
-        } else {
-            // Volume hit or volume intersection.
-            if(Payload.bIsSurfaceHit || Payload.TCurrent >= Ray.TMax) {
-                // Volume intersection detected.
-                // Scatter the ray at the current volume sample position.
-                float Pdf;
-                float3 LocalSampledDirection = SampleHenyeyGreenstein(0.5, rng.rand2(), Pdf);
-                // We do not need to take account of the value and pdf because of perfect sampling
-                
-                // Forward the ray
-                Ray.Origin = Ray.Origin + Ray.Direction * VolumeSampledRayDistance;
-                float3 Tangent, Bitangent;
-                GetOrthoVectors(Ray.Direction, Tangent, Bitangent);
-                Ray.Direction = 
-                    LocalSampledDirection.x * Tangent 
-                  + LocalSampledDirection.y * Bitangent
-                  + LocalSampledDirection.z * Ray.Direction;
-                Ray.TMin = 1e-4f;
-                Ray.TMax = C.FarPlane;
-
-                Throughput *= VolumeSampledColor;
-                BounceIndex ++;
-            } else {
-                // Volume boundary hit.
-                // Fetch the volume primitive
-                // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry)
-                uint InstanceVolPrimitiveIndex = Payload.HitPrimitiveIndex / 20;
-                uint InstanceIndex = Payload.HitInstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-                VolumePrimitivesInstanceHeader Renderable = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
-                uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
-                uint PrimitiveIndex = VolPrimitiveOffset + InstanceVolPrimitiveIndex;
-                VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
-                if(!Payload.bIsFrontFace) {
-                    // Backface hits: entering the volume. Spawn a volume sample for the primitive.
-                    float3x4 ToObject = RenderableTransformBuffer[InstanceIndex];
-                    float2 lr = 0;
-                    float Dist = 0;
-                    bool bIntersected = RayIntersect(Ray.Origin, Ray.Direction, Primitive, ToObject, lr, Dist);
-                    if(bIntersected) {
-                        float TMin = RayTMin();
-                        lr.x = max(lr.x, TMin);
-                        lr.y = max(lr.y, TMin);
-                        RayVolumeDistribution Distr = (RayVolumeDistribution)0;
-                        Distr.l = lr.x;
-                        Distr.r = lr.y;
-                        Distr.Density = Primitive.Opacity;
-                        Distr.Color   = Primitive.Color;
-                        // Make a volume sample
-                        float Distance = SampleRayVolumeDistribution(Distr, rng.rand());
-                        // Compare with VolumeSampledRayDistance
-                        if(Distance < VolumeSampledRayDistance) {
-                            // Pick the closer one
-                            VolumeSampledRayDistance = Distance;
-                            VolumeSampledColor = Primitive.Color;
-                        }
+        } else { // Hit a volume boundary.
+            // Volume boundary hit.
+            // Fetch the volume primitive
+            // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry)
+            uint InstanceVolPrimitiveIndex = Payload.HitPrimitiveIndex / 20;
+            uint InstanceIndex = Payload.HitInstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+            VolumePrimitivesInstanceHeader Renderable = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
+            uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
+            uint PrimitiveIndex = VolPrimitiveOffset + InstanceVolPrimitiveIndex;
+            VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
+            if(!Payload.bIsFrontFace) {
+                // Backface hits: entering the volume. Spawn a volume sample for the primitive.
+                float3x4 ToObject = RenderableInverseTransformBuffer[InstanceIndex];
+                float2 lr = 0;
+                float Dist = 0;
+                bool bIntersected = RayIntersect(Ray.Origin, Ray.Direction, Primitive, ToObject, lr, Dist);
+                if(bIntersected) {
+                    float TMin = Ray.TMin;
+                    lr.x = max(lr.x, TMin);
+                    lr.y = max(lr.y, TMin);
+                    RayVolumeDistribution Distr = (RayVolumeDistribution)0;
+                    Distr.l = lr.x;
+                    Distr.r = lr.y;
+                    Distr.Density = Primitive.Opacity;
+                    Distr.Color   = Primitive.Color;
+                    // Make a volume sample
+                    float Distance = SampleRayVolumeDistribution(Distr, rng.rand());
+                    // Compare with VolumeSampledRayDistance
+                    if(Distance < VolumeSampledRayDistance) {
+                        // Pick the closer one
+                        VolumeSampledRayDistance = Distance;
+                        VolumeSampledColor = Primitive.Color;
                     }
-                    // Insert to the list
-                    OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
-                    OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
-                    CurrentOverlappingVolumePrimitiveCount ++;
-                } else {
-                    // Frontface hits: exiting the volume.
-                    // Remove the primitive from the overlapping list
-                    // Here we make an approximation that the primitive boudary is perfectly the proxy geometry
-                    // when sampling next volume hits aroud surfaces. The overhead introduced for precisely 
-                    // tracking and sampling the volume is too high. 
-                    bool bFound = false;
-                    for(int i = 0; i < CurrentOverlappingVolumePrimitiveCount; i ++) {
-                        bFound |= 
-                            (OverlappingVolumePrimitiveIndices[i] == PrimitiveIndex)
-                         && (OverlappingVolumePrimitiveIndices[i] == InstanceIndex);
-                        if(bFound) {
-                            // Overwrite with the next element
-                            OverlappingVolumePrimitiveIndices[i] = OverlappingVolumePrimitiveIndices[i + 1];
-                            OverlappingVolumePrimitivesInstanceIndices[i] = OverlappingVolumePrimitivesInstanceIndices[i + 1];
-                        }
-                    }
-                    CurrentOverlappingVolumePrimitiveCount --;
                 }
-                // Forward the ray a little bit
-                Ray.TMin = Payload.TCurrent + 2e-5f;
+                // Insert to the list
+                OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
+                OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
+                CurrentOverlappingVolumePrimitiveCount ++;
+            } else {
+                // Frontface hits: exiting the volume.
+                // Remove the primitive from the overlapping list
+                // Here we make an approximation that the primitive boudary is perfectly the proxy geometry
+                // when sampling next volume hits aroud surfaces. The overhead introduced for precisely 
+                // tracking and sampling the volume is too high. 
+                bool bFound = false;
+                for(int i = 0; i < CurrentOverlappingVolumePrimitiveCount; i ++) {
+                    bFound |= 
+                        (OverlappingVolumePrimitiveIndices[i] == PrimitiveIndex)
+                        && (OverlappingVolumePrimitiveIndices[i] == InstanceIndex);
+                    if(bFound) {
+                        // Overwrite with the next element
+                        OverlappingVolumePrimitiveIndices[i] = OverlappingVolumePrimitiveIndices[i + 1];
+                        OverlappingVolumePrimitivesInstanceIndices[i] = OverlappingVolumePrimitivesInstanceIndices[i + 1];
+                    }
+                }
+                CurrentOverlappingVolumePrimitiveCount --;
             }
+            // Forward the ray a little bit
+            Ray.TMin = Payload.TCurrent + 2e-5f;
         }
 
-        // Russian roulette
-        if(BounceIndex >= 2) {
-            float U = rng.rand();
-            float ContinuationProbability = min(hmin(Throughput), 0.95f);
-            if(U > ContinuationProbability) {
-                break;
+        if(bScatter) {
+            BounceIndex ++;
+            // Russian roulette
+            if(BounceIndex >= 2) {
+                float U = rng.rand();
+                float ContinuationProbability = min(RadianceToLuminance(Throughput), 0.95f);
+                if(U > ContinuationProbability) {
+                    break;
+                }
+                Throughput = Throughput * (1.0f / max(ContinuationProbability, 5e-3f));
             }
-            Throughput = Throughput * (1.0f / max(ContinuationProbability, 5e-3f));
         }
-        BounceIndex ++;
     }
-    RWRadiance[RayIndex] = float4(Radiance, 1.0f);
+    if(UB.EnableAccumulation != 0) {
+        float4 FilmRadiance = RWRadiance[RayIndex];
+        FilmRadiance.w += 1.0f;
+        float InvSampleCount = 1.0f / FilmRadiance.w;
+        FilmRadiance.rgb = (1.f - InvSampleCount) * FilmRadiance.rgb + InvSampleCount * Radiance;
+        RWRadiance[RayIndex] = FilmRadiance;
+    } else {
+        RWRadiance[RayIndex] = float4(Radiance, 1.0f);
+    }
 }
 
 [shader("miss")]
@@ -302,10 +296,11 @@ void ReferencePathTracerClosestHit(inout RayPayload Payload: SV_RayPayload,
     uint DescriptionIndex  = GeometryIndex();
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
     // Pack hit data to payload
+    Payload.TCurrent = RayTCurrent();
     Payload.HitInstanceCustomIndex = InstanceCustomIndex;
     Payload.HitGeometryIndex = DescriptionIndex;
     Payload.HitPrimitiveIndex = Triangle;
     Payload.HitBarycentrics = Attributes.barycentrics;
-    Payload.bIsFrontFace = !(HitKind() & HIT_KIND_TRIANGLE_BACK_FACE);
+    Payload.bIsFrontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
     Payload.bIsSurfaceHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK) == 0;
 }

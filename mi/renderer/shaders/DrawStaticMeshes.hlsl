@@ -80,7 +80,9 @@ void DecodeVisibility (uint2 DispatchThreadID : SV_DispatchThreadID) {
             RenderableIndex, 
             DescriptorRank, 
             PrimitiveIndex,
-            Barycentrics
+            Barycentrics,
+            // TODO: Get a proper LOD
+            0
         );
     // Write to G-Buffers
     {

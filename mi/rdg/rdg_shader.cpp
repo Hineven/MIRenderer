@@ -386,6 +386,23 @@ std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderIniti
     for (const auto & extra_macro : ini.optional_macros) {
         extra_options.emplace_back("-D" + extra_macro);
     }
+    // And some preset macros based on shader type and other stuffs
+    // Shader class name
+    extra_options.emplace_back(std::string("-D") + class_registry_->name);
+    // Shader type
+    switch (class_registry_->type) {
+        case RHIPipelineType::kGraphics:
+            extra_options.emplace_back("-DMI_GRAPHICS_SHADER");
+            break;
+        case RHIPipelineType::kCompute:
+            extra_options.emplace_back("-DMI_COMPUTE_SHADER");
+            break;
+        case RHIPipelineType::kRayTracing:
+            extra_options.emplace_back("-DMI_RAY_TRACING_SHADER");
+            break;
+        default:
+            assert(false);
+    };
     return extra_options;
 }
 

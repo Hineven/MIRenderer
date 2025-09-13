@@ -16,19 +16,20 @@ MI_NAMESPACE_BEGIN
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
 
-static CVar<int> CVar_MaxNumGridLights(
+// Some CVars are exposed through r_diffuse_direct_lighting.h
+CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
     "Maximum number of lights in each grid cell.",
     32
 );
 
-static CVar<int> CVar_NumLightSamplerSamples(
+CVar<int> CVar_NumLightSamplerSamples(
     "r.lightgrid.num_light_sampler_samples",
     "Number of candidate samples to take when sampling lights in the light grid.",
     8
 );
 
-static CVar<int> CVar_MaxNumLightGridEntries(
+CVar<int> CVar_MaxNumLightGridEntries(
     "r.lightgrid.max_num_entries",
     "Maximum number of entries in the light grid.",
     1024 * 1024
@@ -234,8 +235,7 @@ static RDGShaderInitializationInfo GetDirectLightingShaderInitializationInfo() {
     RDGShaderInitializationInfo ini {};
     ini.optional_macros = {
         "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
-        "NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()),
-        "NUM_LIGHT_SAMPLER_SAMPLES_DEFINED"
+        "NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
     };
     return ini;
 }

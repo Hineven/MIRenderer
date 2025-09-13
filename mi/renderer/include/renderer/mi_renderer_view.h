@@ -82,6 +82,8 @@ struct RendererViewPersistentData {
 
     TRef<RDGTexture> prev_radiance_;
 
+    TRef<RDGTexture> path_tracing_film_;
+
     Camera prev_camera;
     uint32_t view_index {};
     uint32_t frame_index_ {};
@@ -159,6 +161,7 @@ struct RendererView {
     // Final radiance
     TRef<RDGTexture> radiance_;
 
+    // Only present when debugging rendering
     TRef<RDGTexture> debug_output_;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.

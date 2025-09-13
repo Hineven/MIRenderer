@@ -88,6 +88,10 @@ protected:
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
+    void Render_PathTracing (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
     void Render_HardwareShadowRayTracing (
         RendererView * view, RenderGraphBuilder & builder,
         RDGBuffer * ray_to_trace_list_length,

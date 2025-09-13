@@ -5,9 +5,8 @@
 #include "../headers/Math.hlsl"
 #include "../headers/Light.hlsl"
 
-#ifndef LIGHT_GRID_NUM_CASCADES
+// This must be consistent with the value within r_diffuse_direct_lighting.cpp
 #define LIGHT_GRID_NUM_CASCADES 6
-#endif
 
 #define MAX_NUM_LIGHT_CASCADES 8
 #if LIGHT_GRID_NUM_CASCADES > MAX_NUM_LIGHT_CASCADES

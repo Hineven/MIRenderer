@@ -23,13 +23,6 @@
 #ifndef MAX_NUM_GRID_LIGHTS
 #define MAX_NUM_GRID_LIGHTS 32
 #endif
-#ifndef LIGHT_GRID_NUM_CASCADES
-#define LIGHT_GRID_NUM_CASCADES 6
-#endif
-
-#ifndef NUM_LIGHT_SAMPELR_SAMPLES
-#define NUM_LIGHT_SAMPELR_SAMPLES 8
-#endif
 
 RWStructuredBuffer<uint> RWRayToTraceCount;
 RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
