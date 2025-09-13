@@ -17,3 +17,6 @@ cmake-build-*/
 .idea/
 build/
 .vscode/
+
+# vcpkg
+vcpkg.json
