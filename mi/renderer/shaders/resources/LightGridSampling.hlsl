@@ -11,6 +11,7 @@
 #endif
 
 struct LightSampler {
+    uint NumResampledLights;
     float SumWeight;
     float SampleU[NUM_LIGHT_SAMPELR_SAMPLES];
     float Weights[NUM_LIGHT_SAMPELR_SAMPLES];
@@ -31,6 +32,7 @@ LightSampler InitLightSampler(inout Random R) {
 
 void AddLightToSampler(inout LightSampler LS, float Weight, uint Index) {
     float U = Weight / (LS.SumWeight + Weight + 1e-6f);
+    LS.NumResampledLights ++;
     LS.SumWeight += Weight;
     for (uint i = 0; i < NUM_LIGHT_SAMPELR_SAMPLES; i++) {
         bool bSelect = false;

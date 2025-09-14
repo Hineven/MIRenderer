@@ -343,9 +343,10 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
             // Clip samples with low pdf (potential fireflies)
             if (Sample.IsValid() && Sample.Pdf > 0.001f) {
                 NumValidSamples ++;
-                float LightCdf = LS.Weights[SamplerLightListIndex] / LS.SumWeight;
+                float LightCdf =  LS.Weights[SamplerLightListIndex] / LS.SumWeight;
                 // Pdf of the proposal distribution (hemisphere)
-                float ProposedPdf = LightCdf * Sample.Pdf;
+                // TODO : why not divide Pdf??
+                float ProposedPdf = LightCdf;// * Sample.Pdf;
                 // Target pdf (light contribution)
                 float3 TargetPdf3Unnormalized = Sample.Radiance / Sample.Pdf;
                 float TargetPdfUnnormalized = dot(TargetPdf3Unnormalized, 1.f.xxx);
@@ -664,7 +665,7 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
                 NumValidSamples ++;
                 float LightCdf = LS.Weights[SamplerLightListIndex] / LS.SumWeight;
                 // Pdf of the proposal distribution (hemisphere)
-                float ProposedPdf = LightCdf * Sample.Pdf;
+                float ProposedPdf = LightCdf;// * Sample.Pdf;
                 // Target pdf (light contribution)
                 float3 TargetPdf3Unnormalized = Sample.Radiance / Sample.Pdf;
                 float TargetPdfUnnormalized = dot(TargetPdf3Unnormalized, 1.f.xxx);
