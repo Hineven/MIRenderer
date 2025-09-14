@@ -251,7 +251,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/cornell_box/scene.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,

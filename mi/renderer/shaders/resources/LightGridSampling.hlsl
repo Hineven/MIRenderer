@@ -103,7 +103,7 @@ LightSample SampleLightWithPreMultipliedPhaseFunction(
     float3 EvaluatedEmission = Evaluated.Emission;
     if (IsValid(Evaluated.EmissionTextureIndex))
         EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
-    Result.Radiance = EvaluatedEmission * saturate(Cosine) * HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
+    Result.Radiance = EvaluatedEmission * HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
     return Result;
 }
 

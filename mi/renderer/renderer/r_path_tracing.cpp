@@ -69,7 +69,8 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
     auto shader = RDGShaderLibrary::Get().GetShader<ReferencePathTracerShader>(ini);
 
     if (!view->persistent_data_->path_tracing_film_) {
-        view->persistent_data_->path_tracing_film_ = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
+        // Use 32bit floats for accumulating large sample counts
+        view->persistent_data_->path_tracing_film_ = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR32G32B32A32_FLOAT);
         // Make sure the film is accumulated across frames
         view->persistent_data_->path_tracing_film_->SetExport();
     }

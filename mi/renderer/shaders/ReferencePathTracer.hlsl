@@ -142,8 +142,10 @@ void ReferencePathTracerRaygen() {
     uint   CurrentOverlappingVolumePrimitiveCount = 0;
     float  VolumeSampledRayDistance = Infinity;
     float3 VolumeSampledColor = 0;
+
+    uint MaxNumBounces = 16;
     
-    while(BounceIndex < 16) {
+    while(BounceIndex < MaxNumBounces) {
         RayPayload Payload = (RayPayload)0;
         Payload.TCurrent = Ray.TMax;
         // Trace surface ray first
@@ -326,7 +328,7 @@ void ReferencePathTracerRaygen() {
     }
     if(UB.EnableAccumulation != 0) {
         float4 FilmRadiance = RWRadiance[RayIndex];
-        FilmRadiance.w = min(FilmRadiance.w + 1.0f, 512);
+        FilmRadiance.w = min(FilmRadiance.w + 1.0f, 32768.0f);
         float InvSampleCount = 1.0f / FilmRadiance.w;
         FilmRadiance.rgb = (1.f - InvSampleCount) * FilmRadiance.rgb + InvSampleCount * Radiance;
         RWRadiance[RayIndex] = FilmRadiance;
