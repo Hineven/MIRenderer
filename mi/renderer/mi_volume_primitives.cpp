@@ -167,7 +167,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
 	            }
 
 	            // Magic scaling number
-	            float MagicScale = 1.f;
+	            float MagicScale = 1.3f; // Larger than 1.f to make the proxy slightly bigger than the unit sphere
 
 	            const float3 IcoVertices[12] = {
 		            float3(0.000000, -1.000000, 0.000000),

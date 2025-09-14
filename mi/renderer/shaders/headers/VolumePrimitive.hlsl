@@ -3,6 +3,7 @@
 
 #include "Packing.hlsl"
 #include "../shared/SharedVolumePrimitives.hlsl"
+#include "VolumeScattering.hlsl"
 
 VolumePrimitive UnpackVolumePrimitive(PackedVolumePrimitive PackedPrimitive) {
     VolumePrimitive Primitive;
@@ -35,8 +36,7 @@ float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
     // Sample free flight length from the distribution using inversion method
     float l = Distribution.l;
     float r = Distribution.r;
-    float Density = Distribution.Density;
-    float FreeFlightLength = - log(1 - u) / max(Density, 1e-6f);
+    float FreeFlightLength = SampleExponentialScatteringMedium(Distribution.Density, u);
     float Sample = l + FreeFlightLength;
     if(Sample > r) {
         // Sampled is out of bounds, return a large value

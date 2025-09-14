@@ -80,7 +80,7 @@ LightSample SampleLightDiffuseWithPreMultipliedCosine(float3 Position, float3 No
     float3 EvaluatedEmission = Evaluated.Emission;
     if (IsValid(Evaluated.EmissionTextureIndex))
         EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
-    Result.Radiance = EvaluatedEmission * saturate(Cosine) * saturate(ReceiverCosine);
+    Result.Radiance = EvaluatedEmission * saturate(ReceiverCosine);
     return Result;
 }
 

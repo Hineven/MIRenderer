@@ -517,6 +517,7 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float3 Estimate = DirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
         float Transmittance = ShadowRayToTraceTransmittanceBuffer[RayIndex];
+        // Not multiplied by BSDF (multiplied later in the final composition pass)
         RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate * Transmittance, 1.f);
     }
 }

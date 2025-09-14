@@ -6,14 +6,10 @@
 #include "Scattering.hlsl"
 #include "Material.hlsl"
 
+// FIXME non diffuse bsdf seems broken
+#define DIFFUSE_BSDF
+
 float3 EvaluateBSDF (ShadingMaterial M, float3 ViewDirection, float3 OutgoingDirection) {
-    float3 Tangent, Bitangent;
-    GetOrthoVectors(M.Normal, Tangent, Bitangent);
-    float3 LocalView = float3(
-        dot(ViewDirection, Tangent),
-        dot(ViewDirection, Bitangent),
-        dot(ViewDirection, M.Normal)
-    );
     float3 LambertianTerm = EvaluateLambert(M.Albedo);
     float3 HalfVector = normalize(OutgoingDirection + ViewDirection);
     float  DotHV = dot(HalfVector, ViewDirection);
@@ -24,12 +20,21 @@ float3 EvaluateBSDF (ShadingMaterial M, float3 ViewDirection, float3 OutgoingDir
     float3 F = 0;
     float  RoughnessAlpha = M.Roughness * M.Roughness;
     float3 Specular = EvaluateGGX(RoughnessAlpha, RoughnessAlpha * RoughnessAlpha, F0, DotHV, DotNH, DotNL, DotNV, F);
-    float3 Diffuse  = DiffuseCompensationTerm(F, DotHV) * LambertianTerm;
+    float3 Diffuse = DiffuseCompensationTerm(F, DotHV) * LambertianTerm;
+#ifdef DIFFUSE_BSDF
+    return LambertianTerm;
+#else
     return Specular + Diffuse;
+#endif
 }
 
 float SampleBDSF (ShadingMaterial M, float3 ViewDirection, float2 U, out float3 SampledDirection) {
+#ifdef DIFFUSE_BSDF
+    float DiffuseProbability = 1.f;
+#else
+    // TODO heuristic probability
     float DiffuseProbability = 0.5f;
+#endif
     float3 Tangent, Bitangent;
     GetOrthoVectors(M.Normal, Tangent, Bitangent);
     float3 LocalView = float3(
@@ -37,16 +42,16 @@ float SampleBDSF (ShadingMaterial M, float3 ViewDirection, float2 U, out float3 
         dot(ViewDirection, Bitangent),
         dot(ViewDirection, M.Normal)
     );
+    float RoughnessAlpha = M.Roughness * M.Roughness;
     if(U.x <= DiffuseProbability) {
         U.x = U.x / DiffuseProbability;
         SampledDirection = SampleLambert(M.Albedo, U);
     } else {
         U.x = (U.x - DiffuseProbability) / (1.0f - DiffuseProbability);
-        SampledDirection = SampleGGX(M.Roughness * M.Roughness, LocalView, U);
+        SampledDirection = SampleGGX(RoughnessAlpha, LocalView, U);
     }
     SampledDirection = SampledDirection.x * Tangent + SampledDirection.y * Bitangent + SampledDirection.z * M.Normal;
     float DotNL = dot(M.Normal, SampledDirection);
-    float RoughnessAlpha = M.Roughness * M.Roughness;
     float3 HalfVector = normalize(SampledDirection + ViewDirection);
     float  DotNH = dot(HalfVector, M.Normal);
     float  DotNV = dot(HalfVector, ViewDirection);
