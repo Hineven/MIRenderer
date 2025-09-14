@@ -1,5 +1,6 @@
 #include "resources/CommonSamplerResources.hlsl"
 #include "headers/Camera.hlsl"
+#include "headers/Scattering.hlsl"
 
 #ifndef TILE_SIZE
 #define TILE_SIZE 16
@@ -42,7 +43,7 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
 
     float3 SurfaceRadiance = Emission;
 
-    SurfaceRadiance += DiffuseDirectLighting * AlbedoAlpha.rgb;
+    SurfaceRadiance += DiffuseDirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
 
     // Color is premultiplied.
     float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointClampSampler, UV, 0).rgb;

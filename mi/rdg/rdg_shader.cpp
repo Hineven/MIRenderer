@@ -386,6 +386,23 @@ std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderIniti
     for (const auto & extra_macro : ini.optional_macros) {
         extra_options.emplace_back("-D" + extra_macro);
     }
+    // And some preset macros based on shader type and other stuffs
+    // Shader class name
+    extra_options.emplace_back(std::string("-D") + class_registry_->name);
+    // Shader type
+    switch (class_registry_->type) {
+        case RHIPipelineType::kGraphics:
+            extra_options.emplace_back("-DMI_GRAPHICS_SHADER");
+            break;
+        case RHIPipelineType::kCompute:
+            extra_options.emplace_back("-DMI_COMPUTE_SHADER");
+            break;
+        case RHIPipelineType::kRayTracing:
+            extra_options.emplace_back("-DMI_RAY_TRACING_SHADER");
+            break;
+        default:
+            assert(false);
+    };
     return extra_options;
 }
 
@@ -646,7 +663,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
-            MI_LOG(MIInfraLogType::kError, "Failed to compile shader: {}", errmsg);
+            MI_LOG(MIInfraLogType::kError, "Failed to compile compute shader for entry {}: {}", class_registry_->compute_entry_, errmsg);
             MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
             return false;
         }
@@ -987,8 +1004,16 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         if (!params->render_targets_.empty()) {
             for (auto & e : params->render_targets_) {
                 if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
-                    // TODO support more blending operations
                     RHIColorAttachmentBlendDesc blend {};
+                    if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
+                        // TODO support more blending operations
+                        blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
+                        blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
+                        blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
+                        blend.alpha_blend_op = RHIBlendOpType::kBlendAdd;
+                        blend.src_alpha_blend_factor = RHIBlendFactorType::kOne;
+                        blend.dst_alpha_blend_factor = RHIBlendFactorType::kOneMinusSrcAlpha;
+                    }
                     color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
                 } else {
                     // Enable depth testing

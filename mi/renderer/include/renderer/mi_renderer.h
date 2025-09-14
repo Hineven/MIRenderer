@@ -52,7 +52,7 @@ protected:
     ~Renderer();
 
     struct DrawInvocationSortingHeader {
-        uint32_t material_index;
+        uint32_t descriptor_index;
         uint32_t world_renderable_handle;
         RHIBuffer * vertex_buffer;
         RHIBuffer * index_buffer;
@@ -63,7 +63,7 @@ protected:
     void Render_PrepareStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
     );
-    void Render_DrawStaticMeshes (
+    void Render_DrawDeferredStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
     void Render_DrawVolumePrimitives (
@@ -82,6 +82,14 @@ protected:
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
         RDGTexture * texture
+    ) ;
+
+    void Render_DrawForwardStaticMeshes (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
+    void Render_PathTracing (
+        RendererView * view, RenderGraphBuilder & builder
     ) ;
 
     void Render_HardwareShadowRayTracing (
@@ -123,8 +131,8 @@ protected:
             // Indirect draw commands (device side)
             TRef<RDGBuffer> d_static_draw_commands;
             // Used to index the renderable & material for draw commands, used for viewport rasterization
-            TRef<RDGBuffer> d_static_mesh_draw_command_renderable_material_indices;
-        } static_meshes;
+            TRef<RDGBuffer> d_static_mesh_draw_command_renderable_descriptor_indices;
+        } deferred_static_meshes, forward_static_meshes;
 
         void Init ();
         void Deinit ();

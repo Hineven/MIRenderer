@@ -38,7 +38,7 @@ static CVar<int> CVar_FinalOutputType(
     "1 - Albedo\n"
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
-    6
+    0
 );
 
 Renderer::Renderer() {
@@ -82,7 +82,8 @@ void Renderer::FrameContext::Init() {
 
 void Renderer::FrameContext::Deinit() {
     visible_renderables.clear();
-    static_meshes = {};
+    deferred_static_meshes = {};
+    forward_static_meshes = {};
 }
 
 
@@ -177,8 +178,15 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<int> visible_rt_renderable_indices;
     for (auto e : visible_renderable_indices) {
         if (auto renderable = all_renderables[e]) {
-            if (renderable->IsRayTraced() && renderable->IsVisible() && !renderable->IsEmpty())
+            if (renderable->IsRayTraced()
+                && renderable->IsVisible()
+                && !renderable->IsEmpty()
+                // Some ray-traced renderables have no ray-tracing enabled geometry
+                // we have to check for that here.
+                && renderable->GetBLAS()
+                ) {
                 visible_rt_renderable_indices.push_back(e);
+            }
         }
     }
     auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
@@ -290,14 +298,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Clear G buffers
     builder.AddPass("ClearBuffers", {},
         [view]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        queue.ClearTexture(view->G_depth_->GetRHI(), {});
+        // queue.ClearTexture(view->G_depth_->GetRHI(), {});
         queue.ClearTexture(view->G_normal_->GetRHI(), {});
         queue.ClearTexture(view->G_albedo_->GetRHI(), {});
         queue.ClearTexture(view->G_metallic_roughness_->GetRHI(), {});
         queue.ClearTexture(view->G_emission_->GetRHI(), {});
         queue.ClearTexture(view->G_flags_->GetRHI(), {});
         queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
-    })->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
+    })//->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
@@ -306,7 +314,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite);
 
     // Static meshes
-    Render_DrawStaticMeshes(view, builder);
+    Render_DrawDeferredStaticMeshes(view, builder);
 
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
@@ -321,6 +329,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     if (CVar_DebugVisualizeRayTraced.Get()) {
         Render_VisualizeRayTraced(view, builder);
     }
+
+    // Path tracing pass
 
     if (view->debug_output_) {
         Render_DrawToOutput(view, builder, view->debug_output_.Raw());
@@ -344,8 +354,16 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
         else if (type == 8)
             Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
-        else Render_DrawToOutput(view, builder, view->radiance_.Raw());
+        else if (type == 9) {
+            Render_PathTracing(view, builder);
+            Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+        } else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
+
+
+    // Extra pass for forward rendering
+    Render_DrawForwardStaticMeshes(view, builder);
+
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();
 

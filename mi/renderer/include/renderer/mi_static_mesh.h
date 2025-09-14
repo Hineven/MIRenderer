@@ -100,6 +100,9 @@ public:
         return aabb_;
     }
 
+    // Visibility buffer reserved 8 bits for static mesh descriptor index. So the max number is 256.
+    constexpr static uint32_t kMaxNumGeometries = 256;
+
 protected:
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;

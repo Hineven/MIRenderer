@@ -289,7 +289,20 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
     G_depth_->SetName("GBuffer Depth");
+    // Often used anywhere
     G_depth_->SetExport();
+
+    forward_depth_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kD32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
+
+    G_visibility_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR32G32B32A32_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        |RHITextureUsageFlagBits::kRenderTarget);
+    G_visibility_->SetName("GBuffer Visibility");
+    // Used for readback & visibility testing
+    G_visibility_->SetExport();
 
     G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess

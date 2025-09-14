@@ -28,10 +28,15 @@ struct RDGShaderParamStructAndSizeInfo;
 struct RDGImportedShaderParamStructInfo {
     const RDGShaderParamStructAndSizeInfo * cpp_struct_info {nullptr};
 };
-
+struct RDGShaderRenderTargetBlendingSettings {
+    RHIBlendOpType blend_op {RHIBlendOpType::kMax}; // kMax for no blending
+    RHIBlendFactorType src_blend {RHIBlendFactorType::kSrcAlpha};
+    RHIBlendFactorType dst_blend {RHIBlendFactorType::kOneMinusSrcAlpha};
+};
 struct RDGShaderRenderTargetInfo {
     uint32_t target_index; // UINT32_MAX for depth stencil
     PixelFormatType format;
+    RDGShaderRenderTargetBlendingSettings blending {};
 };
 
 struct RDGShaderVertexBufferInfo {
@@ -254,7 +259,7 @@ struct RDGShaderRenderTargetParameter {
 
 // Declare render targets. Can only be used within render pass shader parameter structs.
 // Usage: SHADER_RENDER_TARGET(PixelFormat::kR8G8B8A8_UNORM, Name)
-#define SHADER_RENDER_TARGET(Format, Name) \
+#define SHADER_RENDER_TARGET(Format, Name, ...) \
     zz##Name##_PrevTypeID; \
 public: \
     RDGShaderRenderTargetParameter Name; \
@@ -267,7 +272,7 @@ private: \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
         auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
-        param_info.cpp_extra.render_targets_info = new RDGShaderRenderTargetInfo {0xffffffffu, Format}; \
+        param_info.cpp_extra.render_targets_info = new RDGShaderRenderTargetInfo {0xffffffffu, Format __VA_OPT__(,) __VA_ARGS__}; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \

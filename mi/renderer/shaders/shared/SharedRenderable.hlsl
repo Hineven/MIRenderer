@@ -28,9 +28,33 @@ struct VolumePrimitivesInstanceHeader {
 
 // The instance custom index is a 20-bit index and a 4-bit flag field.
 #define INSTANCE_CUSTOM_INDEX_INDEX_MASK 0x000FFFFFu
+// Flags marking the kind of the instance. defaults to static mesh instance (0).
 #define INSTANCE_CUSTOM_INDEX_FLAGS_MASK 0x00F00000u
 // The flag indicates that the instance is a volume primitives instance.
 #define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES 0x00100000u
+
+#ifdef MI_SHADER
+
+StaticMeshInstanceHeader GetStaticMeshInstanceHeader(RenderableHeader Header) {
+    StaticMeshInstanceHeader Result;
+    Result.StaticMeshIndex = asuint(Header.Metadata.x);
+    Result.Padding0 = asuint(Header.Metadata.y);
+    Result.Padding1 = asuint(Header.Metadata.z);
+    Result.Padding2 = asuint(Header.Metadata.w);
+    return Result;
+}
+
+
+VolumePrimitivesInstanceHeader GetVolumePrimitivesInstanceHeader(RenderableHeader Header) {
+    VolumePrimitivesInstanceHeader Result;
+    Result.VolumePrimitivesIndex = asuint(Header.Metadata.x);
+    Result.Padding0 = asuint(Header.Metadata.y);
+    Result.Padding1 = asuint(Header.Metadata.z);
+    Result.Padding2 = asuint(Header.Metadata.w);
+    return Result;
+}
+
+#endif // MI_SHADER
 
 MI_SHARED_HLSL_END
 

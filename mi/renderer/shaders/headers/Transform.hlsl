@@ -26,4 +26,15 @@ float3 TransformVector(float3x3 Transform, float3 Vector) {
     return mul(Transform, Vector);
 }
 
+void GetOrthoVectors (float3 Normal, out float3 Tangent, out float3 Bitangent) {
+    if (abs(Normal.x) > abs(Normal.z)) {
+        Tangent = normalize(float3(-Normal.y, Normal.x, 0));
+    } else {
+        Tangent = normalize(float3(0, -Normal.z, Normal.y));
+    }
+    Bitangent = cross(Normal, Tangent);
+}
+
+
+
 #endif

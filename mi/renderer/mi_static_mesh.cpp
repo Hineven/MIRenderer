@@ -33,6 +33,7 @@ DeviceStaticMesh::~DeviceStaticMesh() {
 
 void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     assert(mat->GetDeviceMaterial() && "Material must have a device material. Call UpdateOnDevice() on the material first.");
+    assert(geometries_.size() < kMaxNumGeometries && "Exceeded maximum number of geometries per static mesh.");
     geometries_.push_back(geom);
     materials_.push_back(mat);
     aabb_ = AABB::Merge(aabb_, geom->GetAABB());
@@ -88,6 +89,10 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
     if (!IsRayTraced()) {
         device_static_mesh_->BLAS_ = {};
     } else {
+        // All materials must be deferred
+        for (auto mat : materials_) {
+            mi_assert(!mat->IsForward(), "All materials in a ray-traced static mesh must be deferred materials.");
+        }
         if (geometries_.empty()) {
             // No geometries, release BLAS. NullDescriptorSet feature will take care of this case.
             device_static_mesh_->BLAS_ = {};
