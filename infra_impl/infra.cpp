@@ -34,8 +34,10 @@ std::filesystem::path MyInfra::GetTempDirectory() {
 
 
 void MyInfra::Init() {
+	//记录启动时间
     start_time_ = std::chrono::high_resolution_clock::now();
 
+    //从当前目录开始，逐级向上查找，直到找到包含标识文件"mi_renderer_identity"的目录，在此目录下拿到resources目录
     if (resource_directory_ == "") {
         // Try to find the resource directory via mi_renderer_identity file.
         auto directory = std::filesystem::current_path();
@@ -53,6 +55,7 @@ void MyInfra::Init() {
             directory = directory.parent_path();
         }
     }
+    //没有就自己创建
     if (!std::filesystem::exists(resource_directory_)) {
         LogMessage(MIInfraLogType::kInfo, "Creating resource directory: " + resource_directory_.string());
         std::filesystem::create_directory(resource_directory_);

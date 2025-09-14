@@ -45,6 +45,7 @@ struct MainLoopStartConfig {
     uint32_t window_height;
 };
 
+// Start a GLFW window with given configuration
 GLFWwindow* StartWindow (const MainLoopStartConfig & cfg) {
     if (!glfwInit()) {
         mi_assert(false, "Failed to initialize GLFW");
@@ -69,15 +70,18 @@ GLFWwindow* StartWindow (const MainLoopStartConfig & cfg) {
     return window;
 }
 
-
+// 主启动函数
 void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfig & cfg) {
 
+	// 获取当前工作目录
     auto pwd = std::filesystem::current_path();
 
     // Transfer ownership of underlying infrastructure and initialize
+    // 把注入的“基础设施”对象（资源路径、日志、平台能力等）转移到全局单例并初始化。
     TransferInfra(std::move(infra));
     GetInfra().Init();
 
+    // 给当前线程打上“渲染线程”标签，方便后续做线程断言与调度。
     if(GetCurrentThreadType() != ThreadType::kUnknown) {
         mi_assert(false, "MainLoop: somehow the thread calling Start() is known.");
     }
@@ -87,6 +91,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     glfwInit();
 
     // Initialize RHI
+	//向 GLFW 询问实例扩展
+    //用扩展创建 RHI 
+    //重置管线缓存
     {
         uint32_t extension_count = 0;
         auto extra_extensions =  glfwGetRequiredInstanceExtensions(&extension_count);
