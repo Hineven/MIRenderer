@@ -54,7 +54,7 @@ RWTexture2D<float4> RWNormal;
 RWTexture2D<float4> RWEmission;
 RWTexture2D<float2> RWMetallicRoughness;
 Texture2D<uint4> VisibilityTexture;
-Texture2D<uint4> DepthTexture;
+Texture2D<float> DepthTexture;
 
 #ifndef TILE_SIZE
 #define TILE_SIZE 16
@@ -122,6 +122,9 @@ DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (DefaultStaticMeshVertex 
     uint  GlobalDescriptorIndex = StaticMeshHeader.DescriptionOffset + DescriptorIndex;
     uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[GlobalDescriptorIndex];
     Output.MaterialIndex = GeometryMaterialPair.y;
+
+    printf("RenderableIndex: %d, StaticMeshIndex: %d, DescriptorIndex: %d, GlobalDescriptorIndex: %d, MaterialIndex: %d\n", 
+        RenderableIndex, StaticMeshIndex, DescriptorIndex, GlobalDescriptorIndex, Output.MaterialIndex);
     // Here we use the faster path to interpolate UVs rather than decoding full visibility in fragment shader.
     Output.UV = Vertex.UV;
     return Output;

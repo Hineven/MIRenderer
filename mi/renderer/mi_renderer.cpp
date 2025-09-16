@@ -49,7 +49,6 @@ Renderer::~Renderer() {
 
 }
 
-
 static Renderer * g_renderer = nullptr;
 
 Renderer *Renderer::GetPointer() {
@@ -135,19 +134,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_transforms.reserve(all_renderables.size());
         renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
-        for (auto & e : all_renderables) {
+        for (auto [i, e] : all_renderables | std::views::enumerate) {
+            glm::mat4x3 to_world {};
+            glm::mat4x3 to_local {};
+            glm::mat3x3 normal_transform {};
+            RenderableHeader renderable_header {};
             if (e) {
-                auto to_world = e->GetTransform().GetToWorldTransformMatrix();
-                auto to_local = e->GetTransform().GetToLocalTransformMatrix();
-                renderable_transforms.push_back(to_world);
-                renderable_inverse_transforms.push_back(to_local);
-                auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
-                renderable_normal_transforms.push_back(normal_transform);
-                renderable_headers.push_back(e->GetDeviceRenderableHeader());
+                to_world = e->GetTransform().GetToWorldTransformMatrix();
+                to_local = e->GetTransform().GetToLocalTransformMatrix();
+                normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
+                renderable_header = e->GetDeviceRenderableHeader();
                 // Clear dirty flag
                 e->SetTransformDirty(false);
                 if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
             }
+            renderable_transforms.push_back(to_world);
+            renderable_inverse_transforms.push_back(to_local);
+            renderable_normal_transforms.push_back(normal_transform);
+            renderable_headers.push_back(renderable_header);
         }
     }
     // Upload renderable transforms and headers
@@ -225,7 +229,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Filter visible rendeables
     ctx.visible_renderables.reserve(all_renderables.size());
     for (auto & e : all_renderables) {
-        if (e->IsVisible()) ctx.visible_renderables.push_back(e);
+        if (e && e->IsVisible()) ctx.visible_renderables.push_back(e);
     }
 
     // Prepare static mesh draw commands

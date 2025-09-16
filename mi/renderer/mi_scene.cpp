@@ -57,7 +57,8 @@ void Scene::RemoveRenderable (Renderable * renderable) {
     auto it = std::find_if(renderables_.begin(), renderables_.end(),
         [renderable](const TRef<Renderable> & r) { return r.Raw() == renderable; });
     if (it != renderables_.end()) {
-        renderables_.erase(it);
+        // Not remove from the list, but set to nullptr to keep the indices valid.
+        it->SafeRelease();
     }
 }
 
