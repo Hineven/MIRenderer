@@ -8,6 +8,8 @@ StructuredBuffer<RenderableHeader> RenderableHeaders;
 StructuredBuffer<float3x4> RenderableTransforms;
 StructuredBuffer<float3x3> RenderableNormalTransforms; // InvTranspose of RenderableTransforms
 StructuredBuffer<uint2> RenderableIndexAndMaterialIndex;
+
+// 光源视图矩阵和参数
 ConstantBuffer<DirectionalLightForShadowMap> LightView;
 
 struct VS_Output

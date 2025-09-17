@@ -22,7 +22,7 @@ class DrawShadowMapShader : public RDGShader {
 public:
 	BEGIN_SHADER_PARAMETERS(Params)
 		SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
-		SHADER_UNIFORM_BUFFER(DirectionalLightForShadowMap, LightView)
+        SHADER_UNIFORM_BUFFER(DirectionalLightForShadowMap, LightView)
 		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaders)
 		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
 		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableNormalTransforms)
@@ -32,20 +32,17 @@ public:
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Position), RHIVertexAttributeFormatType::k3xFp32, position)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Normal), RHIVertexAttributeFormatType::k3xFp32, normal)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, UV), RHIVertexAttributeFormatType::k2xFp32, uv)
-		
 		SHADER_RENDER_TARGET(PixelFormatType::kR16G16B16A16_FLOAT, Moments)
 	END_SHADER_PARAMETERS()
 	RDG_SHADER_USE_PARAMETERS(Params)
 	DECLARE_SHADER()
+
 };
 
 IMPLEMENT_RDG_GRAPHICS_SHADER(DrawShadowMapShader, "mi/renderer/shaders/ShadowMap.hlsl", "VS_Main", "PS_Main");
 
 
-
-//-----------------------------------------------
 // 计算主相机视锥体的 8 个角点（世界空间）
-//-----------------------------------------------
 std::array<glm::vec3, 8> GetCameraFrustumCornersWS(
     const glm::mat4& proj,
     const glm::mat4& view)
@@ -71,18 +68,16 @@ std::array<glm::vec3, 8> GetCameraFrustumCornersWS(
     return corners;
 }
 
-//-----------------------------------------------
 // 根据 LightDir + 相机视锥体 得到 LightWorldToNDC
-//-----------------------------------------------
 glm::mat4 ComputeDirectionalLightMatrix(
     const glm::vec3& lightDirWS,   // 世界空间光方向 (必须单位化)
     const glm::mat4& cameraProj,
     const glm::mat4& cameraView)
 {
-    // Step 1: 得到相机视锥体的 8 个角点（世界空间）
+    // 得到相机视锥体的 8 个角点（世界空间）
     auto frustumCornersWS = GetCameraFrustumCornersWS(cameraProj, cameraView);
 
-    // Step 2: 构造 Light View 矩阵
+    // 构造 Light View 矩阵
     glm::vec3 forward = glm::normalize(-lightDirWS);
 
     // 选一个合适的 up 向量（避免和 forward 平行）
@@ -100,7 +95,7 @@ glm::mat4 ComputeDirectionalLightMatrix(
 
     glm::mat4 lightView = glm::lookAt(eye, center, up);
 
-    // Step 3: 把视锥体角点变到光空间，找到包围盒
+    // 把视锥体角点变到光空间，找到包围盒
     glm::vec3 minExtents(FLT_MAX);
     glm::vec3 maxExtents(-FLT_MAX);
     for (auto& c : frustumCornersWS) {
@@ -109,7 +104,7 @@ glm::mat4 ComputeDirectionalLightMatrix(
         maxExtents = glm::max(maxExtents, glm::vec3(ptLS));
     }
 
-    // Step 4: 构造正交投影
+    // 构造正交投影
     float _left = minExtents.x;
     float _right = maxExtents.x;
     float _bottom = minExtents.y;
@@ -119,13 +114,13 @@ glm::mat4 ComputeDirectionalLightMatrix(
 
     glm::mat4 lightProj = glm::orthoRH_ZO(_left, _right, _bottom, _top, _nearZ, _farZ);
     
-    // Step 5: 最终矩阵
+    // 最终矩阵
     return lightProj * lightView;
 }
 
 
 void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& builder) {
-	//没找见方向光信息，先占个位
+    
     glm::vec3 light_dir = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
 
 	auto directional_light_for_shadowMap = builder.Allocate<DirectionalLightForShadowMap>();
