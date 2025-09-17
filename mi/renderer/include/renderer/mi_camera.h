@@ -18,6 +18,9 @@ struct Camera {
     float near_plane {0.1f};
     float far_plane {1000.f};
 
+    glm::mat4 proj;
+    glm::mat4 view;
+
     glm::vec3 GetRight () const {
         return glm::normalize(glm::cross(direction, up));
     }

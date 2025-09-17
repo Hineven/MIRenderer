@@ -407,8 +407,8 @@ enum class RHIDepthCompareOpType {
 
 enum class RHICullModeType : uint32_t {
     kNone = 0, // No culling
-    kFront, // Keep front
-    kBack, // Keep back
+    kFront, // culling front
+    kBack, //  culling back
     kMax
 };
 

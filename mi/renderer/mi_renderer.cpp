@@ -311,6 +311,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
 
+	// Shadow map
+	Render_DrawShadowMap(view, builder);
+
     Render_ComputeHiZBuffer(view, builder);
 
     Render_ComputeDirectLighting(view, builder);
@@ -344,6 +347,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
         else if (type == 8)
             Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
+        else if (type == 9)
+			Render_DrawToOutput(view, builder, view->shadow_map_moments_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
     // Update persistent data using current frame for next frame use

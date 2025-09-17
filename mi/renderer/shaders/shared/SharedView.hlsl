@@ -64,6 +64,14 @@ struct ViewCommonShaderParameters {
     CameraParameters Camera;
 };
 
+struct DirectionalLightForShadowMap
+{
+    float4x4 LightWorldToNDC; // orthographic projection * View
+    float3 LightDirWS; // 归一化的世界空间光方向（指向物体）
+    float DepthBias; // 常数深度偏移（阴影图深度空间单位）
+    float SlopeBias; // 斜率偏移系数
+};
+
 #define CAMERA_TYPE_PERSPECTIVE 0u
 #define CAMERA_TYPE_ORTHOGRAPHIC 1u
 

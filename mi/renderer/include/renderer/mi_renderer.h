@@ -69,6 +69,11 @@ protected:
     void Render_DrawVolumePrimitives (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+
+    void Render_DrawShadowMap (
+        RendererView* view, RenderGraphBuilder& builder
+    );
+
     void Render_ComputeHiZBuffer (
         RendererView * view, RenderGraphBuilder & builder
     ) ;

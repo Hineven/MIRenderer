@@ -459,6 +459,10 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
 
+
+	camera_.proj = proj_matrix;
+	camera_.view = view_matrix;
+
     {
         glm::dmat4 prev_camera_view_matrix = glm::lookAt(
             persistent_data_->prev_camera.position, persistent_data_->prev_camera.position + persistent_data_->prev_camera.direction,
