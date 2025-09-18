@@ -13,6 +13,14 @@
 #include <rhi/rhi_as.h>
 
 MI_NAMESPACE_BEGIN
+
+RDGShaderContext::~RDGShaderContext() {
+    if (valid_) {
+        queue_.ClearBoundState(point_);
+    }
+}
+
+
 std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams(
     RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
     const RDGShaderParamStructAndSizeInfo * base_info, const void * params) {
@@ -159,20 +167,20 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
     return ret;
 }
 
-bool RDGCommandHelper::BindGraphicsShader (
+RDGShaderContext RDGCommandHelper::BindGraphicsShader (
     RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params,
     bool manual_vbuffer) {
     if (!graphics_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid shader. Draw cancelled.",
             graphics_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kGraphics, false);
     }
     auto desc = SetupShaderParams(pass, graphics_shader, queue, info, params);
     if (!desc.has_value()) {
         MI_WARN("Shader {}: Failed to upload shader parameters. Draw cancelled.",
             graphics_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kGraphics, false);
     }
     queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw());
     if (!info->vertex_buffers_.empty()) {
@@ -190,7 +198,7 @@ bool RDGCommandHelper::BindGraphicsShader (
                     MI_LOG(MIInfraLogType::kWarning, "Shader {}: Null vertex buffer for paramter '{}'. Bind cancelled.",
                         graphics_shader->class_registry_->name, e.info->name);
                     // cancel the draw
-                    return false;
+                    return RDGShaderContext(queue, RHIBindPointType::kGraphics, false);
                 }
             }
         }
@@ -225,41 +233,41 @@ bool RDGCommandHelper::BindGraphicsShader (
     }
     queue.BindPipelineParameters(RHIBindPointType::kGraphics, desc.value());
     queue.UpdateDrawState(ds);
-    return true;
+    return RDGShaderContext(queue, RHIBindPointType::kGraphics, true);
 }
 
-bool RDGCommandHelper::BindComputeShader (
+RDGShaderContext RDGCommandHelper::BindComputeShader (
     RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) {
     if (!compute_shader || !compute_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid shader. Dispatch cancelled.",
             compute_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kCompute, false);
     }
     auto desc = SetupShaderParams(pass, compute_shader, queue, info, params);
     if (!desc.has_value()) {
         MI_WARN("Shader {}: Failed to upload shader parameters. Dispatch cancelled.",
             compute_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kCompute, false);
     }
 
     queue.BindPipeline(compute_shader->compute_pipeline_.Raw());
     queue.BindPipelineParameters(RHIBindPointType::kCompute, desc.value());
 
-    return true;
+    return RDGShaderContext(queue, RHIBindPointType::kCompute, true);
 }
 
-bool RDGCommandHelper::BindRayTracingShader(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params) {
+RDGShaderContext RDGCommandHelper::BindRayTracingShader(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params) {
     if (!ray_tracing_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid raytracing shader. Dispatch cancelled.",
             ray_tracing_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kRayTracing, false);
     }
     auto desc = SetupShaderParams(pass, ray_tracing_shader, queue, info, params);
     if (!desc.has_value()) {
         MI_WARN("Shader {}: Failed to upload shader parameters. Dispatch cancelled.",
             ray_tracing_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kRayTracing, false);
     }
 
     queue.BindPipeline(ray_tracing_shader->ray_tracing_pipeline_.Raw());
@@ -271,17 +279,17 @@ bool RDGCommandHelper::BindRayTracingShader(RHICommandQueueGraphics &queue, RDGP
     } else {
         MI_WARN("Shader {}: Shader binding table is not set up correctly. Dispatch rays cancelled.",
             ray_tracing_shader->class_registry_->name);
-        return false;
+        return RDGShaderContext(queue, RHIBindPointType::kRayTracing, false);
     }
 
-    return true;
+    return RDGShaderContext(queue, RHIBindPointType::kRayTracing, true);
 }
 
 
 void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void *params,
     int vertex_count, int instance_count, int first_vertex, int first_instance) {
-    if (BindGraphicsShader(queue, pass, graphics_shader, info, params)) {
+    if (auto ctx = BindGraphicsShader(queue, pass, graphics_shader, info, params)) {
         queue.BeginRendering();
         queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);
         queue.EndRendering();
@@ -290,7 +298,7 @@ void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGSh
 
 void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params, uint32_t x, uint32_t y, uint32_t z) {
-    if (BindComputeShader(queue, pass, shader, info, params)) {
+    if (auto ctx = BindComputeShader(queue, pass, shader, info, params)) {
         queue.Dispatch(x, y, z);
     } else {
         MI_WARN("Shader {}: Failed to upload shader parameters. Dispatch cancelled.",
@@ -300,19 +308,19 @@ void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGPass * pass,
 
 void RDGCommandHelper::DispatchIndirect(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *compute_shader,
     const RDGShaderParamStructAndSizeInfo *info, const void *params, RDGBuffer *indirect_buffer, uint32_t offset) {
-    if (BindComputeShader(queue, pass, compute_shader, info, params)) {
+    if (auto ctx = BindComputeShader(queue, pass, compute_shader, info, params)) {
         queue.DispatchIndirect(indirect_buffer->GetRHI().buffer, uint32_t(indirect_buffer->GetRHI().offset + offset));
     }
 }
 
 void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params, uint32_t width, uint32_t height, uint32_t depth) {
-    if (BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
+    if (auto ctx = BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
         queue.DispatchRays(width, height, depth);
     }
 }
 
 void RDGCommandHelper::DispatchRaysIndirect(RHICommandQueueGraphics &queue, RDGPass *pass, RDGShader *ray_tracing_shader, const RDGShaderParamStructAndSizeInfo *info, const void *params, RDGBuffer *indirect_buffer) {
-    if (BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
+    if (auto ctx = BindRayTracingShader(queue, pass, ray_tracing_shader, info, params)) {
         auto sbt = ray_tracing_shader->GetSBTBuffers(queue);
         queue.DispatchRaysIndirect(sbt.raygen, sbt.miss, sbt.miss_stride, sbt.hit, sbt.hit_stride, indirect_buffer->GetRHI());
     }

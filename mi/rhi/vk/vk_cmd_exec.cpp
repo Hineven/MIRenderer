@@ -388,6 +388,14 @@ void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
     state.bound_vertex_buffers[bind_vertex_buffer->binding_] = vb;
 }
 
+void VulkanCommandExecutor::RHIClearBoundState(RHICommandQueueBase *buffer, RHICommandClearBoundState *cmd) {
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
+    auto & point = state.points[(uint32_t)cmd->point_];
+    // Simply clearing the parameter table is enough.
+    point.parameter_table.Clear();
+    // There's nothing more to do for different points.
+}
+
 void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint * sync) {
     CHECK_RHI_THREAD();
     auto & chain = state_chains_[(uint32_t)cmd->GetCommandQueueType()];
@@ -651,7 +659,7 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
 
 // TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
-VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
+VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrites(
     CommandQueueState & state, [[maybe_unused]] vk::Device device,
     vk::DescriptorSet descriptor_set,
     [[maybe_unused]] vk::CommandBuffer cmdb
@@ -816,18 +824,19 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::InstallShaderDescriptors(
             MI_WARN("Acceleration structure slot {} is not present in bound pipeline {}.", acc.slot, bound_pipeline->GetName());
         }
     }
-    // TODO should i really clear them? or just cache them in case consecutive shader calls have the same parameters?
-    // Clear all bindings
-    parameter_table.uniforms.clear();
-    parameter_table.storages.clear();
-    parameter_table.uavs.clear();
-    parameter_table.srvs.clear();
-    parameter_table.samplers.clear();
-    parameter_table.acceleration_structures.clear();
 
     return {writes, write_index};
 }
 
+void VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Clear() {
+    // Clear all bindings
+    uniforms.clear();
+    storages.clear();
+    uavs.clear();
+    srvs.clear();
+    samplers.clear();
+    acceleration_structures.clear();
+}
 
 // Bind pipeline, descriptor set and flush descriptor writes.
 void VulkanCommandExecutor::FlushBindPointState(
@@ -886,11 +895,12 @@ void VulkanCommandExecutor::FlushBindPointState(
         point.bound_private_descriptor_set = descriptor_set[0];
     }
 
-    auto descriptor_writes = point.InstallShaderDescriptors(
+    auto descriptor_writes = point.CompileShaderDescriptorWrites(
             state, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set,
             state.cmd
     );
-    if(!descriptor_writes.empty()) {
+    // Only write the descriptor set if it's dirty
+    if(!descriptor_writes.empty() && point.bound_descriptor_dirty) {
         if(!point.bound_private_descriptor_set) {
             if(!point.bound_pipeline) {
                 MI_LOG(MIInfraLogType::kWarning, "Flushed resources to null pipeline.");
@@ -984,12 +994,6 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
             ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->src_accesses_[i]);
         vk_barriers[i].dstAccessMask = (barrier->dst_stages_[i] == RHIPipelineStageFlagBits::kNone)
             ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->dst_accesses_[i]);
-        // printf("Buffer: %s, stages: %s -> %s, accesses: %s -> %s\n",
-        //        e.buffer->GetName(),
-        //        vk::to_string(vk_barriers[i].srcStageMask).c_str(),
-        //        vk::to_string(vk_barriers[i].dstStageMask).c_str(),
-        //        vk::to_string(vk_barriers[i].srcAccessMask).c_str(),
-        //        vk::to_string(vk_barriers[i].dstAccessMask).c_str());
         vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         vk_barriers[i].buffer = ((VulkanBuffer*)buffers[i].buffer)->GetBuffer();

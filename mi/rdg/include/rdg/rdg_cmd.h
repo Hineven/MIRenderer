@@ -15,6 +15,36 @@ struct RDGShaderParamStructAndSizeInfo;
 template<typename T>
 concept CShaderType = std::is_base_of<RDGShader, std::remove_cvref_t<T>>::value;
 
+// Shader context holder, used to ensure proper binding and unbinding of shader parameters.
+// Correct usage: if(auto ctx = RDGCommandHelper::BindXXXShader(...)) { ...RHI calls... }
+// Incorrect usage: if(RDGCommandHelper::BindXXXShader(...)) { ...RHI calls... }
+// The context object must be kept alive during the RHI calls to ensure proper resource management.
+struct RDGShaderContext {
+    friend class RDGCommandHelper;
+    FORCEINLINE RDGShaderContext (RHICommandQueueGraphics & queue, RHIBindPointType point, bool valid) : queue_(queue), point_(point), valid_(valid) {}
+public:
+    FORCEINLINE explicit operator bool () const & { return valid_; }
+    // Make sure that if(RDGCommandHelper::BindXXXShader(...)) does not compile.
+    explicit operator bool () const && = delete;
+
+    // Remove copy constructor and copy assignment
+    RDGShaderContext (const RDGShaderContext &) = delete;
+    RDGShaderContext & operator= (const RDGShaderContext &) = delete;
+    // Allow move constructor
+    FORCEINLINE RDGShaderContext (RDGShaderContext && other) noexcept : queue_(other.queue_), valid_(other.valid_) {
+        other.valid_ = false;
+    }
+    // Remove move assignment
+    RDGShaderContext & operator= (RDGShaderContext && other) = delete;
+
+    ~RDGShaderContext() ;
+
+private:
+    bool valid_ = false;
+    RHIBindPointType point_;
+    RHICommandQueueGraphics & queue_;
+};
+
 // Helpers for dispatching shaders, etc.
 // NOTE: Use them inside pass lambdas.
 class RDGCommandHelper {
@@ -32,19 +62,19 @@ public:
 
     // Bind a graphics shader, setting up required shader parameters and bindings for draw commands.
     // @param manual_vbuffer If true, the function will not automatically bind the vertex buffer specified in shader params.
-    static bool BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
+    static RDGShaderContext BindGraphicsShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * graphics_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params, bool manual_vbuffer = false) ;
 
     // Bind a compute shader, setting up required shader parameters and bindings for dispatch commands.
-    static bool BindComputeShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
+    static RDGShaderContext BindComputeShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * compute_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
 
     // Bind a raytracing shader, setting up required shader parameters and bindings for dispatch commands.
-    static bool BindRayTracingShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader,
+    static RDGShaderContext BindRayTracingShader (RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * ray_tracing_shader,
     const RDGShaderParamStructAndSizeInfo * info, const void * params) ;
 
     template<CShaderType T>
-    FORCEINLINE static bool BindGraphicsShader (
+    FORCEINLINE static RDGShaderContext BindGraphicsShader (
         RHICommandQueueGraphics & queue, RDGPass * pass, T * graphics_shader, const typename T::ShaderParameters * params,
         bool manual_vbuffer = false
     ) {

@@ -190,7 +190,7 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
         auto raster_pass = builder.AddPass<DrawDeferredStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (RDGCommandHelper::BindGraphicsShader<DrawDeferredStaticMeshesShader>(
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawDeferredStaticMeshesShader>(
                     queue, pass, shader, params, true
                 )) {
                     queue.BeginRendering();
@@ -360,7 +360,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         auto raster_pass = builder.AddPass<DrawForwardStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.forward_static_meshes, rdg_draw_cmd = ctx.forward_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (RDGCommandHelper::BindGraphicsShader<DrawForwardStaticMeshesShader>(
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawForwardStaticMeshesShader>(
                     queue, pass, shader, params, true
                 )) {
                     queue.BeginRendering();

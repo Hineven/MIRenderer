@@ -17,7 +17,7 @@
 #include "rhi/rhi_types_string.h"
 
 // Instantly start a command buffer submit after the execution of each pass.
-#define INSTANT_SUBMIT_FOR_EACH_PASS
+// #define INSTANT_SUBMIT_FOR_EACH_PASS
 
 MI_NAMESPACE_BEGIN
 

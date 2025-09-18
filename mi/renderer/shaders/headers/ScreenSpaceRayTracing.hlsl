@@ -156,7 +156,8 @@ void ScreenSpaceRayTrace(
             uint2 HiZPixel = uint2(CurrentUVZ.xy * CurrentMipResolution);
             Flags = OrFlagsTexture.Load(uint3(HiZPixel, MipLevel)).r;
         }
-        bool bValidForSSRT = 0 != (Flags & FLAG_BITS_TEXTURE_VALID_FOR_SSRT);
+        
+        bool bValidForSSRT = 0 == (Flags & FLAG_BITS_TEXTURE_INVALID_FOR_SSRT);
 
         float3 BoundaryPlanes = float3(XYPlane, TileZ);
 

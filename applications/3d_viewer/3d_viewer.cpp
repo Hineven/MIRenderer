@@ -307,10 +307,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
         TRef<VolumePrimitives> volprims;
-        VolumePrimitivesLoader::LoadPLY(
-            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
-            *resource_allocator, volprims
-        );
+        // VolumePrimitivesLoader::LoadPLY(
+        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+        //     *resource_allocator, volprims
+        // );
         if (volprims) {
             volprims->UpdateOnDevice(resource_allocator.get());
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));

@@ -603,7 +603,7 @@ void DrawVolumePrimitives (
             RWTransmittance[PixelIndex] = TotalTransmittance;
             // Mark the pixel as invalid for SSRT if it overlaps with a volume
             uint OldFlags = RWFlags[PixelIndex];
-            if(Rendered.Density > 0.f) OldFlags |= FLAG_BITS_TEXTURE_VALID_FOR_SSRT;
+            if(Rendered.Density > 0.f) OldFlags |= FLAG_BITS_TEXTURE_INVALID_FOR_SSRT;
             RWFlags[PixelIndex] = OldFlags;
         }
     }

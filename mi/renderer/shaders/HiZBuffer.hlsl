@@ -40,7 +40,7 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     uint2 Dimensions, DepthDimensions;
     RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
     InDepthBuffer.GetDimensions(DepthDimensions.x, DepthDimensions.y);
-    float2 HZB_UV = (TexCoords + 0.25f) / Dimensions;
+    float2 HZB_UV = (float2(TexCoords) + 0.25f) / Dimensions;
     CameraParameters C = GetActiveCamera();
     float2 Depth_UV = HZB_UV * C.HZBToUVScale;
     float2 DeltaDepth_UV = C.HZBBaseTexelSize * C.HZBToUVScale * 0.5f;

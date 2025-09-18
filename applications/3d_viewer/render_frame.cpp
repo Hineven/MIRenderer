@@ -103,33 +103,34 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     builder.AddPass<ImGuiRenderShader>({}, shader, params, [
         index_raw = index_buffer.Raw(), draw_cmds, params, shader
     ](RDGPass * pass, RHICommandQueueGraphics & cmd) {
-        RDGCommandHelper::BindGraphicsShader(cmd, pass, shader, params);
-        cmd.BeginRendering();
-        int vertex_offset = 0;
-        int index_offset = 0;
-        ImTextureID prev_texture_id = (ImTextureID)-1;
-        for (auto draw_cmd : draw_cmds) {
-            if (draw_cmd.GetTexID() != prev_texture_id) {
-                // Bind sampled texture if texture ID changed
-                prev_texture_id = draw_cmd.GetTexID();
-                auto texture = (RHITexture*)prev_texture_id;
-                RHIBindPipelineParametersDesc desc {};
-                auto texture_descs = cmd.Allocate<RHIPipelineParameterTextureDesc[]>(1);
-                texture_descs[0] = {texture, 0};
-                desc.srvs = {texture_descs, 1};
-                cmd.BindPipelineParameters(RHIBindPointType::kGraphics, desc);
+        if (auto ctx = RDGCommandHelper::BindGraphicsShader(cmd, pass, shader, params)) {
+            cmd.BeginRendering();
+            int vertex_offset = 0;
+            int index_offset = 0;
+            for (auto draw_cmd : draw_cmds) {
+                {
+                    // Bind sampled texture every time before draw
+                    auto texture = (RHITexture*)draw_cmd.GetTexID();
+                    RHIBindPipelineParametersDesc desc {};
+                    if (texture) {
+                        auto texture_descs = cmd.Allocate<RHIPipelineParameterTextureDesc[]>(1);
+                        texture_descs[0] = {texture, 0};
+                        desc.srvs = {texture_descs, 1};
+                    }
+                    cmd.BindPipelineParameters(RHIBindPointType::kGraphics, desc);
+                }
+                cmd.SetScissor(
+                    (int)draw_cmd.ClipRect.x, (int)draw_cmd.ClipRect.y,
+                    (uint32_t)(draw_cmd.ClipRect.z - draw_cmd.ClipRect.x),
+                    (uint32_t)(draw_cmd.ClipRect.w - draw_cmd.ClipRect.y)
+                );
+                cmd.DrawIndexedPrimitive(index_raw->GetRHI(), draw_cmd.ElemCount, 1,
+                               index_offset, vertex_offset, 0, RHIIndexType::kUint16);
+                index_offset += draw_cmd.ElemCount;
+                vertex_offset += draw_cmd.UserCallbackDataOffset;
             }
-            cmd.SetScissor(
-                (int)draw_cmd.ClipRect.x, (int)draw_cmd.ClipRect.y,
-                (uint32_t)(draw_cmd.ClipRect.z - draw_cmd.ClipRect.x),
-                (uint32_t)(draw_cmd.ClipRect.w - draw_cmd.ClipRect.y)
-            );
-            cmd.DrawIndexedPrimitive(index_raw->GetRHI(), draw_cmd.ElemCount, 1,
-                           index_offset, vertex_offset, 0, RHIIndexType::kUint16);
-            index_offset += draw_cmd.ElemCount;
-            vertex_offset += draw_cmd.UserCallbackDataOffset;
+            cmd.EndRendering();
         }
-        cmd.EndRendering();
     })->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }
 

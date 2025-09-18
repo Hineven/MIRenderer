@@ -496,6 +496,14 @@ public:
     uint32_t binding_;
 };
 
+class RHICommandClearBoundState : public TRHICommand<RHICommandClearBoundState> {
+public:
+    RHICommandClearBoundState (RHIBindPointType point)
+        : point_(point) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    RHIBindPointType point_{};
+};
+
 class RHICommandMemoryBarrier : public TRHICommand<RHICommandMemoryBarrier> {
 public:
     RHICommandMemoryBarrier(RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
@@ -767,6 +775,10 @@ public:
     FORCEINLINE void BindVertexBuffer (uint32_t binding, RHIBufferSpan buffer) {
         // TODO switch to batched binding (bind vertex buffers)
         AddCommand(AllocateCommand<RHICommandBindVertexBuffer>(binding, buffer));
+    }
+
+    FORCEINLINE void ClearBoundState (RHIBindPointType point) {
+        AddCommand(AllocateCommand<RHICommandClearBoundState>(point));
     }
 
     FORCEINLINE void MemoryBarrier (
