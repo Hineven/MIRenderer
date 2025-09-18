@@ -157,7 +157,7 @@ FORCEINLINE vk::ImageAspectFlags GetVulkanImageAspectFlags (RHITextureUsageFlags
 
 FORCEINLINE vk::Filter GetVulkanFilter (RHISamplerFilterType filter) {
     switch(filter) {
-        case RHISamplerFilterType::kNearest:
+        case RHISamplerFilterType::kPoint:
             return vk::Filter::eNearest;
         case RHISamplerFilterType::kLinear:
             return vk::Filter::eLinear;

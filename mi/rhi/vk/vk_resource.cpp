@@ -29,7 +29,8 @@ RHISampler(filter, addressing) {
         .setUnnormalizedCoordinates(VK_FALSE)
         .setCompareEnable(VK_FALSE)
         .setCompareOp(vk::CompareOp::eAlways)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setMipmapMode(filter == RHISamplerFilterType::kPoint
+            ? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear)
         .setMipLodBias(0.0f)
         .setMinLod(0.0f)
         .setMaxLod(0.0f)

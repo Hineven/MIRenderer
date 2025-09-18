@@ -200,7 +200,6 @@ enum class RHISamplerAddressModeType {
 };
 
 enum class RHISamplerFilterType {
-    kNearest,
     kLinear,
     kPoint,
     kMax
