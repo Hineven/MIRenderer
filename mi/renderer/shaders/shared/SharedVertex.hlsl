@@ -13,12 +13,14 @@ struct DefaultStaticMeshVertex {
 };
 
 #ifdef MI_SHADER
-DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex C, DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, float2 Barycentric) {
+DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, DefaultStaticMeshVertex C, float2 Barycentric) {
     DefaultStaticMeshVertex Result;
-    float Z = (1 - Barycentric.x - Barycentric.y);
-    Result.Position = A.Position * Barycentric.x + B.Position * Barycentric.y + C.Position * Z;
-    Result.Normal = normalize(A.Normal * Barycentric.x + B.Normal * Barycentric.y + C.Normal * Z);
-    Result.UV = A.UV * Barycentric.x + B.UV * Barycentric.y + C.UV * Z;
+    float a = (1 - Barycentric.x - Barycentric.y);
+    float b = Barycentric.x;
+    float c = Barycentric.y;
+    Result.Position = a * A.Position + b * B.Position + c * C.Position;
+    Result.Normal = a * A.Normal + b * B.Normal + c * C.Normal;
+    Result.UV = a * A.UV + b * B.UV + c * C.UV;
     return Result;
 }
 #endif

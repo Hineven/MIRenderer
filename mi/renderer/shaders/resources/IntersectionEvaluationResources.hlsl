@@ -99,14 +99,12 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
         // 6. 采样法线贴图并变换法线。
         float3 NormalMapSample;
-        if(LOD == -1) {
-            if (bPointSampled) {
-                NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), PointWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
-            } else {
-                NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), LinearWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
-            }
-        } 
         
+        if (bPointSampled) {
+            NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), PointWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
+        } else {
+            NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), LinearWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
+        } 
         Intersection.Normal = normalize(
             NormalMapSample.x * Tangent +
             NormalMapSample.y * Bitangent +

@@ -347,7 +347,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         else if (type == 2)
             Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
         else if (type == 3)
-            Render_DrawToOutput(view, builder, view->persistent_data_->prev_radiance_.Raw());
+            Render_DrawToOutput(view, builder, view->G_normal_.Raw());
         else if (type == 4)
             Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
         else if (type == 5)
