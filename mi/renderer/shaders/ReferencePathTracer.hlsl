@@ -94,7 +94,7 @@ float ResampleVolumePrimitives (
             RayVolumeDistribution Distr = (RayVolumeDistribution)0;
             Distr.l = lr.x;
             Distr.r = lr.y;
-            Distr.Density = Primitive.Opacity;
+            Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
             Distr.Color   = Primitive.Color;
             // Make a volume sample
             float Distance = SampleRayVolumeDistribution(Distr, rng.rand());
@@ -273,7 +273,7 @@ void ReferencePathTracerRaygen() {
                     RayVolumeDistribution Distr = (RayVolumeDistribution)0;
                     Distr.l = lr.x;
                     Distr.r = lr.y;
-                    Distr.Density = Primitive.Opacity;
+                    Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
                     Distr.Color   = Primitive.Color;
                     // Make a volume sample
                     float Distance = SampleRayVolumeDistribution(Distr, rng.rand());

@@ -479,14 +479,15 @@ RayVolumeDistribution RenderRay(
             RayOrigin, RayDirection, Primitive, ToObjectTransform,
             lr, Dist
         );
+        float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
         // Clamp volumes to the nearest seen surface
         lr.y = min(lr.y, MaxLinearDepth);
         float u = rng.rand();
         if(bIntersected && lr.y > max(0.f, lr.x)) {
-            TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Primitive.Opacity);
+            TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Opacity);
             RayVolumeDistribution Intersection;
             Intersection.Color = Primitive.Color;
-            Intersection.Density = Primitive.Opacity;
+            Intersection.Density = Opacity;
             Intersection.l = max(lr.x, 0);
             Intersection.r = max(lr.y, 0);
             // Sample with decomposition tracking
@@ -529,18 +530,19 @@ RayVolumeDistribution RenderRay(
 
             float TMax = min(SampleDepth, lr.y);
             float TMin = max(lr.x, 0.f);
-            float Transmittance = exp(-Primitive.Opacity * max(TMax - TMin, 0));
+            float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+            float Transmittance = exp(-Opacity * max(TMax - TMin, 0));
             // Calculate the sample pdf (derived by differentating 1 - transmittance)
             if(lr.y <= SampleDepth) {
                 // The intersection is before the sampled depth.
                 Pdf_C *= Transmittance;
             } else if(lr.x <= SampleDepth) {
                 // Sample falls into the primitive.
-                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Primitive.Opacity * Transmittance;
+                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Opacity * Transmittance;
                 Pdf_Prod *= Transmittance;
                 // Calculate the sample color
-                SampleColor += Primitive.Opacity * Primitive.Color;
-                SumDensity += Primitive.Opacity;
+                SampleColor += Opacity * Primitive.Color;
+                SumDensity += Opacity;
             }
             SampleTransmittance *= Transmittance;
         }
