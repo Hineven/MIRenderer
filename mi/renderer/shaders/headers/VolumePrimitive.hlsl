@@ -3,6 +3,7 @@
 
 #include "Packing.hlsl"
 #include "../shared/SharedVolumePrimitives.hlsl"
+#include "VolumeScattering.hlsl"
 
 VolumePrimitive UnpackVolumePrimitive(PackedVolumePrimitive PackedPrimitive) {
     VolumePrimitive Primitive;
@@ -20,6 +21,28 @@ VolumePrimitive UnpackVolumePrimitive(PackedVolumePrimitive PackedPrimitive) {
     );
     Primitive.Opacity = Opacity;
     return Primitive;
+}
+
+struct RayVolumeDistribution {
+    float l, r;
+    // Extinction coefficient. We assume that extinction coefficient equals
+    // to the scattering coefficient
+    float Density;
+    float3 Color;
+};
+
+// Return the sampled ray distance
+float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
+    // Sample free flight length from the distribution using inversion method
+    float l = Distribution.l;
+    float r = Distribution.r;
+    float FreeFlightLength = SampleExponentialScatteringMedium(Distribution.Density, u);
+    float Sample = l + FreeFlightLength;
+    if(Sample > r) {
+        // Sampled is out of bounds, return a large value
+        return 1e9f;
+    }
+    return Sample;
 }
 
 #endif // VOLUME_PRIMITIVE_HLSL

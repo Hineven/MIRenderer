@@ -27,6 +27,7 @@
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
 #include "core/task.h"
+#include "rdg/rdg_resource.h"
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
@@ -199,7 +200,81 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
     }
 
+    auto default_mat = Material::Create("default_mat", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
+
     std::vector<TRef<StaticMeshInstance>> meshes;
+
+    // Load internal models
+    TRef<StaticMeshInstance> arrow_mesh_x_instance;
+    TRef<StaticMeshInstance> arrow_mesh_y_instance;
+    TRef<StaticMeshInstance> arrow_mesh_z_instance;
+    TRef<StaticMesh> arrow_mesh_x;
+    TRef<StaticMesh> arrow_mesh_y;
+    TRef<StaticMesh> arrow_mesh_z;
+    TRef<Geometry> arrow_geometry;
+    {
+        // arrow materials
+        auto arrow_mat_x = Material::Create("arrow_mat_x", {1.0f, 0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
+        auto arrow_mat_y = Material::Create("arrow_mat_y", {0.0f, 1.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
+        auto arrow_mat_z = Material::Create("arrow_mat_z", {0.0f, 0.0f, 1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
+        arrow_mat_x->SetForward(true);
+        arrow_mat_y->SetForward(true);
+        arrow_mat_z->SetForward(true);
+        auto & r = Renderer::Get();
+        arrow_mat_x->UpdateOnDevice(r.GetDeviceAllocator());
+        arrow_mat_y->UpdateOnDevice(r.GetDeviceAllocator());
+        arrow_mat_z->UpdateOnDevice(r.GetDeviceAllocator());
+        TRef<StaticMeshInstance> original_arrow_instance;
+        // arrow
+        {
+            std::vector<TRef<Geometry>> geometries;
+            std::vector<TRef<Material>> materials;
+            auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/internal/arrow.gltf");
+            if (!GLTFLoader::LoadGLTF(
+                model_path,
+                *resource_allocator,
+                *scene, default_mat.Raw(),
+                geometries, materials, meshes
+            )) {
+                MI_WARN("Failed to load GLTF model {}.", model_path.string());
+            } else {
+            }
+            original_arrow_instance = meshes.back();
+            auto mesh = original_arrow_instance->GetStaticMesh();
+            // Extract geometry
+            arrow_geometry = mesh->GetGeometries()[0];
+        }
+        // Create instances
+        {
+            float scale = 0.25f;
+            arrow_mesh_x = StaticMesh::Create(false, false);
+            arrow_mesh_x->AddMeshPrimitive(arrow_geometry.Raw(), arrow_mat_x.Raw());
+            arrow_mesh_x->UpdateOnDevice(r.GetDeviceAllocator());
+            arrow_mesh_x_instance = StaticMeshInstance::Create(scene.get(), arrow_mesh_x.Raw(),
+                original_arrow_instance->GetTransform().Scaled(glm::vec3(scale)));
+
+            arrow_mesh_y = StaticMesh::Create(false, false);
+            arrow_mesh_y->AddMeshPrimitive(arrow_geometry.Raw(), arrow_mat_y.Raw());
+            arrow_mesh_y->UpdateOnDevice(r.GetDeviceAllocator());
+            // Rotate along z for 90 degrees : x->y axis
+            arrow_mesh_y_instance = StaticMeshInstance::Create(scene.get(), arrow_mesh_y.Raw(),
+                original_arrow_instance->GetTransform().RotatedAbout(glm::radians(90.0f), {0, 0, 1}).Scaled(glm::vec3(scale)));
+
+            arrow_mesh_z = StaticMesh::Create(false, false);
+            arrow_mesh_z->AddMeshPrimitive(arrow_geometry.Raw(), arrow_mat_z.Raw());
+            arrow_mesh_z->UpdateOnDevice(r.GetDeviceAllocator());
+            // Rotate along y for -90 degrees : x->z axis
+            arrow_mesh_z_instance = StaticMeshInstance::Create(scene.get(), arrow_mesh_z.Raw(),
+                original_arrow_instance->GetTransform().RotatedAbout(glm::radians(-90.0f), {0, 1, 0}).Scaled(glm::vec3(scale)));
+        }
+        // Remove original arrow from scene
+        scene->RemoveRenderable(original_arrow_instance.Raw());
+        // Set invisible at start
+        arrow_mesh_x_instance->SetVisible(false);
+        arrow_mesh_y_instance->SetVisible(false);
+        arrow_mesh_z_instance->SetVisible(false);
+    }
+
     // Load default model
     if (false) {
         std::vector<TRef<Geometry>> geometries;
@@ -208,7 +283,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *scene,
+            *scene, nullptr,
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -224,11 +299,11 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *scene,
+            *scene, nullptr,
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -266,6 +341,13 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     view->film_height_ = cfg.window_height;
     view->scene_ = scene.get();
 
+    // Keep track of selected renderable & primitive
+    uint selected_renderable_index = UINT32_MAX;
+    uint selected_primitive_index = UINT32_MAX;
+    uint selected_descriptor_rank = UINT32_MAX;
+    uint selected_deferred_renderable_index = UINT32_MAX;
+    glm::vec2 selected_uv = {0.0f, 0.0f};
+
     {
         std::future<void> previous_frame_future;
         TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
@@ -283,7 +365,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // Camera control
             {
                 // 相机移动参数
-                const float move_speed = 0.05f;
+                const float move_speed = 0.02f;
                 const float mouse_sensitivity = 0.002f;
                 glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
                 // 获取键盘输入控制移动
@@ -345,57 +427,75 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // UI
             {
                 ImGui::Begin("Rendering");
-                ImGui::Text("Hello");
                 if (ImGui::Button("Reload Shaders") || should_reload_shaders) {
                     RHI::Get().WaitForIdle();
                     RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
                 }
-                // CVars
-                auto & cvar_registry = CVarRegistry::GetInstance();
-                for (auto e : cvar_registry.GetAllCVars()) {
-                    if (e->GetType() == CVarType::kBool) {
-                        auto cvar = static_cast<CVar<bool>*>(e);
-                        bool value = cvar->Get();
-                        if (ImGui::Checkbox(cvar->GetId().c_str(), &value)) {
-                            cvar->Set(value);
-                        }
-                    } else if (e->GetType() == CVarType::kFloat) {
-                        auto cvar = static_cast<CVar<float>*>(e);
-                        float value = cvar->Get();
-                        if (ImGui::DragFloat(cvar->GetId().c_str(), &value, 0.01f)) {
-                            cvar->Set(value);
-                        }
-                    } else if (e->GetType() == CVarType::kFloat2) {
-                        auto cvar = static_cast<CVar<glm::vec2>*>(e);
-                        glm::vec2 value = cvar->Get();
-                        if (ImGui::DragFloat2(cvar->GetId().c_str(), &value[0], 0.01f)) {
-                            cvar->Set(value);
-                        }
-                    } else if (e->GetType() == CVarType::kFloat3) {
-                        auto cvar = static_cast<CVar<glm::vec3>*>(e);
-                        glm::vec3 value = cvar->Get();
-                        if (ImGui::DragFloat3(cvar->GetId().c_str(), &value[0], 0.01f)) {
-                            cvar->Set(value);
-                        }
-                    } else if (e->GetType() == CVarType::kFloat4) {
-                        auto cvar = static_cast<CVar<glm::vec4>*>(e);
-                        glm::vec4 value = cvar->Get();
-                        if (ImGui::DragFloat4(cvar->GetId().c_str(), &value[0], 0.01f)) {
-                            cvar->Set(value);
-                        }
-                    } else if (e->GetType() == CVarType::kInt) {
-                        auto cvar = static_cast<CVar<int>*>(e);
-                        int value = cvar->Get();
-                        if (ImGui::DragInt(cvar->GetId().c_str(), &value)) {
-                            cvar->Set(value);
-                        }
-                    } else if (e->GetType() == CVarType::kString) {
-                        auto cvar = static_cast<CVar<std::string>*>(e);
-                        std::string value = cvar->Get();
-                        char buffer[256];
-                        strncpy_s(buffer, value.c_str(), sizeof(buffer));
-                        if (ImGui::InputText(cvar->GetId().c_str(), buffer, sizeof(buffer))) {
-                            cvar->Set(std::string(buffer));
+                if (ImGui::CollapsingHeader("Selected Renderable")) {
+                    if (selected_deferred_renderable_index != UINT32_MAX) {
+                        auto renderable = scene->GetRenderables()[selected_deferred_renderable_index];
+                        ImGui::Text("Index: %d", renderable->GetIndex());
+                        ImGui::Text("Type: %s", ToString(renderable->GetType()).c_str());
+                        Transform & t = renderable->EditTransform();
+                        ImGui::InputFloat3("Position", &t.position[0]);
+                        ImGui::InputFloat3("Rotation", &t.rotation[0]);
+                        ImGui::InputFloat3("Scale", &t.scale[0]);
+                        ImGui::Text("AABB: Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f)",
+                            renderable->GetAABB().min.x, renderable->GetAABB().min.y, renderable->GetAABB().min.z,
+                            renderable->GetAABB().max.x, renderable->GetAABB().max.y, renderable->GetAABB().max.z
+                        );
+                    } else {
+                        ImGui::Text("None");
+                    }
+                }
+                if (ImGui::CollapsingHeader("CVars")) {
+                    // CVars
+                    auto & cvar_registry = CVarRegistry::GetInstance();
+                    for (auto e : cvar_registry.GetAllCVars()) {
+                        if (e->GetType() == CVarType::kBool) {
+                            auto cvar = static_cast<CVar<bool>*>(e);
+                            bool value = cvar->Get();
+                            if (ImGui::Checkbox(cvar->GetId().c_str(), &value)) {
+                                cvar->Set(value);
+                            }
+                        } else if (e->GetType() == CVarType::kFloat) {
+                            auto cvar = static_cast<CVar<float>*>(e);
+                            float value = cvar->Get();
+                            if (ImGui::DragFloat(cvar->GetId().c_str(), &value, 0.01f)) {
+                                cvar->Set(value);
+                            }
+                        } else if (e->GetType() == CVarType::kFloat2) {
+                            auto cvar = static_cast<CVar<glm::vec2>*>(e);
+                            glm::vec2 value = cvar->Get();
+                            if (ImGui::DragFloat2(cvar->GetId().c_str(), &value[0], 0.01f)) {
+                                cvar->Set(value);
+                            }
+                        } else if (e->GetType() == CVarType::kFloat3) {
+                            auto cvar = static_cast<CVar<glm::vec3>*>(e);
+                            glm::vec3 value = cvar->Get();
+                            if (ImGui::DragFloat3(cvar->GetId().c_str(), &value[0], 0.01f)) {
+                                cvar->Set(value);
+                            }
+                        } else if (e->GetType() == CVarType::kFloat4) {
+                            auto cvar = static_cast<CVar<glm::vec4>*>(e);
+                            glm::vec4 value = cvar->Get();
+                            if (ImGui::DragFloat4(cvar->GetId().c_str(), &value[0], 0.01f)) {
+                                cvar->Set(value);
+                            }
+                        } else if (e->GetType() == CVarType::kInt) {
+                            auto cvar = static_cast<CVar<int>*>(e);
+                            int value = cvar->Get();
+                            if (ImGui::DragInt(cvar->GetId().c_str(), &value)) {
+                                cvar->Set(value);
+                            }
+                        } else if (e->GetType() == CVarType::kString) {
+                            auto cvar = static_cast<CVar<std::string>*>(e);
+                            std::string value = cvar->Get();
+                            char buffer[256];
+                            strncpy_s(buffer, value.c_str(), sizeof(buffer));
+                            if (ImGui::InputText(cvar->GetId().c_str(), buffer, sizeof(buffer))) {
+                                cvar->Set(std::string(buffer));
+                            }
                         }
                     }
                 }
@@ -405,6 +505,161 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             {
                 RenderFrame(view.get(), pool.Raw());
             }
+
+            // Click select
+            static float last_click_forward_depth = 0;
+            auto & io = ImGui::GetIO();
+            if (io.MouseClicked[0] && !io.WantCaptureMouse) {
+                float mouse_x = io.MousePos.x;
+                float mouse_y = io.MousePos.y;
+                // 手动拷回Visibility和Depth
+                auto rhi_visibility = view->G_visibility_->GetRHI();
+                auto rhi_fwd_depth = view->forward_depth_->GetRHI();
+                auto readback_buffer_visibility = rhi.CreateBuffer(
+                    rhi_visibility->GetWidth() * rhi_visibility->GetHeight() * sizeof(uint32_t) * 4,
+                    RHIBufferUsageFlagBits::kReadback
+                );
+                auto readback_buffer_depth = rhi.CreateBuffer(
+                    rhi_fwd_depth->GetWidth() * rhi_fwd_depth->GetHeight() * sizeof(float),
+                    RHIBufferUsageFlagBits::kReadback
+                );
+                auto & queue = RHI::Get().GetGraphicsCommandQueue();
+                // 管它丫儿地直接全部barrier
+                queue.MemoryBarrier();
+                // 转换layout
+                queue.TextureBarrier(rhi_visibility, RHITextureLayoutType::kTransferSrcOptimal,
+                    RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+                queue.TextureBarrier(rhi_fwd_depth, RHITextureLayoutType::kTransferSrcOptimal,
+                    RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+                // 拷贝
+                queue.CopyTextureToBuffer(rhi_visibility, readback_buffer_visibility.Raw());
+                queue.CopyTextureToBuffer(rhi_fwd_depth, readback_buffer_depth.Raw());
+                // 因为这个纹理是RDG里面搞到的，得更新资源追踪
+                view->G_visibility_->Use(
+                    RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
+                    RHITextureLayoutType::kTransferSrcOptimal
+                );
+                view->forward_depth_->Use(
+                    RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
+                    RHITextureLayoutType::kTransferSrcOptimal
+                );
+                // 以防万一（后面如果又有裸的CommandQueue调用），再Barrier一下
+                queue.MemoryBarrier();
+                // 等待
+                queue.WaitForIdle("Readback Buffers");
+                // 搞到buffer
+                auto ptr = (glm::uvec4*)readback_buffer_visibility->Map();
+                glm::uvec4 pixel = ptr[(int(mouse_y) * rhi_visibility->GetWidth() + int(mouse_x))];
+                auto depth_ptr = (float*)readback_buffer_depth->Map();
+                last_click_forward_depth = depth_ptr[(int(mouse_y) * rhi_fwd_depth->GetWidth() + int(mouse_x))];
+                readback_buffer_visibility->Unmap();
+                readback_buffer_depth->Unmap();
+                float uv_x = std::bit_cast<float>(pixel.z);
+                float uv_y = std::bit_cast<float>(pixel.w);
+                auto descriptor_rank = pixel.x >> 24;
+                auto renderable_index = pixel.x & 0xFFFFFF;
+                if (renderable_index == 0xFFFFFF) {
+                    // Clicked on background
+                    renderable_index = UINT32_MAX;
+                }
+                auto primitive_index = pixel.y;
+                glm::vec2 uv = {uv_x, uv_y};
+                if (selected_renderable_index != renderable_index) {
+                    if (renderable_index == UINT32_MAX) {
+                        // Cancel selection, hide the arrow mesh
+                        arrow_mesh_x_instance->SetVisible(false);
+                        arrow_mesh_y_instance->SetVisible(false);
+                        arrow_mesh_z_instance->SetVisible(false);
+                        // Remove deferred renderable selection
+                        selected_deferred_renderable_index = UINT32_MAX;
+                    } else if (renderable_index != arrow_mesh_x_instance->GetIndex()
+                        && renderable_index != arrow_mesh_y_instance->GetIndex()
+                        && renderable_index != arrow_mesh_z_instance->GetIndex()
+                    ) {
+                        // Selected a deferred renderable
+                        selected_deferred_renderable_index = renderable_index;
+                        // Snap the arrow renderable to the selected renderable
+                        auto renderable = scene->GetRenderables()[renderable_index].Raw();
+                        arrow_mesh_x_instance->EditTransform().position = renderable->GetTransform().position;
+                        arrow_mesh_x_instance->SetVisible(true);
+                        arrow_mesh_y_instance->EditTransform().position = renderable->GetTransform().position;
+                        arrow_mesh_y_instance->SetVisible(true);
+                        arrow_mesh_z_instance->EditTransform().position = renderable->GetTransform().position;
+                        arrow_mesh_z_instance->SetVisible(true);
+                    }
+                }
+                selected_descriptor_rank = descriptor_rank;
+                selected_renderable_index = renderable_index;
+                selected_primitive_index = primitive_index;
+                selected_uv = uv;
+                MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
+                    selected_renderable_index, selected_primitive_index, selected_descriptor_rank, selected_uv.x, selected_uv.y
+                );
+            }
+
+            // Left mouse Drag
+            static glm::vec2 drag_mouse_start_pos = {};
+            static glm::vec3 drag_start_obj_pos = {};
+            static bool dragging = false;
+            if (io.MouseDown[GLFW_MOUSE_BUTTON_LEFT]) {
+                int axis = -1;
+                if (selected_renderable_index == arrow_mesh_x_instance->GetIndex()) axis = 0;
+                else if (selected_renderable_index == arrow_mesh_y_instance->GetIndex()) axis = 1;
+                else if (selected_renderable_index == arrow_mesh_z_instance->GetIndex()) axis = 2;
+                if (axis != -1) {
+                    glm::vec2 mouse;
+                    mouse.x = io.MousePos.x;
+                    mouse.y = io.MousePos.y;
+                    // Only when the UI is not blocking the mouse can the dragging start
+                    if (!dragging && !io.WantCaptureMouse) {
+                        drag_mouse_start_pos = mouse;
+                        // Save the start object center
+                        if (selected_deferred_renderable_index != UINT32_MAX) {
+                            auto renderable = scene->GetRenderables()[selected_deferred_renderable_index].Raw();
+                            drag_start_obj_pos = renderable->GetTransform().position;
+                        }
+                        dragging = true;
+                    }
+                    if (dragging) {
+                        glm::vec3 end_world_pos {};
+                        {
+                            // 先计算点击原始开始坐标
+                            auto & camera = view->camera_;
+                            glm::vec2 ndc2 = {
+                                (drag_mouse_start_pos.x / view->film_width_) * 2.0f - 1.0f,
+                                1.0f - (drag_mouse_start_pos.y / view->film_height_) * 2.0f
+                            };
+                            float linear_depth = camera.ReversedZDepthToLinearDepth(last_click_forward_depth);
+                            float aspect = float(view->film_width_) / float(view->film_height_);
+                            glm::vec3 start_world_pos = camera.RecoverWorldPositionNDC2(ndc2, linear_depth, aspect);
+                            glm::vec2 curr_ndc2 = {
+                                (mouse.x / view->film_width_) * 2.0f - 1.0f,
+                                1.0f - (mouse.y / view->film_height_) * 2.0f
+                            };
+                            glm::vec3 cursor_end_world_pos = camera.RecoverWorldPositionNDC2(curr_ndc2, linear_depth, aspect);
+                            glm::vec3 delta = cursor_end_world_pos - start_world_pos;
+                            glm::vec3 delta_projected = {};
+                            delta_projected[axis] = delta[axis];
+                            end_world_pos = drag_start_obj_pos + delta_projected;
+                        }
+                        if (selected_deferred_renderable_index != UINT32_MAX) {
+                            auto renderable = scene->GetRenderables()[selected_deferred_renderable_index].Raw();
+                            renderable->EditTransform().position = end_world_pos;
+                            // Snap the arrow renderables to the updated position
+                            arrow_mesh_x_instance->EditTransform().position = end_world_pos;
+                            arrow_mesh_y_instance->EditTransform().position = end_world_pos;
+                            arrow_mesh_z_instance->EditTransform().position = end_world_pos;
+                        }
+                    }
+                } else {
+                    dragging = false;
+                }
+            } else {
+                dragging = false;
+            }
+
             if (rhi.GetFrameIndex() % 1000 == 0) {
                 printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
                 fflush(stdout);
@@ -437,6 +692,17 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
 
     RHI::Get().WaitForIdle();
+
+    default_mat.SafeRelease();
+    {
+        arrow_mesh_x_instance.SafeRelease();
+        arrow_mesh_y_instance.SafeRelease();
+        arrow_mesh_z_instance.SafeRelease();
+        arrow_mesh_x.SafeRelease();
+        arrow_mesh_y.SafeRelease();
+        arrow_mesh_z.SafeRelease();
+        arrow_geometry.SafeRelease();
+    }
 
     view.reset();
 

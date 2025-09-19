@@ -18,5 +18,13 @@ enum class RenderableType {
     kMax
 };
 
+FORCEINLINE std::string ToString (RenderableType type) {
+    switch (type) {
+        case RenderableType::kStaticMeshInstance: return "StaticMeshInstance";
+        case RenderableType::kVolumePrimitivesInstance: return "VolumePrimitivesInstance";
+        default: return "Unknown";
+    }
+}
+
 MI_NAMESPACE_END
 #endif //MI_RENDERER_TYPES_H

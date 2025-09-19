@@ -2,74 +2,45 @@
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedVertex.hlsl"
 #include "shared/SharedMaterial.hlsl"
+#include "headers/Camera.hlsl"
 #include "headers/Conventions.hlsl"
+#include "headers/Transform.hlsl"
+#include "headers/Math.hlsl"
+#include "resources/IntersectionEvaluationResources.hlsl"
 
-StructuredBuffer<RenderableHeader> RenderableHeaders;
-StructuredBuffer<float3x4> RenderableTransforms;
-StructuredBuffer<float3x3> RenderableNormalTransforms; // InvTranspose of RenderableTransforms
-StructuredBuffer<uint2> RenderableIndexAndMaterialIndex;
+StructuredBuffer<uint2> RenderableIndexAndDescriptorIndexBuffer;
 
 // 光源视图矩阵和参数
 ConstantBuffer<DirectionalLightForShadowMap> LightView;
 
-struct VS_Output
+struct Shadow_VS_Out
 {
-    float4 PositionL : SV_POSITION; // 光源裁剪空间位置
-    float3 WorldNormal : NORMAL;    // 世界空间法线
+    float4 Position : SV_POSITION;
 };
 
-VS_Output VS_Main(DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID)
+Shadow_VS_Out Shadow_VS_Main(DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID)
 {
-    uint RenderableIndex = RenderableIndexAndMaterialIndex[InstanceIndex].x;
-    float3x4 ToWorldTransform = RenderableTransforms[RenderableIndex];
-    float3x3 ToWorldNormalTransform = RenderableNormalTransforms[RenderableIndex];
+    uint2 RenderableIndex_DescriptorIndex = RenderableIndexAndDescriptorIndexBuffer[InstanceIndex];
+    uint RenderableIndex = RenderableIndex_DescriptorIndex.x;
+    uint DescriptorIndex = RenderableIndex_DescriptorIndex.y;
+    float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
-    float3 WorldNormal = normalize(mul(ToWorldNormalTransform, Vertex.Normal));
     float4 PositionL = mul(LightView.LightWorldToNDC, float4(WorldPosition, 1));
-    
-    VS_Output Output = (VS_Output) 0;
-    Output.PositionL = PositionL;
-    Output.WorldNormal = WorldNormal;
-  
+    Shadow_VS_Out Output = (Shadow_VS_Out) 0;
+    Output.Position = PositionL;
     return Output;
 }
 
-// 斜率偏移：用 ndotl 估计曲面相对光方向的斜率（近似）
-float ComputeSlopeBias(float3 N, float3 L)
+struct Shadow_PS_Out
 {
-    // 当法线接近垂直光线时斜率很大，使用一个稳定的近似，避免除零
-    float ndotl = saturate(abs(dot(N, L))); // [0,1]
-    float tanTheta = sqrt(saturate(1.0 - ndotl * ndotl)) / max(ndotl, 1e-3);
-    return LightView.SlopeBias * tanTheta;
-}
-
-struct PS_Output
-{
-    float4 Moments : SV_Target0; // (z, z^2)
+    float4 Moments : SV_TARGET0;
 };
 
-PS_Output PS_Main(VS_Output input)
+Shadow_PS_Out Shadow_PS_Main(Shadow_VS_Out Input)
 {
-    PS_Output Output = (PS_Output) 0;
-    
-    float z = input.PositionL.z;
-    
-    float slopeBias = ComputeSlopeBias(input.WorldNormal, normalize(LightView.LightDirWS));
-
-    float z_biased = z + LightView.DepthBias + slopeBias;
-    
-    z_biased = saturate(z_biased);
-    
-    float m1 = z_biased;
-    float m2 = z_biased * z_biased;
-    
-    // 数值稳定性：避免 m2 < m1^2 导致负方差
-    // 加一点极小噪声可减少条纹
-    const float kEpsilon = 1e-6;
-    m2 = max(m2, m1 * m1 + kEpsilon);
-    
-    Output.Moments = float4(m1, m2 ,0, 0);
-    
+    Shadow_PS_Out Output = (Shadow_PS_Out) 0;
+    //Output.Moments = Input.Position.z * float4(1, 1, 1, 1);
+    Output.Moments = float4(Input.Position.z, Input.Position.z * Input.Position.z, 0, 1);
     return Output;
 }
 

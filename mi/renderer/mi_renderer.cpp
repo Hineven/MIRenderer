@@ -38,7 +38,7 @@ static CVar<int> CVar_FinalOutputType(
     "1 - Albedo\n"
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
-    6
+    10
 );
 
 Renderer::Renderer() {
@@ -48,7 +48,6 @@ Renderer::Renderer() {
 Renderer::~Renderer() {
 
 }
-
 
 static Renderer * g_renderer = nullptr;
 
@@ -82,7 +81,8 @@ void Renderer::FrameContext::Init() {
 
 void Renderer::FrameContext::Deinit() {
     visible_renderables.clear();
-    static_meshes = {};
+    deferred_static_meshes = {};
+    forward_static_meshes = {};
 }
 
 
@@ -134,19 +134,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_transforms.reserve(all_renderables.size());
         renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
-        for (auto & e : all_renderables) {
+        for (auto [i, e] : all_renderables | std::views::enumerate) {
+            glm::mat4x3 to_world {};
+            glm::mat4x3 to_local {};
+            glm::mat3x3 normal_transform {};
+            RenderableHeader renderable_header {};
             if (e) {
-                auto to_world = e->GetTransform().GetToWorldTransformMatrix();
-                auto to_local = e->GetTransform().GetToLocalTransformMatrix();
-                renderable_transforms.push_back(to_world);
-                renderable_inverse_transforms.push_back(to_local);
-                auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
-                renderable_normal_transforms.push_back(normal_transform);
-                renderable_headers.push_back(e->GetDeviceRenderableHeader());
+                to_world = e->GetTransform().GetToWorldTransformMatrix();
+                to_local = e->GetTransform().GetToLocalTransformMatrix();
+                normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
+                renderable_header = e->GetDeviceRenderableHeader();
                 // Clear dirty flag
                 e->SetTransformDirty(false);
                 if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
             }
+            renderable_transforms.push_back(to_world);
+            renderable_inverse_transforms.push_back(to_local);
+            renderable_normal_transforms.push_back(normal_transform);
+            renderable_headers.push_back(renderable_header);
         }
     }
     // Upload renderable transforms and headers
@@ -177,8 +182,15 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<int> visible_rt_renderable_indices;
     for (auto e : visible_renderable_indices) {
         if (auto renderable = all_renderables[e]) {
-            if (renderable->IsRayTraced() && renderable->IsVisible() && !renderable->IsEmpty())
+            if (renderable->IsRayTraced()
+                && renderable->IsVisible()
+                && !renderable->IsEmpty()
+                // Some ray-traced renderables have no ray-tracing enabled geometry
+                // we have to check for that here.
+                && renderable->GetBLAS()
+                ) {
                 visible_rt_renderable_indices.push_back(e);
+            }
         }
     }
     auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
@@ -217,7 +229,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Filter visible rendeables
     ctx.visible_renderables.reserve(all_renderables.size());
     for (auto & e : all_renderables) {
-        if (e->IsVisible()) ctx.visible_renderables.push_back(e);
+        if (e && e->IsVisible()) ctx.visible_renderables.push_back(e);
     }
 
     // Prepare static mesh draw commands
@@ -290,29 +302,31 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Clear G buffers
     builder.AddPass("ClearBuffers", {},
         [view]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        queue.ClearTexture(view->G_depth_->GetRHI(), {});
+        // queue.ClearTexture(view->G_depth_->GetRHI(), {});
         queue.ClearTexture(view->G_normal_->GetRHI(), {});
         queue.ClearTexture(view->G_albedo_->GetRHI(), {});
         queue.ClearTexture(view->G_metallic_roughness_->GetRHI(), {});
         queue.ClearTexture(view->G_emission_->GetRHI(), {});
         queue.ClearTexture(view->G_flags_->GetRHI(), {});
         queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
-    })->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
+        queue.ClearTexture(view->shadow_map_moments_->GetRHI(), {});
+    })//->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_emission_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_flags_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite);
+    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->shadow_map_moments_.Raw(), RDGTextureUsageType::kTransferWrite);
+
+	// Shadow map
+    Render_DrawShadowMap(view, builder);
 
     // Static meshes
-    Render_DrawStaticMeshes(view, builder);
+    Render_DrawDeferredStaticMeshes(view, builder);
 
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
-
-	// Shadow map
-	Render_DrawShadowMap(view, builder);
 
     Render_ComputeHiZBuffer(view, builder);
 
@@ -324,6 +338,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     if (CVar_DebugVisualizeRayTraced.Get()) {
         Render_VisualizeRayTraced(view, builder);
     }
+
+    // Path tracing pass
+
 
     if (view->debug_output_) {
         Render_DrawToOutput(view, builder, view->debug_output_.Raw());
@@ -347,10 +364,19 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
         else if (type == 8)
             Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
-        else if (type == 9)
+        else if (type == 9) {
+            Render_PathTracing(view, builder);
+            Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+        } 
+        else if (type == 10)
 			Render_DrawToOutput(view, builder, view->shadow_map_moments_.Raw());
         else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
+
+
+    // Extra pass for forward rendering
+    Render_DrawForwardStaticMeshes(view, builder);
+
     // Update persistent data using current frame for next frame use
     view->UpdatePersistentData();
 

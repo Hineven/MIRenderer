@@ -289,31 +289,47 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
     G_depth_->SetName("GBuffer Depth");
+    // Often used anywhere
     G_depth_->SetExport();
+
+    forward_depth_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kD32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst | RHITextureUsageFlagBits::kTransferSrc);
+    forward_depth_->SetName("Forward Depth");
+    // Often used anywhere
+    forward_depth_->SetExport();
+
+    G_visibility_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR32G32B32A32_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc);
+    G_visibility_->SetName("GBuffer Visibility");
+    // Used for readback & visibility testing
+    G_visibility_->SetExport();
 
     G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_albedo_->SetName("GBuffer Albedo");
 
     G_normal_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_normal_->SetName("GBuffer Normal");
 
     G_emission_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_emission_->SetName("GBuffer Emission");
 
     G_metallic_roughness_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
     G_flags_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
 
     G_volume_density_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR32_FLOAT,
@@ -334,8 +350,16 @@ void RendererView::InitFrame () {
 
     G_transmittance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransferDst);
     G_transmittance_->SetName("GBuffer Transmittance");
+
+    shadow_map_moments_ = RDGTexture::Create2D(
+        film_height_, film_height_,
+        PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+    );
+    shadow_map_moments_->SetName("Shadow Map Moments");
 
     volume_sample_color_and_linear_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
@@ -390,24 +414,14 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     auto & camera = view_common_params_->Camera;
 
     camera.Position = camera_.position;
+    float aspect_ratio = float(film_width_) / float(film_height_);
     {
         glm::vec3 camera_right = camera_.GetRight();
         glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_.direction));
-        auto aspect = (double)film_width_ / film_height_;
-        auto tan_fov_y = tan(camera_.fov_Y / 2.0);
-        // auto two_tan_fov_y = float(tan_fov_y * 2.0);
-
-        glm::vec3 axis_forward = glm::normalize(camera_.direction);
-        // Camera forward is -z axis
-        glm::vec3 axis_right = glm::normalize(glm::cross(axis_forward, camera_.up));
-        glm::vec3 axis_up = glm::normalize(glm::cross(axis_right, axis_forward));
-        // Thus, normalize(axis_forward + axis_right * ndc.x + axis_up * ndc.y) is the camera ray direction
-        axis_up    *= tan_fov_y;
-        axis_right *= tan_fov_y * aspect;
 
         camera.Direction = glm::normalize(camera_.direction);
-        camera.Right = axis_right;
-        camera.Up = axis_up;
+        camera.Right = camera_.GetScaledRight(aspect_ratio);
+        camera.Up = camera_.GetScaledUp();
 
         camera.NormalizedRight = glm::normalize(camera_right);
         camera.NormalizedUp = glm::normalize(camera_up);
@@ -423,7 +437,6 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
 
     camera.FilmDimensions = {film_width_, film_height_};
 
-    float aspect_ratio = float(film_width_) / float(film_height_);
     camera.FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
 
     uint32_t hzb_size = 1;
@@ -459,9 +472,6 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
 
-
-	camera_.proj = proj_matrix;
-	camera_.view = view_matrix;
 
     {
         glm::dmat4 prev_camera_view_matrix = glm::lookAt(

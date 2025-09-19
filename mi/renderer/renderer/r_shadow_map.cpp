@@ -3,6 +3,7 @@
  * Author:  didu
  * See LICENSE for licensing.
  */
+
 #include <ranges>
 #include <renderer/mi_renderer.h>
 #include <rdg/rdg_cmd.h>
@@ -20,85 +21,68 @@ MI_NAMESPACE_BEGIN
 
 class DrawShadowMapShader : public RDGShader {
 public:
-	BEGIN_SHADER_PARAMETERS(Params)
-		SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(DirectionalLightForShadowMap, LightView)
-		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaders)
-		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransforms)
-		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableNormalTransforms)
-		SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndMaterialIndex)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableNormalTransformBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndDescriptorIndexBuffer)
 
         SHADER_VERTEX_BUFFER(sizeof(DefaultStaticMeshVertex), VertexBuffer)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Position), RHIVertexAttributeFormatType::k3xFp32, position)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Normal), RHIVertexAttributeFormatType::k3xFp32, normal)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, UV), RHIVertexAttributeFormatType::k2xFp32, uv)
-		SHADER_RENDER_TARGET(PixelFormatType::kR16G16B16A16_FLOAT, Moments)
-	END_SHADER_PARAMETERS()
-	RDG_SHADER_USE_PARAMETERS(Params)
-	DECLARE_SHADER()
 
+        SHADER_RENDER_TARGET(PixelFormatType::kR16G16B16A16_FLOAT, Moments)
+        SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth, {})
+        END_SHADER_PARAMETERS()
+        RDG_SHADER_USE_PARAMETERS(Params)
+        DECLARE_SHADER()
+
+    static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+        RDGShaderPipelineConfig config{};
+        // Reversed-z depth buffer
+        config.depth_compare_op = RHIDepthCompareOpType::kLess;
+        return config;
+    }
 };
 
-IMPLEMENT_RDG_GRAPHICS_SHADER(DrawShadowMapShader, "mi/renderer/shaders/ShadowMap.hlsl", "VS_Main", "PS_Main");
+IMPLEMENT_RDG_GRAPHICS_SHADER(DrawShadowMapShader, "mi/renderer/shaders/ShadowMap.hlsl", "Shadow_VS_Main", "Shadow_PS_Main");
 
-
-// 计算主相机视锥体的 8 个角点（世界空间）
-std::array<glm::vec3, 8> GetCameraFrustumCornersWS(
-    const glm::mat4& proj,
-    const glm::mat4& view)
-{
-    glm::mat4 invViewProj = glm::inverse(proj * view);
-
-    std::array<glm::vec3, 8> corners;
-    int idx = 0;
-    for (int x = 0; x < 2; x++) {
-        for (int y = 0; y < 2; y++) {
-            for (int z = 0; z < 2; z++) {
-                glm::vec4 ptNDC(
-                    2.0f * x - 1.0f,
-                    2.0f * y - 1.0f,
-                    2.0f * z - 1.0f,
-                    1.0f
-                );
-                glm::vec4 ptWS = invViewProj * ptNDC;
-                corners[idx++] = glm::vec3(ptWS) / ptWS.w;
-            }
-        }
-    }
-    return corners;
+std::array<glm::vec3, 8> GetCorners(const glm::vec3& min, const glm::vec3& max) {
+    return {
+        glm::vec3(min.x, min.y, min.z),
+        glm::vec3(max.x, min.y, min.z),
+        glm::vec3(min.x, max.y, min.z),
+        glm::vec3(max.x, max.y, min.z),
+        glm::vec3(min.x, min.y, max.z),
+        glm::vec3(max.x, min.y, max.z),
+        glm::vec3(min.x, max.y, max.z),
+        glm::vec3(max.x, max.y, max.z)
+    };
 }
 
 // 根据 LightDir + 相机视锥体 得到 LightWorldToNDC
-glm::mat4 ComputeDirectionalLightMatrix(
-    const glm::vec3& lightDirWS,   // 世界空间光方向 (必须单位化)
-    const glm::mat4& cameraProj,
-    const glm::mat4& cameraView)
+glm::mat4 myComputeDirectionalLightMatrix(
+    const glm::vec3& lightDirWS,   // 世界空间光方向
+    const glm::vec3& AABBmin,
+    const glm::vec3& AABBmax)
 {
-    // 得到相机视锥体的 8 个角点（世界空间）
-    auto frustumCornersWS = GetCameraFrustumCornersWS(cameraProj, cameraView);
 
     // 构造 Light View 矩阵
-    glm::vec3 forward = glm::normalize(-lightDirWS);
-
-    // 选一个合适的 up 向量（避免和 forward 平行）
-    glm::vec3 up = glm::abs(forward.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
-    glm::vec3 right = glm::normalize(glm::cross(up, forward));
-    up = glm::cross(forward, right);
-
-    // 让光的相机位置放在视锥体中心偏后
-    glm::vec3 center(0);
-    for (auto& c : frustumCornersWS) center += c;
-    center /= (float)frustumCornersWS.size();
-
-    float dist = 100.0f; // 光相机离场景中心的距离，可调（要保证能看到整个视锥体）
+    glm::vec3 forward = glm::normalize(lightDirWS);
+	glm::vec3 up = { 0.0f, 1.0f, 0.0f };
+    glm::vec3 center = (AABBmin + AABBmax) * 0.5f;
+    float dist  = 10.0f; // 光相机离场景中心的距离
     glm::vec3 eye = center - forward * dist;
-
     glm::mat4 lightView = glm::lookAt(eye, center, up);
 
-    // 把视锥体角点变到光空间，找到包围盒
+	auto CornersWS = GetCorners(AABBmin, AABBmax);
+
     glm::vec3 minExtents(FLT_MAX);
     glm::vec3 maxExtents(-FLT_MAX);
-    for (auto& c : frustumCornersWS) {
+    for (auto& c : CornersWS) {
         glm::vec4 ptLS = lightView * glm::vec4(c, 1.0);
         minExtents = glm::min(minExtents, glm::vec3(ptLS));
         maxExtents = glm::max(maxExtents, glm::vec3(ptLS));
@@ -109,49 +93,43 @@ glm::mat4 ComputeDirectionalLightMatrix(
     float _right = maxExtents.x;
     float _bottom = minExtents.y;
     float _top = maxExtents.y;
-    float _nearZ = minExtents.z;
-    float _farZ = maxExtents.z;
+    float _nearZ = glm::max(glm::min(glm::abs(minExtents.z), glm::abs(maxExtents.z))-0.001f, 0.1f);
+    float _farZ =  glm::min(glm::max(glm::abs(minExtents.z), glm::abs(maxExtents.z))+0.001f ,1000.0f);
 
-    glm::mat4 lightProj = glm::orthoRH_ZO(_left, _right, _bottom, _top, _nearZ, _farZ);
-    
-    // 最终矩阵
+	glm::mat4 lightProj = glm::orthoRH_ZO(_left, _right, _bottom, _top, _nearZ, _farZ);
     return lightProj * lightView;
 }
 
 
 void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& builder) {
     
-    glm::vec3 light_dir = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
+    view->directional_light_.direction=glm::normalize(glm::vec3(-5.5f, -4.4f, 5.5f));
 
-	auto directional_light_for_shadowMap = builder.Allocate<DirectionalLightForShadowMap>();
-    directional_light_for_shadowMap->LightWorldToNDC = ComputeDirectionalLightMatrix(
-        light_dir,
-        view->camera_.proj,
-        view->camera_.view
-	);
-	directional_light_for_shadowMap->LightDirWS = light_dir;
-	directional_light_for_shadowMap->DepthBias = 0.0005f;
-	directional_light_for_shadowMap->SlopeBias = 0.01f;
-    
+    auto directional_light_for_shadowMap = builder.Allocate<DirectionalLightForShadowMap>();
+    directional_light_for_shadowMap->LightWorldToNDC = myComputeDirectionalLightMatrix(
+        view->directional_light_.direction,
+	    view->scene_->GetAABB().min,
+	    view->scene_->GetAABB().max
+    );
+    directional_light_for_shadowMap->LightDirWS = view->directional_light_.direction;
+
     auto params = builder.Allocate<DrawShadowMapShader::Params>();
-	params->RenderableHeaders = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
-	params->RenderableTransforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
-	params->RenderableNormalTransforms = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
-	params->RenderableIndexAndMaterialIndex = ctx.static_meshes.d_static_mesh_draw_command_renderable_material_indices.Raw();
-    
-    view->shadow_map_moments_ = builder.CreateTexture2D(
-        view->film_width_, view->film_height_,
-        PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-	);
-    view->shadow_map_moments_->SetName("Shadow Map Moments");
-	params->Moments = view->shadow_map_moments_.Raw();
+    params->LightView = directional_light_for_shadowMap;
+    params->View = view->view_common_params_;
+    params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+    params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+    params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
+    params->RenderableIndexAndDescriptorIndexBuffer = ctx.deferred_static_meshes.d_static_mesh_draw_command_renderable_descriptor_indices.Raw();
+    params->Depth = view->G_depth_.Raw();
+    params->Depth.load_op = RHILoadOpType::kClear;
+    params->Depth.clear_value = { 1.0f, 1.0f, 1.0f, 1.0f };
+    params->Moments = view->shadow_map_moments_.Raw();
 
-	auto shader = RDGShaderLibrary::Get().GetShader<DrawShadowMapShader>();
+    auto shader = RDGShaderLibrary::Get().GetShader<DrawShadowMapShader>();
 
     // Rasterize static meshes with batched drawing
     auto raster_pass = builder.AddPass<DrawShadowMapShader>({}, shader, params,
-        [params, shader, data = ctx.static_meshes, rdg_draw_cmd = ctx.static_meshes.d_static_draw_commands.Raw()]
+        [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass* pass, RHICommandQueueGraphics& queue) {
             if (RDGCommandHelper::BindGraphicsShader<DrawShadowMapShader>(
                 queue, pass, shader, params, true
@@ -217,7 +195,7 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
         }
 
         // Indirect command
-        raster_pass->AddBufferH(ctx.static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead);
+        raster_pass->AddBufferH(ctx.deferred_static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead);
     }
 }
 

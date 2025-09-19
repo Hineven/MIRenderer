@@ -5,6 +5,7 @@
 
 StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<float3x4> RenderableTransformBuffer;
+StructuredBuffer<float3x4> RenderableInverseTransformBuffer;
 StructuredBuffer<float3x3> RenderableNormalTransformBuffer; // InvTranspose of RenderableTransforms
 
 #endif

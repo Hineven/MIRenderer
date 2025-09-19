@@ -770,8 +770,10 @@ public:
     }
 
     FORCEINLINE void MemoryBarrier (
-            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
-            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+            RHIPipelineStageFlags src_stages = RHIPipelineStageFlagBits::kAll,
+            RHIPipelineStageFlags dst_stages = RHIPipelineStageFlagBits::kAll,
+            RHIGPUAccessFlags src_access = RHIGPUAccessFlagBits::kAll,
+            RHIGPUAccessFlags dst_access = RHIGPUAccessFlagBits::kAll
     ) {
         AddCommand(AllocateCommand<RHICommandMemoryBarrier>(src_stages, dst_stages, src_access, dst_access));
     }

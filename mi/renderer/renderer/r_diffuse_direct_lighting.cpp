@@ -5,7 +5,6 @@
  */
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
-#include "rdg/rdg_cmd.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_renderer.h"
 #include "r_view_common.h"
@@ -17,19 +16,20 @@ MI_NAMESPACE_BEGIN
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
 
-static CVar<int> CVar_MaxNumGridLights(
+// Some CVars are exposed through r_diffuse_direct_lighting.h
+CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
     "Maximum number of lights in each grid cell.",
     32
 );
 
-static CVar<int> CVar_NumLightSamplerSamples(
+CVar<int> CVar_NumLightSamplerSamples(
     "r.lightgrid.num_light_sampler_samples",
     "Number of candidate samples to take when sampling lights in the light grid.",
     8
 );
 
-static CVar<int> CVar_MaxNumLightGridEntries(
+CVar<int> CVar_MaxNumLightGridEntries(
     "r.lightgrid.max_num_entries",
     "Maximum number of entries in the light grid.",
     1024 * 1024
@@ -55,6 +55,7 @@ static CVar<float> CVar_LightInjectionIntensityThreshold(
 
 static constexpr uint32_t kThreadGroupSize = 128;
 
+// Must be consistent with the struct in LightGrid.hlsl
 struct LightStructureUB {
     glm::uvec3 LightGridSize;
     float LightGridCellSize;
@@ -109,6 +110,7 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_GridLightListLengthBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_BloomFilterBuffer)
 
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
@@ -194,7 +196,7 @@ public:
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
         };
     }
 };
@@ -222,7 +224,7 @@ public:
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
         };
     }
 };
@@ -260,6 +262,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDirectLightingRadianceEstimateTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingRadianceEstimateTexture)
 
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
@@ -477,6 +480,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         params->RWLightGrid_GridLightListLengthBuffer = light_grid_grid_light_list_length_buffer.Raw();
         params->RWLightGrid_BloomFilterBuffer = light_grid_bloom_filter_buffer.Raw();
 
+        params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
         params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
         params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
         params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());
@@ -618,6 +622,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     volprims_params->RWVolumeDirectLightingRadianceEstimateTexture = volume_di_radiance_estimate_texture.Raw();
     volprims_params->VolumeDirectLightingRadianceEstimateTexture = volume_di_radiance_estimate_texture.Raw();
 
+    volprims_params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     volprims_params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
     volprims_params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
     volprims_params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());

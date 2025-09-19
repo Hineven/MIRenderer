@@ -12,7 +12,7 @@
 
 RaytracingAccelerationStructure TLAS;
 
-StructuredBuffer<StaticMeshInstanceHeader> RenderableHeaderBuffer;
+StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
@@ -92,15 +92,6 @@ void TraceShadowRaysMiss(inout RayPayload Payload: SV_RayPayload) {
     // ...
 }
 
-DefaultStaticMeshVertex InterpolateVertex(DefaultStaticMeshVertex C, DefaultStaticMeshVertex A, DefaultStaticMeshVertex B, float2 Barycentric) {
-    DefaultStaticMeshVertex Result;
-    float Z = (1 - Barycentric.x - Barycentric.y);
-    Result.Position = A.Position * Barycentric.x + B.Position * Barycentric.y + C.Position * Z;
-    Result.Normal = normalize(A.Normal * Barycentric.x + B.Normal * Barycentric.y + C.Normal * Z);
-    Result.UV = A.UV * Barycentric.x + B.UV * Barycentric.y + C.UV * Z;
-    return Result;
-}
-
 [shader("anyhit")]
 void TraceShadowRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
@@ -111,7 +102,7 @@ void TraceShadowRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
     if(InstanceFlags == 0) {
         // Static mesh instance
-        StaticMeshInstanceHeader InstanceHeader = RenderableHeaderBuffer[Instance];
+        StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
         uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
         uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];

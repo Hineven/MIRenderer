@@ -82,12 +82,18 @@ struct RendererViewPersistentData {
 
     TRef<RDGTexture> prev_radiance_;
 
+    TRef<RDGTexture> path_tracing_film_;
+
     Camera prev_camera;
     uint32_t view_index {};
     uint32_t frame_index_ {};
 
 
     Scene * prev_scene_;
+};
+
+struct DirectionalLight {
+    glm::vec3 direction {};
 };
 
 
@@ -113,14 +119,24 @@ struct RendererView {
 
     Scene * scene_ {};
 
+	DirectionalLight directional_light_{};
+
+
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
+
+    // Visibility buffer
+    // 0: Renderable index, 1: Descriptor Index (8bits) + Primitive Index (24bits)
+    // 2, 3: Barycentrics
+    TRef<RDGTexture> G_visibility_;
 
     TRef<RDGTexture> G_depth_;
     TRef<RDGTexture> G_albedo_;
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
+
+    TRef<RDGTexture> forward_depth_;
 
 	TRef<RDGTexture> shadow_map_moments_;
 
@@ -154,6 +170,7 @@ struct RendererView {
     // Final radiance
     TRef<RDGTexture> radiance_;
 
+    // Only present when debugging rendering
     TRef<RDGTexture> debug_output_;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
