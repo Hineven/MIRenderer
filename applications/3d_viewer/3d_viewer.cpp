@@ -27,6 +27,7 @@
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
 #include "core/task.h"
+#include "rdg/rdg.h"
 #include "rdg/rdg_resource.h"
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
@@ -494,14 +495,26 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 }
                 ImGui::End();
             }
+
+            auto & io = ImGui::GetIO();
             // Render
             {
-                RenderFrame(view.get(), pool.Raw());
+                RenderGraphBuilder builder;
+                RenderFrame(builder, view.get());
+
+                if (io.MouseClicked[0] && !io.WantCaptureMouse) {
+                    // Export forward depth and visibility for later use
+                    view->forward_depth_->SetExport();
+                    view->G_visibility_->SetExport();
+                }
+
+                std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
+                auto graph = builder.Compile(frame_name);
+                graph->Execute(pool.Raw());
             }
 
             // Click select
             static float last_click_forward_depth = 0;
-            auto & io = ImGui::GetIO();
             if (io.MouseClicked[0] && !io.WantCaptureMouse) {
                 float mouse_x = io.MousePos.x;
                 float mouse_y = io.MousePos.y;

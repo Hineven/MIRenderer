@@ -11,6 +11,7 @@
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_resource_allocator.h"
 #include "../shaders/shared/SharedLight.hlsl"
+#include "../shaders/shared/SharedDebug.hlsl"
 #include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
 static constexpr uint32_t kLightGridSize = 16;
@@ -53,6 +54,12 @@ static CVar<float> CVar_LightInjectionIntensityThreshold(
     0.001f
 );
 
+static CVar<int> CVar_DebugOutputTransmittanceRaysForMesh(
+    "r.direct_lighting.debug.output_transmittance_rays_for_mesh",
+    "Write the transmittance of shadow rays to the output for the specified mesh index. 0 to disable.",
+    0
+);
+
 static constexpr uint32_t kThreadGroupSize = 128;
 
 // Must be consistent with the struct in LightGrid.hlsl
@@ -86,11 +93,13 @@ struct HybridTracingUB {
 
 BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(DebugCommonShaderParameters, Debug)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
     SHADER_UNIFORM_BUFFER(DirectLightingUB, DirectLighting_UB)
     SHADER_UNIFORM_BUFFER(HybridTracingUB, HybridTracing_UB)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrecomputedActiveLightBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrecomputedActiveLightBuffer)
@@ -143,6 +152,12 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDirectLightingRadianceEstimateTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, DirectLightingRadianceEstimateTexture)
+
+    // For debugging purposes
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRaysCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayOrigins)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayDirections)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayStates)
 END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(DirectLightingShaderParameters)
@@ -247,6 +262,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(HybridTracingUB, HybridTracing_UB)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrecomputedActiveLightBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListCount)
@@ -515,6 +531,29 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
 
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
         params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+        params->PointWrapSampler  = RHI::Get().GetGlobalSamplers().point_wrap;
+
+        if (CVar_DebugOutputTransmittanceRaysForMesh.Get() && !view->debug_buffers_.traced_ray_count) {
+            view->debug_buffers_.traced_ray_count = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
+            view->debug_buffers_.traced_ray_count->SetName("Debug_TracedRaysCount");
+            view->debug_buffers_.traced_ray_origins = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage);
+            view->debug_buffers_.traced_ray_directions = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage);
+            view->debug_buffers_.traced_ray_directions->SetName("Debug_TracedRayDirections");
+            view->debug_buffers_.traced_ray_states = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
+            view->debug_buffers_.traced_ray_states->SetName("Debug_TracedRayStates");
+
+            params->RWDebugTracedRaysCount = view->debug_buffers_.traced_ray_count.Raw();
+            params->RWDebugTracedRayOrigins = view->debug_buffers_.traced_ray_origins.Raw();
+            params->RWDebugTracedRayDirections = view->debug_buffers_.traced_ray_directions.Raw();
+            params->RWDebugTracedRayStates = view->debug_buffers_.traced_ray_states.Raw();
+        } else {
+            params->RWDebugTracedRaysCount = nullptr;
+            params->RWDebugTracedRayOrigins = nullptr;
+            params->RWDebugTracedRayDirections = nullptr;
+            params->RWDebugTracedRayStates = nullptr;
+        }
+
+        params->Debug = view->debug_common_params_;
     }
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     // 1. Clear counters
@@ -588,6 +627,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
 
     volprims_params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     volprims_params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+    volprims_params->PointWrapSampler  = RHI::Get().GetGlobalSamplers().point_wrap;
 
     volprims_params->LightBuffer = params->LightBuffer;
     volprims_params->PrecomputedActiveLightBuffer = params->PrecomputedActiveLightBuffer;

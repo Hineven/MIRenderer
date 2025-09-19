@@ -1,3 +1,40 @@
+struct DrawIndirectCommand
+{
+    uint VertexCount;
+    uint InstanceCount;
+    uint FirstVertex;
+    uint FirstInstance;
+};
+
+struct SpawnDrawIndirectCommandUB {
+    uint FirstVertex;
+    uint FirstInstance;
+    uint VertexCount;
+    uint InstanceCount;
+};
+
+ConstantBuffer<SpawnDrawIndirectCommandUB> SpawnDrawIndirectCommand_UB;
+RWStructuredBuffer<DrawIndirectCommand> SpawnDrawIndirectCommand_Command;
+StructuredBuffer<uint> SpawnDrawIndirectCommand_VertexCount;
+StructuredBuffer<uint> SpawnDrawIndirectCommand_InstanceCount;
+[numthreads(1, 1, 1)]
+void SpawnDrawIndirectCommand() {
+    DrawIndirectCommand Cmd = (DrawIndirectCommand)0;
+#ifdef USE_VERTEX_COUNT_BUFFER
+    Cmd.VertexCount = SpawnDrawIndirectCommand_VertexCount[0];
+#else
+    Cmd.VertexCount = SpawnDrawIndirectCommand_UB.VertexCount;
+#endif
+#ifdef USE_INSTANCE_COUNT_BUFFER
+    Cmd.InstanceCount = SpawnDrawIndirectCommand_InstanceCount[0];
+#else
+    Cmd.InstanceCount = SpawnDrawIndirectCommand_UB.InstanceCount;
+#endif
+    Cmd.FirstVertex = SpawnDrawIndirectCommand_UB.FirstVertex;
+    Cmd.FirstInstance = SpawnDrawIndirectCommand_UB.FirstInstance;
+    SpawnDrawIndirectCommand_Command[0] = Cmd;
+}
+
 
 struct DispatchIndirecCommand
 {

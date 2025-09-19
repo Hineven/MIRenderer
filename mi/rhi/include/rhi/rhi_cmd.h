@@ -353,16 +353,16 @@ public:
 
 class RHICommandUpdateDrawState : public TRHICommand<RHICommandUpdateDrawState> {
 public:
-    RHICommandUpdateDrawState(const RHIDrawDesc & draw_state)
+    RHICommandUpdateDrawState(const RHIDrawStateDesc & draw_state)
         : draw_state_(draw_state) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
-    RHIDrawDesc draw_state_;
+    RHIDrawStateDesc draw_state_;
 };
 
-class RHICommandDrawPrimitive : public TRHICommand<RHICommandDrawPrimitive> {
+class RHICommandDraw : public TRHICommand<RHICommandDraw> {
 public:
-    RHICommandDrawPrimitive(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
+    RHICommandDraw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance)
         : vertex_count_(vertex_count), instance_count_(instance_count), first_vertex_(first_vertex), first_instance_(first_instance) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
@@ -406,9 +406,9 @@ public:
     RHICullModeType cull_mode_;
 };
 
-class RHICommandDrawIndexedPrimitive : public TRHICommand<RHICommandDrawIndexedPrimitive> {
+class RHICommandDrawIndexed : public TRHICommand<RHICommandDrawIndexed> {
 public:
-    RHICommandDrawIndexedPrimitive(RHIBufferSpan index_buffer, uint32_t index_count_,
+    RHICommandDrawIndexed(RHIBufferSpan index_buffer, uint32_t index_count_,
                                      uint32_t instance_count, uint32_t first_index, int base_vertex_index,
                                       uint32_t first_instance_index, RHIIndexType index_type)
           : index_buffer_(index_buffer), index_count_(index_count_),
@@ -424,6 +424,16 @@ public:
     int      base_vertex_index_;
     uint32_t first_instance_index_;
     RHIIndexType index_type_;
+};
+
+class RHICommandDrawIndirect : public TRHICommand<RHICommandDrawIndirect> {
+public:
+    RHICommandDrawIndirect(RHIBufferSpan command, uint32_t count)
+        : command_(command), count_(count) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHIBufferSpan command_;
+    uint32_t count_;
 };
 
 class RHICommandDrawIndexedIndirect : public TRHICommand<RHICommandDrawIndexedIndirect> {
@@ -729,7 +739,7 @@ public:
         AddCommand(AllocateCommand<RHICommandCopyBuffer>(src, dst));
     }
 
-    FORCEINLINE void UpdateDrawState (const RHIDrawDesc & draw_state) {
+    FORCEINLINE void UpdateDrawState (const RHIDrawStateDesc & draw_state) {
         AddCommand(AllocateCommand<RHICommandUpdateDrawState>(draw_state));
     }
 
@@ -740,15 +750,18 @@ public:
         AddCommand(AllocateCommand<RHICommandEndRendering>());
     }
 
-    FORCEINLINE void DrawPrimitive (uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex = 0, uint32_t first_instance = 0) {
-        AddCommand(AllocateCommand<RHICommandDrawPrimitive>(vertex_count, instance_count, first_vertex, first_instance));
+    FORCEINLINE void Draw (uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex = 0, uint32_t first_instance = 0) {
+        AddCommand(AllocateCommand<RHICommandDraw>(vertex_count, instance_count, first_vertex, first_instance));
     }
-    FORCEINLINE void DrawIndexedPrimitive (RHIBufferSpan index_buffer, uint32_t index_count,
+    FORCEINLINE void DrawIndexed (RHIBufferSpan index_buffer, uint32_t index_count,
                                           uint32_t instance_count, uint32_t first_index, int base_vertex_index,
                                           uint32_t first_instance_index, RHIIndexType index_type) {
-        AddCommand(AllocateCommand<RHICommandDrawIndexedPrimitive>(index_buffer, index_count, instance_count, first_index, base_vertex_index, first_instance_index, index_type));
+        AddCommand(AllocateCommand<RHICommandDrawIndexed>(index_buffer, index_count, instance_count, first_index, base_vertex_index, first_instance_index, index_type));
     }
-    FORCEINLINE void DrawIndexedIndirect (RHIBufferSpan index_buffer, RHIBufferSpan commands, uint32_t count, RHIIndexType type = RHIIndexType::kUint32) {
+    FORCEINLINE void DrawIndirect (RHIBufferSpan commands, uint32_t count = 1) {
+        AddCommand(AllocateCommand<RHICommandDrawIndirect>(commands, count));
+    }
+    FORCEINLINE void DrawIndexedIndirect (RHIBufferSpan index_buffer, RHIBufferSpan commands, uint32_t count = 1, RHIIndexType type = RHIIndexType::kUint32) {
         AddCommand(AllocateCommand<RHICommandDrawIndexedIndirect>(index_buffer, commands, count, type));
     }
     FORCEINLINE void SetScissor (int x, int y, uint32_t width, uint32_t height) {

@@ -234,37 +234,44 @@ const static vk::ShaderStageFlags kBasicDrawStages =
 | vk::ShaderStageFlagBits::eTessellationEvaluation | vk::ShaderStageFlagBits::eGeometry
 | vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eTaskEXT | vk::ShaderStageFlagBits::eMeshEXT;
 
-void VulkanCommandExecutor::RHIDrawPrimitive(RHICommandQueueBase *cmd,
-                                             RHICommandDrawPrimitive *draw_primitive) {
-    CHECK_RHI_THREAD();
+void VulkanCommandExecutor::CheckDrawReadyness(RHICommandQueueBase *cmd) {
+
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto & graphics = state.points[(uint32_t)RHIBindPointType::kGraphics];
-
     // Check the compatibility of the bound pipeline and the bound framebuffer
     mi_assert(graphics.bound_pipeline, "No graphics pipeline bound");
     auto graphics_pipeline = (RHIGraphicsPipeline*)graphics.bound_pipeline;
     auto depth_enabled = graphics_pipeline->IsDepthTestEnabled();
-    mi_assert(graphics_pipeline->GetFragmentOutputDesc().size() + depth_enabled
+    mi_assert(graphics_pipeline->GetFragmentOutputDesc().size()
               == state.draw_state_.num_framebuffer_attachments_,
               "Mismatched number of framebuffer attachments and fragment outputs");
     if(depth_enabled) {
         mi_assert(
-                state.draw_state_.num_framebuffer_attachments_ > 0 &&
-                IsDepthStencilPixelFormat(state.draw_state_.attachments[
-                        state.draw_state_.num_framebuffer_attachments_ - 1
-                ]->GetFormat()),
+                state.draw_state_.depth_stencil_attachment &&
+                IsDepthStencilPixelFormat(state.draw_state_.depth_stencil_attachment->GetFormat()),
                   "Depth test enabled but no depth attachment found / invalid depth attachment pixel format");
     }
+}
+
+
+void VulkanCommandExecutor::RHIDraw(RHICommandQueueBase *cmd,
+                                             RHICommandDraw *draw_primitive) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    CheckDrawReadyness(cmd);
+
     state.InstallDrawState(state.cmd);
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
     state.cmd.draw(draw_primitive->vertex_count_, draw_primitive->instance_count_, draw_primitive->first_vertex_, draw_primitive->first_instance_);
 }
 
-void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
-                                                    RHICommandDrawIndexedPrimitive *draw_indexed_primitive) {
+void VulkanCommandExecutor::RHIDrawIndexed(RHICommandQueueBase *cmd,
+                                                    RHICommandDrawIndexed *draw_indexed_primitive) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
 
+    CheckDrawReadyness(cmd);
 
     state.InstallDrawState(state.cmd);
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
@@ -277,10 +284,29 @@ void VulkanCommandExecutor::RHIDrawIndexedPrimitive(RHICommandQueueBase *cmd,
                           draw_indexed_primitive->first_instance_index_);
 }
 
+void VulkanCommandExecutor::RHIDrawIndirect(RHICommandQueueBase *cmd, RHICommandDrawIndirect *draw_indirect) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    CheckDrawReadyness(cmd);
+
+    state.InstallDrawState(state.cmd);
+    FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
+
+    state.cmd.drawIndirect(
+        static_cast<VulkanBuffer*>(draw_indirect->command_.buffer)->GetBuffer(),
+        draw_indirect->command_.offset,
+        draw_indirect->count_,
+        sizeof(RHIDrawIndirectCommand)
+    );
+}
+
 void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
                                                     RHICommandDrawIndexedIndirect *draw_indexed_indirect) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    CheckDrawReadyness(cmd);
 
     state.InstallDrawState(state.cmd);
     FlushBindPointState(cmd, RHIBindPointType::kGraphics, kBasicDrawStages);
@@ -607,6 +633,8 @@ void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffe
     cmdb.setViewportWithCount(viewport);
     cmdb.setScissorWithCount(rect);
     cmdb.setCullMode(GetVulkanCullMode(draw_state_.cull_mode));
+    cmdb.setPolygonModeEXT(GetVulkanPolygonMode(draw_state_.polygon_mode));
+    cmdb.setLineWidth(draw_state_.line_width);
 }
 
 bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {

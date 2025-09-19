@@ -129,7 +129,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
                 (uint32_t)(draw_cmd.ClipRect.z - draw_cmd.ClipRect.x),
                 (uint32_t)(draw_cmd.ClipRect.w - draw_cmd.ClipRect.y)
             );
-            cmd.DrawIndexedPrimitive(index_raw->GetRHI(), draw_cmd.ElemCount, 1,
+            cmd.DrawIndexed(index_raw->GetRHI(), draw_cmd.ElemCount, 1,
                            index_offset, vertex_offset, 0, RHIIndexType::kUint16);
             index_offset += draw_cmd.ElemCount;
             vertex_offset += draw_cmd.UserCallbackDataOffset;

@@ -321,6 +321,19 @@ FORCEINLINE vk::PrimitiveTopology GetVulkanPrimitiveTopology (RHIPrimitiveTopolo
     }
 }
 
+FORCEINLINE vk::PolygonMode GetVulkanPolygonMode (RHIPolygonModeType mode) {
+    switch(mode) {
+        case RHIPolygonModeType::kFill:
+            return vk::PolygonMode::eFill;
+        case RHIPolygonModeType::kLine:
+            return vk::PolygonMode::eLine;
+        case RHIPolygonModeType::kPoint:
+            return vk::PolygonMode::ePoint;
+        default:
+            return vk::PolygonMode::eFill;
+    }
+}
+
 FORCEINLINE vk::CompareOp GetVulkanCompareOp (RHIDepthCompareOpType op) {
     switch(op) {
         case RHIDepthCompareOpType::kNever:

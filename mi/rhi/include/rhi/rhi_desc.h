@@ -358,7 +358,7 @@ namespace ShaderReflection {
     };
 }
 
-struct RHIDrawDesc {
+struct RHIDrawStateDesc {
     struct {
         float x {}, y {};
         float width {}, height {};
@@ -386,6 +386,10 @@ struct RHIDrawDesc {
     std::array<float, 4> depth_stencil_clear_value {};
     RHILoadOpType depth_stencil_load_op {};
     RHIStoreOpType depth_stencil_store_op {};
+
+    RHIPolygonModeType polygon_mode {};
+
+    float line_width {1.f};
 
     RHICullModeType cull_mode {};
 

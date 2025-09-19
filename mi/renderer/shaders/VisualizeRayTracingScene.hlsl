@@ -33,7 +33,7 @@ struct RayPayload {
 };
 
 [shader("raygeneration")]
-void RayTracingVisualizationRaygen() {
+void VisualizeRayTracingSceneRaygen() {
 
     uint2 RayIndex = DispatchRaysIndex().xy;
     uint2 DispatchSize = DispatchRaysDimensions().xy;
@@ -71,14 +71,14 @@ void RayTracingVisualizationRaygen() {
 }
 
 [shader("miss")]
-void RayTracingVisualizationMiss(inout RayPayload Payload: SV_RayPayload) {
+void VisualizeRayTracingSceneMiss(inout RayPayload Payload: SV_RayPayload) {
     float3 RayDirection = WorldRayDirection();
     float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearSampler, -RayDirection, 0).xyz;
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 
 [shader("anyhit")]
-void RayTracingVisualizationAnyHit(inout RayPayload Payload: SV_RayPayload,
+void VisualizeRayTracingSceneAnyHit(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
@@ -120,7 +120,7 @@ void RayTracingVisualizationAnyHit(inout RayPayload Payload: SV_RayPayload,
 }
 
 [shader("closesthit")]
-void RayTracingVisualizationClosestHit(inout RayPayload Payload: SV_RayPayload,
+void VisualizeRayTracingSceneClosestHit(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();

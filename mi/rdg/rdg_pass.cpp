@@ -266,6 +266,7 @@ void RDGPass::PreCompile() {
                     || field.type == RHIParamType::kUAVTextureArray
                     || field.type == RHIParamType::kAccelerationStructure
                     || field.type == RHIParamType::kSampler) {
+                    // Query the actual usage of the resource statically reflected in the shader
                     auto shader_access = shader_->QueryShaderAccess(field.name);
                     stages = shader_access.stages;
                     access = shader_access.access;

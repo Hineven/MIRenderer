@@ -37,10 +37,13 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     uint F2 = RWInOrFlagsBuffer[InTexCoords + uint2(0, 1)];
     uint F3 = RWInOrFlagsBuffer[InTexCoords + uint2(1, 1)];
 #else
-    uint2 Dimensions, DepthDimensions;
-    RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
-    InDepthBuffer.GetDimensions(DepthDimensions.x, DepthDimensions.y);
-    float2 HZB_UV = (float2(TexCoords) + 0.25f) / Dimensions;
+    uint2 HZBDimensions, DepthDimensions;
+    HZBDimensions = GetActiveCamera().HZBDimensions;
+    DepthDimensions = GetActiveCamera().FilmDimensions;
+    // These functions seems to be broken
+    // RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
+    // InDepthBuffer.GetDimensions(DepthDimensions.x, DepthDimensions.y);
+    float2 HZB_UV = (float2(TexCoords) + 0.25f) / float2(HZBDimensions);
     CameraParameters C = GetActiveCamera();
     float2 Depth_UV = HZB_UV * C.HZBToUVScale;
     float2 DeltaDepth_UV = C.HZBBaseTexelSize * C.HZBToUVScale * 0.5f;

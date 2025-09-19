@@ -14,6 +14,7 @@
 
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_pool.h"
+#include "rdg/rdg_shader.h"
 #include "rhi/rhi_types_string.h"
 
 // Instantly start a command buffer submit after the execution of each pass.
@@ -88,7 +89,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         }
     }
     // Uniform buffers are handled upon pass execution
-    // Create and upload all uniform buffers. Also, inject usage to passes
+    // Create and upload all uniform buffers prior to all passes' executions. Also, inject usage to passes
     {
         size_t all_uniform_buffer_size = 0;
         auto WriteUniforms = [&] (void * ptr, const RDGShaderParamInfo * param_info, const void * param_data) {
@@ -102,8 +103,14 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     if (struct_ptr == nullptr || RDGParameter_IsUnsetPointer(struct_ptr)) {
                         continue ;
                     }
+                    // Reflect from shader and make sure that the UB is statically used.
+                    // Otherwise, we skip it.
+                    if (pass->shader_ && pass->shader_->QueryShaderAccess(ref.info->name).access == RHIGPUAccessFlagBits::kNone) {
+                        continue ;
+                    }
                     auto it = param_ptr_to_uniform_buffer_segment_.find(struct_ptr);
                     if (it == param_ptr_to_uniform_buffer_segment_.end()) {
+                        // Missing uniform buffer, allocate a segment for it
                         auto aligned_size = RoundUp(ref.info->size, C::kUniformBufferAlignment);
                         param_ptr_to_uniform_buffer_segment_[struct_ptr] = {
                             all_uniform_buffer_size,

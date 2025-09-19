@@ -428,13 +428,13 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     {
-        // Offset the origin a bit, but at most 1 pixel (100%)
+        // Offset the origin a bit, but at most 0.45 pixel (45%)
         float3 Normal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
         float MaxOffsetLength = LinearDepth * 1e-3f;
         float2 PixelSize = GetPixelWorldSize(C, LinearDepth);
         float ProjectionX = abs(dot(C.NormalizedRight, Normal));
         float ProjectionY = abs(dot(C.NormalizedUp, Normal));
-        float Fraction = 1.f;
+        float Fraction = 0.45f;
         float MaxX = Fraction * PixelSize.x / max(ProjectionX, 1e-4f);
         float MaxY = Fraction * PixelSize.y / max(ProjectionY, 1e-4f);
         float OffsetLength = min(MaxOffsetLength, min(MaxX, MaxY));
@@ -456,6 +456,9 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 
     float3 HitWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(HitUVZ.xy), ZDepthToLinearDepth(C, HitUVZ.z));
     float HitDistance = min(length(HitWorldPosition - WorldPosition), TraceTMax);
+
+    // FIXME
+    bHit = false;
 
     // FIXME
     if (false && bHit) {
@@ -484,6 +487,9 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 
         float Bias = min(LinearDepth * HybridTracing_UB.RayContinuationBackwardBiasFactor, HitDistance * 0.5f);
         HitDistance = max(HitDistance - Bias, 0);
+
+        // FIXME
+        HitDistance = 0.001f;
 
         // Allocate new rays for continuation
         uint WaveSurvivingRayCount = WaveActiveCountBits(true);

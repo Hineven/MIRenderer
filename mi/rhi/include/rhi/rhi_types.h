@@ -193,34 +193,34 @@ FORCEINLINE std::string ToString(RHIGPUAccessFlags flags) {
 }
 
 enum class RHISamplerAddressModeType {
-    kRepeat,
+    kRepeat = 0,
     kClampToEdge,
     kClampToBorder,
     kMax
 };
 
 enum class RHISamplerFilterType {
-    kLinear,
+    kLinear = 0,
     kPoint,
     kMax
 };
 
 enum class RHIPrimitiveType {
-    kTriangle,
+    kTriangle = 0,
     kLine,
     kPoint,
     kMax
 };
 
 enum class RHIPipelineType {
-    kGraphics,
+    kGraphics = 0,
     kCompute,
     kRayTracing,
     kMax
 };
 
 enum class RHITextureType {
-    k2D,
+    k2D = 0,
     k2DArray,
     k3D,
     kCube,
@@ -244,7 +244,7 @@ enum class RHITextureUsageFlagBits : uint32_t {
 MAKE_FLAGS(RHITextureUsage)
 
 enum class RHIPipelineResourceType {
-    kUniformBuffer,
+    kUniformBuffer = 0,
     kStorageBuffer,
     kUAV,
     kSRV,
@@ -289,19 +289,19 @@ FORCEINLINE RHIBindlessResourceType ToBindlessResourceType (RHIPipelineResourceT
 }
 
 enum class RHIShaderIRType {
-    kSPIRV,
+    kSPIRV = 0,
     // no other types for now
     kMax
 };
 
 enum class RHIVertexInputRateType {
-    kVertex,
+    kVertex = 0,
     kInstance,
     kMax
 };
 
 enum class RHIVertexAttributeFormatType {
-    k1xFp32,
+    k1xFp32 = 0,
     k2xFp32,
     k3xFp32,
     k4xFp32,
@@ -378,13 +378,13 @@ FORCEINLINE const char * GetRHIFragmentOutputFormatName (RHIFragmentOutputFormat
 }
 
 enum class RHIIndexType {
+    kUint32 = 0,
     kUint16,
-    kUint32,
     kMax
 };
 
 enum class RHIPrimitiveTopologyType {
-    kTriangleList,
+    kTriangleList = 0,
     kTriangleStrip,
     kLineList,
     kLineStrip,
@@ -392,8 +392,15 @@ enum class RHIPrimitiveTopologyType {
     kMax
 };
 
+enum class RHIPolygonModeType {
+    kFill = 0,
+    kLine,
+    kPoint,
+    kMax
+};
+
 enum class RHIDepthCompareOpType {
-    kNever,
+    kNever = 0,
     kLess,
     kEqual,
     kLessOrEqual,
@@ -412,13 +419,13 @@ enum class RHICullModeType : uint32_t {
 };
 
 enum class RHIFrontFaceType {
+    kCounterClockwise = 0,
     kClockwise,
-    kCounterClockwise,
     kMax
 };
 
 enum class RHIBlendFactorType {
-    kZero,
+    kZero = 0,
     kOne,
     kSrcColor,
     kOneMinusSrcColor,
@@ -441,7 +448,7 @@ enum class RHIBlendFactorType {
 };
 
 enum class RHIBlendOpType {
-    kBlendAdd,
+    kBlendAdd = 0,
     kBlendSubtract,
     kBlendReverseSubtract,
     kBlendMin,
@@ -450,20 +457,20 @@ enum class RHIBlendOpType {
 };
 
 enum class RHILoadOpType {
-    kLoad,
+    kLoad = 0,
     kClear,
     kDontCare,
     kMax
 };
 
 enum class RHIStoreOpType {
-    kStore,
+    kStore = 0,
     kDontCare,
     kMax
 };
 
 enum class RHICommandQueueType {
-    kGraphics,
+    kGraphics = 0,
     kMax
 };
 
@@ -479,7 +486,7 @@ enum class RHIResourceFlagBits {
 MAKE_FLAGS(RHIResource)
 
 enum class RHITextureLayoutType {
-    kUndefined,
+    kUndefined = 0,
     kShaderReadOnlyOptimal,
     kColorAttachment,
     kDepthStencilAttachment,
@@ -491,7 +498,7 @@ enum class RHITextureLayoutType {
 
 // Ray tracing shader group types
 enum class RHIRayTracingShaderGroupType {
-    kRayGeneration,     // Ray generation shader group
+    kRayGeneration = 0, // Ray generation shader group
     kMiss,              // Miss shader group
     kTrianglesHitGroup, // Hit group for triangle geometry
     kProceduralHitGroup,// Hit group for procedural geometry

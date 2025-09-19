@@ -9,13 +9,15 @@
 
 #include "rdg/rdg_fwd.h"
 #include "mi_camera.h"
+#include "mi_cvar.h"
 #include "core/util/alloc.h"
 #include "renderer/mi_renderer_fwd.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
+    struct DebugCommonShaderParameters;
 
-class BatchedUploadContext : public NonCopyable, public NonMovable {
+    class BatchedUploadContext : public NonCopyable, public NonMovable {
 protected:
     BatchedUploadContext() = default;
     // Current manual staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
@@ -76,9 +78,7 @@ struct RendererViewPersistentData {
     void Update (RendererView * view);
 
     TRef<RDGTexture> prev_G_depth;
-    TRef<RDGTexture> prev_G_albedo;
     TRef<RDGTexture> prev_G_normal;
-    TRef<RDGTexture> prev_G_roughness;
 
     TRef<RDGTexture> prev_radiance_;
 
@@ -106,7 +106,9 @@ struct RendererView {
     void UpdatePersistentData ();
 
     // Update view common shader parameters
-    void SetViewCommonShaderParameters (RenderGraphBuilder & builder);
+    void SetupViewCommonShaderParameters (RenderGraphBuilder & builder);
+    // Update debug common shader parameters
+    void SetupDebugCommonShaderParameters (RenderGraphBuilder & builder);
 
     Camera camera_ {};
 
@@ -161,8 +163,17 @@ struct RendererView {
     // Final radiance
     TRef<RDGTexture> radiance_;
 
-    // Only present when debugging rendering
+    // Debug output, can be written to for debug purposes
     TRef<RDGTexture> debug_output_;
+
+    struct {
+        // For visualizing traced rays. Can be created and written to in various passes.
+        TRef<RDGBuffer> traced_ray_count;
+        TRef<RDGBuffer> traced_ray_origins;
+        TRef<RDGBuffer> traced_ray_directions;
+        TRef<RDGBuffer> traced_ray_states;
+        TRef<RDGBuffer> traced_ray_colors;
+    } debug_buffers_;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
     BatchedUploadContext upload_context_;
@@ -173,10 +184,17 @@ struct RendererView {
     // Generated view common parameters (for this frame)
     ViewCommonShaderParameters * view_common_params_;
 
+    // Common parameters may be useful in debugging
+    DebugCommonShaderParameters * debug_common_params_;
+
     // Persistent data
     std::unique_ptr<RendererViewPersistentData> persistent_data_ {};
 
 };
+
+// Used for setting cursor positions in debug uniform buffers
+extern CVar<int> CVar_DebugCursorScreenCoordsX;
+extern CVar<int> CVar_DebugCursorScreenCoordsY;
 
 MI_NAMESPACE_END
 

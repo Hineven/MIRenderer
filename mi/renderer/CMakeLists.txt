@@ -18,11 +18,11 @@ set(SOURCES
         renderer/r_sky.cpp
         renderer/r_static_meshes.cpp
         renderer/r_volume_primitives.cpp
-        renderer/r_visualize_ray_traced.cpp
         renderer/r_hzb.cpp
         renderer/r_hwrt.cpp
         renderer/r_diffuse_direct_lighting.cpp
         renderer/r_path_tracing.cpp
+        renderer/r_debug_views.cpp
         util/radix_sort.cpp
 )
 

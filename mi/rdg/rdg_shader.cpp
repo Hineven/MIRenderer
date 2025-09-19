@@ -635,7 +635,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
     sbt_sections_ = {};
 
     if (source_code.empty()) {
-        MI_LOG(MIInfraLogType::kError, "Empty shader source: {}", class_registry_->source_location);
+        MI_LOG(MIInfraLogType::kError, "RDGShader {}: Empty shader source: {}", class_registry_->name, class_registry_->source_location);
         return false;
     }
     // Reflect shader struct param info
@@ -663,7 +663,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
-            MI_LOG(MIInfraLogType::kError, "Failed to compile compute shader for entry {}: {}", class_registry_->compute_entry_, errmsg);
+            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile compute shader for entry {}: {}", class_registry_->name, class_registry_->compute_entry_, errmsg);
             MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
             return false;
         }
@@ -697,7 +697,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
-                MI_LOG(MIInfraLogType::kError, "Failed to compile vertex shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile vertex shader: {}", class_registry_->name, errmsg);
                 MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
@@ -713,7 +713,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
             );
             if (fs_result.empty()) {
-                MI_LOG(MIInfraLogType::kError, "Failed to compile fragment shader: {}", errmsg);
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile fragment shader: {}", class_registry_->name, errmsg);
                 MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
             }
