@@ -92,6 +92,10 @@ struct RendererViewPersistentData {
     Scene * prev_scene_;
 };
 
+struct DirectionalLight {
+    glm::vec3 direction {};
+};
+
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
@@ -115,6 +119,9 @@ struct RendererView {
 
     Scene * scene_ {};
 
+	DirectionalLight directional_light_{};
+
+
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
 
@@ -130,6 +137,8 @@ struct RendererView {
     TRef<RDGTexture> G_metallic_roughness_;
 
     TRef<RDGTexture> forward_depth_;
+
+	TRef<RDGTexture> shadow_map_moments_;
 
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
