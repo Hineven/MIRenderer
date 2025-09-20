@@ -65,11 +65,11 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
         Intersection.Albedo = AlbedoOpacity.rgb;
         Intersection.Opacity = AlbedoOpacity.a;
     }
-    
+
     // Reconstruct shading normal
-    Intersection.Normal = InterpolatedVertex.Normal;
+    float3x3 NormalTransform  = RenderableNormalTransformBuffer[RenderableIndex];
+    Intersection.Normal = mul(NormalTransform, InterpolatedVertex.Normal);
     if(IsValid(Material.NormalMap)) {
-        float3x3 NormalTransform  = RenderableNormalTransformBuffer[RenderableIndex];
         float3 PosA = TransformPoint(ToWorldTransform, VertexA.Position);
         float3 PosB = TransformPoint(ToWorldTransform, VertexB.Position);
         float3 PosC = TransformPoint(ToWorldTransform, VertexC.Position);
@@ -77,25 +77,21 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
         float2 UV_B = VertexB.UV;
         float2 UV_C = VertexC.UV;
 
-        // 2. 计算世界空间和 UV 空间的边。
         float3 EdgePos1 = PosB - PosA;
         float3 EdgePos2 = PosC - PosA;
         float2 EdgeUV1 = UV_B - UV_A;
         float2 EdgeUV2 = UV_C - UV_A;
 
-        // 3. 计算 TBN 矩阵。
-        //    参考 http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-13-normal-mapping/
+        // TBN matrix
+        // http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-13-normal-mapping/
         float r = 1.0f / (EdgeUV1.x * EdgeUV2.y - EdgeUV1.y * EdgeUV2.x);
         float3 Tangent   = normalize((EdgePos1 * EdgeUV2.y - EdgePos2 * EdgeUV1.y) * r);
         float3 Bitangent = normalize((EdgePos2 * EdgeUV1.x - EdgePos1 * EdgeUV2.x) * r);
         
-        // 4. 修正切线空间，使其与插值后的法线正交 (Gram-Schmidt process)。
-        Intersection.Normal = normalize(mul(NormalTransform, Intersection.Normal)); // 确保法线已经被正确变换
+        // Making the tangent ortho to the interpolated vertex normal (Gram-Schmidt process)
         Tangent = normalize(Tangent - dot(Tangent, Intersection.Normal) * Intersection.Normal);
-        
-        // 5. 计算 Bitangent 的handedness，并修正 Bitangent。
-        float handedness = dot(cross(Intersection.Normal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
-        Bitangent = cross(Intersection.Normal, Tangent) * handedness;
+        float Handedness = dot(cross(Intersection.Normal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
+        Bitangent = cross(Intersection.Normal, Tangent) * Handedness;
 
         // 6. 采样法线贴图并变换法线。
         float3 NormalMapSample;
