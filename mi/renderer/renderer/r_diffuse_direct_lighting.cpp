@@ -331,7 +331,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
     auto precomputed_active_light_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_lights * sizeof(PackedPrecomputedLight)
     );
-    precomputed_active_light_buffer->SetName("PrecomputedActiveLightBuffer");//调试时标记缓冲区名称用的
+    precomputed_active_light_buffer->SetName("PrecomputedActiveLightBuffer");
     auto active_light_list_count = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );

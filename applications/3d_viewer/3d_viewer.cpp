@@ -340,6 +340,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     view->film_width_ = cfg.window_width;
     view->film_height_ = cfg.window_height;
     view->scene_ = scene.get();
+    view->directional_light_.direction = glm::normalize(glm::vec3(-5.5f, -4.4f, 5.5f));
 
     // Keep track of selected renderable & primitive
     uint selected_renderable_index = UINT32_MAX;

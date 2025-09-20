@@ -10,12 +10,13 @@
 
 StructuredBuffer<uint2> RenderableIndexAndDescriptorIndexBuffer;
 
-// 光源视图矩阵和参数
 ConstantBuffer<DirectionalLightForShadowMap> LightView;
 
 struct Shadow_VS_Out
 {
     float4 Position : SV_POSITION;
+    uint MaterialIndex : TEXCOORD0;
+    float2 UV : TEXCOORD1;
 };
 
 Shadow_VS_Out Shadow_VS_Main(DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID)
@@ -26,8 +27,16 @@ Shadow_VS_Out Shadow_VS_Main(DefaultStaticMeshVertex Vertex, uint InstanceIndex 
     float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
     float4 PositionL = mul(LightView.LightWorldToNDC, float4(WorldPosition, 1));
+    
+    uint StaticMeshIndex = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]).StaticMeshIndex;
+    StaticMeshHeader StaticMeshHeader = StaticMeshHeaderBuffer[StaticMeshIndex];
+    uint GlobalDescriptorIndex = StaticMeshHeader.DescriptionOffset + DescriptorIndex;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[GlobalDescriptorIndex];
+    
     Shadow_VS_Out Output = (Shadow_VS_Out) 0;
     Output.Position = PositionL;
+    Output.MaterialIndex = GeometryMaterialPair.y;
+    Output.UV = Vertex.UV;
     return Output;
 }
 
@@ -38,9 +47,20 @@ struct Shadow_PS_Out
 
 Shadow_PS_Out Shadow_PS_Main(Shadow_VS_Out Input)
 {
+    
+    MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
+    float opacity = 1.0f;
+    if (IsValid(Material.AlbedoMap)){
+        opacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV).w;
+    }
+    if (opacity < 0.5f){
+        discard;
+    }
+    
     Shadow_PS_Out Output = (Shadow_PS_Out) 0;
     //Output.Moments = Input.Position.z * float4(1, 1, 1, 1);
     Output.Moments = float4(Input.Position.z, Input.Position.z * Input.Position.z, 0, 1);
+    
     return Output;
 }
 
