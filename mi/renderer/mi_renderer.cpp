@@ -38,7 +38,7 @@ static CVar<int> CVar_FinalOutputType(
     "1 - Albedo\n"
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
-    0
+    10
 );
 
 Renderer::Renderer() {
@@ -309,13 +309,18 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         queue.ClearTexture(view->G_emission_->GetRHI(), {});
         queue.ClearTexture(view->G_flags_->GetRHI(), {});
         queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
+        queue.ClearTexture(view->shadow_map_moments_->GetRHI(), {});
     })//->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_emission_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_flags_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite);
+    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->shadow_map_moments_.Raw(), RDGTextureUsageType::kTransferWrite);
+
+	// Shadow map
+    Render_DrawShadowMap(view, builder);
 
     // Static meshes
     Render_DrawDeferredStaticMeshes(view, builder);
@@ -335,6 +340,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Path tracing pass
+
 
     if (view->debug_output_) {
         Render_DrawToOutput(view, builder, view->debug_output_.Raw());
@@ -361,7 +367,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         else if (type == 9) {
             Render_PathTracing(view, builder);
             Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
-        } else Render_DrawToOutput(view, builder, view->radiance_.Raw());
+        } 
+        else if (type == 10)
+			Render_DrawToOutput(view, builder, view->shadow_map_moments_.Raw());
+        else Render_DrawToOutput(view, builder, view->radiance_.Raw());
     }
 
 

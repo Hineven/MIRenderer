@@ -55,6 +55,7 @@ material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_me
     );
     volume_primitives_header_buffer_->SetName("VolumePrimitivesHeaderBuffer");
 
+
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {

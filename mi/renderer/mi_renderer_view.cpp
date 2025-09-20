@@ -354,6 +354,13 @@ void RendererView::InitFrame () {
         | RHITextureUsageFlagBits::kTransferDst);
     G_transmittance_->SetName("GBuffer Transmittance");
 
+    shadow_map_moments_ = RDGTexture::Create2D(
+        1024, 1024,
+        PixelFormatType::kR32G32_FLOAT,
+        RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+    );
+    shadow_map_moments_->SetName("Shadow Map Moments");
+
     volume_sample_color_and_linear_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
@@ -464,6 +471,7 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.WorldToNDC = proj_matrix * view_matrix;
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
+
 
     {
         glm::dmat4 prev_camera_view_matrix = glm::lookAt(

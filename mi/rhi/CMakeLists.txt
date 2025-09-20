@@ -9,6 +9,7 @@ function(create_spirv_targets)
         spirv-cross-glsl
         spirv-cross-hlsl
         spirv-cross-cpp
+        SPIRV-Tools
         SPIRV-Tools-opt
     )
 
@@ -17,6 +18,9 @@ function(create_spirv_targets)
         # Determine library filename based on build type
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(LIB_FILENAME "${SPIRV_LIB}d.lib")
+            if(NOT EXISTS "${VULKAN_LIB_DIR}/${LIB_FILENAME}")
+                set (LIB_FILENAME "${SPIRV_LIB}.lib")
+            endif()
         else()
             set(LIB_FILENAME "${SPIRV_LIB}.lib")
         endif()
@@ -101,7 +105,8 @@ list(
     SPIRV::spirv-cross-hlsl
     SPIRV::spirv-cross-cpp
     # SPV processing
-    Vulkan::SPIRV-Tools
+    # Vulkan::SPIRV-Tools
+    SPIRV::SPIRV-Tools
     SPIRV::SPIRV-Tools-opt
 
     #    SPIRV-Tools-reduce

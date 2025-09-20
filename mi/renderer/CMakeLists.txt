@@ -18,6 +18,7 @@ set(SOURCES
         renderer/r_sky.cpp
         renderer/r_static_meshes.cpp
         renderer/r_volume_primitives.cpp
+        renderer/r_shadow_map.cpp
         renderer/r_visualize_ray_traced.cpp
         renderer/r_hzb.cpp
         renderer/r_hwrt.cpp

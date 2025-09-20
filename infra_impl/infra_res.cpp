@@ -126,7 +126,7 @@ void MyBlobResource::WriteTaskRelease() {
     rw_mutex_.unlock();
 }
 
-
+//文件IO线程主函数，负责异步处理文件读写等任务
 void MyInfra::FIO_ThreadMain () {
     while(!fio_stop_) {
         fio_task_semaphore_.acquire();

@@ -167,9 +167,8 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(DecodeVisibilityShader, "mi/renderer/shaders/DrawStaticMeshes.hlsl", "DecodeVisibility");
 
-
 void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBuilder &builder) {
-    {
+    {   
         auto params = builder.Allocate<DrawDeferredStaticMeshesShader::Params>();
         params->View = view->view_common_params_;
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
