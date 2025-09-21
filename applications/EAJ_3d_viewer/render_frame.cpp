@@ -1,8 +1,17 @@
 /*
-* Created: 2025/9/13
- * Author: Exploring Air Joe
+ * Created: 2025/4/18
+ * Author: ExploringAirJoe
  */
+#include <imgui.h>
+
 #include "EAJ_3d_viewer.h"
+#include "../../mi/renderer/include/renderer/mi_renderer.h"
+#include "../../mi/renderer/include/renderer/mi_renderer_view.h"
+#include "rdg/rdg_builder.h"
+#include "rdg/rdg_cmd.h"
+#include "rdg/rdg_pool.h"
+#include "rdg/rdg_shader.h"
+#include "rhi/rhi_buffer.h"
 
 using namespace MI_NAMESPACE;
 
@@ -124,7 +133,6 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
 }
 
 void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
-
     RenderGraphBuilder builder;
 
     auto backbuffer = builder.Import(RHI::Get().GetBackBuffer());
@@ -146,3 +154,4 @@ void RenderFrame(RendererView * view_state, RDGResourcePool * pool) {
     auto graph = builder.Compile(frame_name);
     graph->Execute(pool);
 }
+
