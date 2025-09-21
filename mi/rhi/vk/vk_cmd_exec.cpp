@@ -157,6 +157,9 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
     auto & cmd = state_chains_[(uint32_t)queue->GetCommandQueueType()].Current().cmd;
     auto src_texture = static_cast<VulkanTexture*>(copy_texture->src_);
     auto dst_texture = static_cast<VulkanTexture*>(copy_texture->dst_);
+    auto width = copy_texture->width_ ? copy_texture->width_ : src_texture->GetMipWidth(copy_texture->src_mip_);
+    auto height = copy_texture->height_ ? copy_texture->height_ : src_texture->GetMipHeight(copy_texture->src_mip_);
+    auto depth = copy_texture->depth_ ? copy_texture->depth_ : src_texture->GetMipDepth(copy_texture->src_mip_);
     auto region = vk::ImageCopy2()
         .setSrcSubresource(vk::ImageSubresourceLayers()
             .setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -170,7 +173,7 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
             .setLayerCount(copy_texture->dst_layer_count_))
         .setSrcOffset({copy_texture->src_x_, copy_texture->src_y_, copy_texture->src_z_})
         .setDstOffset({copy_texture->dst_x_, copy_texture->dst_y_, copy_texture->dst_z_})
-        .setExtent({copy_texture->width_, copy_texture->height_, copy_texture->depth_});
+        .setExtent({width, height, depth});
     auto & copy_info = vk::CopyImageInfo2()
             .setSrcImage(src_texture->GetImage())
             .setDstImage(dst_texture->GetImage())
@@ -753,9 +756,10 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
     for(auto storage : parameter_table.storages) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
         auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer); // NOLINT its safe
-        buffer_info.buffer = buffer ? buffer->GetBuffer() : nullptr;
+        auto buffer_ptr = buffer ? buffer->GetBuffer() : nullptr;
+        buffer_info.buffer = buffer_ptr;
         buffer_info.offset = storage.buffer.offset;
-        buffer_info.range = storage.buffer.size;
+        buffer_info.range = buffer_ptr ? storage.buffer.size : VK_WHOLE_SIZE;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()

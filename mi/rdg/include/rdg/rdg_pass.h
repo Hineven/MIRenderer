@@ -131,11 +131,11 @@ protected:
     } compiled_; // Generated after compilation
 
 
-    // Keep references for resources used in the pass prior to compilation.
+    // Keep references for resources used in the pass prior to compilation. May contain duplicates.
     std::vector<RDGTextureUsage> used_textures;
-    // Keep references for resources used in the pass prior to compilation.
+    // Keep references for resources used in the pass prior to compilation. May contain duplicates.
     std::vector<RDGBufferUsage> used_buffers;
-    // Keep references for resources used in the pass prior to compilation.
+    // Keep references for resources used in the pass prior to compilation. May contain duplicates.
     std::vector<RDGASUsage> used_acceleration_structures;
 
     // This is filled up by the RDG builder upon spawning the pass

@@ -524,6 +524,16 @@ struct RHITraceRaysIndirectCommand2 {
     uint64_t callable_sbt_stride {UINT64_MAX};
 };
 
+struct RHISamplerDesc {
+    RHISamplerFilterType min_filter {RHISamplerFilterType::kLinear};
+    RHISamplerFilterType mag_filter {RHISamplerFilterType::kLinear};
+    RHISamplerFilterType mipmap_mode {RHISamplerFilterType::kLinear};
+    RHISamplerAddressModeType address_mode_u {RHISamplerAddressModeType::kRepeat};
+    RHISamplerAddressModeType address_mode_v {RHISamplerAddressModeType::kRepeat};
+    RHISamplerAddressModeType address_mode_w {RHISamplerAddressModeType::kRepeat};
+    std::array<float, 4> border_color {0.f, 0.f, 0.f, 1.f};
+};
+
 MI_NAMESPACE_END
 
 #endif //MI_RHI_DESC_H

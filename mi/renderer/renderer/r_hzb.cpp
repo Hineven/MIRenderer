@@ -21,7 +21,7 @@ public:
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWInOrFlagsBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutHiZBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutOrFlagsBuffer)
-        SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
@@ -68,7 +68,7 @@ void Renderer::Render_ComputeHiZBuffer(
         if (level == 0) ini.optional_macros.push_back("DEPTH_AS_INPUT");
         auto shader = lib.GetShader<ComputeHiZBufferShader>(ini);
         auto params = builder.Allocate<ComputeHiZBufferShader::ShaderParameters>();
-        params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+        params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
         params->View = view->view_common_params_;
         params->InDepthBuffer = view->G_depth_.Raw();
         params->InFlagsBuffer = view->G_flags_.Raw();

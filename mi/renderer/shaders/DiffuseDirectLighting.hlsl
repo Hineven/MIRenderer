@@ -1,4 +1,5 @@
 #include "shared/SharedView.hlsl"
+#include "shared/SharedDebug.hlsl"
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedVertex.hlsl"
 #include "shared/SharedMaterial.hlsl"
@@ -78,6 +79,9 @@ RWStructuredBuffer<uint> RWRayToTraceOriginScreenCoordBuffer;
 
 // Optional (when the ray origin is in world space)
 RWStructuredBuffer<float3> RWRayToTraceOriginBuffer;
+
+// Special sampler used for SSRT
+SamplerState PointBorder1Sampler;
 
 struct HybridTracingUB {
     float SSRT_RelativeTexelThickness;
@@ -252,12 +256,14 @@ StructuredBuffer<float> ShadowRayToTraceTransmittanceBuffer;
 
 // Direction (Normal uint packed), Length (float)
 RWTexture2D<uint> RWDirectLightingRayIndexTexture; // Specify the shadow ray index in the following hybrid tracing process
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDirectLightingRadianceEstimateTexture; // Output buffer for direct lighting radiance estimates
 
 Texture2D<float> G_HiZBuffer;
 Texture2D<float> G_HistoryDepthTexture;
 
 Texture2D<float4> DirectLightingRadianceEstimateTexture;
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDiffuseDirectLightingTexture;
 
 // Dispatch a thread for each tile
@@ -268,7 +274,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
 
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
-    float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
+    float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0);
     if (ReversedZDepth == 0) {
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
         return; // Skip empty pixels
@@ -276,7 +282,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
 
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
-    float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
+    float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     if (!IsValid(GridIndex.x)) {
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
@@ -421,15 +427,19 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     CameraParameters C = GetActiveCamera();
     uint2 PixelIndex = RayToTrace.OriginScreenCoord;
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
-    float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, PixelUV, 0);
+    float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0);
     // Screen space ray trace
     float3 Estimate = RWDirectLightingRadianceEstimateTexture[PixelIndex].rgb;
     // Shadow ray trace
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
+    
+    // if(all(PixelIndex == Debug.CursorScreenCoords)) {
+    //     printf("World Position: %f, %f, %f\n", WorldPosition.x, WorldPosition.y, WorldPosition.z);
+    // }
     {
         // Offset the origin a bit, but at most 0.45 pixel (45%)
-        float3 Normal = normalize(G_NormalTexture.SampleLevel(PointClampSampler, PixelUV, 0).xyz - 0.5f.xxx);
+        float3 Normal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
         float MaxOffsetLength = LinearDepth * 1e-3f;
         float2 PixelSize = GetPixelWorldSize(C, LinearDepth);
         float ProjectionX = abs(dot(C.NormalizedRight, Normal));
@@ -441,29 +451,35 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
         WorldPosition += OffsetLength * Normal;
     }
 
+    // if(all(PixelIndex == Debug.CursorScreenCoords)) {
+    //     printf("Offset World Position: %f, %f, %f\n", WorldPosition.x, WorldPosition.y, WorldPosition.z);
+    // }
+
     float3 TraceDirection = RayToTrace.Direction;
     float TraceTMax = RayToTrace.TMax;
     bool bHit = false;
     float3 HitUVZ = 0, LastVisibleUVZ = 0;
     float HitTileZ = 0;
     float3 LastValidUVZ = 0;
+    // FIXME
+    bool DebugFlag = all(PixelIndex == Debug.CursorScreenCoords);
     ScreenSpaceRayTrace(
-        C, G_DepthTexture, G_HiZBuffer, G_FlagsTexture, OrFlagsTexture,
+        C, G_DepthTexture, G_HiZBuffer, G_FlagsTexture, OrFlagsTexture, PointBorder1Sampler,
         WorldPosition, TraceDirection, TraceTMax,
         40, HybridTracing_UB.SSRT_RelativeTexelThickness, 0,
+        DebugFlag,
         bHit, HitUVZ, LastVisibleUVZ, HitTileZ, LastValidUVZ
     );
 
-    float3 HitWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(HitUVZ.xy), ZDepthToLinearDepth(C, HitUVZ.z));
+    float3 HitWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(HitUVZ.xy), ReversedZDepthToLinearDepth(C, HitUVZ.z));
     float HitDistance = min(length(HitWorldPosition - WorldPosition), TraceTMax);
 
-    // FIXME
-    bHit = false;
+    // bHit = false;
 
     // FIXME
     if (false && bHit) {
         // Double checking using history buffer
-        float3 PreviousUVZ = ReprojectToPreviousUVZFromUVZ(C, HitUVZ);
+        float3 PreviousUVZ = ReprojectToPreviousUVZFromUVZ(C, float3(HitUVZ.xy, 1 - HitUVZ.z));
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
         float Noise = InterleavedGradientNoise(UV, DirectLighting_UB.FrameIndex);
         if (all(PreviousUVZ.xy >= 0) && all(PreviousUVZ.xy < 1)) {
@@ -471,7 +487,7 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
             float PrevZDepth = PreviousUVZ.z;
 
             // Lookup the actual depth at the same screen position last frame
-            float ReversedHistoryZDepth = G_HistoryDepthTexture.SampleLevel(PointClampSampler, PreviousUVZ.xy, 0).x;
+            float ReversedHistoryZDepth = G_HistoryDepthTexture.SampleLevel(PointEdgeSampler, PreviousUVZ.xy, 0).x;
             float HistoryZDepth = 1.f - ReversedHistoryZDepth;
 
             bHit = abs(HistoryZDepth - PrevZDepth) < HybridTracing_UB.SSRT_RelativeTexelThickness * 0.5f * lerp(.5f, 2.0f, Noise);
@@ -481,15 +497,19 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     if (!bHit) {
         // Not occluded, prepare for world trace and transmittance calculation.
         // Backward the ray a little from the last valid (and visible) position for ray continuation
-        float LinearDepth = ZDepthToLinearDepth(C, LastValidUVZ.z);
+        float LinearDepth = ReversedZDepthToLinearDepth(C, LastValidUVZ.z);
         float3 LastValidWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(LastValidUVZ.xy), LinearDepth);
         HitDistance = min(length(LastValidWorldPosition - WorldPosition), TraceTMax);
+
+        if(all(PixelIndex == Debug.CursorScreenCoords)) {
+            //printf("LastVisibleUVZ: %f %f %f\n", LastVisibleUVZ.x, LastVisibleUVZ.y, LastVisibleUVZ.z);
+            printf("HZBBaseTexelSize: %f %f\n", C.HZBBaseTexelSize.x, C.HZBBaseTexelSize.y);
+        }
 
         float Bias = min(LinearDepth * HybridTracing_UB.RayContinuationBackwardBiasFactor, HitDistance * 0.5f);
         HitDistance = max(HitDistance - Bias, 0);
 
-        // FIXME
-        HitDistance = 0.001f;
+        // HitDistance = 0.001f;
 
         // Allocate new rays for continuation
         uint WaveSurvivingRayCount = WaveActiveCountBits(true);
@@ -510,6 +530,11 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 
 // HWRT...
 
+RWStructuredBuffer<uint> RWDebugTracedRaysCount;
+RWStructuredBuffer<float3> RWDebugTracedRayOrigins;
+RWStructuredBuffer<uint> RWDebugTracedRayDirections;
+RWStructuredBuffer<uint> RWDebugTracedRayStates;
+
 // Render diffuse direct lighting using trace results
 // 1 thread per ray
 [numthreads(WAVE_SIZE, 1, 1)]
@@ -518,15 +543,26 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWRayToTraceCount[0]) return;
     RayToTrace RayToTrace = FetchRayToTraceWithScreenOrigin(RayIndex, 0);
+    CameraParameters C = GetActiveCamera();
+    uint2 PixelIndex = RayToTrace.OriginScreenCoord;
     if (!RayToTrace.bHit) {
-        CameraParameters C = GetActiveCamera();
-        uint2 PixelIndex = RayToTrace.OriginScreenCoord;
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
-        float3 Estimate = DirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
+        float3 Estimate = DirectLightingRadianceEstimateTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
         float Transmittance = ShadowRayToTraceTransmittanceBuffer[RayIndex];
         // Not multiplied by BSDF (multiplied later in the final composition pass)
         RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate * Transmittance, 1.f);
     }
+#ifdef DEBUG_OUTPUT_TRACED_RAY
+    if (all(PixelIndex == Debug.CursorScreenCoords)) {
+        float2 UV = ScreenCoordsToUV(C, PixelIndex);
+        float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
+        float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), ReversedZDepthToLinearDepth(C, ReversedZDepth));
+        RWDebugTracedRaysCount[0] = 1;
+        RWDebugTracedRayDirections[0] = PackNormal(RayToTrace.Direction);
+        RWDebugTracedRayOrigins[0] = WorldPosition;
+        RWDebugTracedRayStates[0] = PackRayToTraceState(RayToTrace.TCurrent, true);
+    }
+#endif
 }
 
 Texture2D<float>  VolumeDensityTexture;
@@ -544,13 +580,13 @@ struct PixelVolume {
 };
 
 PixelVolume FetchVolume(float2 UV) {
-    float2 MinMax = VolumeMinMaxTexture.SampleLevel(PointClampSampler, UV, 0).xy;
+    float2 MinMax = VolumeMinMaxTexture.SampleLevel(PointEdgeSampler, UV, 0).xy;
     PixelVolume Volume;
     Volume.Min = MinMax.x;
     Volume.Max = MinMax.y;
-    Volume.Density = VolumeDensityTexture.SampleLevel(PointClampSampler, UV, 0).x;
-    Volume.Color = VolumeColorTexture.SampleLevel(PointClampSampler, UV, 0).xyz;
-    float2 CdfAndAttenuation = VolumeCdfAttenuationTexture.SampleLevel(PointClampSampler, UV, 0).xy;
+    Volume.Density = VolumeDensityTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
+    Volume.Color = VolumeColorTexture.SampleLevel(PointEdgeSampler, UV, 0).xyz;
+    float2 CdfAndAttenuation = VolumeCdfAttenuationTexture.SampleLevel(PointEdgeSampler, UV, 0).xy;
     Volume.Cdf = CdfAndAttenuation.x;
     Volume.Attenuation = CdfAndAttenuation.y;
     return Volume;
@@ -561,6 +597,7 @@ Texture2D<float4> VolumeSampleColorAndLinearDepth;
 Texture2D<float2> VolumeSampleTransmittanceAndPdf;
 
 // DI textures
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeDirectLightingRadianceEstimateTexture;
 Texture2D<float4> VolumeDirectLightingRadianceEstimateTexture;
 
@@ -576,6 +613,7 @@ RWStructuredBuffer<uint> RWVolumeRayToTracePixelIndexBuffer;
 StructuredBuffer<float> VolumeRayToTraceTransmittanceBuffer;
 
 // Output lighting
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeDirectLightingTexture;
 
 
@@ -590,8 +628,8 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
 
-    float4 ColorAndLinearDepth = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, PixelUV, 0);
-    float2 TransmittanceAndPdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, PixelUV, 0);
+    float4 ColorAndLinearDepth = VolumeSampleColorAndLinearDepth.SampleLevel(PointEdgeSampler, PixelUV, 0);
+    float2 TransmittanceAndPdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointEdgeSampler, PixelUV, 0);
     if(TransmittanceAndPdf.y == 0) {
         // No valid volume sample found. No need to spawn light samples for it.
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
@@ -752,11 +790,11 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     if (!RayToTrace.bHit) {
         CameraParameters C = GetActiveCamera();
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
-        float3 Estimate = VolumeDirectLightingRadianceEstimateTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
+        float3 Estimate = VolumeDirectLightingRadianceEstimateTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
         float3 Radiance = RayTransmittance * Estimate;
         // Resemble volume sampling
-        float3 VolumeSampleColor = VolumeSampleColorAndLinearDepth.SampleLevel(PointClampSampler, UV, 0).rgb;
-        float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointClampSampler, UV, 0);
+        float3 VolumeSampleColor = VolumeSampleColorAndLinearDepth.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+        float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointEdgeSampler, UV, 0);
         float  VolumeSampleTransmittance = VolumeSampleTransmittancePdf.x;
         float  VolumeSamplePdf = VolumeSampleTransmittancePdf.y;
         Radiance = Radiance * VolumeSampleColor;

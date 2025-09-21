@@ -5,8 +5,8 @@
 #define COMMON_SAMPLER_RESOURCES_HLSL
 
 SamplerState LinearWrapSampler;
-SamplerState LinearClampSampler;
-SamplerState PointClampSampler;
+SamplerState LinearEdgeSampler;
+SamplerState PointEdgeSampler;
 SamplerState PointWrapSampler;
 
 #endif

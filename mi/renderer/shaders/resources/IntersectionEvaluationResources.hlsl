@@ -93,7 +93,7 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
         float Handedness = dot(cross(Intersection.Normal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
         Bitangent = cross(Intersection.Normal, Tangent) * Handedness;
 
-        // 6. 采样法线贴图并变换法线。
+        // Sample normal map and reconstruct shading normal
         float3 NormalMapSample;
         
         if (bPointSampled) {

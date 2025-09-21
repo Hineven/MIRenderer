@@ -323,7 +323,7 @@ public:
         : src_(src), dst_(dst),
           src_x_(src_x), src_y_(src_y), src_z_(src_z),
           dst_x_(dst_x), dst_y_(dst_y), dst_z_(dst_z),
-          width_(width), height_(height), depth_(depth),
+          width_(width), height_(height), depth_(depth), // 0 means full size
           src_mip_(src_mip), dst_mip_(dst_mip),
           src_base_layer_(src_base_layer), src_layer_count_(src_layer_count),
           dst_base_layer_(dst_base_layer), dst_layer_count_(dst_layer_count) {}
@@ -706,6 +706,24 @@ public:
     FORCEINLINE void ClearBuffer (RHIBufferSpan buffer, uint32_t clear_value = 0) {
         AddCommand(AllocateCommand<RHICommandClearBuffer>(buffer, clear_value));
     }
+
+    FORCEINLINE void CopyTexture (RHITexture * src, RHITexture * dst,
+                             int src_x = 0, int src_y = 0, int src_z = 0,
+                             int dst_x = 0, int dst_y = 0, int dst_z = 0,
+                             uint32_t width = 0, uint32_t height = 0, uint32_t depth = 1, // 0 means full size
+                             uint32_t src_mip = 0, uint32_t dst_mip = 0,
+                             uint32_t src_base_layer = 0, uint32_t src_layer_count = 1,
+                             uint32_t dst_base_layer = 0, uint32_t dst_layer_count = 1) {
+        AddCommand(AllocateCommand<RHICommandCopyTexture>(
+                src, dst,
+                src_x, src_y, src_z,
+                dst_x, dst_y, dst_z,
+                width, height, depth,
+                src_mip, dst_mip,
+                src_base_layer, src_layer_count,
+                dst_base_layer, dst_layer_count));
+    }
+
     // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed
     // in the buffer
     // Unspecified dst_tex_width, dst_tex_height, dst_tex_depth is the same as the texture's dimensions

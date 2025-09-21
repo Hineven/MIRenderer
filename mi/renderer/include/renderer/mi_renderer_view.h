@@ -164,7 +164,14 @@ struct RendererView {
     TRef<RDGTexture> radiance_;
 
     // Debug output, can be written to for debug purposes
+    // This is tone mapped the same as radiance_
     TRef<RDGTexture> debug_output_;
+
+    struct {
+        // Outputs from debug paasses, can be used as we like
+        TRef<RDGTexture> visualize_ray_tracing_scene_output_;
+        TRef<RDGTexture> visualize_traced_rays_output_;
+    } debug_views_;
 
     struct {
         // For visualizing traced rays. Can be created and written to in various passes.

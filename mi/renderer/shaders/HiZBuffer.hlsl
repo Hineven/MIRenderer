@@ -16,7 +16,9 @@ RWTexture2D<float> RWInHiZBuffer;
 RWTexture2D<float> RWOutHiZBuffer;
 
 Texture2D<uint> InFlagsBuffer;
+[[vk::image_format("r8ui")]]
 RWTexture2D<uint> RWInOrFlagsBuffer;
+[[vk::image_format("r8ui")]]
 RWTexture2D<uint> RWOutOrFlagsBuffer;
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
@@ -52,10 +54,10 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     float2 P2 = Depth_UV + float2(0, DeltaDepth_UV.y);
     float2 P3 = Depth_UV + DeltaDepth_UV;
 
-    float D0 = InDepthBuffer.SampleLevel(PointClampSampler, P0, 0);
-    float D1 = InDepthBuffer.SampleLevel(PointClampSampler, P1, 0);
-    float D2 = InDepthBuffer.SampleLevel(PointClampSampler, P2, 0);
-    float D3 = InDepthBuffer.SampleLevel(PointClampSampler, P3, 0);
+    float D0 = InDepthBuffer.SampleLevel(PointEdgeSampler, P0, 0);
+    float D1 = InDepthBuffer.SampleLevel(PointEdgeSampler, P1, 0);
+    float D2 = InDepthBuffer.SampleLevel(PointEdgeSampler, P2, 0);
+    float D3 = InDepthBuffer.SampleLevel(PointEdgeSampler, P3, 0);
     if(any(P0 >= 1.f)) D0 = 1.f;
     if(any(P1 >= 1.f)) D1 = 1.f;
     if(any(P2 >= 1.f)) D2 = 1.f;

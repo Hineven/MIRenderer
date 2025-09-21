@@ -141,12 +141,6 @@ RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_textures.emplace_back(texture);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_textures.emplace_back(texture);
     used_textures.emplace_back(layout, access, stages, texture);
-    // if (access & RHIGPUAccessFlagBits::kRead) {
-    //     compiled_.in_textures.emplace_back(texture);
-    // }
-    // if (access & RHIGPUAccessFlagBits::kWrite) {
-    //     compiled_.out_textures.emplace_back(texture);
-    // }
     return this;
 }
 

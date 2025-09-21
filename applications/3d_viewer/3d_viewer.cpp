@@ -308,10 +308,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
         TRef<VolumePrimitives> volprims;
-        // VolumePrimitivesLoader::LoadPLY(
-        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
-        //     *resource_allocator, volprims
-        // );
+        VolumePrimitivesLoader::LoadPLY(
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+            *resource_allocator, volprims
+        );
         if (volprims) {
             volprims->UpdateOnDevice(resource_allocator.get());
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
@@ -418,6 +418,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     should_reload_shaders = true;
                 }
             }
+
+            auto & io = ImGui::GetIO();
+            // Update mouse pos cvars
+            {
+                CVar_DebugCursorScreenCoordsX.Set((int)round(io.MousePos.x));
+                CVar_DebugCursorScreenCoordsY.Set((int)round(io.MousePos.y));
+            }
+
             // UI
             {
                 ImGui::Begin("Rendering");
@@ -495,8 +503,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 }
                 ImGui::End();
             }
-
-            auto & io = ImGui::GetIO();
             // Render
             {
                 RenderGraphBuilder builder;

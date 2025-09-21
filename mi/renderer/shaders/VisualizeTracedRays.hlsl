@@ -33,12 +33,13 @@ VisualizeTracedRaysVSOut VisualizeTracedRaysVS (
     float3 RayOrigin = TracedRaysOriginBuffer[InstanceIndex];
     float3 RayDirection = UnpackNormal(TracedRaysDirectionBuffer[InstanceIndex]);
     uint RayState = TracedRaysStateBuffer[InstanceIndex];
-    float RayT = RayState & 0x7fffffffu;
+    float RayT = asfloat(RayState & 0x7fffffffu);
     bool bHit = bool(RayState & 0x80000000u);
     if (VertexIndex == 0) {
         Output.Position = mul(View.Camera.WorldToNDC_ReversedZ, float4(RayOrigin, 1));
         Output.RayT = 0;
     } else {
+        // printf("RayT %f\n", RayT);
         Output.Position = mul(View.Camera.WorldToNDC_ReversedZ, float4(RayOrigin + RayDirection * RayT, 1));
         Output.RayT = bHit ? RayT : 0;
     }
@@ -59,7 +60,7 @@ VisualizeTracedRaysPSOut VisualizeTracedRaysPS (
 #ifdef VISUALIZE_RAY_COLORS
     Output.Color = float4(Input.RayColor, 1);
 #else
-    Output.Color = float4(Input.RayT, Input.RayT, Input.RayT, 1);
+    Output.Color = float4(0, 0.5, 0.5, 1);//Input.RayT, Input.RayT, Input.RayT, 1);
 #endif
     return Output;
 }

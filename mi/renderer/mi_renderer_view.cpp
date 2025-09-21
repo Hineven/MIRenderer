@@ -305,7 +305,7 @@ void RendererView::InitFrame () {
 
     G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_albedo_->SetName("GBuffer Albedo");
 
     G_normal_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
@@ -380,7 +380,9 @@ void RendererView::InitFrame () {
         | RHITextureUsageFlagBits::kTransfer);
     volume_direct_lighting_->SetName("Volume Direct Lighting");
 
-    debug_output_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM);
+    debug_output_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kRenderTarget
+        | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransfer);
     debug_output_->SetName("Debug Output");
 
     // Clear hzb, this is later created
@@ -389,6 +391,8 @@ void RendererView::InitFrame () {
 
     // clear debug buffers. They are created on demand.
     debug_buffers_ = {};
+    // Also clear debug views
+    debug_views_ = {};
 
     // bool world_changed = world_ != persistent_data_->prev_world_;
     // Initialize the upload context used for batching uploads

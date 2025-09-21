@@ -21,6 +21,7 @@ StructuredBuffer<uint> IndexBuffer;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutput;
 TextureCube<float4> EnvironmentMap;
 SamplerState LinearSampler;

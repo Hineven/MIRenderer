@@ -63,7 +63,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, TracedRaysStateBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, TracedRaysColorBuffer)
 
-        SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, DebugOutput)
+        SHADER_RENDER_TARGET(PixelFormatType::kR16G16B16A16_FLOAT, DebugOutput)
         SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -78,6 +78,8 @@ public:
         // Enable comparison but disable depth write
         config.depth_test_enabled = true;
         config.depth_write_enabled = false;
+        // Reversed-z
+        config.depth_compare_op = RHIDepthCompareOpType::kGreater;
         // Render lines only
         config.topology = RHIPrimitiveTopologyType::kLineList;
         return config;
@@ -87,7 +89,13 @@ public:
 IMPLEMENT_RDG_GRAPHICS_SHADER(VisualizeTracedRaysShader, "mi/renderer/shaders/VisualizeTracedRays.hlsl", "VisualizeTracedRaysVS", "VisualizeTracedRaysPS")
 
 void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder) {
-    auto RenderRayTracingScene = [&] () {
+    // Visualize the scene used for ray tracing
+    {
+        view->debug_views_.visualize_ray_tracing_scene_output_ = builder.CreateTexture2D(view->film_width_, view->film_height_,
+            PixelFormatType::kR16G16B16A16_FLOAT,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource
+            | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
+
         auto shader = RDGShaderLibrary::Get().GetShader<VisualizeRayTracingSceneShader>();
         auto params = builder.Allocate<VisualizeRayTracingSceneShader::Params>();
         params->View = view->view_common_params_;
@@ -103,17 +111,26 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->PrimitiveData = builder.Import(
             device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
         );
-        params->RWDebugOutput = view->debug_output_.Raw();
+        params->RWDebugOutput = view->debug_views_.visualize_ray_tracing_scene_output_.Raw();
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
         params->LinearSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
         Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
-    };
-    auto RenderTracedRays = [&] () {
+    }
+    // Visualize traced rays
+    {
         if (!view->debug_buffers_.traced_ray_origins || !view->debug_buffers_.traced_ray_directions
             || !view->debug_buffers_.traced_ray_states || !view->debug_buffers_.traced_ray_count) {
-            // Silently exits when no debugging info is present
-            return ;
+            // Robustness feature makes sure that null -> 0 rays, so we dont need to do anything except popping up a warning
+            // MI_WARN("No traced rays debug buffers, cannot visualize traced rays");
         }
+        // Prepare debug output
+        view->debug_views_.visualize_traced_rays_output_ = builder.CreateTexture2D(view->film_width_, view->film_height_,
+            PixelFormatType::kR16G16B16A16_FLOAT,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource
+            | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
+        // Duplicate lighting to debug output
+        Helpers::CopyTexture(builder, view->radiance_.Raw(), view->debug_views_.visualize_traced_rays_output_.Raw());
+
         bool should_visualize_colors = CVar_DebugViewVisualizeRayColors.Get() && view->debug_buffers_.traced_ray_colors;
         auto ini = RDGShaderInitializationInfo {};
         if (should_visualize_colors) ini.optional_macros.push_back("VISUALIZE_RAY_COLORS");
@@ -124,7 +141,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->TracedRaysDirectionBuffer = view->debug_buffers_.traced_ray_directions.Raw();
         params->TracedRaysStateBuffer = view->debug_buffers_.traced_ray_states.Raw();
         params->TracedRaysColorBuffer = view->debug_buffers_.traced_ray_colors.Raw();
-        params->DebugOutput = view->debug_output_.Raw();
+        params->DebugOutput = view->debug_views_.visualize_traced_rays_output_.Raw();
         params->Depth = view->G_depth_.Raw();
         auto cmd = Helpers::SpawnDrawIndirectCommand(builder, 2, view->debug_buffers_.traced_ray_count.Raw());
         builder.AddPass<VisualizeTracedRaysShader>({}, shader, params,
@@ -135,11 +152,11 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
                 queue.EndRendering();
             }
         })->AddBufferH(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
-    };
+    }
     if (CVar_DebugViewMode.Get() == 0) {
-        RenderRayTracingScene();
+        Helpers::CopyTexture(builder, view->debug_views_.visualize_ray_tracing_scene_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 1) {
-        RenderTracedRays();
+        Helpers::CopyTexture(builder, view->debug_views_.visualize_traced_rays_output_.Raw(), view->debug_output_.Raw());
     }
 }
 
