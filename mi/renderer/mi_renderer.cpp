@@ -328,6 +328,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     Render_ComputeDirectLighting(view, builder);
 
+    Render_DenoiseLighting(view, builder);
+
     Render_LightingComposition(view, builder);
 
     Render_DebugView(view, builder);

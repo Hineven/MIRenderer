@@ -24,6 +24,7 @@ set(SOURCES
         renderer/r_diffuse_direct_lighting.cpp
         renderer/r_path_tracing.cpp
         renderer/r_debug_views.cpp
+        renderer/r_denoise.cpp
         util/radix_sort.cpp
 )
 

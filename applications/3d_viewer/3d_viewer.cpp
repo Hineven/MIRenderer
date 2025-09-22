@@ -412,7 +412,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     // 垂直旋转（俯仰角）- 围绕右向量旋转
                     glm::mat4 rotate_x = glm::rotate(glm::mat4(1.0f), -delta_y, camera_right);
                     view->camera_.direction = glm::vec3(rotate_x * glm::vec4(view->camera_.direction, 0.0f));
-                    // view->camera_.Up = glm::vec3(rotate_x * glm::vec4(view->camera_.Up, 0.0f));
 
                     // 确保所有向量都是单位向量
                     view->camera_.direction = glm::normalize(view->camera_.direction);

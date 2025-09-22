@@ -84,6 +84,10 @@ protected:
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
+    void Render_DenoiseLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
     void Render_LightingComposition (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
