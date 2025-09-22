@@ -24,12 +24,6 @@
 #include "renderer/r_internal_common.h"
 
 MI_NAMESPACE_BEGIN
-static CVar<bool> CVar_DebugVisualizeRayTraced(
-    "r.debug.visualize_ray_traced",
-    "If true, visualize ray-traced objects in the scene. "
-    "This will render the ray-traced objects in the scene using a ray tracing pass.",
-    false
-);
 
 static CVar<int> CVar_FinalOutputType(
     "r.debug.final_output_type",
@@ -38,7 +32,7 @@ static CVar<int> CVar_FinalOutputType(
     "1 - Albedo\n"
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
-    10
+    0
 );
 
 Renderer::Renderer() {
@@ -109,7 +103,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     view->InitFrame();
     // Allocate and set view->view_common_params_
-    view->SetViewCommonShaderParameters(builder);
+    view->SetupViewCommonShaderParameters(builder);
+    // Allocate and set view->debug_common_params_
+    view->SetupDebugCommonShaderParameters(builder);
 
     mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
     auto all_renderables = view->scene_->GetRenderables();
@@ -334,45 +330,31 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     Render_LightingComposition(view, builder);
 
-    // Draw the ray-traced objects to debug buffer if enabled
-    if (CVar_DebugVisualizeRayTraced.Get()) {
-        Render_VisualizeRayTraced(view, builder);
-    }
+    Render_DebugView(view, builder);
 
-    // Path tracing pass
-
-
-    if (view->debug_output_) {
-        Render_DrawToOutput(view, builder, view->debug_output_.Raw());
-    } else {
-        auto type = CVar_FinalOutputType.Get();
-        if (type == 0)
-            Render_DrawToOutput(view, builder, view->radiance_.Raw());
-        else if (type == 1)
-            Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
-        else if (type == 2)
-            Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
-        else if (type == 3)
-            Render_DrawToOutput(view, builder, view->G_normal_.Raw());
-        else if (type == 4)
-            Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
-        else if (type == 5)
-            Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
-        else if (type == 6)
-            Render_DrawToOutput(view, builder, view->volume_sample_transmittance_and_pdf_.Raw());
-        else if (type == 7)
-            Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
-        else if (type == 8)
-            Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
-        else if (type == 9) {
-            Render_PathTracing(view, builder);
-            Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
-        } 
-        else if (type == 10)
-			Render_DrawToOutput(view, builder, view->shadow_map_moments_.Raw());
-        else Render_DrawToOutput(view, builder, view->radiance_.Raw());
-    }
-
+    auto type = CVar_FinalOutputType.Get();
+    if (type == 0)
+        Render_DrawToOutput(view, builder, view->radiance_.Raw());
+    else if (type == 1)
+        Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+    else if (type == 2)
+        Render_DrawToOutput(view, builder, view->G_depth_.Raw());
+    else if (type == 3)
+        Render_DrawToOutput(view, builder, view->G_normal_.Raw());
+    else if (type == 4)
+        Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
+    else if (type == 5)
+        Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
+    else if (type == 6)
+        Render_DrawToOutput(view, builder, view->hzb_.Raw());
+    else if (type == 7)
+        Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
+    else if (type == 8)
+        Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
+    else if (type == 9) {
+        Render_PathTracing(view, builder);
+        Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+    } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());
 
     // Extra pass for forward rendering
     Render_DrawForwardStaticMeshes(view, builder);

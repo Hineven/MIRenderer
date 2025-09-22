@@ -25,6 +25,81 @@ void Helpers::Clear(RenderGraphBuilder &builder, RDGTexture *texture, glm::vec4 
     );
 }
 
+void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTexture *dst,
+    uint32_t src_mip_level, uint32_t src_base_layer, uint32_t src_layer_count,
+    uint32_t dst_mip_level, uint32_t dst_base_layer, uint32_t dst_layer_count) {
+    builder.AddPass("CopyTexture", RDGPassType::kGeneric, {}, {}, {}, {},
+        [src, dst, src_mip_level, src_base_layer, src_layer_count, dst_mip_level, dst_base_layer, dst_layer_count](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            queue.CopyTexture(src->GetRHI(), dst->GetRHI(),
+                0, 0, 0,
+                0, 0, 0,
+                0, 0, 0,
+                src_mip_level, dst_mip_level,
+                src_base_layer, src_layer_count,
+                dst_base_layer, dst_layer_count
+            );
+        }
+    )->AddTexture(src, RHITextureLayoutType::kTransferSrcOptimal, RHIGPUAccessFlagBits::kTransferRead, RHIPipelineStageFlagBits::kTransfer)
+     ->AddTexture(dst, RHITextureLayoutType::kTransferDstOptimal, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
+}
+
+
+class SpawnDrawIndirectCommandShader : public RDGShader {
+public:
+    struct SpawnDrawIndirectCommandUB {
+        uint32_t FirstVertex;
+        uint32_t FirstInstance;
+        uint32_t VertexCount;
+        uint32_t InstanceCount;
+    };
+    BEGIN_SHADER_PARAMETERS(SpawnDrawIndirectCommandShaderParameters)
+        SHADER_UNIFORM_BUFFER(SpawnDrawIndirectCommandUB, SpawnDrawIndirectCommand_UB)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, SpawnDrawIndirectCommand_Command)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, SpawnDrawIndirectCommand_VertexCount)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, SpawnDrawIndirectCommand_InstanceCount)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(SpawnDrawIndirectCommandShaderParameters)
+    DECLARE_SHADER()
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {
+            "USE_VERTEX_COUNT_BUFFER",   // If we should read vertex count from a buffer.
+            "USE_INSTANCE_COUNT_BUFFER", // If we should read instance count from a buffer.
+        };
+    }
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER(SpawnDrawIndirectCommandShader, "mi/rdg/shaders/Helpers.hlsl", "SpawnDrawIndirectCommand");
+
+TRef<RDGBuffer> Helpers::SpawnDrawIndirectCommand(RenderGraphBuilder &builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count, uint32_t first_vertex, uint32_t first_instance) {
+    auto command = RDGBuffer::Create(
+        RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage,
+        sizeof(RHIDrawIndirectCommand)
+    );
+    command->SetName("DrawIndirectCommand");
+    auto params = builder.Allocate<SpawnDrawIndirectCommandShader::SpawnDrawIndirectCommandShaderParameters>();
+    params->SpawnDrawIndirectCommand_UB = builder.Allocate<SpawnDrawIndirectCommandShader::SpawnDrawIndirectCommandUB>();
+    params->SpawnDrawIndirectCommand_UB->FirstVertex = first_vertex;
+    params->SpawnDrawIndirectCommand_UB->FirstInstance = first_instance;
+    params->SpawnDrawIndirectCommand_UB->VertexCount = vertex_count.is_buffer ? 0 : vertex_count.value;
+    params->SpawnDrawIndirectCommand_UB->InstanceCount = instance_count.is_buffer ? 0 : instance_count.value;
+    params->SpawnDrawIndirectCommand_Command = command.Raw();
+    params->SpawnDrawIndirectCommand_VertexCount = vertex_count.is_buffer ? vertex_count.buffer : nullptr;
+    params->SpawnDrawIndirectCommand_InstanceCount = instance_count.is_buffer ? instance_count.buffer : nullptr;
+    auto ini = RDGShaderInitializationInfo{};
+    if (vertex_count.is_buffer) {
+        ini.optional_macros.push_back("USE_VERTEX_COUNT_BUFFER");
+    }
+    if (instance_count.is_buffer) {
+        ini.optional_macros.push_back("USE_INSTANCE_COUNT_BUFFER");
+    }
+    auto shader = RDGShaderLibrary::Get().GetShader<SpawnDrawIndirectCommandShader>(ini);
+    builder.AddPass<SpawnDrawIndirectCommandShader>({}, shader, params,
+        [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            RDGCommandHelper::Dispatch<SpawnDrawIndirectCommandShader>(queue, pass, shader, params);
+        }
+    );
+    return command;
+}
 
 class SpawnDispatchIndirectCommand1DShader : public RDGShader {
 public:

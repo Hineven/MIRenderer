@@ -56,7 +56,7 @@ public:
 
     TRef<RHIAccelerationStructure> CreateAccelerationStructure(RHIAccelerationStructureType type) override;
 
-    RHISamplerRef CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) override;
+    RHISamplerRef CreateSampler(RHISamplerDesc desc) override;
 
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;

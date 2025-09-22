@@ -42,6 +42,19 @@ public:
     FORCEINLINE RHITextureDesc GetDesc() const { return desc_; }
     FORCEINLINE size_t GetSize () const { return size_; }
 
+    FORCEINLINE uint32_t GetMipWidth(uint32_t mip_level) const {
+        mi_assert(mip_level < desc_.mip_levels, "Invalid mip level.");
+        return std::max(1u, desc_.dimensions.width >> mip_level);
+    }
+    FORCEINLINE uint32_t GetMipHeight(uint32_t mip_level) const {
+        mi_assert(mip_level < desc_.mip_levels, "Invalid mip level.");
+        return std::max(1u, desc_.dimensions.height >> mip_level);
+    }
+    FORCEINLINE uint32_t GetMipDepth(uint32_t mip_level) const {
+        mi_assert(mip_level < desc_.mip_levels, "Invalid mip level.");
+        return std::max(1u, desc_.dimensions.depth >> mip_level);
+    }
+
 protected:
     // Actual layout. Mainly accessible to the RHI thread.
     RHITextureLayoutType layout_ {RHITextureLayoutType::kUndefined};

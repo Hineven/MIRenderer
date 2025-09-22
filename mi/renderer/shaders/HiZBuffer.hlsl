@@ -16,7 +16,9 @@ RWTexture2D<float> RWInHiZBuffer;
 RWTexture2D<float> RWOutHiZBuffer;
 
 Texture2D<uint> InFlagsBuffer;
+[[vk::image_format("r8ui")]]
 RWTexture2D<uint> RWInOrFlagsBuffer;
+[[vk::image_format("r8ui")]]
 RWTexture2D<uint> RWOutOrFlagsBuffer;
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
@@ -37,10 +39,13 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     uint F2 = RWInOrFlagsBuffer[InTexCoords + uint2(0, 1)];
     uint F3 = RWInOrFlagsBuffer[InTexCoords + uint2(1, 1)];
 #else
-    uint2 Dimensions, DepthDimensions;
-    RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
-    InDepthBuffer.GetDimensions(DepthDimensions.x, DepthDimensions.y);
-    float2 HZB_UV = (float2(TexCoords) + 0.25f) / Dimensions;
+    uint2 HZBDimensions, DepthDimensions;
+    HZBDimensions = GetActiveCamera().HZBDimensions;
+    DepthDimensions = GetActiveCamera().FilmDimensions;
+    // These functions seems to be broken
+    // RWInHiZBuffer.GetDimensions(Dimensions.x, Dimensions.y);
+    // InDepthBuffer.GetDimensions(DepthDimensions.x, DepthDimensions.y);
+    float2 HZB_UV = (float2(TexCoords) + 0.25f) / float2(HZBDimensions);
     CameraParameters C = GetActiveCamera();
     float2 Depth_UV = HZB_UV * C.HZBToUVScale;
     float2 DeltaDepth_UV = C.HZBBaseTexelSize * C.HZBToUVScale * 0.5f;
@@ -49,10 +54,10 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     float2 P2 = Depth_UV + float2(0, DeltaDepth_UV.y);
     float2 P3 = Depth_UV + DeltaDepth_UV;
 
-    float D0 = InDepthBuffer.SampleLevel(PointClampSampler, P0, 0);
-    float D1 = InDepthBuffer.SampleLevel(PointClampSampler, P1, 0);
-    float D2 = InDepthBuffer.SampleLevel(PointClampSampler, P2, 0);
-    float D3 = InDepthBuffer.SampleLevel(PointClampSampler, P3, 0);
+    float D0 = InDepthBuffer.SampleLevel(PointEdgeSampler, P0, 0);
+    float D1 = InDepthBuffer.SampleLevel(PointEdgeSampler, P1, 0);
+    float D2 = InDepthBuffer.SampleLevel(PointEdgeSampler, P2, 0);
+    float D3 = InDepthBuffer.SampleLevel(PointEdgeSampler, P3, 0);
     if(any(P0 >= 1.f)) D0 = 1.f;
     if(any(P1 >= 1.f)) D1 = 1.f;
     if(any(P2 >= 1.f)) D2 = 1.f;

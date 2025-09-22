@@ -15,7 +15,7 @@ MI_NAMESPACE_BEGIN
 
 class VulkanSampler : public RHISampler {
 public:
-    VulkanSampler(RHISamplerFilterType filter, RHISamplerAddressModeType addressing);
+    VulkanSampler(RHISamplerDesc desc);
     ~VulkanSampler() override;
 
     FORCEINLINE vk::Sampler GetSampler() const { return vk_sampler_; }

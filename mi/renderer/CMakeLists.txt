@@ -24,6 +24,7 @@ set(SOURCES
         renderer/r_hwrt.cpp
         renderer/r_diffuse_direct_lighting.cpp
         renderer/r_path_tracing.cpp
+        renderer/r_debug_views.cpp
         util/radix_sort.cpp
 )
 

@@ -162,6 +162,11 @@ static RHIGPUAccessFlags GetAccessFlags (auto elem) {
     if constexpr(std::is_same_v<std::remove_cvref_t<decltype(elem)>, PipelineReflection::SRVDesc>) {
         return RHIGPUAccessFlagBits::kShaderSampledRead;
     }
+    // specially, for uniform buffer, it is always uniform read
+    if constexpr(std::is_same_v<std::remove_cvref_t<decltype(elem)>, PipelineReflection::UniformBufferDesc>) {
+        return RHIGPUAccessFlagBits::kUniformRead;
+    }
+    // Sampler has no access flags in this circumstance
     return RHIGPUAccessFlagBits::kNone;
 }
 #pragma warning(pop)

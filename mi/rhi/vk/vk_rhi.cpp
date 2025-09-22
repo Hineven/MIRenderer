@@ -30,8 +30,9 @@
 // #define ENABLE_VALIDATION_LAYER
 #endif
 
-// 25.8.7: this must be defined. Otherwise driver panics when validation layer is on
-#define USE_DESCRIPTOR_BUFFER
+// 25.8.7: this must be defined. Otherwise, the driver panics when validation layer is on
+// 25.9.21: somehow this is not needed anymore after several driver updates.
+// #define USE_DESCRIPTOR_BUFFER
 
 MI_NAMESPACE_BEGIN
 
@@ -409,11 +410,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         auto & fpatomic = std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(extended_features);
         fpatomic.shaderBufferFloat32AtomicAdd = VK_TRUE;
 
-        auto & descb = std::get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>(extended_features);
 #ifdef USE_DESCRIPTOR_BUFFER
+        auto & descb = std::get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>(extended_features);
         descb.descriptorBuffer = VK_TRUE;
-#else
-        descb.descriptorBuffer = VK_FALSE;
 #endif
 
         auto & dyrend = std::get<vk::PhysicalDeviceDynamicRenderingFeatures>(extended_features);
@@ -778,8 +777,8 @@ TRef<RHIAccelerationStructure> VulkanRHI::CreateAccelerationStructure(RHIAcceler
 }
 
 
-RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
-    auto sampler = new VulkanSampler(filter, address_mode);
+RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
+    auto sampler = new VulkanSampler(desc);
     return TRef<RHISampler>(sampler);
 }
 

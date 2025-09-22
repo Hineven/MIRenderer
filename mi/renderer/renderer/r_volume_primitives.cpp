@@ -60,7 +60,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWFlags)
-    SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
 END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
@@ -75,7 +75,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(VolumePrimitivesClearCountersShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "VolumePrimitivesClearCounters");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(VolumePrimitivesClearCountersShader, "mi/renderer/shaders/DrawVolumePrimitives.hlsl", "VolumePrimitivesClearCounters");
 
 class CollectVolumePrimitivesShader : public RDGShader {
 public:
@@ -101,7 +101,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(Params)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(CollectVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "CollectVolumePrimitives");
+IMPLEMENT_RDG_COMPUTE_SHADER(CollectVolumePrimitivesShader, "mi/renderer/shaders/DrawVolumePrimitives.hlsl", "CollectVolumePrimitives");
 
 class ProjectVolumePrimitivesShader : public RDGShader {
 public:
@@ -114,7 +114,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ProjectVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "ProjectVolumePrimitives");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ProjectVolumePrimitivesShader, "mi/renderer/shaders/DrawVolumePrimitives.hlsl", "ProjectVolumePrimitives");
 
 class CollectTileInstanceOffsetsShader : public RDGShader {
 public:
@@ -126,7 +126,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(CollectTileInstanceOffsetsShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "CollectTileInstanceOffsets");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(CollectTileInstanceOffsetsShader, "mi/renderer/shaders/DrawVolumePrimitives.hlsl", "CollectTileInstanceOffsets");
 
 class CountTileInstancesShader : public RDGShader {
 public:
@@ -138,7 +138,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(CountTileInstancesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "CountTileInstances");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(CountTileInstancesShader, "mi/renderer/shaders/DrawVolumePrimitives.hlsl", "CountTileInstances");
 
 class DrawVolumePrimitivesShader : public RDGShader {
 public:
@@ -150,7 +150,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesShaderParameters)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DrawVolumePrimitivesShader, "mi/renderer/shaders/VolumePrimitives.hlsl", "DrawVolumePrimitives");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DrawVolumePrimitivesShader, "mi/renderer/shaders/DrawVolumePrimitives.hlsl", "DrawVolumePrimitives");
 
 constexpr static uint32_t kTileSize = 16;
 
@@ -216,7 +216,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
 
         params->G_Depth = view->G_depth_.Raw();
         params->RWFlags = view->G_flags_.Raw();
-        params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+        params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     }
     {
         auto shader = RDGShaderLibrary::Get().GetShader<VolumePrimitivesClearCountersShader>();

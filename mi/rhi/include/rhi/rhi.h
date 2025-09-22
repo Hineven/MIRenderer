@@ -82,7 +82,9 @@ public:
     virtual TRef<RHIAccelerationStructure> CreateAccelerationStructure (RHIAccelerationStructureType type) = 0;
 
     // Create a sampler, thread safe
-    virtual RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) = 0;
+    virtual RHISamplerRef CreateSampler (RHISamplerDesc desc) = 0;
+
+    RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) ;
 
     // Create a shader, thread safe
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -143,9 +145,10 @@ public:
 
     struct GlobalSamplers {
         RHISampler * linear_wrap;
-        RHISampler * linear_clamp;
+        RHISampler * linear_edge;
         RHISampler * point_wrap;
-        RHISampler * point_clamp;
+        RHISampler * point_edge;
+        RHISampler * point_border_1;
     };
 
     FORCEINLINE GlobalSamplers GetGlobalSamplers () const {

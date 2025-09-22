@@ -48,14 +48,20 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
                     }
                     auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
                     if (!buffer_ptr.buffer) {
-                        MI_WARN("Shader {}: Can not find pre-allocated uniform buffer {} from the render graph. Draw cancelled.",
-                            shader->GetShaderClassRegistry()->name,
-                            base_info->uniform_buffers_[i].info->name);
-                        return std::nullopt;
+#ifndef NDEBUG
+                        if (pass->shader_ && pass->shader_->QueryShaderAccess(base_info->uniform_buffers_[i].info->name).access
+                            != RHIGPUAccessFlagBits::kNone) { // The ub is actually used by the shader (statically)
+                                MI_WARN("Shader {}: Can not find pre-allocated uniform buffer {} from the render graph. Draw cancelled.",
+                                    shader->GetShaderClassRegistry()->name,
+                                    base_info->uniform_buffers_[i].info->name);
+                            return std::nullopt;
+                        }
+#endif
+                    } else {
+                        auto span = buffer_ptr.buffer->GetRHI();
+                        span.offset += buffer_ptr.offset;
+                        ret.uniforms[num_uniform_buffers ++] = {span, slot};
                     }
-                    auto span = buffer_ptr.buffer->GetRHI();
-                    span.offset += buffer_ptr.offset;
-                    ret.uniforms[num_uniform_buffers ++] = {span, slot};
                 }
             } // Otherwise, silently ignore the case that the shader is not using this uniform buffer at all.
         }
@@ -203,7 +209,7 @@ RDGShaderContext RDGCommandHelper::BindGraphicsShader (
             }
         }
     }
-    RHIDrawDesc ds {};
+    RHIDrawStateDesc ds {};
     if (!info->render_targets_.empty()) {
         for (const auto& [i, e] : std::views::enumerate(info->render_targets_)) {
             auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)params + e.cpp_offset);
@@ -291,7 +297,7 @@ void RDGCommandHelper::Draw(RHICommandQueueGraphics &queue, RDGPass *pass, RDGSh
     int vertex_count, int instance_count, int first_vertex, int first_instance) {
     if (auto ctx = BindGraphicsShader(queue, pass, graphics_shader, info, params)) {
         queue.BeginRendering();
-        queue.DrawPrimitive(vertex_count, instance_count, first_vertex, first_instance);
+        queue.Draw(vertex_count, instance_count, first_vertex, first_instance);
         queue.EndRendering();
     }
 }

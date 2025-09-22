@@ -97,6 +97,10 @@ protected:
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
+    void Render_DebugView (
+        RendererView * view, RenderGraphBuilder & builder
+    );
+
     void Render_HardwareShadowRayTracing (
         RendererView * view, RenderGraphBuilder & builder,
         RDGBuffer * ray_to_trace_list_length,
@@ -123,10 +127,6 @@ protected:
         RDGBuffer * ray_to_trace_tmax,
         RDGBuffer * ray_to_trace_transmittance
     );
-
-    // Render material properties from the camera using ray-tracing for debugging purposes.
-    void Render_VisualizeRayTraced (RendererView * view, RenderGraphBuilder & builder) ;
-
 
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;

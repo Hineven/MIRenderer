@@ -153,6 +153,13 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-fvk-use-dx-layout"); // Use struct memory layouts specified in DirectX
         add_option(L"-fspv-use-vulkan-memory-model"); // Use Vulkan memory model (see that in Vulkan spec)
         add_option(L"-Ges"); // Strict mode
+        // For storage images, SPIR-V enforces format matching between declaration and usage. This flag relaxes this requirement.
+        // However, in conventional HLSL coding, a Texture2D<float4> can be rgba8 / rgba16f / rgba32f
+        // A way to avoid matching problems is to explicitly specify the format in HLSL, e.g. [[vk::image_format("rgba8")]] RWTexture2D<float4> myImage;
+        // But that is tedious. So we use this flag to avoid the matching requirement by compiling all image types to Unknown format in SPIR-V
+        // leveraging the capability of graphics drivers to perform format conversions on the fly.
+        // 25.9.21: seems this is a new features and the PR has not been merged to mainline yet. And the guessing is not very reliable.
+        // add_option(L"-fspv-use-unknown-image-format");
         // Debugging flag
         add_option(L"-Zi"); // Generate debug information
         // add_option(L"-fspv-reflect");

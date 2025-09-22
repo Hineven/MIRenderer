@@ -40,7 +40,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
-        SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -89,7 +89,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
 
     params->G_DepthTexture = view->G_depth_.Raw();
-    params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+    params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
@@ -130,7 +130,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
-        SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -181,7 +181,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->RWRayToTraceTransmittanceBuffer = ray_to_trace_transmittance;
 
     params->G_DepthTexture = view->G_depth_.Raw();
-    params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+    params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();

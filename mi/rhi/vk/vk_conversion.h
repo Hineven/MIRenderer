@@ -166,6 +166,17 @@ FORCEINLINE vk::Filter GetVulkanFilter (RHISamplerFilterType filter) {
     }
 }
 
+FORCEINLINE vk::SamplerMipmapMode GetVulkanMipmapMode (RHISamplerFilterType mipmap) {
+    switch(mipmap) {
+        case RHISamplerFilterType::kPoint:
+            return vk::SamplerMipmapMode::eNearest;
+        case RHISamplerFilterType::kLinear:
+            return vk::SamplerMipmapMode::eLinear;
+        default:
+            return vk::SamplerMipmapMode::eNearest;
+    }
+}
+
 FORCEINLINE vk::SamplerAddressMode GetVulkanAddressingMode (RHISamplerAddressModeType addressing) {
     switch(addressing) {
         case RHISamplerAddressModeType::kRepeat:
@@ -318,6 +329,19 @@ FORCEINLINE vk::PrimitiveTopology GetVulkanPrimitiveTopology (RHIPrimitiveTopolo
             return vk::PrimitiveTopology::eTriangleStrip;
         default:
             return vk::PrimitiveTopology::eTriangleList;
+    }
+}
+
+FORCEINLINE vk::PolygonMode GetVulkanPolygonMode (RHIPolygonModeType mode) {
+    switch(mode) {
+        case RHIPolygonModeType::kFill:
+            return vk::PolygonMode::eFill;
+        case RHIPolygonModeType::kLine:
+            return vk::PolygonMode::eLine;
+        case RHIPolygonModeType::kPoint:
+            return vk::PolygonMode::ePoint;
+        default:
+            return vk::PolygonMode::eFill;
     }
 }
 

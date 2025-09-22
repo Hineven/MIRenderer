@@ -64,7 +64,7 @@ void TraceTransmittanceRaysRaygen() {
 #else 
         uint2 PixelIndex = UnpackUint2x16(RayToTraceOriginScreenCoordBuffer[RayIndex]);
         float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
-        float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, UV, 0);
+        float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0);
         float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
         Ray.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
 #endif

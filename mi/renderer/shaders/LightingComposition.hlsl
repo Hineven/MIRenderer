@@ -24,6 +24,7 @@ Texture2D<float4> G_Emission;
 Texture2D<float>  G_Transmittance;
 
 Texture2D<float4> HistoryRadiance;
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWRadiance;
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
@@ -34,11 +35,11 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     if (any(PixelIndex >= C.FilmDimensions)) return;
 
     float2 UV = ScreenCoordsToUV(C, PixelIndex);
-    float4 AlbedoAlpha = G_Albedo.SampleLevel(PointClampSampler, UV, 0);
+    float4 AlbedoAlpha = G_Albedo.SampleLevel(PointEdgeSampler, UV, 0);
 
-    float3 DiffuseDirectLighting = DiffuseDirectLightingTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
+    float3 DiffuseDirectLighting = DiffuseDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
 
-    float3 Emission = G_Emission.SampleLevel(PointClampSampler, UV, 0).rgb;
+    float3 Emission = G_Emission.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     if(AlbedoAlpha.w == 0.f) Emission = 0;
 
     float3 SurfaceRadiance = Emission;
@@ -46,15 +47,15 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     SurfaceRadiance += DiffuseDirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
 
     // Color is premultiplied.
-    float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointClampSampler, UV, 0).rgb;
+    float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
 
     float3 VolumeRadiance = VolumeDirectLighting;
 
-    float Transmittance = G_Transmittance.SampleLevel(PointClampSampler, UV, 0);
+    float Transmittance = G_Transmittance.SampleLevel(PointEdgeSampler, UV, 0);
 
     float3 Radiance = SurfaceRadiance * Transmittance + VolumeRadiance;
 
-    float3 OldRadiance = HistoryRadiance.SampleLevel(PointClampSampler, UV, 0).rgb;
+    float3 OldRadiance = HistoryRadiance.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     float LerpFactor = 0.01f;
     if(UB.EnableAccumulation == 0) {
         OldRadiance = 0;

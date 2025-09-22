@@ -330,7 +330,7 @@ TEST(RHITest, RHITriangle) {
                     RHIGPUAccessFlagBits::kRW
             );
             queue.BindPipeline(pipeline.Raw());
-            RHIDrawDesc ds {};
+            RHIDrawStateDesc ds {};
             ds.SetAttachment(0, texture0.Raw());
             ds.SetAttachment(1, texture1.Raw());
 //            ds.SetAttachment(2, depth.Raw());
@@ -373,7 +373,7 @@ TEST(RHITest, RHITriangle) {
             params.storages = {storages, 1};
             queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
             queue.BeginRendering();
-            queue.DrawPrimitive(3, 1);
+            queue.Draw(3, 1);
             queue.EndRendering();
 
             queue.TextureBarrier(

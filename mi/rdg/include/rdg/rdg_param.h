@@ -259,6 +259,8 @@ struct RDGShaderRenderTargetParameter {
 
 // Declare render targets. Can only be used within render pass shader parameter structs.
 // Usage: SHADER_RENDER_TARGET(PixelFormat::kR8G8B8A8_UNORM, Name)
+// Append an optional initializer for RDGShaderRenderTargetBlendingSettings after the name param if advanced
+// blending settings are needed.
 #define SHADER_RENDER_TARGET(Format, Name, ...) \
     zz##Name##_PrevTypeID; \
 public: \

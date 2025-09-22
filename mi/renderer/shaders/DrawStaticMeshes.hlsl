@@ -49,12 +49,21 @@ DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
     return Output;
 }
 
+[[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWAlbedo;
+[[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWNormal;
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWEmission;
+[[vk::image_format("rg8")]]
 RWTexture2D<float2> RWMetallicRoughness;
 Texture2D<uint4> VisibilityTexture;
 Texture2D<float> DepthTexture;
+
+[numthreads(1, 1, 1)]
+void Test() {
+    RWAlbedo[uint2(0,0)] = float4(1,0,0,1);
+}
 
 #ifndef TILE_SIZE
 #define TILE_SIZE 16
@@ -123,8 +132,6 @@ DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (DefaultStaticMeshVertex 
     uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[GlobalDescriptorIndex];
     Output.MaterialIndex = GeometryMaterialPair.y;
 
-    printf("RenderableIndex: %d, StaticMeshIndex: %d, DescriptorIndex: %d, GlobalDescriptorIndex: %d, MaterialIndex: %d\n", 
-        RenderableIndex, StaticMeshIndex, DescriptorIndex, GlobalDescriptorIndex, Output.MaterialIndex);
     // Here we use the faster path to interpolate UVs rather than decoding full visibility in fragment shader.
     Output.UV = Vertex.UV;
     return Output;

@@ -34,8 +34,9 @@ public:
     void RHICopyTexture(RHICommandQueueBase * cmd, RHICommandCopyTexture * copy_texture) override ;
     void RHIBeginRendering (RHICommandQueueBase * cmd, RHICommandBeginRendering * begin_rendering) override ;
     void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) override ;
-    void RHIDrawPrimitive(RHICommandQueueBase * cmd, RHICommandDrawPrimitive * draw_primitive) override ;
-    void RHIDrawIndexedPrimitive(RHICommandQueueBase * cmd, RHICommandDrawIndexedPrimitive * draw_indexed_primitive) override ;
+    void RHIDraw(RHICommandQueueBase * cmd, RHICommandDraw * draw_primitive) override ;
+    void RHIDrawIndexed(RHICommandQueueBase * cmd, RHICommandDrawIndexed * draw_indexed_primitive) override ;
+    void RHIDrawIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndirect * draw_indirect) override ;
     void RHIDrawIndexedIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndexedIndirect * draw_indexed_indirect) override ;
     void RHIDispatch(RHICommandQueueBase * cmd, RHICommandDispatch * dispatch) override ;
     void RHIDispatchIndirect(RHICommandQueueBase * cmd, RHICommandDispatchIndirect * dispatch_indirect) override ;
@@ -70,6 +71,7 @@ public:
         const std::string & submit_prefix, bool release_resources) override ;
 protected:
 
+    void CheckDrawReadyness (RHICommandQueueBase * ) ;
 
     void FlushBindPointState (RHICommandQueueBase *, RHIBindPointType, vk::ShaderStageFlags use_shaders) ;
 
@@ -90,7 +92,7 @@ protected:
         RHIBufferSpan bound_index_buffer {};
         RHIIndexType  bound_index_type {RHIIndexType::kMax};
         // Kept draw state.
-        RHIDrawDesc draw_state_ {};
+        RHIDrawStateDesc draw_state_ {};
         vk::Rect2D GetScissorRect ();
         vk::Viewport GetViewport ();
         void InstallDrawState (vk::CommandBuffer cmdb);
