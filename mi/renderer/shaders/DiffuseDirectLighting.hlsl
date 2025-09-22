@@ -84,10 +84,10 @@ RWStructuredBuffer<float3> RWRayToTraceOriginBuffer;
 SamplerState PointBorder1Sampler;
 
 struct HybridTracingUB {
+    uint  SSRT_Disabled;
     float SSRT_RelativeTexelThickness;
     float RayContinuationBackwardBiasFactor;
     float DefaultTMax;
-    uint Unused2;
 };
 ConstantBuffer<HybridTracingUB> HybridTracing_UB;
 
@@ -434,9 +434,6 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     
-    // if(all(PixelIndex == Debug.CursorScreenCoords)) {
-    //     printf("World Position: %f, %f, %f\n", WorldPosition.x, WorldPosition.y, WorldPosition.z);
-    // }
     {
         // Offset the origin a bit, but at most 0.45 pixel (45%)
         float3 Normal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
@@ -451,18 +448,13 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
         WorldPosition += OffsetLength * Normal;
     }
 
-    // if(all(PixelIndex == Debug.CursorScreenCoords)) {
-    //     printf("Offset World Position: %f, %f, %f\n", WorldPosition.x, WorldPosition.y, WorldPosition.z);
-    // }
-
     float3 TraceDirection = RayToTrace.Direction;
     float TraceTMax = RayToTrace.TMax;
     bool bHit = false;
     float3 HitUVZ = 0, LastVisibleUVZ = 0;
     float HitTileZ = 0;
     float3 LastValidUVZ = 0;
-    // FIXME
-    bool DebugFlag = all(PixelIndex == Debug.CursorScreenCoords);
+    bool DebugFlag = false; //all(PixelIndex == Debug.CursorScreenCoords);
     ScreenSpaceRayTrace(
         C, G_DepthTexture, G_HiZBuffer, G_FlagsTexture, OrFlagsTexture, PointBorder1Sampler,
         WorldPosition, TraceDirection, TraceTMax,
@@ -474,10 +466,11 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     float3 HitWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(HitUVZ.xy), ReversedZDepthToLinearDepth(C, HitUVZ.z));
     float HitDistance = min(length(HitWorldPosition - WorldPosition), TraceTMax);
 
-    // bHit = false;
+    if(HybridTracing_UB.SSRT_Disabled) {
+        bHit = false;
+    }
 
-    // FIXME
-    if (false && bHit) {
+    if (!HybridTracing_UB.SSRT_Disabled && bHit) {
         // Double checking using history buffer
         float3 PreviousUVZ = ReprojectToPreviousUVZFromUVZ(C, float3(HitUVZ.xy, 1 - HitUVZ.z));
         float2 UV = ScreenCoordsToUV(C, PixelIndex);
@@ -501,15 +494,12 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
         float3 LastValidWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(LastValidUVZ.xy), LinearDepth);
         HitDistance = min(length(LastValidWorldPosition - WorldPosition), TraceTMax);
 
-        if(all(PixelIndex == Debug.CursorScreenCoords)) {
-            //printf("LastVisibleUVZ: %f %f %f\n", LastVisibleUVZ.x, LastVisibleUVZ.y, LastVisibleUVZ.z);
-            printf("HZBBaseTexelSize: %f %f\n", C.HZBBaseTexelSize.x, C.HZBBaseTexelSize.y);
-        }
-
         float Bias = min(LinearDepth * HybridTracing_UB.RayContinuationBackwardBiasFactor, HitDistance * 0.5f);
         HitDistance = max(HitDistance - Bias, 0);
-
-        // HitDistance = 0.001f;
+        
+        if(HybridTracing_UB.SSRT_Disabled) {
+            HitDistance = 1e-4f;
+        }
 
         // Allocate new rays for continuation
         uint WaveSurvivingRayCount = WaveActiveCountBits(true);

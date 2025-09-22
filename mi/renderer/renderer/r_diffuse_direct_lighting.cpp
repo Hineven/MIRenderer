@@ -66,6 +66,12 @@ static CVar<bool> CVar_DebugFreezeFrameSeed(
     false
 );
 
+static CVar<bool> CVar_SSRT_Disabled(
+    "r.direct_lighting.ssrt_disabled",
+    "Disable screen space ray tracing. (NOTE: SSRT is buggy for now)",
+    true
+);
+
 static constexpr uint32_t kThreadGroupSize = 128;
 
 // Must be consistent with the struct in LightGrid.hlsl
@@ -91,10 +97,10 @@ struct DirectLightingUB {
     uint32_t Unused;
 };
 struct HybridTracingUB {
+    uint32_t SSRT_Disabled;
     float SSRT_RelativeTexelThickness;
     float RayContinuationBackwardBiasFactor;
     float DefaultTMax;
-    uint32_t Unused2;
 };
 
 BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
@@ -487,6 +493,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         params->DirectLighting_UB = DI_UB;
         auto HT_UB = builder.Allocate<HybridTracingUB>();
         {
+            HT_UB->SSRT_Disabled = CVar_SSRT_Disabled.Get() ? 1 : 0;
             HT_UB->SSRT_RelativeTexelThickness = 1e-4f;
             HT_UB->RayContinuationBackwardBiasFactor = 1e-3f;
             HT_UB->DefaultTMax = view->camera_.far_plane;
