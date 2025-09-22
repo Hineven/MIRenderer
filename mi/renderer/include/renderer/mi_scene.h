@@ -17,8 +17,9 @@
 
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_renderable.h>
+#include <renderer/mi_lights.h>
+#include <renderer/mi_aabb.h>
 
-#include "mi_aabb.h"
 MI_NAMESPACE_BEGIN
     // Integrated class managing the rendering world. This class is not for general use and should only be used
 // for rendering. Scene management is not its responsibility.
@@ -92,6 +93,9 @@ public:
     }
 
     void UpdateAABB () ;
+
+
+    DirectionalLight directional_light_{};
 
 protected:
 

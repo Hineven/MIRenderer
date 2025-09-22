@@ -76,8 +76,7 @@ static glm::mat4 ComputeDirectionalLightViewProjection(
     glm::vec3 forward = glm::normalize(lightDirWS);
 	glm::vec3 up = { 0.0f, 1.0f, 0.0f };
     glm::vec3 center = (AABBmin + AABBmax) * 0.5f;
-	float dist = 10.0f; // distance between eye and center
-    glm::vec3 eye = center - forward * dist;
+    glm::vec3 eye = center - forward;
     glm::mat4 lightView = glm::lookAt(eye, center, up);
 
 	auto CornersWS = GetCorners(AABBmin, AABBmax);
@@ -107,11 +106,11 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
 
     auto directional_light_for_shadowMap = builder.Allocate<DirectionalLightForShadowMap>();
     directional_light_for_shadowMap->LightWorldToNDC = ComputeDirectionalLightViewProjection(
-        view->directional_light_.direction,
+        view->scene_->directional_light_.direction,
 	    view->scene_->GetAABB().min,
 	    view->scene_->GetAABB().max
     );
-    directional_light_for_shadowMap->LightDirWS = view->directional_light_.direction;
+    directional_light_for_shadowMap->LightDirWS = view->scene_->directional_light_.direction;
 
     auto params = builder.Allocate<DrawShadowMapShader::Params>();
     params->LightView = directional_light_for_shadowMap;
@@ -123,7 +122,10 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->material_header_buffer_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->static_mesh_description_uber_buffer_->GetRHI());
     params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->static_mesh_header_buffer_.Raw());
-    params->Depth = view->G_depth_.Raw();
+    auto shadow_depth_buffer = RDGTexture::Create2D(
+        kDefaultShadowMapResolution, kDefaultShadowMapResolution, PixelFormatType::kD32_FLOAT,
+        RHITextureUsageFlagBits::kDepthStencil);
+    params->Depth = shadow_depth_buffer.Raw();
     params->Depth.load_op = RHILoadOpType::kClear;
     params->Depth.clear_value = { 1.0f, 1.0f, 1.0f, 1.0f };
     params->Moments = view->shadow_map_moments_.Raw();
@@ -135,7 +137,7 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
     auto raster_pass = builder.AddPass<DrawShadowMapShader>({}, shader, params,
         [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass* pass, RHICommandQueueGraphics& queue) {
-            if (RDGCommandHelper::BindGraphicsShader<DrawShadowMapShader>(
+            if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawShadowMapShader>(
                 queue, pass, shader, params, true
             )) {
                 queue.BeginRendering();

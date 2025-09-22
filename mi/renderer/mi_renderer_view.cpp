@@ -353,9 +353,10 @@ void RendererView::InitFrame () {
     G_transmittance_->SetName("GBuffer Transmittance");
 
     shadow_map_moments_ = RDGTexture::Create2D(
-        1024, 1024,
+        Renderer::kDefaultShadowMapResolution, Renderer::kDefaultShadowMapResolution,
         PixelFormatType::kR32G32_FLOAT,
         RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer
     );
     shadow_map_moments_->SetName("Shadow Map Moments");
 

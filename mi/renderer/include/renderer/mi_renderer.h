@@ -46,6 +46,9 @@ public:
     // 4 million at most
     constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
 
+    // Default shadow map resolution
+    constexpr static uint32_t kDefaultShadowMapResolution = 1024;
+
 protected:
 
     Renderer();

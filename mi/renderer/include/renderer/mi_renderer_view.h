@@ -15,9 +15,9 @@
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
-    struct DebugCommonShaderParameters;
+struct DebugCommonShaderParameters;
 
-    class BatchedUploadContext : public NonCopyable, public NonMovable {
+class BatchedUploadContext : public NonCopyable, public NonMovable {
 protected:
     BatchedUploadContext() = default;
     // Current manual staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
@@ -92,11 +92,6 @@ struct RendererViewPersistentData {
     Scene * prev_scene_;
 };
 
-struct DirectionalLight {
-    glm::vec3 direction {};
-};
-
-
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
 
@@ -120,9 +115,6 @@ struct RendererView {
     uint32_t film_height_ {};
 
     Scene * scene_ {};
-
-	DirectionalLight directional_light_{};
-
 
     // Used to index the material indices buffer for geometries within the renderable using renderable index.
     TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
