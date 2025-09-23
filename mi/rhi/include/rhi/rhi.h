@@ -149,6 +149,7 @@ public:
         RHISampler * point_wrap;
         RHISampler * point_edge;
         RHISampler * point_border_1;
+        RHISampler * point_border_0;
     };
 
     FORCEINLINE GlobalSamplers GetGlobalSamplers () const {

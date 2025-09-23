@@ -9,6 +9,14 @@ float3x3 BuildRotationMatrix(float4 Quaterion) {
     );
 }
 
+float2 RotateVector2D(float2 Vector, float Angle) {
+    float2x2 Rotation = float2x2(
+        cos(Angle), -sin(Angle),
+        sin(Angle), cos(Angle)
+    );
+    return mul(Rotation, Vector);
+}
+
 float3 TransformPoint(float3x4 Transform, float3 Point) {
     return mul(Transform, float4(Point, 1)).xyz;
 }

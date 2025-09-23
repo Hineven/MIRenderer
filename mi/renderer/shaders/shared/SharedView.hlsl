@@ -57,7 +57,7 @@ struct CameraParameters {
     // Projection matrix with reversed Z
     float4x4 ViewToNDC_ReversedZ;
 
-    float4x4 Reprojection; // current NDC -> previous frame NDC
+    float4x4 Reprojection; // current NDC -> previous frame NDC (normal z)
 };
 
 struct ViewCommonShaderParameters {

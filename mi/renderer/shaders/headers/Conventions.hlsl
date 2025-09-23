@@ -33,4 +33,25 @@ float3x3 To3x3 (float3x4 m) {
     );
 }
 
+float select (float a, float b, bool c) {
+    return c ? b : a;
+}
+
+float3 select (float3 a, float3 b, bool3 c) {
+    return float3(
+        select(a.x, b.x, c.x),
+        select(a.y, b.y, c.y),
+        select(a.z, b.z, c.z)
+    );
+}
+
+float4 select (float4 a, float4 b, bool4 c) {
+    return float4(
+        select(a.x, b.x, c.x),
+        select(a.y, b.y, c.y),
+        select(a.z, b.z, c.z),
+        select(a.w, b.w, c.w)
+    );
+}
+
 #endif

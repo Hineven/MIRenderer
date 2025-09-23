@@ -80,6 +80,8 @@ struct RendererViewPersistentData {
     TRef<RDGTexture> prev_G_depth;
     TRef<RDGTexture> prev_G_normal;
 
+    TRef<RDGTexture> prev_denoised_diffuse_direct_lighting;
+
     TRef<RDGTexture> prev_radiance_;
 
     TRef<RDGTexture> path_tracing_film_;
@@ -158,6 +160,7 @@ struct RendererView {
 
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;
+    TRef<RDGTexture> denoised_diffuse_direct_lighting_;
     // Volume direct lighting
     TRef<RDGTexture> volume_direct_lighting_;
 

@@ -3,6 +3,7 @@
 
 #include "../shared/SharedView.hlsl"
 #include "Conversions.hlsl"
+#include "Transform.hlsl"
 
 CameraParameters GetActiveCamera() {
     return View.Camera;
@@ -42,6 +43,22 @@ float2 PixelPositionToUV (CameraParameters C, float2 PixelPosition) {
 
 float2 UVToPixelPosition (CameraParameters C, float2 UV) {
     return UV * C.FilmDimensions;
+}
+
+float2 ScreenPositionToUV (CameraParameters C, float2 ScreenPosition) {
+    return ScreenPosition * C.InvFilmDimensions;
+}
+
+float2 ScreenPositionToNDC2 (CameraParameters C, float2 ScreenPosition) {
+    return UVToNDC2(ScreenPositionToUV(C, ScreenPosition));
+}
+
+float2 NDC2ToScreenPosition (CameraParameters C, float2 NDC2) {
+    return NDC2ToUV(NDC2) * C.FilmDimensions;
+}
+
+float3 ReprojectToPreviousNDCFromNDC (CameraParameters C, float3 NDC) {
+    return TransformPoint(C.Reprojection, NDC);
 }
 
 #endif

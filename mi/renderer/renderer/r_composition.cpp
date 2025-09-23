@@ -25,6 +25,12 @@ static CVar<bool> CVar_EnableAccumulation(
     false
 );
 
+static CVar<bool> CVar_UseDenoisedDirectLighting(
+    "r.use_denoised_direct_lighting",
+    "Use denoised direct lighting for the final composition",
+    true
+);
+
 
 
 class LightingCompositionShader : public RDGShader {
@@ -68,7 +74,11 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         UB->EnableAccumulation = CVar_EnableAccumulation.Get() ? 1 : 0;
     }
     params->UB = UB;
-    params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
+    if (!CVar_UseDenoisedDirectLighting.Get()) {
+        params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
+    } else {
+        params->DiffuseDirectLightingTexture = view->denoised_diffuse_direct_lighting_.Raw();
+    }
     params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
     params->IndirectDiffuseLightingTexture = nullptr;
     params->G_Albedo = view->G_albedo_.Raw();

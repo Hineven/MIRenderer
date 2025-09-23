@@ -262,6 +262,8 @@ void RendererViewPersistentData::Update(RendererView *view) {
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
 
+    prev_denoised_diffuse_direct_lighting = view->denoised_diffuse_direct_lighting_;
+
     prev_radiance_ = view->radiance_;
 
     prev_scene_ = view->scene_;
@@ -382,6 +384,14 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     diffuse_direct_lighting_->SetName("Diffuse Direct Lighting");
+    denoised_diffuse_direct_lighting_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
+    denoised_diffuse_direct_lighting_->SetName("Denoised Diffuse Direct Lighting");
+    // Persistent till next frame
+    denoised_diffuse_direct_lighting_->SetExport();
+
     volume_direct_lighting_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
