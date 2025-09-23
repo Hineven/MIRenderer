@@ -374,24 +374,38 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     inout float attenuation
 ) {
     // TODO
-    float Epsilon = 1e-9;
-
     Cdf = 1.f;
     attenuation = 1.f;
 
+    // 采样个数
+    int num_integrate_samples = 4;
+    // 用于加速积分运算的提前计算
+    float half_period = fourier_distr.r - fourier_distr.l;
+    float half_period_inv = 1.f / half_period;
+    float omega = PI / half_period;
     // 计算该段体积在傅里叶级数中对应的长度
-    float delta = (intersection.r - intersection.l) / (fourier_distr.r - fourier_distr.l + Epsilon);
-    float mid = ((intersection.r + intersection.l) / 2 - fourier_distr.l) / (fourier_distr.r - fourier_distr.l + Epsilon);
+    float delta = (intersection.r - intersection.l) / float(num_integrate_samples);
     // 给每项傅里叶级数累加
-    for(uint i = 0; i <= fourier_distr.fourier_order; i++) {
-        float fourier_density_a = intersection.Density * cos(TWO_PI * i * mid) * delta;
-        float fourier_density_b = intersection.Density * sin(TWO_PI * i * mid) * delta;
-        fourier_distr.Density_fourier_a[i] = fourier_distr.Density_fourier_a[i] + fourier_density_a;
-        fourier_distr.Density_fourier_b[i] = fourier_distr.Density_fourier_b[i] + fourier_density_b;
-        float3 fourier_color_a = intersection.Color * cos(TWO_PI * i * mid) * delta;
-        float3 fourier_color_b = intersection.Color * sin(TWO_PI * i * mid) * delta;
-        fourier_distr.Color_fourier_a[i] = fourier_distr.Color_fourier_a[i] + fourier_color_a;
-        fourier_distr.Color_fourier_b[i] = fourier_distr.Color_fourier_b[i] + fourier_color_b;
+    fourier_distr.Density_fourier_a[0] += half_period_inv * intersection.Density * (intersection.r - intersection.l);
+    fourier_distr.Color_fourier_a[0] += half_period_inv * intersection.Color * (intersection.r - intersection.l);
+    for(int i = 1; i <= fourier_distr.fourier_order; i++) {
+        float fourier_density_a;
+        float fourier_density_b;
+        float3 fourier_color_a;
+        float3 fourier_color_b;
+        float n_omega = i * omega;
+        for(int k = 0; k < num_integrate_samples; k++) {
+            float x = delta * (k + 0.5f) + intersection.l - fourier_distr.l;
+            float n_omega_x = n_omega * x;
+            fourier_density_a = half_period_inv * intersection.Density * cos(n_omega_x) * delta;
+            fourier_density_b = half_period_inv * intersection.Density * sin(n_omega_x) * delta;
+            fourier_distr.Density_fourier_a[i] = fourier_distr.Density_fourier_a[i] + fourier_density_a;
+            fourier_distr.Density_fourier_b[i] = fourier_distr.Density_fourier_b[i] + fourier_density_b;
+            fourier_color_a = half_period_inv * intersection.Color * cos(n_omega_x) * delta;
+            fourier_color_b = half_period_inv * intersection.Color * sin(n_omega_x) * delta;
+            fourier_distr.Color_fourier_a[i] = fourier_distr.Color_fourier_a[i] + fourier_color_a;
+            fourier_distr.Color_fourier_b[i] = fourier_distr.Color_fourier_b[i] + fourier_color_b;
+        }
     }
     return fourier_distr;
 }
@@ -416,7 +430,7 @@ RayVolumeDistribution RenderRay(
     inout float Attenuation
 ) {
     RayVolumeDistribution Result;
-    Result.l = 0.f;
+    Result.l = 1e9f;
     Result.r = 0.f;
     // TODO:在ImGui中添加对傅里叶级数阶数的调控
     // Result.Density = 0.f;
@@ -486,6 +500,13 @@ RayVolumeDistribution RenderRay(
             Intersection.Color = Primitive.Color;
             Intersection.Density = Primitive.Opacity;
 
+            // 采样自由程
+            float u = rng.rand();
+            float CurrentSampledDepth = SampleRayVolumePrimitiveIntersection(Intersection, u);
+            if(CurrentSampledDepth < SampleDepth) {
+                SampleDepth = CurrentSampledDepth;
+            }
+
             // Update the result distribution
             Result = UpdateRayVolumeDistribution(Result, Intersection, Cdf, Attenuation);
         }
@@ -494,56 +515,15 @@ RayVolumeDistribution RenderRay(
     // 采样自由程
     float u = rng.rand();
     SampleDepth = SampleRayVolumeDistribution(Result, u);
-
-    SamplePdf = 1.f;
-    SampleTransmittance = 1.f;
-    // Used to compute the pdf
-    float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
-    float SumDensity = 0.f;
-    // Iterate again and calculate sample pdf
-    for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
-        uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
-        uint PrimitiveIndex, RenderableIndex;
-        UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
-        VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
-
-        // Transform the primitive to world space
-        float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
-
-        // Calculate intersection with the primitive
-        float2 lr; float Dist;
-        bool bIntersected = RayIntersect(
-            RayOrigin, RayDirection, Primitive, ToObjectTransform,
-            lr, Dist
-        );
-        // Clamp volumes to the nearest seen surface
-        lr.y = min(lr.y, MaxLinearDepth);
-        if(bIntersected && lr.y > max(0.f, lr.x)) {
-
-            float TMax = min(SampleDepth, lr.y);
-            float TMin = max(lr.x, 0.f);
-            float Transmittance = exp(-Primitive.Opacity * max(TMax - TMin, 0));
-            // Calculate the sample pdf (derived by differentating 1 - transmittance)
-            if(lr.y <= SampleDepth) {
-                // The intersection is before the sampled depth.
-                Pdf_C *= Transmittance;
-            } else if(lr.x <= SampleDepth) {
-                // Sample falls into the primitive.
-                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Primitive.Opacity * Transmittance;
-                Pdf_Prod *= Transmittance;
-                // Calculate the sample color
-                SampleColor += Primitive.Opacity * Primitive.Color;
-                SumDensity += Primitive.Opacity;
-            }
-            SampleTransmittance *= Transmittance;
-        }
+    if(SampleDepth < Result.r) {
+        SampleColor = GetRayVolumeDistributionColor(Result, SampleDepth);
+        SamplePdf = GetRayVolumeDistributionDensity(Result, SampleDepth);
+        SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, SampleDepth));
     }
-    if(SumDensity > 0) {
-        SampleColor /= max(SumDensity, 1e-6f);
-        SamplePdf = Pdf_C * Pdf_Sigma;
-    } else {
-        // The sample have not falled into any primitive. No valid sample.
+    else {
+        SampleColor = float3(0.f, 0.f, 0.f);
         SamplePdf = 0.f;
+        SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, Result.r));
     }
     return Result;
 }
