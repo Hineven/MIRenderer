@@ -51,9 +51,9 @@ float GetRayVolumeDistributionDensity(RayVolumeDistribution Distribution, float 
     float l = Distribution.l;
     float r = Distribution.r;
     float u = PI * (x - l) / max(r - l, 1e-6);
-    for(int i = 1; i <= Distribution.fourier_order; i++) {
+    for(uint i = 1; i <= Distribution.fourier_order; i++) {
         float n_u = i * u;
-        Density += Distribution.Density_fourier_a[0] * cos(n_u) + Distribution.Density_fourier_b[0] * sin(n_u);
+        Density += Distribution.Density_fourier_a[i] * cos(n_u) + Distribution.Density_fourier_b[i] * sin(n_u);
     }
     return Density;
 }
@@ -65,9 +65,9 @@ float3 GetRayVolumeDistributionColor(RayVolumeDistribution Distribution, float x
     float l = Distribution.l;
     float r = Distribution.r;
     float u = PI * (x - l) / max(r - l, 1e-6);
-    for(int i = 1; i <= Distribution.fourier_order; i++) {
+    for(uint i = 1; i <= Distribution.fourier_order; i++) {
         float n_u = i * u;
-        Color += Distribution.Color_fourier_a[0] * cos(n_u) + Distribution.Color_fourier_b[0] * sin(n_u);
+        Color += Distribution.Color_fourier_a[i] * cos(n_u) + Distribution.Color_fourier_b[i] * sin(n_u);
     }
     return Color;
 }

@@ -386,8 +386,8 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     // 计算该段体积在傅里叶级数中对应的长度
     float delta = (intersection.r - intersection.l) / float(num_integrate_samples);
     // 给每项傅里叶级数累加
-    fourier_distr.Density_fourier_a[0] += half_period_inv * intersection.Density * (intersection.r - intersection.l);
-    fourier_distr.Color_fourier_a[0] += half_period_inv * intersection.Color * (intersection.r - intersection.l);
+    fourier_distr.Density_fourier_a[0] += 0.5f * half_period_inv * intersection.Density * (intersection.r - intersection.l);
+    fourier_distr.Color_fourier_a[0] += 0.5f * half_period_inv * intersection.Color * (intersection.r - intersection.l);
     for(int i = 1; i <= fourier_distr.fourier_order; i++) {
         float fourier_density_a;
         float fourier_density_b;
@@ -435,7 +435,7 @@ RayVolumeDistribution RenderRay(
     // TODO:在ImGui中添加对傅里叶级数阶数的调控
     // Result.Density = 0.f;
     // Result.Color = float3(0.f, 0.f, 0.f);
-    Result.fourier_order = 7;
+    Result.fourier_order = 3;
     for (uint i = 0; i <= Result.fourier_order; i++) {
         Result.Density_fourier_a[i] = 0.f;
         Result.Density_fourier_b[i] = 0.f;
@@ -455,7 +455,7 @@ RayVolumeDistribution RenderRay(
         VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
         float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
-        
+
         // Calculate intersection with the primitive
         float2 lr; float Dist;
         bool bIntersected = RayIntersect(
@@ -498,15 +498,7 @@ RayVolumeDistribution RenderRay(
             Intersection.l = lr.x;
             Intersection.r = lr.y;
             Intersection.Color = Primitive.Color;
-            Intersection.Density = Primitive.Opacity;
-
-            // 采样自由程
-            float u = rng.rand();
-            float CurrentSampledDepth = SampleRayVolumePrimitiveIntersection(Intersection, u);
-            if(CurrentSampledDepth < SampleDepth) {
-                SampleDepth = CurrentSampledDepth;
-            }
-
+            Intersection.Density = Primitive.Opacity * (1.f - Dist * Dist);
             // Update the result distribution
             Result = UpdateRayVolumeDistribution(Result, Intersection, Cdf, Attenuation);
         }
