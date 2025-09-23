@@ -44,7 +44,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Transmittance)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
-        SHADER_RESOURCE_PARAMETER(SamplerState, PointClampSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
@@ -76,7 +76,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->G_Transmittance = view->G_transmittance_.Raw();
     params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
-    params->PointClampSampler = RHI::Get().GetGlobalSamplers().point_clamp;
+    params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);
     auto groups_y = DivideAndRoundUp(view->film_height_, LightingCompositionShader::kTileSize);
     Helpers::AddComputePass(builder, shader, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);

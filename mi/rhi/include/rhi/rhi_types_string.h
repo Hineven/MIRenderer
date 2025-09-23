@@ -241,8 +241,6 @@ FORCEINLINE std::string ToString(RHISamplerAddressModeType type) {
 // RHISamplerFilterType
 FORCEINLINE std::string ToString(RHISamplerFilterType type) {
     switch (type) {
-        case RHISamplerFilterType::kNearest:
-            return "Nearest";
         case RHISamplerFilterType::kLinear:
             return "Linear";
         case RHISamplerFilterType::kPoint:

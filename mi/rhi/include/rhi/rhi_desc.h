@@ -358,7 +358,7 @@ namespace ShaderReflection {
     };
 }
 
-struct RHIDrawDesc {
+struct RHIDrawStateDesc {
     struct {
         float x {}, y {};
         float width {}, height {};
@@ -386,6 +386,10 @@ struct RHIDrawDesc {
     std::array<float, 4> depth_stencil_clear_value {};
     RHILoadOpType depth_stencil_load_op {};
     RHIStoreOpType depth_stencil_store_op {};
+
+    RHIPolygonModeType polygon_mode {};
+
+    float line_width {1.f};
 
     RHICullModeType cull_mode {};
 
@@ -518,6 +522,16 @@ struct RHITraceRaysIndirectCommand2 {
     uint64_t callable_sbt_address {UINT64_MAX};
     uint64_t callable_sbt_size {UINT64_MAX};
     uint64_t callable_sbt_stride {UINT64_MAX};
+};
+
+struct RHISamplerDesc {
+    RHISamplerFilterType min_filter {RHISamplerFilterType::kLinear};
+    RHISamplerFilterType mag_filter {RHISamplerFilterType::kLinear};
+    RHISamplerFilterType mipmap_mode {RHISamplerFilterType::kLinear};
+    RHISamplerAddressModeType address_mode_u {RHISamplerAddressModeType::kRepeat};
+    RHISamplerAddressModeType address_mode_v {RHISamplerAddressModeType::kRepeat};
+    RHISamplerAddressModeType address_mode_w {RHISamplerAddressModeType::kRepeat};
+    std::array<float, 4> border_color {0.f, 0.f, 0.f, 1.f};
 };
 
 MI_NAMESPACE_END

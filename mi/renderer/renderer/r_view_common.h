@@ -12,4 +12,7 @@
 // Reroute to the shared view shader header
 #include "../shaders/shared/SharedView.hlsl"
 
+// The debug uniform buffer also
+#include "../shaders/shared/SharedDebug.hlsl"
+
 #endif //R_VIEW_COMMON_H

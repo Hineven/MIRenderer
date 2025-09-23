@@ -40,6 +40,9 @@ struct EvaluatedLight {
     float3 EstimatedAverageEmission;
 };
 
+// Use an extra factor on the estimation of light contribution.
+#define LIGHT_PROJECTION_ESTIMATION
+
 // A coarse estimtion used for light -> point contribution
 float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal, bool bVolume = false) {
     if(bVolume) {
@@ -48,10 +51,6 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         float3 ToLightCenter = LightCenter - Position;
         float DistanceSq = dot(ToLightCenter, ToLightCenter);
 
-        // The the light is not facing the sampled position. Cull it out.
-        if (dot(ToLightCenter, L.Normal) >= 0.0f) {
-            return 0.0f;
-        }
         float3 ToLightDirection = normalize(ToLightCenter);
 
         float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
@@ -70,17 +69,30 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
             // The light is big & close enough (distance < 2 * max light radius), reduce the effect from CosineFactor
             CosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
         }
+        // Take into account the cosine factor how much the sampled point is facing towards the light
         // Regarding the nature of volume scattering, lights that the sample is not facing towards will still have a lower
         // effect on the sample. So a constant bias of 1.5 and a scaling factor of 0.4 are applied.
         float CosineFactor = saturate(CosineBias + (1.5f + dot(Normal, ToLightDirection)) * 0.4f);
         // TODO take account of different parameterizations of HG phase function
 
-        float SolidAngle = LightArea / (DistanceSq + LightArea);
+        // Take account for how well is the light facing the shading point
+        float LightFacingCosineFactor = saturate(-dot(ToLightDirection, L.Normal));
+        // In case the light is close to the shading point, reduce the effect from LightFacingCosineFactor
+        if(LightFacingCosineFactor > 0 && DistanceSq < 1.5f * MaxLightRadiusSq)
+            LightFacingCosineFactor = lerp(1, LightFacingCosineFactor, DistanceSq / max(1.5f * MaxLightRadiusSq, 1e-4f));
+#ifndef LIGHT_PROJECTION_ESTIMATION
+        LightFacingCosineFactor = 1;
+#endif
+
+        float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
         return L.Intensity * SolidAngle * CosineFactor / PI;
     } else {
         float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
         float3 ToLightCenter = LightCenter - Position;
         float DistanceSq = dot(ToLightCenter, ToLightCenter);
+
+        
+        float3 ToLightDirection = normalize(ToLightCenter);
 
         float3 ToV0 = L.V0 - Position;
         float3 ToV1 = L.V1 - Position;
@@ -115,12 +127,24 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
             // The light is big & close enough (distance < 2 * max light radius), reduce the effect from CosineFactor
             CosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
         }
-
+        // Take into account the cosine factor how much the sampled point is facing towards the light
         float CosineFactor = saturate(CosineBias + dot(Normal, ToLightCenter));
 
-        float SolidAngle = LightArea / (DistanceSq + LightArea);
+        // Take account for how well is the light facing the shading point
+        float LightFacingCosineFactor = saturate(-dot(ToLightDirection, L.Normal));
+        // In case the light is close to the shading point, reduce the effect from LightFacingCosineFactor
+        if(LightFacingCosineFactor > 0 && DistanceSq < 1.5f * MaxLightRadiusSq)
+            LightFacingCosineFactor = lerp(1, LightFacingCosineFactor, DistanceSq / max(1.5f * MaxLightRadiusSq, 1e-4f));
+
+#ifndef LIGHT_PROJECTION_ESTIMATION
+        LightFacingCosineFactor = 1;
+#endif
+
+        float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
         return L.Intensity * SolidAngle * CosineFactor / PI;
     }
 }
+
+#undef LIGHT_PROJECTION_ESTIMATION
 
 #endif

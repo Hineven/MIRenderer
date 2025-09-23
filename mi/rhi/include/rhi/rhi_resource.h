@@ -8,6 +8,8 @@
 #define MIRENDERER_RHI_RESOURCE_H
 
 #include <atomic>
+
+#include "rhi_desc.h"
 #include "core/refcounted.h"
 #include "core/base.h"
 #include "core/thr.h"
@@ -108,12 +110,11 @@ using RHIResourceRef = TRef<RHIResource>;
 
 class RHISampler : public RHIResource {
 public:
-    FORCEINLINE RHISampler(RHISamplerFilterType filter, RHISamplerAddressModeType addressing):
-    filter_(filter), addressing_(addressing) {}
+    FORCEINLINE RHISampler(RHISamplerDesc desc):
+    desc_(desc) {}
     virtual ~RHISampler() = default;
 protected:
-    RHISamplerFilterType filter_;
-    RHISamplerAddressModeType addressing_;
+    RHISamplerDesc desc_ {};
 };
 
 class RHISyncPoint : public RHIResource {

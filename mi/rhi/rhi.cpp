@@ -16,7 +16,7 @@
 #include "vk/vk_rhi_export.h"
 
 MI_NAMESPACE_BEGIN
-    size_t GetFrameIndexForCurrentThread() {
+size_t GetFrameIndexForCurrentThread() {
     if (GetCurrentThreadType() == ThreadType::kRHIThread) {
         return GetCurrentFrameIndex_RHIThread();
     } else {
@@ -32,6 +32,18 @@ RHITextureRef RHI::CreateTexture(RHITextureType type, RHITextureDimensions dimen
 RHIBufferRef RHI::CreateBuffer(size_t size, RHIBufferUsageFlags type) {
     return CreateBuffer({size, type});
 }
+
+RHISamplerRef RHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
+    auto desc = RHISamplerDesc {};
+    desc.min_filter = filter;
+    desc.mag_filter = filter;
+    desc.mipmap_mode = filter;
+    desc.address_mode_u = address_mode;
+    desc.address_mode_v = address_mode;
+    desc.address_mode_w = address_mode;
+    return CreateSampler(desc);
+}
+
 
 bool RHI::InitializeSwapChain(const void *surface_handle_ptr, uint32_t width, uint32_t height) {
     assert(!is_swapchain_initialized_ && "Double initialization of swapchain");
@@ -124,15 +136,31 @@ void RHI::PostInitialize() {
         auto linear_wrap = CreateSampler(RHISamplerFilterType::kLinear, RHISamplerAddressModeType::kRepeat);
         linear_wrap->IncRef();
         global_samplers_.linear_wrap = linear_wrap.Raw();
-        auto linear_clamp = CreateSampler(RHISamplerFilterType::kLinear, RHISamplerAddressModeType::kClampToEdge);
-        linear_clamp->IncRef();
-        global_samplers_.linear_clamp = linear_clamp.Raw();
+        auto linear_edge = CreateSampler(RHISamplerFilterType::kLinear, RHISamplerAddressModeType::kClampToEdge);
+        linear_edge->IncRef();
+        global_samplers_.linear_edge = linear_edge.Raw();
         auto point_wrap = CreateSampler(RHISamplerFilterType::kPoint, RHISamplerAddressModeType::kRepeat);
         point_wrap->IncRef();
         global_samplers_.point_wrap = point_wrap.Raw();
-        auto point_clamp = CreateSampler(RHISamplerFilterType::kPoint, RHISamplerAddressModeType::kClampToEdge);
-        point_clamp->IncRef();
-        global_samplers_.point_clamp = point_clamp.Raw();
+        auto point_edge = CreateSampler(RHISamplerFilterType::kPoint, RHISamplerAddressModeType::kClampToEdge);
+        point_edge->IncRef();
+        global_samplers_.point_edge = point_edge.Raw();
+        {
+            auto desc = RHISamplerDesc {};
+            desc.min_filter = RHISamplerFilterType::kPoint;
+            desc.mag_filter = RHISamplerFilterType::kPoint;
+            desc.mipmap_mode = RHISamplerFilterType::kPoint;
+            desc.address_mode_u = RHISamplerAddressModeType::kClampToBorder;
+            desc.address_mode_v = RHISamplerAddressModeType::kClampToBorder;
+            desc.address_mode_w = RHISamplerAddressModeType::kClampToBorder;
+            desc.border_color[0] = 1.0f;
+            desc.border_color[1] = 1.0f;
+            desc.border_color[2] = 1.0f;
+            desc.border_color[3] = 1.0f;
+            auto point_border_1 = CreateSampler(desc);
+            point_border_1->IncRef();
+            global_samplers_.point_border_1 = point_border_1.Raw();
+        }
     }
 }
 
@@ -157,9 +185,10 @@ bool RHI::HasSingleton() {
 void RHI::PreDestruction () {
     // Release samplers
     global_samplers_.linear_wrap->DecRef();
-    global_samplers_.linear_clamp->DecRef();
+    global_samplers_.linear_edge->DecRef();
     global_samplers_.point_wrap->DecRef();
-    global_samplers_.point_clamp->DecRef();
+    global_samplers_.point_edge->DecRef();
+    global_samplers_.point_border_1->DecRef();
     // Release command queues
     graphics_command_queue_.PreDestruction();
     // Tell the bindless manager to release all resource handles it holds

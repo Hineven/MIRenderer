@@ -10,6 +10,7 @@
 #include "rdg/rdg_pool.h"
 #include "rdg/rdg_resource.h"
 #include "renderer/mi_buffer_heap.h"
+#include "renderer/mi_cvar.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 #include "rhi/rhi.h"
@@ -248,7 +249,6 @@ RendererView::RendererView() {
 }
 
 RendererView::~RendererView() {
-
 }
 
 
@@ -261,8 +261,6 @@ void RendererViewPersistentData::Update(RendererView *view) {
 
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
-    prev_G_albedo = view->G_albedo_;
-    prev_G_roughness = view->G_metallic_roughness_;
 
     prev_radiance_ = view->radiance_;
 
@@ -277,10 +275,12 @@ void RendererView::InitFrame () {
     // Update persistent data first
     if (persistent_data_ == nullptr) {
         // Create persistent data and initialize it.
-        auto persistent = new RendererViewPersistentData();
-        persistent_data_.reset(persistent);
-        persistent->Init();
+        persistent_data_ = std::make_unique<RendererViewPersistentData>();
+        persistent_data_->Init();
     }
+
+    view_common_params_ = {};
+    debug_common_params_ = {};
 
     static_mesh_geometry_material_indices_start_index = {};
 
@@ -289,44 +289,45 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
     G_depth_->SetName("GBuffer Depth");
-    // Often used anywhere
+    // Keep history for next frame
     G_depth_->SetExport();
 
     forward_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst | RHITextureUsageFlagBits::kTransferSrc);
+    forward_depth_->SetName("Forward Depth");
 
     G_visibility_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR32G32B32A32_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc);
     G_visibility_->SetName("GBuffer Visibility");
-    // Used for readback & visibility testing
-    G_visibility_->SetExport();
 
     G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_albedo_->SetName("GBuffer Albedo");
 
     G_normal_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_normal_->SetName("GBuffer Normal");
+    // Keep history for next frame
+    G_normal_->SetExport(true);
 
     G_emission_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_emission_->SetName("GBuffer Emission");
 
     G_metallic_roughness_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
     G_flags_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
 
     G_volume_density_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR32_FLOAT,
@@ -347,8 +348,17 @@ void RendererView::InitFrame () {
 
     G_transmittance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransferDst);
     G_transmittance_->SetName("GBuffer Transmittance");
+
+    shadow_map_moments_ = RDGTexture::Create2D(
+        Renderer::kDefaultShadowMapResolution, Renderer::kDefaultShadowMapResolution,
+        PixelFormatType::kR32G32_FLOAT,
+        RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer
+    );
+    shadow_map_moments_->SetName("Shadow Map Moments");
 
     volume_sample_color_and_linear_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
@@ -364,6 +374,7 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     radiance_->SetName("Radiance");
+    // Keep history for next frame
     radiance_->SetExport();
 
     diffuse_direct_lighting_ = RDGTexture::Create2D(
@@ -377,13 +388,19 @@ void RendererView::InitFrame () {
         | RHITextureUsageFlagBits::kTransfer);
     volume_direct_lighting_->SetName("Volume Direct Lighting");
 
+    debug_output_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kRenderTarget
+        | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransfer);
+    debug_output_->SetName("Debug Output");
+
     // Clear hzb, this is later created
     hzb_ = {};
     or_flags_ = {};
 
-    // Clear debug output texture
-    debug_output_ = {};
-
+    // clear debug buffers. They are created on demand.
+    debug_buffers_ = {};
+    // Also clear debug views
+    debug_views_ = {};
 
     // bool world_changed = world_ != persistent_data_->prev_world_;
     // Initialize the upload context used for batching uploads
@@ -398,29 +415,19 @@ void RendererView::UpdatePersistentData () {
     persistent_data_->Update(this);
 }
 
-void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
+void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) {
     view_common_params_ = builder.Allocate<ViewCommonShaderParameters>();
     auto & camera = view_common_params_->Camera;
 
     camera.Position = camera_.position;
+    float aspect_ratio = float(film_width_) / float(film_height_);
     {
         glm::vec3 camera_right = camera_.GetRight();
         glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_.direction));
-        auto aspect = (double)film_width_ / film_height_;
-        auto tan_fov_y = tan(camera_.fov_Y / 2.0);
-        // auto two_tan_fov_y = float(tan_fov_y * 2.0);
-
-        glm::vec3 axis_forward = glm::normalize(camera_.direction);
-        // Camera forward is -z axis
-        glm::vec3 axis_right = glm::normalize(glm::cross(axis_forward, camera_.up));
-        glm::vec3 axis_up = glm::normalize(glm::cross(axis_right, axis_forward));
-        // Thus, normalize(axis_forward + axis_right * ndc.x + axis_up * ndc.y) is the camera ray direction
-        axis_up    *= tan_fov_y;
-        axis_right *= tan_fov_y * aspect;
 
         camera.Direction = glm::normalize(camera_.direction);
-        camera.Right = axis_right;
-        camera.Up = axis_up;
+        camera.Right = camera_.GetScaledRight(aspect_ratio);
+        camera.Up = camera_.GetScaledUp();
 
         camera.NormalizedRight = glm::normalize(camera_right);
         camera.NormalizedUp = glm::normalize(camera_up);
@@ -436,7 +443,6 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
 
     camera.FilmDimensions = {film_width_, film_height_};
 
-    float aspect_ratio = float(film_width_) / float(film_height_);
     camera.FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
 
     uint32_t hzb_size = 1;
@@ -472,6 +478,7 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
 
+
     {
         glm::dmat4 prev_camera_view_matrix = glm::lookAt(
             persistent_data_->prev_camera.position, persistent_data_->prev_camera.position + persistent_data_->prev_camera.direction,
@@ -491,6 +498,17 @@ void RendererView::SetViewCommonShaderParameters(RenderGraphBuilder &builder) {
 
     camera.WorldToNDC_ReversedZ = proj_matrix_reversed_z * view_matrix;
     camera.ViewToNDC_ReversedZ = proj_matrix_reversed_z;
+}
+
+CVar<int> CVar_DebugCursorScreenCoordsX("debug.cursor_screen_coords_x", "Debug cursor X in screen coords.", 0);
+CVar<int> CVar_DebugCursorScreenCoordsY("debug.cursor_screen_coords_y", "Debug cursor Y in screen coords.", 0);
+
+void RendererView::SetupDebugCommonShaderParameters(RenderGraphBuilder &builder) {
+    debug_common_params_ = builder.Allocate<DebugCommonShaderParameters>();
+    debug_common_params_->CursorScreenCoords.x = CVar_DebugCursorScreenCoordsX.Get();
+    debug_common_params_->CursorScreenCoords.y = CVar_DebugCursorScreenCoordsY.Get();
+    // TODO
+    debug_common_params_->CursorButtonState = 0;
 }
 
 MI_NAMESPACE_END

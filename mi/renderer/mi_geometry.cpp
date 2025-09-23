@@ -41,7 +41,7 @@ TRef<Geometry> Geometry::CreateFromVertices(std::span<DefaultStaticMeshVertex> v
     }
     geom->vertices_.resize(vertices.size());
     geom->indices_.resize(indices.size());
-    // geom->dynamic_ = dynamic;
+
     std::copy(vertices.begin(), vertices.end(), geom->vertices_.begin());
     std::copy(indices.begin(), indices.end(), geom->indices_.begin());
     // Calculate AABB

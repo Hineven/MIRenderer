@@ -13,6 +13,10 @@
 #include <stack>
 #include <vector>
 
+#include <rdg/rdg_cmd.h>
+#include <rdg/rdg_builder.h>
+#include <rdg/rdg_shader.h>
+
 #include <core/base.h>
 #include <core/util/slot_allocator.h>
 #include <rhi/rhi_desc.h>
@@ -133,6 +137,7 @@ public:
     }
 
 
+
 protected:
 
     // All device materials allocated
@@ -140,7 +145,6 @@ protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
     TRef<RHIBuffer> material_header_buffer_;
-
 
     // Uber buffers for consistent geometries
     TRef<DeviceUberBufferInterface> vertex_uber_buffer_;

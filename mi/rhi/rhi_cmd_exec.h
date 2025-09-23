@@ -27,8 +27,9 @@ public:
     virtual void RHICopyTexture (RHICommandQueueBase * buffer, RHICommandCopyTexture * cmd) = 0;
     virtual void RHIBeginRendering (RHICommandQueueBase * cmd, RHICommandBeginRendering * begin_rendering) = 0;
     virtual void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) = 0;
-    virtual void RHIDrawPrimitive (RHICommandQueueBase * buffer, RHICommandDrawPrimitive * cmd) = 0;
-    virtual void RHIDrawIndexedPrimitive (RHICommandQueueBase * buffer, RHICommandDrawIndexedPrimitive * cmd) = 0;
+    virtual void RHIDraw (RHICommandQueueBase * buffer, RHICommandDraw * cmd) = 0;
+    virtual void RHIDrawIndexed (RHICommandQueueBase * buffer, RHICommandDrawIndexed * cmd) = 0;
+    virtual void RHIDrawIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndirect * draw_indirect) = 0;
     virtual void RHIDrawIndexedIndirect (RHICommandQueueBase * cmd, RHICommandDrawIndexedIndirect * draw_indexed_indirect) = 0;
     virtual void RHIDispatch (RHICommandQueueBase * buffer, RHICommandDispatch * cmd) = 0;
     virtual void RHIDispatchIndirect (RHICommandQueueBase * cmd, RHICommandDispatchIndirect * dispatch_indirect) = 0;
@@ -41,6 +42,7 @@ public:
     virtual void RHIBindComputePipeline (RHICommandQueueBase * buffer, RHICommandBindComputePipeline * cmd) = 0;
     virtual void RHIBindPipelineParameters (RHICommandQueueBase * buffer, RHICommandBindPipelineParameters * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
+    virtual void RHIClearBoundState (RHICommandQueueBase * buffer, RHICommandClearBoundState * cmd) = 0;
     virtual void RHIMemoryBarrier (RHICommandQueueBase * buffer, RHICommandMemoryBarrier * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
     virtual void RHIBufferBarriers (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;

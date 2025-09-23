@@ -24,8 +24,20 @@ struct Transform {
         position += translation;
     }
 
+    FORCEINLINE Transform Translated (const glm::vec3 & translation) const {
+        Transform result = *this;
+        result.position += translation;
+        return result;
+    }
+
     FORCEINLINE void Scale (const glm::vec3 & ext_scale) {
         this->scale *= ext_scale;
+    }
+
+    FORCEINLINE Transform Scaled (const glm::vec3 & ext_scale) const {
+        Transform result = *this;
+        result.scale *= ext_scale;
+        return result;
     }
 
     FORCEINLINE glm::mat4x3 GetToWorldTransformMatrix() const {
@@ -50,9 +62,36 @@ struct Transform {
         return glm::mat4x3(transform);
     }
 
+    FORCEINLINE void Rotate (const glm::vec3 & euler_angles) {
+        rotation += euler_angles;
+    }
+
+    FORCEINLINE Transform Rotated (const glm::vec3 & euler_angles) const {
+        Transform result = *this;
+        result.rotation += euler_angles;
+        return result;
+    }
+
+    FORCEINLINE void RotateAbout (float angle, const glm::vec3 & axis) {
+        glm::quat q = glm::angleAxis(angle, glm::normalize(axis));
+        auto current = glm::quat(rotation);
+        glm::quat result = q * current;
+        rotation = glm::eulerAngles(result);
+    }
+
+    FORCEINLINE Transform RotatedAbout (float angle, const glm::vec3 & axis) const {
+        glm::quat q = glm::angleAxis(angle, glm::normalize(axis));
+        auto current = glm::quat(rotation);
+        glm::quat result = q * current;
+        Transform t = *this;
+        t.rotation = glm::eulerAngles(result);
+        return t;
+    }
+
     FORCEINLINE static Transform Identity () {
         return Transform();
     }
+
 
     static Transform FromMatrix (glm::mat4) ;
 };

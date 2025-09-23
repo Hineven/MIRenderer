@@ -11,25 +11,42 @@
 
 MI_NAMESPACE_BEGIN
 
-VulkanSampler::VulkanSampler(RHISamplerFilterType filter, RHISamplerAddressModeType addressing) :
-RHISampler(filter, addressing) {
+VulkanSampler::VulkanSampler(RHISamplerDesc desc) :
+RHISampler(desc) {
     auto device = GetVulkanRHI()->GetDevice();
-    auto vk_filter = GetVulkanFilter(filter);
-    auto vk_addressing = GetVulkanAddressingMode(addressing);
+    auto vk_border_color = vk::BorderColor::eFloatOpaqueBlack;
+    if (desc.border_color[0] == 0.0f && desc.border_color[1] == 0.0f &&
+        desc.border_color[2] == 0.0f) {
+        if (desc.border_color[3] == 0.0f)
+            vk_border_color = vk::BorderColor::eFloatTransparentBlack;
+        else if (desc.border_color[3] == 1.0f)
+            vk_border_color = vk::BorderColor::eFloatOpaqueBlack;
+        else
+            vk_border_color = vk::BorderColor::eFloatCustomEXT;
+    } else if (desc.border_color[0] == 1.0f && desc.border_color[1] == 1.0f &&
+               desc.border_color[2] == 1.0f) {
+        if (desc.border_color[3] == 1.0f)
+            vk_border_color = vk::BorderColor::eFloatOpaqueWhite;
+        else
+            vk_border_color = vk::BorderColor::eFloatCustomEXT;
+    }
+    if (vk_border_color == vk::BorderColor::eFloatCustomEXT) {
+        mi_check(false, "Not supported yet");
+    }
     vk_sampler_ = device.createSampler(
         vk::SamplerCreateInfo()
-        .setMagFilter(vk_filter)
-        .setMinFilter(vk_filter)
-        .setAddressModeU(vk_addressing)
-        .setAddressModeV(vk_addressing)
-        .setAddressModeW(vk_addressing)
+        .setMagFilter(GetVulkanFilter(desc.min_filter))
+        .setMinFilter(GetVulkanFilter(desc.mag_filter))
+        .setAddressModeU(GetVulkanAddressingMode(desc.address_mode_u))
+        .setAddressModeV(GetVulkanAddressingMode(desc.address_mode_v))
+        .setAddressModeW(GetVulkanAddressingMode(desc.address_mode_w))
         .setAnisotropyEnable(VK_FALSE)
         .setMaxAnisotropy(1)
-        .setBorderColor(vk::BorderColor::eFloatOpaqueBlack)
+        .setBorderColor(vk_border_color)
         .setUnnormalizedCoordinates(VK_FALSE)
         .setCompareEnable(VK_FALSE)
         .setCompareOp(vk::CompareOp::eAlways)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setMipmapMode(GetVulkanMipmapMode(desc.mipmap_mode))
         .setMipLodBias(0.0f)
         .setMinLod(0.0f)
         .setMaxLod(0.0f)

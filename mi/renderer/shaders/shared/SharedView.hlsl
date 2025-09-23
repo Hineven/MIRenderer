@@ -64,6 +64,12 @@ struct ViewCommonShaderParameters {
     CameraParameters Camera;
 };
 
+struct DirectionalLightForShadowMap
+{
+    float4x4 LightWorldToNDC;
+    float3 LightDirWS;
+};
+
 #define CAMERA_TYPE_PERSPECTIVE 0u
 #define CAMERA_TYPE_ORTHOGRAPHIC 1u
 

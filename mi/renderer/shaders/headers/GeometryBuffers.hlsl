@@ -38,6 +38,9 @@ float3 ReprojectToPreviousUVZFromUVZ(CameraParameters C, float3 UVZ) {
     return float3(NDC2ToUV(ReprojectedNDC.xy), ReprojectedNDC.z);
 }
 
-#define FLAG_BITS_TEXTURE_VALID_FOR_SSRT 0x1
+// This bit on the flags texture indicates that the pixel is invalid for SSRT to 
+// step through. For example, volumetric primitives, or some other geometry that 
+// doesn't have proper depth information.
+#define FLAG_BITS_TEXTURE_INVALID_FOR_SSRT 0x1
 
 #endif

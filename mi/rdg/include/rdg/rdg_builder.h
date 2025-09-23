@@ -114,7 +114,7 @@ public:
         return ptr;
     }
 
-    // Create a RDG texture with the given description.
+    // Create a RDG texture with the given description. Shortcut for RDGTexture::Create
     TRef<RDGTexture> CreateTexture (RHITextureDesc desc) ;
     // Create a 2D RDG texture with the given description.
     FORCEINLINE TRef<RDGTexture> CreateTexture2D (
@@ -133,8 +133,13 @@ public:
     RDGTexture * Import (RHITexture * resource, RHITextureLayoutType layout = RHITextureLayoutType::kUndefined,
     RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone, RHIPipelineStageFlags prev_stages = RHIPipelineStageFlagBits::kNone) ;
 
-    // Create a RDG buffer with the given description.
+    // Create a RDG buffer with the given description. Shortcut for RDGBuffer::Create
     TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) ;
+    template <CMemTrivial T>
+    FORCEINLINE TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage, size_t count = 1, bool dedicated = false, bool no_warning = false) {
+        return CreateBuffer(usage, sizeof(T) * count, dedicated, no_warning);
+    }
+
     // Import a rhi buffer. NOTE: The builder kept a reference to the resource once imported.
     RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone, RHIPipelineStageFlags prev_stages = RHIPipelineStageFlagBits::kNone) ;
 

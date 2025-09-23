@@ -15,7 +15,27 @@ MI_NAMESPACE_BEGIN
 // Simple helpers for easily adding commonly used RDG passes. As well as invoking raw RHI commands.
 class Helpers {
 public:
+    template<CMemTrivial T>
+    struct BufferPtrOrValue {
+        union {
+            RDGBuffer * buffer;
+            T value;
+        };
+        bool is_buffer;
+        FORCEINLINE BufferPtrOrValue(T v) : value(v), is_buffer(false) {}
+        FORCEINLINE BufferPtrOrValue(RDGBuffer * buf) : buffer(buf), is_buffer(true) {}
+    };
+    typedef BufferPtrOrValue<uint32_t> BufferPtrOrUint; // Commonly used for indirect command generation
+    typedef BufferPtrOrValue<uint64_t> BufferPtrOrUint64; // Used for device address
+    typedef BufferPtrOrValue<float> BufferPtrOrFloat;
+
     static void Clear(RenderGraphBuilder & builder, RDGTexture * texture, glm::vec4 clear_value = {}, uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t num_layers = 1);
+
+    static void CopyTexture(RenderGraphBuilder & builder, RDGTexture * src, RDGTexture * dst,
+                         uint32_t src_mip_level = 0, uint32_t src_base_layer = 0, uint32_t src_layer_count = 1,
+                         uint32_t dst_mip_level = 0, uint32_t dst_base_layer = 0, uint32_t dst_layer_count = 1);
+
+    static TRef<RDGBuffer> SpawnDrawIndirectCommand (RenderGraphBuilder & builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count = nullptr, uint32_t first_vertex = 0, uint32_t first_instance = 0) ;
 
     // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);

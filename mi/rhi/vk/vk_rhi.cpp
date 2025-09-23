@@ -30,8 +30,9 @@
 // #define ENABLE_VALIDATION_LAYER
 #endif
 
-// 25.8.7: this must be defined. Otherwise driver panics when validation layer is on
-#define USE_DESCRIPTOR_BUFFER
+// 25.8.7: this must be defined. Otherwise, the driver panics when validation layer is on
+// 25.9.21: somehow this is not needed anymore after several driver updates.
+// #define USE_DESCRIPTOR_BUFFER
 
 MI_NAMESPACE_BEGIN
 
@@ -72,10 +73,10 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         std::vector enabled_extension_names = {
                 // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #ifndef NDEBUG
-                VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+            VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
-                // VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-                VK_KHR_SURFACE_EXTENSION_NAME
+            // VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+            VK_KHR_SURFACE_EXTENSION_NAME
         };
         // Append extra instance extensions
         if(extra) {
@@ -217,50 +218,52 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         vk::DeviceQueueCreateInfo queue_info({}, graphics_queue_family_index, queue_priorities);
 
         std::array enabled_extension_names = {
-                VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-                // Support hw ray tracing
-                VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-                // Support hw ray tracing pipeline
-                VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-                // Swapchain
-                VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                // Null descriptor
-                VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
-                // Warp ops
-                // VK_EXT_SHADER_SUBGROUP_BALLOT_EXTENSION_NAME,
-                // VK_EXT_SHADER_SUBGROUP_VOTE_EXTENSION_NAME,
-                VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
-                // Dynamic pipeline states
-                // VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
-                // uint8 indexing
-                VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME,
-                // Indexing device memory using addresses
-                // Use the KHR version for compatibility with Nsight
-                // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-                // Draw lines
-                VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
-                // Mesh shader support
-                VK_EXT_MESH_SHADER_EXTENSION_NAME,
-                // Descriptor indexing (bindless supoort)
-                // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+            VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+            // Support hw ray tracing
+            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+            // Support hw ray tracing pipeline
+            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+            // Swapchain
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+            // Null descriptor
+            VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
+            // Warp ops
+            // VK_EXT_SHADER_SUBGROUP_BALLOT_EXTENSION_NAME,
+            // VK_EXT_SHADER_SUBGROUP_VOTE_EXTENSION_NAME,
+            VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
+            // Dynamic pipeline states
+            // VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
+            // uint8 indexing
+            VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME,
+            // Indexing device memory using addresses
+            // Use the KHR version for compatibility with Nsight
+            // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+            // Draw lines
+            VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+            // Mesh shader support
+            VK_EXT_MESH_SHADER_EXTENSION_NAME,
+            // Descriptor indexing (bindless supoort)
+            // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 #ifdef USE_DESCRIPTOR_BUFFER
-                // Descriptor buffer (bindless support)
-                // 25.8.7: this extension must be present, otherwise the device panics with validation layer
-                VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+            // Descriptor buffer (bindless support)
+            // 25.8.7: this extension must be present, otherwise the device panics with validation layer
+            VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
 #endif
-                // more dynamic states
-                VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
-                // Ray tracing maintenance 1
-                VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,
+            // more dynamic states
+            VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
+            // Ray tracing maintenance 1
+            VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,
 #ifndef NDEBUG
-                VK_KHR_RAY_QUERY_EXTENSION_NAME
+            VK_KHR_RAY_QUERY_EXTENSION_NAME,
 #endif
-                // SPV extensions (not supported by NVIDIA)
-//                VK_GOOGLE_USER_TYPE_EXTENSION_NAME,
-//                VK_GOOGLE_HLSL_FUNCTIONALITY1_EXTENSION_NAME,
-                // Debugging
-                // VK_EXT_DEBUG_MARKER_EXTENSION_NAME // Promoted to VK_EXT_debug_utils extension
-                // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME // This extension has been promoted to Vulkan Core in 1.2
+            // Fragment barycentrics
+            VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
+            // SPV extensions (not supported by NVIDIA)
+            // VK_GOOGLE_USER_TYPE_EXTENSION_NAME,
+            // VK_GOOGLE_HLSL_FUNCTIONALITY1_EXTENSION_NAME,
+            // Debugging
+            // VK_EXT_DEBUG_MARKER_EXTENSION_NAME // Promoted to VK_EXT_debug_utils extension
+            // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME // This extension has been promoted to Vulkan Core in 1.2
         };
         // Check if the required extensions are supported
         auto supported_extensions = physical_device_.enumerateDeviceExtensionProperties();
@@ -325,6 +328,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDeviceTimelineSemaphoreFeatures,
                 vk::PhysicalDeviceFloat16Int8FeaturesKHR,
                 vk::PhysicalDevice8BitStorageFeaturesKHR,
+                vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR,
                 vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR,
                 vk::PhysicalDeviceHostQueryResetFeatures,
                 vk::PhysicalDeviceRayQueryFeaturesKHR,
@@ -372,6 +376,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         storage_8bit.storageBuffer8BitAccess = VK_TRUE;
         storage_8bit.uniformAndStorageBuffer8BitAccess = VK_TRUE;
 
+        auto & barycentric = std::get<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(extended_features);
+        barycentric.fragmentShaderBarycentric = VK_TRUE;
+
         auto & rt_maintence1 = std::get<vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR>(extended_features);
         rt_maintence1.rayTracingPipelineTraceRaysIndirect2 = true;
 
@@ -380,6 +387,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
         auto & RT_features = std::get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(extended_features);
         RT_features.rayTracingPipeline = VK_TRUE;
+        RT_features.rayTracingPipelineTraceRaysIndirect = VK_TRUE;
 
         auto & mesh_shader_features = std::get<vk::PhysicalDeviceMeshShaderFeaturesEXT>(extended_features);
         mesh_shader_features.taskShader = VK_TRUE;
@@ -402,11 +410,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         auto & fpatomic = std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(extended_features);
         fpatomic.shaderBufferFloat32AtomicAdd = VK_TRUE;
 
-        auto & descb = std::get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>(extended_features);
 #ifdef USE_DESCRIPTOR_BUFFER
+        auto & descb = std::get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>(extended_features);
         descb.descriptorBuffer = VK_TRUE;
-#else
-        descb.descriptorBuffer = VK_FALSE;
 #endif
 
         auto & dyrend = std::get<vk::PhysicalDeviceDynamicRenderingFeatures>(extended_features);
@@ -771,8 +777,8 @@ TRef<RHIAccelerationStructure> VulkanRHI::CreateAccelerationStructure(RHIAcceler
 }
 
 
-RHISamplerRef VulkanRHI::CreateSampler(RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) {
-    auto sampler = new VulkanSampler(filter, address_mode);
+RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
+    auto sampler = new VulkanSampler(desc);
     return TRef<RHISampler>(sampler);
 }
 

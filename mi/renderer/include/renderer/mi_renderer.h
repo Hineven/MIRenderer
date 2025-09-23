@@ -46,6 +46,9 @@ public:
     // 4 million at most
     constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
 
+    // Default shadow map resolution
+    constexpr static uint32_t kDefaultShadowMapResolution = 1024;
+
 protected:
 
     Renderer();
@@ -69,6 +72,11 @@ protected:
     void Render_DrawVolumePrimitives (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+
+    void Render_DrawShadowMap (
+        RendererView* view, RenderGraphBuilder& builder
+    );
+
     void Render_ComputeHiZBuffer (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
@@ -91,6 +99,10 @@ protected:
     void Render_PathTracing (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+
+    void Render_DebugView (
+        RendererView * view, RenderGraphBuilder & builder
+    );
 
     void Render_HardwareShadowRayTracing (
         RendererView * view, RenderGraphBuilder & builder,
@@ -118,10 +130,6 @@ protected:
         RDGBuffer * ray_to_trace_tmax,
         RDGBuffer * ray_to_trace_transmittance
     );
-
-    // Render material properties from the camera using ray-tracing for debugging purposes.
-    void Render_VisualizeRayTraced (RendererView * view, RenderGraphBuilder & builder) ;
-
 
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;

@@ -157,12 +157,23 @@ FORCEINLINE vk::ImageAspectFlags GetVulkanImageAspectFlags (RHITextureUsageFlags
 
 FORCEINLINE vk::Filter GetVulkanFilter (RHISamplerFilterType filter) {
     switch(filter) {
-        case RHISamplerFilterType::kNearest:
+        case RHISamplerFilterType::kPoint:
             return vk::Filter::eNearest;
         case RHISamplerFilterType::kLinear:
             return vk::Filter::eLinear;
         default:
             return vk::Filter::eNearest;
+    }
+}
+
+FORCEINLINE vk::SamplerMipmapMode GetVulkanMipmapMode (RHISamplerFilterType mipmap) {
+    switch(mipmap) {
+        case RHISamplerFilterType::kPoint:
+            return vk::SamplerMipmapMode::eNearest;
+        case RHISamplerFilterType::kLinear:
+            return vk::SamplerMipmapMode::eLinear;
+        default:
+            return vk::SamplerMipmapMode::eNearest;
     }
 }
 
@@ -318,6 +329,19 @@ FORCEINLINE vk::PrimitiveTopology GetVulkanPrimitiveTopology (RHIPrimitiveTopolo
             return vk::PrimitiveTopology::eTriangleStrip;
         default:
             return vk::PrimitiveTopology::eTriangleList;
+    }
+}
+
+FORCEINLINE vk::PolygonMode GetVulkanPolygonMode (RHIPolygonModeType mode) {
+    switch(mode) {
+        case RHIPolygonModeType::kFill:
+            return vk::PolygonMode::eFill;
+        case RHIPolygonModeType::kLine:
+            return vk::PolygonMode::eLine;
+        case RHIPolygonModeType::kPoint:
+            return vk::PolygonMode::ePoint;
+        default:
+            return vk::PolygonMode::eFill;
     }
 }
 

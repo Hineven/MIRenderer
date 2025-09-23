@@ -100,12 +100,16 @@ void RHICommandUpdateDrawState::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIUpdateDrawState(&cmd, this);
 }
 
-void RHICommandDrawPrimitive::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIDrawPrimitive(&cmd, this);
+void RHICommandDraw::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDraw(&cmd, this);
 }
 
-void RHICommandDrawIndexedPrimitive::Execute(RHICommandQueueBase &cmd) {
-    RHI::Get().GetCommandExecutor()->RHIDrawIndexedPrimitive(&cmd, this);
+void RHICommandDrawIndexed::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDrawIndexed(&cmd, this);
+}
+
+void RHICommandDrawIndirect::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIDrawIndirect(&cmd, this);
 }
 
 void RHICommandDrawIndexedIndirect::Execute(RHICommandQueueBase &cmd) {
@@ -148,6 +152,10 @@ void RHICommandBindPipelineParameters::Execute(RHICommandQueueBase &cmd) {
 
 void RHICommandBindVertexBuffer::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindVertexBuffer(&cmd, this);
+}
+
+void RHICommandClearBoundState::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIClearBoundState(&cmd, this);
 }
 
 void RHICommandMemoryBarrier::Execute(RHICommandQueueBase &cmd) {

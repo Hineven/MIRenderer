@@ -379,7 +379,7 @@ TEST(RHITest, RHIBindlessTextureDraw) {
                     RHIGPUAccessFlagBits::kRW
             );
             queue.BindPipeline(pipeline.Raw());
-            RHIDrawDesc ds {};
+            RHIDrawStateDesc ds {};
             ds.SetAttachment(0, texture0.Raw());
             ds.SetClearValue(0, {0.f, 1.f, 0.f, 1.f});
 
@@ -428,7 +428,7 @@ TEST(RHITest, RHIBindlessTextureDraw) {
             params.samplers = {samplers, 1};
             queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
             queue.BeginRendering();
-            queue.DrawPrimitive(3, 1);
+            queue.Draw(3, 1);
             queue.EndRendering();
 
             queue.TextureBarrier(

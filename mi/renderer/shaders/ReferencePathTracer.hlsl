@@ -66,6 +66,7 @@ struct RayPayload {
     float2 HitBarycentrics;
 };
 
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWRadiance; // Output radiance (1spp)
 
 #define MAX_OVERLAPPING_VOLUME_PRIMITIVES 16
@@ -94,7 +95,7 @@ float ResampleVolumePrimitives (
             RayVolumePrimitiveIntersection Distr = (RayVolumePrimitiveIntersection)0;
             Distr.l = lr.x;
             Distr.r = lr.y;
-            Distr.Density = Primitive.Opacity;
+            Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
             Distr.Color   = Primitive.Color;
             // Make a volume sample
             float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());
@@ -273,7 +274,7 @@ void ReferencePathTracerRaygen() {
                     RayVolumePrimitiveIntersection Distr = (RayVolumePrimitiveIntersection)0;
                     Distr.l = lr.x;
                     Distr.r = lr.y;
-                    Distr.Density = Primitive.Opacity;
+                    Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
                     Distr.Color   = Primitive.Color;
                     // Make a volume sample
                     float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());

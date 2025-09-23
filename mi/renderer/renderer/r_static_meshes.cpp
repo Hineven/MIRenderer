@@ -167,9 +167,8 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(DecodeVisibilityShader, "mi/renderer/shaders/DrawStaticMeshes.hlsl", "DecodeVisibility");
 
-
 void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBuilder &builder) {
-    {
+    {   
         auto params = builder.Allocate<DrawDeferredStaticMeshesShader::Params>();
         params->View = view->view_common_params_;
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
@@ -190,7 +189,7 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
         auto raster_pass = builder.AddPass<DrawDeferredStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (RDGCommandHelper::BindGraphicsShader<DrawDeferredStaticMeshesShader>(
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawDeferredStaticMeshesShader>(
                     queue, pass, shader, params, true
                 )) {
                     queue.BeginRendering();
@@ -308,7 +307,7 @@ public:
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, UV), RHIVertexAttributeFormatType::k2xFp32, uv)
 
         SHADER_RENDER_TARGET(PixelFormatType::kR32G32B32A32_UINT, Visibility, {})
-        SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, RDGShaderRenderTargetBlendingSettings{
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, Color, RDGShaderRenderTargetBlendingSettings{
             .blend_op = RHIBlendOpType::kBlendAdd,
             .src_blend = RHIBlendFactorType::kSrcAlpha,
             .dst_blend = RHIBlendFactorType::kOneMinusSrcAlpha
@@ -360,7 +359,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         auto raster_pass = builder.AddPass<DrawForwardStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.forward_static_meshes, rdg_draw_cmd = ctx.forward_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (RDGCommandHelper::BindGraphicsShader<DrawForwardStaticMeshesShader>(
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawForwardStaticMeshesShader>(
                     queue, pass, shader, params, true
                 )) {
                     queue.BeginRendering();

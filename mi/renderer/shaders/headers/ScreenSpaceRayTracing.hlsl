@@ -3,7 +3,7 @@
 #include "Transform.hlsl"
 #include "Conventions.hlsl"
 #include "GeometryBuffers.hlsl"
-#include "../resources/CommonSamplerResources.hlsl"
+// #include "../resources/CommonSamplerResources.hlsl"
 
 Texture2D<float> HiZBuffer;
 
@@ -38,21 +38,23 @@ void ScreenSpaceRayTrace(
     // Detect invalid pixels when performing screen space ray tracing
     Texture2D<uint> FlagsTexture,
     Texture2D<uint> OrFlagsTexture,
+    SamplerState PointBorder1Sampler, // A point sampler with border address mode, border color is 1
     float3 RayWorldOrigin,
     float3 RayWorldDirection,
     float MaxTraceDistance,
     int MaxNumIterations,
     float RelTexelThickness,
     int MinWarpOccupancy,
+    bool bPrintDebugMessages,
     inout bool bHit, // If a trustworthy hit is found
     inout float3 OutHitUVZ,
     inout float3 OutLastVisibleUVZ,
-    inout float OutHitTileZ,
+    inout float OutHitReversedTileZ,
     inout float3 OutLastValidUVZ
 ) {
     float3 RayStartUVZ;
     {
-        float3 Homogeneous = TransformPoint(C.WorldToNDC, RayWorldOrigin);
+        float3 Homogeneous = TransformPoint(C.WorldToNDC_ReversedZ, RayWorldOrigin);
         RayStartUVZ = float3(
             NDC2ToUV(Homogeneous.xy) * C.UVToHZBScale,
             Homogeneous.z
@@ -68,7 +70,7 @@ void ScreenSpaceRayTrace(
                                         : MaxTraceDistance;
 
         float3 RayWorldEnd = RayWorldOrigin + RayWorldDirection * RayEndWorldDistance;
-        float3 Homogeneous = TransformPoint(C.WorldToNDC, RayWorldEnd);
+        float3 Homogeneous = TransformPoint(C.WorldToNDC_ReversedZ, RayWorldEnd);
         RayEndUVZ = float3(NDC2ToUV(Homogeneous.xy) * C.UVToHZBScale, Homogeneous.z);
 
         float2 ScreenEdgeIntersections = LineBoxIntersect(RayStartUVZ, RayEndUVZ, 0.xxx, float3(C.UVToHZBScale, 1));
@@ -103,11 +105,11 @@ void ScreenSpaceRayTrace(
         float2 CurrentMipTexelSize = exp2(MipLevelForStepOut) * C.HZBBaseTexelSize;
         float2 CurrentMipResolution = 1.0f / CurrentMipTexelSize;
 
-        // Go a little further from the current texel
         float2 UVOffset = .005f * CurrentMipTexelSize;
         UVOffset = select(RayDirectionUVZ.xy < 0, -UVOffset, UVOffset);
-
+        
         float2 XYPlane = floor(CurrentUVZ.xy * CurrentMipResolution) + FloorOffset;
+        // Go a little further from the current texel border (to correctly march into the next texel)
         XYPlane = XYPlane * CurrentMipTexelSize + UVOffset;
 
         float2 PlaneIntersections = (XYPlane - RayStartUVZ.xy) / RayDirectionUVZ.xy;
@@ -117,7 +119,7 @@ void ScreenSpaceRayTrace(
 
     int Iteration = 0;
     bHit = false;
-    OutHitTileZ = 0;
+    OutHitReversedTileZ = 1;
 
     float LastAboveSurfaceT = CurrentT;
     float LastValidT = CurrentT;
@@ -141,32 +143,43 @@ void ScreenSpaceRayTrace(
         float2 XYPlane = floor(CurrentUVZ.xy * CurrentMipResolution) + FloorOffset;
         XYPlane = XYPlane * CurrentMipTexelSize + UVOffset;
 
-        float TileZ;
-        uint Flags;
+        float ReversedTileZ;
+        uint Flags = 0;
 
         if (MipLevel < 0) {
             // Sample from full resolution depth buffer
             float2 FullResUV = CurrentUVZ.xy * C.HZBToUVScale;
-            TileZ = 1.f - ReversedZDepthTexture.SampleLevel(PointClampSampler, FullResUV, 0).r;
-            uint2 FullResPixel = uint2(FullResUV * C.FilmDimensions);
-            Flags = FlagsTexture.Load(uint3(FullResPixel, 0)).r;
+            ReversedTileZ = ReversedZDepthTexture.SampleLevel(PointBorder1Sampler, FullResUV, 0).r;
+            int2 FullResPixel = uint2(FullResUV * C.FilmDimensions);
+            if(all(FullResPixel < C.FilmDimensions) && all(FullResPixel >= 0))
+                Flags = FlagsTexture.Load(uint3(FullResPixel, 0)).r;
         } else {
             // Sample from HZB
-            TileZ = 1.f - NearReversedZHZBTexture.SampleLevel(PointClampSampler, CurrentUVZ.xy, MipLevel).r;
-            uint2 HiZPixel = uint2(CurrentUVZ.xy * CurrentMipResolution);
-            Flags = OrFlagsTexture.Load(uint3(HiZPixel, MipLevel)).r;
+            ReversedTileZ = NearReversedZHZBTexture.SampleLevel(PointBorder1Sampler, CurrentUVZ.xy, MipLevel).r;
+            int2 HiZPixel = uint2(CurrentUVZ.xy * CurrentMipResolution);
+            int2 OrFlagsDimensions = C.HZBDimensions >> MipLevel;
+            if(all(HiZPixel < OrFlagsDimensions) && all(HiZPixel >= 0))
+                Flags = OrFlagsTexture.Load(uint3(HiZPixel, MipLevel)).r;
         }
-        bool bValidForSSRT = 0 != (Flags & FLAG_BITS_TEXTURE_VALID_FOR_SSRT);
 
-        float3 BoundaryPlanes = float3(XYPlane, TileZ);
+        if(bPrintDebugMessages) {
+            float2 Pixel = CurrentUVZ.xy * CurrentMipResolution;
+            printf("Sampling at mip level pixel: %f, %f\n", Pixel.x, Pixel.y);
+            printf("SSRT Iteration %d, MipLevel %d, CurrentT %.4f, CurrentUVZ (%.4f, %.4f, %.4f), ReversedTileZ %.4f\n", 
+                Iteration, MipLevel, CurrentT, CurrentUVZ.x, CurrentUVZ.y, CurrentUVZ.z, ReversedTileZ);
+        }
+        
+        bool bValidForSSRT = 0 == (Flags & FLAG_BITS_TEXTURE_INVALID_FOR_SSRT);
+
+        float3 BoundaryPlanes = float3(XYPlane, ReversedTileZ);
 
         float3 PlaneIntersections = (BoundaryPlanes - RayStartUVZ) / RayDirectionUVZ;
         // Do not intersect with the Z-plane when the ray is heading toward the camera (may miss a closer hit)
-        PlaneIntersections.z = RayDirectionUVZ.z > 0 ? PlaneIntersections.z : 1.0f;
+        PlaneIntersections.z = RayDirectionUVZ.z < 0 ? PlaneIntersections.z : 1.0f;
         // Ray T used to update the current T
         float UpdateT = min(PlaneIntersections.x, PlaneIntersections.y);
 
-        bool bAboveSurface = CurrentUVZ.z < TileZ;
+        bool bAboveSurface = CurrentUVZ.z > ReversedTileZ;
         bool bSkippedTile = bAboveSurface;
 
         UpdateT = min(UpdateT, PlaneIntersections.z);
@@ -175,6 +188,9 @@ void ScreenSpaceRayTrace(
         if (bSkippedTile) {
             LastAboveSurfaceT = saturate(UpdateT);
             if(bValidForSSRT) {
+                if(bPrintDebugMessages) {
+                    printf("    UpdateT to %f\n", UpdateT);
+                }
                 LastValidT = saturate(UpdateT);
             }
         }
@@ -191,13 +207,12 @@ void ScreenSpaceRayTrace(
     if (MipLevel < -1 && CurrentT < 1.0f)
     {
         float2 FullResUV = CurrentUVZ.xy * C.HZBToUVScale;
-        float ReversedTileZ = ReversedZDepthTexture.SampleLevel(PointClampSampler, FullResUV, 0).r;
-        float TileZ = 1.f - ReversedTileZ;
+        float ReversedTileZ = ReversedZDepthTexture.SampleLevel(PointBorder1Sampler, FullResUV, 0).r;
 
-        OutHitTileZ = TileZ;
+        OutHitReversedTileZ = ReversedTileZ;
 
-        float HitLinearDepth = ZDepthToLinearDepth(C, TileZ);
-        float CurLinearDepth = ZDepthToLinearDepth(C, CurrentUVZ.z);
+        float HitLinearDepth = ReversedZDepthToLinearDepth(C, ReversedTileZ);
+        float CurLinearDepth = ReversedZDepthToLinearDepth(C, CurrentUVZ.z);
 
         bHit = (CurLinearDepth - HitLinearDepth) < RelTexelThickness * max(HitLinearDepth, .00001f);
 

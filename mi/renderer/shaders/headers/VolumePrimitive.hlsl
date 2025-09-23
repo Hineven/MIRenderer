@@ -146,4 +146,13 @@ float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
     return FreeFlightLength;
 }
 
+// Return the decrease in extinction coefficient when traversing through volume primitives
+// NormalizedCenterDistance is the minimum nomalized distance from the ray line to
+// the center of the volume primitive. Ranging from 0 to 1.
+float VolumePrimitiveRayDecay (float NormalizedCenterDistance) {
+    float u = NormalizedCenterDistance;
+    // Simple quadratic falloff
+    return (1 - u * u);
+}
+
 #endif // VOLUME_PRIMITIVE_HLSL

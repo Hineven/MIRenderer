@@ -9,8 +9,9 @@
 
 #include <rdg/rdg_pool.h>
 
+#include "rdg/rdg_builder.h"
 #include "renderer/mi_renderer_view.h"
 
-void RenderFrame (MI_NAMESPACE::RendererView * view_state, MI_NAMESPACE::RDGResourcePool * pool) ;
+void RenderFrame (MI_NAMESPACE::RenderGraphBuilder & builder, MI_NAMESPACE::RendererView * view_state) ;
 
 #endif //INC_3D_VIEWER_H

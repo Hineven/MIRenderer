@@ -107,15 +107,16 @@ float LightGrid_EstimateLightGridContribution(PrecomputedLight L, float3 GridMin
     float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3;
     float3 UnnormalizedDirection = GridCenter - LightCenter;
     float3 Direction = normalize(UnnormalizedDirection);
-    float DotProduct = dot(Direction, L.Normal);
-    if(DotProduct < 0) {
+    float DotProduct = dot(
         // Offset the light position according to the light normal for conservative estimation
-        DotProduct += GridSize * sqrt(3.f) + 0.01f;
-    }
+        normalize(UnnormalizedDirection + L.Normal * (GridSize * sqrt(3.f) * 0.6f + 0.01f)),
+        L.Normal
+    );
+    
     float Distance = length(UnnormalizedDirection);
 
     // Assume that the light is small enough compared to the grid, estimate the solid angle.
-    float CosineFactor = saturate(DotProduct);
+    float CosineFactor = max(saturate(DotProduct), Distance * Distance);
     float SolidAngle = CosineFactor / max(Distance * Distance, 1e-6f);
 
     // Area is premultiplied to L.Intensity

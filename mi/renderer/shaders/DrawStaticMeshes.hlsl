@@ -37,24 +37,33 @@ struct DrawDeferredStaticMeshesPSOut {
 DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
     DrawDeferredStaticMeshesVSOut Input,
     uint PrimitiveIndex : SV_PrimitiveID,
-    float2 Barycentrics : SV_BaryCentrics
+    float3 Barycentrics : SV_BaryCentrics
 ) {
     DrawDeferredStaticMeshesPSOut Output = (DrawDeferredStaticMeshesPSOut)0;
     Output.Visibility = uint4(
         Input.DescriptorRenderableIndex, 
         PrimitiveIndex,
-        asuint(Barycentrics.x),
-        asuint(Barycentrics.y)
+        asuint(Barycentrics.y), // Keep the latter 2 floats
+        asuint(Barycentrics.z)
     );
     return Output;
 }
 
+[[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWAlbedo;
+[[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWNormal;
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWEmission;
+[[vk::image_format("rg8")]]
 RWTexture2D<float2> RWMetallicRoughness;
 Texture2D<uint4> VisibilityTexture;
-Texture2D<uint4> DepthTexture;
+Texture2D<float> DepthTexture;
+
+[numthreads(1, 1, 1)]
+void Test() {
+    RWAlbedo[uint2(0,0)] = float4(1,0,0,1);
+}
 
 #ifndef TILE_SIZE
 #define TILE_SIZE 16
@@ -70,7 +79,7 @@ void DecodeVisibility (uint2 DispatchThreadID : SV_DispatchThreadID) {
     }
     uint4 Visibility = VisibilityTexture.Load(uint3(DispatchThreadID, 0));
     // Decode visibility
-    float2 Barycentrics = asfloat(Visibility.wz);
+    float2 Barycentrics = asfloat(Visibility.zw);
     uint PrimitiveIndex = Visibility.y;
     uint RenderableIndex = Visibility.x & 0xFFFFFF;
     uint DescriptorRank = (Visibility.x >> 24) & 0xFF;
@@ -122,6 +131,7 @@ DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (DefaultStaticMeshVertex 
     uint  GlobalDescriptorIndex = StaticMeshHeader.DescriptionOffset + DescriptorIndex;
     uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[GlobalDescriptorIndex];
     Output.MaterialIndex = GeometryMaterialPair.y;
+
     // Here we use the faster path to interpolate UVs rather than decoding full visibility in fragment shader.
     Output.UV = Vertex.UV;
     return Output;

@@ -64,7 +64,7 @@ void TraceTransmittanceRaysRaygen() {
 #else 
         uint2 PixelIndex = UnpackUint2x16(RayToTraceOriginScreenCoordBuffer[RayIndex]);
         float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
-        float ReversedZDepth = G_DepthTexture.SampleLevel(PointClampSampler, UV, 0);
+        float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0);
         float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
         Ray.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
 #endif
@@ -162,8 +162,9 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             lr.x = max(lr.x, TMin);
             lr.y = max(lr.y, TMin);
             float Length = max(lr.y - lr.x, 0);
+            float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
             // Multiply to transmittance
-            float Transmittance = exp(-Length * Primitive.Opacity);
+            float Transmittance = exp(-Length * Opacity);
             Payload.Transmittance *= Transmittance;
             if(Payload.Transmittance < 0.001f) {
                 // Early termination if transmittance is too small

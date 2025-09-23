@@ -24,12 +24,6 @@
 #include "renderer/r_internal_common.h"
 
 MI_NAMESPACE_BEGIN
-static CVar<bool> CVar_DebugVisualizeRayTraced(
-    "r.debug.visualize_ray_traced",
-    "If true, visualize ray-traced objects in the scene. "
-    "This will render the ray-traced objects in the scene using a ray tracing pass.",
-    false
-);
 
 static CVar<int> CVar_FinalOutputType(
     "r.debug.final_output_type",
@@ -48,7 +42,6 @@ Renderer::Renderer() {
 Renderer::~Renderer() {
 
 }
-
 
 static Renderer * g_renderer = nullptr;
 
@@ -110,7 +103,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     view->InitFrame();
     // Allocate and set view->view_common_params_
-    view->SetViewCommonShaderParameters(builder);
+    view->SetupViewCommonShaderParameters(builder);
+    // Allocate and set view->debug_common_params_
+    view->SetupDebugCommonShaderParameters(builder);
 
     mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
     auto all_renderables = view->scene_->GetRenderables();
@@ -135,19 +130,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_transforms.reserve(all_renderables.size());
         renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
-        for (auto & e : all_renderables) {
+        for (auto [i, e] : all_renderables | std::views::enumerate) {
+            glm::mat4x3 to_world {};
+            glm::mat4x3 to_local {};
+            glm::mat3x3 normal_transform {};
+            RenderableHeader renderable_header {};
             if (e) {
-                auto to_world = e->GetTransform().GetToWorldTransformMatrix();
-                auto to_local = e->GetTransform().GetToLocalTransformMatrix();
-                renderable_transforms.push_back(to_world);
-                renderable_inverse_transforms.push_back(to_local);
-                auto normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
-                renderable_normal_transforms.push_back(normal_transform);
-                renderable_headers.push_back(e->GetDeviceRenderableHeader());
+                to_world = e->GetTransform().GetToWorldTransformMatrix();
+                to_local = e->GetTransform().GetToLocalTransformMatrix();
+                normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
+                renderable_header = e->GetDeviceRenderableHeader();
                 // Clear dirty flag
                 e->SetTransformDirty(false);
                 if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
             }
+            renderable_transforms.push_back(to_world);
+            renderable_inverse_transforms.push_back(to_local);
+            renderable_normal_transforms.push_back(normal_transform);
+            renderable_headers.push_back(renderable_header);
         }
     }
     // Upload renderable transforms and headers
@@ -225,7 +225,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Filter visible rendeables
     ctx.visible_renderables.reserve(all_renderables.size());
     for (auto & e : all_renderables) {
-        if (e->IsVisible()) ctx.visible_renderables.push_back(e);
+        if (e && e->IsVisible()) ctx.visible_renderables.push_back(e);
     }
 
     // Prepare static mesh draw commands
@@ -305,13 +305,18 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         queue.ClearTexture(view->G_emission_->GetRHI(), {});
         queue.ClearTexture(view->G_flags_->GetRHI(), {});
         queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
+        queue.ClearTexture(view->shadow_map_moments_->GetRHI(), {});
     })//->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_emission_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_flags_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite);
+    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->shadow_map_moments_.Raw(), RDGTextureUsageType::kTransferWrite);
+
+	// Shadow map
+    Render_DrawShadowMap(view, builder);
 
     // Static meshes
     Render_DrawDeferredStaticMeshes(view, builder);
@@ -325,41 +330,31 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     Render_LightingComposition(view, builder);
 
-    // Draw the ray-traced objects to debug buffer if enabled
-    if (CVar_DebugVisualizeRayTraced.Get()) {
-        Render_VisualizeRayTraced(view, builder);
-    }
+    Render_DebugView(view, builder);
 
-    // Path tracing pass
-
-    if (view->debug_output_) {
-        Render_DrawToOutput(view, builder, view->debug_output_.Raw());
-    } else {
-        auto type = CVar_FinalOutputType.Get();
-        if (type == 0)
-            Render_DrawToOutput(view, builder, view->radiance_.Raw());
-        else if (type == 1)
-            Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
-        else if (type == 2)
-            Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
-        else if (type == 3)
-            Render_DrawToOutput(view, builder, view->persistent_data_->prev_radiance_.Raw());
-        else if (type == 4)
-            Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
-        else if (type == 5)
-            Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
-        else if (type == 6)
-            Render_DrawToOutput(view, builder, view->volume_sample_transmittance_and_pdf_.Raw());
-        else if (type == 7)
-            Render_DrawToOutput(view, builder, view->volume_sample_color_and_linear_depth_.Raw());
-        else if (type == 8)
-            Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
-        else if (type == 9) {
-            Render_PathTracing(view, builder);
-            Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
-        } else Render_DrawToOutput(view, builder, view->radiance_.Raw());
-    }
-
+    auto type = CVar_FinalOutputType.Get();
+    if (type == 0)
+        Render_DrawToOutput(view, builder, view->radiance_.Raw());
+    else if (type == 1)
+        Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+    else if (type == 2)
+        Render_DrawToOutput(view, builder, view->G_depth_.Raw());
+    else if (type == 3)
+        Render_DrawToOutput(view, builder, view->G_normal_.Raw());
+    else if (type == 4)
+        Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
+    else if (type == 5)
+        Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
+    else if (type == 6)
+        Render_DrawToOutput(view, builder, view->hzb_.Raw());
+    else if (type == 7)
+        Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
+    else if (type == 8)
+        Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
+    else if (type == 9) {
+        Render_PathTracing(view, builder);
+        Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+    } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());
 
     // Extra pass for forward rendering
     Render_DrawForwardStaticMeshes(view, builder);
