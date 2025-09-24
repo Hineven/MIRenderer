@@ -36,6 +36,7 @@ public:
     static void DestroySingleton () ;
 
     void Init (DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) ;
+
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
@@ -152,6 +153,11 @@ protected:
 
     TRef<DeviceBindlessResourceAllocator> device_allocator_;
     TRef<RDGResourcePool> pool_;
+
+    // Sampling related resources
+    TRef<RHITexture> blue_noise_128x128_;
+    TRef<RHIBuffer> sobol_256x256_;
+    TRef<RHIBuffer> sobol_scrambling_tile_256x256x8_;
 
 };
 

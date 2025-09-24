@@ -249,7 +249,7 @@ void ReferencePathTracerRaygen() {
             } else {
                 // Ignore backface hits for surfaces
                 // Advance ray to next hit
-                Ray.TMin = Payload.TCurrent + 1e-4f;
+                Ray.TMin = Payload.TCurrent + 1e-5f;
             }
         } else { // Hit a volume boundary.
             // Volume boundary hit.
@@ -289,8 +289,8 @@ void ReferencePathTracerRaygen() {
                 if(CurrentOverlappingVolumePrimitiveCount < MAX_OVERLAPPING_VOLUME_PRIMITIVES) {
                     OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
                     OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
+                    CurrentOverlappingVolumePrimitiveCount ++;
                 }
-                CurrentOverlappingVolumePrimitiveCount ++;
             } else {
                 // Frontface hits: exiting the volume.
                 // Remove the primitive from the overlapping list
@@ -308,7 +308,9 @@ void ReferencePathTracerRaygen() {
                         OverlappingVolumePrimitivesInstanceIndices[i] = OverlappingVolumePrimitivesInstanceIndices[i + 1];
                     }
                 }
-                CurrentOverlappingVolumePrimitiveCount --;
+                if(bFound) {
+                    CurrentOverlappingVolumePrimitiveCount --;
+                }
             }
             // Forward the ray a little bit
             Ray.TMin = Payload.TCurrent + 2e-5f;

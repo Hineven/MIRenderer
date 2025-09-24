@@ -51,7 +51,7 @@ float SampleRayVolumeDistribution(RayVolumeDistribution Distribution, float u) {
 float VolumePrimitiveRayDecay (float NormalizedCenterDistance) {
     float u = NormalizedCenterDistance;
     // Simple quadratic falloff
-    return (1 - u * u); 
+    return (1 - u * u);
 } 
 
 #endif // VOLUME_PRIMITIVE_HLSL
