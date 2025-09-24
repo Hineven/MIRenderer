@@ -9,7 +9,6 @@ function(create_spirv_targets)
         spirv-cross-glsl
         spirv-cross-hlsl
         spirv-cross-cpp
-        SPIRV-Tools
         SPIRV-Tools-opt
     )
 
@@ -108,7 +107,6 @@ list(
     Vulkan::SPIRV-Tools
     Vulkan::SPIRV-Tools-opt
 
-    #    SPIRV-Tools-reduce
 )
 
 target_link_libraries(rhi PUBLIC core ${EXTERNAL_LIBRARIES})
