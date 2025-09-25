@@ -7,6 +7,10 @@ bool IsValid (uint v) {
     return v != INVALID_UINT;
 }
 
+bool IsInvalid (uint v) {
+    return v == INVALID_UINT;
+}
+
 // Transform a 3x4 matrix to a 4x4 matrix by adding a row of zeros and a one in the last column.
 float4x4 float3x4To4x4 (float3x4 m) {
     return float4x4(

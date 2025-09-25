@@ -321,7 +321,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     Render_ComputeHiZBuffer(view, builder);
 
-    Render_ComputeDirectLighting(view, builder);
+    Render_ComputeDirectDiffuseLighting(view, builder);
 
     Render_DenoiseLighting(view, builder);
 

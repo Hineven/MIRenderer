@@ -356,7 +356,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     RenderVolumeDirectLightingShader,
     "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderVolumeDirectLighting");
 
-void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
+void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGraphBuilder &builder) {
     auto & lib = RDGShaderLibrary::Get();
     auto ini = GetDirectLightingShaderInitializationInfo();
 

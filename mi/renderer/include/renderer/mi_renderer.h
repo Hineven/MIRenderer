@@ -81,7 +81,10 @@ protected:
     void Render_ComputeHiZBuffer (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_ComputeDirectLighting (
+    void Render_ComputeDirectDiffuseLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_ComputeIndirectDiffuseLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
