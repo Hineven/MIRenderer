@@ -374,7 +374,7 @@ float TempFn(float l1, float r1, float s1, float l2, float r2, float s2, float x
 }
 
 RayVolumeDistribution UpdateRayVolumeDistribution(
-    RayVolumeDistribution fourier_distr,
+    RayVolumeDistribution distr,
     RayVolumePrimitiveIntersection intersection,
     inout float Cdf,
     inout float attenuation
@@ -383,37 +383,39 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     Cdf = 1.f;
     attenuation = 1.f;
 
-    // 采样个数
+    float l = distr.Density.l;
+    float r = distr.Density.r;
+    // sample nums per intersection
     int num_integrate_samples = 4;
-    // 用于加速积分运算的提前计算
-    float half_period = fourier_distr.r - fourier_distr.l;
+
+    float half_period = r - l;
     float half_period_inv = 1.f / half_period;
     float omega = PI / half_period;
     // 计算该段体积在傅里叶级数中对应的长度
     float delta = (intersection.r - intersection.l) / float(num_integrate_samples);
     // 给每项傅里叶级数累加
-    fourier_distr.Density_fourier_a[0] += 0.5f * half_period_inv * intersection.Density * (intersection.r - intersection.l);
-    fourier_distr.Color_fourier_a[0] += 0.5f * half_period_inv * intersection.Color * (intersection.r - intersection.l);
-    for(int i = 1; i <= fourier_distr.fourier_order; i++) {
+    distr.Density.fourier_a[0] += 0.5f * half_period_inv * intersection.Density * (intersection.r - intersection.l);
+    distr.Color.fourier_a[0] += 0.5f * half_period_inv * intersection.Color * (intersection.r - intersection.l);
+    for(int i = 1; i <= distr.Density.fourier_order; i++) {
         float fourier_density_a;
         float fourier_density_b;
         float3 fourier_color_a;
         float3 fourier_color_b;
         float n_omega = i * omega;
         for(int k = 0; k < num_integrate_samples; k++) {
-            float x = delta * (k + 0.5f) + intersection.l - fourier_distr.l;
+            float x = delta * (k + 0.5f) + intersection.l - l;
             float n_omega_x = n_omega * x;
             fourier_density_a = half_period_inv * intersection.Density * cos(n_omega_x) * delta;
             fourier_density_b = half_period_inv * intersection.Density * sin(n_omega_x) * delta;
-            fourier_distr.Density_fourier_a[i] = fourier_distr.Density_fourier_a[i] + fourier_density_a;
-            fourier_distr.Density_fourier_b[i] = fourier_distr.Density_fourier_b[i] + fourier_density_b;
+            distr.Density.fourier_a[i] = distr.Density.fourier_a[i] + fourier_density_a;
+            distr.Density.fourier_b[i] = distr.Density.fourier_b[i] + fourier_density_b;
             fourier_color_a = half_period_inv * intersection.Color * cos(n_omega_x) * delta;
             fourier_color_b = half_period_inv * intersection.Color * sin(n_omega_x) * delta;
-            fourier_distr.Color_fourier_a[i] = fourier_distr.Color_fourier_a[i] + fourier_color_a;
-            fourier_distr.Color_fourier_b[i] = fourier_distr.Color_fourier_b[i] + fourier_color_b;
+            distr.Color.fourier_a[i] = distr.Color.fourier_a[i] + fourier_color_a;
+            distr.Color.fourier_b[i] = distr.Color.fourier_b[i] + fourier_color_b;
         }
     }
-    return fourier_distr;
+    return distr;
 }
 
 float ComputeTransmittance (float Depth, float Density) {
@@ -436,15 +438,18 @@ RayVolumeDistribution RenderRay(
     inout float Attenuation
 ) {
     RayVolumeDistribution Result;
-    Result.l = 0.f;
-    Result.r = 0.f;
+    Result.Density.l = 0.f;
+    Result.Density.r = 0.f;
+    Result.Color.l = 0.f;
+    Result.Color.r = 0.f;
     // TODO:在ImGui中添加对傅里叶级数阶数的调控
-    Result.fourier_order = 3;
-    for (uint i = 0; i <= Result.fourier_order; i++) {
-        Result.Density_fourier_a[i] = 0.f;
-        Result.Density_fourier_b[i] = 0.f;
-        Result.Color_fourier_a[i] = float3(0.f, 0.f, 0.f);
-        Result.Color_fourier_b[i] = float3(0.f, 0.f, 0.f);
+    Result.Density.fourier_order = 7;
+    Result.Color.fourier_order = 7;
+    for (uint i = 0; i <= Result.Density.fourier_order; i++) {
+        Result.Density.fourier_a[i] = 0.f;
+        Result.Density.fourier_b[i] = 0.f;
+        Result.Color.fourier_a[i] = float3(0.f, 0.f, 0.f);
+        Result.Color.fourier_b[i] = float3(0.f, 0.f, 0.f);
     }
     Cdf = 1.f;
     SampleDepth = 1e9f;
@@ -471,8 +476,10 @@ RayVolumeDistribution RenderRay(
         lr.y = min(lr.y, MaxLinearDepth);
         // 更新当前像素体积分布的前后界
         if(bIntersected && lr.y > lr.x) {
-            Result.l = min(Result.l, lr.x);
-            Result.r = max(Result.r, lr.y);
+            Result.Density.l = min(Result.Density.l, lr.x);
+            Result.Density.r = max(Result.Density.r, lr.y);
+            Result.Color.l = min(Result.Color.l, lr.x);
+            Result.Color.r = max(Result.Color.r, lr.y);
         }
     }
 
@@ -511,15 +518,17 @@ RayVolumeDistribution RenderRay(
     // 采样自由程
     float u = rng.rand();
     SampleDepth = SampleRayVolumeDistribution(Result, u);
-    if(SampleDepth < Result.r) {
+    if(SampleDepth < Result.Density.r) {
         SampleColor = GetRayVolumeDistributionColor(Result, SampleDepth);
-        SamplePdf = GetRayVolumeDistributionDensity(Result, SampleDepth);
+        float Density = GetRayVolumeDistributionDensity(Result, SampleDepth);
+        SamplePdf = exp(-Density) * Density;
         SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, SampleDepth));
+        SamplePdf = SampleTransmittance * Density;
     }
     else {
         SampleColor = float3(0.f, 0.f, 0.f);
         SamplePdf = 0.f;
-        SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, Result.r));
+        SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, Result.Density.r));
     }
     return Result;
 }
@@ -562,13 +571,15 @@ void DrawVolumePrimitives (
                 rng,
                 TotalTransmittance, SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
                  Cdf, Attenuation);
-            for(uint i = 0; i <= Rendered.fourier_order; i++) {
-                RWVolumeDensity[uint3(PixelIndex, i << 1)] = Rendered.Density_fourier_a[i];
-                RWVolumeDensity[uint3(PixelIndex, (i << 1) + 1)] = Rendered.Density_fourier_b[i];
-                RWVolumeColor[uint3(PixelIndex, i << 1)] = float4(Rendered.Color_fourier_a[i], 1);
-                RWVolumeColor[uint3(PixelIndex, (i << 1) + 1)] = float4(Rendered.Color_fourier_b[i], 1);
+            for(uint i = 0; i <= Rendered.Density.fourier_order; i++) {
+                RWVolumeDensity[uint3(PixelIndex, i << 1)] = Rendered.Density.fourier_a[i];
+                RWVolumeDensity[uint3(PixelIndex, (i << 1) + 1)] = Rendered.Density.fourier_b[i];
             }
-            RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
+            for(uint i = 0; i <= Rendered.Color.fourier_order; i++) {
+                RWVolumeColor[uint3(PixelIndex, i << 1)] = float4(Rendered.Color.fourier_a[i], 1);
+                RWVolumeColor[uint3(PixelIndex, (i << 1) + 1)] = float4(Rendered.Color.fourier_b[i], 1);
+            }
+            RWVolumeMinMax[PixelIndex] = float2(Rendered.Density.l, Rendered.Density.r);
             RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
             RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
             RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
@@ -576,8 +587,8 @@ void DrawVolumePrimitives (
             // Mark the pixel as invalid for SSRT if it overlaps with a volume
             uint OldFlags = RWFlags[PixelIndex];
             int Density_valid = 0;
-            for(uint i = 0; i <= Rendered.fourier_order; i++) {
-                if(Rendered.Density_fourier_a[i] > 0.f) {
+            for(uint i = 0; i <= Rendered.Density.fourier_order; i++) {
+                if(Rendered.Density.fourier_a[i] > 0.f) {
                     Density_valid = 1;
                     break;
                 }
