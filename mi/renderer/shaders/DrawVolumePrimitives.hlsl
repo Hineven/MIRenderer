@@ -438,13 +438,13 @@ RayVolumeDistribution RenderRay(
     inout float Attenuation
 ) {
     RayVolumeDistribution Result;
-    Result.Density.l = 0.f;
+    Result.Density.l = 1e9f;
     Result.Density.r = 0.f;
-    Result.Color.l = 0.f;
+    Result.Color.l = 1e9f;
     Result.Color.r = 0.f;
     // TODO:在ImGui中添加对傅里叶级数阶数的调控
-    Result.Density.fourier_order = 7;
-    Result.Color.fourier_order = 7;
+    Result.Density.fourier_order = 3;
+    Result.Color.fourier_order = 3;
     for (uint i = 0; i <= Result.Density.fourier_order; i++) {
         Result.Density.fourier_a[i] = 0.f;
         Result.Density.fourier_b[i] = 0.f;
@@ -453,10 +453,14 @@ RayVolumeDistribution RenderRay(
     }
     Cdf = 1.f;
     SampleDepth = 1e9f;
-    SampleColor = 0;
+    SampleColor = float3(0.f, 0.f, 0.f);
     TotalTransmittance = 1.f;
 
-    // 第一轮循环确定每个像素的体积分布范围
+    // Restore all the Intersection information
+    uint IntersectionCount = 0;
+    RayVolumePrimitiveIntersection Intersections[128];
+
+    // First loop:Get l & r and restore intersections
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
         uint PrimitiveIndex, RenderableIndex;
@@ -471,48 +475,59 @@ RayVolumeDistribution RenderRay(
             RayOrigin, RayDirection, Primitive, ToObjectTransform,
             lr, Dist
         );
-        // 把相交部分控制到0~MaxLinearDepth
+
+        // Control intersection range to 0~MaxLinearDepth
         lr.x = max(lr.x, 0.f);
         lr.y = min(lr.y, MaxLinearDepth);
-        // 更新当前像素体积分布的前后界
+        // If intersection is valid, update l & r and restore it
         if(bIntersected && lr.y > lr.x) {
             Result.Density.l = min(Result.Density.l, lr.x);
             Result.Density.r = max(Result.Density.r, lr.y);
             Result.Color.l = min(Result.Color.l, lr.x);
             Result.Color.r = max(Result.Color.r, lr.y);
+
+            Intersections[IntersectionCount].l = lr.x;
+            Intersections[IntersectionCount].r = lr.y;
+            //Intersections[IntersectionCount].Density = Primitive.Opacity;
+            Intersections[IntersectionCount].Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+            Intersections[IntersectionCount].Color = Primitive.Color;
+            IntersectionCount++;
         }
     }
 
-    // 第二轮循环计算体积分布的Density和Color，并处理
-    for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
-        uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
-        uint PrimitiveIndex, RenderableIndex;
-        UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
-        VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
+    // Second loop:Calculate Density and Color at each part of the distribution and fit them as Fourier series
+    float part_l = Result.Density.l;
+    float part_r = 1e9f;
+    while(part_l < (Result.Density.r - 1e-6f) && IntersectionCount > 0) {
+        float SumDensity = 0.f;
+        float3 SumWeightedColor = float3(0.f, 0.f, 0.f);
 
-        float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
-
-        // Calculate intersection with the primitive
-        float2 lr; float Dist;
-        bool bIntersected = RayIntersect(
-            RayOrigin, RayDirection, Primitive, ToObjectTransform,
-            lr, Dist
-        );
-        // 把相交部分控制到0~MaxLinearDepth
-        lr.x = max(lr.x, 0.f);
-        lr.y = min(lr.y, MaxLinearDepth);
-
-        if(bIntersected && lr.y > lr.x) {
-            TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Primitive.Opacity);
-            RayVolumePrimitiveIntersection Intersection;
-            // 处理相交部分的数据
-            Intersection.l = lr.x;
-            Intersection.r = lr.y;
-            Intersection.Color = Primitive.Color;
-            Intersection.Density = Primitive.Opacity * (1.f - Dist * Dist);
-            // Update the result distribution
-            Result = UpdateRayVolumeDistribution(Result, Intersection, Cdf, Attenuation);
+        // Check all Intersections
+        for(uint i = 0; i < IntersectionCount; i++) {
+            RayVolumePrimitiveIntersection Intersection = Intersections[i];
+            // If this intersection covers this part
+            if(Intersection.l < (part_l + 1e-6f) && Intersection.r > (part_l + 1e-6f)) {
+                part_r = min(part_r, Intersection.r);
+                SumDensity += Intersection.Density;
+                SumWeightedColor += Intersection.Density * Intersection.Color;
+            }
+            // If this intersection is on the right side
+            else if(Intersection.l > (part_l + 1e-6f)) {
+                part_r = min(part_r, Intersection.l);
+            }
         }
+
+        // Update Fourier series
+        RayVolumePrimitiveIntersection CurrentPart;
+        CurrentPart.l = part_l;
+        CurrentPart.r = part_r;
+        CurrentPart.Density = SumDensity;
+        CurrentPart.Color = (SumDensity > 1e-6f) ? (SumWeightedColor / SumDensity) : float3(0.f, 0.f, 0.f);
+        Result = UpdateRayVolumeDistribution(Result, CurrentPart, Cdf, Attenuation);
+
+        // Move to next part
+        part_l = part_r;
+        part_r = 1e9f;
     }
 
     // 采样自由程
@@ -520,16 +535,15 @@ RayVolumeDistribution RenderRay(
     SampleDepth = SampleRayVolumeDistribution(Result, u);
     if(SampleDepth < Result.Density.r) {
         SampleColor = GetRayVolumeDistributionColor(Result, SampleDepth);
-        float Density = GetRayVolumeDistributionDensity(Result, SampleDepth);
-        SamplePdf = exp(-Density) * Density;
+        SamplePdf = GetRayVolumeDistributionDensity(Result, SampleDepth);
         SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, SampleDepth));
-        SamplePdf = SampleTransmittance * Density;
     }
     else {
         SampleColor = float3(0.f, 0.f, 0.f);
         SamplePdf = 0.f;
         SampleTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, Result.Density.r));
     }
+    TotalTransmittance = exp(-IntegrateRayVolumeDistributionDensity(Result, Result.Density.r));
     return Result;
 }
 

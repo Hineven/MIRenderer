@@ -25,7 +25,8 @@ struct AreaLight {
 };
 
 // Precompute lights, making it easier to estiamte their contributions
-struct PrecomputedLight {
+struct
+    PrecomputedLight {
     float3 V0, V1, V2; // Triangle vertices
     float3 Normal;     // Triangle normal
     float Intensity;
