@@ -395,24 +395,24 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     float delta = (intersection.r - intersection.l) / float(num_integrate_samples);
     // 给每项傅里叶级数累加
     distr.Density.fourier_a[0] += 0.5f * half_period_inv * intersection.Density * (intersection.r - intersection.l);
-    distr.Color.fourier_a[0] += 0.5f * half_period_inv * intersection.Color * (intersection.r - intersection.l);
+    distr.WeightedColor.fourier_a[0] += 0.5f * half_period_inv * intersection.Density * intersection.Color * (intersection.r - intersection.l);
     for(int i = 1; i <= distr.Density.fourier_order; i++) {
         float fourier_density_a;
         float fourier_density_b;
-        float3 fourier_color_a;
-        float3 fourier_color_b;
+        float3 weighted_fourier_color_a;
+        float3 weighted_fourier_color_b;
         float n_omega = i * omega;
         for(int k = 0; k < num_integrate_samples; k++) {
             float x = delta * (k + 0.5f) + intersection.l - l;
             float n_omega_x = n_omega * x;
             fourier_density_a = half_period_inv * intersection.Density * cos(n_omega_x) * delta;
             fourier_density_b = half_period_inv * intersection.Density * sin(n_omega_x) * delta;
-            distr.Density.fourier_a[i] = distr.Density.fourier_a[i] + fourier_density_a;
-            distr.Density.fourier_b[i] = distr.Density.fourier_b[i] + fourier_density_b;
-            fourier_color_a = half_period_inv * intersection.Color * cos(n_omega_x) * delta;
-            fourier_color_b = half_period_inv * intersection.Color * sin(n_omega_x) * delta;
-            distr.Color.fourier_a[i] = distr.Color.fourier_a[i] + fourier_color_a;
-            distr.Color.fourier_b[i] = distr.Color.fourier_b[i] + fourier_color_b;
+            distr.Density.fourier_a[i] += fourier_density_a;
+            distr.Density.fourier_b[i] += fourier_density_b;
+            weighted_fourier_color_a = half_period_inv * intersection.Density * intersection.Color * cos(n_omega_x) * delta;
+            weighted_fourier_color_b = half_period_inv * intersection.Density * intersection.Color * sin(n_omega_x) * delta;
+            distr.WeightedColor.fourier_a[i] += weighted_fourier_color_a;
+            distr.WeightedColor.fourier_b[i] += weighted_fourier_color_b;
         }
     }
     return distr;
@@ -440,16 +440,16 @@ RayVolumeDistribution RenderRay(
     RayVolumeDistribution Result;
     Result.Density.l = 1e9f;
     Result.Density.r = 0.f;
-    Result.Color.l = 1e9f;
-    Result.Color.r = 0.f;
+    Result.WeightedColor.l = 1e9f;
+    Result.WeightedColor.r = 0.f;
     // TODO:在ImGui中添加对傅里叶级数阶数的调控
     Result.Density.fourier_order = 3;
-    Result.Color.fourier_order = 3;
+    Result.WeightedColor.fourier_order = 3;
     for (uint i = 0; i <= Result.Density.fourier_order; i++) {
         Result.Density.fourier_a[i] = 0.f;
         Result.Density.fourier_b[i] = 0.f;
-        Result.Color.fourier_a[i] = float3(0.f, 0.f, 0.f);
-        Result.Color.fourier_b[i] = float3(0.f, 0.f, 0.f);
+        Result.WeightedColor.fourier_a[i] = float3(0.f, 0.f, 0.f);
+        Result.WeightedColor.fourier_b[i] = float3(0.f, 0.f, 0.f);
     }
     Cdf = 1.f;
     SampleDepth = 1e9f;
@@ -483,8 +483,8 @@ RayVolumeDistribution RenderRay(
         if(bIntersected && lr.y > lr.x) {
             Result.Density.l = min(Result.Density.l, lr.x);
             Result.Density.r = max(Result.Density.r, lr.y);
-            Result.Color.l = min(Result.Color.l, lr.x);
-            Result.Color.r = max(Result.Color.r, lr.y);
+            Result.WeightedColor.l = min(Result.WeightedColor.l, lr.x);
+            Result.WeightedColor.r = max(Result.WeightedColor.r, lr.y);
 
             Intersections[IntersectionCount].l = lr.x;
             Intersections[IntersectionCount].r = lr.y;
@@ -495,39 +495,9 @@ RayVolumeDistribution RenderRay(
         }
     }
 
-    // Second loop:Calculate Density and Color at each part of the distribution and fit them as Fourier series
-    float part_l = Result.Density.l;
-    float part_r = 1e9f;
-    while(part_l < (Result.Density.r - 1e-6f) && IntersectionCount > 0) {
-        float SumDensity = 0.f;
-        float3 SumWeightedColor = float3(0.f, 0.f, 0.f);
-
-        // Check all Intersections
-        for(uint i = 0; i < IntersectionCount; i++) {
-            RayVolumePrimitiveIntersection Intersection = Intersections[i];
-            // If this intersection covers this part
-            if(Intersection.l < (part_l + 1e-6f) && Intersection.r > (part_l + 1e-6f)) {
-                part_r = min(part_r, Intersection.r);
-                SumDensity += Intersection.Density;
-                SumWeightedColor += Intersection.Density * Intersection.Color;
-            }
-            // If this intersection is on the right side
-            else if(Intersection.l > (part_l + 1e-6f)) {
-                part_r = min(part_r, Intersection.l);
-            }
-        }
-
-        // Update Fourier series
-        RayVolumePrimitiveIntersection CurrentPart;
-        CurrentPart.l = part_l;
-        CurrentPart.r = part_r;
-        CurrentPart.Density = SumDensity;
-        CurrentPart.Color = (SumDensity > 1e-6f) ? (SumWeightedColor / SumDensity) : float3(0.f, 0.f, 0.f);
-        Result = UpdateRayVolumeDistribution(Result, CurrentPart, Cdf, Attenuation);
-
-        // Move to next part
-        part_l = part_r;
-        part_r = 1e9f;
+    // Second loop:Calculate Fourier Density and Color
+    for(uint i = 0; i < IntersectionCount; i++) {
+        Result = UpdateRayVolumeDistribution(Result, Intersections[i], Cdf, Attenuation);
     }
 
     // 采样自由程
@@ -589,9 +559,9 @@ void DrawVolumePrimitives (
                 RWVolumeDensity[uint3(PixelIndex, i << 1)] = Rendered.Density.fourier_a[i];
                 RWVolumeDensity[uint3(PixelIndex, (i << 1) + 1)] = Rendered.Density.fourier_b[i];
             }
-            for(uint i = 0; i <= Rendered.Color.fourier_order; i++) {
-                RWVolumeColor[uint3(PixelIndex, i << 1)] = float4(Rendered.Color.fourier_a[i], 1);
-                RWVolumeColor[uint3(PixelIndex, (i << 1) + 1)] = float4(Rendered.Color.fourier_b[i], 1);
+            for(uint i = 0; i <= Rendered.WeightedColor.fourier_order; i++) {
+                RWVolumeColor[uint3(PixelIndex, i << 1)] = float4(Rendered.WeightedColor.fourier_a[i], 1);
+                RWVolumeColor[uint3(PixelIndex, (i << 1) + 1)] = float4(Rendered.WeightedColor.fourier_b[i], 1);
             }
             RWVolumeMinMax[PixelIndex] = float2(Rendered.Density.l, Rendered.Density.r);
             RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);

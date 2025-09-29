@@ -34,7 +34,7 @@ struct RayVolumePrimitiveIntersection {
 // Ray intersect with all primitives in one pixel
 struct RayVolumeDistribution {
     FourierFloat Density;
-    FourierFloat3 Color;
+    FourierFloat3 WeightedColor; // Actually restores Density * Color
 };
 
 // 计算一个傅里叶分布在x处的密度
@@ -46,8 +46,13 @@ float GetRayVolumeDistributionDensity(RayVolumeDistribution Distr, float x) {
 
 // 计算一个傅里叶分布在x处的颜色
 float3 GetRayVolumeDistributionColor(RayVolumeDistribution Distr, float x) {
-    float3 Color = ComputeFourierValue(Distr.Color, x);
+    float3 WeightedColor = ComputeFourierValue(Distr.WeightedColor, x);
+    float Density = ComputeFourierValue(Distr.Density, x);
 
+    float3 Color = float3(0.f, 0.f, 0.f);
+    if(Density > 1e-6f) {
+        Color = clamp((WeightedColor / Density), 0.f, 1.f);
+    }
     return Color;
 }
 
