@@ -109,4 +109,22 @@ uint2 UnpackUint2x16 (uint Value) {
     return uint2(Value & 0xFFFF, Value >> 16);
 }
 
+uint2 PackFp16x4Safe (float4 Value) {
+    // Avoid NaN and Inf
+    float4 SafeValue = clamp(Value, -65504.f, 65504.f);
+    return uint2(
+        f32tof16(SafeValue.x) | (f32tof16(SafeValue.y) << 16),
+        f32tof16(SafeValue.z) | (f32tof16(SafeValue.w) << 16)
+    );
+}
+
+float4 UnpackFp16x4Safe (uint2 Value) {
+    return float4(
+        f16tof32(Value.x & 0xFFFFu),
+        f16tof32(Value.x >> 16),
+        f16tof32(Value.y & 0xFFFFu),
+        f16tof32(Value.y >> 16)
+    );
+}
+
 #endif // PACKING_HLSL
