@@ -119,11 +119,12 @@ public:
     // Create a 2D RDG texture with the given description.
     FORCEINLINE TRef<RDGTexture> CreateTexture2D (
         uint32_t width, uint32_t height, PixelFormatType format,
-        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
+        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+        uint32_t mip_levels = 1, uint32_t array_layers = 1) {
         return CreateTexture(RHITextureDesc{
             RHITextureType::k2D,
             {width, height, 1},
-            1, 1, format, usage
+            mip_levels, array_layers, format, usage
         });
     }
 

@@ -61,7 +61,10 @@ struct CameraParameters {
 };
 
 struct ViewCommonShaderParameters {
+    // Current camera
     CameraParameters Camera;
+    // Main camera of the previous frame
+    CameraParameters PreviousCamera;
 };
 
 struct DirectionalLightForShadowMap

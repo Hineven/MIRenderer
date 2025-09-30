@@ -68,6 +68,8 @@ public:
 
 };
 
+struct DiffuseIndirectLightingPersistentData;
+
 // The data kept across frames for a view.
 struct RendererViewPersistentData {
 
@@ -90,6 +92,7 @@ struct RendererViewPersistentData {
     uint32_t view_index {};
     uint32_t frame_index_ {};
 
+    TRef<DiffuseIndirectLightingPersistentData> diffuse_indirect_lighting_persistent_data_ {};
 
     Scene * prev_scene_;
 };
@@ -161,6 +164,11 @@ struct RendererView {
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;
     TRef<RDGTexture> denoised_diffuse_direct_lighting_;
+
+    // Diffuse indirect lighting
+    TRef<RDGTexture> diffuse_indirect_lighting_;
+    TRef<RDGTexture> denoised_diffuse_indirect_lighting_;
+
     // Volume direct lighting
     TRef<RDGTexture> volume_direct_lighting_;
 

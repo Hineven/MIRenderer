@@ -9,6 +9,10 @@ CameraParameters GetActiveCamera() {
     return View.Camera;
 }
 
+CameraParameters GetPreviousCamera() {
+    return View.PreviousCamera;
+}
+
 uint GetCameraType (CameraParameters C) {
     return C.Type;
 }
@@ -65,10 +69,22 @@ float3 ReprojectToPreviousNDCFromNDC (CameraParameters C, float3 NDC) {
     return TransformPoint(C.Reprojection, NDC);
 }
 
+float PerspectiveZDepthToLinearDepth(float Near, float Far, float ZDepth)
+{
+    return Far * Near / (Far - ZDepth * (Far - Near));
+}
+
 float ZDepthToLinearDepth(CameraParameters C, float ZDepth)
 {
-    float Far = C.FarPlane, Near = C.NearPlane;
-    return Far * Near / (Far - ZDepth * (Far - Near));
+    if(true) {
+        float Far = C.FarPlane, Near = C.NearPlane;
+        return PerspectiveZDepthToLinearDepth(Near, Far, ZDepth);
+    }
+}
+
+float PerspectiveReversedZDepthToLinearDepth(float Near, float Far, float ReversedZDepth)
+{
+    return PerspectiveZDepthToLinearDepth(Near, Far, 1.0f - ReversedZDepth);
 }
 
 float ReversedZDepthToLinearDepth(CameraParameters C, float ReversedZDepth)

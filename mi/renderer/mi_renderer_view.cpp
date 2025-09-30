@@ -379,6 +379,7 @@ void RendererView::InitFrame () {
     // Keep history for next frame
     radiance_->SetExport();
 
+    // Diffuse direct lighting
     diffuse_direct_lighting_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
@@ -391,6 +392,20 @@ void RendererView::InitFrame () {
     denoised_diffuse_direct_lighting_->SetName("Denoised Diffuse Direct Lighting");
     // Persistent till next frame
     denoised_diffuse_direct_lighting_->SetExport();
+
+    // Diffuse indirect lighting
+    diffuse_indirect_lighting_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
+    diffuse_indirect_lighting_->SetName("Diffuse Indirect Lighting");
+    denoised_diffuse_indirect_lighting_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
+    denoised_diffuse_indirect_lighting_->SetName("Denoised Diffuse Indirect Lighting");
+    // Persistent till next frame
+    denoised_diffuse_indirect_lighting_->SetExport();
 
     volume_direct_lighting_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
