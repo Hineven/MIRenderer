@@ -254,7 +254,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_primitive_count.Raw(), ProjectVolumePrimitivesShader::kThreadGroupSize);
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
-    RadixSort::AddRadixSort32BitsPass(builder, kMaxNumActiveVolumePrimitives,
+    DeviceRadixSort::AddRadixSort32BitsPass(builder, kMaxNumActiveVolumePrimitives,
         primitive_instance_list_key.Raw(), primitive_instance_key_sorted.Raw(),
         primitive_instance_list_value.Raw(), primitive_instance_list_value_sorted.Raw(),
         primitive_instance_count.Raw()

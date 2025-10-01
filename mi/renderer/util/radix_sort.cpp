@@ -36,7 +36,11 @@ public:
 
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "BINS_PER_PASS=" + std::to_string(DeviceRadixSort::kBinsPerPass),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceRadixSort::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
@@ -56,7 +60,11 @@ public:
     DECLARE_SHADER()
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "BINS_PER_PASS=" + std::to_string(DeviceRadixSort::kBinsPerPass),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceRadixSort::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
@@ -77,7 +85,11 @@ public:
     DECLARE_SHADER()
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "BINS_PER_PASS=" + std::to_string(DeviceRadixSort::kBinsPerPass),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceRadixSort::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
@@ -103,7 +115,11 @@ public:
     DECLARE_SHADER()
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "BINS_PER_PASS=" + std::to_string(DeviceRadixSort::kBinsPerPass),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceRadixSort::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
@@ -112,7 +128,7 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(RadixSortScatterShader, "mi/renderer/shaders/radix_sort/RadixSort.hlsl", "RadixSortScatter");
 
-void RadixSort::AddRadixSort32BitsPass(
+void DeviceRadixSort::AddRadixSort32BitsPass(
     RenderGraphBuilder &builder, uint32_t num_elements, RDGBuffer *src_keys_buffer, RDGBuffer *dst_keys_buffer,
     RDGBuffer *src_values_buffer, RDGBuffer *dst_values_buffer, RDGBuffer * count_buffer, const std::string &name
 ) {

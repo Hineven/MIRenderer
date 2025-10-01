@@ -17,8 +17,13 @@ StructuredBuffer<uint> Count;
 RWStructuredBuffer<uint> RWOutKeys;
 RWStructuredBuffer<uint> RWOutValues;
 
+#ifndef BINS_PER_PASS
 #define BINS_PER_PASS 256 // As well as threads per group
+#endif
+
+#ifndef ELEMENTS_PER_SEGMENT
 #define ELEMENTS_PER_SEGMENT 1024
+#endif
 
 #ifndef WAVE_SIZE
 #error "WAVE_SIZE must be defined"
@@ -32,8 +37,6 @@ RWStructuredBuffer<uint> RWOutValues;
 #if BINS_PER_PASS % WAVE_SIZE
 #error "BINS_PER_PASS must be a multiple of WAVE_SIZE"
 #endif
-
-
 
 groupshared uint SharedBins[BINS_PER_PASS];
 [numthreads(BINS_PER_PASS, 1, 1)]

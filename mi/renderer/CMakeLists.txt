@@ -29,6 +29,7 @@ set(SOURCES
         renderer/r_debug_views.cpp
         renderer/r_denoise.cpp
         util/radix_sort.cpp
+        util/scan_sum.cpp
 )
 
 add_library(renderer ${SOURCES})

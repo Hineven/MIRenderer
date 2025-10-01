@@ -11,17 +11,18 @@
 
 MI_NAMESPACE_BEGIN
 
-class RadixSort {
+class DeviceRadixSort {
 public:
+    // Optimized for sorting up to millions of elements. Performance may degrade when sorting more / fewer elements.
     static void AddRadixSort32BitsPass (
         RenderGraphBuilder & builder,
-        uint32_t num_elements,
+        uint32_t num_elements, // Number of elements to sort if non-indirect. If indirect, this parameter stores an upper bound.
         RDGBuffer * src_keys_buffer,
         RDGBuffer * dst_keys_buffer,
         RDGBuffer * src_values_buffer = nullptr,
         RDGBuffer * dst_values_buffer = nullptr,
-        // If the count_buffer is set, it will be used to store the count of each bin.
-        // num bins will be a bound of this value in that case.
+        // If the count_buffer is set, the sort will be performed in an indirect manner, where the actual number of elements to sort
+        // is read from the count_buffer at execution time. The num_elements parameter will be treated as an upper bound.
         RDGBuffer * count_buffer = nullptr,
         const std::string & name = ""
     ) ;
