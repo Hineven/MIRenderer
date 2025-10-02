@@ -3,16 +3,17 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "rdg/rdg_shader.h"
-#include "rdg/rdg_builder.h"
-#include "renderer/mi_cvar.h"
-#include "renderer/mi_renderer.h"
-#include "r_view_common.h"
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_resource_allocator.h"
+#include <rdg/rdg_shader.h>
+#include <rdg/rdg_builder.h>
+#include <rdg/rdg_helper.h>
+#include <renderer/mi_cvar.h>
+#include <renderer/mi_renderer.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_scene.h>
 #include "../shaders/shared/SharedLight.hlsl"
 #include "../shaders/shared/SharedDebug.hlsl"
-#include "renderer/mi_scene.h"
+#include "r_view_common.h"
+#include "r_persistent.h"
 MI_NAMESPACE_BEGIN
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid

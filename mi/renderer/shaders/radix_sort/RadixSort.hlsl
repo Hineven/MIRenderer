@@ -185,26 +185,33 @@ void RadixSortScatter (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupI
     // Reorder the elements
     for(int Offset = ELEMENTS_PER_SEGMENT; Offset > 0; Offset -= WAVE_SIZE) {
         int Index = StartOffset + Offset - WAVE_SIZE + LocalID;
+        uint Key = 0, BinIndex = 0;
+        bool bIsPrimary = false;
+        uint Rank = 0;
         if (Index < NumElements) {
-            uint Key = Keys[Index];
-            uint BinIndex = (Key >> UB.BitShift) & (BINS_PER_PASS - 1);
+            Key = Keys[Index];
+            BinIndex = (Key >> UB.BitShift) & (BINS_PER_PASS - 1);
             InterlockedOr(SharedBinsMask[BinIndex], WaveMask_T(1) << LocalID);
-            GroupMemoryBarrierWithGroupSync();
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (Index < NumElements) {
             WaveMask_T Threads = SharedBinsMask[BinIndex];
             WaveMask_T Masked = Threads & (~((WaveMask_T(1) << LocalID) - 1));
-            uint Rank = countbits(Masked);
+            Rank = countbits(Masked);
             uint ReorderIndex = SharedBins[BinIndex] - Rank;
             // Reorder
             RWOutKeys[ReorderIndex] = Key;
             RWOutValues[ReorderIndex] = Values[Index];
             // Update the bin count
-            bool bIsPrimary = Masked == Threads;
-            GroupMemoryBarrierWithGroupSync();
+            bIsPrimary = Masked == Threads;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (Index < NumElements) {
             if (bIsPrimary) {
                 SharedBins[BinIndex] -= Rank;
                 SharedBinsMask[BinIndex] = 0; // Reset the mask for the next pass
             }
-            GroupMemoryBarrierWithGroupSync();
         }
+        GroupMemoryBarrierWithGroupSync();
     }
 }

@@ -16,10 +16,12 @@
 #include "rhi/rhi.h"
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_desc.h"
+#include "renderer/r_persistent.h"
 #include "renderer/r_view_common.h"
+#include "renderer/r_diffuse_direct_lighting.h"
+#include "renderer/r_diffuse_indirect_lighting.h"
 
 MI_NAMESPACE_BEGIN
-
 RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {
     mi_assert(!fired_, "Allocating more staging buffer after upload.");
     bool dedicated = false;
@@ -235,11 +237,9 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
 }
 
 RendererViewPersistentData::RendererViewPersistentData() {
-
 }
 
 RendererViewPersistentData::~RendererViewPersistentData() {
-
 }
 
 
@@ -249,6 +249,9 @@ RendererView::RendererView() {
 }
 
 RendererView::~RendererView() {
+    if (persistent_data_) {
+        delete persistent_data_;
+    }
 }
 
 
@@ -256,8 +259,9 @@ void RendererViewPersistentData::Init() {
     *this = {};
 }
 
-void RendererViewPersistentData::Update(RendererView *view) {
+void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_camera = view->camera_;
+    prev_camera_parameters_ = view->view_common_params_->Camera;
 
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
@@ -268,6 +272,7 @@ void RendererViewPersistentData::Update(RendererView *view) {
 
     prev_scene_ = view->scene_;
 
+
     frame_index_ ++;
 }
 
@@ -277,7 +282,7 @@ void RendererView::InitFrame () {
     // Update persistent data first
     if (persistent_data_ == nullptr) {
         // Create persistent data and initialize it.
-        persistent_data_ = std::make_unique<RendererViewPersistentData>();
+        persistent_data_ = new RendererViewPersistentData();
         persistent_data_->Init();
     }
 
@@ -435,13 +440,11 @@ void RendererView::InitFrame () {
 }
 
 
-void RendererView::UpdatePersistentData () {
-    // Roll states for the next frame
-    persistent_data_->Update(this);
-}
-
 void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) {
+
     view_common_params_ = builder.Allocate<ViewCommonShaderParameters>();
+    view_common_params_->PreviousCamera = persistent_data_->prev_camera_parameters_;
+
     auto & camera = view_common_params_->Camera;
 
     camera.Position = camera_.position;

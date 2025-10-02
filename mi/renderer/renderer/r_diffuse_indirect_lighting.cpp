@@ -8,12 +8,34 @@
 #include <rdg/rdg_shader.h>
 #include <rdg/rdg_helper.h>
 #include <renderer/mi_renderer.h>
+#include <renderer/util/scan_sum.h>
 #include "r_view_common.h"
+#include "r_diffuse_direct_lighting.h"
+#include "r_diffuse_indirect_lighting.h"
+#include "r_persistent.h"
 
 MI_NAMESPACE_BEGIN
+    static CVar<float> CVar_ProbeSearchSize(
+    "r.diffuse_indirect_lighting.probe_reprojection_search_size",
+    "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
+    5.f
+);
+
+static CVar<bool> CVar_ScreenProbesRayImportanceSampling(
+    "r.diffuse_indirect_lighting.screen_probes_ray_importance_sampling",
+    "Whether to use importance sampling when generating probe update rays. If disabled, uniform hemisphere sampling will be used.",
+    true
+);
+
+static CVar<bool> CVar_ScreenProbesRayFreezeSeed(
+    "r.diffuse_indirect_lighting.screen_probes_ray_freeze_seed",
+    "Whether to freeze the random seed for probe update rays. This is used for debugging only.",
+    false
+);
 
 struct DiffuseIndirectLightingUB {
-    glm::uvec2 Unused;
+    uint32_t MaxNumUpdateRays;
+    uint32_t HeaderTileDimension;
     glm::uvec2 TileDimensions;
 
     glm::vec2 InvTileDimensions;
@@ -73,6 +95,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayOffsetsBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayCountsBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayDirectionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayStateBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayOriginScreenCoordsBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayAllocator)
 
@@ -84,7 +107,9 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousNormalTexture)
 
-    SHADER_RESOURCE_PARAMETER(Texture2D, RWDiffuseIndirectLightingTexture)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDiffuseIndirectLightingTexture)
+
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
 
     SHADER_UNIFORM_BUFFER(DiffuseIndirectLightingUB, UB)
 
@@ -195,6 +220,14 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     "mi/renderer/shaders/DiffuseIndirectLighting.hlsl",
     "ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries");
 
+class ClipUpdateRayCountShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClipUpdateRayCount");
+
 // Trace update rayus...
 
 class UpdateScreenProbesAndCacheShader : public DiffuseIndirectLightingShader {
@@ -214,7 +247,16 @@ public:
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeCacheMRUQueueShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeCacheMRUQueue");
 
 class MakeTileScreenProbeHeaderIndexShader : public RDGShader {
+public:
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWInTileScreenProbeHeaderTexture)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutTileScreenProbeHeaderTexture)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Params)
+    DECLARE_SHADER()
 };
+
+IMPLEMENT_RDG_COMPUTE_SHADER(MakeTileScreenProbeHeaderIndexShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "MakeTileScreenProbeHeaderIndex");
 
 class ComputeScreenProbeSHCoefficientsShader : public DiffuseIndirectLightingShader {
 public:
@@ -232,61 +274,54 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeDiffuseIndirectLightingShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ComputeDiffuseIndirectLighting");
 
-struct DiffuseIndirectLightingPersistentData : public RefCounted<> {
-    TRef<RDGTexture> ScreenProbeRadianceDepthTexture;
-    TRef<RDGBuffer>  ScreenProbeCacheData;
-    TRef<RDGTexture> ScreenProbeCacheRadianceDepthTexture;
-    TRef<RDGBuffer>  ScreenProbeCacheMRUQueueBuffer;
-    TRef<RDGTexture> TileScreenProbeHeaderTexture;
+bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions, uint32_t header_tile_dimension) {
+    bool flag = true;
+    auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
 
-    bool MakeSureExists (RenderGraphBuilder & builder, glm::uvec2 tile_dimensions) {
-        bool flag = true;
-        auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
-        if (!ScreenProbeRadianceDepthTexture) {
-            ScreenProbeRadianceDepthTexture = builder.CreateTexture2D(
-                atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
-            );
-            ScreenProbeRadianceDepthTexture->SetName("ScreenProbeRadianceDepth");
-            ScreenProbeRadianceDepthTexture->SetExport();
-            flag = false;
-        }
-        if (!ScreenProbeCacheData) {
-            ScreenProbeCacheData = builder.CreateBuffer(
-                RHIBufferUsageFlagBits::kStorage,
-                atlas_dimensions.x * atlas_dimensions.y * sizeof(uint32_t) * 4
-            );
-            ScreenProbeCacheData->SetName("ScreenProbeCacheData");
-            ScreenProbeCacheData->SetExport();
-            flag = false;
-        }
-        if (!ScreenProbeCacheRadianceDepthTexture) {
-            ScreenProbeCacheRadianceDepthTexture = builder.CreateTexture2D(
-                atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
-            );
-            ScreenProbeCacheRadianceDepthTexture->SetName("ScreenProbeCacheRadianceDepth");
-            ScreenProbeCacheRadianceDepthTexture->SetExport();
-            flag = false;
-        }
-        if (!ScreenProbeCacheMRUQueueBuffer) {
-            ScreenProbeCacheMRUQueueBuffer = builder.CreateBuffer(
-                RHIBufferUsageFlagBits::kStorage,
-                atlas_dimensions.x * atlas_dimensions.y * sizeof(uint32_t)
-            );
-            ScreenProbeCacheMRUQueueBuffer->SetName("ScreenProbeCacheMRUQueue");
-            ScreenProbeCacheMRUQueueBuffer->SetExport();
-            flag = false;
-        }
-        if (!TileScreenProbeHeaderTexture) {
-            TileScreenProbeHeaderTexture = builder.CreateTexture2D(
-                tile_dimensions.x, tile_dimensions.y, PixelFormatType::kR32_UINT
-            );
-            TileScreenProbeHeaderTexture->SetName("TileScreenProbeHeader");
-            TileScreenProbeHeaderTexture->SetExport();
-            flag = false;
-        }
-        return flag;
+    if (!ScreenProbeRadianceDepthTexture) {
+        ScreenProbeRadianceDepthTexture = builder.CreateTexture2D(
+            atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        );
+        ScreenProbeRadianceDepthTexture->SetName("ScreenProbeRadianceDepth");
+        ScreenProbeRadianceDepthTexture->SetExport();
+        flag = false;
     }
-};
+    if (!ScreenProbeCacheData) {
+        ScreenProbeCacheData = builder.CreateBuffer(
+            RHIBufferUsageFlagBits::kStorage,
+            atlas_dimensions.x * atlas_dimensions.y * sizeof(uint32_t) * 4
+        );
+        ScreenProbeCacheData->SetName("ScreenProbeCacheData");
+        ScreenProbeCacheData->SetExport();
+        flag = false;
+    }
+    if (!ScreenProbeCacheRadianceDepthTexture) {
+        ScreenProbeCacheRadianceDepthTexture = builder.CreateTexture2D(
+            atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        );
+        ScreenProbeCacheRadianceDepthTexture->SetName("ScreenProbeCacheRadianceDepth");
+        ScreenProbeCacheRadianceDepthTexture->SetExport();
+        flag = false;
+    }
+    if (!ScreenProbeCacheMRUQueueBuffer) {
+        ScreenProbeCacheMRUQueueBuffer = builder.CreateBuffer(
+            RHIBufferUsageFlagBits::kStorage,
+            atlas_dimensions.x * atlas_dimensions.y * sizeof(uint32_t)
+        );
+        ScreenProbeCacheMRUQueueBuffer->SetName("ScreenProbeCacheMRUQueue");
+        ScreenProbeCacheMRUQueueBuffer->SetExport();
+        flag = false;
+    }
+    if (!TileScreenProbeHeaderTexture) {
+        TileScreenProbeHeaderTexture = builder.CreateTexture2D(
+            header_tile_dimension, header_tile_dimension, PixelFormatType::kR32_UINT
+        );
+        TileScreenProbeHeaderTexture->SetName("TileScreenProbeHeader");
+        TileScreenProbeHeaderTexture->SetExport();
+        flag = false;
+    }
+    return flag;
+}
 
 void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, RenderGraphBuilder & builder) {
 
@@ -298,11 +333,24 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         view->persistent_data_->diffuse_indirect_lighting_persistent_data_ = new DiffuseIndirectLightingPersistentData();
     }
     bool need_reset = false;
+    mi_check(view->film_width_ % DiffuseIndirectLightingShader::kTileSize == 0, "View width not a multiple of tile size");
+    mi_check(view->film_height_ % DiffuseIndirectLightingShader::kTileSize == 0, "View height not a multiple of tile size");
     auto tile_dimensions = glm::uvec2(
         DivideAndRoundUp(view->film_width_, DiffuseIndirectLightingShader::kTileSize),
         DivideAndRoundUp(view->film_height_, DiffuseIndirectLightingShader::kTileSize)
     );
-    if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_->MakeSureExists(builder, tile_dimensions))
+    uint32_t tile_index_mip_levels = 0;
+    while ((1u << tile_index_mip_levels) < std::max(tile_dimensions.x, tile_dimensions.y))
+        tile_index_mip_levels++;
+    auto tile_screen_probe_header_texture = builder.CreateTexture2D(
+        tile_dimensions.x, tile_dimensions.y, PixelFormatType::kR32_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+        tile_index_mip_levels + 1
+    );
+    tile_index_mip_levels ++;
+    uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
+
+    if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_->MakeSureExists(builder, tile_dimensions, header_tile_dimension))
         need_reset = true;
 
     auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
@@ -366,12 +414,6 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
 
-    auto tile_screen_probe_header_texture = builder.CreateTexture2D(
-        tile_dimensions.x, tile_dimensions.y, PixelFormatType::kR32_UINT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
-        tile_index_mip_levels
-    );
-
     auto reprojection_fail_tile_count = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
     );
@@ -391,7 +433,13 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_update_ray_counts_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
     );
+
+    uint32_t max_num_update_rays = num_tiles * 64;
+
     auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(uint32_t)
+    );
+    auto screen_probe_update_ray_state_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(uint32_t)
     );
     auto screen_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer(
@@ -483,6 +531,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             screen_probe_update_ray_counts_buffer.Raw();
         params->RWScreenProbeUpdateRayDirectionBuffer =
             screen_probe_update_ray_direction_buffer.Raw();
+        params->RWScreenProbeUpdateRayStateBuffer =
+            screen_probe_update_ray_state_buffer.Raw();
         params->RWScreenProbeUpdateRayOriginScreenCoordsBuffer =
             screen_probe_update_ray_origin_screen_coords_buffer.Raw();
         params->RWScreenProbeUpdateRayAllocator =
@@ -503,8 +553,12 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         params->RWDiffuseIndirectLightingTexture =
             view->diffuse_indirect_lighting_.Raw();
 
+        params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+
         auto UB = builder.Allocate<DiffuseIndirectLightingUB>();
         {
+            UB->MaxNumUpdateRays = max_num_update_rays;
+            UB->HeaderTileDimension = header_tile_dimension;
             UB->TileDimensions = tile_dimensions;
             UB->InvTileDimensions = 1.0f / glm::vec2(tile_dimensions);
 
@@ -603,9 +657,25 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             spawn_list_command.Raw()
         );
     }
+    {
+        auto shader = lib.GetShader<ClipUpdateRayCountShader>(ini);
+        Helpers::AddComputePass<ClipUpdateRayCountShader>(builder, shader, params);
+    }
 
     // Ray tracing...
-    // TODO
+    // TODO screen space tracing
+    Render_HardwareRadianceRayTracing(
+        view, builder,
+        screen_probe_update_ray_allocator.Raw(),
+        nullptr,
+        screen_probe_update_ray_direction_buffer.Raw(),
+        screen_probe_update_ray_state_buffer.Raw(),
+        screen_probe_update_ray_origin_screen_coords_buffer.Raw(),
+        nullptr,
+        nullptr,
+        screen_probe_update_ray_result_buffer.Raw(),
+        view->persistent_data_->frame_index_ * 137
+    );
 
     {
         auto shader = lib.GetShader<UpdateScreenProbesAndCacheShader>(ini);
@@ -616,7 +686,10 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     }
 
     // Scan sum
-    // TODO
+    DeviceScanSum::AddScanSum32BitsPass(builder, num_tiles,
+        screen_probe_cache_mru_flag_buffer.Raw(),
+        screen_probe_cache_mru_flag_prefix_sum_buffer.Raw()
+    );
 
     {
         auto shader = lib.GetShader<UpdateScreenProbeCacheMRUQueueShader>(ini);
@@ -626,7 +699,28 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     }
     // MakeTileScreenProbeHeaderIndex
     {
-        // TODO
+        for (uint i = 1; i < tile_index_mip_levels; i++) {
+            auto index_params = builder.Allocate<MakeTileScreenProbeHeaderIndexShader::Params>();
+            {
+                index_params->RWInTileScreenProbeHeaderTexture = tile_screen_probe_header_texture.Raw();
+                index_params->RWInTileScreenProbeHeaderTexture.mip_level = i - 1;
+                index_params->RWOutTileScreenProbeHeaderTexture = tile_screen_probe_header_texture.Raw();
+                index_params->RWOutTileScreenProbeHeaderTexture.mip_level = i;
+            }
+            auto shader = lib.GetShader<MakeTileScreenProbeHeaderIndexShader>(ini);
+            Helpers::AddComputePass<MakeTileScreenProbeHeaderIndexShader>(
+                builder, shader, index_params,
+                DivideAndRoundUp(
+                    1 << (tile_index_mip_levels - i),
+                    DiffuseIndirectLightingShader::kTileSize
+                ),
+                DivideAndRoundUp(
+                    1 << (tile_index_mip_levels - i),
+                    DiffuseIndirectLightingShader::kTileSize
+                ),
+                i
+            );
+        }
     }
 
     {
@@ -643,6 +737,17 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             DivideAndRoundUp(view->film_width_, DiffuseIndirectLightingShader::kTileSize),
             DivideAndRoundUp(view->film_height_, DiffuseIndirectLightingShader::kTileSize)
         );
+    }
+
+    // Update persistent data
+    {
+        auto persistent = view->persistent_data_->diffuse_indirect_lighting_persistent_data_;
+        persistent->ScreenProbeRadianceDepthTexture = screen_probe_radiance_depth;
+        persistent->ScreenProbeRadianceDepthTexture->SetExport();
+        persistent->ScreenProbeCacheMRUQueueBuffer = screen_probe_cache_updated_mru_queue_buffer;
+        persistent->ScreenProbeCacheMRUQueueBuffer->SetExport();
+        persistent->TileScreenProbeHeaderTexture = tile_screen_probe_header_texture;
+        persistent->TileScreenProbeHeaderTexture->SetExport();
     }
 }
 

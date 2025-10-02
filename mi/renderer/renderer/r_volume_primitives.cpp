@@ -5,17 +5,17 @@
  */
 
 #include <ranges>
-#include <renderer/mi_renderer.h>
 #include <rdg/rdg_cmd.h>
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_shader.h>
+#include <rdg/rdg_helper.h>
+#include <renderer/mi_renderer.h>
 #include <renderer/util/radix_sort.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_volume_primitives.h>
 
 #include "r_view_common.h"
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_resource_allocator.h"
-#include "renderer/mi_volume_primitives.h"
-#include "renderer/util/radix_sort.h"
+#include "r_persistent.h"
 
 MI_NAMESPACE_BEGIN
 

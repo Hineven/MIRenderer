@@ -24,7 +24,7 @@ StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 
-Texture2D<float> G_DepthTexture;
+Texture2D<float> G_Depth;
 
 StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;
@@ -64,7 +64,7 @@ void TraceTransmittanceRaysRaygen() {
 #else 
         uint2 PixelIndex = UnpackUint2x16(RayToTraceOriginScreenCoordBuffer[RayIndex]);
         float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
-        float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0);
+        float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
         float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
         Ray.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
 #endif

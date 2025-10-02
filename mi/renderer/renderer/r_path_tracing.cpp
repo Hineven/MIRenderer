@@ -12,6 +12,7 @@
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
 #include "r_view_common.h"
+#include "r_persistent.h"
 #include "r_diffuse_direct_lighting.h"
 
 MI_NAMESPACE_BEGIN

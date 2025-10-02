@@ -761,8 +761,8 @@ MI_NAMESPACE_END
 
 int main () {
     mi::MainLoopStartConfig cfg;
-    cfg.window_width = 1440;
-    cfg.window_height = 900;
+    cfg.window_width = 1920;
+    cfg.window_height = 1080;
 
 #ifndef NDEBUG
     // 仅用于Debug

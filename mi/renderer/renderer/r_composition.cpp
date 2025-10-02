@@ -10,6 +10,7 @@
 #include "renderer/mi_renderer.h"
 #include "r_view_common.h"
 #include "rdg/rdg_helper.h"
+#include "../renderer/r_persistent.h"
 MI_NAMESPACE_BEGIN
 
 static CVar<float> CVar_Exposure(
@@ -44,7 +45,7 @@ public:
         SHADER_UNIFORM_BUFFER(LightingCompositionUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, IndirectDiffuseLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseIndirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Transmittance)
@@ -80,7 +81,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         params->DiffuseDirectLightingTexture = view->denoised_diffuse_direct_lighting_.Raw();
     }
     params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
-    params->IndirectDiffuseLightingTexture = nullptr;
+    params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_.Raw();
     params->G_Albedo = view->G_albedo_.Raw();
     params->G_Emission = view->G_emission_.Raw();
     params->G_Transmittance = view->G_transmittance_.Raw();

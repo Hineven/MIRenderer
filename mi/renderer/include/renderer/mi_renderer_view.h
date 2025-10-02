@@ -68,34 +68,7 @@ public:
 
 };
 
-struct DiffuseIndirectLightingPersistentData;
-
-// The data kept across frames for a view.
-struct RendererViewPersistentData {
-
-    RendererViewPersistentData() ;
-    ~RendererViewPersistentData() ;
-
-    void Init ();
-    void Update (RendererView * view);
-
-    TRef<RDGTexture> prev_G_depth;
-    TRef<RDGTexture> prev_G_normal;
-
-    TRef<RDGTexture> prev_denoised_diffuse_direct_lighting;
-
-    TRef<RDGTexture> prev_radiance_;
-
-    TRef<RDGTexture> path_tracing_film_;
-
-    Camera prev_camera;
-    uint32_t view_index {};
-    uint32_t frame_index_ {};
-
-    TRef<DiffuseIndirectLightingPersistentData> diffuse_indirect_lighting_persistent_data_ {};
-
-    Scene * prev_scene_;
-};
+struct RendererViewPersistentData;
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
@@ -105,9 +78,6 @@ struct RendererView {
 
     // Called once per frame to initialize the view.
     void InitFrame ();
-
-    // Called once per frame at the frame end to roll data to the persistent store
-    void UpdatePersistentData ();
 
     // Update view common shader parameters
     void SetupViewCommonShaderParameters (RenderGraphBuilder & builder);
@@ -207,7 +177,7 @@ struct RendererView {
     DebugCommonShaderParameters * debug_common_params_;
 
     // Persistent data
-    std::unique_ptr<RendererViewPersistentData> persistent_data_ {};
+    RendererViewPersistentData * persistent_data_ {};
 
 };
 

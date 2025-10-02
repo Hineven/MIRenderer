@@ -37,16 +37,21 @@ public:
 
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "THREADS_PER_GROUP=" + std::to_string(DeviceScanSum::kThreadsPerGroup),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceScanSum::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(ScanSumBlockSumShader, "mi/renderer/shaders/radix_sort/ScanSum.hlsl", "ScanSumBlockSum");
+IMPLEMENT_RDG_COMPUTE_SHADER(ScanSumBlockSumShader, "mi/renderer/shaders/scan_sum/ScanSum.hlsl", "ScanSumBlockSum");
 
 class ScanSumSumBlockSumsShader : public RDGShader {
+public:
     BEGIN_SHADER_PARAMETERS(ScanSumSumBlockSumsShaderParameters)
         SHADER_UNIFORM_BUFFER(ScanSumUB, UB)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWBlockSums)
@@ -58,22 +63,26 @@ class ScanSumSumBlockSumsShader : public RDGShader {
 
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "THREADS_PER_GROUP=" + std::to_string(DeviceScanSum::kThreadsPerGroup),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceScanSum::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(ScanSumSumBlockSumsShader, "mi/renderer/shaders/radix_sort/ScanSum.hlsl", "ScanSumSumBlockSums");
+IMPLEMENT_RDG_COMPUTE_SHADER(ScanSumSumBlockSumsShader, "mi/renderer/shaders/scan_sum/ScanSum.hlsl", "ScanSumSumBlockSums");
 
 class ScanSumScatterBlockSumsShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(ScanSumScatterBlockSumsShaderParameters)
         SHADER_UNIFORM_BUFFER(ScanSumUB, UB)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Values)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, OutValues)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWBlockSums)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWOutValues)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, BlockSums)
         // Count is only valid when the shader is an indirect version
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Count)
     END_SHADER_PARAMETERS()
@@ -82,14 +91,18 @@ public:
 
     static std::vector<std::string> GetShaderDefaultMacros() {
         std::string wave_size = std::to_string(RHI::Get().GetDeviceProperties().wave_size);
-        return {"WAVE_SIZE=" + wave_size};
+        return {
+            "WAVE_SIZE=" + wave_size,
+            "THREADS_PER_GROUP=" + std::to_string(DeviceScanSum::kThreadsPerGroup),
+            "ELEMENTS_PER_SEGMENT=" + std::to_string(DeviceScanSum::kElementsPerSegment)
+        };
     }
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {kIndirectMacro};
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(ScanSumScatterBlockSumsShader, "mi/renderer/shaders/radix_sort/ScanSum.hlsl", "ScanSumScatterBlockSums");
+IMPLEMENT_RDG_COMPUTE_SHADER(ScanSumScatterBlockSumsShader, "mi/renderer/shaders/scan_sum/ScanSum.hlsl", "ScanSumScatterBlockSums");
 
 void DeviceScanSum::AddScanSum32BitsPass(
     RenderGraphBuilder &builder, uint32_t num_elements,
@@ -105,8 +118,64 @@ void DeviceScanSum::AddScanSum32BitsPass(
 
     auto temp_block_sums_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kShaderDeviceAddress,
-        sizeof(uint32_t) * ((num_elements + 1023) / 1024)
+        sizeof(uint32_t) * DivideAndRoundUp(num_elements, kElementsPerSegment)
     );
+    temp_block_sums_buffer->SetName("TempBlockSumsBuffer" + name);
+    TRef<RDGBuffer> dispatch_command;
+    if (count_buffer) {
+        dispatch_command = Helpers::SpawnDispatchIndirectCommand1D(builder, count_buffer, kElementsPerSegment);
+    }
+    auto UB = builder.Allocate<ScanSumUB>();
+    UB->NumElements = num_elements;
+    // Block scan
+    {
+        auto params = builder.Allocate<ScanSumBlockSumShader::ScanSumBlockSumShaderParameters>();
+        params->UB = UB;
+        params->Values = src_values_buffer;
+        params->RWBlockSums = temp_block_sums_buffer.Raw();
+        params->Count = count_buffer;
+        if (count_buffer) {
+            Helpers::AddComputeIndirectPass<ScanSumBlockSumShader>(
+                builder, block_sum_shader, params, dispatch_command.Raw()
+            )->SetName(name + "_BlockSum");
+        } else {
+            Helpers::AddComputePass<ScanSumBlockSumShader>(
+                builder, block_sum_shader, params,
+                DivideAndRoundUp(num_elements, kElementsPerSegment)
+            )->SetName(name + "_BlockSum");
+        }
+    }
+    // Sum the block sums
+    {
+        auto params = builder.Allocate<ScanSumSumBlockSumsShader::ScanSumSumBlockSumsShaderParameters>();
+        params->UB = UB;
+        params->RWBlockSums = temp_block_sums_buffer.Raw();
+        params->Count = count_buffer;
+        Helpers::AddComputePass<ScanSumSumBlockSumsShader>(
+            builder, sum_block_sums_shader, params,
+            1
+        )->SetName(name + "_SumBlockSums");
+    }
+    // Scatter the block sums
+    {
+        auto params = builder.Allocate<ScanSumScatterBlockSumsShader::ScanSumScatterBlockSumsShaderParameters>();
+        params->UB = UB;
+        params->Values = src_values_buffer;
+        params->RWOutValues = dst_values_buffer;
+        params->BlockSums = temp_block_sums_buffer.Raw();
+        params->Count = count_buffer;
+        if (count_buffer) {
+            Helpers::AddComputeIndirectPass<ScanSumScatterBlockSumsShader>(
+                builder, scatter_block_sums_shader, params, dispatch_command.Raw()
+            )->SetName(name + "_ScatterBlockSums");
+        } else {
+            Helpers::AddComputePass<ScanSumScatterBlockSumsShader>(
+                builder, scatter_block_sums_shader, params,
+                DivideAndRoundUp(num_elements, kElementsPerSegment)
+            )->SetName(name + "_ScatterBlockSums");
+        }
+    }
+
 }
 
 MI_NAMESPACE_END

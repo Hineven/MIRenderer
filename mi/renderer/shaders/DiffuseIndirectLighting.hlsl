@@ -7,22 +7,23 @@
 #include "headers/Radiometry.hlsl"
 #include "headers/Sampling.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
+#include "headers/HybridTracing.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 
 // Foreground screen probes
-[[vk::image_format(rgba16f)]]
+//[[vk::image_format(rgba16f)]]
 Texture2D<float4> PreviousScreenProbeRadianceDepthTexture;
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeRadianceDepthTexture;
 
 // SH projection of foreground probes
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeIrradianceTexture; // UB.TileDimensions
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeSHCoefficientsRTexture; // Doubled width ( to store 4 + 4 floats )
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeSHCoefficientsGTexture;
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeSHCoefficientsBTexture;
 
 // Probe cache indexing and updating datastructures
@@ -36,7 +37,7 @@ RWStructuredBuffer<uint4> RWScreenProbeCacheIndexReprojectionEntryBuffer;
 RWStructuredBuffer<uint> RWScreenProbeCacheIndexReprojectionCount;
 
 // A temporary buffer of reconstructed radiance (when sampling update rays) for newly spawned probes. Used for temporal blending.
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeReconstructedRadianceDepthBuffer;
 
 // Buffers holding the cache entries to update & evict upon probe spawning.
@@ -72,7 +73,7 @@ uint4 PackCacheEntry (CacheEntryData Entry) {
     return Data;
 }
 
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeCacheRadianceDepthTexture; // Cached radiance & depth
 
 // A mipmapped texture (of resolution TileDimensions) of the probe headers in each tile
@@ -96,6 +97,7 @@ RWStructuredBuffer<uint> RWScreenProbeSpawnListBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayOffsetsBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayCountsBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayDirectionBuffer;
+RWStructuredBuffer<uint> RWScreenProbeUpdateRayStateBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayOriginScreenCoordsBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayAllocator; // Number of all rays to be traced
 
@@ -110,11 +112,12 @@ Texture2D<float> PreviousDepthTexture;
 Texture2D<float3> PreviousNormalTexture;
 
 // Final result
-[[vk::image_format(rgba16f)]]
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDiffuseIndirectLightingTexture;
 
 struct DiffuseIndirectLightingUB {
-    uint2 Unused;
+    uint  MaxNumUpdateRays;
+    uint  HeaderTileDimension;
     uint2 TileDimensions;
 
     float2 InvTileDimensions;
@@ -226,7 +229,7 @@ float RecoverWeight (uint V) {
 uint FindClosestScreenProbe(uint2 PixelCoords, int2 Offset = 0)
 {
     uint2 TileIndex = min(PixelCoords / TILE_SIZE, UB.TileDimensions - 1);
-    uint2 MipTileDimensions = UB.TileDimensions;
+    uint2 MipTileDimensions = UB.HeaderTileDimension;
 
     for (uint i = 0; i < UB.ProbeHeaderIndexMipLevelCount; ++i)
     {
@@ -319,13 +322,14 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
         float3 NDC = float3(UVToNDC2(UV), ZDepth);
         float3 WorldPosition = RecoverWorldPositionNDC2(C, NDC.xy, LinearDepth);
 
-        float SearchSize = LinearDepth * UB.ProbeReprojectionSearchSize;
+        float SearchSize = LinearDepth * UB.ProbeReprojectionSearchSize 
+            * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
         
         uint PreviousProbeHeaderPacked = 0xFFFFFFFFu;
         if(bValidPixel) {
             float3 PreviousNDC = ReprojectToPreviousNDCFromNDC(C, NDC);
             float2 PreviousUV = NDC2ToUV(PreviousNDC.xy);
-            if(all(PreviousUV >= 0 && PreviousUV < 1)) {
+            if(all(PreviousUV >= 0) && all(PreviousUV < 1)) {
                 uint2 PreviousTile = floor(PreviousUV * UB.TileDimensions);
                 PreviousProbeHeaderPacked = PreviousTileScreenProbeHeaderTexture.Load(int3(PreviousTile, 0));
                 ScreenProbeHeader PreviousProbe = UnpackProbeHeader(PreviousProbeHeaderPacked);
@@ -632,7 +636,7 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
 
 
 [numthreads(1, 1, 1)]
-void UpdateScrenProbeSpawnCount () {
+void UpdateScreenProbeSpawnCount () {
     RWScreenProbeSpawnCount[0] = 
         min(
             RWScreenProbeSpawnCount[0] + RWReprojectionFailTileCount[0],
@@ -690,7 +694,8 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
     }
 
 
-    float SearchSize = LinearDepth * UB.ProbeReprojectionSearchSize;
+    float SearchSize = LinearDepth * UB.ProbeReprojectionSearchSize
+            * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
     uint  ReusedProbeTexelCount = 0;
 
     // Recover radiance at the new probe from reprojected probes on neighbor tiles
@@ -794,6 +799,8 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
             }
         }
     }
+    ReusedProbeTexelCount = WaveActiveSum(ReusedProbeTexelCount);
+
     // Write out the cache to substitute & update if the reprojected probe is present
     if(WaveIsFirstLane()) {
         if(ReprojectedProbe.bValid) {
@@ -874,10 +881,13 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
     NumProbeOctahedronSamples = max(NumProbeOctahedronSamples, MAX_NUM_UPDATE_RAYS_PER_PROBE);
     uint UpdateRayIndexBase = 0;
     if(WaveIsFirstLane()) {
-        RWScreenProbeUpdateRayCountsBuffer[SpawnListIndex] = NumProbeOctahedronSamples;
         InterlockedAdd(RWScreenProbeUpdateRayAllocator[0], NumProbeOctahedronSamples, UpdateRayIndexBase);
+        uint RemainingRayCount = (UB.MaxNumUpdateRays <= UpdateRayIndexBase) ? 0 : UB.MaxNumUpdateRays - UpdateRayIndexBase;
+        NumProbeOctahedronSamples = min(NumProbeOctahedronSamples, RemainingRayCount);
+        RWScreenProbeUpdateRayCountsBuffer[SpawnListIndex] = NumProbeOctahedronSamples;
         RWScreenProbeUpdateRayOffsetsBuffer[SpawnListIndex] = UpdateRayIndexBase;
     }
+    NumProbeOctahedronSamples = WaveReadLaneFirst(NumProbeOctahedronSamples);
     UpdateRayIndexBase = WaveReadLaneFirst(UpdateRayIndexBase);
 
     // If the probe has adequate samples from radiance reconstruction, mark it as temporal blendable
@@ -928,6 +938,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
 			// A valid update ray is spawned
 			// Queue up for a ray trace
             RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = PackNormal(RayDirection);
+            RWScreenProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
             RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex] = PackUint2x16(Header.PixelCoords);
 			RWScreenProbeUpdateRayResultBuffer[RayIndex] = PackFp16x4Safe(0.f.xxxx);
 			// Keep extra data for later probe update
@@ -935,16 +946,22 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
             RWScreenProbeUpdateRayInvPdfBuffer[RayIndex] = RayInvPdf;
         } else {
             // Invalid update ray, mark it as invalid to skip tracing
-            RWScreenProbeUpdateRayResultBuffer[RayIndex] = PackFp16x4Safe(0.f.xxxx);
             RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = PackNormal(0.f.xxx);
+            RWScreenProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
             RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex] = 0;
+            RWScreenProbeUpdateRayResultBuffer[RayIndex] = PackFp16x4Safe(0.f.xxxx);
             RWScreenProbeUpdateRayInvPdfBuffer[RayIndex] = 0.f;
         }
     }
 }
 
+[numthreads(WAVE_SIZE, 1, 1)]
+void ClipUpdateRayCount () {
+    RWScreenProbeUpdateRayAllocator[0] = min(RWScreenProbeUpdateRayAllocator[0], UB.MaxNumUpdateRays);
+}
+
 // The sampled rays are traced in separate shaders via hybrid tracing
-// Radiance results and hit distances are stored in RWScreenProbeUpdateRayResultBuffer
+// Radiance results are stored in RWScreenProbeUpdateRayResultBuffer
 
 // Update screen probes & cache
 groupshared uint SharedProbeSampleCounts[TILE_SIZE * TILE_SIZE];
@@ -982,10 +999,13 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         uint RayRank = BaseRayRank + LocalID;
         uint RayIndex = ProbeUpdateRayBase + RayRank;
         float4 RayResult = UnpackFp16x4Safe(RWScreenProbeUpdateRayResultBuffer[RayIndex]);
-        bool bValid = RayResult.w > 0;
+        // The hit distance is stored in RWScreenProbeUpdateRayStateBuffer[RayIndex]
+        bool bHit;
+        RayResult.w = UnpackRayToTraceState(RWScreenProbeUpdateRayStateBuffer[RayIndex], bHit);
+        float RayInvPdf = RWScreenProbeUpdateRayInvPdfBuffer[RayIndex];
+        bool bValid = RayInvPdf > 0 && RayResult.w > 0;
         if(bValid) {
             float3 RayDirection = UnpackNormal(RWScreenProbeUpdateRayDirectionBuffer[RayIndex]);
-            float RayInvPdf = RWScreenProbeUpdateRayInvPdfBuffer[RayIndex];
             float3 RayRadiance = RayResult.xyz;
             float2 RayOctahedronUV = UnitVectorToHemiOctahedron01A(RayDirection);
             uint2 RayTexelCoords = uint2(RayOctahedronUV * TILE_SIZE);
@@ -1135,7 +1155,7 @@ RWTexture2D<uint> RWInTileScreenProbeHeaderTexture;
 RWTexture2D<uint> RWOutTileScreenProbeHeaderTexture;
 
 // Update the mips of RWTileScreenProbeHeaderTexture
-[numthreads(8, 8, 1)]
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void MakeTileScreenProbeHeaderIndex(uint2 DispatchID : SV_DispatchThreadID)
 {
     uint2 Dimensions;
@@ -1289,7 +1309,8 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
     float2 UV = (PixelCoords + 0.5f) * C.InvFilmDimensions;
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), LinearDepth);
-    float  SearchSize = distance(C.Position, WorldPosition) * UB.ProbeReprojectionSearchSize;
+    float  SearchSize = LinearDepth * UB.ProbeReprojectionSearchSize
+            * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
 
     uint4 NearbyProbes;   // locate nearby probes for interpolation
 

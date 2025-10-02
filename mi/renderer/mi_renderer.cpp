@@ -24,10 +24,10 @@
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
 #include "renderer/r_internal_common.h"
+#include "renderer/r_persistent.h"
 
 MI_NAMESPACE_BEGIN
-
-static CVar<int> CVar_FinalOutputType(
+    static CVar<int> CVar_FinalOutputType(
     "r.debug.final_output_type",
     "Final output on screen.\n"
     "0 - Radiance\n"
@@ -323,6 +323,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     Render_ComputeDirectDiffuseLighting(view, builder);
 
+    Render_ComputeIndirectDiffuseLighting(view, builder);
+
     Render_DenoiseLighting(view, builder);
 
     Render_LightingComposition(view, builder);
@@ -357,7 +359,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     Render_DrawForwardStaticMeshes(view, builder);
 
     // Update persistent data using current frame for next frame use
-    view->UpdatePersistentData();
+    view->persistent_data_->FinalUpdate(view);
 
 }
 

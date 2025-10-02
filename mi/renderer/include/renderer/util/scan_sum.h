@@ -14,6 +14,7 @@ MI_NAMESPACE_BEGIN
 class DeviceScanSum {
 public:
     // Optimized for summing up to millions of elements. Performance may degrade when summing more / much fewer elements.
+    // Inclusive sum
     static void AddScanSum32BitsPass (
         RenderGraphBuilder & builder,
         uint32_t num_elements, // Number of elements to sum if non-indirect. If indirect, this parameter stores an upper bound.

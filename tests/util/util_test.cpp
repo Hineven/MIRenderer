@@ -9,7 +9,6 @@
 #include "infra_impl/infra.h"
 #include "rdg/rdg.h"
 #include "rdg/rdg_builder.h"
-#include "../../mi/renderer/include/renderer/util/radix_sort.h"
 #include "rdg/rdg_pool.h"
 
 #include <exception>
@@ -19,6 +18,8 @@
 #include "rdg/rdg_helper.h"
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi_buffer.h"
+#include "renderer/util/radix_sort.h"
+#include "renderer/util/scan_sum.h"
 
 TEST(UtilTest, UtilRadixSort) {
     using namespace mi;
@@ -243,6 +244,89 @@ TEST(UtilTest, UtilRadixSortIndirect) {
     DestroyInfra();
 }
 
+TEST(UtilTest, UtilScanSum) {
+    using namespace mi;
+    TransferInfra(std::make_unique<MyInfra>(true));
+    GetInfra().Init();
+
+    // Pretend to be render thread to pass assertions in builder/helpers
+    SetCurrentThreadType(ThreadType::kRenderThread);
+
+    RHI::InitializeSingleton(RHIType::kVulkan);
+    TaskGraph::InitializeSingleton(2, 2);
+
+    RDGShaderLibrary::Get().Init();
+
+    {
+        RenderGraphBuilder builder;
+        auto pool = RDGResourcePool::Create();
+
+        // 使用一个适中规模的测试数组
+        uint32_t num_elements = 91738; // 可调整
+        std::vector<uint32_t> host_values(num_elements);
+
+        // 生成确定性随机数据
+        std::mt19937 rng(12345);
+        for (uint32_t i = 0; i < num_elements; ++i) {
+            host_values[i] = rng();
+        }
+
+        // 创建源/目标 buffer
+        auto src_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        src_values->SetName("ScanSum_SrcValues");
+        auto dst_values = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, num_elements * sizeof(uint32_t));
+        dst_values->SetName("ScanSum_DstValues");
+
+        // 上传输入数据
+        Helpers::UploadWithRDG(builder, src_values.Raw(), host_values.data(), host_values.size() * sizeof(uint32_t));
+
+        // 调用 DeviceScanSum 非间接版本
+        DeviceScanSum::AddScanSum32BitsPass(builder, num_elements, src_values.Raw(), dst_values.Raw(), nullptr, "ScanSumTest");
+
+        // 读回结果
+        auto readback = RHI::Get().CreateBuffer(num_elements * sizeof(uint32_t), RHIBufferUsageFlagBits::kReadback);
+        Helpers::ReadbackWithRDG(builder, dst_values.Raw(), 0, readback->GetSpan());
+
+        builder.Compile()->Execute(pool.Raw());
+
+        RHI::Get().AdvanceFrame();
+        RHI::Get().WaitForIdle();
+
+        std::vector<uint32_t> gpu_out(num_elements);
+        std::memcpy(gpu_out.data(), readback->Map(), num_elements * sizeof(uint32_t));
+
+        // 在 CPU 上计算 32 位前缀和（使用 64 位累加然后截断为 uint32_t，以匹配 GPU 的 32 位行为）
+        std::vector<uint32_t> cpu_out(num_elements);
+        uint64_t acc = 0;
+        for (uint32_t i = 0; i < num_elements; ++i) {
+            acc += static_cast<uint64_t>(host_values[i]);
+            cpu_out[i] = static_cast<uint32_t>(acc & 0xFFFFFFFFu);
+        }
+
+        // 比较
+        uint32_t mismatch_index = UINT32_MAX;
+        for (uint32_t i = 0; i < num_elements; ++i) {
+            if (gpu_out[i] != cpu_out[i]) {
+                mismatch_index = i;
+                break;
+            }
+        }
+
+        if (mismatch_index != UINT32_MAX) {
+            std::cout << "ScanSum mismatch at index " << mismatch_index << "\n";
+            std::cout << "Expected: " << cpu_out[mismatch_index] << " Got: " << gpu_out[mismatch_index] << "\n";
+        }
+
+        ASSERT_EQ(mismatch_index, UINT32_MAX) << "ScanSum GPU result differs from CPU reference.";
+    }
+
+    RDGShaderLibrary::Get().Deinit();
+    TaskGraph::DestroySingleton();
+    RHI::DestroySingleton();
+
+    GetInfra().Shutdown();
+    DestroyInfra();
+}
 
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
