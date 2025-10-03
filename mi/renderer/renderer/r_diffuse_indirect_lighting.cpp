@@ -33,6 +33,18 @@ static CVar<bool> CVar_ScreenProbesRayFreezeSeed(
     false
 );
 
+static CVar<bool> CVar_ResetDiffuseIndirectLighting(
+    "r.diffuse_indirect_lighting.reset",
+    "Reset the diffuse indirect lighting system. This will clear all cache and reinitialize.",
+    false
+);
+
+static CVar<bool> CVar_AdaptiveProbeUpdateRayAllocation(
+    "r.diffuse_indirect_lighting.adaptive_probe_update_ray_allocation",
+    "Whether to adaptively allocate probe update rays based on the reprojection results. If disabled, a fixed number of rays will be used for all probes.",
+    true
+);
+
 struct DiffuseIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     uint32_t HeaderTileDimension;
@@ -40,7 +52,7 @@ struct DiffuseIndirectLightingUB {
 
     glm::vec2 InvTileDimensions;
     uint32_t  TileCount;
-    float InvTileCount;
+    uint32_t  ResetCache;
 
     float ProbeReprojectionSearchSize;
     uint32_t  MaxProbesToSpawnPerFrame;
@@ -50,6 +62,11 @@ struct DiffuseIndirectLightingUB {
     uint32_t ProbeUpdateRaysNoImportanceSampling;
     uint32_t ProbeHeaderIndexMipLevelCount;
     uint32_t ProbeUpdateRaySampleSeed;
+
+    uint32_t ProbeUpdateRaysNoAdaptiveAllocation;
+    uint32_t ProbeSpawnSubTileJitterSeed;
+    uint32_t TileProbeSpawnSeed;
+    uint32_t Padding;
 };
 
 BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
@@ -320,6 +337,15 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
         TileScreenProbeHeaderTexture->SetExport();
         flag = false;
     }
+    if (!ScreenProbeCacheMRUFlagBuffer) {
+        ScreenProbeCacheMRUFlagBuffer = builder.CreateBuffer(
+            RHIBufferUsageFlagBits::kStorage,
+            tile_dimensions.x * tile_dimensions.y * sizeof(uint32_t)
+        );
+        ScreenProbeCacheMRUFlagBuffer->SetName("ScreenProbeCacheMRUFlag");
+        ScreenProbeCacheMRUFlagBuffer->SetExport();
+        flag = false;
+    }
     return flag;
 }
 
@@ -343,15 +369,15 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     while ((1u << tile_index_mip_levels) < std::max(tile_dimensions.x, tile_dimensions.y))
         tile_index_mip_levels++;
     auto tile_screen_probe_header_texture = builder.CreateTexture2D(
-        tile_dimensions.x, tile_dimensions.y, PixelFormatType::kR32_UINT,
+        1 << tile_index_mip_levels, 1 << tile_index_mip_levels, PixelFormatType::kR32_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
-        tile_index_mip_levels + 1
+        tile_index_mip_levels
     );
-    tile_index_mip_levels ++;
     uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
 
     if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_->MakeSureExists(builder, tile_dimensions, header_tile_dimension))
         need_reset = true;
+    need_reset |= CVar_ResetDiffuseIndirectLighting.Get();
 
     auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
     auto screen_probe_radiance_depth = builder.CreateTexture2D(
@@ -402,9 +428,6 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
     );
     auto screen_probe_cache_updated_mru_queue_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto screen_probe_cache_mru_flag_buffer = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
     );
     auto screen_probe_cache_mru_flag_prefix_sum_buffer = builder.CreateBuffer(
@@ -498,7 +521,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         params->RWScreenProbeCacheToMRUQueueIndexBuffer =
             screen_probe_cache_to_mru_queue_index_buffer.Raw();
         params->RWScreenProbeCacheMRUFlagBuffer =
-            screen_probe_cache_mru_flag_buffer.Raw();
+            view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeCacheMRUFlagBuffer.Raw();
         params->RWScreenProbeCacheMRUFlagPrefixSumBuffer =
             screen_probe_cache_mru_flag_prefix_sum_buffer.Raw();
         params->RWScreenProbeCacheMRUQueueEntryAllocator =
@@ -563,7 +586,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             UB->InvTileDimensions = 1.0f / glm::vec2(tile_dimensions);
 
             UB->TileCount = num_tiles;
-            UB->InvTileCount = 1.0f / float(num_tiles);
+            UB->ResetCache = need_reset;
 
             UB->ProbeReprojectionSearchSize = CVar_ProbeSearchSize.Get();
             UB->MaxProbesToSpawnPerFrame = num_tiles;
@@ -574,6 +597,12 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
                 CVar_ScreenProbesRayImportanceSampling.Get() ? 0 : 1;
             UB->ProbeHeaderIndexMipLevelCount = tile_index_mip_levels;
             UB->ProbeUpdateRaySampleSeed =
+                CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : (view->persistent_data_->frame_index_ + 7198272u);
+
+            UB->ProbeUpdateRaysNoAdaptiveAllocation = CVar_AdaptiveProbeUpdateRayAllocation.Get() ? 1 : 0;
+            UB->ProbeSpawnSubTileJitterSeed =
+                CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
+            UB->TileProbeSpawnSeed =
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
         }
         params->UB = UB;
@@ -599,9 +628,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     {
         auto shader = lib.GetShader<ReprojectScreenProbesShader>(ini);
         Helpers::AddComputePass<ReprojectScreenProbesShader>(
-            builder, shader, params,
-            DivideAndRoundUp(tile_dimensions.x, DiffuseIndirectLightingShader::kTileSize),
-            DivideAndRoundUp(tile_dimensions.y, DiffuseIndirectLightingShader::kTileSize)
+            builder, shader, params, tile_dimensions.x, tile_dimensions.y
         );
     }
     {
@@ -648,7 +675,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         );
     }
     auto spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
-        builder, screen_probe_spawn_count.Raw(), wave_size
+        builder, screen_probe_spawn_count.Raw(), 1
     );
     {
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader>(ini);
@@ -687,7 +714,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
     // Scan sum
     DeviceScanSum::AddScanSum32BitsPass(builder, num_tiles,
-        screen_probe_cache_mru_flag_buffer.Raw(),
+        view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeCacheMRUFlagBuffer.Raw(),
         screen_probe_cache_mru_flag_prefix_sum_buffer.Raw()
     );
 
@@ -727,7 +754,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         auto shader = lib.GetShader<ComputeScreenProbeSHCoefficientsShader>(ini);
         Helpers::AddComputePass<ComputeScreenProbeSHCoefficientsShader>(
             builder, shader, params,
-            num_tiles
+            tile_dimensions.x, tile_dimensions.y
         );
     }
     {

@@ -122,7 +122,7 @@ struct DiffuseIndirectLightingUB {
 
     float2 InvTileDimensions;
     uint  TileCount;
-    float InvTileCount;
+    uint  ResetCache;
 
     float ProbeReprojectionSearchSize;
     uint  MaxProbesToSpawnPerFrame;
@@ -132,6 +132,11 @@ struct DiffuseIndirectLightingUB {
     uint ProbeUpdateRaysNoImportanceSampling;
     uint ProbeHeaderIndexMipLevelCount;
     uint ProbeUpdateRaySampleSeed;
+
+    uint ProbeUpdateRaysNoAdaptiveAllocation;
+    uint ProbeSpawnSubTileJitterSeed;
+    uint TileProbeSpawnSeed;
+    uint Padding;
 };
 
 ConstantBuffer<DiffuseIndirectLightingUB> UB;
@@ -276,16 +281,25 @@ void InitializeScreenProbeCache (uint DispatchID : SV_DispatchThreadID) {
     if(QueueIndex >= UB.TileCount) return ;
     // Initialize MRU queue
     RWScreenProbeCacheMRUQueueBuffer[QueueIndex] = QueueIndex;
-    // Empty cache
-    CacheEntryData NoData = (CacheEntryData)0;
-    NoData.bAlive = false;
-    RWScreenProbeCacheDataBuffer[QueueIndex] = PackCacheEntry(NoData);
     // Reset flags to no updates
     RWScreenProbeCacheMRUFlagBuffer[QueueIndex] = 0;
+    // Empty cache
     uint CacheEntryIndex = QueueIndex; // For clearing, CacheEntryIndex == QueueIndex
+    CacheEntryData NoData = (CacheEntryData)0;
+    NoData.bAlive = false;
+    RWScreenProbeCacheDataBuffer[CacheEntryIndex] = PackCacheEntry(NoData);
 }
 
-groupshared uint SharedScreenProbeSourceHeader;
+uint2 GetProbeSpawnSubTileJitter () {
+    return min(CalculateHaltonSequence(UB.ProbeSpawnSubTileJitterSeed) * TILE_SIZE, TILE_SIZE - 1.0f);
+}
+
+bool ShouldSpawnProbe (uint2 TileIndex) {
+    // Interleaved spawning
+    return ((TileIndex.x + TileIndex.y) % 2) == UB.TileProbeSpawnSeed % 2;
+}
+
+groupshared uint SharedScreenProbeMinScore;
 groupshared uint SharedReprojectedRadiance[TILE_SIZE * TILE_SIZE * 4];
 groupshared uint SharedReprojectedSampleCounts[TILE_SIZE * TILE_SIZE];
 
@@ -296,6 +310,11 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
     CameraParameters C = GetActiveCamera();
     CameraParameters PrevC = GetPreviousCamera();
 
+    
+    // Clear the probe header in this tile
+    if(WaveIsFirstLane()) {
+        RWTileScreenProbeHeaderTexture[TileIndex] = INVALID_UINT;
+    }
     // Clear the reprojected radiance
     for(uint WaveBaseIndex = 0; WaveBaseIndex < TILE_TEXEL_COUNT; WaveBaseIndex += WAVE_SIZE) {
         uint TexelIndex = WaveBaseIndex + LocalID;
@@ -306,9 +325,9 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
         SharedReprojectedSampleCounts[TexelIndex] = 0;
     }
 
-    GroupMemoryBarrierWithGroupSync();
+    if(WaveIsFirstLane()) SharedScreenProbeMinScore = 0xFFFFFFFFu;
 
-    uint MinScreenProbeScore = 0xFFFFFFFFu;
+    GroupMemoryBarrierWithGroupSync();
     
     for(uint WaveBaseIndex = 0; WaveBaseIndex < TILE_TEXEL_COUNT; WaveBaseIndex += WAVE_SIZE) {
         uint TexelIndex = WaveBaseIndex + LocalID;
@@ -329,7 +348,7 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
         if(bValidPixel) {
             float3 PreviousNDC = ReprojectToPreviousNDCFromNDC(C, NDC);
             float2 PreviousUV = NDC2ToUV(PreviousNDC.xy);
-            if(all(PreviousUV >= 0) && all(PreviousUV < 1)) {
+            if(all(PreviousUV >= 0) && all(PreviousUV < 1) && UB.ResetCache == 0) {
                 uint2 PreviousTile = floor(PreviousUV * UB.TileDimensions);
                 PreviousProbeHeaderPacked = PreviousTileScreenProbeHeaderTexture.Load(int3(PreviousTile, 0));
                 ScreenProbeHeader PreviousProbe = UnpackProbeHeader(PreviousProbeHeaderPacked);
@@ -345,11 +364,8 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
                     float3 PreviousProbeWorldNormal = normalize(PreviousNormalTexture.SampleLevel(PointEdgeSampler, PreviousUV, 0).rgb * 2 - 1);
 
                     if(abs(dot(PreviousProbeWorldPosition - WorldPosition, Normal)) <= SearchSize && dot(PreviousProbeWorldNormal, Normal) > 0.95f) {
-                        uint ProbeScore = f32tof16(distance(PreviousProbeWorldPosition, WorldPosition) / SearchSize) << 16 | TexelIndex;
-                        MinScreenProbeScore = WaveActiveMin(min(MinScreenProbeScore, ProbeScore));
-                    }
-                    if(TexelIndex == (MinScreenProbeScore & 0xFFFF)) {
-                        SharedScreenProbeSourceHeader = PreviousProbeHeaderPacked;
+                        uint ProbeScore = (f32tof16(distance(PreviousProbeWorldPosition, WorldPosition) / SearchSize) << 16) | TexelIndex;
+                        InterlockedMin(SharedScreenProbeMinScore, ProbeScore);
                     }
                 }
             }
@@ -358,36 +374,58 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
 
     GroupMemoryBarrierWithGroupSync();
 
-    uint SelectedSrcProbeThread = MinScreenProbeScore & 0xFFFFu;
-    uint2 SelectedPixelIndex = uint2(SelectedSrcProbeThread % TILE_SIZE, SelectedSrcProbeThread / TILE_SIZE) + TileIndex * TILE_SIZE;
+    uint SelectedSrcProbeThread = SharedScreenProbeMinScore & 0xFFFFu;
+    uint2 SelectedPixelCoords = uint2(SelectedSrcProbeThread % TILE_SIZE, SelectedSrcProbeThread / TILE_SIZE) + TileIndex * TILE_SIZE;
     
     if (SelectedSrcProbeThread != 0xFFFFu)
     {
-        ScreenProbeHeader PrevProbeHeader = UnpackProbeHeader(SharedScreenProbeSourceHeader);
-        float SelectedPixelLinearDepth = ReversedZDepthToLinearDepth(C, G_Depth.Load(int3(SelectedPixelIndex, 0)).x);
-        float2 SelectdPixelUV = ScreenCoordsToUV(C, SelectedPixelIndex);
-        float3 SelectedPixelWorldPosition = RecoverWorldPositionPixelCoords(C, SelectedPixelIndex, SelectedPixelLinearDepth);
-        float3 SelectedPixelWorldNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, SelectdPixelUV, 0).rgb * 2 - 1);
+        float SelectedPixelReversedZDepth = G_Depth.Load(int3(SelectedPixelCoords, 0)).x;
+        float SelectedPixelLinearDepth = ReversedZDepthToLinearDepth(C, SelectedPixelReversedZDepth);
+        float2 SelectedPixelUV = ScreenCoordsToUV(C, SelectedPixelCoords);
+        float3 SelectedPixelWorldPosition = RecoverWorldPositionPixelCoords(C, SelectedPixelCoords, SelectedPixelLinearDepth);
+        float3 SelectedPixelWorldNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, SelectedPixelUV, 0).rgb * 2 - 1);
+        // Recovering the results from the selected pixel. No need for boundary checks.
+        uint PreviousProbeHeaderPacked = 0xFFFFFFFFu;
+        {
+            float3 SelectedPixelNDC = float3(UVToNDC2(SelectedPixelUV), 1 - SelectedPixelReversedZDepth);
+            float3 PreviousNDC = ReprojectToPreviousNDCFromNDC(C, SelectedPixelNDC);
+            float2 PreviousUV = NDC2ToUV(PreviousNDC.xy);
+            uint2 PreviousTile = floor(PreviousUV * UB.TileDimensions);
+            PreviousProbeHeaderPacked = PreviousTileScreenProbeHeaderTexture.Load(int3(PreviousTile, 0));
+        }
+        ScreenProbeHeader PrevProbeHeader = UnpackProbeHeader(PreviousProbeHeaderPacked);
 
         CameraParameters PrevC = GetPreviousCamera();
         float2 PrevProbeUV = ScreenCoordsToUV(PrevC, PrevProbeHeader.PixelCoords);
         float3 PrevProbeNormal = normalize(PreviousNormalTexture.SampleLevel(PointEdgeSampler, PrevProbeUV, 0).rgb * 2 - 1);
         float PrevProbeLinearDepth = ReversedZDepthToLinearDepth(PrevC, PreviousDepthTexture.Load(int3(PrevProbeHeader.PixelCoords, 0)).x);
         float3 PrevProbeWorldPosition = RecoverWorldPositionPixelCoords(PrevC, PrevProbeHeader.PixelCoords, PrevProbeLinearDepth);
+        uint2 PrevProbeTile = PrevProbeHeader.PixelCoords / TILE_SIZE;
 
+        if(TileIndex.x == 120 && TileIndex.y == 67 && WaveIsFirstLane()) {
+            printf("Reprojecting probe at (%.3f, %.3f, %.3f) with normal (%.3f, %.3f, %.3f) to (%.3f, %.3f, %.3f) with normal (%.3f, %.3f, %.3f)\n", 
+                PrevProbeWorldPosition.x, PrevProbeWorldPosition.y, PrevProbeWorldPosition.z,
+                PrevProbeNormal.x, PrevProbeNormal.y, PrevProbeNormal.z,
+                SelectedPixelWorldPosition.x, SelectedPixelWorldPosition.y, SelectedPixelWorldPosition.z,
+                SelectedPixelWorldNormal.x, SelectedPixelWorldNormal.y, SelectedPixelWorldNormal.z
+            );
+        }
+
+        float3 PrevProbeTangent, PrevProbeBitangent;
+        GetOrthoVectors(PrevProbeNormal, PrevProbeTangent, PrevProbeBitangent);
+        float3 CurrProbeTangent, CurrProbeBitangent;
+        GetOrthoVectors(SelectedPixelWorldNormal, CurrProbeTangent, CurrProbeBitangent);
         for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_TEXEL_COUNT; BaseTexelIndex += WAVE_SIZE) {
-            uint TexelIndex = BaseTexelIndex + LocalID;
-            uint2 TexelOffset = uint2(TexelIndex % TILE_SIZE, TexelIndex / TILE_SIZE);
+            uint TileTexelIndex1 = BaseTexelIndex + LocalID;
+            uint2 TileTexelOffset = uint2(TileTexelIndex1 % TILE_SIZE, TileTexelIndex1 / TILE_SIZE);
             // Start reprojection
-            float2 HistoryRadianceUV    = (PrevProbeHeader.PixelCoords / TILE_SIZE + TexelOffset) * UB.InvProbeAtlasDimensions;
+            float2 HistoryRadianceUV    = (PrevProbeTile * TILE_SIZE + TileTexelOffset + 0.5f) * UB.InvProbeAtlasDimensions;
             float4 HistoryRadianceDepth = PreviousScreenProbeRadianceDepthTexture.SampleLevel(PointEdgeSampler, HistoryRadianceUV, 0);
-            float3 HistoryRadianceLocalDirection = HemiOctahedron01ToUnitVectorA((TexelOffset + 0.5f) / TILE_SIZE);
+            float3 HistoryRadianceLocalDirection = HemiOctahedron01ToUnitVectorA((TileTexelOffset + 0.5f) / TILE_SIZE);
 
-            float3 Tangent, Bitangent;
-            GetOrthoVectors(PrevProbeNormal, Tangent, Bitangent);
             float3 HistoryRadianceWorldDirection = 
-                Tangent * HistoryRadianceLocalDirection.x 
-                + Bitangent * HistoryRadianceLocalDirection.y
+                PrevProbeTangent * HistoryRadianceLocalDirection.x 
+                + PrevProbeBitangent * HistoryRadianceLocalDirection.y
                 + PrevProbeNormal * HistoryRadianceLocalDirection.z;
 
             float3 HistoryHitPoint = PrevProbeWorldPosition + HistoryRadianceWorldDirection * HistoryRadianceDepth.w;
@@ -398,10 +436,9 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
 
             if (dot(SelectedPixelWorldNormal, ReprojectedWorldDirection) > 0.0f)
             {
-                GetOrthoVectors(SelectedPixelWorldNormal, Tangent, Bitangent);
                 float3 ReprojectedLocalDirection = 
-                    float3(dot(ReprojectedWorldDirection, Tangent), 
-                        dot(ReprojectedWorldDirection, Bitangent), 
+                    float3(dot(ReprojectedWorldDirection, CurrProbeTangent), 
+                        dot(ReprojectedWorldDirection, CurrProbeBitangent), 
                         dot(ReprojectedWorldDirection, SelectedPixelWorldNormal));
                 float2 ReprojectedProbeUV = UnitVectorToHemiOctahedron01A(ReprojectedLocalDirection);
                 uint2 ReprojectedProbePixelCoords = uint2(ReprojectedProbeUV * TILE_SIZE);
@@ -421,7 +458,7 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
 
     // Calculate the radiance backup value to be used for unvisited cells
     float4 SumBackupRadiance = 0;
-    for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_SIZE * TILE_SIZE; BaseTexelIndex += WAVE_SIZE) {
+    for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_TEXEL_COUNT; BaseTexelIndex += WAVE_SIZE) {
         uint TexelIndex = BaseTexelIndex + LocalID;
         float4 Radiance = float4(RecoverRadiance(uint3(SharedReprojectedRadiance[(TexelIndex * 4) + 0],
                                               SharedReprojectedRadiance[(TexelIndex * 4) + 1],
@@ -439,45 +476,54 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
         BackupRadianceDepth.xyz = BackupRadianceDepth.xyz / max(EmptyTexelCount, 1.0f);
     }
 
-    // No probe found, this is a disocclusion
-    if (IsInvalid(MinScreenProbeScore))
+    // Check if we can spawn a new probe in this tile
+    bool bCanSpawnProbe = false;
     {
-        if (WaveIsFirstLane())
-        {
-            // Mark this probe as invalid
-            RWTileScreenProbeHeaderTexture[TileIndex] = INVALID_UINT;
-            // Add the tile to the list of projection fail list (prioritized for spawning new probes)
-            uint ReprojectionFailListIndex = 0;
-            InterlockedAdd(RWReprojectionFailTileCount[0], 1, ReprojectionFailListIndex);
-            RWReprojectionFailTileListBuffer[ReprojectionFailListIndex] = PackUint2x16(TileIndex);
+        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
+        uint2 SpawnPixelCoords = TileIndex * TILE_SIZE + SubTileJitter;
+        float2 SpawnUV = ScreenCoordsToUV(C, SpawnPixelCoords);
+        float SpawnReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, SpawnUV, 0);
+        if(SpawnReversedZDepth > 0) bCanSpawnProbe = true; // valid pixel to spawn probe on
+    }
+
+    // Valid for new probe spawning
+    if (bCanSpawnProbe)
+    {
+        // but no previous probe is found & this tile is not scheduled for probe spawning
+        // in that case this is a disocclusion, we need to spawn extra probes for this tile.
+        if(IsInvalid(SharedScreenProbeMinScore) && !ShouldSpawnProbe(TileIndex)) {
+            if (WaveIsFirstLane()) {
+                // Add the tile to the list of projection fail list (prioritized for spawning new probes)
+                uint ReprojectionFailListIndex = 0;
+                InterlockedAdd(RWReprojectionFailTileCount[0], 1, ReprojectionFailListIndex);   
+                RWReprojectionFailTileListBuffer[ReprojectionFailListIndex] = PackUint2x16(TileIndex);
+            }
+            return; // reprojection failed :'(
+        }
+    
+        // Inject the probe index
+        if(WaveIsFirstLane()) {
+            ScreenProbeHeader SelectedProbeHeader = (ScreenProbeHeader)0;
+            SelectedProbeHeader.PixelCoords = SelectedPixelCoords;
+            SelectedProbeHeader.bValid = true;
+            RWTileScreenProbeHeaderTexture[TileIndex] = PackProbeHeader(SelectedProbeHeader);
         }
 
-        return; // reprojection failed :'(
-    }
+        // And reproject the radiance
+        for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_TEXEL_COUNT; BaseTexelIndex += WAVE_SIZE) {
+            uint TileTexelIndex1 = BaseTexelIndex + LocalID;
+            float4 RadianceDepth = RecoverRadiance(uint4(SharedReprojectedRadiance[TileTexelIndex1 * 4 + 0],
+                                                        SharedReprojectedRadiance[TileTexelIndex1 * 4 + 1],
+                                                        SharedReprojectedRadiance[TileTexelIndex1 * 4 + 2],
+                                                        SharedReprojectedRadiance[TileTexelIndex1 * 4 + 3]));
 
-    // Inject the probe index
-    if(WaveIsFirstLane()) {
-        ScreenProbeHeader SelectedProbeHeader = (ScreenProbeHeader)0;
-        SelectedProbeHeader.PixelCoords = SelectedPixelIndex;
-        SelectedProbeHeader.bValid = true;
-        RWTileScreenProbeHeaderTexture[TileIndex] = PackProbeHeader(SelectedProbeHeader);
-    }
+            uint SampleCount = SharedReprojectedSampleCounts[TileTexelIndex1];
 
-
-    // And reproject the radiance
-    for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_SIZE * TILE_SIZE; BaseTexelIndex += WAVE_SIZE) {
-        uint TileTexelIndex1 = BaseTexelIndex + LocalID;
-        float4 RadianceDepth = RecoverRadiance(uint4(SharedReprojectedRadiance[TileTexelIndex1 * 4 + 0],
-                                                    SharedReprojectedRadiance[TileTexelIndex1 * 4 + 1],
-                                                    SharedReprojectedRadiance[TileTexelIndex1 * 4 + 2],
-                                                    SharedReprojectedRadiance[TileTexelIndex1 * 4 + 3]));
-
-        uint SampleCount = SharedReprojectedSampleCounts[TileTexelIndex1];
-
-        if (SampleCount > 0) RadianceDepth /= SampleCount;
-        else RadianceDepth = BackupRadianceDepth;
-        uint2 TileTexelIndex = TileIndex * TILE_SIZE + uint2(TileTexelIndex1 % TILE_SIZE, TileTexelIndex1 / TILE_SIZE);
-        RWScreenProbeRadianceDepthTexture[TileTexelIndex] = RadianceDepth;
+            if (SampleCount > 0) RadianceDepth /= SampleCount;
+            else RadianceDepth = BackupRadianceDepth;
+            uint2 AtlasTexelIndex = TileIndex * TILE_SIZE + uint2(TileTexelIndex1 % TILE_SIZE, TileTexelIndex1 / TILE_SIZE);
+            RWScreenProbeRadianceDepthTexture[AtlasTexelIndex] = RadianceDepth;
+        }
     }
 }
 
@@ -543,11 +589,6 @@ void ScatterReprojectedCachedProbesToMRUList (uint DispatchID : SV_DispatchThrea
     RWTileScreenProbeCacheIndexListBuffer[TileEntryBase + TileEntryIndex] = PreviousCacheEntryIndex;
 }
 
-bool ShouldSpawnProbe (uint2 TileIndex) {
-    // Interleaved spawning
-    return ((TileIndex.x + TileIndex.y) % 2) == UB.FrameIndex % 2;
-}
-
 // Spawn a fraction of new probes for interleaved tiles each frame
 [numthreads(WAVE_SIZE, 1, 1)]
 void SpawnScreenProbes (uint DispatchID : SV_DispatchThreadID) {
@@ -558,7 +599,7 @@ void SpawnScreenProbes (uint DispatchID : SV_DispatchThreadID) {
     // Spawn one probe per tile. This can be adjusted to spawn interleaved probes.
     if(ShouldSpawnProbe(TileIndex)) {
         CameraParameters C = GetActiveCamera();
-        uint2 SubTileJitter = min(CalculateHaltonSequence(UB.FrameIndex) * TILE_SIZE, TILE_SIZE - 1.0f);
+        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
         uint2 ScreenCoords  = min(TileIndex * TILE_SIZE + SubTileJitter, C.FilmDimensions - 1);
         float2 UV = ScreenCoords * C.InvFilmDimensions;
         float ReversedZDepth       = G_Depth.SampleLevel(PointEdgeSampler, UV, 0).x;
@@ -597,7 +638,7 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
     if(FailListIndex >= FailTileCount) return;
     uint2 FailTileIndex = UnpackUint2x16(RWReprojectionFailTileListBuffer[FailListIndex]);
     uint SpawnProbeCount = min(RWScreenProbeSpawnCount[0], UB.MaxProbesToSpawnPerFrame);
-    uint2 SubTileJitter = min(CalculateHaltonSequence(UB.FrameIndex) * TILE_SIZE, TILE_SIZE - 1.0f);
+    uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
     ScreenProbeHeader Header = (ScreenProbeHeader)0;
     Header.bValid = true;
     Header.PixelCoords = FailTileIndex * TILE_SIZE + SubTileJitter;
@@ -637,6 +678,7 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
 
 [numthreads(1, 1, 1)]
 void UpdateScreenProbeSpawnCount () {
+    printf("ProbeCount: %d %d\n", RWScreenProbeSpawnCount[0], RWReprojectionFailTileCount[0]);
     RWScreenProbeSpawnCount[0] = 
         min(
             RWScreenProbeSpawnCount[0] + RWReprojectionFailTileCount[0],
@@ -874,11 +916,12 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
     {
         float P = saturate(1 - float(ReusedProbeTexelCount) / 128);
         // For the case that we have no history for reuse, double the number of samples
-        if(rng.rand() < P) {
+        bool FirstFrame = (UB.ResetCache != 0) || (UB.FrameIndex == 0); // In case we're just starting to render the cache, do not do adaptive balancing
+        if(rng.rand() < P && UB.ProbeUpdateRaysNoAdaptiveAllocation == 0 && !FirstFrame) {
             NumProbeOctahedronSamples += TILE_TEXEL_COUNT;
         }
     }
-    NumProbeOctahedronSamples = max(NumProbeOctahedronSamples, MAX_NUM_UPDATE_RAYS_PER_PROBE);
+    NumProbeOctahedronSamples = min(NumProbeOctahedronSamples, MAX_NUM_UPDATE_RAYS_PER_PROBE);
     uint UpdateRayIndexBase = 0;
     if(WaveIsFirstLane()) {
         InterlockedAdd(RWScreenProbeUpdateRayAllocator[0], NumProbeOctahedronSamples, UpdateRayIndexBase);
@@ -960,7 +1003,7 @@ void ClipUpdateRayCount () {
     RWScreenProbeUpdateRayAllocator[0] = min(RWScreenProbeUpdateRayAllocator[0], UB.MaxNumUpdateRays);
 }
 
-// The sampled rays are traced in separate shaders via hybrid tracing
+// The sampled rays are traced in separate shaders via hybrid tracing (no written here)
 // Radiance results are stored in RWScreenProbeUpdateRayResultBuffer
 
 // Update screen probes & cache
@@ -1129,7 +1172,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
     }
 }
 
-// A scan-sum is performed on RWScreenProbeCacheMRUFlagBuffer
+// A scan-sum is performed on RWScreenProbeCacheMRUFlagBuffer (in external shaders)
 // Results are accumulated into RWScreenProbeCacheMRUFlagPrefixSumBuffer
 
 // Update MRU queue, putting recently used entries to the front
@@ -1386,5 +1429,9 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
     }
 
     RWDiffuseIndirectLightingTexture[PixelCoords] = float4(Irradiance, bUseBackup ? 0 : 1);
+    // {
+    //     float3 Radiance = RWScreenProbeRadianceDepthTexture[PixelCoords].xyz;
+    //     RWDiffuseIndirectLightingTexture[PixelCoords] = float4(Radiance, 1);
+    // }
 
 }

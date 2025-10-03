@@ -15,6 +15,7 @@ struct DiffuseIndirectLightingPersistentData : public RefCounted<> {
     TRef<RDGTexture> ScreenProbeCacheRadianceDepthTexture;
     TRef<RDGBuffer>  ScreenProbeCacheMRUQueueBuffer;
     TRef<RDGTexture> TileScreenProbeHeaderTexture;
+    TRef<RDGBuffer>  ScreenProbeCacheMRUFlagBuffer;
 
     bool MakeSureExists (RenderGraphBuilder & builder, glm::uvec2 tile_dimensions, uint32_t header_tile_dimension) ;
 };
