@@ -27,7 +27,7 @@ set(SOURCES
         renderer/r_diffuse_indirect_lighting.cpp
         renderer/r_path_tracing.cpp
         renderer/r_debug_views.cpp
-        renderer/r_denoise.cpp
+        renderer/r_denoiser.cpp
         util/radix_sort.cpp
         util/scan_sum.cpp
 )

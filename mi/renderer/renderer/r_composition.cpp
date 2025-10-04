@@ -11,9 +11,10 @@
 #include "r_view_common.h"
 #include "rdg/rdg_helper.h"
 #include "../renderer/r_persistent.h"
+#include "renderer/mi_scene.h"
+#include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
-
-static CVar<float> CVar_Exposure(
+    static CVar<float> CVar_Exposure(
     "r.exposure",
     "Exposure value for the final output. "
     "This is used to adjust the brightness of the final image.",
@@ -46,12 +47,14 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseIndirectLightingTexture)
+        SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Transmittance)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
@@ -81,13 +84,15 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         params->DiffuseDirectLightingTexture = view->denoised_diffuse_direct_lighting_.Raw();
     }
     params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
-    params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_.Raw();
+    params->DiffuseIndirectLightingTexture = view->denoised_diffuse_indirect_lighting_.Raw();
+    params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     params->G_Albedo = view->G_albedo_.Raw();
     params->G_Emission = view->G_emission_.Raw();
     params->G_Transmittance = view->G_transmittance_.Raw();
     params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+    params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);
     auto groups_y = DivideAndRoundUp(view->film_height_, LightingCompositionShader::kTileSize);
     Helpers::AddComputePass(builder, shader, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);

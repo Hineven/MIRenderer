@@ -137,6 +137,7 @@ struct RendererView {
 
     // Diffuse indirect lighting
     TRef<RDGTexture> diffuse_indirect_lighting_;
+    // Special: this is set by the denoiser. Not created by the view itself.
     TRef<RDGTexture> denoised_diffuse_indirect_lighting_;
 
     // Volume direct lighting

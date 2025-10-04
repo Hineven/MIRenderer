@@ -19,6 +19,7 @@
 #include "renderer/r_persistent.h"
 #include "renderer/r_view_common.h"
 #include "renderer/r_diffuse_direct_lighting.h"
+#include "renderer/r_denoiser.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
 
 MI_NAMESPACE_BEGIN
@@ -266,8 +267,6 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
 
-    prev_denoised_diffuse_direct_lighting = view->denoised_diffuse_direct_lighting_;
-
     prev_radiance_ = view->radiance_;
 
     prev_scene_ = view->scene_;
@@ -395,8 +394,6 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     denoised_diffuse_direct_lighting_->SetName("Denoised Diffuse Direct Lighting");
-    // Persistent till next frame
-    denoised_diffuse_direct_lighting_->SetExport();
 
     // Diffuse indirect lighting
     diffuse_indirect_lighting_ = RDGTexture::Create2D(
@@ -404,13 +401,7 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     diffuse_indirect_lighting_->SetName("Diffuse Indirect Lighting");
-    denoised_diffuse_indirect_lighting_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransfer);
-    denoised_diffuse_indirect_lighting_->SetName("Denoised Diffuse Indirect Lighting");
-    // Persistent till next frame
-    denoised_diffuse_indirect_lighting_->SetExport();
+    // Denoised diffuse indirect lighting is handled by the denoiser.
 
     volume_direct_lighting_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,

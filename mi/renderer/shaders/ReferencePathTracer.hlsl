@@ -198,7 +198,7 @@ void ReferencePathTracerRaygen() {
         } else if(Payload.TCurrent >= Ray.TMax) { // Miss
             // No hits, accumulate environment lighting and terminate
             float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -Ray.Direction, 0).xyz;
-            //Radiance += Throughput * EnvironmentColor;
+            Radiance += Throughput * EnvironmentColor;
             // Terminate directly
             break;
         } else if(Payload.bIsSurfaceHit) { // Hits a mesh surface

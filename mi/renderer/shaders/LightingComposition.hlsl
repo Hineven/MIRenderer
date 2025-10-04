@@ -20,6 +20,8 @@ Texture2D<float4> DiffuseIndirectLightingTexture;
 Texture2D<float4> VolumeDirectLightingTexture;
 //Texture2D<float4> HistoryDiffuseDirectLightingTexture;
 
+TextureCube<float4> EnvironmentMap;
+
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
 Texture2D<float>  G_Transmittance;
@@ -42,7 +44,11 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
 
     // Emission
     float3 Emission = G_Emission.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-    if(AlbedoAlpha.w == 0.f) Emission = 0;
+    if(AlbedoAlpha.w == 0.f) {
+        float3 RayDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
+        float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+        Emission = EnvironmentColor;
+    }
     SurfaceRadiance += Emission;
 
     // Diffuse direct
