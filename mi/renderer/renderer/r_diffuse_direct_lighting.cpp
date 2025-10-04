@@ -559,14 +559,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         params->PointBorder1Sampler = RHI::Get().GetGlobalSamplers().point_border_1;
 
         if (CVar_DebugOutputTransmittanceRaysForMesh.Get() && !view->debug_buffers_.traced_ray_count) {
-            view->debug_buffers_.traced_ray_count = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_count->SetName("Debug_TracedRaysCount");
-            view->debug_buffers_.traced_ray_origins = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_directions = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_directions->SetName("Debug_TracedRayDirections");
-            view->debug_buffers_.traced_ray_states = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_states->SetName("Debug_TracedRayStates");
-
+            view->debug_buffers_.CreateTracedRayBuffers(builder, 16);
             params->RWDebugTracedRaysCount = view->debug_buffers_.traced_ray_count.Raw();
             params->RWDebugTracedRayOrigins = view->debug_buffers_.traced_ray_origins.Raw();
             params->RWDebugTracedRayDirections = view->debug_buffers_.traced_ray_directions.Raw();

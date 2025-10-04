@@ -45,6 +45,12 @@ static CVar<bool> CVar_AdaptiveProbeUpdateRayAllocation(
     true
 );
 
+static CVar<bool> CVar_Debug_OutputProbeUpdateRays(
+    "r.diffuse_indirect_lighting.debug.output_probe_update_rays",
+    "Output the probe update rays for debugging purposes.",
+    false
+);
+
 struct DiffuseIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     uint32_t HeaderTileDimension;
@@ -129,6 +135,13 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
 
     SHADER_UNIFORM_BUFFER(DiffuseIndirectLightingUB, UB)
+    SHADER_UNIFORM_BUFFER(DebugCommonShaderParameters, Debug)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRaysCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayOrigins)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayDirections)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayStates)
+
 
 END_SHADER_PARAMETERS()
 
@@ -251,6 +264,9 @@ class UpdateScreenProbesAndCacheShader : public DiffuseIndirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {"DEBUG_OUTPUT_TRACED_RAY"};
+    }
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbesAndCacheShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbesAndCache");
@@ -606,6 +622,19 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
         }
         params->UB = UB;
+        params->Debug = view->debug_common_params_;
+    }
+    if (CVar_Debug_OutputProbeUpdateRays.Get()) {
+        view->debug_buffers_.CreateTracedRayBuffers(builder, 256);
+        params->RWDebugTracedRaysCount = view->debug_buffers_.traced_ray_count.Raw();
+        params->RWDebugTracedRayOrigins = view->debug_buffers_.traced_ray_origins.Raw();
+        params->RWDebugTracedRayDirections = view->debug_buffers_.traced_ray_directions.Raw();
+        params->RWDebugTracedRayStates = view->debug_buffers_.traced_ray_states.Raw();
+    } else {
+        params->RWDebugTracedRaysCount = nullptr;
+        params->RWDebugTracedRayOrigins = nullptr;
+        params->RWDebugTracedRayDirections = nullptr;
+        params->RWDebugTracedRayStates = nullptr;
     }
     // Wave size is the default thread group size in almost all shaders.
     uint32_t wave_size = RHI::Get().GetDeviceProperties().wave_size;
@@ -705,7 +734,9 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     );
 
     {
-        auto shader = lib.GetShader<UpdateScreenProbesAndCacheShader>(ini);
+        auto ini_s = ini;
+        if (CVar_Debug_OutputProbeUpdateRays.Get()) ini_s.optional_macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
+        auto shader = lib.GetShader<UpdateScreenProbesAndCacheShader>(ini_s);
         Helpers::AddComputeIndirectPass<UpdateScreenProbesAndCacheShader>(
             builder, shader, params,
             spawn_list_command.Raw()

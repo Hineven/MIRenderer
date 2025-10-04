@@ -530,4 +530,15 @@ void RendererView::SetupDebugCommonShaderParameters(RenderGraphBuilder &builder)
     debug_common_params_->CursorButtonState = 0;
 }
 
+void RendererView::DebugBuffers::CreateTracedRayBuffers(RenderGraphBuilder &builder, uint32_t max_num_rays) {
+    traced_ray_count = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
+    traced_ray_count->SetName("Debug_TracedRaysCount");
+    traced_ray_origins = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage, max_num_rays);
+    traced_ray_directions = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage, max_num_rays);
+    traced_ray_directions->SetName("Debug_TracedRayDirections");
+    traced_ray_states = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage, max_num_rays);
+    traced_ray_states->SetName("Debug_TracedRayStates");
+}
+
+
 MI_NAMESPACE_END

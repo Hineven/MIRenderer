@@ -156,13 +156,15 @@ struct RendererView {
         TRef<RDGTexture> visualize_traced_rays_output_;
     } debug_views_;
 
-    struct {
+    struct DebugBuffers {
         // For visualizing traced rays. Can be created and written to in various passes.
         TRef<RDGBuffer> traced_ray_count;
         TRef<RDGBuffer> traced_ray_origins;
         TRef<RDGBuffer> traced_ray_directions;
         TRef<RDGBuffer> traced_ray_states;
         TRef<RDGBuffer> traced_ray_colors;
+
+        void CreateTracedRayBuffers (RenderGraphBuilder & builder, uint32_t max_num_rays);
     } debug_buffers_;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.

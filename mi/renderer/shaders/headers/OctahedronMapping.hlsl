@@ -63,7 +63,7 @@ float2 UnitVectorToHemiOctahedron01A( float3 direction )
     // Transform from [-1,1] to [0,1]
     st = 0.5f.xx * st + 0.5f.xx;
 
-    return st;
+    return saturateDown(st);
 }
 
 float3 HemiOctahedronToUnitVector( float2 Oct )

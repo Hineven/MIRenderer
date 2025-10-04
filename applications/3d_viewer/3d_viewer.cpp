@@ -198,7 +198,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     // Upload sky texture
     {
-        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
+        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/blue_light.png"));
     }
 
     auto default_mat = Material::Create("default_mat", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
@@ -300,7 +301,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene_no_lights.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
