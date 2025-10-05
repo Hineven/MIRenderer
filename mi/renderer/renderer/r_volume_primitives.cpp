@@ -26,6 +26,10 @@ struct RenderVolumePrimitivesUB {
     uint32_t MaxNumPrimitiveInstances;
     uint32_t FrameIndex;
     glm::uvec2 Padding;
+    uint32_t EnableFourier; // True:Use Fourier volume
+    uint32_t DensityFourierOrder; // If IsFourier, the Fourier order of Density
+    uint32_t ColorFourierOrder; // The Fourier order of Color
+    uint32_t FourierSampleNum; // Primitive intersection sample num
 };
 
 
@@ -156,6 +160,30 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DrawVolumePrimitivesShader,
 
 constexpr static uint32_t kTileSize = 16;
 
+static CVar<bool> CVar_EnableFourier(
+    "enable_fourier",
+    "Enable Fourier Volume",
+    true
+);
+
+static CVar<int> CVar_DensityFourierOrder(
+    "density_fourier_order",
+    "The Fourier order of volume density",
+    3
+);
+
+static CVar<int> CVar_ColorFourierOrder(
+    "color_fourier_order",
+    "The Fourier order of volume color",
+    3
+);
+
+static CVar<int> CVar_FourierSampleNum(
+    "fourier_sample_num",
+    "The sample num of each intersection in calculating Fourier series",
+    4
+);
+
 void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilder &builder) {
 
     glm::uvec2 tile_dimensions = {
@@ -187,6 +215,10 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     common_ub->NumTiles = num_tiles;
     common_ub->MaxNumPrimitiveInstances = kMaxNumActiveVolumePrimitives;
     common_ub->FrameIndex = view->persistent_data_->frame_index_;
+    common_ub->EnableFourier = CVar_EnableFourier.Get() ? 1 : 0;
+    common_ub->DensityFourierOrder = CVar_DensityFourierOrder.Get();
+    common_ub->ColorFourierOrder = CVar_ColorFourierOrder.Get();
+    common_ub->FourierSampleNum = CVar_FourierSampleNum.Get();
     auto params = builder.Allocate<VolumePrimitivesShaderParameters>();
     {
         params->View = view->view_common_params_;

@@ -31,21 +31,28 @@ struct RayVolumePrimitiveIntersection {
     float3 Color;
 };
 
-// Ray intersect with all primitives in one pixel
+// Uniform volume distribution
 struct RayVolumeDistribution {
+    float l, r;
+    float Density;
+    float3 Color;
+};
+
+// Fourier volume distribution
+struct RayFourierVolumeDistribution {
     FourierFloat Density;
     FourierFloat3 WeightedColor; // Actually restores Density * Color
 };
 
-// 计算一个傅里叶分布在x处的密度
-float GetRayVolumeDistributionDensity(RayVolumeDistribution Distr, float x) {
+// Calculate the density of a Fourier distribution at x
+float GetRayFourierVolumeDistributionDensity(RayFourierVolumeDistribution Distr, float x) {
     float Density = ComputeFourierValue(Distr.Density, x);
 
     return Density;
 }
 
-// 计算一个傅里叶分布在x处的颜色
-float3 GetRayVolumeDistributionColor(RayVolumeDistribution Distr, float x) {
+// Calculate the color of a Fourier distribution at x
+float3 GetRayFourierVolumeDistributionColor(RayFourierVolumeDistribution Distr, float x) {
     float3 WeightedColor = ComputeFourierValue(Distr.WeightedColor, x);
     float Density = ComputeFourierValue(Distr.Density, x);
 
@@ -56,7 +63,7 @@ float3 GetRayVolumeDistributionColor(RayVolumeDistribution Distr, float x) {
     return Color;
 }
 
-// 对单个体素球的交进行自由程采样
+// Sample single volume primitive intersection ray distance
 float SampleRayVolumePrimitiveIntersection(RayVolumePrimitiveIntersection Distribution, float u) {
     float l = Distribution.l;
     float r = Distribution.r;
@@ -71,15 +78,15 @@ float SampleRayVolumePrimitiveIntersection(RayVolumePrimitiveIntersection Distri
     return Sample;
 }
 
-// 计算傅里叶级数到x点的积分
-float IntegrateRayVolumeDistributionDensity(RayVolumeDistribution Distr, float x) {
+// Calculate the density integral of Fourier order from l to point x
+float IntegrateRayFourierVolumeDistributionDensity(RayFourierVolumeDistribution Distr, float x) {
     float integral = ComputeFourierIntegral(Distr.Density, x);
 
     return integral;
 }
 
-// 对傅里叶级数体积分布进行自由程采样
-float SampleRayVolumeDistribution(RayVolumeDistribution Distr, float u) {
+// Free path sampling of Fourier volume distribution
+float SampleRayFourierVolumeDistribution(RayFourierVolumeDistribution Distr, float u) {
     // Sample free flight length from the distribution using inversion method
     float l = Distr.Density.l;
     float r = Distr.Density.r;
@@ -96,13 +103,13 @@ float SampleRayVolumeDistribution(RayVolumeDistribution Distr, float u) {
     float mid;
 
     // the ray cross the whole volume
-    if(IntegrateRayVolumeDistributionDensity(Distr, r) < target) {
+    if(IntegrateRayFourierVolumeDistributionDensity(Distr, r) < target) {
         return 1e9f;
     }
 
     for(uint i = 0; i < max_iterations; i++) {
         mid = (low + high) * 0.5f;
-        float F_mid = IntegrateRayVolumeDistributionDensity(Distr, mid);
+        float F_mid = IntegrateRayFourierVolumeDistributionDensity(Distr, mid);
         if(abs(F_mid - target) < tolerance) {
             FreeFlightLength = mid;
             break;
