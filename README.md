@@ -2,13 +2,11 @@
 A set of CG libraries.
 ![cover](images/cover.png)
 ## 宇宙免责声明
-* 框架还在持续性修修补补之中，可能有bug（或许是大量的bug、离谱的bug！），不要信任这个框架！
-* 如果你在阅读代码时发现了非常傻逼的错误或丑陋的代码，请不要惊讶，这是正常的，请喊Hineven去修，或者你也可以自己动手！
-* 如果你因为未知的框架bug而怒火中烧，请原谅Hineven【狗头】。
+* 框架还在持续性修修补补之中，可能有bug，不要太信任此框架！
 ## 安装和编译
 ### 安装外部依赖
 * NVIDIA RTX显卡。AMD显卡理论上支持，但未经过测试。
-* `Vulkan SDK`: https://vulkan.lunarg.com/ ，安装最新的Vulkan SDK，请使用1.4.300更高版本。
+* `Vulkan SDK`: https://vulkan.lunarg.com/ ，安装最新的Vulkan SDK，请使用1.4.300更高版本，较低版本会出现意外错误。
 ### 安装Vcpkg
 安装vcpkg包管理器，并使用包管理器与`CMake`集成，然后安装以下依赖：
 * `glm`
@@ -22,6 +20,7 @@ A set of CG libraries.
 * `happly`
 * `nlohmann-json`
 * `glfw3`
+* `tinyexr`
 # 使用
 请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表
@@ -32,8 +31,6 @@ A set of CG libraries.
 * `renderer`：渲染器实现。
 * `util`：一些实用工具，比如模型加载。
 * `micromc`：小玩具，用这个渲染器渲染几个mc区块。
-### Vulkan Validation Layer配置
-如果使用Vulkan Validation Layer，请禁用08742号警告（SPIRV字节码扩展能力不支持），此警告不影响程序正确性。
 ### 调试
 * 请使用`Debug Build`，目前版本`Release Build`会编译错误。
 * 在使用`Vulkan Configurator`时，可以开启`Vulkan Validation Layer`与`Break on Validation Error`选项，此时，出现问题时程序会自动中断，你可以用IDE查看栈帧。

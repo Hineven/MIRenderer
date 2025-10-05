@@ -677,7 +677,7 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
 
 [numthreads(1, 1, 1)]
 void UpdateScreenProbeSpawnCount () {
-    printf("ProbeCount: %d %d\n", RWScreenProbeSpawnCount[0], RWReprojectionFailTileCount[0]);
+    // printf("ProbeCount: %d %d\n", RWScreenProbeSpawnCount[0], RWReprojectionFailTileCount[0]);
     RWScreenProbeSpawnCount[0] = 
         min(
             RWScreenProbeSpawnCount[0] + RWReprojectionFailTileCount[0],
