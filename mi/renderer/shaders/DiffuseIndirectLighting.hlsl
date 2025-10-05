@@ -491,8 +491,7 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
         if (bCanSpawnProbe && !ShouldSpawnProbe(TileIndex))
         {
             // Manually schedule the tile for probe spawnning
-            // FIXME
-            if (false && WaveIsFirstLane()) {
+            if (WaveIsFirstLane()) {
                 // Add the tile to the list of projection fail list (prioritized for spawning new probes)
                 uint ReprojectionFailListIndex = 0;
                 InterlockedAdd(RWReprojectionFailTileCount[0], 1, ReprojectionFailListIndex);   
@@ -746,11 +745,9 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
     uint  ReusedProbeTexelCount = 0;
 
     // Recover radiance at the new probe from reprojected probes on neighbor tiles
-    // FIXME
-    if(false)
     for(int dx = -1; dx <= 1; dx++) {
         for(int dy = -1; dy <= 1; dy++) {
-            int2 NeighborTileIndex = TileIndex + int2(dx, dy);
+            int2 NeighborTileIndex = int2(TileIndex) + int2(dx, dy);
             if(any(NeighborTileIndex < 0) || any(NeighborTileIndex >= UB.TileDimensions)) continue ;
             ScreenProbeHeader NeighborHeader = UnpackProbeHeader(RWTileScreenProbeHeaderTexture[NeighborTileIndex]);
             if(!NeighborHeader.bValid) continue ;
@@ -800,11 +797,9 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
     // And finding a possible matching cache entry for the existing old probe to evict
     float MinReprojectedProbeScoreFromCache = 1e+10f;
     uint  MinReprojectedProbeScoreCacheEntryIndex = INVALID_UINT;
-    // FIXME
-    if(false)
     for(int dx = -1; dx <= 1; dx++) {
         for(int dy = -1; dy <= 1; dy++) {
-            int2 NeighborTileIndex = TileIndex + int2(dx, dy);
+            int2 NeighborTileIndex = int2(TileIndex) + int2(dx, dy);
             if(any(NeighborTileIndex < 0) || any(NeighborTileIndex >= UB.TileDimensions)) continue ;
             uint NeighborTileIndex1 = NeighborTileIndex.x + NeighborTileIndex.y * UB.TileDimensions.x;
             uint TileCacheIndexListLenght = RWTileScreenProbeCacheIndexListLengthsBuffer[NeighborTileIndex1];
@@ -822,8 +817,9 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
                     for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_TEXEL_COUNT; BaseTexelIndex += WAVE_SIZE) {
                         uint TexelIndex1 = BaseTexelIndex + LocalID;
                         uint2 ProbeTexelCoords = int2(TexelIndex1 % TILE_SIZE, TexelIndex1 / TILE_SIZE);
-                        uint2 AtlasTexelCoords = NeighborTileIndex * TILE_SIZE + ProbeTexelCoords;
-                        float4 ProbeRadianceDepth = RWScreenProbeCacheRadianceDepthTexture[AtlasTexelCoords];
+                        uint2 CacheEntryAtlasTile = uint2(CacheEntryIndex % UB.TileDimensions.x, CacheEntryIndex / UB.TileDimensions.x);
+                        uint2 CacheAtlasTexelCoords = CacheEntryAtlasTile * TILE_SIZE + ProbeTexelCoords;
+                        float4 ProbeRadianceDepth = RWScreenProbeCacheRadianceDepthTexture[CacheAtlasTexelCoords];
                         float2 ProbeTexelUV = (ProbeTexelCoords + 0.5f) / TILE_SIZE;
                         float3 ProbeLocalDirection = HemiOctahedron01ToUnitVectorA(ProbeTexelUV);
                         float3 ProbeWorldDirection = ProbeLocalDirection.x * CachedProbeTangent + ProbeLocalDirection.y * CachedProbeBitangent + ProbeLocalDirection.z * CachedProbeNormal;
@@ -1175,8 +1171,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             NewRadiance = BackupRayResult;
         }
         // Temporal blending with the reconstructed radiance from previous frames.
-        // FIXME
-        if (false && Header.bTemporalBlendable)
+        if (Header.bTemporalBlendable)
         {
             float4 ReconstructedRadiance = RWScreenProbeReconstructedRadianceDepthBuffer[AtlasTexelCoords];
             float lumaA = RadianceToLuminance(NewRadiance.xyz);
@@ -1184,9 +1179,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
 
             // Shadow-preserving biased temporal hysteresis (inspired by: https://www.youtube.com/watch?v=WzpLWzGvFK4&t=630s)
             float temporal_blend = Squared(clamp(max(lumaA - lumaB - min(lumaA, lumaB), 0.0f) / max(max(lumaA, lumaB), 1e-4f), 0.0f, 0.95f));
-            // FIXME
-            temporal_blend = 0.f;
-
+            
             NewRadiance = lerp(NewRadiance, ReconstructedRadiance, temporal_blend);
         }
 
@@ -1441,11 +1434,9 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
 
     for (uint i = 0; i < 4; i++)
     {
-        if (IsValid(NearbyProbes[i]))
+        ScreenProbeHeader Header = UnpackProbeHeader(NearbyProbes[i]);
+        if (Header.bValid)
         {
-            // uint2 probe_seed = ScreenProbes_UnpackSeed(probes[i]);
-            ScreenProbeHeader Header = UnpackProbeHeader(NearbyProbes[i]);
-
             float2 ProbeUV    = (Header.PixelCoords + 0.5f) * C.InvFilmDimensions;
             float  ProbeReversedZDepth = G_Depth.Load(int3(Header.PixelCoords, 0)).x;
             float  ProbeLinearDepth = ReversedZDepthToLinearDepth(C, ProbeReversedZDepth);
@@ -1490,7 +1481,7 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
 
     RWDiffuseIndirectLightingTexture[PixelCoords] = float4(Irradiance, bUseBackup ? 0 : 1);
     // {
-    //     float3 Radiance = RWScreenProbeReconstructedRadianceDepthBuffer[PixelCoords].xyz;
+    //     float3 Radiance = RWScreenProbeRadianceDepthTexture[PixelCoords].xyz;
     //     RWDiffuseIndirectLightingTexture[PixelCoords] = float4(Radiance, 1);
     // }
 

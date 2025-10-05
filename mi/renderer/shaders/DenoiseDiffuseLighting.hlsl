@@ -16,7 +16,7 @@ struct DenoiseDiffuseDirectLightingUB {
 	float DepthHistoryThreshold;
 	float DilatedConvolutionLuminanceSize;
 	float ConvolutionNormalDifferenceWeight;
-	uint Padding;
+	uint  DenoiseDiffuseIndirect;
 };
 
 ConstantBuffer<DenoiseDiffuseDirectLightingUB> UB;
@@ -268,7 +268,12 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 #ifdef OUTPUT_DIRECTLY
 	RWDenoisedDiffuseDirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseDirectRadianceVariance.rgb, NewHistoryLength);
 #endif
-	RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseIndirectRadianceVariance.rgb, 1);
+	if(UB.DenoiseDiffuseIndirect) {
+		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseIndirectRadianceVariance.rgb, 1);
+	} else {
+		float3 OriginalDiffuseIndirect = InputDiffuseIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
+		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalDiffuseIndirect, 1);
+	}
 	RWHistoryLengthTexture[CenterPixelCoords] = NewHistoryLength / 255.f;
 }
 

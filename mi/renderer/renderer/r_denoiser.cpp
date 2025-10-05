@@ -27,6 +27,11 @@ static CVar<float> CVar_ConvolutionNormalDifferenceWeight("r.denoise_diffuse_dir
     5.0f
 );
 
+static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable",
+    "Whether to denoise diffuse indirect lighting.",
+    true
+);
+
 bool DenoiserPersistentData::MakeSureExists(RendererView * view, RenderGraphBuilder & builder) {
     bool flag = false;
     // Actually, we don't need to do anything. Passing null resources to shader
@@ -51,7 +56,7 @@ struct DenoiseDiffuseLightingUB {
     float DepthHistoryThreshold;
     float DilatedConvolutionLuminanceSize;
     float ConvolutionNormalDifferenceWeight;
-    uint32_t Padding;
+    uint32_t DenoiseDiffuseIndirect;
 };
 
 class PreFilterDiffuseLightingAndTemporalAccumulateShader : public RDGShader {
@@ -154,7 +159,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         UB->DepthHistoryThreshold = 0.001f;
         UB->DilatedConvolutionLuminanceSize = glm::clamp(CVar_DilatedConvolutionLuminanceSize.Get(), 0.01f, 100.f);
         UB->ConvolutionNormalDifferenceWeight = glm::clamp(CVar_ConvolutionNormalDifferenceWeight.Get(), 0.01f, 100.f);
-        UB->Padding = {};
+        UB->DenoiseDiffuseIndirect = CVar_DenoiseDiffuseIndirect.Get() ? 1 : 0;
     }
     {
         auto ini = RDGShaderInitializationInfo {};
