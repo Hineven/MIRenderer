@@ -124,7 +124,7 @@ std::vector<float> NoiseHelpers::BlueNoiseTexture2D(int width, int height, int s
     std::vector<float> blueNoise(count);
     std::mt19937 rng(seed);
     for (int i = 0; i < count; ++i) {
-        blueNoise[i] = rng();
+        blueNoise[i] = (float)rng() / (float)rng.max();
     }
     std::vector<float> filtered(count, 0.0f);
     // Low pass filter setup
