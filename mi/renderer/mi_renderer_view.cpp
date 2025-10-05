@@ -329,18 +329,26 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
 
-    G_volume_density_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR32_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_density_->SetName("GBuffer Volume Density");
     G_volume_min_max_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
     G_volume_min_max_->SetName("GBuffer Volume Min Max");
+    G_volume_density_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_density_->SetName("GBuffer Volume Density");
     G_volume_color_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
     G_volume_color_->SetName("GBuffer Volume Color");
+    G_volume_density_fourier_ = RDGTexture::Create2DArray(
+        film_width_, film_height_, 3, PixelFormatType::kR32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_density_fourier_->SetName("GBuffer Volume Density Fourier");
+    G_volume_weighted_color_fourier_ = RDGTexture::Create2DArray(
+        film_width_, film_height_, 3, PixelFormatType::kR8G8B8A8_UNORM,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
+    G_volume_weighted_color_fourier_->SetName("GBuffer Volume Weighted Color Fourier");
     G_volume_cdf_attenuation_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);

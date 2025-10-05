@@ -55,12 +55,16 @@ StructuredBuffer<uint> TileInstanceCountBuffer;
 RWStructuredBuffer<uint> RWTileInstanceCountBuffer;
 
 // Final output
-[[vk::image_format("r32f")]]
-RWTexture2DArray<float> RWVolumeDensity;
 [[vk::image_format("rg16f")]]
 RWTexture2D<float2> RWVolumeMinMax;
+[[vk::image_format("r32f")]]
+RWTexture2DArray<float> RWVolumeDensity;
 [[vk::image_format("rgba8")]]
 RWTexture2DArray<float4> RWVolumeColor;
+[[vk::image_format("r32f")]]
+RWTexture2DArray<float> RWVolumeDensityFourier;
+[[vk::image_format("rgba8")]]
+RWTexture2DArray<float4> RWVolumeWeightedColorFourier;
 [[vk::image_format("rg16f")]]
 RWTexture2D<float2> RWVolumeCdfAttenuation;
 
@@ -558,10 +562,14 @@ void DrawVolumePrimitives (
             for(uint i = 0; i <= Rendered.Density.fourier_order; i++) {
                 RWVolumeDensity[uint3(PixelIndex, i << 1)] = Rendered.Density.fourier_a[i];
                 RWVolumeDensity[uint3(PixelIndex, (i << 1) + 1)] = Rendered.Density.fourier_b[i];
+                RWVolumeDensityFourier[uint3(PixelIndex, i << 1)] = Rendered.Density.fourier_a[i];
+                RWVolumeDensityFourier[uint3(PixelIndex, (i << 1) + 1)] = Rendered.Density.fourier_b[i];
             }
             for(uint i = 0; i <= Rendered.WeightedColor.fourier_order; i++) {
                 RWVolumeColor[uint3(PixelIndex, i << 1)] = float4(Rendered.WeightedColor.fourier_a[i], 1);
                 RWVolumeColor[uint3(PixelIndex, (i << 1) + 1)] = float4(Rendered.WeightedColor.fourier_b[i], 1);
+                RWVolumeWeightedColorFourier[uint3(PixelIndex, i << 1)] = float4(Rendered.WeightedColor.fourier_a[i], 1);
+                RWVolumeWeightedColorFourier[uint3(PixelIndex, (i << 1) + 1)] = float4(Rendered.WeightedColor.fourier_b[i], 1);
             }
             RWVolumeMinMax[PixelIndex] = float2(Rendered.Density.l, Rendered.Density.r);
             RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);

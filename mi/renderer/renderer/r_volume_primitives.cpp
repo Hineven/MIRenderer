@@ -50,9 +50,11 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, TileInstanceCountBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileInstanceCountBuffer)
 
-    SHADER_RESOURCE_PARAMETER(RWTexture2DArray, RWVolumeDensity)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeMinMax)
-    SHADER_RESOURCE_PARAMETER(RWTexture2DArray, RWVolumeColor)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeDensity)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeColor)
+    SHADER_RESOURCE_PARAMETER(RWTexture2DArray, RWVolumeDensityFourier)
+    SHADER_RESOURCE_PARAMETER(RWTexture2DArray, RWVolumeWeightedColorFourier)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeCdfAttenuation)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleColorAndLinearDepth)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleTransmittanceAndPdf)
@@ -206,9 +208,11 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWTileInstanceOffsetBuffer = tile_instance_offset.Raw();
         params->TileInstanceCountBuffer = tile_instance_count.Raw();
         params->RWTileInstanceCountBuffer = tile_instance_count.Raw();
-        params->RWVolumeDensity = view->G_volume_density_.Raw();
         params->RWVolumeMinMax = view->G_volume_min_max_.Raw();
+        params->RWVolumeDensity = view->G_volume_density_.Raw();
         params->RWVolumeColor = view->G_volume_color_.Raw();
+        params->RWVolumeDensityFourier = view->G_volume_density_fourier_.Raw();
+        params->RWVolumeWeightedColorFourier = view->G_volume_weighted_color_fourier_.Raw();
         params->RWVolumeCdfAttenuation = view->G_volume_cdf_attenuation_.Raw();
         params->RWVolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
         params->RWVolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();
