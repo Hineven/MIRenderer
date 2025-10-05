@@ -16,6 +16,8 @@
 Texture2D<float4> PreviousScreenProbeRadianceDepthTexture;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeRadianceDepthTexture;
+[[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWScreenProbeFilteredRadianceDepthTexture; // A standalone spatial filter pass is applied before final shading.
 
 // SH projection of foreground probes
 [[vk::image_format("rgba16f")]]
@@ -143,7 +145,7 @@ struct DiffuseIndirectLightingUB {
     uint ProbeUpdateRaysNoAdaptiveAllocation;
     uint ProbeSpawnSubTileJitterSeed;
     uint TileProbeSpawnSeed;
-    uint Padding;
+    uint EnableSpatialProbeFiltering;
 };
 
 ConstantBuffer<DiffuseIndirectLightingUB> UB;
@@ -159,6 +161,7 @@ uint GetProbeCacheEntryIndex (uint ProbeIndex1) {
 struct ScreenProbeHeader {
     bool bValid;
     bool bTemporalBlendable;
+    bool bNeedFiltering;
     uint2 PixelCoords;
 };
 
@@ -166,7 +169,8 @@ ScreenProbeHeader UnpackProbeHeader (uint PackedProbeHeader) {
     ScreenProbeHeader Header;
     Header.bValid = !(PackedProbeHeader & 0x80000000u); // Make INVALID_UINT unpacks to an invalid probe
     Header.bTemporalBlendable = (PackedProbeHeader & 0x40000000u) != 0;
-    Header.PixelCoords = uint2(PackedProbeHeader & 0xFFFFu, (PackedProbeHeader >> 16) & 0x3FFFu);
+    Header.bNeedFiltering = (PackedProbeHeader & 0x8000u) != 0;
+    Header.PixelCoords = uint2(PackedProbeHeader & 0x7FFFu, (PackedProbeHeader >> 16) & 0x3FFFu);
     return Header;
 }
 
@@ -174,6 +178,7 @@ uint PackProbeHeader (ScreenProbeHeader Header) {
     uint ProbeHeader = 0;
     ProbeHeader |= Header.bValid ? 0 : 0x80000000u;
     ProbeHeader |= Header.bTemporalBlendable ? 0x40000000u : 0;
+    ProbeHeader |= Header.bNeedFiltering ? 0x8000u : 0;
     ProbeHeader |= (Header.PixelCoords.x | (Header.PixelCoords.y << 16)) & 0x3FFFFFFF;
     return ProbeHeader;
 }
@@ -618,9 +623,15 @@ void SpawnScreenProbes (uint DispatchID : SV_DispatchThreadID) {
             SpawnListWaveIndexBase = WaveReadLaneFirst(SpawnListWaveIndexBase);
             uint SpawnListIndex = SpawnListWaveIndexBase + SpawnListWaveRank;
             if(SpawnListIndex < UB.MaxProbesToSpawnPerFrame) {
+                ScreenProbeHeader PreviousHeader = UnpackProbeHeader(RWTileScreenProbeHeaderTexture[TileIndex]);
                 // Write the header to the spawn list
                 ScreenProbeHeader Header = (ScreenProbeHeader)0;
                 Header.bValid = true;
+                if(!PreviousHeader.bValid) {
+                    // We do not have a valid previous probe, so we need to spawn a new probe with aggresive spatial filtering configuration
+                    // to supress noise
+                    Header.bNeedFiltering = true;
+                }
                 Header.PixelCoords = ScreenCoords;
                 RWScreenProbeSpawnListBuffer[SpawnListIndex] = PackProbeHeader(Header);
             }
@@ -640,6 +651,7 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
     uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
     ScreenProbeHeader Header = (ScreenProbeHeader)0;
     Header.bValid = true;
+    Header.bNeedFiltering = true; // Always enable filtering for probes spawned in reprojection fail tiles
     Header.PixelCoords = FailTileIndex * TILE_SIZE + SubTileJitter;
     uint PackedHeader = PackProbeHeader(Header);
     // Firstly try to append to the tail of the spawn list
@@ -908,7 +920,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
                                                   SharedProbeBlendedRadiance[ProbeTexelIndex].w));
             uint TexelSampleCount = SharedProbeTexelWeight[ProbeTexelIndex];
             // Write out reconstructed radiance to a separate buffer for later blending
-            float4 ReconstructedRadianceDepth = TexelSampleCount > 0 ? (RadianceDepthSum / TexelSampleCount) : float4(BackupRadiance, 1000);
+            float4 ReconstructedRadianceDepth = (TexelSampleCount > 0) ? (RadianceDepthSum / TexelSampleCount) : float4(BackupRadiance, 1000);
             RWScreenProbeReconstructedRadianceDepthBuffer[TileIndex * TILE_SIZE + ProbeTexelCoords] = ReconstructedRadianceDepth;
             float3 Radiance = ReconstructedRadianceDepth.xyz;
             float AreaCorrectionFactor = 1.f;
@@ -1225,6 +1237,120 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
     }
 }
 
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID)
+{
+    uint2 TileIndex = GroupID;
+    uint2 AtlasTexelCoords = TileIndex * TILE_SIZE + LocalID;
+    ScreenProbeHeader Header = UnpackProbeHeader(TileScreenProbeHeaderTexture.Load(int3(TileIndex, 0)));
+    if(!Header.bValid) {
+        RWScreenProbeFilteredRadianceDepthTexture[AtlasTexelCoords] = float4(0, 0, 0, 1000);
+        return;
+    }
+    CameraParameters C = GetActiveCamera();
+    float2 ProbeUV = (Header.PixelCoords + 0.5f) * C.InvFilmDimensions;
+    float  ProbeReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, ProbeUV, 0).x;
+    float3 ProbeNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, ProbeUV, 0).xyz * 2 - 1);
+    float  ProbeLinearDepth = ReversedZDepthToLinearDepth(C, ProbeReversedZDepth);
+    float3 ProbeWorldPos = RecoverWorldPositionPixelCoords(C, Header.PixelCoords, ProbeLinearDepth);
+    
+    float  SearchSize = ProbeLinearDepth * UB.ProbeReprojectionSearchSize;
+    float3 ProbeTangent, ProbeBitangent;
+    GetOrthoVectors(ProbeNormal, ProbeTangent, ProbeBitangent);
+    
+    float4 SelfRadianceDepth = RWScreenProbeRadianceDepthTexture[AtlasTexelCoords];
+    float2 ProbeTexelUV = (LocalID + 0.5f) / TILE_SIZE;
+    float3 LocalTexelDirection = HemiOctahedron01ToUnitVectorA(ProbeTexelUV);
+    float3 WorldTexelDirection = LocalTexelDirection.x * ProbeTangent + LocalTexelDirection.y * ProbeBitangent + LocalTexelDirection.z * ProbeNormal;
+    float4 SumRadianceDepth = SelfRadianceDepth;
+    float  CurrentHitDistance = SelfRadianceDepth.w;
+    float  SumWeight = 1.0f;
+
+    float RelaxFactor = 1.f;
+    if(!Header.bTemporalBlendable || Header.bNeedFiltering) {
+        RelaxFactor = 2.f; // More aggressive search for non-temporal-blendable & filtering required probes
+    }
+
+    const int RADIUS = 3;
+    const int SIZE   = (RADIUS << 1);
+
+    if(UB.EnableSpatialProbeFiltering != 0)
+    for (int i = 0; i < SIZE; ++i)
+    {
+        int  Sign = (i & 1) ? -1 : 1;
+        int  Step = Sign * ((i >> 1) + 1);
+#ifdef VERTICAL_FILTER_DIRECTION
+        int2 FilterDirection = int2(0, 1);
+#else
+        int2 FilterDirection = int2(1, 0);
+#endif
+        uint PackedDestHeader = FindClosestScreenProbe(TileIndex, Step * FilterDirection);
+        ScreenProbeHeader DestHeader = UnpackProbeHeader(PackedDestHeader);
+        if (!DestHeader.bValid)
+        {
+            continue;   // invalid probe
+        }
+        float2 DestProbeUV = (DestHeader.PixelCoords + 0.5f) * C.InvFilmDimensions;
+        float  DestProbeReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, DestProbeUV, 0).x;
+        float  DestProbeLinearDepth = ReversedZDepthToLinearDepth(C, DestProbeReversedZDepth);
+        float3 DestProbeWorldPos = RecoverWorldPositionPixelCoords(C, DestHeader.PixelCoords, DestProbeLinearDepth);
+        float3 DestProbeNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, DestProbeUV, 0).xyz * 2 - 1);
+
+        if (abs(dot(ProbeWorldPos - DestProbeWorldPos, ProbeNormal)) > SearchSize * RelaxFactor || dot(WorldTexelDirection, DestProbeNormal) < 0.0f)
+        {
+            continue;   // oriented hemispheres do not overlap
+        }
+
+        float3 DestProbeTangent, DestProbeBitangent;
+        GetOrthoVectors(DestProbeNormal, DestProbeTangent, DestProbeBitangent);
+        float3 DestProbeLocalDirection = float3(
+            dot(WorldTexelDirection, DestProbeTangent),
+            dot(WorldTexelDirection, DestProbeBitangent),
+            dot(WorldTexelDirection, DestProbeNormal)
+        );
+        float2 DestProbeTexelUV = UnitVectorToHemiOctahedron01A(DestProbeLocalDirection);
+        uint2 DestProbeTexelCoords = DestProbeTexelUV * TILE_SIZE;
+        uint2 DestProbeTileIndex = DestHeader.PixelCoords / TILE_SIZE;
+        uint2 DestProbeAtlasTexelCoords = DestProbeTileIndex * TILE_SIZE + DestProbeTexelCoords;
+        float4 DestProbeRadianceDepth = RWScreenProbeRadianceDepthTexture[DestProbeAtlasTexelCoords];
+        float3 HitPosition = DestProbeRadianceDepth.w * WorldTexelDirection + DestProbeWorldPos;
+        float3 ReprojectedDirection = HitPosition - ProbeWorldPos;
+        float  HitDistance = length(ReprojectedDirection) + 1e-5f;
+        ReprojectedDirection /= HitDistance;
+        if(dot(ReprojectedDirection, WorldTexelDirection) < 0.98f) {
+            continue;   // skip probes with high angle error after reprojection
+        }
+        float  ClampedHitDistance = min(HitDistance, CurrentHitDistance);
+
+        float Weight = pow(saturate(1.0f - abs(ProbeLinearDepth - DestProbeLinearDepth) / ProbeLinearDepth), 8.0f);
+
+        SumRadianceDepth += Weight * float4(DestProbeRadianceDepth.rgb, ClampedHitDistance);
+        SumWeight += Weight;
+
+        CurrentHitDistance = SumRadianceDepth.w / SumWeight;
+    }
+
+    RWScreenProbeFilteredRadianceDepthTexture[AtlasTexelCoords] = SumRadianceDepth / SumWeight;
+}
+
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void WriteBackFilteredScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID)
+{
+    uint2 TileIndex = GroupID;
+    uint2 AtlasTexelCoords = TileIndex * TILE_SIZE + LocalID;
+    ScreenProbeHeader Header = UnpackProbeHeader(RWTileScreenProbeHeaderTexture[TileIndex]);
+    if(!Header.bValid) {
+        return;
+    }
+    
+    // TODO this seems to be causing a lot quality downgrade...
+    if(!Header.bTemporalBlendable && Header.bNeedFiltering) { // A strict condition for spatially-reused radiance to be written back (for temporal reuse)
+        // Write back filtered radiance to foreground for faster convergence
+        RWScreenProbeRadianceDepthTexture[AtlasTexelCoords] = RWScreenProbeFilteredRadianceDepthTexture[AtlasTexelCoords];
+    }
+}
+
 // A scan-sum is performed on RWScreenProbeCacheMRUFlagBuffer (in external shaders)
 // Results are accumulated into RWScreenProbeCacheMRUFlagPrefixSumBuffer
 
@@ -1341,7 +1467,7 @@ void ComputeScreenProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         uint TexelIndex = BaseTexelIndex + LocalID;
         uint2 TexelCoords = uint2(TexelIndex % TILE_SIZE, TexelIndex / TILE_SIZE);
         uint2 AtlasTexelCoords = ProbeAtlasBaseCoords + TexelCoords;
-        float4 RadianceDepth = RWScreenProbeRadianceDepthTexture[AtlasTexelCoords];
+        float4 RadianceDepth = RWScreenProbeFilteredRadianceDepthTexture[AtlasTexelCoords];
         float3 Radiance = RadianceDepth.xyz;
         float2 TexelUV = (float2(TexelCoords) + 0.5f) / TILE_SIZE;
         float3 LocalTexelDirection = HemiOctahedron01ToUnitVectorA(TexelUV);

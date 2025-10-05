@@ -33,6 +33,9 @@ public:
 
     FORCEINLINE RHIPipelineStageFlags GetReadStages () const { return read_stages_; }
     FORCEINLINE RHIPipelineStageFlags GetWriteStages () const {return write_stages_;}
+
+    // Update RDG resource tracking after manual RHI usage. If you're using it as RDG
+    // shader parameters or added it to pass resource access, you don't need to call this explicitly.
     FORCEINLINE void Use (RHIPipelineStageFlags stages, RHIGPUAccessFlags usage, RHITextureLayoutType layout = RHITextureLayoutType::kUndefined) {
         RDGResource::Use(stages, usage);
         if (layout != RHITextureLayoutType::kUndefined) {

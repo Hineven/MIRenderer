@@ -15,10 +15,10 @@
 #include "r_persistent.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<float> CVar_ProbeSearchSize(
+static CVar<float> CVar_ProbeSearchSize(
     "r.diffuse_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
-    5.f
+    2.f
 );
 
 static CVar<bool> CVar_ScreenProbesRayImportanceSampling(
@@ -51,6 +51,12 @@ static CVar<bool> CVar_Debug_OutputProbeUpdateRays(
     false
 );
 
+static CVar<bool> CVar_EnableSpatialProbeFiltering(
+    "r.diffuse_indirect_lighting.enable_spatial_probe_filtering",
+    "Enable spatial filtering of probes to reduce noise and make the primary cache converge faster.",
+    true
+);
+
 struct DiffuseIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     uint32_t HeaderTileDimension;
@@ -72,7 +78,7 @@ struct DiffuseIndirectLightingUB {
     uint32_t ProbeUpdateRaysNoAdaptiveAllocation;
     uint32_t ProbeSpawnSubTileJitterSeed;
     uint32_t TileProbeSpawnSeed;
-    uint32_t Padding;
+    uint32_t EnableSpatialProbeFiltering;
 };
 
 BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
@@ -80,6 +86,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousScreenProbeRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeRadianceDepthTexture)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeFilteredRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeIrradianceTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeSHCoefficientsRTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeSHCoefficientsGTexture)
@@ -271,13 +278,33 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbesAndCacheShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbesAndCache");
 
-class UpdateScreenProbeCacheMRUQueueShader : public DiffuseIndirectLightingShader {
+class FilterScreenProbesShader : public DiffuseIndirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
 };
 
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "FilterScreenProbes");
+
+class WriteBackFilteredScreenProbesShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(WriteBackFilteredScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "WriteBackFilteredScreenProbes");
+
+class UpdateScreenProbeCacheMRUQueueShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {"VERTICAL_FILTER_DIRECTION"};
+    }
+};
+
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeCacheMRUQueueShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeCacheMRUQueue");
+
 
 class MakeTileScreenProbeHeaderIndexShader : public RDGShader {
 public:
@@ -399,6 +426,11 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_radiance_depth = builder.CreateTexture2D(
         atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    screen_probe_radiance_depth->SetName("ScreenProbeRadianceDepth");
+    auto screen_probe_filtered_radiance_depth = builder.CreateTexture2D(
+        atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    screen_probe_filtered_radiance_depth->SetName("ScreenProbeFilteredRadianceDepth");
     auto screen_probe_irradiance = builder.CreateTexture2D(
         tile_dimensions.x * 2, tile_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
     );
@@ -502,6 +534,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeRadianceDepthTexture.Raw();
         params->RWScreenProbeRadianceDepthTexture =
             screen_probe_radiance_depth.Raw();
+        params->RWScreenProbeFilteredRadianceDepthTexture =
+            screen_probe_filtered_radiance_depth.Raw();
         params->RWScreenProbeIrradianceTexture =
             screen_probe_irradiance.Raw();
         params->RWScreenProbeSHCoefficientsRTexture =
@@ -620,6 +654,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
             UB->TileProbeSpawnSeed =
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
+            UB->EnableSpatialProbeFiltering = CVar_EnableSpatialProbeFiltering.Get() ? 1 : 0;
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;
@@ -740,6 +775,34 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         Helpers::AddComputeIndirectPass<UpdateScreenProbesAndCacheShader>(
             builder, shader, params,
             spawn_list_command.Raw()
+        );
+    }
+
+    // Filter probes
+    {
+        auto shader  = lib.GetShader<FilterScreenProbesShader>(ini);
+        Helpers::AddComputePass<FilterScreenProbesShader>(
+            builder, shader, params,
+            tile_dimensions.x, tile_dimensions.y
+        );
+    }
+
+    {
+        auto ini_s = ini;
+        ini_s.optional_macros.push_back("VERTICAL_FILTER_DIRECTION");
+        auto shader  = lib.GetShader<FilterScreenProbesShader>(ini_s);
+        Helpers::AddComputePass<FilterScreenProbesShader>(
+            builder, shader, params,
+            tile_dimensions.x, tile_dimensions.y
+        );
+    }
+
+    // Write back filtered probes to history for unstable probes (faster convergence)
+    {
+        auto shader = lib.GetShader<WriteBackFilteredScreenProbesShader>(ini);
+        Helpers::AddComputePass<WriteBackFilteredScreenProbesShader>(
+            builder, shader, params,
+            tile_dimensions.x, tile_dimensions.y
         );
     }
 

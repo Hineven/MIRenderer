@@ -558,7 +558,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 // 拷贝
                 queue.CopyTextureToBuffer(rhi_visibility, readback_buffer_visibility.Raw());
                 queue.CopyTextureToBuffer(rhi_fwd_depth, readback_buffer_depth.Raw());
-                // 因为这个纹理是RDG里面搞到的，得更新资源追踪
+                // 因为这个纹理是RDG里面搞到的，RDG外手操之后得更新资源追踪
                 view->G_visibility_->Use(
                     RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
                     RHITextureLayoutType::kTransferSrcOptimal

@@ -49,6 +49,8 @@ public:
     FORCEINLINE RHIPipelineStageFlags GetWriteStages () const {return write_stages_;}
     FORCEINLINE RHIGPUAccessFlags GetReadAccess () const { return read_access_; }
     FORCEINLINE RHIGPUAccessFlags GetWriteAccess () const {return write_access_;}
+    // Update RDG resource tracking after manual RHI usage. If you're using it as RDG
+    // shader parameters or added to RDG pass resource accesses, you don't need to call this explicitly.
     FORCEINLINE void Use (RHIPipelineStageFlags stages, RHIGPUAccessFlags usage) {
         if (usage & RHIGPUAccessFlagBits::kWrite) {
             // Reset the "un-barriered" read access, because a xx-w barrier is assumed to be placed before Use(write).
