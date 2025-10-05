@@ -86,6 +86,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousScreenProbeRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeRadianceDepthTexture)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeVerticalFilteredRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeFilteredRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeIrradianceTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeSHCoefficientsRTexture)
@@ -299,7 +300,7 @@ public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
     static std::vector<std::string> GetShaderOptionalMacros() {
-        return {"VERTICAL_FILTER_DIRECTION"};
+        return {"FIRST_PASS_VERTICAL_FILTER_DIRECTION"};
     }
 };
 
@@ -426,11 +427,12 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_radiance_depth = builder.CreateTexture2D(
         atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
     );
-    screen_probe_radiance_depth->SetName("ScreenProbeRadianceDepth");
+    auto screen_probe_vertical_filtered_radiance_depth = builder.CreateTexture2D(
+        atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+    );
     auto screen_probe_filtered_radiance_depth = builder.CreateTexture2D(
         atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
     );
-    screen_probe_filtered_radiance_depth->SetName("ScreenProbeFilteredRadianceDepth");
     auto screen_probe_irradiance = builder.CreateTexture2D(
         tile_dimensions.x * 2, tile_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
     );
@@ -534,6 +536,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeRadianceDepthTexture.Raw();
         params->RWScreenProbeRadianceDepthTexture =
             screen_probe_radiance_depth.Raw();
+        params->RWScreenProbeVerticalFilteredRadianceDepthTexture =
+            screen_probe_vertical_filtered_radiance_depth.Raw();
         params->RWScreenProbeFilteredRadianceDepthTexture =
             screen_probe_filtered_radiance_depth.Raw();
         params->RWScreenProbeIrradianceTexture =
@@ -780,17 +784,16 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
     // Filter probes
     {
-        auto shader  = lib.GetShader<FilterScreenProbesShader>(ini);
+        auto ini_s = ini;
+        ini_s.optional_macros.push_back("FIRST_PASS_VERTICAL_FILTER_DIRECTION");
+        auto shader  = lib.GetShader<FilterScreenProbesShader>(ini_s);
         Helpers::AddComputePass<FilterScreenProbesShader>(
             builder, shader, params,
             tile_dimensions.x, tile_dimensions.y
         );
     }
-
     {
-        auto ini_s = ini;
-        ini_s.optional_macros.push_back("VERTICAL_FILTER_DIRECTION");
-        auto shader  = lib.GetShader<FilterScreenProbesShader>(ini_s);
+        auto shader  = lib.GetShader<FilterScreenProbesShader>(ini);
         Helpers::AddComputePass<FilterScreenProbesShader>(
             builder, shader, params,
             tile_dimensions.x, tile_dimensions.y

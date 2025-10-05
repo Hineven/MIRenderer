@@ -17,6 +17,8 @@ Texture2D<float4> PreviousScreenProbeRadianceDepthTexture;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeRadianceDepthTexture;
 [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWScreenProbeVerticalFilteredRadianceDepthTexture;
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeFilteredRadianceDepthTexture; // A standalone spatial filter pass is applied before final shading.
 
 // SH projection of foreground probes
@@ -1244,7 +1246,6 @@ void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThre
     uint2 AtlasTexelCoords = TileIndex * TILE_SIZE + LocalID;
     ScreenProbeHeader Header = UnpackProbeHeader(TileScreenProbeHeaderTexture.Load(int3(TileIndex, 0)));
     if(!Header.bValid) {
-        RWScreenProbeFilteredRadianceDepthTexture[AtlasTexelCoords] = float4(0, 0, 0, 1000);
         return;
     }
     CameraParameters C = GetActiveCamera();
@@ -1254,11 +1255,14 @@ void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThre
     float  ProbeLinearDepth = ReversedZDepthToLinearDepth(C, ProbeReversedZDepth);
     float3 ProbeWorldPos = RecoverWorldPositionPixelCoords(C, Header.PixelCoords, ProbeLinearDepth);
     
-    float  SearchSize = ProbeLinearDepth * UB.ProbeReprojectionSearchSize;
+    float  SearchSize = ProbeLinearDepth * UB.ProbeReprojectionSearchSize * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
     float3 ProbeTangent, ProbeBitangent;
     GetOrthoVectors(ProbeNormal, ProbeTangent, ProbeBitangent);
-    
+#ifdef FIRST_PASS_VERTICAL_FILTER_DIRECTION
     float4 SelfRadianceDepth = RWScreenProbeRadianceDepthTexture[AtlasTexelCoords];
+#else
+    float4 SelfRadianceDepth = RWScreenProbeVerticalFilteredRadianceDepthTexture[AtlasTexelCoords];
+#endif 
     float2 ProbeTexelUV = (LocalID + 0.5f) / TILE_SIZE;
     float3 LocalTexelDirection = HemiOctahedron01ToUnitVectorA(ProbeTexelUV);
     float3 WorldTexelDirection = LocalTexelDirection.x * ProbeTangent + LocalTexelDirection.y * ProbeBitangent + LocalTexelDirection.z * ProbeNormal;
@@ -1271,7 +1275,7 @@ void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThre
         RelaxFactor = 2.f; // More aggressive search for non-temporal-blendable & filtering required probes
     }
 
-    const int RADIUS = 3;
+    const int RADIUS = 2;
     const int SIZE   = (RADIUS << 1);
 
     if(UB.EnableSpatialProbeFiltering != 0)
@@ -1279,12 +1283,12 @@ void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThre
     {
         int  Sign = (i & 1) ? -1 : 1;
         int  Step = Sign * ((i >> 1) + 1);
-#ifdef VERTICAL_FILTER_DIRECTION
+#ifdef FIRST_PASS_VERTICAL_FILTER_DIRECTION
         int2 FilterDirection = int2(0, 1);
 #else
         int2 FilterDirection = int2(1, 0);
 #endif
-        uint PackedDestHeader = FindClosestScreenProbe(TileIndex, Step * FilterDirection);
+        uint PackedDestHeader = FindClosestScreenProbe(Header.PixelCoords, Step * FilterDirection);
         ScreenProbeHeader DestHeader = UnpackProbeHeader(PackedDestHeader);
         if (!DestHeader.bValid)
         {
@@ -1312,17 +1316,22 @@ void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThre
         uint2 DestProbeTexelCoords = DestProbeTexelUV * TILE_SIZE;
         uint2 DestProbeTileIndex = DestHeader.PixelCoords / TILE_SIZE;
         uint2 DestProbeAtlasTexelCoords = DestProbeTileIndex * TILE_SIZE + DestProbeTexelCoords;
+#ifdef FIRST_PASS_VERTICAL_FILTER_DIRECTION
         float4 DestProbeRadianceDepth = RWScreenProbeRadianceDepthTexture[DestProbeAtlasTexelCoords];
+#else
+        float4 DestProbeRadianceDepth = RWScreenProbeVerticalFilteredRadianceDepthTexture[DestProbeAtlasTexelCoords];
+#endif
         float3 HitPosition = DestProbeRadianceDepth.w * WorldTexelDirection + DestProbeWorldPos;
         float3 ReprojectedDirection = HitPosition - ProbeWorldPos;
         float  HitDistance = length(ReprojectedDirection) + 1e-5f;
         ReprojectedDirection /= HitDistance;
-        if(dot(ReprojectedDirection, WorldTexelDirection) < 0.98f) {
+        if(dot(ReprojectedDirection, WorldTexelDirection) < 0.99f) {
             continue;   // skip probes with high angle error after reprojection
         }
         float  ClampedHitDistance = min(HitDistance, CurrentHitDistance);
 
-        float Weight = pow(saturate(1.0f - abs(ProbeLinearDepth - DestProbeLinearDepth) / ProbeLinearDepth), 8.0f);
+        float RelativeDepthDifference = abs(ProbeLinearDepth - DestProbeLinearDepth) / max(ProbeLinearDepth, DestProbeLinearDepth);
+        float Weight = exp(-2000 * RelativeDepthDifference * RelativeDepthDifference); // From lumen
 
         SumRadianceDepth += Weight * float4(DestProbeRadianceDepth.rgb, ClampedHitDistance);
         SumWeight += Weight;
@@ -1330,7 +1339,11 @@ void FilterScreenProbes(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThre
         CurrentHitDistance = SumRadianceDepth.w / SumWeight;
     }
 
+#ifdef FIRST_PASS_VERTICAL_FILTER_DIRECTION
+    RWScreenProbeVerticalFilteredRadianceDepthTexture[AtlasTexelCoords] = SumRadianceDepth / SumWeight;
+#else
     RWScreenProbeFilteredRadianceDepthTexture[AtlasTexelCoords] = SumRadianceDepth / SumWeight;
+#endif
 }
 
 
