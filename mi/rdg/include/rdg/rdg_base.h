@@ -14,7 +14,7 @@
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_type_helpers.h"
 MI_NAMESPACE_BEGIN
-    // A resource that is imported into / exist only within a render graph
+// A resource that is imported into / exist only within a render graph
 // Only the render thread can access its references, so no need for thread-safe reference counting.
 class RDGResource : public NonCopyable, public NonMovable, public RefCounted<false> {
 public:
@@ -49,6 +49,8 @@ public:
     FORCEINLINE RHIPipelineStageFlags GetWriteStages () const {return write_stages_;}
     FORCEINLINE RHIGPUAccessFlags GetReadAccess () const { return read_access_; }
     FORCEINLINE RHIGPUAccessFlags GetWriteAccess () const {return write_access_;}
+    // Update RDG resource tracking after manual RHI usage. If you're using it as RDG
+    // shader parameters or added to RDG pass resource accesses, you don't need to call this explicitly.
     FORCEINLINE void Use (RHIPipelineStageFlags stages, RHIGPUAccessFlags usage) {
         if (usage & RHIGPUAccessFlagBits::kWrite) {
             // Reset the "un-barriered" read access, because a xx-w barrier is assumed to be placed before Use(write).
@@ -98,6 +100,21 @@ template<CPointerType T>
 FORCEINLINE bool RDGParameter_IsUnsetPointer (T ptr) {
     return reinterpret_cast<uint64_t>(ptr) == RDGParameter_UnsetPointer;
 }
+
+template<CMemTrivial T>
+    struct BufferPtrOrValue {
+    union {
+        RDGBuffer * buffer;
+        T value;
+    };
+    bool is_buffer;
+    FORCEINLINE BufferPtrOrValue(T v) : value(v), is_buffer(false) {}
+    FORCEINLINE BufferPtrOrValue(RDGBuffer * buf) : buffer(buf), is_buffer(true) {}
+};
+
+typedef BufferPtrOrValue<uint32_t> BufferPtrOrUint; // Commonly used for indirect command generation
+typedef BufferPtrOrValue<uint64_t> BufferPtrOrUint64; // Used for device address
+typedef BufferPtrOrValue<float> BufferPtrOrFloat;
 
 MI_NAMESPACE_END
 #endif //MI_RDG_H

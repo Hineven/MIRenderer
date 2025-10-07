@@ -15,19 +15,6 @@ MI_NAMESPACE_BEGIN
 // Simple helpers for easily adding commonly used RDG passes. As well as invoking raw RHI commands.
 class Helpers {
 public:
-    template<CMemTrivial T>
-    struct BufferPtrOrValue {
-        union {
-            RDGBuffer * buffer;
-            T value;
-        };
-        bool is_buffer;
-        FORCEINLINE BufferPtrOrValue(T v) : value(v), is_buffer(false) {}
-        FORCEINLINE BufferPtrOrValue(RDGBuffer * buf) : buffer(buf), is_buffer(true) {}
-    };
-    typedef BufferPtrOrValue<uint32_t> BufferPtrOrUint; // Commonly used for indirect command generation
-    typedef BufferPtrOrValue<uint64_t> BufferPtrOrUint64; // Used for device address
-    typedef BufferPtrOrValue<float> BufferPtrOrFloat;
 
     static void Clear(RenderGraphBuilder & builder, RDGTexture * texture, glm::vec4 clear_value = {}, uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t num_layers = 1);
 

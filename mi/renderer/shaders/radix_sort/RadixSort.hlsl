@@ -17,8 +17,13 @@ StructuredBuffer<uint> Count;
 RWStructuredBuffer<uint> RWOutKeys;
 RWStructuredBuffer<uint> RWOutValues;
 
+#ifndef BINS_PER_PASS
 #define BINS_PER_PASS 256 // As well as threads per group
+#endif
+
+#ifndef ELEMENTS_PER_SEGMENT
 #define ELEMENTS_PER_SEGMENT 1024
+#endif
 
 #ifndef WAVE_SIZE
 #error "WAVE_SIZE must be defined"
@@ -32,8 +37,6 @@ RWStructuredBuffer<uint> RWOutValues;
 #if BINS_PER_PASS % WAVE_SIZE
 #error "BINS_PER_PASS must be a multiple of WAVE_SIZE"
 #endif
-
-
 
 groupshared uint SharedBins[BINS_PER_PASS];
 [numthreads(BINS_PER_PASS, 1, 1)]
@@ -182,26 +185,33 @@ void RadixSortScatter (uint LocalID : SV_GroupThreadID, uint GroupID : SV_GroupI
     // Reorder the elements
     for(int Offset = ELEMENTS_PER_SEGMENT; Offset > 0; Offset -= WAVE_SIZE) {
         int Index = StartOffset + Offset - WAVE_SIZE + LocalID;
+        uint Key = 0, BinIndex = 0;
+        bool bIsPrimary = false;
+        uint Rank = 0;
         if (Index < NumElements) {
-            uint Key = Keys[Index];
-            uint BinIndex = (Key >> UB.BitShift) & (BINS_PER_PASS - 1);
+            Key = Keys[Index];
+            BinIndex = (Key >> UB.BitShift) & (BINS_PER_PASS - 1);
             InterlockedOr(SharedBinsMask[BinIndex], WaveMask_T(1) << LocalID);
-            GroupMemoryBarrierWithGroupSync();
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (Index < NumElements) {
             WaveMask_T Threads = SharedBinsMask[BinIndex];
             WaveMask_T Masked = Threads & (~((WaveMask_T(1) << LocalID) - 1));
-            uint Rank = countbits(Masked);
+            Rank = countbits(Masked);
             uint ReorderIndex = SharedBins[BinIndex] - Rank;
             // Reorder
             RWOutKeys[ReorderIndex] = Key;
             RWOutValues[ReorderIndex] = Values[Index];
             // Update the bin count
-            bool bIsPrimary = Masked == Threads;
-            GroupMemoryBarrierWithGroupSync();
+            bIsPrimary = Masked == Threads;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (Index < NumElements) {
             if (bIsPrimary) {
                 SharedBins[BinIndex] -= Rank;
                 SharedBinsMask[BinIndex] = 0; // Reset the mask for the next pass
             }
-            GroupMemoryBarrierWithGroupSync();
         }
+        GroupMemoryBarrierWithGroupSync();
     }
 }

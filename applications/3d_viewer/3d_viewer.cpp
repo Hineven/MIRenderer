@@ -198,7 +198,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     // Upload sky texture
     {
-        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture", GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.png"));
+        sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
     }
 
     auto default_mat = Material::Create("default_mat", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
@@ -412,7 +413,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     // 垂直旋转（俯仰角）- 围绕右向量旋转
                     glm::mat4 rotate_x = glm::rotate(glm::mat4(1.0f), -delta_y, camera_right);
                     view->camera_.direction = glm::vec3(rotate_x * glm::vec4(view->camera_.direction, 0.0f));
-                    // view->camera_.Up = glm::vec3(rotate_x * glm::vec4(view->camera_.Up, 0.0f));
 
                     // 确保所有向量都是单位向量
                     view->camera_.direction = glm::normalize(view->camera_.direction);
@@ -558,7 +558,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 // 拷贝
                 queue.CopyTextureToBuffer(rhi_visibility, readback_buffer_visibility.Raw());
                 queue.CopyTextureToBuffer(rhi_fwd_depth, readback_buffer_depth.Raw());
-                // 因为这个纹理是RDG里面搞到的，得更新资源追踪
+                // 因为这个纹理是RDG里面搞到的，RDG外手操之后得更新资源追踪
                 view->G_visibility_->Use(
                     RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
                     RHITextureLayoutType::kTransferSrcOptimal
@@ -762,8 +762,8 @@ MI_NAMESPACE_END
 
 int main () {
     mi::MainLoopStartConfig cfg;
-    cfg.window_width = 1440;
-    cfg.window_height = 900;
+    cfg.window_width = 1920;
+    cfg.window_height = 1080;
 
 #ifndef NDEBUG
     // 仅用于Debug

@@ -198,7 +198,7 @@ void ReferencePathTracerRaygen() {
         } else if(Payload.TCurrent >= Ray.TMax) { // Miss
             // No hits, accumulate environment lighting and terminate
             float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -Ray.Direction, 0).xyz;
-            //Radiance += Throughput * EnvironmentColor;
+            Radiance += Throughput * EnvironmentColor;
             // Terminate directly
             break;
         } else if(Payload.bIsSurfaceHit) { // Hits a mesh surface
@@ -249,7 +249,7 @@ void ReferencePathTracerRaygen() {
             } else {
                 // Ignore backface hits for surfaces
                 // Advance ray to next hit
-                Ray.TMin = Payload.TCurrent + 1e-4f;
+                Ray.TMin = Payload.TCurrent + 1e-5f;
             }
         } else { // Hit a volume boundary.
             // Volume boundary hit.
@@ -289,8 +289,8 @@ void ReferencePathTracerRaygen() {
                 if(CurrentOverlappingVolumePrimitiveCount < MAX_OVERLAPPING_VOLUME_PRIMITIVES) {
                     OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
                     OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
+                    CurrentOverlappingVolumePrimitiveCount ++;
                 }
-                CurrentOverlappingVolumePrimitiveCount ++;
             } else {
                 // Frontface hits: exiting the volume.
                 // Remove the primitive from the overlapping list
@@ -308,7 +308,9 @@ void ReferencePathTracerRaygen() {
                         OverlappingVolumePrimitivesInstanceIndices[i] = OverlappingVolumePrimitivesInstanceIndices[i + 1];
                     }
                 }
-                CurrentOverlappingVolumePrimitiveCount --;
+                if(bFound) {
+                    CurrentOverlappingVolumePrimitiveCount --;
+                }
             }
             // Forward the ray a little bit
             Ray.TMin = Payload.TCurrent + 2e-5f;

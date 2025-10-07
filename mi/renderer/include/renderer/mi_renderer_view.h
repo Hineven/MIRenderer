@@ -68,29 +68,7 @@ public:
 
 };
 
-// The data kept across frames for a view.
-struct RendererViewPersistentData {
-
-    RendererViewPersistentData() ;
-    ~RendererViewPersistentData() ;
-
-    void Init ();
-    void Update (RendererView * view);
-
-    TRef<RDGTexture> prev_G_depth;
-    TRef<RDGTexture> prev_G_normal;
-
-    TRef<RDGTexture> prev_radiance_;
-
-    TRef<RDGTexture> path_tracing_film_;
-
-    Camera prev_camera;
-    uint32_t view_index {};
-    uint32_t frame_index_ {};
-
-
-    Scene * prev_scene_;
-};
+struct RendererViewPersistentData;
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
@@ -100,9 +78,6 @@ struct RendererView {
 
     // Called once per frame to initialize the view.
     void InitFrame ();
-
-    // Called once per frame at the frame end to roll data to the persistent store
-    void UpdatePersistentData ();
 
     // Update view common shader parameters
     void SetupViewCommonShaderParameters (RenderGraphBuilder & builder);
@@ -162,6 +137,13 @@ struct RendererView {
 
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;
+    TRef<RDGTexture> denoised_diffuse_direct_lighting_;
+
+    // Diffuse indirect lighting
+    TRef<RDGTexture> diffuse_indirect_lighting_;
+    // Special: this is set by the denoiser. Not created by the view itself.
+    TRef<RDGTexture> denoised_diffuse_indirect_lighting_;
+
     // Volume direct lighting
     TRef<RDGTexture> volume_direct_lighting_;
 
@@ -178,13 +160,15 @@ struct RendererView {
         TRef<RDGTexture> visualize_traced_rays_output_;
     } debug_views_;
 
-    struct {
+    struct DebugBuffers {
         // For visualizing traced rays. Can be created and written to in various passes.
         TRef<RDGBuffer> traced_ray_count;
         TRef<RDGBuffer> traced_ray_origins;
         TRef<RDGBuffer> traced_ray_directions;
         TRef<RDGBuffer> traced_ray_states;
         TRef<RDGBuffer> traced_ray_colors;
+
+        void CreateTracedRayBuffers (RenderGraphBuilder & builder, uint32_t max_num_rays);
     } debug_buffers_;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
@@ -200,7 +184,7 @@ struct RendererView {
     DebugCommonShaderParameters * debug_common_params_;
 
     // Persistent data
-    std::unique_ptr<RendererViewPersistentData> persistent_data_ {};
+    RendererViewPersistentData * persistent_data_ {};
 
 };
 

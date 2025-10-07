@@ -16,8 +16,11 @@ struct LightingCompositionUB {
 ConstantBuffer<LightingCompositionUB> UB;
 
 Texture2D<float4> DiffuseDirectLightingTexture;
+Texture2D<float4> DiffuseIndirectLightingTexture;
 Texture2D<float4> VolumeDirectLightingTexture;
 //Texture2D<float4> HistoryDiffuseDirectLightingTexture;
+
+TextureCube<float4> EnvironmentMap;
 
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
@@ -37,18 +40,27 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     float2 UV = ScreenCoordsToUV(C, PixelIndex);
     float4 AlbedoAlpha = G_Albedo.SampleLevel(PointEdgeSampler, UV, 0);
 
-    float3 DiffuseDirectLighting = DiffuseDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+    float3 SurfaceRadiance = 0;
 
+    // Emission
     float3 Emission = G_Emission.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-    if(AlbedoAlpha.w == 0.f) Emission = 0;
+    if(AlbedoAlpha.w == 0.f) {
+        float3 RayDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
+        float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+        Emission = EnvironmentColor;
+    }
+    SurfaceRadiance += Emission;
 
-    float3 SurfaceRadiance = Emission;
-
+    // Diffuse direct
+    float3 DiffuseDirectLighting = DiffuseDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     SurfaceRadiance += DiffuseDirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
+
+    // Diffuse indirect
+    float3 DiffuseIndirectLighting = DiffuseIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+    SurfaceRadiance += DiffuseIndirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
 
     // Color is premultiplied.
     float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-
     float3 VolumeRadiance = VolumeDirectLighting;
 
     float Transmittance = G_Transmittance.SampleLevel(PointEdgeSampler, UV, 0);

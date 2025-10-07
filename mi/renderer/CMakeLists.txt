@@ -10,7 +10,9 @@ set(SOURCES
         mi_scene.cpp
         mi_renderer_view.cpp
         mi_renderer.cpp
+        mi_renderer_init.cpp
         mi_buffer_heap.cpp
+        mi_noise.cpp
         mi_dirty_tracker.cpp
         mi_cvar.cpp
         # Implementing the renderer
@@ -22,9 +24,12 @@ set(SOURCES
         renderer/r_hzb.cpp
         renderer/r_hwrt.cpp
         renderer/r_diffuse_direct_lighting.cpp
+        renderer/r_diffuse_indirect_lighting.cpp
         renderer/r_path_tracing.cpp
         renderer/r_debug_views.cpp
+        renderer/r_denoiser.cpp
         util/radix_sort.cpp
+        util/scan_sum.cpp
 )
 
 add_library(renderer ${SOURCES})

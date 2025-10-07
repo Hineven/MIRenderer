@@ -3,16 +3,17 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "rdg/rdg_shader.h"
-#include "rdg/rdg_builder.h"
-#include "renderer/mi_cvar.h"
-#include "renderer/mi_renderer.h"
-#include "r_view_common.h"
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_resource_allocator.h"
+#include <rdg/rdg_shader.h>
+#include <rdg/rdg_builder.h>
+#include <rdg/rdg_helper.h>
+#include <renderer/mi_cvar.h>
+#include <renderer/mi_renderer.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_scene.h>
 #include "../shaders/shared/SharedLight.hlsl"
 #include "../shaders/shared/SharedDebug.hlsl"
-#include "renderer/mi_scene.h"
+#include "r_view_common.h"
+#include "r_persistent.h"
 MI_NAMESPACE_BEGIN
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
@@ -356,7 +357,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     RenderVolumeDirectLightingShader,
     "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderVolumeDirectLighting");
 
-void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
+void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGraphBuilder &builder) {
     auto & lib = RDGShaderLibrary::Get();
     auto ini = GetDirectLightingShaderInitializationInfo();
 
@@ -558,14 +559,7 @@ void Renderer::Render_ComputeDirectLighting(RendererView *view, RenderGraphBuild
         params->PointBorder1Sampler = RHI::Get().GetGlobalSamplers().point_border_1;
 
         if (CVar_DebugOutputTransmittanceRaysForMesh.Get() && !view->debug_buffers_.traced_ray_count) {
-            view->debug_buffers_.traced_ray_count = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_count->SetName("Debug_TracedRaysCount");
-            view->debug_buffers_.traced_ray_origins = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_directions = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_directions->SetName("Debug_TracedRayDirections");
-            view->debug_buffers_.traced_ray_states = builder.CreateBuffer<uint32_t>(RHIBufferUsageFlagBits::kStorage);
-            view->debug_buffers_.traced_ray_states->SetName("Debug_TracedRayStates");
-
+            view->debug_buffers_.CreateTracedRayBuffers(builder, 16);
             params->RWDebugTracedRaysCount = view->debug_buffers_.traced_ray_count.Raw();
             params->RWDebugTracedRayOrigins = view->debug_buffers_.traced_ray_origins.Raw();
             params->RWDebugTracedRayDirections = view->debug_buffers_.traced_ray_directions.Raw();

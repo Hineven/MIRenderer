@@ -262,14 +262,35 @@ struct TGetShaderOptionalMacros<T, std::void_t<decltype(T::GetShaderOptionalMacr
     constexpr static auto value = T::GetShaderOptionalMacros;
 };
 
-#define DECLARE_SHADER() \
+// Helpers
+#define MI_PP_GET_FIRST(first, ...) first
+#define MI_PP_HAS_ARGS_IMPL(...) MI_PP_GET_FIRST(__VA_ARGS__ 0)
+#define MI_PP_HAS_ARGS(...) MI_PP_HAS_ARGS_IMPL(__VA_OPT__(1,))
+
+#define MI_PP_CAT(a, b) MI_PP_CAT_I(a, b)
+#define MI_PP_CAT_I(a, b) a##b
+
+
+#define DECLARE_SHADER_0() \
 protected: \
-    using RDGShader::RDGShader; \
+using RDGShader::RDGShader; \
 public: \
-    template<typename T> friend class RDGShaderClassRegistrator; \
-    friend class RDGShaderLibrary; \
-    static RDGPassType GetRDGPassType () ; \
-    static const char * GetShaderTypeName () ; \
+template<typename T> friend class RDGShaderClassRegistrator; \
+friend class RDGShaderLibrary; \
+static RDGPassType GetRDGPassType (); \
+static const char * GetShaderTypeName ();
+
+#define DECLARE_SHADER_1(Super) \
+protected: \
+using Super::Super; \
+public: \
+template<typename T> friend class RDGShaderClassRegistrator; \
+friend class RDGShaderLibrary; \
+static RDGPassType GetRDGPassType (); \
+static const char * GetShaderTypeName ();
+
+#define DECLARE_SHADER_SELECT(n) MI_PP_CAT(DECLARE_SHADER_, n)
+#define DECLARE_SHADER(...) DECLARE_SHADER_SELECT(MI_PP_HAS_ARGS(__VA_ARGS__))(__VA_ARGS__)
 
 // Generic
 #define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \

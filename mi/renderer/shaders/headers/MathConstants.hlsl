@@ -12,6 +12,9 @@
 #define FLT_MAX      3.402823466e+38
 #define FLT_MIN      1.175494351e-38
 
+#define FP16_MAX 65504.0f
+#define FP16_MIN 6.103515625e-05f
+
 #define Infinity asfloat(0x7F800000)
 
 #endif 

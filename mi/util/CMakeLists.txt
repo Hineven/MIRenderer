@@ -10,6 +10,8 @@ add_resources(util shaders "shaders/*.hlsl")
 
 # Happly for loading .ply point clouds
 find_path(HAPPLY_INCLUDE_DIRS "happly.h")
+# tinyexr for exr loading
+find_package(tinyexr CONFIG REQUIRED)
 
 target_include_directories(util PUBLIC include PRIVATE ${HAPPLY_INCLUDE_DIRS})
-target_link_libraries(util PUBLIC infra core rhi rdg renderer)
+target_link_libraries(util PUBLIC infra core rhi rdg renderer unofficial::tinyexr::tinyexr)

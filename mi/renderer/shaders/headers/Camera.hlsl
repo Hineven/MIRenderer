@@ -3,9 +3,14 @@
 
 #include "../shared/SharedView.hlsl"
 #include "Conversions.hlsl"
+#include "Transform.hlsl"
 
 CameraParameters GetActiveCamera() {
     return View.Camera;
+}
+
+CameraParameters GetPreviousCamera() {
+    return View.PreviousCamera;
 }
 
 uint GetCameraType (CameraParameters C) {
@@ -36,12 +41,78 @@ float2 ScreenCoordsToUV (CameraParameters C, uint2 ScreenCoords) {
     return (ScreenCoords + 0.5f.xx) * C.InvFilmDimensions;
 }
 
+float2 ScreenCoordsToNDC2 (CameraParameters C, uint2 ScreenCoords) {
+    return UVToNDC2(ScreenCoordsToUV(C, ScreenCoords));
+}
+
 float2 PixelPositionToUV (CameraParameters C, float2 PixelPosition) {
     return PixelPosition * C.InvFilmDimensions;
 }
 
 float2 UVToPixelPosition (CameraParameters C, float2 UV) {
     return UV * C.FilmDimensions;
+}
+
+float2 ScreenPositionToUV (CameraParameters C, float2 ScreenPosition) {
+    return ScreenPosition * C.InvFilmDimensions;
+}
+
+float2 ScreenPositionToNDC2 (CameraParameters C, float2 ScreenPosition) {
+    return UVToNDC2(ScreenPositionToUV(C, ScreenPosition));
+}
+
+float2 NDC2ToScreenPosition (CameraParameters C, float2 NDC2) {
+    return NDC2ToUV(NDC2) * C.FilmDimensions;
+}
+
+float3 ReprojectToPreviousNDCFromNDC (CameraParameters C, float3 NDC) {
+    return TransformPoint(C.Reprojection, NDC);
+}
+
+float PerspectiveZDepthToLinearDepth(float Near, float Far, float ZDepth)
+{
+    return Far * Near / (Far - ZDepth * (Far - Near));
+}
+
+float ZDepthToLinearDepth(CameraParameters C, float ZDepth)
+{
+    if(true) {
+        float Far = C.FarPlane, Near = C.NearPlane;
+        return PerspectiveZDepthToLinearDepth(Near, Far, ZDepth);
+    }
+}
+
+float PerspectiveReversedZDepthToLinearDepth(float Near, float Far, float ReversedZDepth)
+{
+    return PerspectiveZDepthToLinearDepth(Near, Far, 1.0f - ReversedZDepth);
+}
+
+float ReversedZDepthToLinearDepth(CameraParameters C, float ReversedZDepth)
+{
+    return ZDepthToLinearDepth(C, 1.0f - ReversedZDepth);
+}
+
+float3 RecoverWorldPositionNDC2(CameraParameters C, float2 NDC2, float LinearDepth)
+{
+    return C.Position + NDC2ToCameraDirectionUnnormalized(C, NDC2) * LinearDepth;
+}
+
+float3 RecoverWorldPositionPixelCoords(CameraParameters C, uint2 PixelCoords, float LinearDepth)
+{
+    float2 UV = (PixelCoords + 0.5f.xx) / C.FilmDimensions;
+    float2 NDC2 = UVToNDC2(UV);
+    return RecoverWorldPositionNDC2(C, NDC2, LinearDepth);
+}
+
+float2 GetPixelWorldSize(CameraParameters C, float LinearDepth)
+{
+    return C.FilmPixelWorldSize * LinearDepth;
+}
+
+float3 ReprojectToPreviousUVZFromUVZ(CameraParameters C, float3 UVZ) {
+    float3 NDC = float3(UVToNDC2(UVZ.xy), UVZ.z);
+    float3 ReprojectedNDC = TransformPoint(C.Reprojection, NDC);
+    return float3(NDC2ToUV(ReprojectedNDC.xy), ReprojectedNDC.z);
 }
 
 #endif

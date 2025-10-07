@@ -5,17 +5,17 @@
  */
 
 #include <ranges>
-#include <renderer/mi_renderer.h>
 #include <rdg/rdg_cmd.h>
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_shader.h>
+#include <rdg/rdg_helper.h>
+#include <renderer/mi_renderer.h>
 #include <renderer/util/radix_sort.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_volume_primitives.h>
 
 #include "r_view_common.h"
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_resource_allocator.h"
-#include "renderer/mi_volume_primitives.h"
-#include "renderer/util/radix_sort.h"
+#include "r_persistent.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -290,7 +290,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_primitive_count.Raw(), ProjectVolumePrimitivesShader::kThreadGroupSize);
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
-    RadixSort::AddRadixSort32BitsPass(builder, kMaxNumActiveVolumePrimitives,
+    DeviceRadixSort::AddRadixSort32BitsPass(builder, kMaxNumActiveVolumePrimitives,
         primitive_instance_list_key.Raw(), primitive_instance_key_sorted.Raw(),
         primitive_instance_list_value.Raw(), primitive_instance_list_value_sorted.Raw(),
         primitive_instance_count.Raw()

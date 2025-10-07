@@ -1,5 +1,5 @@
 /*
- * Created: 2025/9/13
+ * Created: 2025/9/25
  * Author:  hineven
  * See LICENSE for licensing.
  */
@@ -11,10 +11,7 @@
 MI_NAMESPACE_BEGIN
 
 extern CVar<int> CVar_MaxNumGridLights;
-
-extern  CVar<int> CVar_NumLightSamplerSamples;
-
-extern CVar<int> CVar_MaxNumLightGridEntries;
+extern CVar<int> CVar_NumLightSamplerSamples;
 
 MI_NAMESPACE_END
 

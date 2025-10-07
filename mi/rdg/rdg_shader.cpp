@@ -388,7 +388,7 @@ std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderIniti
     }
     // And some preset macros based on shader type and other stuffs
     // Shader class name
-    extra_options.emplace_back(std::string("-D") + class_registry_->name);
+    extra_options.emplace_back(std::string("-D") + "MI_SHADER_" + class_registry_->name);
     // Shader type
     switch (class_registry_->type) {
         case RHIPipelineType::kGraphics:

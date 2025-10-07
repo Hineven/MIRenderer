@@ -161,6 +161,22 @@ void RHI::PostInitialize() {
             point_border_1->IncRef();
             global_samplers_.point_border_1 = point_border_1.Raw();
         }
+        {
+            auto desc = RHISamplerDesc {};
+            desc.min_filter = RHISamplerFilterType::kPoint;
+            desc.mag_filter = RHISamplerFilterType::kPoint;
+            desc.mipmap_mode = RHISamplerFilterType::kPoint;
+            desc.address_mode_u = RHISamplerAddressModeType::kClampToBorder;
+            desc.address_mode_v = RHISamplerAddressModeType::kClampToBorder;
+            desc.address_mode_w = RHISamplerAddressModeType::kClampToBorder;
+            desc.border_color[0] = 0.0f;
+            desc.border_color[1] = 0.0f;
+            desc.border_color[2] = 0.0f;
+            desc.border_color[3] = 0.0f;
+            auto point_border_0 = CreateSampler(desc);
+            point_border_0->IncRef();
+            global_samplers_.point_border_0 = point_border_0.Raw();
+        }
     }
 }
 
@@ -189,6 +205,8 @@ void RHI::PreDestruction () {
     global_samplers_.point_wrap->DecRef();
     global_samplers_.point_edge->DecRef();
     global_samplers_.point_border_1->DecRef();
+    global_samplers_.point_border_0->DecRef();
+    global_samplers_ = {};
     // Release command queues
     graphics_command_queue_.PreDestruction();
     // Tell the bindless manager to release all resource handles it holds

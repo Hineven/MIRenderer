@@ -36,6 +36,7 @@ public:
     static void DestroySingleton () ;
 
     void Init (DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) ;
+
     // Called each frame
     void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
@@ -80,7 +81,14 @@ protected:
     void Render_ComputeHiZBuffer (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_ComputeDirectLighting (
+    void Render_ComputeDirectDiffuseLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_ComputeIndirectDiffuseLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
+    void Render_DenoiseLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
@@ -131,6 +139,21 @@ protected:
         RDGBuffer * ray_to_trace_transmittance
     );
 
+    void Render_HardwareRadianceRayTracing (
+        RendererView * view, RenderGraphBuilder & builder,
+        RDGBuffer * ray_to_trace_list_length,
+        RDGBuffer * ray_to_trace_list,
+        RDGBuffer * ray_to_trace_direction,
+        RDGBuffer * ray_to_trace_state,
+        // Either ray_to_trace_origin_screen_coords or ray_to_trace_origin should be used. The
+        // other one should be nullptr.
+        RDGBuffer * ray_to_trace_origin_screen_coords,
+        RDGBuffer * ray_to_trace_origin,
+        RDGBuffer * ray_to_trace_tmax,
+        RDGBuffer * ray_to_trace_result, // Output fp16x4 (rgb, thit)
+        uint32_t seed
+    );
+
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;
         struct StaticMeshes {
@@ -148,6 +171,11 @@ protected:
 
     TRef<DeviceBindlessResourceAllocator> device_allocator_;
     TRef<RDGResourcePool> pool_;
+
+    // Sampling related resources
+    TRef<RHITexture> blue_noise_128x128_;
+    TRef<RHIBuffer> sobol_256x256_;
+    TRef<RHIBuffer> sobol_scrambling_tile_256x256x8_;
 
 };
 
