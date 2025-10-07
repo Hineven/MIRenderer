@@ -127,6 +127,16 @@ public:
             mip_levels, array_layers, format, usage
         });
     }
+    // Creat a 2D RDG texture array with the given description.
+    FORCEINLINE TRef<RDGTexture> CreateTexture2DArray (
+        uint32_t width, uint32_t height, uint32_t layers, PixelFormatType format,
+        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
+        return CreateTexture(RHITextureDesc{
+            RHITextureType::k2D,
+            {width, height, 1},
+            1, layers, format, usage
+        });
+    }
 
     // Import a rhi texture. NOTE: The builder kept a reference to the resource once imported.
     // If the layout is kUndefined, we don't care about the contents of the imported texture.

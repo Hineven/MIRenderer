@@ -75,6 +75,16 @@ public:
         });
     }
 
+    FORCEINLINE static TRef<RDGTexture> Create2DArray (
+    uint32_t width, uint32_t height, uint32_t layers, PixelFormatType format,
+    RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
+        return Create(RHITextureDesc{
+            RHITextureType::k2DArray,
+            {width, height, 1},
+            1, layers, format, usage
+        });
+    }
+
 protected:
 
     RHITextureDesc desc_ {};

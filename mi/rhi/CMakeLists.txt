@@ -9,7 +9,6 @@ function(create_spirv_targets)
         spirv-cross-glsl
         spirv-cross-hlsl
         spirv-cross-cpp
-        SPIRV-Tools
         SPIRV-Tools-opt
     )
 
@@ -30,8 +29,8 @@ function(create_spirv_targets)
         # Check if library exists
         if(EXISTS ${LIB_PATH})
             # Create imported target
-            add_library(SPIRV::${SPIRV_LIB} STATIC IMPORTED)
-            set_target_properties(SPIRV::${SPIRV_LIB} PROPERTIES
+            add_library(Vulkan::${SPIRV_LIB} STATIC IMPORTED)
+            set_target_properties(Vulkan::${SPIRV_LIB} PROPERTIES
                 IMPORTED_LOCATION ${LIB_PATH}
             )
             message(STATUS "Found SPIRV library: ${LIB_PATH}")
@@ -100,16 +99,14 @@ list(
     GPUOpen::VulkanMemoryAllocator
     ${VMA_HPP_TARGET_NAME}
     # Reflection
-    SPIRV::spirv-cross-core
-    SPIRV::spirv-cross-glsl
-    SPIRV::spirv-cross-hlsl
-    SPIRV::spirv-cross-cpp
+    Vulkan::spirv-cross-core
+    Vulkan::spirv-cross-glsl
+    Vulkan::spirv-cross-hlsl
+    Vulkan::spirv-cross-cpp
     # SPV processing
-    # Vulkan::SPIRV-Tools
-    SPIRV::SPIRV-Tools
-    SPIRV::SPIRV-Tools-opt
+    Vulkan::SPIRV-Tools
+    Vulkan::SPIRV-Tools-opt
 
-    #    SPIRV-Tools-reduce
 )
 
 target_link_libraries(rhi PUBLIC core ${EXTERNAL_LIBRARIES})
