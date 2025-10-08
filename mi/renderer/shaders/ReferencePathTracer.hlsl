@@ -92,13 +92,13 @@ float ResampleVolumePrimitives (
             float TMin = Ray.TMin;
             lr.x = max(lr.x, TMin);
             lr.y = max(lr.y, TMin);
-            RayVolumeDistribution Distr = (RayVolumeDistribution)0;
+            RayVolumePrimitiveIntersection Distr = (RayVolumePrimitiveIntersection)0;
             Distr.l = lr.x;
             Distr.r = lr.y;
             Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
             Distr.Color   = Primitive.Color;
             // Make a volume sample
-            float Distance = SampleRayVolumeDistribution(Distr, rng.rand());
+            float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());
             // Compare with VolumeSampledRayDistance
             if(Distance < SampledDistance) {
                 // Pick the closer one
@@ -271,13 +271,13 @@ void ReferencePathTracerRaygen() {
                     float TMin = Ray.TMin;
                     lr.x = max(lr.x, TMin);
                     lr.y = max(lr.y, TMin);
-                    RayVolumeDistribution Distr = (RayVolumeDistribution)0;
+                    RayVolumePrimitiveIntersection Distr = (RayVolumePrimitiveIntersection)0;
                     Distr.l = lr.x;
                     Distr.r = lr.y;
                     Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
                     Distr.Color   = Primitive.Color;
                     // Make a volume sample
-                    float Distance = SampleRayVolumeDistribution(Distr, rng.rand());
+                    float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());
                     // Compare with VolumeSampledRayDistance
                     if(Distance < VolumeSampledRayDistance) {
                         // Pick the closer one

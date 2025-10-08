@@ -112,12 +112,16 @@ struct RendererView {
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
 
-    // Volume density
-    TRef<RDGTexture> G_volume_density_;
     // Min-max values for the rendered volume segment
     TRef<RDGTexture> G_volume_min_max_;
+    // Volume density
+    TRef<RDGTexture> G_volume_density_;
     // Albedo of the volume segment
     TRef<RDGTexture> G_volume_color_;
+    // Volume density in fourier term
+    TRef<RDGTexture> G_volume_density_fourier_;
+    // Albedo of the volume segment multiplied by density in fourier term
+    TRef<RDGTexture> G_volume_weighted_color_fourier_;
     // CDF of recorded volume segment
     TRef<RDGTexture> G_volume_cdf_attenuation_;
 

@@ -21,3 +21,6 @@ build/
 .vscode/
 # visual stdio
 .vs/
+
+# vcpkg
+vcpkg.json
