@@ -1,23 +1,23 @@
 #include "resources/HashGridCacheResources.hlsl"
 
 [numthreads(WAVE_SIZE, 1, 1)]	
-void SSRC_ResetHashGrids (uint DispatchID : SV_DispatchThreadID) {
-	if(DispatchID >= UB.HashGrids_MaxNumTiles) return;
+void ResetHashGrids (uint DispatchID : SV_DispatchThreadID) {
+	if(DispatchID >= HashGrids_UB.MaxNumTiles) return;
 	if(DispatchID == 0) {
 		HashGrids_HistoryActiveTileCountBuffer[0] = 0;
-		HashGrids_FreeTileCountBuffer[0] = UB.HashGrids_MaxNumTiles;
+		HashGrids_FreeTileCountBuffer[0] = HashGrids_UB.MaxNumTiles;
 	}
-	HashGrids_FreeTileListBuffer[DispatchID] = UB.HashGrids_MaxNumTiles - DispatchID - 1;
+	HashGrids_FreeTileListBuffer[DispatchID] = HashGrids_UB.MaxNumTiles - DispatchID - 1;
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
-void SSRC_ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
+void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 	if(DispatchID >= HashGrids_HistoryActiveTileCountBuffer[0]) return;
 	int TileIndex = HashGrids_HistoryActiveTileListBuffer[DispatchID];
-	uint CurrentTimestamp = UB.FrameIndex + 1;
+	uint CurrentTimestamp = HashGrids_UB.FrameIndex + 1;
 	uint TileTimestamp = HashGrids_TileTimestampBuffer[TileIndex];
 	bool bShouldFreeTile = false;
-	if(TileTimestamp + UB.HashGrids_TileLifespan < CurrentTimestamp) {
+	if(TileTimestamp + HashGrids_UB.TileLifeSpan < CurrentTimestamp) {
 		bShouldFreeTile = true;
 	}
 	// Keep the tile (and insert to the hash table)
@@ -52,11 +52,19 @@ void SSRC_ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 	}
 }
 
+struct DispatchIndirectCommand {
+    uint ThreadGroupCountX;
+    uint ThreadGroupCountY;
+    uint ThreadGroupCountZ;
+    uint Padding;
+};
+
+RWStructuredBuffer<DispatchIndirectCommand> RWClearNewHashGridTileCellsIndirectCommandBuffer;
 
 // Used to clear newly allocated hash grid tile cells
 // Only the newly allocated cells should be cleared
 [numthreads(1, 1, 1)]
-void SSRC_PrepareClearNewHashGridTileCells () {
+void PrepareDispatchCommandForClearNewHashGridTileCells () {
 	// Clip counters
 	HashGrids_FreeTileCountBuffer[0] = max(HashGrids_FreeTileCountBuffer[0], 0);
 	DispatchIndirectCommand Command = (DispatchIndirectCommand) 0;
@@ -65,22 +73,25 @@ void SSRC_PrepareClearNewHashGridTileCells () {
 	- HashGrids_ActiveTileCountBeforeAllocationBuffer[0];
 	Command.ThreadGroupCountY = 1;
 	Command.ThreadGroupCountZ = 1;
-	RWDispatchIndirectCommandBuffer[0] = Command;
+	RWClearNewHashGridTileCellsIndirectCommandBuffer[0] = Command;
 }
 
+
 // Clear the newly allocated tile cells
-[numthreads(WAVE_SIZE, 1, 1)]
-void SSRC_ClearNewHashGridTileCells (uint GroupID : SV_GroupID, uint LocalID : SV_GroupThreadID) {
+[numthreads(HASHGRIDS_TILE_CELL_MIP_OFFSET_1, 1, 1)]
+void ClearNewHashGridTileCells (uint GroupID : SV_GroupID, uint LocalID : SV_GroupThreadID) {
 	uint TileIndex = HashGrids_ActiveTileListBuffer[GroupID + HashGrids_ActiveTileCountBeforeAllocationBuffer[0]];
 	uint Start = TileIndex * HASHGRIDS_NUM_CELLS_PER_TILE * 2;
-	for(int BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_NUM_CELLS_PER_TILE * 2); BaseCellOffset += WAVE_SIZE) {
+	for(int BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_NUM_CELLS_PER_TILE * 2);
+        BaseCellOffset += HASHGRIDS_TILE_CELL_MIP_OFFSET_1) {
 		int DWordIndex = BaseCellOffset + LocalID;
 		if(DWordIndex < (HASHGRIDS_NUM_CELLS_PER_TILE * 2)) {
 			HashGrids_CellValueBuffer[Start + DWordIndex] = 0;
 		}
 	}
 	Start = TileIndex * HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4;
-	for(int BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4); BaseCellOffset += WAVE_SIZE) {
+	for(int BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4);
+        BaseCellOffset += HASHGRIDS_TILE_CELL_MIP_OFFSET_1) {
 		int DWordIndex = BaseCellOffset + LocalID;
 		if(DWordIndex < (HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4)) {
 			HashGrids_UpdateCellValueXBuffer[Start + DWordIndex] = 0;
@@ -92,7 +103,7 @@ void SSRC_ClearNewHashGridTileCells (uint GroupID : SV_GroupID, uint LocalID : S
 groupshared float4 LocalHashGridTileRadiance[HASHGRIDS_TILE_CELL_WIDTH][HASHGRIDS_TILE_CELL_WIDTH];
 // Filter hash grids
 [numthreads(HASHGRIDS_TILE_CELL_WIDTH, HASHGRIDS_TILE_CELL_WIDTH, 1)]
-void SSRC_FilterHashGrids (uint GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
+void FilterHashGrids (uint GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
 	uint  TileIndex  = HashGrids_UpdateTileListBuffer[GroupID];
 	uint2 CellOffset = LocalID;
     // MIP 0
@@ -104,7 +115,7 @@ void SSRC_FilterHashGrids (uint GroupID : SV_GroupID, uint2 LocalID : SV_GroupTh
         float4 OldRadiance = HashGrids_GetCellRadiance(CellIndex);
         float4 NewRadiance = HashGrids_GetUpdateCellRadiance(CompactCellIndex);
         NewRadiance.rgb /= max(NewRadiance.w, 1.0f);
-		float  SampleCount = min(OldRadiance.w + NewRadiance.w, UB.HashGrids_MaxNumSamples);
+		float  SampleCount = min(OldRadiance.w + NewRadiance.w, HashGrids_UB.MaxNumSamples);
         
 		float4 Radiance = float4(
 			lerp(OldRadiance.rgb, NewRadiance.rgb, saturate(NewRadiance.w / SampleCount)),
@@ -181,23 +192,5 @@ void SSRC_FilterHashGrids (uint GroupID : SV_GroupID, uint2 LocalID : SV_GroupTh
 		uint2 PackedValue = PackFp16x4Safe(float4(Radiance.rgb / max(Radiance.w, 1), Radiance.w));
 		HashGrids_CellValueBuffer[CellIndex * 2 + 0] = PackedValue.x;
 		HashGrids_CellValueBuffer[CellIndex * 2 + 1] = PackedValue.y;
-	}
-}
-
-// Resolve probe update ray radiance results from hash grid cache
-[numthreads(WAVE_SIZE, 1, 1)]
-void SSRC_ResolveProbeUpdateRayRadianceFromCells (uint DispatchID : SV_DispatchThreadID)
-{
-	if(DispatchID >= RWProbeUpdateRayHitShadeCountBuffer[0]) return ;
-	int ProbeUpdateRayIndex = RWProbeUpdateRayHitShadeListBuffer[DispatchID];
-    uint CellIndex          = RWProbeUpdateRayResolveHashCellIndexBuffer[ProbeUpdateRayIndex];
-	float4 Radiance         = HashGrids_GetFilteredRadiance(CellIndex);
-	ProbeUpdateRayResult Result = FetchProbeUpdateRayResult(ProbeUpdateRayIndex);
-	if(!Result.bBypass) {
-		// Resolve radiance from hash grid cache if no bypass is specified
-		if(!UB.II_EnvironmentOnly) {
-			Result.Radiance = Radiance.xyz;
-		}
-		WriteProbeUpdateRayResult(ProbeUpdateRayIndex, Result);
 	}
 }

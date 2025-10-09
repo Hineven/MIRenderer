@@ -28,6 +28,7 @@ set(SOURCES
         renderer/r_path_tracing.cpp
         renderer/r_debug_views.cpp
         renderer/r_denoiser.cpp
+        renderer/r_world_radiance_cache.cpp
         util/radix_sort.cpp
         util/scan_sum.cpp
 )

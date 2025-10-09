@@ -10,9 +10,28 @@
 // each tile contains 8x8 cells. We have an extra tile allocator to deal with hash
 // tiles compared to GI1.0.
 
+struct HashGridWorldCacheUB {
+    uint MaxNumTiles;
+    uint FrameIndex;
+    uint TileLifeSpan;
+    uint MaxNumSamples;
+    float3 Center;
+    float InvCascadeRadius;
+
+    float CellSize;
+    uint  NumBuckets;
+    uint  MaxNumEntriesSearchedPerBucket;
+    uint  NumInterleavedEntriesPerBucket;
+
+    uint  TargetSampleCount;
+    uint3 Padding;
+};
+
+ConstantBuffer<HashGridWorldCacheUB> HashGrids_UB;
+
 // Tile allocator
 RWStructuredBuffer<int>  HashGrids_FreeTileCountBuffer;
-RWStructuredBuffer<int>  HashGrids_FreeTileListBuffer;
+RWStructuredBuffer<uint>  HashGrids_FreeTileListBuffer;
 
 // Hash table for tiles
 RWStructuredBuffer<uint> HashGrids_BucketHashBuffer;
@@ -56,8 +75,8 @@ float4 HashGrids_RecoverRadianceSampleCount (uint4 QuantilizedRadiance) {
 }
 
 float HashGrids_GetCellSize (float3 WorldPosition) {
-    float Distance = distance(UB.HashGrids_Center, WorldPosition);
-    float CellSize = max(UB.HashGrids_InvCascadeRadius * Distance * UB.HashGrids_CellSize, UB.HashGrids_CellSize);
+    float Distance = distance(HashGrids_UB.Center, WorldPosition);
+    float CellSize = max(HashGrids_UB.InvCascadeRadius * Distance * HashGrids_UB.CellSize, HashGrids_UB.CellSize);
     int   L2CellSize = int(floor(log2(CellSize)));
     return exp2(L2CellSize);
 }
@@ -115,12 +134,12 @@ uint HashGrids_GetCellIndex (uint TileIndex, uint2 CellOffset, uint MipLevel = 0
 // Find and (if not found) allocate a slot in the hash table
 // Return the slot index in the hash table.
 uint HashGrids_FindAndAllocate (uint BucketHash, out bool bIsNewSlot) {
-    uint BucketIndex = BucketHash % UB.HashGrids_NumBuckets;
+    uint BucketIndex = BucketHash % HashGrids_UB.NumBuckets;
     int TileRank = 0, BucketSlotIndex = 0;
     uint PrevBucketHash = 0;
     [unroll(HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET)]
-    for(; TileRank < UB.HashGrids_MaxNumEntriesSearchedPerBucket; TileRank ++) {
-        BucketSlotIndex = BucketIndex * UB.HashGrids_NumInterleavedEntriesPerBucket + TileRank;
+    for(; TileRank < HashGrids_UB.MaxNumEntriesSearchedPerBucket; TileRank ++) {
+        BucketSlotIndex = BucketIndex * HashGrids_UB.NumInterleavedEntriesPerBucket + TileRank;
         // Try to allocate a tile (if it is empty)
         InterlockedCompareExchange(HashGrids_BucketHashBuffer[BucketSlotIndex], 0, BucketHash, PrevBucketHash);
         if(PrevBucketHash == 0) {
@@ -131,7 +150,7 @@ uint HashGrids_FindAndAllocate (uint BucketHash, out bool bIsNewSlot) {
         }
     }
     bIsNewSlot = PrevBucketHash == 0;
-    if(TileRank == UB.HashGrids_MaxNumEntriesSearchedPerBucket) {
+    if(TileRank == HashGrids_UB.MaxNumEntriesSearchedPerBucket) {
         return INVALID_UINT; // No more space in the bucket
     }
     return BucketSlotIndex;
@@ -140,12 +159,12 @@ uint HashGrids_FindAndAllocate (uint BucketHash, out bool bIsNewSlot) {
 // Find a slot in the hash table
 // Return the slot index in the hash table.
 uint HashGrids_Find (uint BucketHash) {
-    uint BucketIndex = BucketHash % UB.HashGrids_NumBuckets;
+    uint BucketIndex = BucketHash % HashGrids_UB.NumBuckets;
     int TileRank = 0, BucketSlotIndex = 0;
     uint PrevBucketHash = 0;
     [unroll(HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET)]
-    for(; TileRank < UB.HashGrids_MaxNumEntriesSearchedPerBucket; TileRank ++) {
-        BucketSlotIndex = BucketIndex * UB.HashGrids_NumInterleavedEntriesPerBucket + TileRank;
+    for(; TileRank < HashGrids_UB.MaxNumEntriesSearchedPerBucket; TileRank ++) {
+        BucketSlotIndex = BucketIndex * HashGrids_UB.NumInterleavedEntriesPerBucket + TileRank;
         PrevBucketHash = HashGrids_BucketHashBuffer[BucketSlotIndex];
         if(PrevBucketHash == BucketHash) {
             break; // Found existing tile
@@ -183,7 +202,7 @@ uint HashGrids_AllocateTile (float3 WorldPosition, float3 ViewDirection) {
     } else {
         TileIndex = HashGrids_BucketTileIndexBuffer[BucketSlotIndex];
     }
-    uint Timestamp = UB.FrameIndex + 1, PrevTimestamp = 0;
+    uint Timestamp = HashGrids_UB.FrameIndex + 1, PrevTimestamp = 0;
     InterlockedExchange(HashGrids_TileTimestampBuffer[TileIndex], Timestamp, PrevTimestamp);
     if(bIsNewSlot || PrevTimestamp != Timestamp) {
         // This tile is touched (for the first time in this frame), queue it up for update.
@@ -224,15 +243,15 @@ float4 HashGrids_GetFilteredRadiance(uint CellIndexMip0)
     Radiance = HashGrids_GetCellRadiance(CellIndexMip0);
     
     // Mip 1
-    Radiance = Radiance.w < UB.HashGrids_TargetSampleCount ?
+    Radiance = Radiance.w < HashGrids_UB.TargetSampleCount ?
          HashGrids_GetCellRadiance(CellIndexMip1) : Radiance;
     
     // Mip 2
-    Radiance = Radiance.w < UB.HashGrids_TargetSampleCount ?
+    Radiance = Radiance.w < HashGrids_UB.TargetSampleCount ?
         HashGrids_GetCellRadiance(CellIndexMip2) : Radiance;
     
     // Mip 3
-    Radiance = Radiance.w < UB.HashGrids_TargetSampleCount ?
+    Radiance = Radiance.w < HashGrids_UB.TargetSampleCount ?
         HashGrids_GetCellRadiance(CellIndexMip3) : Radiance;
 
     return Radiance;
@@ -254,12 +273,5 @@ void HashGrids_AccumulateSamplesToCell (uint CompactCellIndex, float3 Radiance, 
     }
     InterlockedAdd(HashGrids_UpdateCellValueXBuffer[CompactCellIndex * 4 + 3], QuantilizedRadiance.w);
 }
-
-
-
-
-
-
-
 
 #endif // HASH_GRID_CACHE_RESOURCES_HLSL
