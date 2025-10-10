@@ -128,6 +128,9 @@ LightSample SampleOneLightSample_RIS (
     inout Random R, out float3 SumResampleWeights3, out uint NumValidSamples,
     out float LightGridLightListCdf
 ) {
+    NumValidSamples = 0;
+    SumResampleWeights3 = 0.f;
+    LightGridLightListCdf = 1.f;
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     LightSample Sample = (LightSample)0;
     if (!IsValid(GridIndex.x)) {
@@ -180,8 +183,6 @@ LightSample SampleOneLightSample_RIS (
     }
     float SumResampleWeights = 0.f, SumTargetWeigts = 0.f;
     float U = R.rand();
-    NumValidSamples = 0;
-    SumResampleWeights3 = 0.f;
     LightSample ReservedSample = (LightSample)0;
     // Simply assume all volumes have the same isotropic parameter g
     float g = 0.f;

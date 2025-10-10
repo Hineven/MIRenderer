@@ -14,34 +14,10 @@
 #include "../shaders/shared/SharedDebug.hlsl"
 #include "r_view_common.h"
 #include "r_persistent.h"
+#include "r_light_structure.h"
 MI_NAMESPACE_BEGIN
-static constexpr uint32_t kLightGridSize = 16;
-static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
 
 // Some CVars are exposed through r_diffuse_direct_lighting.h
-CVar<int> CVar_MaxNumGridLights(
-    "r.lightgrid.max_num_grid_lights",
-    "Maximum number of lights in each grid cell.",
-    32
-);
-
-CVar<int> CVar_NumLightSamplerSamples(
-    "r.lightgrid.num_light_sampler_samples",
-    "Number of candidate samples to take when sampling lights in the light grid.",
-    8
-);
-
-CVar<int> CVar_MaxNumLightGridEntries(
-    "r.lightgrid.max_num_entries",
-    "Maximum number of entries in the light grid.",
-    1024 * 1024
-);
-
-static CVar<float> CVar_MinLightGridSize(
-    "r.lightgrid.min_size",
-    "Minimum size of the light grid in world units.",
-    0.15f
-);
 
 static CVar<float> CVar_ShadowRayLengthMultiplier(
     "r.lightgrid.shadow_ray_length_multiplier",
@@ -49,11 +25,6 @@ static CVar<float> CVar_ShadowRayLengthMultiplier(
     0.995f
 );
 
-static CVar<float> CVar_LightInjectionIntensityThreshold(
-    "r.lightgrid.light_injection_intensity_threshold",
-    "Threshold for light injection intensity. Lights with intensity below this value will not be injected into the grid.",
-    0.001f
-);
 
 static CVar<bool> CVar_DebugOutputTransmittanceRaysForMesh(
     "r.direct_lighting.debug.output_transmittance_rays_for_mesh",
@@ -75,22 +46,6 @@ static CVar<bool> CVar_SSRT_Disabled(
 
 static constexpr uint32_t kThreadGroupSize = 128;
 
-// Must be consistent with the struct in LightGrid.hlsl
-struct LightStructureUB {
-    glm::uvec3 LightGridSize;
-    float LightGridCellSize;
-    glm::vec3 LightGridCenter;
-    uint32_t LighGridNumCascadesUsed;
-    uint32_t LightGridMaxNumGridLights;
-    uint32_t LightGridNumCascadeGrids;
-    uint32_t LightGridNumGrids;
-    float LightInjectionIntensityThreshold;
-    glm::vec4 LightGridCascadeMin[kLightGridNumCascades];
-    glm::vec4 LightGridCascadeMax[kLightGridNumCascades];
-    uint32_t FrameIndex;
-    uint32_t MaxNumLights;
-    glm::uvec2 Unused;
-};
 struct DirectLightingUB {
     uint32_t FrameIndex;
     float ShadowRayTMax;
@@ -222,10 +177,12 @@ class SpawnLightSamplesShader : public RDGShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
     DECLARE_SHADER()
+    constexpr static uint32_t kTileSize = 8;
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+            "TILE_SIZE=" + std::to_string(kTileSize)
         };
     }
 };
@@ -329,10 +286,12 @@ class VolumePrimitivesSpawnLightSamplesShader : public RDGShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     DECLARE_SHADER()
+    constexpr static uint32_t kTileSize = 8;
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
             "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+            "TILE_SIZE=" + std::to_string(kTileSize)
         };
     }
 };
@@ -368,122 +327,69 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         RHIBufferUsageFlagBits::kStorage, max_num_lights * sizeof(PackedPrecomputedLight)
     );
     precomputed_active_light_buffer->SetName("PrecomputedActiveLightBuffer");
-    auto active_light_list_count = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto active_light_list_count = builder.CreateBuffer<uint32_t>();
     active_light_list_count->SetName("ActiveLightListCount");
-    auto active_light_list_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_lights * sizeof(uint32_t)
-    );
+    auto active_light_list_buffer = builder.CreateBuffer<uint32_t>(max_num_lights);
     active_light_list_buffer->SetName("ActiveLightListBuffer");
     auto max_num_light_grid_entries = CVar_MaxNumLightGridEntries.Get();
     auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
-    auto light_grid_list_light_index_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_light_grid_entries * sizeof(uint32_t)
-    );
+    auto light_grid_list_light_index_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries);
     light_grid_list_light_index_buffer->SetName("LightGrid_ListLightIndexBuffer");
-    auto light_grid_grid_light_list_offset_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_light_grids * sizeof(uint32_t)
-    );
+    auto light_grid_grid_light_list_offset_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
     light_grid_grid_light_list_offset_buffer->SetName("LightGrid_GridLightListOffsetBuffer");
-    auto light_grid_grid_light_list_cdf_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_light_grids * sizeof(float)
-    );
+    auto light_grid_grid_light_list_cdf_buffer = builder.CreateBuffer<float>(num_light_grids);
     light_grid_grid_light_list_cdf_buffer->SetName("LightGrid_GridLightListCdfBuffer");
-    auto light_grid_grid_light_list_length_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_light_grids * sizeof(uint32_t)
-    );
+
+    auto light_grid_grid_light_list_length_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
     light_grid_grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
-    auto light_grid_bloom_filter_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_light_grid_entries * sizeof(uint32_t) * 4
-    );
+
+    // 4 Histories
+    auto light_grid_bloom_filter_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries * 4);
     light_grid_bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
-    auto light_grid_list_allocator_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto light_grid_list_allocator_buffer = builder.CreateBuffer<uint32_t>();
     light_grid_list_allocator_buffer->SetName("LightGrid_ListAllocatorBuffer");
 
     uint32_t num_screen_pixels = view->film_width_ * view->film_height_;
 
-    auto ray_to_trace_count = builder.CreateBuffer(RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t));\
+    auto ray_to_trace_count = builder.CreateBuffer<uint32_t>();
     ray_to_trace_count->SetName("RayToTraceCount");
 
-    auto ray_to_trace_list_allocator = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto ray_to_trace_list_allocator = builder.CreateBuffer<uint32_t>();
     ray_to_trace_list_allocator->SetName("RayToTraceListAllocator");
-    auto ray_to_trace_list = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
-    );
+
+    auto ray_to_trace_list = builder.CreateBuffer<uint32_t>(num_screen_pixels);
     ray_to_trace_list->SetName("RayToTraceList");
-    auto ray_to_trace_direction = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::vec3)
-    );
+    auto ray_to_trace_direction = builder.CreateBuffer<glm::vec3>(num_screen_pixels);
     ray_to_trace_direction->SetName("RayToTraceDirection");
-    auto ray_to_trace_state = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
-    );
+    auto ray_to_trace_state = builder.CreateBuffer<uint32_t>(num_screen_pixels);
     ray_to_trace_state->SetName("RayToTraceState");
-    auto ray_to_trace_origin_screen_coords = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::uvec2)
-    );
+    auto ray_to_trace_origin_screen_coords = builder.CreateBuffer<glm::uvec2>(num_screen_pixels);
     ray_to_trace_origin_screen_coords->SetName("RayToTraceOriginScreenCoord");
 
-    auto volume_ray_to_trace_count = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto volume_ray_to_trace_count = builder.CreateBuffer<uint32_t>();
     volume_ray_to_trace_count->SetName("VolumeRayToTraceCount");
 
-    auto direct_lighting_radiance_estimate_texture = builder.CreateTexture(
-    RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
-        1, 1, PixelFormatType::kR16G16B16A16_FLOAT, RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource});
+    auto direct_lighting_radiance_estimate_texture = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT
+    );
     direct_lighting_radiance_estimate_texture->SetName("DirectLightingRadianceEstimateTexture");
-    auto direct_lighting_ray_index_texture = builder.CreateTexture(
-    RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
-1, 1, PixelFormatType::kR32_UINT, RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource}
+    auto direct_lighting_ray_index_texture = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR32_UINT
     );
     direct_lighting_ray_index_texture->SetName("DirectLightingRayIndexTexture");
 
-    auto shadow_ray_to_trace_tmax = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
-    );
+    auto shadow_ray_to_trace_tmax = builder.CreateBuffer<float>(num_screen_pixels);
     shadow_ray_to_trace_tmax->SetName("ShadowRayToTraceTMaxBuffer");
-    auto shadow_ray_to_trace_transmittance = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
-    );
+
+    auto shadow_ray_to_trace_transmittance = builder.CreateBuffer<float>(num_screen_pixels);
     shadow_ray_to_trace_transmittance->SetName("ShadowRayToTraceTransmittanceBuffer");
     {
         params->View = view->view_common_params_;
+
         auto L_UB = builder.Allocate<LightStructureUB>();
-        {
-            auto scene_aabb = view->scene_->GetAABB();
-            auto camera_pos = view->camera_.position;
-            auto dist_to_min = scene_aabb.min - camera_pos;
-            auto dist_to_max = scene_aabb.max - camera_pos;
-            auto maxv = glm::max(glm::abs(dist_to_min), glm::abs(dist_to_max));
-            auto hmaxv = std::max(maxv.x, std::max(maxv.y, maxv.z));
-            float grid_cell_size = 4.01f * float(double(hmaxv) / pow(2, kLightGridNumCascades) / kLightGridSize);
-            grid_cell_size = std::max(grid_cell_size, CVar_MinLightGridSize.Get());
-            L_UB->LightGridSize = glm::uvec3(kLightGridSize);
-            L_UB->LightGridCellSize = grid_cell_size;
-            L_UB->LightGridCenter = camera_pos;
-            L_UB->LighGridNumCascadesUsed = kLightGridNumCascades;
-            L_UB->LightGridMaxNumGridLights = CVar_MaxNumGridLights.Get();
-            L_UB->LightGridNumCascadeGrids = kLightGridSize * kLightGridSize * kLightGridSize;
-            assert(L_UB->LightGridNumCascadeGrids * L_UB->LighGridNumCascadesUsed == num_light_grids);
-            L_UB->LightGridNumGrids = L_UB->LightGridNumCascadeGrids * L_UB->LighGridNumCascadesUsed;
-            L_UB->LightInjectionIntensityThreshold = CVar_LightInjectionIntensityThreshold.Get();
-            for (int i = 0; i < kLightGridNumCascades; i++) {
-                auto min = camera_pos + 0.5f * glm::vec3(-grid_cell_size, -grid_cell_size, -grid_cell_size) * float(kLightGridSize << i);
-                auto max = camera_pos + 0.5f * glm::vec3(grid_cell_size, grid_cell_size, grid_cell_size) * float(kLightGridSize << i);
-                L_UB->LightGridCascadeMin[i] = glm::vec4(min, 1.0f);
-                L_UB->LightGridCascadeMax[i] = glm::vec4(max, 1.0f);
-            }
-            if (CVar_DebugFreezeFrameSeed.Get()) L_UB->FrameIndex = 0;
-            else L_UB->FrameIndex = view->persistent_data_->frame_index_;
-            L_UB->MaxNumLights = (uint32_t)max_num_lights;
-        }
+        FillParametersForLightStructure(view, L_UB);
         params->LightStructure_UB = L_UB;
+
         auto DI_UB = builder.Allocate<DirectLightingUB>();
         {
             if (CVar_DebugFreezeFrameSeed.Get()) DI_UB->FrameIndex = 0;
@@ -504,6 +410,8 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         params->RWPrecomputedActiveLightBuffer = precomputed_active_light_buffer.Raw();
         params->PrecomputedActiveLightBuffer = precomputed_active_light_buffer.Raw();
         params->RWActiveLightListCount = active_light_list_count.Raw();
+        asdfasfdasfasf
+        migrate light grid data to lightgrid.cpp
         params->RWActiveLightListBuffer = active_light_list_buffer.Raw();
         params->ActiveLightListCount = active_light_list_count.Raw();
         params->ActiveLightListBuffer = active_light_list_buffer.Raw();
@@ -597,9 +505,9 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
             builder, shader, params, num_groups
         );
     }
-    auto tile_size = 8;
     {
         auto shader = lib.GetShader<SpawnLightSamplesShader>(ini);
+        auto tile_size = SpawnLightSamplesShader::kTileSize;
         auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
         auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
         Helpers::AddComputePass<SpawnLightSamplesShader>(
@@ -716,6 +624,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
     // Volume Direct Lighting
     {
         auto shader = lib.GetShader<VolumePrimitivesSpawnLightSamplesShader>(ini);
+        auto tile_size = VolumePrimitivesSpawnLightSamplesShader::kTileSize;
         auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
         auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
         Helpers::AddComputePass<VolumePrimitivesSpawnLightSamplesShader>(
@@ -742,7 +651,6 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
 
     {
         auto shader = lib.GetShader<RenderVolumeDirectLightingShader>(ini);
-        // Helpers::Clear(builder, view->volume_direct_lighting_.Raw());
         Helpers::AddComputeIndirectPass<RenderVolumeDirectLightingShader>(
             builder, shader, volprims_params, cmd.Raw()
         );

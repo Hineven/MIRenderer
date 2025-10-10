@@ -1,7 +1,6 @@
 #ifndef MATERIAL_EVALUATION_HLSL
 #define MATERIAL_EVALUATION_HLSL
 
-
 #include "Transform.hlsl"
 #include "Scattering.hlsl"
 #include "Material.hlsl"
@@ -62,9 +61,17 @@ float SampleBDSF (ShadingMaterial M, float3 ViewDirection, float2 U, out float3 
 
 // Evaluate cached material brdf
 // Simple lambertian
-float3 EvaluateCachedMaterialBRDF (CachedHitMaterial M, float3 Normal, float3 ViewDirection, float3 OutgoingDirection) {
-    if(dot(Normal, ViewDirection) * dot(Normal, OutgoingDirection) <= 0) return 0;
-    return EvaluateLambert(M.Albedo);
+float3 EvaluateCachedMaterialBRDF (
+    CachedHitMaterial M, float3 Normal, float3 ViewDirection, float3 OutgoingDirection,
+    float PhaseG
+) {
+    if(M.bIsSurface) {
+        if(dot(Normal, ViewDirection) * dot(Normal, OutgoingDirection) <= 0) return 0;
+        return EvaluateLambert(M.Albedo);
+    } else {
+        float Cosine = dot(Normal, ViewDirection);
+        return HenyeyGreensteinPhaseFunction(Cosine, PhaseG) * M.Albedo;
+    }
 }
 
 #endif

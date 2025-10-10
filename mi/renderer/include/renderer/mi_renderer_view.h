@@ -69,6 +69,8 @@ public:
 };
 
 struct RendererViewPersistentData;
+struct WorldRadianceCacheData;
+struct LightStructureData;
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
@@ -130,6 +132,11 @@ struct RendererView {
     TRef<RDGTexture> hzb_;
     // or flags
     TRef<RDGTexture> or_flags_;
+
+    // Shared world radiance cache data
+    TRef<WorldRadianceCacheData> world_cache_;
+    // Shared data for light sampling
+    TRef<LightStructureData> light_structure_;
 
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;

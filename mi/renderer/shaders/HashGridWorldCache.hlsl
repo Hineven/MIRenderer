@@ -4,15 +4,15 @@
 void ResetHashGrids (uint DispatchID : SV_DispatchThreadID) {
 	if(DispatchID >= HashGrids_UB.MaxNumTiles) return;
 	if(DispatchID == 0) {
-		HashGrids_HistoryActiveTileCountBuffer[0] = 0;
-		HashGrids_FreeTileCountBuffer[0] = HashGrids_UB.MaxNumTiles;
+		HashGrids_HistoryActiveTileCount[0] = 0;
+		HashGrids_FreeTileCount[0] = HashGrids_UB.MaxNumTiles;
 	}
 	HashGrids_FreeTileListBuffer[DispatchID] = HashGrids_UB.MaxNumTiles - DispatchID - 1;
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
 void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
-	if(DispatchID >= HashGrids_HistoryActiveTileCountBuffer[0]) return;
+	if(DispatchID >= HashGrids_HistoryActiveTileCount[0]) return;
 	int TileIndex = HashGrids_HistoryActiveTileListBuffer[DispatchID];
 	uint CurrentTimestamp = HashGrids_UB.FrameIndex + 1;
 	uint TileTimestamp = HashGrids_TileTimestampBuffer[TileIndex];
@@ -36,7 +36,7 @@ void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 	if(bShouldFreeTile) {
 		// Free the tile
 		int FreeListIndex;
-		InterlockedAdd(HashGrids_FreeTileCountBuffer[0], 1, FreeListIndex);
+		InterlockedAdd(HashGrids_FreeTileCount[0], 1, FreeListIndex);
 		HashGrids_FreeTileListBuffer[FreeListIndex] = TileIndex;
 		return ;
 	}
@@ -44,7 +44,7 @@ void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 	if(bIsNewSlot) {
 		// Register the tile on the active list
 		int ActiveListIndex;
-		InterlockedAdd(HashGrids_ActiveTileCountBuffer[0], 1, ActiveListIndex);
+		InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
 		HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
 		// Insert the tile to the hash table
 		HashGrids_BucketHashBuffer[SlotIndex] = TileBucketHash;
@@ -66,10 +66,10 @@ RWStructuredBuffer<DispatchIndirectCommand> RWClearNewHashGridTileCellsIndirectC
 [numthreads(1, 1, 1)]
 void PrepareDispatchCommandForClearNewHashGridTileCells () {
 	// Clip counters
-	HashGrids_FreeTileCountBuffer[0] = max(HashGrids_FreeTileCountBuffer[0], 0);
+	HashGrids_FreeTileCount[0] = max(HashGrids_FreeTileCount[0], 0);
 	DispatchIndirectCommand Command = (DispatchIndirectCommand) 0;
 	Command.ThreadGroupCountX = 
-		HashGrids_ActiveTileCountBuffer[0] 
+		HashGrids_ActiveTileCount[0]
 	- HashGrids_ActiveTileCountBeforeAllocationBuffer[0];
 	Command.ThreadGroupCountY = 1;
 	Command.ThreadGroupCountZ = 1;

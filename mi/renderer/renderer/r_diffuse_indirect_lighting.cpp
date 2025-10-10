@@ -13,9 +13,12 @@
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
 #include "r_persistent.h"
+#include "r_world_radiance_cache.h"
+#include "renderer/mi_scene.h"
+#include "renderer/mi_texture.h"
 
 MI_NAMESPACE_BEGIN
-static CVar<float> CVar_ProbeSearchSize(
+    static CVar<float> CVar_ProbeSearchSize(
     "r.diffuse_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     2.f
@@ -131,10 +134,26 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayAllocator)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayResultBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayRadianceBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayInvPdfBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitShadingPointAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitShadingPointListBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayDirectionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayOriginBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayStateBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayTMaxBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayContributionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
+    SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousNormalTexture)
 
@@ -144,6 +163,29 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
     SHADER_UNIFORM_BUFFER(DiffuseIndirectLightingUB, UB)
     SHADER_UNIFORM_BUFFER(DebugCommonShaderParameters, Debug)
+
+    // Hash grid
+    // Tile allocator
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileListBuffer)
+    // Hash table for tiles
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_BucketHashBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_BucketTileIndexBuffer) // Store indices of tiles in the bucket
+    // Tile properties
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_TileTimestampBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_TileBucketHashBuffer)
+    // Cell values (radiance) cached in hash grids
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_CellValueBuffer) // 2 elements per cell
+    // This is quantilized and atomic accumulated, and only contains mip0 cells
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_UpdateCellValueXBuffer) // 4 elements per cell
+    // A list of tiles that should be updated this frame
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_UpdateTileCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_UpdateTileListBuffer)
+    // A list of active tile indices
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileListBuffer)
+
+    SHADER_UNIFORM_BUFFER(HashGridWorldCacheUB, HashGrids_UB)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRaysCount)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayOrigins)
@@ -266,7 +308,44 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClipUpdateRayCount");
 
+
 // Trace update rayus...
+
+class ResolveHitLightingFromScreenHistoryShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
+
+class SampleLightRaysForUpdateRayHitsShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SampleLightRaysForUpdateRayHitsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SampleLightRaysForUpdateRayHits");
+
+// Trace light rays ... (stochastic transmittance rays)
+
+class ResolveUpdateRayHitsDirectLightingFromTraceResultShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveUpdateRayHitsDirectLightingFromTraceResultShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveUpdateRayHitsDirectLightingFromTraceResult");
+
+// Hash grid update ...
+
+class ResolveProbeUpdateRayRadianceFromCellsShader : public DiffuseIndirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+    DECLARE_SHADER(DiffuseIndirectLightingShader)
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveProbeUpdateRayRadianceFromCellsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveProbeUpdateRayRadianceFromCells");
 
 class UpdateScreenProbesAndCacheShader : public DiffuseIndirectLightingShader {
 public:
@@ -419,115 +498,86 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     );
     uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
 
-    if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_->MakeSureExists(builder, tile_dimensions, header_tile_dimension))
+    if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_
+        ->MakeSureExists(builder, tile_dimensions, header_tile_dimension))
         need_reset = true;
     need_reset |= CVar_ResetDiffuseIndirectLighting.Get();
 
     auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
     auto screen_probe_radiance_depth = builder.CreateTexture2D(
-        atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     auto screen_probe_vertical_filtered_radiance_depth = builder.CreateTexture2D(
-        atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     auto screen_probe_filtered_radiance_depth = builder.CreateTexture2D(
-        atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    auto sh_coeff_atlas_dimensions = glm::uvec2{tile_dimensions.x * 2, tile_dimensions.y};
     auto screen_probe_irradiance = builder.CreateTexture2D(
-        tile_dimensions.x * 2, tile_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     auto screen_probe_sh_coefficients_r = builder.CreateTexture2D(
-        tile_dimensions.x * 2, tile_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     auto screen_probe_sh_coefficients_g = builder.CreateTexture2D(
-        tile_dimensions.x * 2, tile_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     auto screen_probe_sh_coefficients_b = builder.CreateTexture2D(
-        tile_dimensions.x * 2, tile_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
 
     auto num_tiles = tile_dimensions.x * tile_dimensions.y;
-    auto tile_screen_probe_cache_index_list_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto tile_screen_probe_cache_index_list_lengths_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto tile_screen_probe_cache_index_list_offsets_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto tile_screen_probe_cache_index_list_allocator = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto tile_screen_probe_cache_index_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_screen_probe_cache_index_list_lengths_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_screen_probe_cache_index_list_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_screen_probe_cache_index_list_allocator = builder.CreateBuffer<uint32_t>();
 
-    auto screen_probe_cache_index_reprojection_entry_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t) * 4
-    );
-    auto screen_probe_cache_index_reprojection_count = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto screen_probe_cache_index_reprojection_entry_buffer = builder.CreateBuffer<glm::uvec4>(num_tiles);
+    auto screen_probe_cache_index_reprojection_count = builder.CreateBuffer<uint32_t>();
 
     auto screen_probe_reconstructed_radiance_depth_buffer = builder.CreateTexture2D(
-        atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
+        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
 
-    auto screen_probe_spawn_cache_matches_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t) * 2
-    );
-    auto screen_probe_cache_to_mru_queue_index_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto screen_probe_cache_updated_mru_queue_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto screen_probe_cache_mru_flag_prefix_sum_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto screen_probe_cache_mru_queue_entry_allocator = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto screen_probe_spawn_cache_matches_buffer = builder.CreateBuffer<glm::uvec2>(num_tiles);
+    auto screen_probe_cache_to_mru_queue_index_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto screen_probe_cache_updated_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto screen_probe_cache_mru_flag_prefix_sum_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto screen_probe_cache_mru_queue_entry_allocator = builder.CreateBuffer<uint32_t>();
 
-    auto reprojection_fail_tile_count = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
-    auto reprojection_fail_tile_list_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto screen_probe_spawn_count = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
-    auto screen_probe_spawn_list_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
+    auto reprojection_fail_tile_count = builder.CreateBuffer<uint32_t>();
+    auto reprojection_fail_tile_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto screen_probe_spawn_count = builder.CreateBuffer<uint32_t>();
+    auto screen_probe_spawn_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
 
-    auto screen_probe_update_ray_offsets_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
-    auto screen_probe_update_ray_counts_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_tiles * sizeof(uint32_t)
-    );
+    auto screen_probe_update_ray_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto screen_probe_update_ray_counts_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
 
-    uint32_t max_num_update_rays = num_tiles * 64;
+    uint32_t max_num_update_rays = num_tiles * 64; // Theoretically this can be configured
 
-    auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(uint32_t)
-    );
-    auto screen_probe_update_ray_state_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(uint32_t)
-    );
-    auto screen_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(uint32_t)
-    );
-    auto screen_probe_update_ray_allocator = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, sizeof(uint32_t)
-    );
+    auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto screen_probe_update_ray_state_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto screen_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto screen_probe_update_ray_allocator = builder.CreateBuffer<uint32_t>();
 
-    auto screen_probe_update_ray_result_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(uint32_t) * 2
-    );
-    auto screen_probe_update_ray_inv_pdf_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_update_rays * sizeof(float)
-    );
+    auto screen_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays * 2);
+    auto screen_probe_update_ray_radiance_buffer = builder.CreateBuffer<glm::vec2>(max_num_update_rays);
+    auto screen_probe_update_ray_inv_pdf_buffer = builder.CreateBuffer<float>(max_num_update_rays);
+    auto screen_probe_update_ray_hit_resolve_hash_cell_index_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+
+    auto screen_probe_update_ray_hit_shading_point_allocator = builder.CreateBuffer<uint>();
+    auto screen_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint>(max_num_update_rays);
+
+    auto shade_point_transmittance_ray_allocator = builder.CreateBuffer<uint32_t>();
+    auto shade_point_transmittance_ray_direction = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto shade_point_transmittance_ray_origin = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    auto shade_point_transmittance_ray_state = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
+    auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
+
+    auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    auto shade_point_transmittance_ray_to_screen_probe_update_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto params = builder.Allocate<DiffuseIndirectLightingParams>();
     {
@@ -617,11 +667,39 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
         params->RWScreenProbeUpdateRayResultBuffer =
             screen_probe_update_ray_result_buffer.Raw();
+        params->RWScreenprobeUpdateRayRadianceBuffer =
+            screen_probe_update_ray_radiance_buffer.Raw();
         params->RWScreenProbeUpdateRayInvPdfBuffer =
             screen_probe_update_ray_inv_pdf_buffer.Raw();
+        params->RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer =
+            screen_probe_update_ray_hit_resolve_hash_cell_index_buffer.Raw();
+
+        params->RWScreenProbeUpdateRayHitShadingPointAllocator =
+            screen_probe_update_ray_hit_shading_point_allocator.Raw();
+        params->RWScreenProbeUpdateRayHitShadingPointListBuffer =
+            screen_probe_update_ray_hit_shading_point_list_buffer.Raw();
+
+        params->RWShadePointTransmittanceRayAllocator =
+            shade_point_transmittance_ray_allocator.Raw();
+        params->RWShadePointTransmittanceRayDirectionBuffer =
+            shade_point_transmittance_ray_direction.Raw();
+        params->RWShadePointTransmittanceRayOriginBuffer =
+            shade_point_transmittance_ray_origin.Raw();
+        params->RWShadePointTransmittanceRayStateBuffer =
+            shade_point_transmittance_ray_state.Raw();
+        params->RWShadePointTransmittanceRayTMaxBuffer =
+            shade_point_transmittance_ray_tmax.Raw();
+        params->ShadePointTransmittanceRayTransmittanceBuffer =
+            shade_point_transmittance_ray_transmittance.Raw();
+
+        params->RWShadePointTransmittanceRayContributionBuffer =
+            shade_point_transmittance_ray_contribution.Raw();
+        params->RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer =
+            shade_point_transmittance_ray_to_screen_probe_update_ray_index.Raw();
 
         params->G_Depth = view->G_depth_.Raw();
         params->G_Normal = view->G_normal_.Raw();
+        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
         params->PreviousDepthTexture =
             view->persistent_data_->prev_G_depth.Raw();
         params->PreviousNormalTexture =
@@ -662,6 +740,19 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;
+
+        // Hash grid
+        {
+            FillParametersForHashGridCache(view, params);
+            auto HashGrid_UB = builder.Allocate<HashGridWorldCacheUB>();
+            FillUniformBufferForHashGridCache(view, HashGrid_UB);
+            params->HashGrids_UB = HashGrid_UB;
+        }
+
+        // Direct lighting
+        {
+ahahaha
+        }
     }
     if (CVar_Debug_OutputProbeUpdateRays.Get()) {
         view->debug_buffers_.CreateTracedRayBuffers(builder, 256);
@@ -759,7 +850,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
     // Ray tracing...
     // TODO screen space tracing
-    Render_HardwareRadianceRayTracing(
+    Render_HardwareVisibilityRayTracing(
         view, builder,
         screen_probe_update_ray_allocator.Raw(),
         nullptr,
@@ -769,8 +860,65 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         nullptr,
         nullptr,
         screen_probe_update_ray_result_buffer.Raw(),
-        view->persistent_data_->frame_index_ * 137
+        view->persistent_data_->frame_index_ * 718 + 21,
+        true // Coarse visibility will be okay
     );
+
+    {
+        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryShader>(ini);
+        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
+            builder, screen_probe_update_ray_allocator.Raw(), wave_size
+        );
+        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryShader>(
+            builder, shader, params, cmd.Raw()
+        );
+    }
+
+    {
+        // Initialize & reuse the hash grid cache from the previous frame before updating.
+        Render_ReuseHashGridCache(view, builder);
+    }
+
+    auto shading_point_cmd = Helpers::SpawnDispatchIndirectCommand1D(
+        builder, screen_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
+    );
+    {
+        auto shader = lib.GetShader<SampleLightRaysForUpdateRayHitsShader>(ini);
+        Helpers::AddComputeIndirectPass<SampleLightRaysForUpdateRayHitsShader>(
+            builder, shader, params, shading_point_cmd.Raw()
+        );
+    }
+
+    Render_HardwareTransmittanceRayTracing(
+        view, builder,
+        shade_point_transmittance_ray_allocator.Raw(),
+        nullptr,
+        shade_point_transmittance_ray_direction.Raw(),
+        shade_point_transmittance_ray_state.Raw(),
+        nullptr,
+        shade_point_transmittance_ray_origin.Raw(),
+        shade_point_transmittance_ray_tmax.Raw(),
+        shade_point_transmittance_ray_transmittance.Raw()
+    );
+
+    {
+        auto shader = lib.GetShader<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(ini);
+        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
+            builder, shade_point_transmittance_ray_allocator.Raw(), wave_size
+        );
+        Helpers::AddComputeIndirectPass<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(
+            builder, shader, params, cmd.Raw()
+        );
+    }
+
+    Render_UpdateHashGridCache(view, builder);
+
+    {
+        auto shader = lib.GetShader<ResolveProbeUpdateRayRadianceFromCellsShader>(ini);
+        Helpers::AddComputeIndirectPass<ResolveProbeUpdateRayRadianceFromCellsShader>(
+            builder, shader, params, shading_point_cmd.Raw()
+        );
+    }
 
     {
         auto ini_s = ini;

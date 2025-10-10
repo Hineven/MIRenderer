@@ -43,6 +43,25 @@ void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTextu
      ->AddTexture(dst, RHITextureLayoutType::kTransferDstOptimal, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
 }
 
+void Helpers::CopyBuffer(RenderGraphBuilder &builder, RDGBuffer *src, RDGBuffer *dst,
+    size_t size, size_t src_offset, size_t dst_offset) {
+    if (size == SIZE_MAX) {
+        if (src->GetDesc().size - src_offset != dst->GetDesc().size - dst_offset) {
+            mi_assert(false, "CopyBuffer size is not specified, but the source and destination buffer sizes do not match.");
+        }
+        size = src->GetDesc().size - src_offset;
+    }
+    builder.AddPass("CopyBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
+        [src, dst, size, src_offset, dst_offset](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            queue.CopyBuffer(
+                RHIBufferSpan{src->GetRHI().buffer, src_offset, size},
+                RHIBufferSpan{dst->GetRHI().buffer, dst_offset, size}
+            );
+        }
+    )->AddBuffer(src, RHIGPUAccessFlagBits::kTransferRead, RHIPipelineStageFlagBits::kTransfer)
+     ->AddBuffer(dst, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
+}
+
 
 class SpawnDrawIndirectCommandShader : public RDGShader {
 public:

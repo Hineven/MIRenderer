@@ -25,6 +25,7 @@
 #include "renderer/mi_volume_primitives.h"
 #include "renderer/r_internal_common.h"
 #include "renderer/r_persistent.h"
+#include "renderer/r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
     static CVar<int> CVar_FinalOutputType(
@@ -284,6 +285,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         ->AddBufferH(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
+
+    // Pre-allocate world radiance cache buffers that may be used among multiple lighting stages
+    view->world_cache_->Allocate(builder);
 
     // Ready for rendering
 

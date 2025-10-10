@@ -29,6 +29,7 @@ set(SOURCES
         renderer/r_debug_views.cpp
         renderer/r_denoiser.cpp
         renderer/r_world_radiance_cache.cpp
+        renderer/r_light_structure.cpp
         util/radix_sort.cpp
         util/scan_sum.cpp
 )

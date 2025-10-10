@@ -87,6 +87,9 @@ protected:
     void Render_ComputeIndirectDiffuseLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+    void Render_ReuseHashGridCache ( // Called by Render_ComputeIndirectDiffuseLighting()
+        RendererView * view, RenderGraphBuilder & builder
+    );
     void Render_UpdateHashGridCache ( // Called by Render_ComputeIndirectDiffuseLighting()
         RendererView * view, RenderGraphBuilder & builder
     );

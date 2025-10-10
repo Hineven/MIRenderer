@@ -30,7 +30,7 @@ struct HashGridWorldCacheUB {
 ConstantBuffer<HashGridWorldCacheUB> HashGrids_UB;
 
 // Tile allocator
-RWStructuredBuffer<int>  HashGrids_FreeTileCountBuffer;
+RWStructuredBuffer<int>  HashGrids_FreeTileCount;
 RWStructuredBuffer<uint>  HashGrids_FreeTileListBuffer;
 
 // Hash table for tiles
@@ -45,13 +45,13 @@ RWStructuredBuffer<uint> HashGrids_CellValueBuffer; // 2 elements per cell
 // This is quantilized and atomic accumulated, and only contains mip0 cells
 RWStructuredBuffer<uint> HashGrids_UpdateCellValueXBuffer; // 4 elements per cell
 // A list of tiles that should be updated this frame
-RWStructuredBuffer<uint> HashGrids_UpdateTileCountBuffer;
+RWStructuredBuffer<uint> HashGrids_UpdateTileCount;
 RWStructuredBuffer<uint> HashGrids_UpdateTileListBuffer;
 // A list of active tile indices
 RWStructuredBuffer<uint> HashGrids_ActiveTileCountBeforeAllocationBuffer;
-RWStructuredBuffer<uint> HashGrids_ActiveTileCountBuffer;
+RWStructuredBuffer<uint> HashGrids_ActiveTileCount;
 RWStructuredBuffer<uint> HashGrids_ActiveTileListBuffer;
-RWStructuredBuffer<uint> HashGrids_HistoryActiveTileCountBuffer;
+RWStructuredBuffer<uint> HashGrids_HistoryActiveTileCount;
 RWStructuredBuffer<uint> HashGrids_HistoryActiveTileListBuffer;
 
 #define HASHGRIDS_RADIANCE_QUANTILIZATION_MULTIPLIER 2048.f
@@ -187,7 +187,7 @@ uint HashGrids_AllocateTile (float3 WorldPosition, float3 ViewDirection) {
     if(bIsNewSlot) {
         // No previous tile found, allocate a new one
         int TileFreeListIndex = 0;
-        InterlockedAdd(HashGrids_FreeTileCountBuffer[0], -1, TileFreeListIndex);
+        InterlockedAdd(HashGrids_FreeTileCount[0], -1, TileFreeListIndex);
         TileFreeListIndex --;
         if(TileFreeListIndex < 0) {
             return INVALID_UINT; // No more space in the free list
@@ -195,7 +195,7 @@ uint HashGrids_AllocateTile (float3 WorldPosition, float3 ViewDirection) {
         TileIndex = HashGrids_FreeTileListBuffer[TileFreeListIndex];
         // Register the tile to the active list
         uint ActiveListIndex;
-        InterlockedAdd(HashGrids_ActiveTileCountBuffer[0], 1, ActiveListIndex);
+        InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
         HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
         // Keep the key to index the tile for re-insertion
         HashGrids_TileBucketHashBuffer[TileIndex] = Key.BucketHash;
@@ -207,7 +207,7 @@ uint HashGrids_AllocateTile (float3 WorldPosition, float3 ViewDirection) {
     if(bIsNewSlot || PrevTimestamp != Timestamp) {
         // This tile is touched (for the first time in this frame), queue it up for update.
         int UpdateListIndex = 0;
-        InterlockedAdd(HashGrids_UpdateTileCountBuffer[0], 1, UpdateListIndex);
+        InterlockedAdd(HashGrids_UpdateTileCount[0], 1, UpdateListIndex);
         HashGrids_UpdateTileListBuffer[UpdateListIndex] = TileIndex;
     }
     return HashGrids_GetCellIndex(TileIndex, Key.CellOffset);
