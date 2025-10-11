@@ -13,8 +13,6 @@
 #error "LIGHT_GRID_NUM_CASCADES must be less than or equal to MAX_NUM_LIGHT_CASCADES"
 #endif
 
-
-
 struct LightStructureUB {
     uint3 LightGridSize;
     float LightGridCellSize;
@@ -39,9 +37,6 @@ struct DirectLightingUB {
     float ShadowRayLengthMultiplier;
     uint Unused;
 };
-
-ConstantBuffer<DirectLightingUB> DirectLighting_UB;
-
 
 // returns the wold grid min
 float3 LightGrid_GetGridBounds(int4 GridIndex, out float GridSize) {

@@ -59,6 +59,18 @@ bool HashGridPersistentData::MakeSureExists(
     return flag;
 }
 
+void RendererView::MakeSureHashGridPersistentDataExists(RenderGraphBuilder &builder) {
+    const uint32_t max_num_tiles = kHashGridMaxNumTiles;
+    const uint32_t num_buckets = kHashGridMaxNumBuckets;
+    const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
+    if (!persistent_data_->hash_grid_persistent_data_) {
+        persistent_data_->hash_grid_persistent_data_ = new HashGridPersistentData();
+    }
+    auto persistent = persistent_data_->hash_grid_persistent_data_;
+    persistent->MakeSureExists(this, builder, max_num_tiles, num_buckets, num_elements_per_bucket);
+}
+
+
 void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
     // TODO CVar system does not support dirty tracking currently.
     // So we have to make these parameters constant.
@@ -151,7 +163,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterHashGridsShader, "mi/
 
 
 void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
-        auto params = builder.Allocate<HashGridCommonParameters>();
+    auto params = builder.Allocate<HashGridCommonParameters>();
 
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
     const uint32_t num_buckets = kHashGridMaxNumBuckets;
@@ -159,12 +171,10 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
 
     bool need_reset = false;
 
-    if (!view->persistent_data_->hash_grid_persistent_data_) {
-        view->persistent_data_->hash_grid_persistent_data_ = new HashGridPersistentData();
-        need_reset = true;
-    }
+    // Make sure to reset the cache when persistent data is created.
     auto persistent = view->persistent_data_->hash_grid_persistent_data_;
-    need_reset |= persistent->MakeSureExists(view, builder, max_num_tiles, num_buckets, num_elements_per_bucket);
+    need_reset |= persistent->need_reset_;
+    persistent->need_reset_ = false;
     {
         FillParametersForHashGridCache(view, params);
         auto UB = builder.Allocate<HashGridWorldCacheUB>();

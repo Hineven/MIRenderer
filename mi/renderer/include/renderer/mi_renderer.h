@@ -160,6 +160,23 @@ protected:
         uint32_t seed
     );
 
+    void Render_HardwareVisibilityRayTracing (
+        RendererView * view, RenderGraphBuilder & builder,
+        RDGBuffer * ray_to_trace_list_length,
+        RDGBuffer * ray_to_trace_list,
+        RDGBuffer * ray_to_trace_direction,
+        RDGBuffer * ray_to_trace_state,
+        // Either ray_to_trace_origin_screen_coords or ray_to_trace_origin should be used. The
+        // other one should be nullptr.
+        RDGBuffer * ray_to_trace_origin_screen_coords,
+        RDGBuffer * ray_to_trace_origin,
+        RDGBuffer * ray_to_trace_tmax,
+        // For normal tracing: uint2 (packed normal, packed cached material)
+        // For full tracing: uint4 (full visibility)
+        RDGBuffer * ray_to_trace_result,
+        uint32_t seed, bool full_visibility = false
+    );
+
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;
         struct StaticMeshes {

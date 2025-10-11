@@ -45,7 +45,30 @@ static CVar<bool> CVar_DebugFreezeFrameSeed(
 );
 
 void LightStructureData::Allocate(RenderGraphBuilder &builder) {
+    auto & r = Renderer::Get();
+    auto max_num_lights = r.GetDeviceAllocator()->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(RawLight);
+    auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
 
+    precomputed_active_light_buffer = builder.CreateBuffer<PackedPrecomputedLight>(max_num_lights);
+    precomputed_active_light_buffer->SetName("LightGrid_PrecomputedActiveLightBuffer");
+    active_light_list_count = builder.CreateBuffer<uint32_t>();
+    active_light_list_count->SetName("LightGrid_ActiveLightListCount");
+    active_light_list_buffer = builder.CreateBuffer<uint32_t>(max_num_lights);
+    active_light_list_buffer->SetName("LightGrid_ActiveLightListBuffer");
+    auto max_num_light_grid_entries = CVar_MaxNumLightGridEntries.Get();
+    list_active_light_list_index_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries);
+    list_allocator = builder.CreateBuffer<uint32_t>();
+    list_allocator->SetName("LightGrid_ListAllocator");
+    list_active_light_list_index_buffer->SetName("LightGrid_ListActiveLightListIndexBuffer");
+    grid_light_list_offset_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
+    grid_light_list_offset_buffer->SetName("LightGrid_GridLightListOffsetBuffer");
+    grid_light_list_cdf_buffer = builder.CreateBuffer<float>(num_light_grids);
+    grid_light_list_cdf_buffer->SetName("LightGrid_GridLightListCdfBuffer");
+    grid_light_list_length_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
+    grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
+    // 4 Histories
+    bloom_filter_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries * 4);
+    bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
 }
 
 

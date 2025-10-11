@@ -28,19 +28,6 @@
 RWStructuredBuffer<uint> RWRayToTraceCount;
 RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
 
-// All area lights
-RWStructuredBuffer<PackedPrecomputedLight> RWPrecomputedActiveLightBuffer;
-
-RWStructuredBuffer<uint> RWActiveLightListCount;
-RWStructuredBuffer<uint> RWActiveLightListBuffer;
-
-
-RWStructuredBuffer<uint> RWLightGrid_ListAllocatorBuffer;
-RWStructuredBuffer<uint> RWLightGrid_ListLightIndexBuffer;
-RWStructuredBuffer<float> RWLightGrid_GridLightListCdfBuffer;
-RWStructuredBuffer<uint> RWLightGrid_GridLightListOffsetBuffer;
-RWStructuredBuffer<uint> RWLightGrid_GridLightListLengthBuffer;
-RWStructuredBuffer<uint> RWLightGrid_BloomFilterBuffer;
 
 #ifndef TILE_SIZE
 // Defaults to a smaller tile size for better thread coherency
@@ -70,6 +57,8 @@ RWStructuredBuffer<float3> RWRayToTraceOriginBuffer;
 
 // Special sampler used for SSRT
 SamplerState PointBorder1Sampler;
+
+ConstantBuffer<DirectLightingUB> DirectLighting_UB;
 
 struct HybridTracingUB {
     uint  SSRT_Disabled;
@@ -102,8 +91,8 @@ RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
     if(DispatchID == 0) {
-        RWLightGrid_ListAllocatorBuffer[0] = 0;
-        RWActiveLightListCount[0] = 0;
+        LightGrid_ListAllocator[0] = 0;
+        LightGrid_ActiveLightListCount[0] = 0;
         RWRayToTraceCount[0] = 0;
         RWRayToTraceListAllocator[0] = 0;
         RWVolumeRayToTraceCount[0] = 0;
@@ -112,10 +101,10 @@ void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
     if (Index >= LightStructure_UB.LighGridNumCascadesUsed * LightStructure_UB.LightGridNumGrids) {
         return;
     }
-    RWLightGrid_GridLightListLengthBuffer[Index] = 0;
+     LightGrid_GridLightListLengthBuffer[Index] = 0;
 }
 
-// Precompute lights, gather light data for later injection
+// Precompute lights, filter active lights and gather light data for later injection
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
     uint LightIndex = DispatchID;
@@ -140,14 +129,14 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
             uint WaveNumActiveLights = WaveActiveCountBits(true);
             uint WaveLightListOffset = 0;
             if (WaveIsFirstLane()) {
-                InterlockedAdd(RWActiveLightListCount[0], WaveNumActiveLights, WaveLightListOffset);
+                InterlockedAdd(LightGrid_ActiveLightListCount[0], WaveNumActiveLights, WaveLightListOffset);
             }
             WaveLightListOffset = WaveReadLaneFirst(WaveLightListOffset);
             uint WaveLightListIndex = WavePrefixCountBits(true);
             uint LightListIndex = WaveLightListOffset + WaveLightListIndex;
             // Precompute and store active lights
-            RWActiveLightListBuffer[LightListIndex] = LightIndex;
-            RWPrecomputedActiveLightBuffer[LightListIndex] = PackPrecomputedLight(L);
+            LightGrid_ActiveLightListBuffer[LightListIndex] = LightIndex;
+            LightGrid_PrecomputedActiveLightBuffer[LightListIndex] = PackPrecomputedLight(L);
         }
     }
 }
@@ -164,14 +153,14 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     float GridSize;
     float3 GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
     // TODO use multi level injection for a large number of lights
-    uint NumActiveLights = ActiveLightListCount[0];
+    uint NumActiveLights = LightGrid_ActiveLightListCount[0];
     uint NumGridLights = 0, WriteLocation = 0;
     uint SampledOffset = 0, CandidateOffset = MAX_NUM_GRID_LIGHTS;
     Random R = MakeRandom(17419142u + DispatchID, LightStructure_UB.FrameIndex);
     float U = R.rand();
     float SumWeights = 0.0f, SumSampledWeights = 0.f, SumCandidateWeights = 0.f;
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
-        PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[LightListIndex]);
+        PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridContribution(L, GridMin, GridSize);
         if (Weight > LightStructure_UB.LightInjectionIntensityThreshold) {
             // Avoid bank conflicts
@@ -214,23 +203,23 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
         }
     }
     // Write to grid
-    RWLightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
-    RWLightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
+     LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
+    LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();
     uint LocalOffset = 0;
     InterlockedAdd(SharedListElementsRequired, NumSampledLights, LocalOffset);
     GroupMemoryBarrierWithGroupSync();
     if (LocalID == 0) {
-        InterlockedAdd(RWLightGrid_ListAllocatorBuffer[0], SharedListElementsRequired, SharedListOffsetBase);
+        InterlockedAdd(LightGrid_ListAllocator[0], SharedListElementsRequired, SharedListOffsetBase);
     }
     GroupMemoryBarrierWithGroupSync();
     uint GlobalOffset = SharedListOffsetBase + LocalOffset;
-    RWLightGrid_GridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
+    LightGrid_GridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
     for (uint i = 0; i < NumSampledLights; i++) {
         uint LightListIndex = SharedGridLightListIndices[(SampledOffset + i) * WAVE_SIZE + LocalID];
         // This time we store active light list index in the grid buffer 
-        RWLightGrid_ListLightIndexBuffer[GlobalOffset + i] = LightListIndex;
+        LightGrid_ListActiveLightListIndexBuffer[GlobalOffset + i] = LightListIndex;
     }
 }
 

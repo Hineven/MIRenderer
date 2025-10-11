@@ -9,6 +9,10 @@
 #include <renderer/mi_renderer_view.h>
 MI_NAMESPACE_BEGIN
 
+extern CVar<int> CVar_MaxNumGridLights;
+extern CVar<int> CVar_NumLightSamplerSamples;
+extern CVar<int> CVar_MaxNumLightGridEntries;
+
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
 
@@ -30,12 +34,16 @@ struct LightStructureUB {
 };
 
 struct LightStructureData : RefCounted<> {
-    TRef<RDGBuffer> active_light_list_buffer;
     TRef<RDGBuffer> precomputed_active_light_buffer;
-    TRef<RDGBuffer> list_light_index_buffer;
+    TRef<RDGBuffer> active_light_list_count;
+    TRef<RDGBuffer> active_light_list_buffer;
+    // List of light indices for each grid
+    TRef<RDGBuffer> list_allocator;
+    TRef<RDGBuffer> list_active_light_list_index_buffer; // stores a index to active light list
     TRef<RDGBuffer> grid_light_list_offset_buffer;
     TRef<RDGBuffer> grid_light_list_cdf_buffer;
     TRef<RDGBuffer> grid_light_list_length_buffer;
+    TRef<RDGBuffer> bloom_filter_buffer;
 
     void Allocate(
         RenderGraphBuilder & builder
@@ -45,23 +53,33 @@ struct LightStructureData : RefCounted<> {
 template<typename T>
 void FillParametersForLightStructure (RendererView * view, T * params) {
     auto ls = view->light_structure_;
-    if constexpr(requires{params->LightStructure_ActiveLightListBuffer;}) {
-        params->LightStructure_ActiveLightListBuffer = ls->active_light_list_buffer.Raw();
+
+    if constexpr(requires{params->LightGrid_PrecomputedActiveLightBuffer;}) {
+        params->LightGrid_PrecomputedActiveLightBuffer = ls->precomputed_active_light_buffer.Raw();
     }
-    if constexpr(requires{params->LightStructure_PrecomputedActiveLightBuffer;}) {
-        params->LightStructure_PrecomputedActiveLightBuffer = ls->precomputed_active_light_buffer.Raw();
+    if constexpr(requires{params->LightGrid_ActiveLightListCount;}) {
+        params->LightGrid_ActiveLightListCount = ls->active_light_list_buffer.Raw();
     }
-    if constexpr(requires{params->LightStructure_ListLightIndexBuffer;}) {
-        params->LightStructure_ListLightIndexBuffer = ls->list_light_index_buffer.Raw();
+    if constexpr(requires{params->LightGrid_ActiveLightListBuffer;}) {
+        params->LightGrid_ActiveLightListBuffer = ls->active_light_list_buffer.Raw();
     }
-    if constexpr(requires{params->LightStructure_GridLightListOffsetBuffer;}) {
-        params->LightStructure_GridLightListOffsetBuffer = ls->grid_light_list_offset_buffer.Raw();
+    if constexpr(requires{params->LightGrid_ListAllocator;}) {
+        params->LightGrid_ListAllocator = ls->list_allocator.Raw();
     }
-    if constexpr(requires{params->LightStructure_GridLightListCDFBuffer;}) {
-        params->LightStructure_GridLightListCDFBuffer = ls->grid_light_list_cdf_buffer.Raw();
+    if constexpr(requires{params->LightGrid_ListActiveLightListIndexBuffer;}) {
+        params->LightGrid_ListActiveLightListIndexBuffer = ls->list_active_light_list_index_buffer.Raw();
     }
-    if constexpr(requires{params->LightStructure_GridLightListLengthBuffer;}) {
-        params->LightStructure_GridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
+    if constexpr(requires{params->LightGrid_GridLightListOffsetBuffer;}) {
+        params->LightGrid_GridLightListOffsetBuffer = ls->grid_light_list_offset_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_GridLightListCdfBuffer;}) {
+        params->LightGrid_GridLightListCdfBuffer = ls->grid_light_list_cdf_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_GridLightListLengthBuffer;}) {
+        params->LightGrid_GridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_BloomFilterBuffer;}) {
+        params->LightGrid_BloomFilterBuffer = ls->bloom_filter_buffer.Raw();
     }
 }
 

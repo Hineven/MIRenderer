@@ -70,23 +70,17 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder1Sampler)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWPrecomputedActiveLightBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrecomputedActiveLightBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveLightListCount)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveLightListBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListCount)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_ListLightIndexBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListOffsetBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListCdfBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListLengthBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_BloomFilterBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_ListAllocatorBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_ListLightIndexBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_GridLightListCdfBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_GridLightListOffsetBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_GridLightListLengthBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLightGrid_BloomFilterBuffer)
+
+    // Light grid
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_PrecomputedActiveLightBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ActiveLightListCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ActiveLightListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ListAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ListActiveLightListIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
@@ -241,14 +235,16 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrecomputedActiveLightBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListCount)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveLightListBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_ListLightIndexBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListOffsetBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListCdfBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_GridLightListLengthBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    // Light grid
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_PrecomputedActiveLightBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ActiveLightListCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ActiveLightListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ListActiveLightListIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleColorAndLinearDepth)
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleTransmittanceAndPdf)
@@ -323,31 +319,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
     auto params = builder.Allocate<DirectLightingShaderParameters>();
     auto light_buffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
     auto max_num_lights = device_allocator_->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(RawLight);
-    auto precomputed_active_light_buffer = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, max_num_lights * sizeof(PackedPrecomputedLight)
-    );
-    precomputed_active_light_buffer->SetName("PrecomputedActiveLightBuffer");
-    auto active_light_list_count = builder.CreateBuffer<uint32_t>();
-    active_light_list_count->SetName("ActiveLightListCount");
-    auto active_light_list_buffer = builder.CreateBuffer<uint32_t>(max_num_lights);
-    active_light_list_buffer->SetName("ActiveLightListBuffer");
-    auto max_num_light_grid_entries = CVar_MaxNumLightGridEntries.Get();
     auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
-    auto light_grid_list_light_index_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries);
-    light_grid_list_light_index_buffer->SetName("LightGrid_ListLightIndexBuffer");
-    auto light_grid_grid_light_list_offset_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
-    light_grid_grid_light_list_offset_buffer->SetName("LightGrid_GridLightListOffsetBuffer");
-    auto light_grid_grid_light_list_cdf_buffer = builder.CreateBuffer<float>(num_light_grids);
-    light_grid_grid_light_list_cdf_buffer->SetName("LightGrid_GridLightListCdfBuffer");
-
-    auto light_grid_grid_light_list_length_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
-    light_grid_grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
-
-    // 4 Histories
-    auto light_grid_bloom_filter_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries * 4);
-    light_grid_bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
-    auto light_grid_list_allocator_buffer = builder.CreateBuffer<uint32_t>();
-    light_grid_list_allocator_buffer->SetName("LightGrid_ListAllocatorBuffer");
 
     uint32_t num_screen_pixels = view->film_width_ * view->film_height_;
 
@@ -407,25 +379,8 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         }
         params->HybridTracing_UB = HT_UB;
         params->LightBuffer = light_buffer;
-        params->RWPrecomputedActiveLightBuffer = precomputed_active_light_buffer.Raw();
-        params->PrecomputedActiveLightBuffer = precomputed_active_light_buffer.Raw();
-        params->RWActiveLightListCount = active_light_list_count.Raw();
-        asdfasfdasfasf
-        migrate light grid data to lightgrid.cpp
-        params->RWActiveLightListBuffer = active_light_list_buffer.Raw();
-        params->ActiveLightListCount = active_light_list_count.Raw();
-        params->ActiveLightListBuffer = active_light_list_buffer.Raw();
-        params->LightGrid_ListLightIndexBuffer = light_grid_list_light_index_buffer.Raw();
-        params->LightGrid_GridLightListOffsetBuffer = light_grid_grid_light_list_offset_buffer.Raw();
-        params->LightGrid_GridLightListCdfBuffer = light_grid_grid_light_list_cdf_buffer.Raw();
-        params->LightGrid_GridLightListLengthBuffer = light_grid_grid_light_list_length_buffer.Raw();
-        params->LightGrid_BloomFilterBuffer = light_grid_bloom_filter_buffer.Raw();
-        params->RWLightGrid_ListAllocatorBuffer = light_grid_list_allocator_buffer.Raw();
-        params->RWLightGrid_ListLightIndexBuffer = light_grid_list_light_index_buffer.Raw();
-        params->RWLightGrid_GridLightListCdfBuffer = light_grid_grid_light_list_cdf_buffer.Raw();
-        params->RWLightGrid_GridLightListOffsetBuffer = light_grid_grid_light_list_offset_buffer.Raw();
-        params->RWLightGrid_GridLightListLengthBuffer = light_grid_grid_light_list_length_buffer.Raw();
-        params->RWLightGrid_BloomFilterBuffer = light_grid_bloom_filter_buffer.Raw();
+
+        FillParametersForLightStructure(view, params);
 
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
         params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
@@ -561,7 +516,6 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
     volprims_params->PointWrapSampler  = RHI::Get().GetGlobalSamplers().point_wrap;
 
     volprims_params->LightBuffer = params->LightBuffer;
-    volprims_params->PrecomputedActiveLightBuffer = params->PrecomputedActiveLightBuffer;
     auto volume_ray_to_trace_direction = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::vec3)
     );
@@ -574,13 +528,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
     auto volume_ray_to_trace_tmax = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
     );
-    volprims_params->ActiveLightListCount = params->ActiveLightListCount;
-    volprims_params->ActiveLightListBuffer = params->ActiveLightListBuffer;
-    volprims_params->LightGrid_ListLightIndexBuffer = params->LightGrid_ListLightIndexBuffer;
-    volprims_params->LightGrid_GridLightListOffsetBuffer = params->LightGrid_GridLightListOffsetBuffer;
-    volprims_params->LightGrid_GridLightListCdfBuffer = params->LightGrid_GridLightListCdfBuffer;
-    volprims_params->LightGrid_GridLightListLengthBuffer = params->LightGrid_GridLightListLengthBuffer;
-    volprims_params->LightGrid_BloomFilterBuffer = params->LightGrid_BloomFilterBuffer;
+    FillParametersForLightStructure(view, volprims_params);
 
     volprims_params->VolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
     volprims_params->VolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();

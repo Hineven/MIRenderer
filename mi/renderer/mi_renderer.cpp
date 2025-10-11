@@ -24,6 +24,7 @@
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
 #include "renderer/r_internal_common.h"
+#include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
 #include "renderer/r_world_radiance_cache.h"
 
@@ -287,7 +288,16 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Pre-allocate world radiance cache buffers that may be used among multiple lighting stages
+    if (!view->world_cache_) {
+        view->world_cache_ = new WorldRadianceCacheData();
+    }
     view->world_cache_->Allocate(builder);
+    if (!view->light_structure_) {
+        view->light_structure_ = new LightStructureData();
+    }
+    view->light_structure_->Allocate(builder);
+    // Pre-allocate view persistent data
+    view->MakeSureHashGridPersistentDataExists(builder);
 
     // Ready for rendering
 

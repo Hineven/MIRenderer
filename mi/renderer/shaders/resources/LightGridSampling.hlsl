@@ -13,17 +13,18 @@
 
 StructuredBuffer<AreaLight> LightBuffer;
 
-StructuredBuffer<uint> ActiveLightListCount;
-StructuredBuffer<uint> ActiveLightListBuffer;
+RWStructuredBuffer<uint> LightGrid_ActiveLightListCount;
+RWStructuredBuffer<uint> LightGrid_ActiveLightListBuffer;
 
-StructuredBuffer<uint> LightGrid_ListLightIndexBuffer;
-StructuredBuffer<uint> LightGrid_GridLightListOffsetBuffer;
-StructuredBuffer<float> LightGrid_GridLightListCdfBuffer;
-StructuredBuffer<uint> LightGrid_GridLightListLengthBuffer;
+RWStructuredBuffer<uint>  LightGrid_ListAllocator;
+RWStructuredBuffer<uint>  LightGrid_ListActiveLightListIndexBuffer;
+RWStructuredBuffer<uint> LightGrid_GridLightListOffsetBuffer;
+RWStructuredBuffer<float> LightGrid_GridLightListCdfBuffer;
+RWStructuredBuffer<uint> LightGrid_GridLightListLengthBuffer;
 // Record the combination of light encodings that successfully illuminated geometries in the grid
-StructuredBuffer<uint4> LightGrid_BloomFilterBuffer;
+RWStructuredBuffer<uint4> LightGrid_BloomFilterBuffer;
 
-StructuredBuffer<PackedPrecomputedLight> PrecomputedActiveLightBuffer;
+RWStructuredBuffer<PackedPrecomputedLight> LightGrid_PrecomputedActiveLightBuffer;
 
 struct LightSampler {
     uint NumResampledLights;
@@ -151,8 +152,8 @@ LightSample SampleOneLightSample_RIS (
     if (bUniformGrid || !bGroupedAccess) {
         // Assume one wave have locality regarding the grid index
         for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
-            uint ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
-            PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
+            uint ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
+            PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
             float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
             if(Weight > 0.f) {
                 AddLightToSampler(LS, Weight, ActiveLightListIndex);
@@ -166,10 +167,10 @@ LightSample SampleOneLightSample_RIS (
         // TODO add a noisy occlusion modifier based on history cache to the target distribution
         while(LightListIndex < NumGridLights && Iteration < 256) {
             uint ActiveLightListIndex = INVALID_UINT;
-            ActiveLightListIndex = LightGrid_ListLightIndexBuffer[GridLightListOffset + LightListIndex];
+            ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
             uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
             if (WaveMinLightIndex == ActiveLightListIndex) {
-                PrecomputedLight L = UnpackPrecomputedLight(PrecomputedActiveLightBuffer[ActiveLightListIndex]);
+                PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
                 float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
                 if (Weight > 0.f) {
                     // Add the light to the sampler
@@ -190,7 +191,7 @@ LightSample SampleOneLightSample_RIS (
     for (int SamplerLightListIndex = 0; SamplerLightListIndex < NUM_LIGHT_SAMPELR_SAMPLES; SamplerLightListIndex++) {
         uint ActiveLightListIndex = LS.ActiveLightListIndex[SamplerLightListIndex];
         if(IsValid(ActiveLightListIndex)) {
-            uint LightIndex = ActiveLightListBuffer[ActiveLightListIndex];
+            uint LightIndex = LightGrid_ActiveLightListBuffer[ActiveLightListIndex];
             EvaluatedLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
             float2 u2 = R.rand2();
             LightSample Sample;

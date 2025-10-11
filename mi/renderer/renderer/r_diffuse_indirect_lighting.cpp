@@ -12,8 +12,11 @@
 #include "r_view_common.h"
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
+
+#include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_world_radiance_cache.h"
+#include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 
@@ -96,6 +99,8 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeSHCoefficientsGTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeSHCoefficientsBTexture)
 
+    SHADER_RESOURCE_PARAMETER(Texture2D, PreviousShadedDiffuseRadianceWithoutEmission)
+
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileScreenProbeCacheIndexListBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileScreenProbeCacheIndexListLengthsBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileScreenProbeCacheIndexListOffsetsBuffer)
@@ -159,8 +164,6 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDiffuseIndirectLightingTexture)
 
-    SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
-
     SHADER_UNIFORM_BUFFER(DiffuseIndirectLightingUB, UB)
     SHADER_UNIFORM_BUFFER(DebugCommonShaderParameters, Debug)
 
@@ -187,6 +190,36 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
     SHADER_UNIFORM_BUFFER(HashGridWorldCacheUB, HashGrids_UB)
 
+    // Light grid
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_PrecomputedActiveLightBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ActiveLightListCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ActiveLightListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ListAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_ListActiveLightListIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
+
+    // Geometry & Material & Lighting
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
+
+    // Samplers
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+    SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
+
+
+    // Debugging
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRaysCount)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayOrigins)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayDirections)
@@ -599,6 +632,9 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         params->RWScreenProbeSHCoefficientsBTexture =
             screen_probe_sh_coefficients_b.Raw();
 
+        params->PreviousShadedDiffuseRadianceWithoutEmission =
+            view->persistent_data_->prev_shaded_radiance_no_emission_.Raw();
+
         params->RWTileScreenProbeCacheIndexListBuffer =
             tile_screen_probe_cache_index_list_buffer.Raw();
         params->RWTileScreenProbeCacheIndexListLengthsBuffer =
@@ -667,7 +703,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
         params->RWScreenProbeUpdateRayResultBuffer =
             screen_probe_update_ray_result_buffer.Raw();
-        params->RWScreenprobeUpdateRayRadianceBuffer =
+        params->RWScreenProbeUpdateRayRadianceBuffer =
             screen_probe_update_ray_radiance_buffer.Raw();
         params->RWScreenProbeUpdateRayInvPdfBuffer =
             screen_probe_update_ray_inv_pdf_buffer.Raw();
@@ -749,9 +785,25 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             params->HashGrids_UB = HashGrid_UB;
         }
 
-        // Direct lighting
+        // Light grid
         {
-ahahaha
+            FillParametersForLightStructure(view, params);
+            auto LightStructure_UB = builder.Allocate<LightStructureUB>();
+            FillUniformBufferForLightStructure(view, LightStructure_UB);
+            params->LightStructure_UB = LightStructure_UB;
+        }
+
+        // Geometry & Material & Lighting
+        {
+            params->LightBuffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
+            params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+            params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+            params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+            params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());
+            params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
+            params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
+            params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
+            params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
         }
     }
     if (CVar_Debug_OutputProbeUpdateRays.Get()) {
@@ -861,7 +913,7 @@ ahahaha
         nullptr,
         screen_probe_update_ray_result_buffer.Raw(),
         view->persistent_data_->frame_index_ * 718 + 21,
-        true // Coarse visibility will be okay
+        false // Coarse visibility will be okay
     );
 
     {

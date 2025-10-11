@@ -268,8 +268,13 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
 
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
+    prev_G_depth->SetExport();
+    prev_G_normal->SetExport();
 
     prev_radiance_ = view->radiance_;
+    prev_radiance_->SetExport();
+    prev_shaded_radiance_no_emission_ = view->shaded_radiance_no_emission_;
+    prev_shaded_radiance_no_emission_->SetExport();
 
     prev_scene_ = view->scene_;
 

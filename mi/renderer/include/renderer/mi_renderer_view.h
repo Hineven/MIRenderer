@@ -152,6 +152,8 @@ struct RendererView {
 
     // Final radiance
     TRef<RDGTexture> radiance_;
+    // Shaded radiance without emission, created & written by final composition
+    TRef<RDGTexture> shaded_radiance_no_emission_;
 
     // Debug output, can be written to for debug purposes
     // This is tone mapped the same as radiance_
@@ -188,7 +190,7 @@ struct RendererView {
 
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
-
+    void MakeSureHashGridPersistentDataExists (RenderGraphBuilder & builder);
 };
 
 // Used for setting cursor positions in debug uniform buffers

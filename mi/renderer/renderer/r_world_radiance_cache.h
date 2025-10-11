@@ -67,6 +67,8 @@ struct HashGridPersistentData : RefCounted<> {
     TRef<RDGBuffer> active_tile_count;
     TRef<RDGBuffer> active_tile_list_buffer;
 
+    bool need_reset_ {true};
+
     bool MakeSureExists(
         RendererView * view, RenderGraphBuilder & builder,
         uint32_t max_num_tiles,
