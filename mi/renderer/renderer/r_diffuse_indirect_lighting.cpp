@@ -745,6 +745,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             view->diffuse_indirect_lighting_.Raw();
 
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+        params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
         auto UB = builder.Allocate<DiffuseIndirectLightingUB>();
         {

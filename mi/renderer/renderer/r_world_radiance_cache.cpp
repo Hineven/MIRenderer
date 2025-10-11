@@ -124,8 +124,14 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReInsertHashGridTilesShader
 
 class PrepareDispatchCommandForClearNewHashGridTileCellsShader : public RDGShader {
 public:
-    RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileCount)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCount)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCountBeforeAllocationBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWClearNewHashGridTileCellsIndirectCommandBuffer)
+    END_SHADER_PARAMETERS()
     DECLARE_SHADER()
+    RDG_SHADER_USE_PARAMETERS(Params)
     static std::vector<std::string> GetShaderDefaultMacros () {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
@@ -133,7 +139,7 @@ public:
     }
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrepareDispatchCommandForClearNewHashGridTileCellsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "PrepareDispatchCommandForClearNewHashGridTileCells")
+IMPLEMENT_RDG_COMPUTE_SHADER(PrepareDispatchCommandForClearNewHashGridTileCellsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "PrepareDispatchCommandForClearNewHashGridTileCells")
 
 class ClearNewHashGridTileCellsShader : public RDGShader {
 public:
@@ -218,7 +224,14 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     {
         auto shader = lib.GetShader<PrepareDispatchCommandForClearNewHashGridTileCellsShader>();
-        Helpers::AddComputePass(builder, shader, params, 1);
+        auto prepare_params = builder.Allocate<PrepareDispatchCommandForClearNewHashGridTileCellsShader::Params>();
+        {
+            prepare_params->HashGrids_FreeTileCount = view->persistent_data_->hash_grid_persistent_data_->free_tile_count.Raw();
+            prepare_params->HashGrids_ActiveTileCount = view->world_cache_->active_tile_count.Raw();
+            prepare_params->HashGrids_ActiveTileCountBeforeAllocationBuffer = view->world_cache_->active_tile_count_before_allocation_buffer.Raw();
+            prepare_params->RWClearNewHashGridTileCellsIndirectCommandBuffer = clear_cmd.Raw();
+        }
+        Helpers::AddComputePass(builder, shader, prepare_params, 1);
     }
     {
         auto shader = lib.GetShader<ClearNewHashGridTileCellsShader>();

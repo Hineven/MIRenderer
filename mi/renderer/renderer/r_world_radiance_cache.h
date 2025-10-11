@@ -52,8 +52,6 @@ BEGIN_SHADER_PARAMETERS(HashGridCommonParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_HistoryActiveTileCount)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_HistoryActiveTileListBuffer)
 
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWClearNewHashGridTileCellsIndirectCommandBuffer)
-
     SHADER_UNIFORM_BUFFER(HashGridWorldCacheUB, HashGrids_UB)
 END_SHADER_PARAMETERS()
 
