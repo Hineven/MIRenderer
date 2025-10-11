@@ -1133,7 +1133,15 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	}
 	if(!bBypass) {
 		if(bHit) {
-			// Queue up all hits that failed in reprojection for world-space direct lighting
+            // FIXME
+            {
+                uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
+                float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
+                Radiance = 0;
+                RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
+                return ;
+            }
+            // Queue up all hits that failed in reprojection for world-space direct lighting
 			int HitCountNoBypass = WaveActiveCountBits(true);
 			int HitCountListOffset = 0;
 			if(WaveIsFirstLane()) {
@@ -1151,6 +1159,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			if(RayHitT < CellSize) {
 				uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
                 float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
+                // Mark bypassing the cache
                 RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
 			}
 		} else {
@@ -1158,9 +1167,8 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			// Sample the sky radiance and store it in the result buffer
 			// Note: sky radiance is regarded an indirect lighting source
 			// due to it's low frequency nature (sun excluded)
-            uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
-            float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
-            Radiance = EnvironmentMap.SampleLevel(LinearWrapSampler, RayDirection, 0).xyz;
+            // uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
+            float3 Radiance = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
 		}
 	}
