@@ -446,21 +446,31 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
     // Initialize device properties
     {
-        auto props = physical_device_.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties>();
+        auto props = physical_device_.getProperties2<
+            vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties,
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+        >();
         auto& subgroup_props = props.get<vk::PhysicalDeviceSubgroupProperties>();
 
         rhi_device_properties_.wave_size = subgroup_props.subgroupSize;
         strcpy_s(rhi_device_properties_.device_name, physical_device_properties_.self.properties.deviceName);
 
-        auto rt_props = physical_device_.getProperties2<
-            vk::PhysicalDeviceProperties2,
-            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        auto& rt_props = props.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
 
         rhi_device_properties_.shader_group_handle_size = rt_props.shaderGroupHandleSize;
         rhi_device_properties_.shader_group_handle_alignment = rt_props.shaderGroupHandleAlignment;
         rhi_device_properties_.shader_group_base_alignment = rt_props.shaderGroupBaseAlignment;
         rhi_device_properties_.max_ray_recursion_depth = rt_props.maxRayRecursionDepth;
         rhi_device_properties_.max_shader_group_stride = rt_props.maxShaderGroupStride;
+
+        auto& def_props = props.get<vk::PhysicalDeviceProperties2>();
+        rhi_device_properties_.timestamp_period = def_props.properties.limits.timestampPeriod;
+        mi_assert(def_props.properties.limits.timestampComputeAndGraphics, "What hardware is this????");
+        auto queue_props = physical_device_.getQueueFamilyProperties2();
+        auto graphics_queue_prop = queue_props[graphics_queue_family_index_];
+        rhi_device_properties_.timestamp_valid_bits = graphics_queue_prop.queueFamilyProperties.timestampValidBits;
+        // Hardcoded in timestamp implementations
+        mi_assert(rhi_device_properties_.timestamp_valid_bits < 128, "What hardware is this????");
     }
 
 #ifdef ENABLE_VALIDATION_LAYER
@@ -485,6 +495,14 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         });
 #endif
         LoadPipelineCache();
+
+        // Query pool
+        timestamp_query_pool_ = device_.createQueryPool(vk::QueryPoolCreateInfo{
+            {},
+            vk::QueryType::eTimestamp,
+            2048, // max 2048 timestamps for all flying frames
+            {} // No pipeline statistics
+        });
     }
     vma_ = vma::createAllocator(vma::AllocatorCreateInfo{
             vma::AllocatorCreateFlagBits::eKhrDedicatedAllocation // Vulkan 1.1
@@ -571,6 +589,9 @@ VulkanRHI::~VulkanRHI() {
     // Release the resources held by upper layers first
     delete this->bindless_manager_;
     delete this->command_executor_;
+
+    // Query pool
+    device_.destroy(timestamp_query_pool_);
 
     // Save pipeline cache before destroying it
     if (pipeline_cache_) {
@@ -780,6 +801,12 @@ TRef<RHIAccelerationStructure> VulkanRHI::CreateAccelerationStructure(RHIAcceler
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
     auto sampler = new VulkanSampler(desc);
     return TRef<RHISampler>(sampler);
+}
+
+RHITimestampRef VulkanRHI::CreateTimestamp() {
+    auto index = timestamp_query_allocator_.fetch_add(1);
+    auto timestamp = new VulkanTimestamp(index);
+    return TRef<RHITimestamp>(timestamp);
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,

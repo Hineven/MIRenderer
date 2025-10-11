@@ -55,6 +55,7 @@ public:
     void RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHICommandDebugMarkerBegin *cmd) override;
     void RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) override;
     void RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) override;
+    void RHIInsertTimestamp (RHICommandQueueBase * buffer, RHICommandInsertTimestamp * cmd) override;
 
     // Ray tracing commands
     void RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) override;

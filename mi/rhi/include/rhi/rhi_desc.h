@@ -30,6 +30,9 @@ struct RHIDeviceProperties {
     uint32_t shader_group_base_alignment {};      // Base alignment for SBT entries
     uint32_t max_ray_recursion_depth {};          // Maximum ray recursion depth
     uint32_t max_shader_group_stride {};          // Maximum stride for shader binding table
+
+    float    timestamp_period {};            // Timestamp period in nanoseconds (1 timestamp = this many ns)
+    uint32_t timestamp_valid_bits {};        // Number of valid bits in a timestamp value
 };
 
 struct RHIParamStructInfo;

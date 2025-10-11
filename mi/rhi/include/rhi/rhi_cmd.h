@@ -612,6 +612,17 @@ public:
     std::array<float, 4> color_;
 };
 
+// Insert a GPU timestamp into the global query pool for later readback.
+class RHICommandInsertTimestamp : public TRHICommand<RHICommandInsertTimestamp> {
+public:
+    RHICommandInsertTimestamp(RHITimestamp* timestamp, RHIPipelineStageFlags stages)
+        : timestamp_(timestamp), stages_(stages) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    RHITimestamp* timestamp_;
+    RHIPipelineStageFlags stages_;
+};
+
 
 // Ray tracing commands
 class RHICommandBuildAccelerationStructure : public TRHICommand<RHICommandBuildAccelerationStructure> {
@@ -960,6 +971,12 @@ public:
         memcpy(name_copy, marker_name, len + 1);
         AddCommand(AllocateCommand<RHICommandDebugMarkerInsert>(name_copy, color));
 #endif
+    }
+
+    // Insert a GPU timestamp at the specified pipeline stages. Default is all commands.
+    FORCEINLINE void InsertTimestamp(RHITimestamp* timestamp,
+                                     RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kAll) {
+        AddCommand(AllocateCommand<RHICommandInsertTimestamp>(timestamp, stages));
     }
 
 };

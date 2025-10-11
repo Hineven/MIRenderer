@@ -58,6 +58,8 @@ public:
 
     RHISamplerRef CreateSampler(RHISamplerDesc desc) override;
 
+    RHITimestampRef CreateTimestamp() override;
+
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;
 
@@ -98,6 +100,10 @@ public:
 
     FORCEINLINE vk::PipelineCache GetPipelineCache () const {
         return pipeline_cache_;
+    }
+
+    FORCEINLINE vk::QueryPool GetTimestampQueryPool () const {
+        return timestamp_query_pool_;
     }
 
     FORCEINLINE vk::Queue GetQueue (RHICommandQueueType type) {
@@ -162,6 +168,12 @@ protected:
 
     std::mutex pipeline_cache_mutex_ {};
     vk::PipelineCache pipeline_cache_ {};
+
+    // Ring buffer allocator without recycling and overlapping checking
+    // We assume that the allocations are short lived and will never exceed the total size of the buffer
+    constexpr static uint32_t kMaxNumTimestampQueries = 2048;
+    vk::QueryPool timestamp_query_pool_ {};
+    std::atomic<uint32_t> timestamp_query_allocator_ {0};
 
     int surface_offset_x_ {};
     int surface_offset_y_ {};

@@ -119,4 +119,29 @@ void VulkanSyncPoint::SetName(const std::string& name) {
     );
 }
 
+VulkanTimestamp::~VulkanTimestamp() {
+
+}
+
+uint64_t VulkanTimestamp::QueryTimestamp() const {
+    auto rhi = GetVulkanRHI();
+    struct TimestampValue {
+        char padding[16]; // maximum of 128 bytes
+    };
+    auto result = rhi->GetDevice().getQueryPoolResult<uint64_t>(
+        rhi->GetTimestampQueryPool(), query_index_, 1,
+        sizeof(TimestampValue),
+        vk::QueryResultFlagBits::eWait | vk::QueryResultFlagBits::eWithAvailability
+    );
+    uint64_t value = *(uint64_t*)&result;
+    auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
+    if (valid_bits < 64) {
+        uint64_t mask = (1ull << valid_bits) - 1;
+        value &= mask;
+    }
+    return value;
+}
+
+
+
 MI_NAMESPACE_END

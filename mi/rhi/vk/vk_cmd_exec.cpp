@@ -1080,6 +1080,16 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
 #endif
 }
 
+void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHICommandInsertTimestamp *cmd) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    auto vk_rhi = GetVulkanRHI();
+    auto vk_timestamp = (VulkanTimestamp*)cmd->timestamp_;
+    auto query = vk_timestamp->GetQueryIndex();
+    state.BeginCmd();
+    state.cmd.writeTimestamp(vk::PipelineStageFlagBits::eAllCommands, vk_rhi->GetTimestampQueryPool(), query);
+}
+
 void
 VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
 const std::string & submit_prefix,
