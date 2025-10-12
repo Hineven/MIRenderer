@@ -32,7 +32,9 @@ static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable
     true
 );
 
-bool DenoiserPersistentData::MakeSureExists(RendererView * view, RenderGraphBuilder & builder) {
+bool DenoiserPersistentData::MakeSureExists(
+    [[maybe_unused]] RendererView * view,
+    [[maybe_unused]] RenderGraphBuilder & builder) {
     bool flag = false;
     // Actually, we don't need to do anything. Passing null resources to shader
     // fallbacks to a default and safe behavior. Just tell the shader not to use history.

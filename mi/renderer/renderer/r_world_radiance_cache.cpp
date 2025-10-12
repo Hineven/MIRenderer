@@ -77,8 +77,8 @@ void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
     const uint32_t num_buckets = kHashGridMaxNumBuckets;
     const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
-    const float cascade_radius = kHashGridCascadeRadius;
-    const float cell_size = kHashGridCellSize;
+    // const float cascade_radius = kHashGridCascadeRadius;
+    // const float cell_size = kHashGridCellSize;
 
     bucket_hash_buffer = builder.CreateBuffer<uint32_t>(num_buckets * num_elements_per_bucket);
     bucket_tile_index_buffer = builder.CreateBuffer<uint32_t>(num_buckets * num_elements_per_bucket);
@@ -172,8 +172,8 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
-    const uint32_t num_buckets = kHashGridMaxNumBuckets;
-    const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
+    // const uint32_t num_buckets = kHashGridMaxNumBuckets;
+    // const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
 
     bool need_reset = false;
 
@@ -207,9 +207,9 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
 void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
     auto params = builder.Allocate<HashGridCommonParameters>();
 
-    const uint32_t max_num_tiles = kHashGridMaxNumTiles;
-    const uint32_t num_buckets = kHashGridMaxNumBuckets;
-    const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
+    // const uint32_t max_num_tiles = kHashGridMaxNumTiles;
+    // const uint32_t num_buckets = kHashGridMaxNumBuckets;
+    // const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
 
     auto clear_cmd = builder.CreateBuffer<RHIDispatchIndirectCommand>(
         RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage

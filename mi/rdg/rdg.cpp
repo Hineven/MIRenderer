@@ -162,6 +162,20 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     }
 
     std::string active_debug_marker_name;
+    std::vector<RHITimestampRef> marker_timestamps;
+    std::vector<std::string> marker_timestamp_names;
+    [[maybe_unused]] auto& rhi = RHI::Get();
+
+    auto insert_timestamp = [&] ([[maybe_unused]] int pass_index) {
+#ifndef NDEBUG
+        auto timestamp = rhi.CreateTimestamp();
+        marker_timestamps.push_back(timestamp);
+        marker_timestamp_names.push_back(
+            pass_index >= 0 ? passes_[pass_index]->GetName() : ""
+        );
+        cmd.InsertTimestamp(timestamp.Raw());
+#endif
+    };
 
     while (!ready_passes.empty()) {
         int pass_index = ready_passes.front();
@@ -183,11 +197,13 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 }
                 cmd.BeginDebugMarker(pass->name_.c_str());
                 active_debug_marker_name = pass->name_;
+                insert_timestamp(pass_index);
             }
         } else {
             if (!active_debug_marker_name.empty()) {
                 cmd.EndDebugMarker();
                 active_debug_marker_name.clear();
+                insert_timestamp(pass_index);
             }
         }
 
@@ -298,9 +314,30 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     // End the debug marker if it is still active
     if (!active_debug_marker_name.empty()) {
         cmd.EndDebugMarker();
+        insert_timestamp(-1);
     }
 
     cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
+
+#ifndef NDEBUG
+    // Extract timestamp results
+    if (!marker_timestamps.empty()) {
+        timestamp_periods_.clear();
+        uint64_t prev_time_ticks = 0;
+        if (!marker_timestamps.empty())
+            prev_time_ticks = marker_timestamps[0]->QueryTimestamp(); // This function implicitly waits for the GPU to finish.
+        for (size_t i = 0; i < marker_timestamps.size() - 1; i++) {
+            uint64_t time_ticks = marker_timestamps[i + 1]->QueryTimestamp();
+
+            uint64_t delta = time_ticks - prev_time_ticks;
+            float period = rhi.GetDeviceProperties().timestamp_period;
+            double duration = double(delta) * double(period) * 1e-9; // ns
+            prev_time_ticks = time_ticks;
+
+            timestamp_periods_.emplace_back(marker_timestamp_names[i], duration);
+        }
+    }
+#endif
 
     // Release all uniform buffers as they are no longer needed.
     uniform_buffer_.SafeRelease();

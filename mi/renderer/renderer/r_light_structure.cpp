@@ -89,7 +89,7 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     UB->LighGridNumCascadesUsed = kLightGridNumCascades;
     UB->LightGridMaxNumGridLights = CVar_MaxNumGridLights.Get();
     UB->LightGridNumCascadeGrids = kLightGridSize * kLightGridSize * kLightGridSize;
-    auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
+    [[maybe_unused]] auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
     assert(UB->LightGridNumCascadeGrids * UB->LighGridNumCascadesUsed == num_light_grids);
     UB->LightGridNumGrids = UB->LightGridNumCascadeGrids * UB->LighGridNumCascadesUsed;
     UB->LightInjectionIntensityThreshold = CVar_LightInjectionIntensityThreshold.Get();

@@ -159,6 +159,7 @@ void *VulkanTexture::GetAPIHandle() const {
 
 void VulkanTexture::SetName(const std::string &name) {
     RHITexture::SetName(name);
+#ifndef NDEBUG
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eImage,
@@ -187,6 +188,7 @@ void VulkanTexture::SetName(const std::string &name) {
         auto & vma = GetVulkanRHI()->GetVmaAllocator();
         vma.setAllocationName(allocation_, GetName());
     }
+#endif
 }
 
 

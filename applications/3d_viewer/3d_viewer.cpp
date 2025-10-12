@@ -352,6 +352,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     uint selected_descriptor_rank = UINT32_MAX;
     uint selected_deferred_renderable_index = UINT32_MAX;
     glm::vec2 selected_uv = {0.0f, 0.0f};
+    float cpu_duration = 0;
+
+
+    std::vector<std::pair<std::string, double>> time_intervals;
 
     {
         std::future<void> previous_frame_future;
@@ -361,6 +365,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         // Main loop
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            auto cpu_tp_start = std::chrono::steady_clock::now();
             bool should_reload_shaders = false;
             // ImGui new frame routine
             {
@@ -511,6 +516,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                         }
                     }
                 }
+                if (ImGui::CollapsingHeader("Performance")) {
+                    ImGui::Text("CPU: %.2f ms", cpu_duration * 1000.0);
+                    for (auto e : time_intervals) {
+                        auto name = e.first;
+                        auto duration = e.second;
+                        ImGui::Text("   - %s: %.3f ms", name.c_str(), duration * 1000.0);
+                    }
+                }
                 ImGui::End();
             }
             // Render
@@ -527,6 +540,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
                 auto graph = builder.Compile(frame_name);
                 graph->Execute(pool.Raw());
+                time_intervals = graph->GetTimestampPeriods();
             }
 
             // Click select
@@ -709,6 +723,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
             }
             fflush(stdout);
+            auto cpu_tp_end = std::chrono::steady_clock::now();
+            cpu_duration = std::chrono::duration<float>(cpu_tp_end - cpu_tp_start).count();
         }
     }
 

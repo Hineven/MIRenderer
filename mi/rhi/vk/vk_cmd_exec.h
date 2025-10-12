@@ -191,7 +191,7 @@ protected:
         std::stack<std::string> debug_marker_stack;
         std::string last_inserted_debug_marker;
 #endif
-        FORCEINLINE void PushDebugMarker (const std::string & name) {
+        FORCEINLINE void PushDebugMarker ([[maybe_unused]] const std::string & name) {
 #ifndef NDEBUG
             debug_marker_stack.push(name);
 #endif

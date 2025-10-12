@@ -63,6 +63,8 @@ void * VulkanSampler::GetAPIHandle() const {
 }
 
 void VulkanSampler::SetName(const std::string& name) {
+    RHIResource::SetName(name);
+#ifndef NDEBUG
     auto device = GetVulkanRHI()->GetDevice();
     vk::DebugUtilsObjectNameInfoEXT name_info{
         vk::ObjectType::eSampler,
@@ -70,6 +72,7 @@ void VulkanSampler::SetName(const std::string& name) {
         name.c_str()
     };
     device.setDebugUtilsObjectNameEXT(name_info);
+#endif
 }
 
 VulkanSyncPoint::VulkanSyncPoint() {
@@ -83,7 +86,7 @@ void VulkanSyncPoint::Wait() {
     // Wait for command buffer submission first.
     submission_sem_.acquire();
     auto dev = GetVulkanRHI()->GetDevice();
-    auto ret = dev.waitForFences({vk_fence_}, VK_TRUE, 500 * 1000 * 1000); // 500 ms timeout
+    [[maybe_unused]] auto ret = dev.waitForFences({vk_fence_}, VK_TRUE, 500 * 1000 * 1000); // 500 ms timeout
     mi_assert(ret == vk::Result::eSuccess, "Failed to wait for fence.");
     can_be_waited_ = false;
 }
@@ -111,12 +114,15 @@ void *VulkanSyncPoint::GetAPIHandle() const {
 }
 
 void VulkanSyncPoint::SetName(const std::string& name) {
+    RHIResource::SetName(name);
+#ifndef NDEBUG
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT()
         .setObjectType(vk::ObjectType::eFence)
         .setObjectHandle(reinterpret_cast<uint64_t>(static_cast<VkFence>(vk_fence_)))
         .setPObjectName(name.c_str())
     );
+#endif
 }
 
 VulkanTimestamp::~VulkanTimestamp() {
@@ -124,6 +130,7 @@ VulkanTimestamp::~VulkanTimestamp() {
 }
 
 uint64_t VulkanTimestamp::QueryTimestamp() const {
+#ifndef NDEBUG
     auto rhi = GetVulkanRHI();
     struct TimestampValue {
         char padding[16]; // maximum of 128 bytes
@@ -133,13 +140,17 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
         sizeof(TimestampValue),
         vk::QueryResultFlagBits::eWait | vk::QueryResultFlagBits::eWithAvailability
     );
-    uint64_t value = *(uint64_t*)&result;
+    uint64_t value = *(uint64_t*)&(result.value);
     auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
     if (valid_bits < 64) {
         uint64_t mask = (1ull << valid_bits) - 1;
         value &= mask;
     }
     return value;
+#else
+    mi_warning(true, "Querying timestamp in release build returns UINT64_MAX.");
+    return UINT64_MAX;
+#endif
 }
 
 

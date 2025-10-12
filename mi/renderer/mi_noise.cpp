@@ -14,7 +14,7 @@ MI_NAMESPACE_BEGIN
 
 float NoiseHelpers::HaltonValue(int index, int base) {
     float result = 0.0;
-    float f = 1.0 / base;
+    float f = 1.0f / base;
     int i = index;
     while (i > 0) {
         result += f * (i % base);
