@@ -90,6 +90,8 @@ public:
 
     FORCEINLINE RenderGraph * GetGraph () const {return graph_;}
 
+    FORCEINLINE std::vector<std::string> GetClassPath () const {return class_path_;}
+
 protected:
 
     bool is_pre_compiled_ {};
@@ -100,7 +102,10 @@ protected:
     // Gather resources accessed by the shader, initialize in/out resources and detailed resource usage
     void Compile () ;
 
+    // Name and class of the pass. Usually used for profilling and debugging.
     std::string name_;
+    std::vector<std::string> class_path_;
+
     // The index when the pass is joined to the graph
     int index_ {};
     // Flags for the pass

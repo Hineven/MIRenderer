@@ -21,7 +21,6 @@ class RDGPass;
 class RenderGraph;
 typedef TRef<RDGResource> RDGResourceRef;
 
-
 // The builder class for building a render graph.
 // It holds all the passes and resources created during the building phase.
 // After building, call Compile() to get a RenderGraph object that can be executed.
@@ -170,7 +169,15 @@ public:
     // Import a rhi buffer. NOTE: The builder kept a reference to the resource once imported.
     RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone, RHIPipelineStageFlags prev_stages = RHIPipelineStageFlagBits::kNone) ;
 
+    FORCEINLINE void PushPassClassPath (const std::string & class_name) {
+        current_class_path_.push_back(class_name);
+    }
 
+    FORCEINLINE void PopPassClassPath () {
+        if (!current_class_path_.empty()) {
+            current_class_path_.pop_back();
+        }
+    }
 
 protected:
 
@@ -188,6 +195,35 @@ protected:
     std::vector<std::unique_ptr<RDGPass>> passes_;
     int current_pass_index_ {};
 
+    // Current class path of the passes being added. Used for debug naming.
+    std::vector<std::string> current_class_path_;
+};
+
+// Easily manage push/pop of pass class path in the builder.
+// Usage:
+// {
+//     RDGSectionGuard section(builder, "MySection");
+//     // All passes added here will have "MySection" in their class path.
+//     ...
+// }
+class RDGSectionGuard {
+public:
+    FORCEINLINE RDGSectionGuard(RenderGraphBuilder & builder, const std::string & name) :
+    name_(name), builder_(builder) {
+        builder_.PushPassClassPath(name_);
+    }
+    FORCEINLINE ~RDGSectionGuard() {
+        builder_.PopPassClassPath();
+    }
+
+    // Remove copy and move ctors and assignments
+    RDGSectionGuard(const RDGSectionGuard &) = delete;
+    RDGSectionGuard & operator=(const RDGSectionGuard &) = delete;
+    RDGSectionGuard(RDGSectionGuard &&) = delete;
+    RDGSectionGuard & operator=(RDGSectionGuard &&) = delete;
+protected:
+    std::string name_;
+    RenderGraphBuilder & builder_;
 };
 
 MI_NAMESPACE_END

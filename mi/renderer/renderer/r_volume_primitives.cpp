@@ -155,7 +155,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DrawVolumePrimitivesShader,
 constexpr static uint32_t kTileSize = 16;
 
 void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilder &builder) {
-
+    RDGSectionGuard section(builder, "Render_DrawVolumePrimitives");
     glm::uvec2 tile_dimensions = {
         DivideAndRoundUp(view->film_width_, kTileSize),
         DivideAndRoundUp(view->film_height_, kTileSize)

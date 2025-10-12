@@ -355,7 +355,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     float cpu_duration = 0;
 
 
-    std::vector<std::pair<std::string, double>> time_intervals;
+    std::vector<RDGTimePeriod> time_periods;
 
     {
         std::future<void> previous_frame_future;
@@ -518,11 +518,53 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 }
                 if (ImGui::CollapsingHeader("Performance")) {
                     ImGui::Text("CPU: %.2f ms", cpu_duration * 1000.0);
-                    for (auto e : time_intervals) {
-                        auto name = e.first;
-                        auto duration = e.second;
-                        ImGui::Text("   - %s: %.3f ms", name.c_str(), duration * 1000.0);
-                    }
+                    // 构建树状结构
+                    std::function<void(int, int, int)> DrawTree;
+                    DrawTree = [&](int start, int end, int depth) {
+                        ImGui::Indent(20);
+                        int last = start;
+                        for (int i = start; i < end; i++) {
+                            if (time_periods[i].class_names.size() <= depth
+                            ||  time_periods[i].class_names[depth] != time_periods[last].class_names[depth]) {
+                                if (last != i) {
+                                    // Tree node
+                                    std::string node_name = time_periods[last].class_names[depth];
+                                    float duration = 0.0f;
+                                    for (int j = last; j < i; j++) {
+                                        duration += time_periods[j].duration;
+                                    }
+                                    std::string id = node_name;
+                                    node_name += std::format(" ({:.2f} ms)", duration * 1000);
+                                    if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
+                                        DrawTree(last, i, depth + 1);
+                                        ImGui::TreePop();
+                                    }
+                                }
+                                if (time_periods[i].class_names.size() <= depth) {
+                                    // Leaf node
+                                    std::string node_name = time_periods[i].pass_name;
+                                    ImGui::Text("%s: %.2f ms", node_name.c_str(), time_periods[i].duration * 1000);
+                                }
+                                last = i + 1;
+                            }
+                        }
+                            // Tree node
+                        if (last < end) {
+                            std::string node_name = time_periods[last].class_names[depth];
+                            float duration = 0.0f;
+                            for (int j = last; j < end; j++) {
+                                duration += time_periods[j].duration;
+                            }
+                            std::string id = node_name;
+                            node_name += std::format(" ({:.2f} ms)", duration * 1000);
+                            if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
+                                DrawTree(last, end, depth + 1);
+                                ImGui::TreePop();
+                            }
+                        }
+                        ImGui::Unindent(20);
+                    };
+                    DrawTree(0, time_periods.size(), 0);
                 }
                 ImGui::End();
             }
@@ -540,7 +582,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
                 auto graph = builder.Compile(frame_name);
                 graph->Execute(pool.Raw());
-                time_intervals = graph->GetTimestampPeriods();
+                time_periods = graph->GetTimestampPeriods();
             }
 
             // Click select

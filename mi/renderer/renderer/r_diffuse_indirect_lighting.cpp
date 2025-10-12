@@ -506,7 +506,7 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
 }
 
 void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, RenderGraphBuilder & builder) {
-
+    RDGSectionGuard section(builder, "Render_ComputeIndirectDiffuseLighting");
 
     auto ini = RDGShaderInitializationInfo {};
     auto & lib = RDGShaderLibrary::Get();

@@ -40,6 +40,7 @@ RDGPass * RenderGraphBuilder::AddPass(
     ptr->shader_ = shader;
     ptr->shader_param_struct_info_ = shader_param_struct_info;
     ptr->shader_param_data_ = parameter_struct;
+    ptr->class_path_ = current_class_path_;
 #ifndef NDEBUG
     if (shader_param_struct_info && parameter_struct) {
         for (auto e : shader_param_struct_info->uniform_buffers_) {

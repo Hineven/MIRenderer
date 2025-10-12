@@ -17,9 +17,11 @@
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi_types_string.h"
 
+#ifndef NDEBUG
 // Instantly start a command buffer submit after the execution of each pass.
+// This is useful for debugging, but hurts performance alot.
 // #define INSTANT_SUBMIT_FOR_EACH_PASS
-
+#endif
 MI_NAMESPACE_BEGIN
 
 static bool is_rdg_executing = false;
@@ -161,19 +163,50 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
     }
 
-    std::string active_debug_marker_name;
     std::vector<RHITimestampRef> marker_timestamps;
-    std::vector<std::string> marker_timestamp_names;
+    std::vector<RDGTimePeriod> marker_periods;
+    RDGTimePeriod active_period;
     [[maybe_unused]] auto& rhi = RHI::Get();
 
-    auto insert_timestamp = [&] ([[maybe_unused]] int pass_index) {
+    auto insert_timestamp = [&] () {
 #ifndef NDEBUG
         auto timestamp = rhi.CreateTimestamp();
         marker_timestamps.push_back(timestamp);
-        marker_timestamp_names.push_back(
-            pass_index >= 0 ? passes_[pass_index]->GetName() : ""
-        );
+        marker_periods.push_back(active_period);
         cmd.InsertTimestamp(timestamp.Raw());
+#endif
+    };
+
+    auto sync_active_period = [&] (RDGPass * pass, RHICommandQueueGraphics & queue) {
+        insert_timestamp();
+#ifndef NDEBUG
+        auto curr_class_path = pass ? pass->class_path_ : std::vector<std::string>{};
+        auto curr_pass_name = pass ? pass->GetName() : "";
+        if (curr_class_path == active_period.class_names && curr_pass_name == active_period.pass_name) {
+            // Continue the current period
+            return ;
+        }
+        // Pop the previous period to a longest common ancestor
+        size_t common_length = 0;
+        while (common_length < std::min(active_period.class_names.size(), curr_class_path.size())) {
+            if (active_period.class_names[common_length] != curr_class_path[common_length]) {
+                break;
+            }
+            common_length ++;
+        }
+        // Commit pop operations to RHI queue
+        if (!active_period.pass_name.empty()) queue.EndDebugMarker();
+        for (size_t i = active_period.class_names.size(); i > common_length; i--) {
+            queue.EndDebugMarker();
+        }
+        // Push new periods
+        for (size_t i = common_length; i < curr_class_path.size(); i++) {
+            queue.BeginDebugMarker(curr_class_path[i].c_str());
+        }
+        if (!curr_pass_name.empty()) queue.BeginDebugMarker(curr_pass_name.c_str());
+
+        active_period.class_names = curr_class_path;
+        active_period.pass_name = curr_pass_name;
 #endif
     };
 
@@ -189,23 +222,8 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         for (const auto & buffer_use : pass->compiled_.buffers) {
             buffer_use.buffer->RequestRHI(pool);
         }
-        // Add debug marker, group the passes with the same names
-        if (!pass->name_.empty()) {
-            if (pass->name_ != active_debug_marker_name) {
-                if (!active_debug_marker_name.empty()) {
-                    cmd.EndDebugMarker();
-                }
-                cmd.BeginDebugMarker(pass->name_.c_str());
-                active_debug_marker_name = pass->name_;
-                insert_timestamp(pass_index);
-            }
-        } else {
-            if (!active_debug_marker_name.empty()) {
-                cmd.EndDebugMarker();
-                active_debug_marker_name.clear();
-                insert_timestamp(pass_index);
-            }
-        }
+        // Mark incoming commands.
+        sync_active_period(pass.get(), cmd);
 
         // Place resource barriers.
         // RHIPipelineStageFlags current_stages = pass->GetStageFlags();
@@ -311,11 +329,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         pass.reset();
     }
 
-    // End the debug marker if it is still active
-    if (!active_debug_marker_name.empty()) {
-        cmd.EndDebugMarker();
-        insert_timestamp(-1);
-    }
+    sync_active_period(nullptr, cmd);
 
     cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
 
@@ -330,11 +344,13 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             uint64_t time_ticks = marker_timestamps[i + 1]->QueryTimestamp();
 
             uint64_t delta = time_ticks - prev_time_ticks;
-            float period = rhi.GetDeviceProperties().timestamp_period;
-            double duration = double(delta) * double(period) * 1e-9; // ns
+            float device_timestamp_tick_period = rhi.GetDeviceProperties().timestamp_period;
+            double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns
             prev_time_ticks = time_ticks;
+            auto period = marker_periods[i];
+            period.duration = duration;
 
-            timestamp_periods_.emplace_back(marker_timestamp_names[i], duration);
+            timestamp_periods_.emplace_back(period);
         }
     }
 #endif

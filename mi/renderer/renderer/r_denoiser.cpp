@@ -128,7 +128,7 @@ public:
 IMPLEMENT_RDG_COMPUTE_SHADER(DilatedFilterDiffuseDirectLightingShader, "mi/renderer/shaders/DenoiseDiffuseLighting.hlsl", "DilatedFilterDiffuseDirectLighting");
 
 void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &builder) {
-
+    RDGSectionGuard section(builder, "Render_DenoiseLighting");
     bool need_reset = false;
     if (!view->persistent_data_->denoiser_persistent_data_) {
         view->persistent_data_->denoiser_persistent_data_ = new DenoiserPersistentData();

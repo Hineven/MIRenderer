@@ -19,6 +19,12 @@ struct RDGShaderParamStructAndSizeInfo;
 class RDGShader;
 class RDGPass;
 
+struct RDGTimePeriod {
+    std::vector<std::string> class_names;
+    std::string pass_name;
+    float duration {};
+};
+
 class RenderGraph : public RefCounted<> {
 public:
     ~RenderGraph();
@@ -39,7 +45,7 @@ public:
     }
     FORCEINLINE const std::string & GetName () {return name_;}
 
-    std::vector<std::pair<std::string, double>> & GetTimestampPeriods () {return timestamp_periods_;}
+    const std::vector<RDGTimePeriod> & GetTimestampPeriods () const {return timestamp_periods_;}
 
 protected:
     RenderGraph(const std::string & name) ;
@@ -70,7 +76,7 @@ protected:
     std::string name_;
 
     // Timestamps. For profiling.
-    std::vector<std::pair<std::string, double>> timestamp_periods_;
+    std::vector<RDGTimePeriod> timestamp_periods_;
 };
 
 typedef TRef<RenderGraph> RenderGraphRef;
