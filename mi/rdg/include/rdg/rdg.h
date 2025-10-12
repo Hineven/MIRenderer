@@ -45,6 +45,7 @@ public:
     }
     FORCEINLINE const std::string & GetName () {return name_;}
 
+    // This only works in debug builds. Otherwise it returns an empty vector.
     const std::vector<RDGTimePeriod> & GetTimestampPeriods () const {return timestamp_periods_;}
 
 protected:

@@ -13,7 +13,7 @@ void ResetHashGrids (uint DispatchID : SV_DispatchThreadID) {
 [numthreads(WAVE_SIZE, 1, 1)]
 void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 	if(DispatchID >= HashGrids_HistoryActiveTileCount[0]) return;
-	int TileIndex = HashGrids_HistoryActiveTileListBuffer[DispatchID];
+	uint TileIndex = HashGrids_HistoryActiveTileListBuffer[DispatchID];
 	uint CurrentTimestamp = HashGrids_UB.FrameIndex + 1;
 	uint TileTimestamp = HashGrids_TileTimestampBuffer[TileIndex];
 	bool bShouldFreeTile = false;
@@ -40,7 +40,7 @@ void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 		HashGrids_FreeTileListBuffer[FreeListIndex] = TileIndex;
 		return ;
 	}
-	// Theorietically, this should always be true otherwise hash collision occurs
+	// Theorietically, this should always be true otherwise hash collision occurred
 	if(bIsNewSlot) {
 		// Register the tile on the active list
 		int ActiveListIndex;
@@ -82,17 +82,17 @@ void PrepareDispatchCommandForClearNewHashGridTileCells () {
 void ClearNewHashGridTileCells (uint GroupID : SV_GroupID, uint LocalID : SV_GroupThreadID) {
 	uint TileIndex = HashGrids_ActiveTileListBuffer[GroupID + HashGrids_ActiveTileCountBeforeAllocationBuffer[0]];
 	uint Start = TileIndex * HASHGRIDS_NUM_CELLS_PER_TILE * 2;
-	for(int BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_NUM_CELLS_PER_TILE * 2);
+	for(uint BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_NUM_CELLS_PER_TILE * 2);
         BaseCellOffset += HASHGRIDS_TILE_CELL_MIP_OFFSET_1) {
-		int DWordIndex = BaseCellOffset + LocalID;
+		uint DWordIndex = BaseCellOffset + LocalID;
 		if(DWordIndex < (HASHGRIDS_NUM_CELLS_PER_TILE * 2)) {
 			HashGrids_CellValueBuffer[Start + DWordIndex] = 0;
 		}
 	}
 	Start = TileIndex * HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4;
-	for(int BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4);
+	for(uint BaseCellOffset = 0; BaseCellOffset < (HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4);
         BaseCellOffset += HASHGRIDS_TILE_CELL_MIP_OFFSET_1) {
-		int DWordIndex = BaseCellOffset + LocalID;
+		uint DWordIndex = BaseCellOffset + LocalID;
 		if(DWordIndex < (HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4)) {
 			HashGrids_UpdateCellValueXBuffer[Start + DWordIndex] = 0;
 		}

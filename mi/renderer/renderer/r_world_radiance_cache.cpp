@@ -41,7 +41,7 @@ bool HashGridPersistentData::MakeSureExists(
     }
     // Fp16x4 packed
     if (!cell_value_buffer) {
-        cell_value_buffer = builder.CreateBuffer<glm::vec2>(max_num_tiles * HASHGRIDS_NUM_CELLS_PER_TILE);
+        cell_value_buffer = builder.CreateBuffer<glm::uvec2>(max_num_tiles * HASHGRIDS_NUM_CELLS_PER_TILE);
         cell_value_buffer->SetExport();
         flag = true;
     }
@@ -83,7 +83,7 @@ void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
     bucket_hash_buffer = builder.CreateBuffer<uint32_t>(num_buckets * num_elements_per_bucket);
     bucket_tile_index_buffer = builder.CreateBuffer<uint32_t>(num_buckets * num_elements_per_bucket);
     update_cell_value_x_buffer = builder.CreateBuffer<uint32_t>(
-        // mip 0 only, 4 automic integers per cell
+        // mip 0 only, 4 atomic integers per cell
         max_num_tiles * HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4
     );
     update_tile_count_buffer = builder.CreateBuffer<uint32_t>();
@@ -169,6 +169,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterHashGridsShader, "mi/
 
 
 void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
+    return ;
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
@@ -195,6 +196,7 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
     }
 
     {
+        Helpers::Clear(builder, view->world_cache_->bucket_hash_buffer.Raw());
         auto shader = lib.GetShader<ReInsertHashGridTilesShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, persistent->active_tile_count.Raw(), wave_size);
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
@@ -205,6 +207,7 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
 }
 
 void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
+    return ;
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     // const uint32_t max_num_tiles = kHashGridMaxNumTiles;
@@ -222,11 +225,12 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
     }
     auto & lib = RDGShaderLibrary::Get();
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
+    auto persistent = view->persistent_data_->hash_grid_persistent_data_;
     {
         auto shader = lib.GetShader<PrepareDispatchCommandForClearNewHashGridTileCellsShader>();
         auto prepare_params = builder.Allocate<PrepareDispatchCommandForClearNewHashGridTileCellsShader::Params>();
         {
-            prepare_params->HashGrids_FreeTileCount = view->persistent_data_->hash_grid_persistent_data_->free_tile_count.Raw();
+            prepare_params->HashGrids_FreeTileCount = persistent->free_tile_count.Raw();
             prepare_params->HashGrids_ActiveTileCount = view->world_cache_->active_tile_count.Raw();
             prepare_params->HashGrids_ActiveTileCountBeforeAllocationBuffer = view->world_cache_->active_tile_count_before_allocation_buffer.Raw();
             prepare_params->RWClearNewHashGridTileCellsIndirectCommandBuffer = clear_cmd.Raw();
@@ -237,11 +241,10 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
         auto shader = lib.GetShader<ClearNewHashGridTileCellsShader>();
         Helpers::AddComputeIndirectPass(builder, shader, params, clear_cmd.Raw());
     }
-    auto persistent = view->persistent_data_->hash_grid_persistent_data_;
     auto w = view->world_cache_;
     {
         auto shader = lib.GetShader<FilterHashGridsShader>();
-        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, w->active_tile_count.Raw(), wave_size);
+        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, w->active_tile_count.Raw());
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
     // Update persistent data

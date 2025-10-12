@@ -12,6 +12,18 @@
 #include "rhi/rhi_buffer.h"
 MI_NAMESPACE_BEGIN
 
+void Helpers::Clear(RenderGraphBuilder &builder, RDGBuffer *buffer, uint32_t value, size_t offset, size_t size) {
+    builder.AddPass("ClearBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
+        [buffer, value, offset, size]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            auto span = RHIBufferSpan{buffer->GetRHI().buffer, offset, size == SIZE_MAX ? buffer->GetDesc().size - offset : size};
+            queue.ClearBuffer(span, value);
+    })->AddBuffer(buffer,
+        RHIGPUAccessFlagBits::kTransferWrite,
+        RHIPipelineStageFlagBits::kTransfer
+    );
+}
+
+
 void Helpers::Clear(RenderGraphBuilder &builder, RDGTexture *texture, glm::vec4 clear_value, uint32_t mip_level, uint32_t base_layer, uint32_t num_layers) {
     builder.AddPass("ClearTexture", RDGPassType::kGeneric, {}, {}, {}, {},
         [texture, clear_value, mip_level, base_layer, num_layers]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {

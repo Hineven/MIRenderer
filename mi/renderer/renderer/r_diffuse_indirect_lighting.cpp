@@ -151,7 +151,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayOriginBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayStateBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayTMaxBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayContributionBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer)
@@ -314,13 +314,13 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SubstituteScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SubstituteScreenProbes");
 
-class UpdateScrenProbeSpawnCountShader : public DiffuseIndirectLightingShader {
+class UpdateScreenProbeSpawnCountShader : public DiffuseIndirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScrenProbeSpawnCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeSpawnCount");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeSpawnCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeSpawnCount");
 
 class ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader : public DiffuseIndirectLightingShader {
 public:
@@ -599,8 +599,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_update_ray_inv_pdf_buffer = builder.CreateBuffer<float>(max_num_update_rays);
     auto screen_probe_update_ray_hit_resolve_hash_cell_index_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
-    auto screen_probe_update_ray_hit_shading_point_allocator = builder.CreateBuffer<uint>();
-    auto screen_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint>(max_num_update_rays);
+    auto screen_probe_update_ray_hit_shading_point_allocator = builder.CreateBuffer<uint32_t>();
+    auto screen_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto shade_point_transmittance_ray_allocator = builder.CreateBuffer<uint32_t>();
     auto shade_point_transmittance_ray_direction = builder.CreateBuffer<uint32_t>(max_num_update_rays);
@@ -768,7 +768,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             UB->ProbeUpdateRaySampleSeed =
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : (view->persistent_data_->frame_index_ + 7198272u);
 
-            UB->ProbeUpdateRaysNoAdaptiveAllocation = CVar_AdaptiveProbeUpdateRayAllocation.Get() ? 1 : 0;
+            UB->ProbeUpdateRaysNoAdaptiveAllocation = CVar_AdaptiveProbeUpdateRayAllocation.Get() ? 0 : 1;
             UB->ProbeSpawnSubTileJitterSeed =
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
             UB->TileProbeSpawnSeed =
@@ -881,8 +881,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
         );
     }
     {
-        auto shader = lib.GetShader<UpdateScrenProbeSpawnCountShader>(ini);
-        Helpers::AddComputePass<UpdateScrenProbeSpawnCountShader>(
+        auto shader = lib.GetShader<UpdateScreenProbeSpawnCountShader>(ini);
+        Helpers::AddComputePass<UpdateScreenProbeSpawnCountShader>(
             builder, shader, params
         );
     }

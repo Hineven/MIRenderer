@@ -309,6 +309,8 @@ void ClearCounters () {
     RWTileScreenProbeCacheIndexListAllocator[0] = 0;
     RWScreenProbeUpdateRayHitShadingPointAllocator[0] = 0;
     RWShadePointTransmittanceRayAllocator[0] = 0;
+    HashGrids_ActiveTileCount[0] = 0;
+    HashGrids_UpdateTileCount[0] = 0;
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
@@ -578,8 +580,8 @@ void ReprojectCachedProbes (uint DispatchID : SV_DispatchThreadID) {
         float2 UV  = NDC2ToUV(NDC.xy);
         if (all(UV > 0.0f) && all(UV < 1.0f))
         {
-            uint2 ReprojectedTileIndex = UV * UB.TileDimensions;
-            uint2 ReprojectedScreenCoords = UV * C.FilmDimensions;
+            uint2 ReprojectedTileIndex = floor(UV * UB.TileDimensions);
+            uint2 ReprojectedScreenCoords = floor(UV * C.FilmDimensions);
             uint TileIndex1 = ReprojectedTileIndex.x + ReprojectedTileIndex.y * UB.TileDimensions.x;
             // Append to the tile's MRU list
             uint TileEntryIndex;
@@ -1134,7 +1136,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	if(!bBypass) {
 		if(bHit) {
             // FIXME
-            {
+            if(true) {
                 uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
                 float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
                 Radiance = 0;
@@ -1322,15 +1324,18 @@ void ResolveProbeUpdateRayRadianceFromCells (uint DispatchID : SV_DispatchThread
     uint ShadingPointIndex = DispatchID;
 	if(ShadingPointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
 	int UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadingPointIndex];
-    uint CellIndex          = RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex];
-	float4 Radiance         = HashGrids_GetFilteredRadiance(CellIndex);
-    bool bBypass;
-    float3 OldRadiance      = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
-	if(!bBypass) {
-		// Resolve radiance from hash grid cache if no bypass is specified
-		uint2 Packed = PackUpdateRayRadianceFlag(Radiance.xyz + OldRadiance, false);
-        RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = Packed;
-	}
+    uint CellIndex = RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex];
+    if(IsValid(CellIndex)) {
+        float4 Radiance    = HashGrids_GetFilteredRadiance(CellIndex);
+        bool bBypass;
+        float3 OldRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
+        if(!bBypass) {
+            // Resolve radiance from hash grid cache if no bypass is specified
+            float3 NewRadiance = Radiance.xyz + OldRadiance;
+            uint2 Packed = PackUpdateRayRadianceFlag(NewRadiance, false);
+            RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = Packed;
+        }
+    }
 }
 
 // Now, radiance results are stored in RWScreenProbeUpdateRayResultBuffer

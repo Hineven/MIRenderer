@@ -16,6 +16,8 @@ MI_NAMESPACE_BEGIN
 class Helpers {
 public:
 
+    static void Clear(RenderGraphBuilder & builder, RDGBuffer * buffer, uint32_t value = 0, size_t offset = 0, size_t size = SIZE_MAX);
+
     static void Clear(RenderGraphBuilder & builder, RDGTexture * texture, glm::vec4 clear_value = {}, uint32_t mip_level = 0, uint32_t base_layer = 0, uint32_t num_layers = 1);
 
     static void CopyTexture(RenderGraphBuilder & builder, RDGTexture * src, RDGTexture * dst,
