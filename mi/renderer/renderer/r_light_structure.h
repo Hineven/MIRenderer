@@ -58,7 +58,7 @@ void FillParametersForLightStructure (RendererView * view, T * params) {
         params->LightGrid_PrecomputedActiveLightBuffer = ls->precomputed_active_light_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_ActiveLightListCount;}) {
-        params->LightGrid_ActiveLightListCount = ls->active_light_list_buffer.Raw();
+        params->LightGrid_ActiveLightListCount = ls->active_light_list_count.Raw();
     }
     if constexpr(requires{params->LightGrid_ActiveLightListBuffer;}) {
         params->LightGrid_ActiveLightListBuffer = ls->active_light_list_buffer.Raw();

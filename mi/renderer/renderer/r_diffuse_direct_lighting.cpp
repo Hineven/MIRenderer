@@ -361,7 +361,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         params->View = view->view_common_params_;
 
         auto L_UB = builder.Allocate<LightStructureUB>();
-        FillParametersForLightStructure(view, L_UB);
+        FillUniformBufferForLightStructure(view, L_UB);
         params->LightStructure_UB = L_UB;
 
         auto DI_UB = builder.Allocate<DirectLightingUB>();

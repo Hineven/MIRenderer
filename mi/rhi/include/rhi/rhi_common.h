@@ -11,12 +11,13 @@
 
 #ifndef NDEBUG
 // Set this macro to true to bypass the RHI thread and execute commands directly on the render thread
-#define BYPASS_RHI_THREAD true
+#define BYPASS_RHI_THREAD false
 #else
 #define BYPASS_RHI_THREAD false
 #endif
 
-#define CHECK_RHI_THREAD() {assert(IsRHIThread() || BYPASS_RHI_THREAD);}
+#define CHECK_RHI_THREAD() {assert(IsRHIThread()  || BYPASS_RHI_THREAD);}
+#define CHECK_NOT_RHI_THREAD() {assert(!IsRHIThread() || BYPASS_RHI_THREAD);}
 
 MI_NAMESPACE_BEGIN
 

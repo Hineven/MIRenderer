@@ -167,6 +167,7 @@ protected:
     // Manually managed command destruction, used internally.
     template<CRHIValidCommand T>
     T * AllocateCommand (auto...args) {
+        assert(IsRenderThread());
         auto ptr = GetCommandAllocator().Allocate(sizeof(T));
         return new(ptr) T(args...);
     }

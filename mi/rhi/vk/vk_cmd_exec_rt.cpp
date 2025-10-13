@@ -68,9 +68,9 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
     if (build_info.type == RHIAccelerationStructureType::kBottomLevel) {
         // BLAS - handle geometry data
         geometries =
-            cmd->Allocate<vk::AccelerationStructureGeometryKHR[]>(build_info.geometries.size());
+            state.Allocate<vk::AccelerationStructureGeometryKHR[]>(build_info.geometries.size());
         range_infos =
-            cmd->Allocate<vk::AccelerationStructureBuildRangeInfoKHR[]>(build_info.geometries.size());
+            state.Allocate<vk::AccelerationStructureBuildRangeInfoKHR[]>(build_info.geometries.size());
 
         for (const auto [i, geometry] : std::views::enumerate(build_info.geometries)) {
             vk::AccelerationStructureGeometryKHR vk_geometry;
@@ -151,7 +151,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
             instance_data.setData(instance_buffer->GetDeviceAddress() + build_info.instance_data.offset);
 
         vk_geometry.geometry.setInstances(instance_data);
-        geometries = cmd->Allocate<vk::AccelerationStructureGeometryKHR[]>(1);
+        geometries = state.Allocate<vk::AccelerationStructureGeometryKHR[]>(1);
         geometries[0] = vk_geometry;
 
         vk::AccelerationStructureBuildRangeInfoKHR range_info;
@@ -159,7 +159,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
         range_info.setPrimitiveOffset(0);
         range_info.setFirstVertex(0);
         range_info.setTransformOffset(0);
-        range_infos = cmd->Allocate<vk::AccelerationStructureBuildRangeInfoKHR>(1);
+        range_infos = state.Allocate<vk::AccelerationStructureBuildRangeInfoKHR[]>(1);
         range_infos[0] = range_info;
     }
 
@@ -172,10 +172,7 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
     vk_build_info.setScratchData(scratch_buffer->GetDeviceAddress() + build_acceleration_structure->scratch_buffer_.offset);
 
     // Build the acceleration structure
-    auto range_infos_ptr = cmd->Allocate<vk::AccelerationStructureBuildRangeInfoKHR*>();
-    *range_infos_ptr = range_infos;
-
-    cmdb.buildAccelerationStructuresKHR(1, &vk_build_info, range_infos_ptr);
+    cmdb.buildAccelerationStructuresKHR(1, &vk_build_info, &range_infos);
 }
 
 void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) {

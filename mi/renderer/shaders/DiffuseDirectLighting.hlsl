@@ -266,7 +266,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float LightGridLightListCdf = 1.f;
     float3 ViewDirection = normalize(C.Position - WorldPosition);
     LightSample ReservedSample = SampleOneLightSample_RIS(
-        WorldPosition, ViewDirection, WorldNormal,
+        WorldPosition, WorldNormal, ViewDirection,
         true, true, R,
         SumResampleWeights3, NumValidSamples,
         LightGridLightListCdf

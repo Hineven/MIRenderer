@@ -746,22 +746,19 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 first_frame = false;
             } else {
                 {
-                    // PROFILE_SECTION(WaitPreviousFrame);
-                    // Wait for the previous frame to finish execution on GPU before submitting commands about this frame
+                    // Wait for the previous frame to finish execution on CPU
                     if (previous_frame_future.valid()) {
                         previous_frame_future.wait();
                     }
                 }
                 {
-                    // PROFILE_SECTION(WaitFence);
-                    // Wait for the previous frame to finish execution on GPU before submitting commands about this frame
+                    // Wait for the previous frame to finish execution on GPU
                     previous_frame_sync_point->Wait();
                 }
                 previous_frame_sync_point->Reset();
             }
             {
-                // PROFILE_SECTION(AdvanceFrame);
-                // Submit commands recorded for this frame, and switch to next frame
+                // Finish this frame, clear double-buffered resources and switch to next frame
                 previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
             }
             fflush(stdout);
