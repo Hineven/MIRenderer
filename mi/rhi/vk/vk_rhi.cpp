@@ -36,6 +36,7 @@
 
 MI_NAMESPACE_BEGIN
 
+#ifdef ENABLE_VALIDATION_LAYER
 static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
     [[maybe_unused]] vk::DebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
     [[maybe_unused]] vk::DebugUtilsMessageTypeFlagsEXT             messageType,
@@ -49,6 +50,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
     }
     return VK_FALSE;
 }
+#endif
 
 VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
@@ -253,9 +255,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
             // Ray tracing maintenance 1
             VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,
-#ifndef NDEBUG
             VK_KHR_RAY_QUERY_EXTENSION_NAME,
-#endif
             // Fragment barycentrics
             VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
             // SPV extensions (not supported by NVIDIA)
@@ -425,11 +425,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         sync2.synchronization2 = VK_TRUE;
 
         auto & rayqry = std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(extended_features);
-        #ifndef NDEBUG
         rayqry.rayQuery = VK_TRUE;
-        #else
-        rayqry.rayQuery = VK_FALSE;
-        #endif
 
         auto & vulkan_memory_model = std::get<vk::PhysicalDeviceVulkanMemoryModelFeatures>(extended_features);
         vulkan_memory_model.vulkanMemoryModel = VK_TRUE;
@@ -446,21 +442,31 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
     // Initialize device properties
     {
-        auto props = physical_device_.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties>();
+        auto props = physical_device_.getProperties2<
+            vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties,
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+        >();
         auto& subgroup_props = props.get<vk::PhysicalDeviceSubgroupProperties>();
 
         rhi_device_properties_.wave_size = subgroup_props.subgroupSize;
         strcpy_s(rhi_device_properties_.device_name, physical_device_properties_.self.properties.deviceName);
 
-        auto rt_props = physical_device_.getProperties2<
-            vk::PhysicalDeviceProperties2,
-            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>().get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+        auto& rt_props = props.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
 
         rhi_device_properties_.shader_group_handle_size = rt_props.shaderGroupHandleSize;
         rhi_device_properties_.shader_group_handle_alignment = rt_props.shaderGroupHandleAlignment;
         rhi_device_properties_.shader_group_base_alignment = rt_props.shaderGroupBaseAlignment;
         rhi_device_properties_.max_ray_recursion_depth = rt_props.maxRayRecursionDepth;
         rhi_device_properties_.max_shader_group_stride = rt_props.maxShaderGroupStride;
+
+        auto& def_props = props.get<vk::PhysicalDeviceProperties2>();
+        rhi_device_properties_.timestamp_period = def_props.properties.limits.timestampPeriod;
+        mi_assert(def_props.properties.limits.timestampComputeAndGraphics, "What hardware is this????");
+        auto queue_props = physical_device_.getQueueFamilyProperties2();
+        auto graphics_queue_prop = queue_props[graphics_queue_family_index_];
+        rhi_device_properties_.timestamp_valid_bits = graphics_queue_prop.queueFamilyProperties.timestampValidBits;
+        // Hardcoded in timestamp implementations
+        mi_assert(rhi_device_properties_.timestamp_valid_bits < 128, "What hardware is this????");
     }
 
 #ifdef ENABLE_VALIDATION_LAYER
@@ -485,6 +491,16 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         });
 #endif
         LoadPipelineCache();
+
+#ifndef NDEBUG
+        // Query pool
+        timestamp_query_pool_ = device_.createQueryPool(vk::QueryPoolCreateInfo{
+            {},
+            vk::QueryType::eTimestamp,
+            kMaxNumTimestampQueries, // max 2048 timestamps for all flying frames
+            {} // No pipeline statistics
+        });
+#endif
     }
     vma_ = vma::createAllocator(vma::AllocatorCreateInfo{
             vma::AllocatorCreateFlagBits::eKhrDedicatedAllocation // Vulkan 1.1
@@ -571,6 +587,10 @@ VulkanRHI::~VulkanRHI() {
     // Release the resources held by upper layers first
     delete this->bindless_manager_;
     delete this->command_executor_;
+
+    // Query pool
+    if (timestamp_query_pool_)
+        device_.destroy(timestamp_query_pool_);
 
     // Save pipeline cache before destroying it
     if (pipeline_cache_) {
@@ -721,6 +741,7 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             vk::SemaphoreCreateInfo semaphore_info {};
             vk_swapchain_image_available_semaphores_[i] = device_.createSemaphore(semaphore_info);
             vk_swapchain_render_finished_semaphores_[i] = device_.createSemaphore(semaphore_info);
+#ifndef NDEBUG
             // Set debug names of the semaphores
             std::string name = "Swapchain image available semaphore " + std::to_string(i);
             vk::DebugUtilsObjectNameInfoEXT name_info {};
@@ -739,6 +760,7 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             name_info3.objectHandle = (uint64_t)(VkImage)swapchain_images[i];
             name_info3.pObjectName = (std::string("Swapchain image ") + std::to_string(i)).c_str();
             device_.setDebugUtilsObjectNameEXT(name_info3);
+#endif
         }
     }
 
@@ -780,6 +802,12 @@ TRef<RHIAccelerationStructure> VulkanRHI::CreateAccelerationStructure(RHIAcceler
 RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
     auto sampler = new VulkanSampler(desc);
     return TRef<RHISampler>(sampler);
+}
+
+RHITimestampRef VulkanRHI::CreateTimestamp() {
+    auto index = timestamp_query_allocator_.fetch_add(1);
+    auto timestamp = new VulkanTimestamp(index % kMaxNumTimestampQueries);
+    return TRef<RHITimestamp>(timestamp);
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,

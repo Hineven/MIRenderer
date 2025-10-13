@@ -10,9 +10,6 @@
 
 MI_NAMESPACE_BEGIN
 
-extern CVar<int> CVar_MaxNumGridLights;
-extern CVar<int> CVar_NumLightSamplerSamples;
-
 MI_NAMESPACE_END
 
 #endif //MI_R_DIFFUSE_DIRECT_LIGHTING_H

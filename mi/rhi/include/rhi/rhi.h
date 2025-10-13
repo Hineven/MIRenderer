@@ -86,6 +86,9 @@ public:
 
     RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) ;
 
+    // Create a GPU timestamp resource. Each resource owns a query slot in the global query pool.
+    virtual RHITimestampRef CreateTimestamp () = 0;
+
     // Create a shader, thread safe
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                        RHIShaderIRType ir_type, std::span<const std::byte> ir) = 0;

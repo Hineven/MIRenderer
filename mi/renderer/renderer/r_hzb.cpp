@@ -39,6 +39,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER(ComputeHiZBufferShader, "mi/renderer/shaders/HiZBuf
 void Renderer::Render_ComputeHiZBuffer(
     [[maybe_unused]] RendererView * view, RenderGraphBuilder & builder
 ) {
+    RDGSectionGuard section(builder, "Render_ComputeHiZBuffer");
     auto & lib = RDGShaderLibrary::Get();
     uint32_t max_resolution = std::max(
         view->film_width_, view->film_height_

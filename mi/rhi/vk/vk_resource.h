@@ -48,6 +48,19 @@ protected:
     bool can_be_waited_ {true};
 };
 
+class VulkanTimestamp : public RHITimestamp {
+public:
+    FORCEINLINE VulkanTimestamp(uint32_t allocated_query_index) : query_index_(allocated_query_index) {};
+    ~VulkanTimestamp() override;
+
+    FORCEINLINE void * GetAPIHandle () const override { return (void*)(uintptr_t)query_index_; }
+    uint64_t QueryTimestamp() const override;
+
+    FORCEINLINE uint32_t GetQueryIndex() const { return query_index_; }
+private:
+    uint32_t query_index_ {UINT32_MAX};
+};
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_VK_RESOURCE_H

@@ -24,7 +24,9 @@
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
 #include "renderer/r_internal_common.h"
+#include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
+#include "renderer/r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
     static CVar<int> CVar_FinalOutputType(
@@ -267,7 +269,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kRayTracing,
                 RHIPipelineStageFlagBits::kAccelerationStructureBuild,
                 RHIGPUAccessFlagBits::kAccelerationStructureRW,
-                RHIGPUAccessFlagBits::kAccelerationStructureWrite
+                RHIGPUAccessFlagBits::kAccelerationStructureRW
             );
             auto as_build_info = build_info;
             as_build_info.instance_data = instance_buffer ? instance_buffer->GetRHI() : RHIBufferSpan{};
@@ -277,13 +279,25 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
                 RHIPipelineStageFlagBits::kAccelerationStructureBuild,
                 RHIPipelineStageFlagBits::kRayTracing,
-                RHIGPUAccessFlagBits::kAccelerationStructureWrite,
+                RHIGPUAccessFlagBits::kAccelerationStructureRW,
                 RHIGPUAccessFlagBits::kAccelerationStructureRead
             );
         })->AddASH_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
         ->AddBufferH(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
+
+    // Pre-allocate world radiance cache buffers that may be used among multiple lighting stages
+    if (!view->world_cache_) {
+        view->world_cache_ = new WorldRadianceCacheData();
+    }
+    view->world_cache_->Allocate(builder);
+    if (!view->light_structure_) {
+        view->light_structure_ = new LightStructureData();
+    }
+    view->light_structure_->Allocate(builder);
+    // Pre-allocate view persistent data
+    view->MakeSureHashGridPersistentDataExists(builder);
 
     // Ready for rendering
 

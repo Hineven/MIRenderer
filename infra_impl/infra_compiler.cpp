@@ -142,8 +142,9 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         w_options.push_back(option);
     };
 
+    // TODO Migrate the flags to the renderer logic
     if (preprocess_only) {
-        // 对于预处理，添加-P选项
+        // Preprocessing
         add_option(L"-P");
     } else {
         // Instruct dxc to compile adequate SPIRV
@@ -160,8 +161,10 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         // leveraging the capability of graphics drivers to perform format conversions on the fly.
         // 25.9.21: seems this is a new features and the PR has not been merged to mainline yet. And the guessing is not very reliable.
         // add_option(L"-fspv-use-unknown-image-format");
+#ifndef NDEBUG
         // Debugging flag
         add_option(L"-Zi"); // Generate debug information
+#endif
         // add_option(L"-fspv-reflect");
         // add_option(L"-fspv-debug=vulkan-with-source");
         // Warnings as errors

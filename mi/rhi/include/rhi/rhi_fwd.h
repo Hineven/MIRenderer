@@ -19,6 +19,7 @@ class RHIBuffer;
 class RHITexture;
 class RHISampler;
 class RHISyncPoint;
+class RHITimestamp; // Added forward declaration for timestamp resource
 
 // These references can only be used within the render thread
 using RHIResourceRef = TRef<RHIResource>;
@@ -26,6 +27,7 @@ using RHIBufferRef = TRef<RHIBuffer>;
 using RHITextureRef = TRef<RHITexture>;
 using RHISamplerRef = TRef<RHISampler>;
 using RHISyncPointRef = TRef<RHISyncPoint>;
+using RHITimestampRef = TRef<RHITimestamp>; // Added timestamp ref type
 
 
 class RHIShader;

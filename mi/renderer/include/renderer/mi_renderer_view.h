@@ -69,6 +69,8 @@ public:
 };
 
 struct RendererViewPersistentData;
+struct WorldRadianceCacheData;
+struct LightStructureData;
 
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
@@ -135,6 +137,11 @@ struct RendererView {
     // or flags
     TRef<RDGTexture> or_flags_;
 
+    // Shared world radiance cache data
+    TRef<WorldRadianceCacheData> world_cache_;
+    // Shared data for light sampling
+    TRef<LightStructureData> light_structure_;
+
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;
     TRef<RDGTexture> denoised_diffuse_direct_lighting_;
@@ -149,6 +156,8 @@ struct RendererView {
 
     // Final radiance
     TRef<RDGTexture> radiance_;
+    // Shaded radiance without emission, created & written by final composition
+    TRef<RDGTexture> shaded_radiance_no_emission_;
 
     // Debug output, can be written to for debug purposes
     // This is tone mapped the same as radiance_
@@ -185,7 +194,7 @@ struct RendererView {
 
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
-
+    void MakeSureHashGridPersistentDataExists (RenderGraphBuilder & builder);
 };
 
 // Used for setting cursor positions in debug uniform buffers

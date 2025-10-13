@@ -185,7 +185,7 @@ static CVar<int> CVar_FourierSampleNum(
 );
 
 void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilder &builder) {
-
+    RDGSectionGuard section(builder, "Render_DrawVolumePrimitives");
     glm::uvec2 tile_dimensions = {
         DivideAndRoundUp(view->film_width_, kTileSize),
         DivideAndRoundUp(view->film_height_, kTileSize)

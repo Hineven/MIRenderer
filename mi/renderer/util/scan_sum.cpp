@@ -109,6 +109,8 @@ void DeviceScanSum::AddScanSum32BitsPass(
     RDGBuffer *src_values_buffer, RDGBuffer *dst_values_buffer,
     RDGBuffer * count_buffer, const std::string &name
 ) {
+    RDGSectionGuard section(builder, name.empty() ? "ScanSum32Bits" : (name + "_ScanSum32Bits"));
+
     auto &lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo{};
     if (count_buffer) ini.optional_macros.push_back(kIndirectMacro);

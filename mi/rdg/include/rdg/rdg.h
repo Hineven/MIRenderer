@@ -19,6 +19,12 @@ struct RDGShaderParamStructAndSizeInfo;
 class RDGShader;
 class RDGPass;
 
+struct RDGTimePeriod {
+    std::vector<std::string> class_names;
+    std::string pass_name;
+    float duration {};
+};
+
 class RenderGraph : public RefCounted<> {
 public:
     ~RenderGraph();
@@ -38,6 +44,9 @@ public:
         return {uniform_buffer_.Raw(), it->second.offset};
     }
     FORCEINLINE const std::string & GetName () {return name_;}
+
+    // This only works in debug builds. Otherwise it returns an empty vector.
+    const std::vector<RDGTimePeriod> & GetTimestampPeriods () const {return timestamp_periods_;}
 
 protected:
     RenderGraph(const std::string & name) ;
@@ -66,6 +75,9 @@ protected:
 
     // Graph name. For debugging purposes.
     std::string name_;
+
+    // Timestamps. For profiling.
+    std::vector<RDGTimePeriod> timestamp_periods_;
 };
 
 typedef TRef<RenderGraph> RenderGraphRef;

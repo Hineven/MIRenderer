@@ -28,4 +28,7 @@ struct VolumePrimitivesHeader {
 
 MI_SHARED_HLSL_END
 
+// TODO this is a fixed parameter for now.
+#define VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G 0
+
 #endif

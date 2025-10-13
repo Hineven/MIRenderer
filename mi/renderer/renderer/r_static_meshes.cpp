@@ -168,6 +168,7 @@ public:
 IMPLEMENT_RDG_COMPUTE_SHADER(DecodeVisibilityShader, "mi/renderer/shaders/DrawStaticMeshes.hlsl", "DecodeVisibility");
 
 void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBuilder &builder) {
+    RDGSectionGuard section_guard(builder, "Render_DrawDeferredStaticMeshes");
     {   
         auto params = builder.Allocate<DrawDeferredStaticMeshesShader::Params>();
         params->View = view->view_common_params_;
@@ -332,7 +333,7 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(
 );
 
 void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBuilder &builder) {
-
+    RDGSectionGuard section_guard(builder, "Render_DrawForwardStaticMeshes");
     Helpers::Clear(builder, view->forward_depth_.Raw(), {});
 
     {

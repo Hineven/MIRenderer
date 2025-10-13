@@ -1,0 +1,90 @@
+/*
+ * Created: 2025/10/10
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef MI_R_LIGHT_STRUCTURE_H
+#define MI_R_LIGHT_STRUCTURE_H
+#include <renderer/mi_renderer_view.h>
+MI_NAMESPACE_BEGIN
+
+extern CVar<int> CVar_MaxNumGridLights;
+extern CVar<int> CVar_NumLightSamplerSamples;
+extern CVar<int> CVar_MaxNumLightGridEntries;
+
+static constexpr uint32_t kLightGridSize = 16;
+static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
+
+// Must be consistent with the struct in LightGrid.hlsl
+struct LightStructureUB {
+    glm::uvec3 LightGridSize;
+    float LightGridCellSize;
+    glm::vec3 LightGridCenter;
+    uint32_t LighGridNumCascadesUsed;
+    uint32_t LightGridMaxNumGridLights;
+    uint32_t LightGridNumCascadeGrids;
+    uint32_t LightGridNumGrids;
+    float LightInjectionIntensityThreshold;
+    glm::vec4 LightGridCascadeMin[kLightGridNumCascades];
+    glm::vec4 LightGridCascadeMax[kLightGridNumCascades];
+    uint32_t FrameIndex;
+    uint32_t MaxNumLights;
+    glm::uvec2 Unused;
+};
+
+struct LightStructureData : RefCounted<> {
+    TRef<RDGBuffer> precomputed_active_light_buffer;
+    TRef<RDGBuffer> active_light_list_count;
+    TRef<RDGBuffer> active_light_list_buffer;
+    // List of light indices for each grid
+    TRef<RDGBuffer> list_allocator;
+    TRef<RDGBuffer> list_active_light_list_index_buffer; // stores a index to active light list
+    TRef<RDGBuffer> grid_light_list_offset_buffer;
+    TRef<RDGBuffer> grid_light_list_cdf_buffer;
+    TRef<RDGBuffer> grid_light_list_length_buffer;
+    TRef<RDGBuffer> bloom_filter_buffer;
+
+    void Allocate(
+        RenderGraphBuilder & builder
+    );
+};
+
+template<typename T>
+void FillParametersForLightStructure (RendererView * view, T * params) {
+    auto ls = view->light_structure_;
+
+    if constexpr(requires{params->LightGrid_PrecomputedActiveLightBuffer;}) {
+        params->LightGrid_PrecomputedActiveLightBuffer = ls->precomputed_active_light_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_ActiveLightListCount;}) {
+        params->LightGrid_ActiveLightListCount = ls->active_light_list_count.Raw();
+    }
+    if constexpr(requires{params->LightGrid_ActiveLightListBuffer;}) {
+        params->LightGrid_ActiveLightListBuffer = ls->active_light_list_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_ListAllocator;}) {
+        params->LightGrid_ListAllocator = ls->list_allocator.Raw();
+    }
+    if constexpr(requires{params->LightGrid_ListActiveLightListIndexBuffer;}) {
+        params->LightGrid_ListActiveLightListIndexBuffer = ls->list_active_light_list_index_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_GridLightListOffsetBuffer;}) {
+        params->LightGrid_GridLightListOffsetBuffer = ls->grid_light_list_offset_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_GridLightListCdfBuffer;}) {
+        params->LightGrid_GridLightListCdfBuffer = ls->grid_light_list_cdf_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_GridLightListLengthBuffer;}) {
+        params->LightGrid_GridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_BloomFilterBuffer;}) {
+        params->LightGrid_BloomFilterBuffer = ls->bloom_filter_buffer.Raw();
+    }
+}
+
+void FillUniformBufferForLightStructure (RendererView * view, LightStructureUB * UB) ;
+
+MI_NAMESPACE_END
+
+#endif //MI_R_LIGHT_STRUCTURE_H

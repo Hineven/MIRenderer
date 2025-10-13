@@ -49,7 +49,7 @@ void VulkanCommandExecutor::Destroy_RHIThread() {
 
 template<typename T> concept VKLayoutType = std::is_same_v<T, vk::ImageLayout>;
 template<VKLayoutType...Layouts>
-static void CheckImageLayout(VulkanTexture * texture, [[maybe_unused]] Layouts...layout) {
+static void CheckImageLayout([[maybe_unused]] VulkanTexture * texture, [[maybe_unused]] Layouts...layout) {
 #ifndef NDEBUG
     auto current_layout = texture->GetImageLayout();
     bool valid = ((current_layout == layout) || ...);
@@ -63,7 +63,7 @@ void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommand
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
     auto texture = static_cast<VulkanTexture*>(clear_texture->texture_);
-    auto & region = vk::ImageSubresourceRange()
+    auto region = vk::ImageSubresourceRange()
             .setAspectMask(texture->GetImageAspect())
             .setBaseMipLevel(clear_texture->mip_level_)
             .setLevelCount(1)
@@ -101,7 +101,7 @@ void VulkanCommandExecutor::RHICopyBufferToTexture(RHICommandQueueBase *cmd,
     auto & cmdb = state.cmd;
     auto src_buffer = static_cast<VulkanBuffer*>(copy_buffer_to_texture->buffer_.buffer);
     auto dst_texture = static_cast<VulkanTexture*>(copy_buffer_to_texture->texture_);
-    auto & region = vk::BufferImageCopy()
+    auto region = vk::BufferImageCopy()
             .setBufferOffset(copy_buffer_to_texture->buffer_.offset)
             .setBufferRowLength(copy_buffer_to_texture->src_tex_width_)
             .setBufferImageHeight(copy_buffer_to_texture->src_tex_height_)
@@ -124,7 +124,7 @@ void VulkanCommandExecutor::RHICopyTextureToBuffer(RHICommandQueueBase *cmd,
     auto & cmdb = state.cmd;
     auto src_texture = static_cast<VulkanTexture*>(copy_texture_to_buffer->texture_);
     auto dst_buffer = static_cast<VulkanBuffer*>(copy_texture_to_buffer->buffer_);
-    auto & region = vk::BufferImageCopy()
+    auto region = vk::BufferImageCopy()
             .setBufferOffset(copy_texture_to_buffer->buffer_offset_)
             .setBufferRowLength(copy_texture_to_buffer->dst_tex_width_)
             .setBufferImageHeight(copy_texture_to_buffer->dst_tex_height_)
@@ -143,7 +143,7 @@ void VulkanCommandExecutor::RHICopyTextureToBuffer(RHICommandQueueBase *cmd,
 void VulkanCommandExecutor::RHICopyBuffer(RHICommandQueueBase *queue, RHICommandCopyBuffer *copy_buffer) {
     CHECK_RHI_THREAD();
     auto & cmd = state_chains_[(uint32_t)queue->GetCommandQueueType()].Current().cmd;
-    auto & region = vk::BufferCopy()
+    auto region = vk::BufferCopy()
         .setSrcOffset(copy_buffer->src_.offset)
         .setDstOffset(copy_buffer->dst_.offset)
         .setSize(std::min(copy_buffer->src_.size, copy_buffer->dst_.size));
@@ -543,11 +543,13 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         ];
         vk::PipelineStageFlags submit_wait_stages = vk::PipelineStageFlagBits::eTransfer;
         if (!prefix.empty()) {
+#ifndef NDEBUG
             GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
                 vk::DebugUtilsObjectNameInfoEXT {
                 vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)state.cmd),
                 prefix.c_str()
             });
+#endif
         }
         auto submit_info = vk::SubmitInfo {
             1, &image_ready_sem, &submit_wait_stages,
@@ -1078,6 +1080,22 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
 #ifndef NDEBUG
     state.last_inserted_debug_marker = cmd->marker_name_;
 #endif
+}
+
+void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHICommandInsertTimestamp *cmd) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
+    auto vk_rhi = GetVulkanRHI();
+    auto vk_timestamp = (VulkanTimestamp*)cmd->timestamp_;
+    auto query = vk_timestamp->GetQueryIndex();
+    state.BeginCmd();
+    mi_assert(cmd->stage_ == RHIPipelineStageFlagBits::kAll, "Not implemented");
+    auto pool = vk_rhi->GetTimestampQueryPool();
+    state.cmd.resetQueryPool(pool, query, 1);
+    state.cmd.writeTimestamp(
+        vk::PipelineStageFlagBits::eAllCommands,
+        pool, query
+    );
 }
 
 void

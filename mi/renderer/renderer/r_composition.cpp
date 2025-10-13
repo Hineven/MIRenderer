@@ -53,6 +53,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Transmittance)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWShadedRadianceWithoutEmission)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
@@ -69,6 +70,13 @@ public:
 IMPLEMENT_RDG_COMPUTE_SHADER(LightingCompositionShader, "mi/renderer/shaders/LightingComposition.hlsl", "LightingComposition");
 
 void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder &builder) {
+    {
+        // Allocate outputs in the view.
+        view->shaded_radiance_no_emission_ = builder.CreateTexture2D(
+            view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT
+        );
+    }
+
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<LightingCompositionShader>();
     auto params = builder.Allocate<LightingCompositionShader::ShaderParameters>();
@@ -91,6 +99,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->G_Transmittance = view->G_transmittance_.Raw();
     params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
+    params->RWShadedRadianceWithoutEmission = view->shaded_radiance_no_emission_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);

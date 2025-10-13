@@ -132,6 +132,8 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
     RenderGraphBuilder &builder, uint32_t num_elements, RDGBuffer *src_keys_buffer, RDGBuffer *dst_keys_buffer,
     RDGBuffer *src_values_buffer, RDGBuffer *dst_values_buffer, RDGBuffer * count_buffer, const std::string &name
 ) {
+    RDGSectionGuard section(builder, (!name.empty()) ? (name + "_RadixSort32Bits") : "RadixSort32Bits");
+
     auto &lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo{};
     if (count_buffer) ini.optional_macros.push_back(kIndirectMacro);

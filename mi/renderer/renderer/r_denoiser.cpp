@@ -32,7 +32,9 @@ static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable
     true
 );
 
-bool DenoiserPersistentData::MakeSureExists(RendererView * view, RenderGraphBuilder & builder) {
+bool DenoiserPersistentData::MakeSureExists(
+    [[maybe_unused]] RendererView * view,
+    [[maybe_unused]] RenderGraphBuilder & builder) {
     bool flag = false;
     // Actually, we don't need to do anything. Passing null resources to shader
     // fallbacks to a default and safe behavior. Just tell the shader not to use history.
@@ -126,7 +128,7 @@ public:
 IMPLEMENT_RDG_COMPUTE_SHADER(DilatedFilterDiffuseDirectLightingShader, "mi/renderer/shaders/DenoiseDiffuseLighting.hlsl", "DilatedFilterDiffuseDirectLighting");
 
 void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &builder) {
-
+    RDGSectionGuard section(builder, "Render_DenoiseLighting");
     bool need_reset = false;
     if (!view->persistent_data_->denoiser_persistent_data_) {
         view->persistent_data_->denoiser_persistent_data_ = new DenoiserPersistentData();

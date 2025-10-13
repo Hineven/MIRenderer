@@ -349,19 +349,19 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     bool has_depth_stencil = pipeline_info.depth_stencil_attachment.format != PixelFormatType::kUnknown;
     // Dynamic rendering support
     auto color_attachment_formats = std::vector<vk::Format>(pipeline_info.color_attachments.size());
-    {
-        for(int i = 0; i < pipeline_info.color_attachments.size(); ++i) {
-            color_attachment_formats[i] = GetVulkanPixelFormat(
-                    pipeline_info.color_attachments[i].format
-            );
-        }
-        auto rdn_info = vk::PipelineRenderingCreateInfo {
-                    {}, color_attachment_formats,
-                    has_depth_stencil ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
-                    {}
-        };
-        pipeline_info_vk.setPNext(&rdn_info);
+
+    for(int i = 0; i < pipeline_info.color_attachments.size(); ++i) {
+        color_attachment_formats[i] = GetVulkanPixelFormat(
+                pipeline_info.color_attachments[i].format
+        );
     }
+    auto rdn_info = vk::PipelineRenderingCreateInfo {
+                {}, color_attachment_formats,
+                has_depth_stencil ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+                {}
+    };
+    pipeline_info_vk.setPNext(&rdn_info);
+
     {
         auto guard = std::lock_guard(GetVulkanRHI()->GetPipelineCacheMutex());
         auto result = device.createGraphicsPipeline(GetVulkanRHI()->GetPipelineCache(), pipeline_info_vk);

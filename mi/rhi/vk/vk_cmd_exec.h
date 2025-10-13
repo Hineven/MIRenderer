@@ -55,6 +55,7 @@ public:
     void RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHICommandDebugMarkerBegin *cmd) override;
     void RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) override;
     void RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) override;
+    void RHIInsertTimestamp (RHICommandQueueBase * buffer, RHICommandInsertTimestamp * cmd) override;
 
     // Ray tracing commands
     void RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) override;
@@ -190,7 +191,7 @@ protected:
         std::stack<std::string> debug_marker_stack;
         std::string last_inserted_debug_marker;
 #endif
-        FORCEINLINE void PushDebugMarker (const std::string & name) {
+        FORCEINLINE void PushDebugMarker ([[maybe_unused]] const std::string & name) {
 #ifndef NDEBUG
             debug_marker_stack.push(name);
 #endif
