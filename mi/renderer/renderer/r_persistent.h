@@ -14,6 +14,7 @@ MI_NAMESPACE_BEGIN
 
 struct DiffuseIndirectLightingPersistentData;
 struct DenoiserPersistentData;
+struct HashGridPersistentData;
 
 // The data kept across frames for a view.
 struct RendererViewPersistentData {
@@ -29,6 +30,9 @@ struct RendererViewPersistentData {
 
     // Denoised results from last frame
     TRef<RDGTexture> prev_radiance_;
+    // Denoised results from last frame (shaded radiance without emission)
+    // Written by final composition
+    TRef<RDGTexture> prev_shaded_radiance_no_emission_;
 
     TRef<RDGTexture> path_tracing_film_;
 
@@ -41,6 +45,8 @@ struct RendererViewPersistentData {
     TRef<DenoiserPersistentData> denoiser_persistent_data_;
 
     TRef<DiffuseIndirectLightingPersistentData> diffuse_indirect_lighting_persistent_data_;
+
+    TRef<HashGridPersistentData> hash_grid_persistent_data_;
 
     Scene * prev_scene_ {};
 };

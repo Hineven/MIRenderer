@@ -186,6 +186,10 @@ void RHICommandDebugMarkerInsert::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIDebugMarkerInsert(&cmd, this);
 }
 
+void RHICommandInsertTimestamp::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIInsertTimestamp(&cmd, this);
+}
+
 void RHICommandBuildAccelerationStructure::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBuildAccelerationStructure(&cmd, this);
 }
@@ -212,8 +216,3 @@ void RHICommandBindShaderBindingTable::Execute(RHICommandQueueBase &cmd) {
 
 
 MI_NAMESPACE_END
-
-
-
-
-

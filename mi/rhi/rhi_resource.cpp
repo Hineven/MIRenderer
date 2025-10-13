@@ -37,5 +37,10 @@ void RHIResource::SetName([[maybe_unused]] const std::string & name) {
 #endif
 }
 
+float RHITimestamp::QueryTimestampInSeconds() const {
+    float period = RHI::Get().GetDeviceProperties().timestamp_period;
+    return float(double(QueryTimestamp()) * period * 1e-9f);
+}
+
 
 MI_NAMESPACE_END

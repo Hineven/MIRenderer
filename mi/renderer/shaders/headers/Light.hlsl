@@ -103,11 +103,12 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
             return 0.0f;
         }
 
-        float k0 = saturate(dot(Normal, ToV0));
-        float k1 = saturate(dot(Normal, ToV1));
-        float k2 = saturate(dot(Normal, ToV2));
+        float k0 = saturate(dot(Normal, normalize(ToV0)));
+        float k1 = saturate(dot(Normal, normalize(ToV1)));
+        float k2 = saturate(dot(Normal, normalize(ToV2)));
+        float MaxK = max(k0, max(k1, k2));
         // the sampled surface is not facing the light. Cull it out.
-        if (all(float3(k0, k1, k2) <= 0.0f)) {
+        if (MaxK <= 0.0f) {
             return 0.0f;
         }
 
@@ -128,7 +129,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
             CosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
         }
         // Take into account the cosine factor how much the sampled point is facing towards the light
-        float CosineFactor = saturate(CosineBias + dot(Normal, ToLightCenter));
+        float CosineFactor = saturate(CosineBias + MaxK);
 
         // Take account for how well is the light facing the shading point
         float LightFacingCosineFactor = saturate(-dot(ToLightDirection, L.Normal));

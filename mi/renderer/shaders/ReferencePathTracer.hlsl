@@ -26,10 +26,10 @@
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
-StructuredBuffer<PackedPrecomputedLight> PrecomputedActiveLightBuffer;
+StructuredBuffer<PackedPrecomputedLight> LightGrid_PrecomputedActiveLightBuffer;
 
-StructuredBuffer<uint> ActiveLightListCount;
-StructuredBuffer<uint> ActiveLightListBuffer;
+StructuredBuffer<uint> LightGrid_ActiveLightListCount;
+StructuredBuffer<uint> LightGrid_ActiveLightListBuffer;
 
 
 StructuredBuffer<uint> LightGrid_ListLightIndexBuffer;

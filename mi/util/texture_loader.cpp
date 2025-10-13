@@ -43,7 +43,7 @@ public:
 IMPLEMENT_RDG_GRAPHICS_SHADER(MappingShader, "mi/util/shaders/texture_loader/MappingShader.hlsl", "VS_Main", "PS_Main")
 
 TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &name, const std::string &mime_type, const void *ptr, size_t size) {
-    auto env_texture = LoadFromBuffer(name + "_env", mime_type, ptr, size);
+    auto env_texture = LoadFromBuffer(name + "_source", mime_type, ptr, size);
     env_texture->UpdateOnDevice();
 
     glm::dvec3 const forward_vectors[] = {glm::dvec3(-1.0, 0.0, 0.0), glm::dvec3(1.0, 0.0, 0.0),
@@ -57,6 +57,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
     // 1k res
     constexpr auto face_resolution = 1024;
     auto env_cubemap = Texture::Create(RHITextureType::kCube, PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution, 6);
+    env_cubemap->SetName(name);
     env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
     env_cubemap->UpdateOnDevice();
     // Make sure pool is destroyed after the render graph
@@ -142,7 +143,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMap(std::string name, std::filesyste
     if (ext_name == ".exr") {
         mime = "image/exr";
     }
-    auto texture = LoadEnvironmentMapFromBuffer(resource_path.string(), mime, buffer.data(), size);
+    auto texture = LoadEnvironmentMapFromBuffer(name, mime, buffer.data(), size);
     return texture;
 }
 
@@ -181,7 +182,7 @@ TRef<Texture> TextureLoader::LoadFromFile(std::string name, std::filesystem::pat
     if (ext_name == ".jpg" || ext_name == ".jpeg") {
         mime = "image/jpeg";
     }
-    auto texture = LoadFromBuffer(resource_path.string(), mime, buffer.data(), size);
+    auto texture = LoadFromBuffer(name, mime, buffer.data(), size);
     return texture;
 }
 

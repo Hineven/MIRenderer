@@ -21,6 +21,8 @@
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_denoiser.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
+#include "renderer/r_world_radiance_cache.h"
+#include "renderer/r_light_structure.h"
 
 MI_NAMESPACE_BEGIN
 RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {
@@ -266,8 +268,13 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
 
     prev_G_depth = view->G_depth_;
     prev_G_normal = view->G_normal_;
+    prev_G_depth->SetExport();
+    prev_G_normal->SetExport();
 
     prev_radiance_ = view->radiance_;
+    prev_radiance_->SetExport();
+    prev_shaded_radiance_no_emission_ = view->shaded_radiance_no_emission_;
+    prev_shaded_radiance_no_emission_->SetExport();
 
     prev_scene_ = view->scene_;
 

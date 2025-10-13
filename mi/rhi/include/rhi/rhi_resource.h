@@ -132,6 +132,18 @@ protected:
     virtual void NotifySubmission () = 0;
 };
 
+// A GPU timestamp resource representing a slot in the global timestamp query pool.
+// Use InsertTimestamp on a command queue to write the timestamp to this resource,
+// and call GetTimestamp() later (after GPU completion) to read it back.
+class RHITimestamp : public RHIResource {
+public:
+    virtual ~RHITimestamp() = default;
+    // Query and returns the raw timestamp counter value written by the GPU for this resource.
+    // The unit is device-dependent ticks; convert using device timestampPeriod if needed.
+    virtual uint64_t QueryTimestamp() const = 0;
+    float QueryTimestampInSeconds() const ;
+};
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_RHI_RESOURCE_H

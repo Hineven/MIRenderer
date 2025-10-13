@@ -49,6 +49,7 @@ public:
     virtual void RHIDebugMarkerBegin (RHICommandQueueBase * buffer, RHICommandDebugMarkerBegin * cmd) = 0;
     virtual void RHIDebugMarkerEnd (RHICommandQueueBase * buffer, RHICommandDebugMarkerEnd * cmd) = 0;
     virtual void RHIDebugMarkerInsert (RHICommandQueueBase * buffer, RHICommandDebugMarkerInsert * cmd) = 0;
+    virtual void RHIInsertTimestamp (RHICommandQueueBase * buffer, RHICommandInsertTimestamp * cmd) = 0;
 
     // Ray tracing commands
     virtual void RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) = 0;

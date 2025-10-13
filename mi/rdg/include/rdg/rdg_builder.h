@@ -21,6 +21,10 @@ class RDGPass;
 class RenderGraph;
 typedef TRef<RDGResource> RDGResourceRef;
 
+// The builder class for building a render graph.
+// It holds all the passes and resources created during the building phase.
+// After building, call Compile() to get a RenderGraph object that can be executed.
+// The builder itself can be discarded after Compile() is called.
 class RenderGraphBuilder : public NonCopyable, public NonMovable {
 public:
     RenderGraphBuilder();
@@ -87,13 +91,13 @@ public:
     TRef<RenderGraph> Compile (const std::string & name = "Unnamed Render Graph") ;
 
     // Allocate temporary memory that lives up to the end of the graph execution.
-    // Useful for trasfering data to pass lambdas
+    // Useful for transferring data to pass lambdas
     FORCEINLINE void * Allocate (size_t size) {
         return allocator_->Allocate(size);
     }
 
     // Allocate temporary memory that lives up to the end of the graph execution.
-    // Useful for trasfering data to pass lambdas
+    // Useful for transferring data to pass lambdas
     template<CMemTrivial T, typename BoolType = bool>
     FORCEINLINE T * Allocate (BoolType zero_before_construction = true) {
         static_assert(std::is_same_v<BoolType, bool>, "The parameter to Allocate must be a bool "
@@ -138,7 +142,19 @@ public:
         });
     }
 
+    FORCEINLINE TRef<RDGTexture> CreateTexture2D (
+    glm::uvec2 dimensions, PixelFormatType format,
+    RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+    uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        return CreateTexture(RHITextureDesc{
+            RHITextureType::k2D,
+            {dimensions.x, dimensions.y, 1},
+            mip_levels, array_layers, format, usage
+        });
+    }
+
     // Import a rhi texture. NOTE: The builder kept a reference to the resource once imported.
+    // Importing the same RHI texture multiple times will return the same RDGTexture. So feel free to use it anywhere.
     // If the layout is kUndefined, we don't care about the contents of the imported texture.
     // All the data will be lost within the first pass that uses it.
     RDGTexture * Import (RHITexture * resource, RHITextureLayoutType layout = RHITextureLayoutType::kUndefined,
@@ -146,15 +162,32 @@ public:
 
     // Create a RDG buffer with the given description. Shortcut for RDGBuffer::Create
     TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage, size_t size, bool dedicated = false, bool no_warning = false) ;
+    // Legacy support
     template <CMemTrivial T>
-    FORCEINLINE TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage, size_t count = 1, bool dedicated = false, bool no_warning = false) {
+    FORCEINLINE TRef<RDGBuffer> CreateBuffer (RHIBufferUsageFlags usage,
+        size_t count = 1, bool dedicated = false, bool no_warning = false) {
+        return CreateBuffer(usage, sizeof(T) * count, dedicated, no_warning);
+    }
+
+    // Create a RDG buffer with the given description. Shortcut for RDGBuffer::Create
+    template <CMemTrivial T>
+    FORCEINLINE TRef<RDGBuffer> CreateBuffer (size_t count = 1, RHIBufferUsageFlags usage = RHIBufferUsageFlagBits::kStorage,
+     bool dedicated = false, bool no_warning = false) {
         return CreateBuffer(usage, sizeof(T) * count, dedicated, no_warning);
     }
 
     // Import a rhi buffer. NOTE: The builder kept a reference to the resource once imported.
     RDGBuffer * Import (RHIBuffer * resource, RHIGPUAccessFlags prev_access = RHIGPUAccessFlagBits::kNone, RHIPipelineStageFlags prev_stages = RHIPipelineStageFlagBits::kNone) ;
 
+    FORCEINLINE void PushPassClassPath (const std::string & class_name) {
+        current_class_path_.push_back(class_name);
+    }
 
+    FORCEINLINE void PopPassClassPath () {
+        if (!current_class_path_.empty()) {
+            current_class_path_.pop_back();
+        }
+    }
 
 protected:
 
@@ -172,6 +205,35 @@ protected:
     std::vector<std::unique_ptr<RDGPass>> passes_;
     int current_pass_index_ {};
 
+    // Current class path of the passes being added. Used for debug naming.
+    std::vector<std::string> current_class_path_;
+};
+
+// Easily manage push/pop of pass class path in the builder.
+// Usage:
+// {
+//     RDGSectionGuard section(builder, "MySection");
+//     // All passes added here will have "MySection" in their class path.
+//     ...
+// }
+class RDGSectionGuard {
+public:
+    FORCEINLINE RDGSectionGuard(RenderGraphBuilder & builder, const std::string & name) :
+    name_(name), builder_(builder) {
+        builder_.PushPassClassPath(name_);
+    }
+    FORCEINLINE ~RDGSectionGuard() {
+        builder_.PopPassClassPath();
+    }
+
+    // Remove copy and move ctors and assignments
+    RDGSectionGuard(const RDGSectionGuard &) = delete;
+    RDGSectionGuard & operator=(const RDGSectionGuard &) = delete;
+    RDGSectionGuard(RDGSectionGuard &&) = delete;
+    RDGSectionGuard & operator=(RDGSectionGuard &&) = delete;
+protected:
+    std::string name_;
+    RenderGraphBuilder & builder_;
 };
 
 MI_NAMESPACE_END

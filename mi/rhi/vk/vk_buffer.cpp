@@ -68,6 +68,7 @@ void *VulkanBuffer::GetAPIHandle() const {
 
 void VulkanBuffer::SetName(const std::string & name) {
     RHIBuffer::SetName(name);
+#ifndef NDEBUG
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eBuffer,
@@ -78,6 +79,7 @@ void VulkanBuffer::SetName(const std::string & name) {
     if (allocation_) {
         GetVulkanRHI()->GetVmaAllocator().setAllocationName(allocation_, GetName());
     }
+#endif
 }
 
 uint64_t VulkanBuffer::GetDeviceAddress() const {

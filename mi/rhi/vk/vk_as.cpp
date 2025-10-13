@@ -160,7 +160,6 @@ void VulkanAccelerationStructure::ResetRHI() {
         acceleration_structure_ = nullptr;
     }
 
-    // 使用 vma-hpp 风格的现代 C++ API 清理buffer和内存
     if (buffer_ && allocation_) {
         allocator.destroyBuffer(buffer_, allocation_);
         buffer_ = nullptr;
@@ -171,6 +170,8 @@ void VulkanAccelerationStructure::ResetRHI() {
 }
 
 void VulkanAccelerationStructure::SetName(const std::string& name) {
+    RHIResource::SetName(name);
+#ifndef NDEBUG
     auto device = GetVulkanRHI()->GetDevice();
     vk::DebugUtilsObjectNameInfoEXT name_info{
         vk::ObjectType::eAccelerationStructureKHR,
@@ -178,6 +179,7 @@ void VulkanAccelerationStructure::SetName(const std::string& name) {
         name.c_str()
     };
     device.setDebugUtilsObjectNameEXT(name_info);
+#endif
 }
 
 MI_NAMESPACE_END

@@ -12,9 +12,21 @@
 #include "rhi/rhi_buffer.h"
 MI_NAMESPACE_BEGIN
 
+void Helpers::Clear(RenderGraphBuilder &builder, RDGBuffer *buffer, uint32_t value, size_t offset, size_t size) {
+    builder.AddPass("ClearBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
+        [buffer, value, offset, size]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            auto span = RHIBufferSpan{buffer->GetRHI().buffer, offset, size == SIZE_MAX ? buffer->GetDesc().size - offset : size};
+            queue.ClearBuffer(span, value);
+    })->AddBuffer(buffer,
+        RHIGPUAccessFlagBits::kTransferWrite,
+        RHIPipelineStageFlagBits::kTransfer
+    );
+}
+
+
 void Helpers::Clear(RenderGraphBuilder &builder, RDGTexture *texture, glm::vec4 clear_value, uint32_t mip_level, uint32_t base_layer, uint32_t num_layers) {
     builder.AddPass("ClearTexture", RDGPassType::kGeneric, {}, {}, {}, {},
-        [texture, clear_value, mip_level, base_layer, num_layers](RDGPass * pass, RHICommandQueueGraphics & queue) {
+        [texture, clear_value, mip_level, base_layer, num_layers]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             std::array<float, 4> arr = {clear_value.x, clear_value.y, clear_value.z, clear_value.w};
             queue.ClearTexture(texture->GetRHI(), arr, mip_level, base_layer, num_layers);
 
@@ -29,7 +41,8 @@ void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTextu
     uint32_t src_mip_level, uint32_t src_base_layer, uint32_t src_layer_count,
     uint32_t dst_mip_level, uint32_t dst_base_layer, uint32_t dst_layer_count) {
     builder.AddPass("CopyTexture", RDGPassType::kGeneric, {}, {}, {}, {},
-        [src, dst, src_mip_level, src_base_layer, src_layer_count, dst_mip_level, dst_base_layer, dst_layer_count](RDGPass * pass, RHICommandQueueGraphics & queue) {
+        [src, dst, src_mip_level, src_base_layer, src_layer_count, dst_mip_level, dst_base_layer, dst_layer_count]
+        ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             queue.CopyTexture(src->GetRHI(), dst->GetRHI(),
                 0, 0, 0,
                 0, 0, 0,
@@ -41,6 +54,25 @@ void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTextu
         }
     )->AddTexture(src, RHITextureLayoutType::kTransferSrcOptimal, RHIGPUAccessFlagBits::kTransferRead, RHIPipelineStageFlagBits::kTransfer)
      ->AddTexture(dst, RHITextureLayoutType::kTransferDstOptimal, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
+}
+
+void Helpers::CopyBuffer(RenderGraphBuilder &builder, RDGBuffer *src, RDGBuffer *dst,
+    size_t size, size_t src_offset, size_t dst_offset) {
+    if (size == SIZE_MAX) {
+        if (src->GetDesc().size - src_offset != dst->GetDesc().size - dst_offset) {
+            mi_assert(false, "CopyBuffer size is not specified, but the source and destination buffer sizes do not match.");
+        }
+        size = src->GetDesc().size - src_offset;
+    }
+    builder.AddPass("CopyBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
+        [src, dst, size, src_offset, dst_offset]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            queue.CopyBuffer(
+                RHIBufferSpan{src->GetRHI().buffer, src_offset, size},
+                RHIBufferSpan{dst->GetRHI().buffer, dst_offset, size}
+            );
+        }
+    )->AddBuffer(src, RHIGPUAccessFlagBits::kTransferRead, RHIPipelineStageFlagBits::kTransfer)
+     ->AddBuffer(dst, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
 }
 
 

@@ -7,6 +7,7 @@
 #ifndef MI_R_DENOISER_H
 #define MI_R_DENOISER_H
 #include <renderer/mi_cvar.h>
+#include <rdg/rdg_resource.h>
 MI_NAMESPACE_BEGIN
 
 struct DenoiserPersistentData : RefCounted<> {

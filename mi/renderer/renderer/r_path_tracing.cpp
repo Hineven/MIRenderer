@@ -14,10 +14,10 @@
 #include "r_view_common.h"
 #include "r_persistent.h"
 #include "r_diffuse_direct_lighting.h"
+#include "r_light_structure.h"
 
 MI_NAMESPACE_BEGIN
-
-static CVar<bool> CVar_PathTracingEnableAccumulation(
+    static CVar<bool> CVar_PathTracingEnableAccumulation(
     "r.pathtracing.enable_accumulation",
     "Enable accumulation for path tracing.",
     false

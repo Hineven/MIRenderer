@@ -167,6 +167,7 @@ protected:
     // Manually managed command destruction, used internally.
     template<CRHIValidCommand T>
     T * AllocateCommand (auto...args) {
+        assert(IsRenderThread());
         auto ptr = GetCommandAllocator().Allocate(sizeof(T));
         return new(ptr) T(args...);
     }
@@ -612,6 +613,17 @@ public:
     std::array<float, 4> color_;
 };
 
+// Insert a GPU timestamp into the global query pool for later readback.
+class RHICommandInsertTimestamp : public TRHICommand<RHICommandInsertTimestamp> {
+public:
+    RHICommandInsertTimestamp(RHITimestamp* timestamp, RHIPipelineStageFlagBits stage)
+        : timestamp_(timestamp), stage_(stage) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    RHITimestamp* timestamp_;
+    RHIPipelineStageFlagBits stage_;
+};
+
 
 // Ray tracing commands
 class RHICommandBuildAccelerationStructure : public TRHICommand<RHICommandBuildAccelerationStructure> {
@@ -938,7 +950,9 @@ public:
         AddCommand(AllocateCommand<RHICommandDispatchRaysIndirect2>(indirect_buffer));
     }
 
-    FORCEINLINE void BeginDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
+    FORCEINLINE void BeginDebugMarker(
+        [[maybe_unused]] const char* marker_name,
+        [[maybe_unused]] const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
 #ifndef NDEBUG
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
@@ -953,13 +967,21 @@ public:
 #endif
     }
 
-    FORCEINLINE void InsertDebugMarker(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
+    FORCEINLINE void InsertDebugMarker(
+        [[maybe_unused]] const char* marker_name,
+        [[maybe_unused]] const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
 #ifndef NDEBUG
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);
         AddCommand(AllocateCommand<RHICommandDebugMarkerInsert>(name_copy, color));
 #endif
+    }
+
+    // Insert a GPU timestamp at the specified pipeline stages. Default is all commands.
+    FORCEINLINE void InsertTimestamp(RHITimestamp* timestamp,
+                                     RHIPipelineStageFlagBits stage = RHIPipelineStageFlagBits::kAll) {
+        AddCommand(AllocateCommand<RHICommandInsertTimestamp>(timestamp, stage));
     }
 
 };

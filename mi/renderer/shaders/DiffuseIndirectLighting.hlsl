@@ -1,4 +1,5 @@
 #include "shared/SharedDebug.hlsl"
+#include "shared/SharedVolumePrimitives.hlsl"
 #include "headers/Conventions.hlsl"
 #include "headers/Camera.hlsl"
 #include "headers/GeometryBuffers.hlsl"
@@ -9,7 +10,10 @@
 #include "headers/Sampling.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/HybridTracing.hlsl"
+#include "headers/MaterialEvaluation.hlsl"
+#include "resources/HashGridCacheResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
+#include "resources/LightGridSampling.hlsl"
 
 // Foreground screen probes
 //[[vk::image_format(rgba16f)]]
@@ -30,6 +34,10 @@ RWTexture2D<float4> RWScreenProbeSHCoefficientsRTexture; // Doubled width ( to s
 RWTexture2D<float4> RWScreenProbeSHCoefficientsGTexture;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeSHCoefficientsBTexture;
+
+// Used for screen space radiance reuse (for probe update rays)
+// This radiance has albedo premultiplied, which is different from ordinary
+Texture2D<float4> PreviousShadedDiffuseRadianceWithoutEmission;
 
 // Probe cache indexing and updating datastructures
 RWStructuredBuffer<uint> RWTileScreenProbeCacheIndexListBuffer;
@@ -107,8 +115,25 @@ RWStructuredBuffer<uint> RWScreenProbeUpdateRayOriginScreenCoordsBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayAllocator; // Number of all rays to be traced
 
 // Ray trace results
-RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer;
+RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed material & normal (material is packed as CachedHitMaterial)
+RWStructuredBuffer<uint2> RWScreenProbeUpdateRayRadianceBuffer; // Fp16x4 packed radiance + flag
 RWStructuredBuffer<float> RWScreenProbeUpdateRayInvPdfBuffer;
+RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer;
+
+// Shading counters for update rays
+RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitShadingPointAllocator;
+RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitShadingPointListBuffer; // Shading point -> update ray index
+
+// Transmittance ray traces
+RWStructuredBuffer<uint>   RWShadePointTransmittanceRayAllocator;
+RWStructuredBuffer<uint>   RWShadePointTransmittanceRayDirectionBuffer;
+RWStructuredBuffer<float3> RWShadePointTransmittanceRayOriginBuffer;
+RWStructuredBuffer<uint>   RWShadePointTransmittanceRayStateBuffer;
+RWStructuredBuffer<float>  RWShadePointTransmittanceRayTMaxBuffer;
+StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
+
+RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
+RWStructuredBuffer<uint>   RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer;
 
 // For debugging
 RWStructuredBuffer<uint> RWDebugTracedRaysCount;
@@ -118,6 +143,7 @@ RWStructuredBuffer<uint> RWDebugTracedRayStates;
 
 Texture2D<float> G_Depth;
 Texture2D<float3> G_Normal;
+TextureCube<float4> EnvironmentMap;
 
 Texture2D<float> PreviousDepthTexture;
 Texture2D<float3> PreviousNormalTexture;
@@ -281,6 +307,10 @@ void ClearCounters () {
     RWScreenProbeSpawnCount[0] = 0;
     RWScreenProbeUpdateRayAllocator[0] = 0;
     RWTileScreenProbeCacheIndexListAllocator[0] = 0;
+    RWScreenProbeUpdateRayHitShadingPointAllocator[0] = 0;
+    RWShadePointTransmittanceRayAllocator[0] = 0;
+    HashGrids_ActiveTileCount[0] = 0;
+    HashGrids_UpdateTileCount[0] = 0;
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
@@ -550,8 +580,8 @@ void ReprojectCachedProbes (uint DispatchID : SV_DispatchThreadID) {
         float2 UV  = NDC2ToUV(NDC.xy);
         if (all(UV > 0.0f) && all(UV < 1.0f))
         {
-            uint2 ReprojectedTileIndex = UV * UB.TileDimensions;
-            uint2 ReprojectedScreenCoords = UV * C.FilmDimensions;
+            uint2 ReprojectedTileIndex = floor(UV * UB.TileDimensions);
+            uint2 ReprojectedScreenCoords = floor(UV * C.FilmDimensions);
             uint TileIndex1 = ReprojectedTileIndex.x + ReprojectedTileIndex.y * UB.TileDimensions.x;
             // Append to the tile's MRU list
             uint TileEntryIndex;
@@ -1016,7 +1046,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
             RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = PackNormal(RayWorldDirection);
             RWScreenProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
             RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex] = PackUint2x16(Header.PixelCoords);
-			RWScreenProbeUpdateRayResultBuffer[RayIndex] = PackFp16x4Safe(0.f.xxxx);
+			RWScreenProbeUpdateRayResultBuffer[RayIndex] = 0;
 			// Keep extra data for later probe update
 			float RayInvPdf = 1.f / RayPdf;
             RWScreenProbeUpdateRayInvPdfBuffer[RayIndex] = RayInvPdf;
@@ -1025,7 +1055,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
             RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = PackNormal(0.f.xxx);
             RWScreenProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
             RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex] = 0;
-            RWScreenProbeUpdateRayResultBuffer[RayIndex] = PackFp16x4Safe(0.f.xxxx);
+            RWScreenProbeUpdateRayResultBuffer[RayIndex] = 0;
             RWScreenProbeUpdateRayInvPdfBuffer[RayIndex] = 0.f;
         }
     }
@@ -1037,7 +1067,278 @@ void ClipUpdateRayCount () {
 }
 
 // The sampled rays are traced in separate shaders via hybrid tracing (no written here)
-// Radiance results are stored in RWScreenProbeUpdateRayResultBuffer
+// HWRT trace shading rays (without indirection ray index list)
+
+float3 GetScreenProbeUpdateRayOrigin (int RayIndex) {
+    uint2 ScreenCoords = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex]);
+    float ReversedZDepth = G_Depth.Load(int3(ScreenCoords, 0)).x;
+    CameraParameters C = GetActiveCamera();
+    float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+    float2 UV = (ScreenCoords + 0.5f) * C.InvFilmDimensions;
+    float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), LinearDepth);
+    return WorldPosition;
+}
+
+uint2 PackUpdateRayRadianceFlag (float3 Radiance, bool bBypass) {
+    return PackFp16x4Safe(float4(Radiance, bBypass));
+}
+
+float3 UnpackUpdateRayRadianceFlag (uint2 Packed, out bool bBypass) {
+    float4 v = UnpackFp16x4Safe(Packed);
+    bBypass = v.w != 0.f;
+    return v.xyz;
+}
+
+// Try to resolve hit lighting from screen space history directly (that spares the effort for further light ray tracing & shading)
+// Dispatched per probe update ray, spawn candidate shading points
+[numthreads(WAVE_SIZE, 1, 1)]
+void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID) {
+	int RayIndex = DispatchID;
+    if(RayIndex >= RWScreenProbeUpdateRayAllocator[0]) return ;
+    float3 RayOrigin = GetScreenProbeUpdateRayOrigin(RayIndex);
+    float3 RayDirection = UnpackNormal(RWScreenProbeUpdateRayDirectionBuffer[RayIndex]);
+    uint PackedRayState = RWScreenProbeUpdateRayStateBuffer[RayIndex];
+    bool bHit;
+    float RayHitT = UnpackRayToTraceState(PackedRayState, bHit);
+	CameraParameters C = GetActiveCamera();
+	// Whether we should bypass the second level radiance cache. 
+	bool bBypass = false;
+	if(bHit) {
+		float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
+		float4 PreviousHomogeneousW = mul(GetPreviousCamera().WorldToNDC, float4(HitWorldPosition, 1));
+		float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
+		if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
+		&& PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
+			float2 HistoryScreenPosition = C.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
+			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
+			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
+			uint2  PackedHitResult = RWScreenProbeUpdateRayResultBuffer[RayIndex];
+			float3 HitNormal     = UnpackNormal(PackedHitResult.y);
+			float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
+			if(HistoryReversedZDepth > 0) {
+				float  HistoryDepth  = ReversedZDepthToLinearDepth(C, HistoryReversedZDepth);
+				float  PreviousDepth = ZDepthToLinearDepth(C, PreviousHomogeneous.z);
+				bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
+				bool   bDepthVisible  = 
+							abs(HistoryDepth - PreviousDepth) 
+							/ max(PreviousDepth, HistoryDepth) < 5e-2f;
+				if(bNormalVisible && bDepthVisible) {
+					// The irradiance is directly attained from reprojected history radiance
+					// The radiance has been multiplied by BRDF. So no need to do shading again.
+					float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
+                    bBypass = true;
+                    uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
+                    RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+				}
+			}
+		}
+	}
+	if(!bBypass) {
+		if(bHit) {
+            // FIXME
+            if(true) {
+                uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
+                float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
+                Radiance = 0;
+                RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
+                return ;
+            }
+            // Queue up all hits that failed in reprojection for world-space direct lighting
+			int HitCountNoBypass = WaveActiveCountBits(true);
+			int HitCountListOffset = 0;
+			if(WaveIsFirstLane()) {
+				InterlockedAdd(RWScreenProbeUpdateRayHitShadingPointAllocator[0], HitCountNoBypass, HitCountListOffset);
+			}
+			HitCountListOffset = WaveReadLaneFirst(HitCountListOffset);
+			
+			int ShadeHitIndex  = HitCountListOffset + WavePrefixCountBits(true);
+			RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadeHitIndex] = RayIndex;
+
+			// According to GI1.0, bypass the cache when the ray length from
+			// primary vertex to secondary vertex is less than hash grid cell size.
+			// (Avoid light leaking though cache filtering)
+			float CellSize = HashGrids_GetCellSize(RayOrigin);
+			if(RayHitT < CellSize) {
+				uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
+                float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
+                // Mark bypassing the cache
+                RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
+			}
+		} else {
+			// A miss indicates that the ray has reached the sky
+			// Sample the sky radiance and store it in the result buffer
+			// Note: sky radiance is regarded an indirect lighting source
+			// due to it's low frequency nature (sun excluded)
+            // uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
+            float3 Radiance = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+            RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
+		}
+	}
+}
+
+// Sample light rays for DI calculation using light grid
+// Dispatched per shading point
+[numthreads(WAVE_SIZE, 1, 1)]
+void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
+    uint ShadingPointIndex = DispatchID;
+	if(ShadingPointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
+	uint UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadingPointIndex];
+	uint2  UpdateRayOriginScreenCoords = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[UpdateRayIndex]);
+    float  UpdateRayOriginReversedZDepth = G_Depth.Load(int3(UpdateRayOriginScreenCoords, 0)).x;
+    float2 UpdateRayOriginUV = (UpdateRayOriginScreenCoords + 0.5f) * GetActiveCamera().InvFilmDimensions;
+    float3 UpdateRayOrigin   = RecoverWorldPositionNDC2(GetActiveCamera(), UVToNDC2(UpdateRayOriginUV), 
+        ReversedZDepthToLinearDepth(GetActiveCamera(), UpdateRayOriginReversedZDepth));
+    bool bUpdateRayHit;
+	float  UpdateRayDepth     = UnpackRayToTraceState(RWScreenProbeUpdateRayStateBuffer[UpdateRayIndex], bUpdateRayHit);
+    uint   UpdateRayDirectionPacked = RWScreenProbeUpdateRayDirectionBuffer[UpdateRayIndex];
+	float3 UpdateRayDirection = UnpackNormal(UpdateRayDirectionPacked);
+	float3 ShadePosition      = UpdateRayDirection * UpdateRayDepth + UpdateRayOrigin;
+	float3 ShadeViewDirection = -UpdateRayDirection;
+	// Till now rays to be traced have identical indices with the probe update rays
+	// After this kernel, rays to be traced will be cleared and re-assigned shadow rays for DI calculation.
+	uint2 PackedHitResult = RWScreenProbeUpdateRayResultBuffer[UpdateRayIndex];
+	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.x);
+	float3 ShadeNormal     = UnpackNormal(PackedHitResult.y);
+
+	// Offset the hit position to avoid self-intersection
+	if(ShadeMaterial.bIsSurface) ShadePosition += ShadeNormal * 2e-5f;
+
+    Random R = MakeRandom(
+        // Make random numbers consistent when freezing update ray seeds.
+        (UpdateRayOriginScreenCoords.x + UpdateRayOriginScreenCoords.y * 6472) * MAX_NUM_UPDATE_RAYS_PER_PROBE
+        + UpdateRayDirectionPacked,
+        UB.ProbeUpdateRaySampleSeed
+    );
+    float3 SumResampleWeights3 = 0;
+    uint   NumValidSamples = 0;
+    float  LightGridLightListCdf = 0;
+    LightSample ReservedSample = SampleOneLightSample_RIS(
+        ShadePosition, ShadeNormal, ShadeViewDirection,
+        ShadeMaterial.bIsSurface, false, R, SumResampleWeights3, NumValidSamples,
+        LightGridLightListCdf
+    );
+
+	
+	// Allocate an hash grid cache cell for the hit position
+	// (Only points outside of the screen are cached in the hash grid cache)
+	// Store indirections
+
+	uint HashCellIndex = HashGrids_AllocateTile(ShadePosition, ShadeViewDirection);
+	// Probe update ray results should be resolved from this cell
+	RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex] = HashCellIndex;
+
+	// Spawn shadow ray
+	float3 TransmittanceRayDirection         = 0;
+	float TransmittanceRayOcclusionThreshold = 0;
+	bool bValidRay = ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0;
+    float3 ShadedRadiance = 0.f;
+	if(bValidRay) {
+		// Calculate the real sample contribution. (cosine premultiplied)
+		ShadedRadiance = ReservedSample.Radiance * SumResampleWeights3 / (NumValidSamples * LightGridLightListCdf);
+
+		TransmittanceRayDirection = normalize(ReservedSample.Position - ShadePosition);
+		TransmittanceRayOcclusionThreshold = length(ReservedSample.Position - ShadePosition);
+        // Avoid self-intersection
+        float CoordinateEpsilon = max(TransmittanceRayOcclusionThreshold, abs(dot(ShadePosition, 1.xxx))) * 1e-5f;
+        TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(1e-5f, CoordinateEpsilon), 0.f);
+
+		// Account for shading
+        ShadedRadiance *= EvaluateCachedMaterialBRDF(
+            ShadeMaterial, ShadeNormal, ShadeViewDirection,
+            TransmittanceRayDirection, VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G
+        );
+	}
+
+	// Allocate rays
+	int TransmittanceRayIndex = 0;
+	if(bValidRay) {
+		int TransmittanceRayIndexBase = 0;
+		int TransmittanceRayWarpCount = WaveActiveCountBits(1);
+		int TransmittanceRayWarpRank  = WavePrefixCountBits(1);
+		if(WaveIsFirstLane()) {
+			InterlockedAdd(RWShadePointTransmittanceRayAllocator[0], TransmittanceRayWarpCount, TransmittanceRayIndexBase);
+		}
+		TransmittanceRayIndexBase = WaveReadLaneFirst(TransmittanceRayIndexBase);
+		TransmittanceRayIndex = TransmittanceRayIndexBase + TransmittanceRayWarpRank;
+	}
+	// Write ray to memory for HWRT
+	if(bValidRay) {
+        RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex] = PackNormal(TransmittanceRayDirection);
+        RWShadePointTransmittanceRayOriginBuffer[TransmittanceRayIndex]    = ShadePosition;
+        RWShadePointTransmittanceRayStateBuffer[TransmittanceRayIndex]     = 0; // Initial state
+        // Keep the occulusion threshold for direct illumination visibility testing
+        RWShadePointTransmittanceRayTMaxBuffer[TransmittanceRayIndex]      = TransmittanceRayOcclusionThreshold;
+        // Store the sample contribution for direct illumination (if it passed the visibility test)
+        RWShadePointTransmittanceRayContributionBuffer[TransmittanceRayIndex] = PackFp16x4Safe(float4(ShadedRadiance, 1.f));
+        // Trace results are used to shade the hit of a probe update ray. Store indirections
+        RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer[TransmittanceRayIndex] = UpdateRayIndex;
+    }
+}
+
+// Trace transmittance rays...
+
+// Resolve direct lighting from transmittance ray results, accumulate their contributions to hash grids
+// Dispatched per transmittance ray
+[numthreads(WAVE_SIZE, 1, 1)]
+void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_DispatchThreadID) {
+	int TransmittanceRayIndex = DispatchID;
+	if(TransmittanceRayIndex >= RWShadePointTransmittanceRayAllocator[0]) return ;
+	CameraParameters C = GetActiveCamera();
+	uint UpdateRayIndex = RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer[TransmittanceRayIndex];
+
+	float3 Radiance = 0;
+    {
+        float Transmittance = ShadePointTransmittanceRayTransmittanceBuffer[TransmittanceRayIndex];
+		Radiance = UnpackFp16x4Safe(RWShadePointTransmittanceRayContributionBuffer[TransmittanceRayIndex]).xyz;
+        bool bHit;
+        float THit = UnpackRayToTraceState(RWShadePointTransmittanceRayStateBuffer[TransmittanceRayIndex], bHit);
+        // If the ray hits a solit surface before reaching the light, it is occluded.
+        // Otherwise just multiply the estimated ray transmittance.
+		Radiance *= bHit ? 0 : Transmittance;
+	}
+
+	// Accumulate the radiance to the hash grid cell
+	uint HashCellIndex = RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex];
+	if(!IsInvalid(HashCellIndex)) {
+		uint CompactCellIndex = HashGrids_CellIndexToCompactCellIndex(HashCellIndex);
+		// Clamp the outliers (due to inadequate light sampling)
+		// Radiance = clamp(Radiance, 0, UB.II_SecondaryVertexRadianceClamping);
+		HashGrids_AccumulateSamplesToCell(CompactCellIndex, Radiance, 1);
+	}
+	// Bypass the hash grid cache for the probe update ray if required
+    bool bBypass = false;
+	float3 CurrentRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
+	// Bypass hash grid cache, directly transfer radiance from DI results
+	if(bBypass) {
+        RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = PackUpdateRayRadianceFlag(CurrentRadiance + Radiance, true);
+	}
+}
+
+// Hash grid cache update and filtering...
+
+// Resolve probe update ray radiance results from hash grid cache
+// Dispatched per shading point
+[numthreads(WAVE_SIZE, 1, 1)]
+void ResolveProbeUpdateRayRadianceFromCells (uint DispatchID : SV_DispatchThreadID)
+{
+    uint ShadingPointIndex = DispatchID;
+	if(ShadingPointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
+	int UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadingPointIndex];
+    uint CellIndex = RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex];
+    if(IsValid(CellIndex)) {
+        float4 Radiance    = HashGrids_GetFilteredRadiance(CellIndex);
+        bool bBypass;
+        float3 OldRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
+        if(!bBypass) {
+            // Resolve radiance from hash grid cache if no bypass is specified
+            float3 NewRadiance = Radiance.xyz + OldRadiance;
+            uint2 Packed = PackUpdateRayRadianceFlag(NewRadiance, false);
+            RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = Packed;
+        }
+    }
+}
+
+// Now, radiance results are stored in RWScreenProbeUpdateRayResultBuffer
 
 // Update screen probes & cache
 groupshared uint SharedProbeSampleCounts[TILE_SIZE * TILE_SIZE];
@@ -1103,10 +1404,14 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
     for(uint BaseRayRank = 0; BaseRayRank < UpdateRayCount; BaseRayRank += WAVE_SIZE) {
         uint RayRank = BaseRayRank + LocalID;
         uint RayIndex = ProbeUpdateRayBase + RayRank;
-        float4 RayResult = UnpackFp16x4Safe(RWScreenProbeUpdateRayResultBuffer[RayIndex]);
+        bool bBypass;
         // The hit distance is stored in RWScreenProbeUpdateRayStateBuffer[RayIndex]
         bool bHit;
-        RayResult.w = UnpackRayToTraceState(RWScreenProbeUpdateRayStateBuffer[RayIndex], bHit);
+        float4 RayResult = 
+            float4(
+                UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[RayIndex], bBypass),
+                UnpackRayToTraceState(RWScreenProbeUpdateRayStateBuffer[RayIndex], bHit)
+            );
         float RayInvPdf = RWScreenProbeUpdateRayInvPdfBuffer[RayIndex];
         bool bValid = RayInvPdf > 0 && RayResult.w > 0;
         if(bValid) {
