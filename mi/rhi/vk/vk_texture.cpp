@@ -37,8 +37,10 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
     if (desc.type == RHITextureType::kCube) {
         flags = vk::ImageCreateFlagBits::eCubeCompatible;
     } else if (desc.type == RHITextureType::k2DArray) {
-        flags = vk::ImageCreateFlagBits::e2DArrayCompatible;
-    } else if (desc.type == RHITextureType::k3D || desc.type == RHITextureType::k3DArray) {
+
+    } else if (desc.type == RHITextureType::k3D) {
+
+    } else if (desc.type == RHITextureType::k3DArray) {
         assert(false);
     }
     // Create image

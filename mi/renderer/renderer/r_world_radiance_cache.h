@@ -9,6 +9,7 @@
 #include <renderer/mi_cvar.h>
 #include <rdg/rdg_resource.h>
 #include "r_persistent.h"
+#include "../shaders/shared/SharedHashGridCache.hlsl"
 
 MI_NAMESPACE_BEGIN
 struct HashGridWorldCacheUB {
@@ -91,6 +92,12 @@ struct WorldRadianceCacheData : RefCounted<> {
 constexpr static uint32_t kHashGridMaxNumTiles = 64 * 1024;
 constexpr static uint32_t kHashGridMaxNumBuckets = 64 * 1024;
 constexpr static uint32_t kHashGridNumElementsPerBucket = 2;
+
+static_assert(kHashGridMaxNumBuckets * kHashGridNumElementsPerBucket  < 1 << std::max(32 - 2 * HASHGRIDS_TILE_CELL_WIDTH_L2, 0),
+    "Too many bucket slots. Packing the bucket slot index & tile cell offset in a 32-bit integer won't work."
+    "(Which is hard-coded in the shaders PackBucketSlotAndCellOffset)."
+);
+
 // TODO make the following two configurable
 constexpr static float kHashGridCascadeRadius = 5.f;
 constexpr static float kHashGridCellSize = 0.05f;
@@ -163,7 +170,8 @@ FORCEINLINE void FillUniformBufferForHashGridCache (RendererView * view, HashGri
 
     UB->CellSize = cell_size;
     UB->NumBuckets = num_buckets;
-    UB->MaxNumEntriesSearchedPerBucket = num_elements_per_bucket * 4;
+    mi_check(num_elements_per_bucket <= HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET, "Too many elements per bucket.");
+    UB->MaxNumEntriesSearchedPerBucket = std::min(uint32_t(num_elements_per_bucket * 4), (uint32_t)HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET);
     UB->NumInterleavedEntriesPerBucket = num_elements_per_bucket;
 
     UB->TargetSampleCount = 64;

@@ -118,7 +118,7 @@ RWStructuredBuffer<uint> RWScreenProbeUpdateRayAllocator; // Number of all rays 
 RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed material & normal (material is packed as CachedHitMaterial)
 RWStructuredBuffer<uint2> RWScreenProbeUpdateRayRadianceBuffer; // Fp16x4 packed radiance + flag
 RWStructuredBuffer<float> RWScreenProbeUpdateRayInvPdfBuffer;
-RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer;
+RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer;
 
 // Shading counters for update rays
 RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitShadingPointAllocator;
@@ -1135,8 +1135,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	}
 	if(!bBypass) {
 		if(bHit) {
-            // FIXME
-            if(true) {
+            if(false) {
                 uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
                 float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
                 Radiance = 0;
@@ -1174,6 +1173,22 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
 		}
 	}
+}
+
+uint PackBucketSlotAndCellOffset(uint BucketSlotIndex, uint CellOffset) {
+    if(!IsValid(BucketSlotIndex)) return INVALID_UINT;
+    
+    return (BucketSlotIndex << (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2) | (CellOffset & HASHGRIDS_TILE_CELL_INDEX_MASK));
+}
+
+void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out uint CellOffset) {
+    if(!IsValid(Packed)) {
+        BucketSlotIndex = INVALID_UINT;
+        CellOffset = INVALID_UINT;
+        return ;
+    }
+    BucketSlotIndex = Packed >> (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2);
+    CellOffset = Packed & HASHGRIDS_TILE_CELL_INDEX_MASK;
 }
 
 // Sample light rays for DI calculation using light grid
@@ -1222,10 +1237,16 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	// Allocate an hash grid cache cell for the hit position
 	// (Only points outside of the screen are cached in the hash grid cache)
 	// Store indirections
-
-	uint HashCellIndex = HashGrids_AllocateTile(ShadePosition, ShadeViewDirection);
-	// Probe update ray results should be resolved from this cell
-	RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex] = HashCellIndex;
+    
+    uint BucketSlotIndex = INVALID_UINT, CellOffset = INVALID_UINT;
+	uint AllocatedTileIndex = HashGrids_AllocateTile(
+        ShadePosition, ShadeViewDirection,
+        BucketSlotIndex, CellOffset
+    );
+	// Probe update ray results should be resolved from cell within the tile referred by the bucket slot
+    // with corresponding cell offset.
+	RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer[UpdateRayIndex]
+        = PackBucketSlotAndCellOffset(BucketSlotIndex, CellOffset);
 
 	// Spawn shadow ray
 	float3 TransmittanceRayDirection         = 0;
@@ -1298,13 +1319,23 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
 	}
 
 	// Accumulate the radiance to the hash grid cell
-	uint HashCellIndex = RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex];
-	if(!IsInvalid(HashCellIndex)) {
-		uint CompactCellIndex = HashGrids_CellIndexToCompactCellIndex(HashCellIndex);
-		// Clamp the outliers (due to inadequate light sampling)
-		// Radiance = clamp(Radiance, 0, UB.II_SecondaryVertexRadianceClamping);
-		HashGrids_AccumulateSamplesToCell(CompactCellIndex, Radiance, 1);
-	}
+    uint BucketSlotIndex = INVALID_UINT, CellOffset = INVALID_UINT;
+    UnpackBucketSlotAndCellOffset(
+        RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer[UpdateRayIndex],
+        BucketSlotIndex, CellOffset
+    );
+    if(IsValid(BucketSlotIndex)) {
+        uint TileIndex = HashGrids_BucketTileIndexBuffer[BucketSlotIndex];
+        if(IsValid(TileIndex)) {
+            // Update tile timestamp and queue it up for update.
+            HashGrids_TouchTile(TileIndex);
+            uint CellIndex = HashGrids_GetCellIndex(TileIndex, CellOffset);
+            uint CompactCellIndex = HashGrids_CellIndexToCompactCellIndex(CellIndex);
+            // Clamp the outliers (due to inadequate light sampling)
+            // Radiance = clamp(Radiance, 0, UB.II_SecondaryVertexRadianceClamping);
+            HashGrids_AccumulateSamplesToCell(CompactCellIndex, Radiance, 1);
+        }
+    }
 	// Bypass the hash grid cache for the probe update ray if required
     bool bBypass = false;
 	float3 CurrentRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
@@ -1324,16 +1355,24 @@ void ResolveProbeUpdateRayRadianceFromCells (uint DispatchID : SV_DispatchThread
     uint ShadingPointIndex = DispatchID;
 	if(ShadingPointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
 	int UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadingPointIndex];
-    uint CellIndex = RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer[UpdateRayIndex];
-    if(IsValid(CellIndex)) {
-        float4 Radiance    = HashGrids_GetFilteredRadiance(CellIndex);
-        bool bBypass;
-        float3 OldRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
-        if(!bBypass) {
-            // Resolve radiance from hash grid cache if no bypass is specified
-            float3 NewRadiance = Radiance.xyz + OldRadiance;
-            uint2 Packed = PackUpdateRayRadianceFlag(NewRadiance, false);
-            RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = Packed;
+    uint BucketSlotIndex = INVALID_UINT, CellOffset = INVALID_UINT;
+    UnpackBucketSlotAndCellOffset(
+        RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer[UpdateRayIndex],
+        BucketSlotIndex, CellOffset
+    );
+    if(IsValid(BucketSlotIndex)) {
+        uint TileIndex = HashGrids_BucketTileIndexBuffer[BucketSlotIndex];
+        if(IsValid(TileIndex)) {
+            uint CellIndex  = HashGrids_GetCellIndex(TileIndex, CellOffset);
+            float4 Radiance = HashGrids_GetFilteredRadiance(CellIndex);
+            bool bBypass;
+            float3 OldRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
+            if(!bBypass) {
+                // Resolve radiance from hash grid cache if no bypass is specified
+                float3 NewRadiance = Radiance.xyz + OldRadiance;
+                uint2 Packed = PackUpdateRayRadianceFlag(NewRadiance, false);
+                RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = Packed;
+            }
         }
     }
 }

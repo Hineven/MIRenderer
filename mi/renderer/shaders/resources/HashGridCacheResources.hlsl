@@ -176,41 +176,60 @@ uint HashGrids_Find (uint BucketHash) {
     return (PrevBucketHash == BucketHash) ? BucketSlotIndex : INVALID_UINT;
 }
 
-// Return the cell index to index int the value buffer
+// Return the tile index if the tile is newly allocated. Otherwise return INVALID_UINT.
+// The BucketSlotIndex is the slot index with corresponding hash in the hash table
+// no matter the tile is newly allocated or not.
 // ViewDirection is the view direction "watching" the cell
-uint HashGrids_AllocateTile (float3 WorldPosition, float3 ViewDirection) {
+uint HashGrids_AllocateTile (
+    float3 WorldPosition, float3 ViewDirection,
+    out uint BucketSlotIndex, out uint2 CellOffset) {
     HashGridsKey Key = HashGrids_GetEntryKey(WorldPosition, ViewDirection);
+    CellOffset = Key.CellOffset;
     bool bIsNewSlot = false;
-    uint BucketSlotIndex = HashGrids_FindAndAllocate(Key.BucketHash, bIsNewSlot);
+    BucketSlotIndex = HashGrids_FindAndAllocate(Key.BucketHash, bIsNewSlot);
     if(BucketSlotIndex == INVALID_UINT) return INVALID_UINT;
-    int TileIndex = 0;
+    uint TileIndex = INVALID_UINT;
     if(bIsNewSlot) {
         // No previous tile found, allocate a new one
         int TileFreeListIndex = 0;
         InterlockedAdd(HashGrids_FreeTileCount[0], -1, TileFreeListIndex);
         TileFreeListIndex --;
-        if(TileFreeListIndex < 0) {
-            return INVALID_UINT; // No more space in the free list
+        if(TileFreeListIndex >= 0) {
+            // Free tile allocated.
+            TileIndex = HashGrids_FreeTileListBuffer[TileFreeListIndex];
+            // Register the tile to the active list
+            uint ActiveListIndex;
+            InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
+            HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
+            // Keep the key to index the tile for re-insertion
+            HashGrids_TileBucketHashBuffer[TileIndex] = Key.BucketHash;
+            // Record the mapping from bucket slot to tile index for future lookups in this frame
+            HashGrids_BucketTileIndexBuffer[BucketSlotIndex] = TileIndex;
         }
-        TileIndex = HashGrids_FreeTileListBuffer[TileFreeListIndex];
-        // Register the tile to the active list
-        uint ActiveListIndex;
-        InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
-        HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
-        // Keep the key to index the tile for re-insertion
-        HashGrids_TileBucketHashBuffer[TileIndex] = Key.BucketHash;
-    } else {
-        TileIndex = HashGrids_BucketTileIndexBuffer[BucketSlotIndex];
     }
-    uint Timestamp = HashGrids_UB.FrameIndex + 1, PrevTimestamp = 0;
-    InterlockedExchange(HashGrids_TileTimestampBuffer[TileIndex], Timestamp, PrevTimestamp);
-    if(bIsNewSlot || PrevTimestamp != Timestamp) {
-        // This tile is touched (for the first time in this frame), queue it up for update.
+    // Initialize the timestamp for new tiles 
+    if(IsValid(TileIndex)) { 
+        uint Timestamp = HashGrids_UB.FrameIndex + 1;
+        HashGrids_TileTimestampBuffer[TileIndex] = Timestamp;
+        // Queue it up for update.
         int UpdateListIndex = 0;
         InterlockedAdd(HashGrids_UpdateTileCount[0], 1, UpdateListIndex);
         HashGrids_UpdateTileListBuffer[UpdateListIndex] = TileIndex;
     }
-    return HashGrids_GetCellIndex(TileIndex, Key.CellOffset);
+    return TileIndex;
+}
+
+void HashGrids_TouchTile (uint TileIndex) {
+    if(IsValid(TileIndex)) { 
+        uint Timestamp = HashGrids_UB.FrameIndex + 1, PrevTimestamp = 0;
+        InterlockedExchange(HashGrids_TileTimestampBuffer[TileIndex], Timestamp, PrevTimestamp);
+        if(PrevTimestamp != Timestamp) {
+            // This tile is touched (for the first time in this frame), queue it up for update.
+            int UpdateListIndex = 0;
+            InterlockedAdd(HashGrids_UpdateTileCount[0], 1, UpdateListIndex);
+            HashGrids_UpdateTileListBuffer[UpdateListIndex] = TileIndex;
+        }
+    }
 }
 
 float4 HashGrids_GetCellRadiance (uint CellIndex) {

@@ -169,7 +169,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterHashGridsShader, "mi/
 
 
 void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
-    return ;
+    // Initialize and reuse the hash grid cache from the previous frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
@@ -207,7 +207,7 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
 }
 
 void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
-    return ;
+    // Clear newly allocated tiles and filter hash grids this frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     // const uint32_t max_num_tiles = kHashGridMaxNumTiles;

@@ -141,7 +141,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayResultBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayRadianceBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayInvPdfBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitShadingPointAllocator)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitShadingPointListBuffer)
@@ -594,10 +594,10 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_allocator = builder.CreateBuffer<uint32_t>();
 
-    auto screen_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays * 2);
-    auto screen_probe_update_ray_radiance_buffer = builder.CreateBuffer<glm::vec2>(max_num_update_rays);
+    auto screen_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
+    auto screen_probe_update_ray_radiance_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
     auto screen_probe_update_ray_inv_pdf_buffer = builder.CreateBuffer<float>(max_num_update_rays);
-    auto screen_probe_update_ray_hit_resolve_hash_cell_index_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto screen_probe_update_ray_hit_resolve_bucket_and_cell_offset_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto screen_probe_update_ray_hit_shading_point_allocator = builder.CreateBuffer<uint32_t>();
     auto screen_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
@@ -609,7 +609,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
     auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
 
-    auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
     auto shade_point_transmittance_ray_to_screen_probe_update_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto params = builder.Allocate<DiffuseIndirectLightingParams>();
@@ -707,8 +707,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             screen_probe_update_ray_radiance_buffer.Raw();
         params->RWScreenProbeUpdateRayInvPdfBuffer =
             screen_probe_update_ray_inv_pdf_buffer.Raw();
-        params->RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer =
-            screen_probe_update_ray_hit_resolve_hash_cell_index_buffer.Raw();
+        params->RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer =
+            screen_probe_update_ray_hit_resolve_bucket_and_cell_offset_buffer.Raw();
 
         params->RWScreenProbeUpdateRayHitShadingPointAllocator =
             screen_probe_update_ray_hit_shading_point_allocator.Raw();
