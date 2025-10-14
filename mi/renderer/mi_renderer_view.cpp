@@ -267,8 +267,8 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_camera_parameters_ = view->view_common_params_->Camera;
 
     prev_G_depth = view->G_depth_;
-    prev_G_normal = view->G_normal_;
     prev_G_depth->SetExport();
+    prev_G_normal = view->G_normal_;
     prev_G_normal->SetExport();
 
     prev_radiance_ = view->radiance_;
@@ -277,7 +277,6 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_shaded_radiance_no_emission_->SetExport();
 
     prev_scene_ = view->scene_;
-
 
     frame_index_ ++;
 }
@@ -302,8 +301,6 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
     G_depth_->SetName("GBuffer Depth");
-    // Keep history for next frame
-    G_depth_->SetExport();
 
     forward_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kD32_FLOAT,
@@ -325,8 +322,6 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_normal_->SetName("GBuffer Normal");
-    // Keep history for next frame
-    G_normal_->SetExport(true);
 
     G_emission_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
@@ -395,8 +390,11 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     radiance_->SetName("Radiance");
-    // Keep history for next frame
-    radiance_->SetExport();
+
+    shaded_radiance_no_emission_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    shaded_radiance_no_emission_->SetName("Shaded Radiance No Emission");
 
     // Diffuse direct lighting
     diffuse_direct_lighting_ = RDGTexture::Create2D(

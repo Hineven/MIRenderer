@@ -1136,33 +1136,27 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	if(!bBypass) {
 		if(bHit) {
             if(false) {
-                uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
-                float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
-                Radiance = 0;
+                float3 Radiance = 0;
                 RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
                 return ;
             }
             // Queue up all hits that failed in reprojection for world-space direct lighting
-			int HitCountNoBypass = WaveActiveCountBits(true);
-			int HitCountListOffset = 0;
+			uint HitCountNoBypass = WaveActiveCountBits(true);
+			uint HitCountListOffset = 0;
 			if(WaveIsFirstLane()) {
 				InterlockedAdd(RWScreenProbeUpdateRayHitShadingPointAllocator[0], HitCountNoBypass, HitCountListOffset);
 			}
 			HitCountListOffset = WaveReadLaneFirst(HitCountListOffset);
 			
-			int ShadeHitIndex  = HitCountListOffset + WavePrefixCountBits(true);
+			uint ShadeHitIndex  = HitCountListOffset + WavePrefixCountBits(true);
 			RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadeHitIndex] = RayIndex;
 
 			// According to GI1.0, bypass the cache when the ray length from
 			// primary vertex to secondary vertex is less than hash grid cell size.
 			// (Avoid light leaking though cache filtering)
 			float CellSize = HashGrids_GetCellSize(RayOrigin);
-			if(RayHitT < CellSize) {
-				uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
-                float3 Radiance = UnpackUpdateRayRadianceFlag(Result, bBypass);
-                // Mark bypassing the cache
-                RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
-			}
+			bool bBypassCache = RayHitT < CellSize;
+            RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(0, bBypassCache);
 		} else {
 			// A miss indicates that the ray has reached the sky
 			// Sample the sky radiance and store it in the result buffer
@@ -1175,20 +1169,25 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	}
 }
 
-uint PackBucketSlotAndCellOffset(uint BucketSlotIndex, uint CellOffset) {
+uint PackBucketSlotAndCellOffset(uint BucketSlotIndex, uint2 CellOffset) {
     if(!IsValid(BucketSlotIndex)) return INVALID_UINT;
-    
-    return (BucketSlotIndex << (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2) | (CellOffset & HASHGRIDS_TILE_CELL_INDEX_MASK));
+    uint CellOffset1 = CellOffset.x + CellOffset.y * HASHGRIDS_TILE_CELL_WIDTH;
+    return (BucketSlotIndex << (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2) 
+    | (CellOffset1 & HASHGRIDS_TILE_CELL_INDEX_MASK));
 }
 
-void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out uint CellOffset) {
+void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out uint2 CellOffset) {
     if(!IsValid(Packed)) {
         BucketSlotIndex = INVALID_UINT;
         CellOffset = INVALID_UINT;
         return ;
     }
     BucketSlotIndex = Packed >> (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2);
-    CellOffset = Packed & HASHGRIDS_TILE_CELL_INDEX_MASK;
+    uint CellOffset1 = Packed & HASHGRIDS_TILE_CELL_INDEX_MASK;
+    CellOffset = uint2(
+        CellOffset1 % HASHGRIDS_TILE_CELL_WIDTH,
+        CellOffset1 / HASHGRIDS_TILE_CELL_WIDTH
+    );
 }
 
 // Sample light rays for DI calculation using light grid
@@ -1238,7 +1237,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	// (Only points outside of the screen are cached in the hash grid cache)
 	// Store indirections
     
-    uint BucketSlotIndex = INVALID_UINT, CellOffset = INVALID_UINT;
+    uint BucketSlotIndex = INVALID_UINT;
+    uint2 CellOffset;
 	uint AllocatedTileIndex = HashGrids_AllocateTile(
         ShadePosition, ShadeViewDirection,
         BucketSlotIndex, CellOffset
@@ -1302,6 +1302,9 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 // Dispatched per transmittance ray
 [numthreads(WAVE_SIZE, 1, 1)]
 void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_DispatchThreadID) {
+    if(DispatchID == 0) {
+        printf("Active tiles: %d\n", HashGrids_ActiveTileCount[0]);
+    }
 	int TransmittanceRayIndex = DispatchID;
 	if(TransmittanceRayIndex >= RWShadePointTransmittanceRayAllocator[0]) return ;
 	CameraParameters C = GetActiveCamera();
@@ -1319,7 +1322,8 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
 	}
 
 	// Accumulate the radiance to the hash grid cell
-    uint BucketSlotIndex = INVALID_UINT, CellOffset = INVALID_UINT;
+    uint BucketSlotIndex = INVALID_UINT;
+    uint2 CellOffset;
     UnpackBucketSlotAndCellOffset(
         RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer[UpdateRayIndex],
         BucketSlotIndex, CellOffset
@@ -1340,7 +1344,8 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
     bool bBypass = false;
 	float3 CurrentRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
 	// Bypass hash grid cache, directly transfer radiance from DI results
-	if(bBypass) {
+    if(bBypass) {
+        
         RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = PackUpdateRayRadianceFlag(CurrentRadiance + Radiance, true);
 	}
 }
@@ -1355,7 +1360,8 @@ void ResolveProbeUpdateRayRadianceFromCells (uint DispatchID : SV_DispatchThread
     uint ShadingPointIndex = DispatchID;
 	if(ShadingPointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
 	int UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadingPointIndex];
-    uint BucketSlotIndex = INVALID_UINT, CellOffset = INVALID_UINT;
+    uint BucketSlotIndex = INVALID_UINT;
+    uint2 CellOffset;
     UnpackBucketSlotAndCellOffset(
         RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer[UpdateRayIndex],
         BucketSlotIndex, CellOffset

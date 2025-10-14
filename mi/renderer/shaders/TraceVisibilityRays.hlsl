@@ -124,9 +124,6 @@ void TraceVisibilityRaysRaygen() {
 #ifdef FULL_VISIBILITY
 #error "not implemented yet"
 #else
-    if(RayIndex == 0) {
-        printf("%u %u\n", Payload.PackedMaterial.x, Payload.PackedMaterial.y);
-    }
     RWRayToTraceResultBuffer[RayIndex] = Payload.PackedMaterial;
 #endif
 }

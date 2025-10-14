@@ -99,8 +99,8 @@ static_assert(kHashGridMaxNumBuckets * kHashGridNumElementsPerBucket  < 1 << std
 );
 
 // TODO make the following two configurable
-constexpr static float kHashGridCascadeRadius = 5.f;
-constexpr static float kHashGridCellSize = 0.05f;
+constexpr static float kHashGridCascadeRadius = 6.4f;
+constexpr static float kHashGridCellSize = 0.1f;
 
 template<typename T>
 void FillParametersForHashGridCache (RendererView * view, T * params) {

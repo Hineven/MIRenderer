@@ -102,7 +102,7 @@ HashGridsKey HashGrids_GetEntryKey (float3 WorldPosition, float3 ViewDirection, 
     float3 QuantilizedViewDirection = floor(0.5f + 4 * (ViewDirection * 0.5 + 0.5));
     uint3 Features1 = QuantilizedViewDirection;
     uint BucketHash = pcgHash(uint4(Features1, pcgHash(Features0)));
-    BucketHash = max(BucketHash, 1); // 0 is reserved for empty tile marker
+    BucketHash = max(BucketHash, 1); // 0 is reserved for empty slot marker
     float3 CellOffset3 = WorldPosition / CellSize - TileIndex * HASHGRIDS_TILE_CELL_WIDTH;
     // Pick a plane with the most normal component
     float3 Normal = abs(ViewDirection);
@@ -160,7 +160,7 @@ uint HashGrids_FindAndAllocate (uint BucketHash, out bool bIsNewSlot) {
 // Return the slot index in the hash table.
 uint HashGrids_Find (uint BucketHash) {
     uint BucketIndex = BucketHash % HashGrids_UB.NumBuckets;
-    int TileRank = 0, BucketSlotIndex = 0;
+    uint TileRank = 0, BucketSlotIndex = 0;
     uint PrevBucketHash = 0;
     [unroll(HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET)]
     for(; TileRank < HashGrids_UB.MaxNumEntriesSearchedPerBucket; TileRank ++) {
@@ -182,7 +182,7 @@ uint HashGrids_Find (uint BucketHash) {
 // ViewDirection is the view direction "watching" the cell
 uint HashGrids_AllocateTile (
     float3 WorldPosition, float3 ViewDirection,
-    out uint BucketSlotIndex, out uint2 CellOffset) {
+    inout uint BucketSlotIndex, out uint2 CellOffset) {
     HashGridsKey Key = HashGrids_GetEntryKey(WorldPosition, ViewDirection);
     CellOffset = Key.CellOffset;
     bool bIsNewSlot = false;
@@ -212,7 +212,7 @@ uint HashGrids_AllocateTile (
         uint Timestamp = HashGrids_UB.FrameIndex + 1;
         HashGrids_TileTimestampBuffer[TileIndex] = Timestamp;
         // Queue it up for update.
-        int UpdateListIndex = 0;
+        uint UpdateListIndex = 0;
         InterlockedAdd(HashGrids_UpdateTileCount[0], 1, UpdateListIndex);
         HashGrids_UpdateTileListBuffer[UpdateListIndex] = TileIndex;
     }
