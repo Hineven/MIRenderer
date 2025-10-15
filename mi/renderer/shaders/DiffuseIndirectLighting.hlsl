@@ -174,6 +174,9 @@ struct DiffuseIndirectLightingUB {
     uint ProbeSpawnSubTileJitterSeed;
     uint TileProbeSpawnSeed;
     uint EnableSpatialProbeFiltering;
+
+    uint NoEnvironmentLight; // For debugging
+    uint3 Padding;
 };
 
 ConstantBuffer<DiffuseIndirectLightingUB> UB;
@@ -1164,6 +1167,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			// due to it's low frequency nature (sun excluded)
             // uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
             float3 Radiance = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+            if(UB.NoEnvironmentLight != 0) Radiance = 0;
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
 		}
 	}
@@ -1345,7 +1349,6 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
 	float3 CurrentRadiance = UnpackUpdateRayRadianceFlag(RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex], bBypass);
 	// Bypass hash grid cache, directly transfer radiance from DI results
     if(bBypass) {
-        
         RWScreenProbeUpdateRayRadianceBuffer[UpdateRayIndex] = PackUpdateRayRadianceFlag(CurrentRadiance + Radiance, true);
 	}
 }

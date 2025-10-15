@@ -63,6 +63,12 @@ static CVar<bool> CVar_EnableSpatialProbeFiltering(
     true
 );
 
+static CVar<bool> CVar_NoEnvironmentLight(
+    "r.diffuse_indirect_lighting.no_environment_light",
+    "Disable the environment light when updating probes.",
+    false
+);
+
 struct DiffuseIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     uint32_t HeaderTileDimension;
@@ -85,6 +91,9 @@ struct DiffuseIndirectLightingUB {
     uint32_t ProbeSpawnSubTileJitterSeed;
     uint32_t TileProbeSpawnSeed;
     uint32_t EnableSpatialProbeFiltering;
+
+    uint32_t NoEnvironmentLight;
+    glm::uvec3 Padding;
 };
 
 BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
@@ -774,6 +783,9 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             UB->TileProbeSpawnSeed =
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
             UB->EnableSpatialProbeFiltering = CVar_EnableSpatialProbeFiltering.Get() ? 1 : 0;
+
+            UB->NoEnvironmentLight = CVar_NoEnvironmentLight.Get() ? 1 : 0;
+            UB->Padding = glm::uvec3{0};
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;
