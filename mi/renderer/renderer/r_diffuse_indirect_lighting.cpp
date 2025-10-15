@@ -163,7 +163,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayContributionBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointToTransmittanceRayIndexBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
@@ -619,7 +619,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
 
     auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
-    auto shade_point_transmittance_ray_to_screen_probe_update_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto shade_point_to_transmittance_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto params = builder.Allocate<DiffuseIndirectLightingParams>();
     {
@@ -739,8 +739,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
         params->RWShadePointTransmittanceRayContributionBuffer =
             shade_point_transmittance_ray_contribution.Raw();
-        params->RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer =
-            shade_point_transmittance_ray_to_screen_probe_update_ray_index.Raw();
+        params->RWShadePointToTransmittanceRayIndexBuffer =
+            shade_point_to_transmittance_ray_index.Raw();
 
         params->G_Depth = view->G_depth_.Raw();
         params->G_Normal = view->G_normal_.Raw();
@@ -969,7 +969,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     {
         auto shader = lib.GetShader<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(ini);
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
-            builder, shade_point_transmittance_ray_allocator.Raw(), wave_size
+            builder, screen_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(
             builder, shader, params, cmd.Raw()

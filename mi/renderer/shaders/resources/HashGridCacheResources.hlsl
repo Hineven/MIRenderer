@@ -99,7 +99,7 @@ HashGridsKey HashGrids_GetEntryKey (float3 WorldPosition, float3 ViewDirection, 
     // TODO: seems unworthy...
     bool bWithinTile = false;//TraveledDistance < TileSize;
     uint4 Features0 = uint4(asuint(TileIndex), uint(max(0, 100 + floor(log2(CellSize)))) + (bWithinTile ? 200 : 0));
-    float3 QuantilizedViewDirection = floor(0.5f + 4 * (ViewDirection * 0.5 + 0.5));
+    float3 QuantilizedViewDirection = floor(0.5f + 3 * (ViewDirection * 0.5 + 0.5)); // 3 levels for each dimension
     uint3 Features1 = QuantilizedViewDirection;
     uint BucketHash = pcgHash(uint4(Features1, pcgHash(Features0)));
     BucketHash = max(BucketHash, 1); // 0 is reserved for empty slot marker
@@ -135,7 +135,7 @@ uint HashGrids_GetCellIndex (uint TileIndex, uint2 CellOffset, uint MipLevel = 0
 // Return the slot index in the hash table.
 uint HashGrids_FindAndAllocate (uint BucketHash, out bool bIsNewSlot) {
     uint BucketIndex = BucketHash % HashGrids_UB.NumBuckets;
-    int TileRank = 0, BucketSlotIndex = 0;
+    int TileRank = 0, BucketSlotIndex = INVALID_UINT;
     uint PrevBucketHash = 0;
     [unroll(HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET)]
     for(; TileRank < HashGrids_UB.MaxNumEntriesSearchedPerBucket; TileRank ++) {
@@ -151,7 +151,7 @@ uint HashGrids_FindAndAllocate (uint BucketHash, out bool bIsNewSlot) {
     }
     bIsNewSlot = PrevBucketHash == 0;
     if(TileRank == HashGrids_UB.MaxNumEntriesSearchedPerBucket) {
-        return INVALID_UINT; // No more space in the bucket
+        return INVALID_UINT; // No more space in the table
     }
     return BucketSlotIndex;
 }

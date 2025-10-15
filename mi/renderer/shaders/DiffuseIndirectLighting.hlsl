@@ -133,7 +133,7 @@ RWStructuredBuffer<float>  RWShadePointTransmittanceRayTMaxBuffer;
 StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
 
 RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
-RWStructuredBuffer<uint>   RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer;
+RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
 
 // For debugging
 RWStructuredBuffer<uint> RWDebugTracedRaysCount;
@@ -1138,11 +1138,6 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	}
 	if(!bBypass) {
 		if(bHit) {
-            if(false) {
-                float3 Radiance = 0;
-                RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
-                return ;
-            }
             // Queue up all hits that failed in reprojection for world-space direct lighting
 			uint HitCountNoBypass = WaveActiveCountBits(true);
 			uint HitCountListOffset = 0;
@@ -1195,12 +1190,12 @@ void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out ui
 }
 
 // Sample light rays for DI calculation using light grid
-// Dispatched per shading point
+// Dispatched per shade point
 [numthreads(WAVE_SIZE, 1, 1)]
 void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
-    uint ShadingPointIndex = DispatchID;
-	if(ShadingPointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
-	uint UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadingPointIndex];
+    uint ShadePointIndex = DispatchID;
+	if(ShadePointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
+	uint UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadePointIndex];
 	uint2  UpdateRayOriginScreenCoords = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[UpdateRayIndex]);
     float  UpdateRayOriginReversedZDepth = G_Depth.Load(int3(UpdateRayOriginScreenCoords, 0)).x;
     float2 UpdateRayOriginUV = (UpdateRayOriginScreenCoords + 0.5f) * GetActiveCamera().InvFilmDimensions;
@@ -1276,7 +1271,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	}
 
 	// Allocate rays
-	int TransmittanceRayIndex = 0;
+	int TransmittanceRayIndex = INVALID_UINT;
 	if(bValidRay) {
 		int TransmittanceRayIndexBase = 0;
 		int TransmittanceRayWarpCount = WaveActiveCountBits(1);
@@ -1286,9 +1281,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 		}
 		TransmittanceRayIndexBase = WaveReadLaneFirst(TransmittanceRayIndexBase);
 		TransmittanceRayIndex = TransmittanceRayIndexBase + TransmittanceRayWarpRank;
-	}
-	// Write ray to memory for HWRT
-	if(bValidRay) {
+
+	    // Write ray to memory for HWRT
         RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex] = PackNormal(TransmittanceRayDirection);
         RWShadePointTransmittanceRayOriginBuffer[TransmittanceRayIndex]    = ShadePosition;
         RWShadePointTransmittanceRayStateBuffer[TransmittanceRayIndex]     = 0; // Initial state
@@ -1296,27 +1290,28 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
         RWShadePointTransmittanceRayTMaxBuffer[TransmittanceRayIndex]      = TransmittanceRayOcclusionThreshold;
         // Store the sample contribution for direct illumination (if it passed the visibility test)
         RWShadePointTransmittanceRayContributionBuffer[TransmittanceRayIndex] = PackFp16x4Safe(float4(ShadedRadiance, 1.f));
-        // Trace results are used to shade the hit of a probe update ray. Store indirections
-        RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer[TransmittanceRayIndex] = UpdateRayIndex;
     }
+    // Trace results are used to shade the hit of a probe update ray (shade point). Store indirections
+    RWShadePointToTransmittanceRayIndexBuffer[ShadePointIndex] = TransmittanceRayIndex;
 }
 
 // Trace transmittance rays...
 
-// Resolve direct lighting from transmittance ray results, accumulate their contributions to hash grids
-// Dispatched per transmittance ray
+// Resolve direct lighting from transmittance ray (if valid) results, accumulate their contributions to hash grids
+// Dispatched per shading point
 [numthreads(WAVE_SIZE, 1, 1)]
 void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_DispatchThreadID) {
     if(DispatchID == 0) {
         printf("Active tiles: %d\n", HashGrids_ActiveTileCount[0]);
     }
-	int TransmittanceRayIndex = DispatchID;
-	if(TransmittanceRayIndex >= RWShadePointTransmittanceRayAllocator[0]) return ;
+	int ShadePointIndex = DispatchID;
+	if(ShadePointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
 	CameraParameters C = GetActiveCamera();
-	uint UpdateRayIndex = RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer[TransmittanceRayIndex];
+	uint UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadePointIndex];
+    uint TransmittanceRayIndex = RWShadePointToTransmittanceRayIndexBuffer[ShadePointIndex];
 
 	float3 Radiance = 0;
-    {
+    if(IsValid(TransmittanceRayIndex)) {
         float Transmittance = ShadePointTransmittanceRayTransmittanceBuffer[TransmittanceRayIndex];
 		Radiance = UnpackFp16x4Safe(RWShadePointTransmittanceRayContributionBuffer[TransmittanceRayIndex]).xyz;
         bool bHit;
@@ -1342,6 +1337,8 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
             uint CompactCellIndex = HashGrids_CellIndexToCompactCellIndex(CellIndex);
             // Clamp the outliers (due to inadequate light sampling)
             // Radiance = clamp(Radiance, 0, UB.II_SecondaryVertexRadianceClamping);
+            // FIXME (temporary): use a fixed value (white) to update hash grids. Visualizing the 'hot' cells and tell them from hash grids that have not been updated.
+            //Radiance = 1.f.xxx;
             HashGrids_AccumulateSamplesToCell(CompactCellIndex, Radiance, 1);
         }
     }

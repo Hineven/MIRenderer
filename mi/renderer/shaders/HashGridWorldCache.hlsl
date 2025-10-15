@@ -47,7 +47,6 @@ void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 		InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
 		HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
 		// Insert the tile to the hash table
-		HashGrids_BucketHashBuffer[SlotIndex] = TileBucketHash;
 		HashGrids_BucketTileIndexBuffer[SlotIndex] = TileIndex;
 	}
 }
