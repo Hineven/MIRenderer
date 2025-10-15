@@ -62,6 +62,7 @@ struct HashGridPersistentData : RefCounted<> {
     TRef<RDGBuffer> tile_timestamp_buffer;
     TRef<RDGBuffer> tile_bucket_hash_buffer;
     TRef<RDGBuffer> cell_value_buffer;
+    TRef<RDGBuffer> update_cell_value_x_buffer;
 
     TRef<RDGBuffer> active_tile_count;
     TRef<RDGBuffer> active_tile_list_buffer;
@@ -78,7 +79,6 @@ struct HashGridPersistentData : RefCounted<> {
 struct WorldRadianceCacheData : RefCounted<> {
     TRef<RDGBuffer> bucket_hash_buffer;
     TRef<RDGBuffer> bucket_tile_index_buffer;
-    TRef<RDGBuffer> update_cell_value_x_buffer;
     TRef<RDGBuffer> update_tile_count_buffer;
     TRef<RDGBuffer> update_tile_list_buffer;
     TRef<RDGBuffer> active_tile_count_before_allocation_buffer;
@@ -129,7 +129,7 @@ void FillParametersForHashGridCache (RendererView * view, T * params) {
             params->HashGrids_CellValueBuffer = persistent->cell_value_buffer.Raw();
         }
         if constexpr(requires{params->HashGrids_UpdateCellValueXBuffer;}) {
-            params->HashGrids_UpdateCellValueXBuffer = w->update_cell_value_x_buffer.Raw();
+            params->HashGrids_UpdateCellValueXBuffer = persistent->update_cell_value_x_buffer.Raw();
         }
         if constexpr(requires{params->HashGrids_UpdateTileCount;}) {
             params->HashGrids_UpdateTileCount      = w->update_tile_count_buffer.Raw();

@@ -1176,12 +1176,12 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 uint PackBucketSlotAndCellOffset(uint BucketSlotIndex, uint2 CellOffset) {
     if(!IsValid(BucketSlotIndex)) return INVALID_UINT;
     uint CellOffset1 = CellOffset.x + CellOffset.y * HASHGRIDS_TILE_CELL_WIDTH;
-    return (BucketSlotIndex << (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2) 
-    | (CellOffset1 & HASHGRIDS_TILE_CELL_INDEX_MASK));
+    return (BucketSlotIndex << (HASHGRIDS_TILE_CELL_WIDTH_L2 * 2)) 
+    | (CellOffset1 & HASHGRIDS_TILE_CELL_INDEX_MASK);
 }
 
 void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out uint2 CellOffset) {
-    if(!IsValid(Packed)) {
+    if(IsInvalid(Packed)) {
         BucketSlotIndex = INVALID_UINT;
         CellOffset = INVALID_UINT;
         return ;
@@ -1232,7 +1232,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float  LightGridLightListCdf = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         ShadePosition, ShadeNormal, ShadeViewDirection,
-        ShadeMaterial.bIsSurface, false, R, SumResampleWeights3, NumValidSamples,
+        ShadeMaterial.bIsSurface, false, 
+        R, SumResampleWeights3, NumValidSamples,
         LightGridLightListCdf
     );
 

@@ -188,7 +188,7 @@ uint HashGrids_AllocateTile (
     bool bIsNewSlot = false;
     BucketSlotIndex = HashGrids_FindAndAllocate(Key.BucketHash, bIsNewSlot);
     if(BucketSlotIndex == INVALID_UINT) return INVALID_UINT;
-    uint TileIndex = INVALID_UINT;
+    uint NewTileIndex = INVALID_UINT;
     if(bIsNewSlot) {
         // No previous tile found, allocate a new one
         int TileFreeListIndex = 0;
@@ -196,27 +196,27 @@ uint HashGrids_AllocateTile (
         TileFreeListIndex --;
         if(TileFreeListIndex >= 0) {
             // Free tile allocated.
-            TileIndex = HashGrids_FreeTileListBuffer[TileFreeListIndex];
+            NewTileIndex = HashGrids_FreeTileListBuffer[TileFreeListIndex];
             // Register the tile to the active list
             uint ActiveListIndex;
             InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
-            HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
+            HashGrids_ActiveTileListBuffer[ActiveListIndex] = NewTileIndex;
             // Keep the key to index the tile for re-insertion
-            HashGrids_TileBucketHashBuffer[TileIndex] = Key.BucketHash;
+            HashGrids_TileBucketHashBuffer[NewTileIndex] = Key.BucketHash;
             // Record the mapping from bucket slot to tile index for future lookups in this frame
-            HashGrids_BucketTileIndexBuffer[BucketSlotIndex] = TileIndex;
-        }
+            HashGrids_BucketTileIndexBuffer[BucketSlotIndex] = NewTileIndex;
+        } // TODO overflow handling
     }
     // Initialize the timestamp for new tiles 
-    if(IsValid(TileIndex)) { 
+    if(IsValid(NewTileIndex)) { 
         uint Timestamp = HashGrids_UB.FrameIndex + 1;
-        HashGrids_TileTimestampBuffer[TileIndex] = Timestamp;
+        HashGrids_TileTimestampBuffer[NewTileIndex] = Timestamp;
         // Queue it up for update.
         uint UpdateListIndex = 0;
         InterlockedAdd(HashGrids_UpdateTileCount[0], 1, UpdateListIndex);
-        HashGrids_UpdateTileListBuffer[UpdateListIndex] = TileIndex;
+        HashGrids_UpdateTileListBuffer[UpdateListIndex] = NewTileIndex;
     }
-    return TileIndex;
+    return NewTileIndex;
 }
 
 void HashGrids_TouchTile (uint TileIndex) {
@@ -225,7 +225,7 @@ void HashGrids_TouchTile (uint TileIndex) {
         InterlockedExchange(HashGrids_TileTimestampBuffer[TileIndex], Timestamp, PrevTimestamp);
         if(PrevTimestamp != Timestamp) {
             // This tile is touched (for the first time in this frame), queue it up for update.
-            int UpdateListIndex = 0;
+            uint UpdateListIndex = 0;
             InterlockedAdd(HashGrids_UpdateTileCount[0], 1, UpdateListIndex);
             HashGrids_UpdateTileListBuffer[UpdateListIndex] = TileIndex;
         }
