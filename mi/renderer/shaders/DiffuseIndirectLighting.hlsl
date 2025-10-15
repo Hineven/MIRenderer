@@ -115,7 +115,7 @@ RWStructuredBuffer<uint> RWScreenProbeUpdateRayOriginScreenCoordsBuffer;
 RWStructuredBuffer<uint> RWScreenProbeUpdateRayAllocator; // Number of all rays to be traced
 
 // Ray trace results
-RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed material & normal (material is packed as CachedHitMaterial)
+RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed normal & material (material is packed as CachedHitMaterial)
 RWStructuredBuffer<uint2> RWScreenProbeUpdateRayRadianceBuffer; // Fp16x4 packed radiance + flag
 RWStructuredBuffer<float> RWScreenProbeUpdateRayInvPdfBuffer;
 RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer;
@@ -1116,7 +1116,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
 			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
 			uint2  PackedHitResult = RWScreenProbeUpdateRayResultBuffer[RayIndex];
-			float3 HitNormal     = UnpackNormal(PackedHitResult.y);
+			float3 HitNormal     = UnpackNormal(PackedHitResult.x);
 			float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
 			if(HistoryReversedZDepth > 0) {
 				float  HistoryDepth  = ReversedZDepthToLinearDepth(C, HistoryReversedZDepth);
@@ -1197,10 +1197,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	if(ShadePointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
 	uint UpdateRayIndex = RWScreenProbeUpdateRayHitShadingPointListBuffer[ShadePointIndex];
 	uint2  UpdateRayOriginScreenCoords = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[UpdateRayIndex]);
-    float  UpdateRayOriginReversedZDepth = G_Depth.Load(int3(UpdateRayOriginScreenCoords, 0)).x;
-    float2 UpdateRayOriginUV = (UpdateRayOriginScreenCoords + 0.5f) * GetActiveCamera().InvFilmDimensions;
-    float3 UpdateRayOrigin   = RecoverWorldPositionNDC2(GetActiveCamera(), UVToNDC2(UpdateRayOriginUV), 
-        ReversedZDepthToLinearDepth(GetActiveCamera(), UpdateRayOriginReversedZDepth));
+    float3 UpdateRayOrigin    = GetScreenProbeUpdateRayOrigin(UpdateRayIndex);
     bool bUpdateRayHit;
 	float  UpdateRayDepth     = UnpackRayToTraceState(RWScreenProbeUpdateRayStateBuffer[UpdateRayIndex], bUpdateRayHit);
     uint   UpdateRayDirectionPacked = RWScreenProbeUpdateRayDirectionBuffer[UpdateRayIndex];
@@ -1210,8 +1207,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	// Till now rays to be traced have identical indices with the probe update rays
 	// After this kernel, rays to be traced will be cleared and re-assigned shadow rays for DI calculation.
 	uint2 PackedHitResult = RWScreenProbeUpdateRayResultBuffer[UpdateRayIndex];
-	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.x);
-	float3 ShadeNormal     = UnpackNormal(PackedHitResult.y);
+	float3 ShadeNormal     = UnpackNormal(PackedHitResult.x);
+	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.y);
 
 	// Offset the hit position to avoid self-intersection
 	if(ShadeMaterial.bIsSurface) ShadePosition += ShadeNormal * 2e-5f;
@@ -1337,7 +1334,7 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
             uint CompactCellIndex = HashGrids_CellIndexToCompactCellIndex(CellIndex);
             // Clamp the outliers (due to inadequate light sampling)
             // Radiance = clamp(Radiance, 0, UB.II_SecondaryVertexRadianceClamping);
-            // FIXME (temporary): use a fixed value (white) to update hash grids. Visualizing the 'hot' cells and tell them from hash grids that have not been updated.
+            // (temporary): use a fixed value (white) to update hash grids. Visualizing the 'hot' cells and tell them from hash grids that have not been updated.
             //Radiance = 1.f.xxx;
             HashGrids_AccumulateSamplesToCell(CompactCellIndex, Radiance, 1);
         }
@@ -1383,8 +1380,6 @@ void ResolveProbeUpdateRayRadianceFromCells (uint DispatchID : SV_DispatchThread
         }
     }
 }
-
-// Now, radiance results are stored in RWScreenProbeUpdateRayResultBuffer
 
 // Update screen probes & cache
 groupshared uint SharedProbeSampleCounts[TILE_SIZE * TILE_SIZE];

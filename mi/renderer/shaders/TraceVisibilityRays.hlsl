@@ -55,7 +55,7 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
 struct RayPayload {
-    float HitDistance; // Hit on meshes, TMax for no hits
+    float HitDistance; // Hit on meshes / proxy meshes, TMax for no hits
     float U; // Random number
 #ifdef FULL_VISIBILITY
     #error "not implemented yet"
@@ -118,8 +118,8 @@ void TraceVisibilityRaysRaygen() {
         Ray,
         Payload
     );
-    uint PackedTraceResult = PackRayToTraceState(Payload.HitDistance, Payload.HitDistance < Ray.TMax);
-    RWRayToTraceStateBuffer[RayIndex] = PackedTraceResult;
+    uint PackedTraceState = PackRayToTraceState(Payload.HitDistance, Payload.HitDistance < Ray.TMax);
+    RWRayToTraceStateBuffer[RayIndex] = PackedTraceState;
     // Write back Radiance
 #ifdef FULL_VISIBILITY
 #error "not implemented yet"
