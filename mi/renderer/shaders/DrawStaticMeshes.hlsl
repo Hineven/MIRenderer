@@ -40,6 +40,8 @@ DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
     float3 Barycentrics : SV_BaryCentrics
 ) {
     DrawDeferredStaticMeshesPSOut Output = (DrawDeferredStaticMeshesPSOut)0;
+    // FIXME: Alpha test is still required here to discard some pixels.
+    // TODO: for opaque meshes, we can skip the alpha test here
     Output.Visibility = uint4(
         Input.DescriptorRenderableIndex, 
         PrimitiveIndex,

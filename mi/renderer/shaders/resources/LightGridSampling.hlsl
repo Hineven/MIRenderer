@@ -83,7 +83,7 @@ float3 SampleAreaLightArea(float3 V0, float3 V1, float3 V2, float2 u, out float 
     return Position;
 }
 
-LightSample SampleLightDiffuseWithPreMultipliedCosine(float3 Position, float3 Normal, EvaluatedLight Evaluated, float2 u2) {
+LightSample SampleLightDiffuseWithPreMultipliedCosine(float3 Position, float3 Normal, EvaluatedAreaLight Evaluated, float2 u2) {
     LightSample Result = (LightSample)0;
     float Area = 0.f;
     Result.Position = SampleAreaLightArea(Evaluated.V0, Evaluated.V1, Evaluated.V2, u2, Area, Result.Pdf);
@@ -103,7 +103,7 @@ LightSample SampleLightDiffuseWithPreMultipliedCosine(float3 Position, float3 No
 }
 
 LightSample SampleLightWithPreMultipliedPhaseFunction(
-    float3 Position, float3 ViewDirection, EvaluatedLight Evaluated, float g, float2 u2
+    float3 Position, float3 ViewDirection, EvaluatedAreaLight Evaluated, float g, float2 u2
 ) {
     LightSample Result = (LightSample)0;
     float Area = 0.f;
@@ -192,7 +192,7 @@ LightSample SampleOneLightSample_RIS (
         uint ActiveLightListIndex = LS.ActiveLightListIndex[SamplerLightListIndex];
         if(IsValid(ActiveLightListIndex)) {
             uint LightIndex = LightGrid_ActiveLightListBuffer[ActiveLightListIndex];
-            EvaluatedLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
+            EvaluatedAreaLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
             float2 u2 = R.rand2();
             LightSample Sample;
             if(bSurface) {

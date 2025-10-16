@@ -1191,6 +1191,9 @@ void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out ui
 
 // Sample light rays for DI calculation using light grid
 // Dispatched per shade point
+
+// FIXME also sample environment light here to reduce bias!
+
 [numthreads(WAVE_SIZE, 1, 1)]
 void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     uint ShadePointIndex = DispatchID;
@@ -1252,7 +1255,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float3 ShadedRadiance = 0.f;
 	if(bValidRay) {
 		// Calculate the real sample contribution. (cosine premultiplied)
-		ShadedRadiance = ReservedSample.Radiance * SumResampleWeights3 / (NumValidSamples * LightGridLightListCdf);
+		ShadedRadiance = SumResampleWeights3 / (NumValidSamples * LightGridLightListCdf);
 
 		TransmittanceRayDirection = normalize(ReservedSample.Position - ShadePosition);
 		TransmittanceRayOcclusionThreshold = length(ReservedSample.Position - ShadePosition);
