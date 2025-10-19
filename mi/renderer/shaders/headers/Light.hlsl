@@ -14,25 +14,41 @@
 
 PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
     PackedPrecomputedLight P = (PackedPrecomputedLight)0;
-    P.V0 = L.V0;
-    P.V1 = L.V1;
-    P.V2 = L.V2;
-    P.Normal = PackNormal(L.Normal);
+    if(L.Type == PRECOMPUTED_LIGHT_TYPE_TRIANGLE) {
+        P.V0 = L.V0;
+        P.V1 = L.V1;
+        P.V2 = L.V2;
+        P.Normal = PackNormal(L.Normal);
+    } else {
+        P.V0 = L.V0;
+        P.V1 = L.V1;
+        P.V2 = float3(asfloat(L.Type), 0, 0);
+        P.Normal = INVALID_UINT;
+    }
     P.Intensity = L.Intensity;
     return P;
 }
 
 PrecomputedLight UnpackPrecomputedLight(PackedPrecomputedLight P) {
     PrecomputedLight L = (PrecomputedLight)0;
-    L.V0 = P.V0;
-    L.V1 = P.V1;
-    L.V2 = P.V2;
-    L.Normal = UnpackNormal(P.Normal);
+    if(IsValid(P.Normal)) {
+        L.V0 = P.V0;
+        L.V1 = P.V1;
+        L.V2 = P.V2;
+        L.Normal = UnpackNormal(P.Normal);
+        L.Type = PRECOMPUTED_LIGHT_TYPE_TRIANGLE;
+    } else {
+        L.V0 = P.V0;
+        L.V1 = P.V1;
+        L.V2 = 0;
+        L.Normal = INVALID_UINT;
+        L.Type = asuint(P.V2.x);
+    }
     L.Intensity = P.Intensity;
     return L;
 }
 
-struct EvaluatedLight {
+struct EvaluatedAreaLight {
     float3 V0, V1, V2;
     float2 UV0, UV1, UV2;
     uint EmissionTextureIndex;

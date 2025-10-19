@@ -45,6 +45,14 @@ bool HashGridPersistentData::MakeSureExists(
         cell_value_buffer->SetExport();
         flag = true;
     }
+    if (!update_cell_value_x_buffer) {
+        update_cell_value_x_buffer = builder.CreateBuffer<uint32_t>(
+            // mip 0 only, 4 atomic integers per cell
+            max_num_tiles * HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4
+        );
+        update_cell_value_x_buffer->SetExport();
+        flag = true;
+    }
 
     if (!active_tile_count) {
         active_tile_count = builder.CreateBuffer<uint32_t>();
@@ -82,10 +90,6 @@ void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
 
     bucket_hash_buffer = builder.CreateBuffer<uint32_t>(num_buckets * num_elements_per_bucket);
     bucket_tile_index_buffer = builder.CreateBuffer<uint32_t>(num_buckets * num_elements_per_bucket);
-    update_cell_value_x_buffer = builder.CreateBuffer<uint32_t>(
-        // mip 0 only, 4 atomic integers per cell
-        max_num_tiles * HASHGRIDS_TILE_CELL_MIP_OFFSET_1 * 4
-    );
     update_tile_count_buffer = builder.CreateBuffer<uint32_t>();
     update_tile_list_buffer = builder.CreateBuffer<uint32_t>(max_num_tiles);
     active_tile_count_before_allocation_buffer = builder.CreateBuffer<uint32_t>();
@@ -169,7 +173,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterHashGridsShader, "mi/
 
 
 void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
-    return ;
+    // Initialize and reuse the hash grid cache from the previous frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
@@ -193,6 +197,7 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
     if (need_reset) {
         auto shader = lib.GetShader<ResetHashGridsShader>();
         Helpers::AddComputePass(builder, shader, params, DivideAndRoundUp(max_num_tiles, wave_size));
+        Helpers::Clear(builder, view->persistent_data_->hash_grid_persistent_data_->update_cell_value_x_buffer.Raw());
     }
 
     {
@@ -207,7 +212,7 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
 }
 
 void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
-    return ;
+    // Clear newly allocated tiles and filter hash grids this frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
     // const uint32_t max_num_tiles = kHashGridMaxNumTiles;

@@ -9,6 +9,7 @@
 #include <renderer/mi_cvar.h>
 #include <rdg/rdg_resource.h>
 #include "r_persistent.h"
+#include "../shaders/shared/SharedHashGridCache.hlsl"
 
 MI_NAMESPACE_BEGIN
 struct HashGridWorldCacheUB {
@@ -61,6 +62,7 @@ struct HashGridPersistentData : RefCounted<> {
     TRef<RDGBuffer> tile_timestamp_buffer;
     TRef<RDGBuffer> tile_bucket_hash_buffer;
     TRef<RDGBuffer> cell_value_buffer;
+    TRef<RDGBuffer> update_cell_value_x_buffer;
 
     TRef<RDGBuffer> active_tile_count;
     TRef<RDGBuffer> active_tile_list_buffer;
@@ -77,7 +79,6 @@ struct HashGridPersistentData : RefCounted<> {
 struct WorldRadianceCacheData : RefCounted<> {
     TRef<RDGBuffer> bucket_hash_buffer;
     TRef<RDGBuffer> bucket_tile_index_buffer;
-    TRef<RDGBuffer> update_cell_value_x_buffer;
     TRef<RDGBuffer> update_tile_count_buffer;
     TRef<RDGBuffer> update_tile_list_buffer;
     TRef<RDGBuffer> active_tile_count_before_allocation_buffer;
@@ -91,9 +92,15 @@ struct WorldRadianceCacheData : RefCounted<> {
 constexpr static uint32_t kHashGridMaxNumTiles = 64 * 1024;
 constexpr static uint32_t kHashGridMaxNumBuckets = 64 * 1024;
 constexpr static uint32_t kHashGridNumElementsPerBucket = 2;
+
+static_assert(kHashGridMaxNumBuckets * kHashGridNumElementsPerBucket  < 1 << std::max(32 - 2 * HASHGRIDS_TILE_CELL_WIDTH_L2, 0),
+    "Too many bucket slots. Packing the bucket slot index & tile cell offset in a 32-bit integer won't work."
+    "(Which is hard-coded in the shaders PackBucketSlotAndCellOffset)."
+);
+
 // TODO make the following two configurable
-constexpr static float kHashGridCascadeRadius = 5.f;
-constexpr static float kHashGridCellSize = 0.05f;
+constexpr static float kHashGridCascadeRadius = 6.4f;
+constexpr static float kHashGridCellSize = 0.1f;
 
 template<typename T>
 void FillParametersForHashGridCache (RendererView * view, T * params) {
@@ -122,7 +129,7 @@ void FillParametersForHashGridCache (RendererView * view, T * params) {
             params->HashGrids_CellValueBuffer = persistent->cell_value_buffer.Raw();
         }
         if constexpr(requires{params->HashGrids_UpdateCellValueXBuffer;}) {
-            params->HashGrids_UpdateCellValueXBuffer = w->update_cell_value_x_buffer.Raw();
+            params->HashGrids_UpdateCellValueXBuffer = persistent->update_cell_value_x_buffer.Raw();
         }
         if constexpr(requires{params->HashGrids_UpdateTileCount;}) {
             params->HashGrids_UpdateTileCount      = w->update_tile_count_buffer.Raw();
@@ -163,7 +170,8 @@ FORCEINLINE void FillUniformBufferForHashGridCache (RendererView * view, HashGri
 
     UB->CellSize = cell_size;
     UB->NumBuckets = num_buckets;
-    UB->MaxNumEntriesSearchedPerBucket = num_elements_per_bucket * 4;
+    mi_check(num_elements_per_bucket <= HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET, "Too many elements per bucket.");
+    UB->MaxNumEntriesSearchedPerBucket = std::min(uint32_t(num_elements_per_bucket * 4), (uint32_t)HASHGRIDS_MAX_NUM_ENTRIES_SEARCHED_PER_BUCKET);
     UB->NumInterleavedEntriesPerBucket = num_elements_per_bucket;
 
     UB->TargetSampleCount = 64;

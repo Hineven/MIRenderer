@@ -11,8 +11,8 @@
 #include "GeometryResources.hlsl"
 #include "MaterialResources.hlsl"
 
-EvaluatedLight EvaluateLight(AreaLight Light) {
-    EvaluatedLight EvaluatedLightData = (EvaluatedLight)0;
+EvaluatedAreaLight EvaluateLight(AreaLight Light) {
+    EvaluatedAreaLight EvaluatedLightData = (EvaluatedAreaLight)0;
     // Extract light data
     uint RenderableIndex = Light.RenderableIndex;
     uint StaticMeshDescriptionOffset = Light.StaticMeshDescriptionIndex;

@@ -355,16 +355,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     else if (type == 3)
         Render_DrawToOutput(view, builder, view->G_normal_.Raw());
     else if (type == 4)
-        Render_DrawToOutput(view, builder, view->G_volume_color_.Raw());
-    else if (type == 5)
         Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
-    else if (type == 6)
-        Render_DrawToOutput(view, builder, view->hzb_.Raw());
-    else if (type == 7)
+    else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
-    else if (type == 8)
+    else if (type == 6)
         Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
-    else if (type == 9) {
+    else if (type == 7)
+        Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_.Raw());
+    else if (type == 8) {
         Render_PathTracing(view, builder);
         Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
     } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());

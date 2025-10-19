@@ -278,14 +278,15 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
 
     // Load default model
-    if (false) {
+    if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
+        // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
+        auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *scene, nullptr,
+            *scene, default_mat.Raw(),
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -298,14 +299,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
 
 
-    if (true) {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
-            *scene, nullptr,
+            *scene, default_mat.Raw(),
             geometries, materials, meshes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -315,16 +316,16 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
-        TRef<VolumePrimitives> volprims;
-        VolumePrimitivesLoader::LoadPLY(
-            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
-            *resource_allocator, volprims
-        );
-        if (volprims) {
-            volprims->UpdateOnDevice(resource_allocator.get());
-            auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
-            volprims_instance->EditTransform().Translate({0, 0.5, 0});
-        }
+        // TRef<VolumePrimitives> volprims;
+        // VolumePrimitivesLoader::LoadPLY(
+        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+        //     *resource_allocator, volprims
+        // );
+        // if (volprims) {
+        //     volprims->UpdateOnDevice(resource_allocator.get());
+        //     auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
+        //     volprims_instance->EditTransform().Translate({0, 0.5, 0});
+        // }
     }
 
     // Get ready for device rendering

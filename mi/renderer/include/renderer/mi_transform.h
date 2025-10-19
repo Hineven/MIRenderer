@@ -42,10 +42,9 @@ struct Transform {
 
     FORCEINLINE glm::mat4x3 GetToWorldTransformMatrix() const {
         glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.0f), scale);
-        glm::mat4 rotationMatrix = glm::mat4(1.0f);
-        rotationMatrix = glm::rotate(rotationMatrix, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-        rotationMatrix = glm::rotate(rotationMatrix, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
-        rotationMatrix = glm::rotate(rotationMatrix, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+        auto quat = glm::quat(rotation);
+        glm::mat4 rotationMatrix = glm::mat3_cast(quat);
+        rotationMatrix[3][3] = 1.f;
         glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), position);
         glm::mat4 transform = translationMatrix * rotationMatrix * scaleMatrix;
         return glm::mat4x3(transform);
@@ -53,10 +52,10 @@ struct Transform {
 
     FORCEINLINE glm::mat4x3 GetToLocalTransformMatrix() const {
         glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.0f), 1.f / scale);
-        glm::mat4 rotationMatrix = glm::mat4(1.0f);
-        rotationMatrix = glm::rotate(rotationMatrix, -rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-        rotationMatrix = glm::rotate(rotationMatrix, -rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
-        rotationMatrix = glm::rotate(rotationMatrix, -rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+        auto quat = glm::quat(rotation);
+        glm::quat inv_quat = glm::conjugate(quat);
+        glm::mat4 rotationMatrix = glm::mat3_cast(inv_quat);
+        rotationMatrix[3][3] = 1.f;
         glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), -position);
         glm::mat4 transform = scaleMatrix * rotationMatrix * translationMatrix;
         return glm::mat4x3(transform);

@@ -167,6 +167,7 @@ struct RendererView {
         // Outputs from debug paasses, can be used as we like
         TRef<RDGTexture> visualize_ray_tracing_scene_output_;
         TRef<RDGTexture> visualize_traced_rays_output_;
+        TRef<RDGTexture> visualize_world_cache_output_;
     } debug_views_;
 
     struct DebugBuffers {
