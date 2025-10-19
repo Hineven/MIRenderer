@@ -29,10 +29,17 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndDescriptorIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
 
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
+
         SHADER_VERTEX_BUFFER(sizeof(DefaultStaticMeshVertex), VertexBuffer)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Position), RHIVertexAttributeFormatType::k3xFp32, position)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, Normal), RHIVertexAttributeFormatType::k3xFp32, normal)
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, UV), RHIVertexAttributeFormatType::k2xFp32, uv)
+
 
         SHADER_RENDER_TARGET(PixelFormatType::kR32G32B32A32_UINT, Visibility, {})
         SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth, {})
@@ -177,6 +184,12 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
         params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
         params->RenderableIndexAndDescriptorIndexBuffer = ctx.deferred_static_meshes.d_static_mesh_draw_command_renderable_descriptor_indices.Raw();
         params->MaterialHeaderBuffer = builder.Import(device_allocator_->material_header_buffer_.Raw());
+
+        params->GeometryHeaderBuffer = builder.Import(device_allocator_->geometry_header_buffer_.Raw());
+        params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->static_mesh_description_uber_buffer_->GetRHI());
+        params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->static_mesh_header_buffer_.Raw());
+        params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+        params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
         params->Visibility = view->G_visibility_.Raw();
         params->Visibility.load_op = RHILoadOpType::kClear;

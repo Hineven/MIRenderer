@@ -597,6 +597,10 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_update_ray_counts_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
 
     uint32_t max_num_update_rays = num_tiles * 64; // Theoretically this can be configured
+    
+    // Add validation to prevent excessive memory allocation
+    const uint32_t kMaxUpdateRays = 128 * 128 * 128; // Reasonable upper limit
+    max_num_update_rays = std::min(max_num_update_rays, kMaxUpdateRays);
 
     auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_state_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);

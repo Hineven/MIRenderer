@@ -13,6 +13,8 @@ StructuredBuffer<uint2>            RenderableIndexAndDescriptorIndexBuffer;
 struct DrawDeferredStaticMeshesVSOut {
     float4 Position : SV_POSITION;
     uint   DescriptorRenderableIndex : TEXCOORD0; // Packed DescriptorIndex (8bits) RenderableIndex (24bits)
+    uint   MaterialIndex : TEXCOORD1;
+    float2 UV : TEXCOORD2;
 };
 
 DrawDeferredStaticMeshesVSOut DrawDeferredStaticMeshesVS (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID) {
@@ -23,9 +25,19 @@ DrawDeferredStaticMeshesVSOut DrawDeferredStaticMeshesVS (DefaultStaticMeshVerte
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
     float4 PositionW = mul(View.Camera.WorldToNDC_ReversedZ, float4(WorldPosition, 1));
 
+    
+    uint StaticMeshIndex = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]).StaticMeshIndex;
+    StaticMeshHeader StaticMeshHeader = StaticMeshHeaderBuffer[StaticMeshIndex];
+    // Compute the global descriptor index
+    uint  GlobalDescriptorIndex = StaticMeshHeader.DescriptionOffset + DescriptorIndex;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[GlobalDescriptorIndex];
+
     DrawDeferredStaticMeshesVSOut Output = (DrawDeferredStaticMeshesVSOut)0;
     Output.Position = PositionW;
     Output.DescriptorRenderableIndex = DescriptorIndex << 24 | RenderableIndex;
+    Output.MaterialIndex = GeometryMaterialPair.y;
+    // Here we use the faster path to interpolate UVs rather than decoding full visibility in fragment shader.
+    Output.UV = Vertex.UV;
     return Output;
 }
 
@@ -40,8 +52,17 @@ DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
     float3 Barycentrics : SV_BaryCentrics
 ) {
     DrawDeferredStaticMeshesPSOut Output = (DrawDeferredStaticMeshesPSOut)0;
-    // FIXME: Alpha test is still required here to discard some pixels.
     // TODO: for opaque meshes, we can skip the alpha test here
+    MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1);
+    if(IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV);
+    }
+    // TODO stochastic alpha test
+    if(ColorOpacity.a < 0.5f) {
+        // Discard the pixel
+        discard;
+    }
     Output.Visibility = uint4(
         Input.DescriptorRenderableIndex, 
         PrimitiveIndex,
@@ -95,6 +116,7 @@ void DecodeVisibility (uint2 DispatchThreadID : SV_DispatchThreadID) {
             // TODO: Get a proper LOD
             0
         );
+        
     // Write to G-Buffers
     {
         RWAlbedo[DispatchThreadID] = float4(Intersection.Albedo, Intersection.Opacity);
@@ -157,14 +179,6 @@ DrawForwardStaticMeshesPSOut DrawForwardStaticMeshesPS (
         asuint(Barycentrics.x),
         asuint(Barycentrics.y)
     );
-
-    // Decode visibility
-    // IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial(
-    //     Input.DescriptorRenderableIndex & 0xFFFFFF, 
-    //     (Input.DescriptorRenderableIndex >> 24) & 0xFF, 
-    //     PrimitiveIndex,
-    //     Barycentrics
-    // );
 
     MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
     float4 ColorOpacity = float4(Material.Albedo, 1);

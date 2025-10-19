@@ -16,7 +16,6 @@
 #include "resources/LightGridSampling.hlsl"
 
 // Foreground screen probes
-//[[vk::image_format(rgba16f)]]
 Texture2D<float4> PreviousScreenProbeRadianceDepthTexture;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWScreenProbeRadianceDepthTexture;
@@ -221,7 +220,9 @@ uint ProbeHeaderMarkTemporalBlendable (uint Packed) {
 // Quantilization
 // May overflow if the radiance is too large (e.g. 1000)
 uint QuantilizeRadiance (float V, float Noise = 0) {
-    return floor(min(V, 1000) * 16384 + Noise);
+    // Add precision check to prevent overflow and ensure stability
+    V = clamp(V, 0.0f, 1000.0f);
+    return floor(V * 16384.0f + Noise);
 }
 uint4 QuantilizeRadiance (float4 V, float Noise = 0) {
     return uint4(
