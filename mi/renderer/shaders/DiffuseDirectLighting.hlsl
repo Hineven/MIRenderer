@@ -112,7 +112,7 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
     AreaLight LightData = LightBuffer[LightIndex];
     if (LightData.Flags == 0) return; // Invalid light, skip
     // Extract light data
-    EvaluatedLight Evaluated = EvaluateLight(LightData);
+    EvaluatedAreaLight Evaluated = EvaluateLight(LightData);
     // Evaluate other features
     float3 N = normalize(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0));
     // Precompute

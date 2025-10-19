@@ -14,7 +14,8 @@
 
 MI_NAMESPACE_BEGIN
 
-template<size_t BlockSize = 4096, size_t Alignment = 16>
+// 512k block by default
+template<size_t BlockSize = 512 * 1024, size_t Alignment = 16>
 class TOneTimeLinearAllocator : public NonCopyable, public NonMovable {
 public:
     TOneTimeLinearAllocator() {

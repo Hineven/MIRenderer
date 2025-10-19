@@ -63,6 +63,12 @@ static CVar<bool> CVar_EnableSpatialProbeFiltering(
     true
 );
 
+static CVar<bool> CVar_NoEnvironmentLight(
+    "r.diffuse_indirect_lighting.no_environment_light",
+    "Disable the environment light when updating probes.",
+    false
+);
+
 struct DiffuseIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     uint32_t HeaderTileDimension;
@@ -85,6 +91,9 @@ struct DiffuseIndirectLightingUB {
     uint32_t ProbeSpawnSubTileJitterSeed;
     uint32_t TileProbeSpawnSeed;
     uint32_t EnableSpatialProbeFiltering;
+
+    uint32_t NoEnvironmentLight;
+    glm::uvec3 Padding;
 };
 
 BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
@@ -141,7 +150,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayResultBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayRadianceBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayInvPdfBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitShadingPointAllocator)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeUpdateRayHitShadingPointListBuffer)
@@ -154,7 +163,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayContributionBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointToTransmittanceRayIndexBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
@@ -588,16 +597,20 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto screen_probe_update_ray_counts_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
 
     uint32_t max_num_update_rays = num_tiles * 64; // Theoretically this can be configured
+    
+    // Add validation to prevent excessive memory allocation
+    const uint32_t kMaxUpdateRays = 128 * 128 * 128; // Reasonable upper limit
+    max_num_update_rays = std::min(max_num_update_rays, kMaxUpdateRays);
 
     auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_state_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_allocator = builder.CreateBuffer<uint32_t>();
 
-    auto screen_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays * 2);
-    auto screen_probe_update_ray_radiance_buffer = builder.CreateBuffer<glm::vec2>(max_num_update_rays);
+    auto screen_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
+    auto screen_probe_update_ray_radiance_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
     auto screen_probe_update_ray_inv_pdf_buffer = builder.CreateBuffer<float>(max_num_update_rays);
-    auto screen_probe_update_ray_hit_resolve_hash_cell_index_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto screen_probe_update_ray_hit_resolve_bucket_and_cell_offset_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto screen_probe_update_ray_hit_shading_point_allocator = builder.CreateBuffer<uint32_t>();
     auto screen_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
@@ -609,8 +622,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
     auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
 
-    auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
-    auto shade_point_transmittance_ray_to_screen_probe_update_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
+    auto shade_point_to_transmittance_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto params = builder.Allocate<DiffuseIndirectLightingParams>();
     {
@@ -707,8 +720,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             screen_probe_update_ray_radiance_buffer.Raw();
         params->RWScreenProbeUpdateRayInvPdfBuffer =
             screen_probe_update_ray_inv_pdf_buffer.Raw();
-        params->RWScreenProbeUpdateRayHitResolveHashCellIndexBuffer =
-            screen_probe_update_ray_hit_resolve_hash_cell_index_buffer.Raw();
+        params->RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer =
+            screen_probe_update_ray_hit_resolve_bucket_and_cell_offset_buffer.Raw();
 
         params->RWScreenProbeUpdateRayHitShadingPointAllocator =
             screen_probe_update_ray_hit_shading_point_allocator.Raw();
@@ -730,8 +743,8 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
 
         params->RWShadePointTransmittanceRayContributionBuffer =
             shade_point_transmittance_ray_contribution.Raw();
-        params->RWShadePointTransmittanceRayToScreenProbeUpdateRayIndexBuffer =
-            shade_point_transmittance_ray_to_screen_probe_update_ray_index.Raw();
+        params->RWShadePointToTransmittanceRayIndexBuffer =
+            shade_point_to_transmittance_ray_index.Raw();
 
         params->G_Depth = view->G_depth_.Raw();
         params->G_Normal = view->G_normal_.Raw();
@@ -774,6 +787,9 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             UB->TileProbeSpawnSeed =
                 CVar_ScreenProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
             UB->EnableSpatialProbeFiltering = CVar_EnableSpatialProbeFiltering.Get() ? 1 : 0;
+
+            UB->NoEnvironmentLight = CVar_NoEnvironmentLight.Get() ? 1 : 0;
+            UB->Padding = glm::uvec3{0};
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;
@@ -957,7 +973,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     {
         auto shader = lib.GetShader<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(ini);
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
-            builder, shade_point_transmittance_ray_allocator.Raw(), wave_size
+            builder, screen_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(
             builder, shader, params, cmd.Raw()

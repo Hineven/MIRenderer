@@ -29,6 +29,8 @@ Texture2D<float>  G_Transmittance;
 Texture2D<float4> HistoryRadiance;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWRadiance;
+[[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWShadedRadianceWithoutEmission;
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
@@ -49,7 +51,6 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
         float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
         Emission = EnvironmentColor;
     }
-    SurfaceRadiance += Emission;
 
     // Diffuse direct
     float3 DiffuseDirectLighting = DiffuseDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
@@ -65,7 +66,7 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
 
     float Transmittance = G_Transmittance.SampleLevel(PointEdgeSampler, UV, 0);
 
-    float3 Radiance = SurfaceRadiance * Transmittance + VolumeRadiance;
+    float3 Radiance = (Emission + SurfaceRadiance) * Transmittance + VolumeRadiance;
 
     float3 OldRadiance = HistoryRadiance.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     float LerpFactor = 0.01f;
@@ -75,4 +76,7 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     }
 
     RWRadiance[PixelIndex] = float4(lerp(OldRadiance, Radiance, LerpFactor), 1.0f);
+
+    // Specially for screen space radiance reuse
+    RWShadedRadianceWithoutEmission[PixelIndex] = float4(SurfaceRadiance, 1);
 }

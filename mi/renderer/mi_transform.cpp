@@ -11,23 +11,70 @@
 #include "core/infra.h"
 
 MI_NAMESPACE_BEGIN
+
 Transform Transform::FromMatrix(glm::mat4 to_world) {
+    Transform transform;
+
+    // Translation
+    transform.position = glm::vec3(to_world[3]);
+
+    // Extract 3x3
+    glm::mat3 M(to_world);
+
+    // Scale from column lengths
     glm::vec3 scale;
-    glm::quat orientation;
-    glm::vec3 translation;
-    glm::vec3 skew;
+    scale.x = glm::length(glm::vec3(M[0]));
+    scale.y = glm::length(glm::vec3(M[1]));
+    scale.z = glm::length(glm::vec3(M[2]));
+
+    const float eps = 1e-6f;
+    if (scale.x < eps || scale.y < eps || scale.z < eps) {
+        mi_warning(false, "Transform::FromMatrix: Degenerate scale ({}, {}, {}).",
+                   scale.x, scale.y, scale.z);
+        transform.scale = glm::max(scale, glm::vec3(eps));
+        transform.rotation = glm::vec3(0.0f);
+        return transform;
+    }
+
+    // Normalize columns to get rotation matrix
+    glm::mat3 R;
+    R[0] = glm::vec3(M[0]) / scale.x;
+    R[1] = glm::vec3(M[1]) / scale.y;
+    R[2] = glm::vec3(M[2]) / scale.z;
+
+    // Fix reflection: move sign into one scale component
+    if (glm::determinant(R) < 0.0f) {
+        if (scale.x >= scale.y && scale.x >= scale.z) {
+            scale.x = -scale.x; R[0] = -R[0];
+        } else if (scale.y >= scale.x && scale.y >= scale.z) {
+            scale.y = -scale.y; R[1] = -R[1];
+        } else {
+            scale.z = -scale.z; R[2] = -R[2];
+        }
+    }
+
+    // Rotation from proper rotation matrix 
+    glm::quat q = glm::normalize(glm::quat_cast(R));
+
+    // Optional: warn on skew/perspective using decompose, but ignore its rot/scale
+    glm::vec3 tmpS, skew;
+    glm::quat tmpQ;
+    glm::vec3 tmpT;
     glm::vec4 perspective;
-    glm::decompose(to_world, scale, orientation, translation, skew, perspective);
-    mi_warning(glm::length(skew) < 0.005f, "Transform::FromMatrix: Skew {} is not zero. Discarding that.", glm::length(skew));
-    mi_warning(perspective == glm::vec4(0, 0, 0, 1),
+    glm::decompose(to_world, tmpS, tmpQ, tmpT, skew, perspective);
+    [[maybe_unused]] float skewLen = glm::length(skew);
+    mi_warning(skewLen < 0.005f,
+               "Transform::FromMatrix: Skew {} is not zero. Discarding that.", skewLen);
+    glm::vec4 idealP(0, 0, 0, 1);
+    [[maybe_unused]] bool perspOk = glm::all(glm::lessThan(glm::abs(perspective - idealP), glm::vec4(1e-4f)));
+    mi_warning(perspOk,
         "Transform::FromMatrix: Perspective ({}, {}, {}, {}) is non standard. Discarding that.",
         perspective.x, perspective.y, perspective.z, perspective.w);
-    Transform transform;
+
     transform.scale = scale;
-    transform.rotation = glm::eulerAngles(orientation);
-    transform.position = translation;
+    transform.rotation = glm::eulerAngles(q); // 弧度
+
     return transform;
 }
-
 
 MI_NAMESPACE_END

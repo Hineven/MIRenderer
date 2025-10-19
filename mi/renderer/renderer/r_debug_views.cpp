@@ -5,15 +5,16 @@
  */
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_renderer.h"
-#include "r_view_common.h"
-#include "rdg/rdg_helper.h"
 #include "renderer/mi_resource_allocator.h"
-#include "../shaders/shared/SharedLight.hlsl"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
+#include "r_view_common.h"
+#include "r_world_radiance_cache.h"
+#include "../shaders/shared/SharedLight.hlsl"
 MI_NAMESPACE_BEGIN
 
 static CVar<int> CVar_DebugViewMode(
@@ -88,6 +89,44 @@ public:
 
 IMPLEMENT_RDG_GRAPHICS_SHADER(VisualizeTracedRaysShader, "mi/renderer/shaders/VisualizeTracedRays.hlsl", "VisualizeTracedRaysVS", "VisualizeTracedRaysPS")
 
+class VisualizeWorldCacheShader : public RDGShader {
+public:
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousShadedDiffuseRadianceWithoutEmission)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutputTexture)
+        // Tile allocator
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileCount)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileListBuffer)
+        // Hash table for tiles
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_BucketHashBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_BucketTileIndexBuffer) // Store indices of tiles in the bucket
+        // Tile properties
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_TileTimestampBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_TileBucketHashBuffer)
+        // Cell values (radiance) cached in hash grids
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_CellValueBuffer) // 2 elements per cell
+        // This is quantilized and atomic accumulated, and only contains mip0 cells
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_UpdateCellValueXBuffer) // 4 elements per cell
+        // A list of tiles that should be updated this frame
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_UpdateTileCount)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_UpdateTileListBuffer)
+        // A list of active tile indices
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCountBeforeAllocationBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCount)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileListBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_HistoryActiveTileCount)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_HistoryActiveTileListBuffer)
+
+        SHADER_UNIFORM_BUFFER(HashGridWorldCacheUB, HashGrids_UB)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Params)
+    DECLARE_SHADER()
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER(VisualizeWorldCacheShader, "mi/renderer/shaders/VisualizeWorldCache.hlsl", "VisualizeWorldCache")
+
 void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder) {
     // Visualize the scene used for ray tracing
     {
@@ -153,10 +192,30 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
             }
         })->AddBufferH(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
+    // Visualize world cache
+    {
+        view->debug_views_.visualize_world_cache_output_ = builder.CreateTexture2D(view->film_width_, view->film_height_,
+            PixelFormatType::kR16G16B16A16_FLOAT,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource
+            | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
+        auto shader = RDGShaderLibrary::Get().GetShader<VisualizeWorldCacheShader>();
+        auto params = builder.Allocate<VisualizeWorldCacheShader::Params>();
+        params->View = view->view_common_params_;
+        params->G_Depth = view->G_depth_.Raw();
+        params->PreviousShadedDiffuseRadianceWithoutEmission = view->persistent_data_->prev_shaded_radiance_no_emission_.Raw();
+        params->RWDebugOutputTexture = view->debug_views_.visualize_world_cache_output_.Raw();
+        FillParametersForHashGridCache(view, params);
+        auto HashGrids_UB = builder.Allocate<HashGridWorldCacheUB>();
+        FillUniformBufferForHashGridCache(view, HashGrids_UB);
+        params->HashGrids_UB = HashGrids_UB;
+        Helpers::AddComputePass(builder, shader, params, DivideAndRoundUp(view->film_width_, 8), DivideAndRoundUp(view->film_height_, 8));
+    }
     if (CVar_DebugViewMode.Get() == 0) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_ray_tracing_scene_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 1) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_traced_rays_output_.Raw(), view->debug_output_.Raw());
+    } else if (CVar_DebugViewMode.Get() == 2) {
+        Helpers::CopyTexture(builder, view->debug_views_.visualize_world_cache_output_.Raw(), view->debug_output_.Raw());
     }
 }
 

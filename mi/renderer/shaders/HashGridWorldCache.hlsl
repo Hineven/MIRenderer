@@ -47,7 +47,6 @@ void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 		InterlockedAdd(HashGrids_ActiveTileCount[0], 1, ActiveListIndex);
 		HashGrids_ActiveTileListBuffer[ActiveListIndex] = TileIndex;
 		// Insert the tile to the hash table
-		HashGrids_BucketHashBuffer[SlotIndex] = TileBucketHash;
 		HashGrids_BucketTileIndexBuffer[SlotIndex] = TileIndex;
 	}
 }
@@ -127,7 +126,7 @@ void FilterHashGrids (uint GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadI
 		HashGrids_CellValueBuffer[CellIndex * 2 + 0] = PackedValue.x;
 		HashGrids_CellValueBuffer[CellIndex * 2 + 1] = PackedValue.y;
 
-        // Clear scratch
+        // Clear scratch (the buffer is persistent across frames)
         HashGrids_UpdateCellValueXBuffer[4 * CompactCellIndex + 0] = 0;
         HashGrids_UpdateCellValueXBuffer[4 * CompactCellIndex + 1] = 0;
         HashGrids_UpdateCellValueXBuffer[4 * CompactCellIndex + 2] = 0;

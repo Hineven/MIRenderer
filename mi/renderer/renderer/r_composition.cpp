@@ -70,12 +70,6 @@ public:
 IMPLEMENT_RDG_COMPUTE_SHADER(LightingCompositionShader, "mi/renderer/shaders/LightingComposition.hlsl", "LightingComposition");
 
 void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder &builder) {
-    {
-        // Allocate outputs in the view.
-        view->shaded_radiance_no_emission_ = builder.CreateTexture2D(
-            view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT
-        );
-    }
 
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<LightingCompositionShader>();
