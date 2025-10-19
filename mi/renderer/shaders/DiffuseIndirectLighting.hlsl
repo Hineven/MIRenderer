@@ -1215,7 +1215,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.y);
 
 	// Offset the hit position to avoid self-intersection
-	if(ShadeMaterial.bIsSurface) ShadePosition += ShadeNormal * 2e-5f;
+    float ShadePositionOffsetLength = max(2e-5f, dot(abs(ShadePosition), 1.xxx) * 1e-5f);
+	if(ShadeMaterial.bIsSurface) ShadePosition += ShadeNormal * ShadePositionOffsetLength;
 
     Random R = MakeRandom(
         // Make random numbers consistent when freezing update ray seeds.
@@ -1254,6 +1255,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	float TransmittanceRayOcclusionThreshold = 0;
 	bool bValidRay = ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0;
     float3 ShadedRadiance = 0.f;
+    const float OcclusionEpsilon = 2e-3f; // 25.10.19: a too small value can cause false positives for shadow rays due to precision issues
 	if(bValidRay) {
 		// Calculate the real sample contribution. (cosine premultiplied)
 		ShadedRadiance = SumResampleWeights3 / (NumValidSamples * LightGridLightListCdf);
@@ -1261,8 +1263,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 		TransmittanceRayDirection = normalize(ReservedSample.Position - ShadePosition);
 		TransmittanceRayOcclusionThreshold = length(ReservedSample.Position - ShadePosition);
         // Avoid self-intersection
-        float CoordinateEpsilon = max(TransmittanceRayOcclusionThreshold, abs(dot(ShadePosition, 1.xxx))) * 1e-5f;
-        TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(1e-5f, CoordinateEpsilon), 0.f);
+        float CoordinateEpsilon = max(TransmittanceRayOcclusionThreshold, dot(abs(ShadePosition), 1.xxx)) * OcclusionEpsilon;
+        TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(OcclusionEpsilon, CoordinateEpsilon), 0.f);
 
 		// Account for shading
         ShadedRadiance *= EvaluateCachedMaterialBRDF(

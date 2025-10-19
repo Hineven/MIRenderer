@@ -35,6 +35,7 @@ void VisualizeWorldCache (uint2 DispatchID : SV_DispatchThreadID) {
         uint TileIndex = HashGrids_BucketTileIndexBuffer[HashGridSlot];
         if(IsValid(TileIndex)) {
             uint CellIndex  = HashGrids_GetCellIndex(TileIndex, Key.CellOffset);
+            HashGrids_TouchTile(TileIndex);
             Radiance = HashGrids_GetFilteredRadiance(CellIndex).xyz;
             bRadianceFound = true;
         }

@@ -22,7 +22,7 @@ MI_NAMESPACE_BEGIN
 static CVar<float> CVar_ShadowRayLengthMultiplier(
     "r.lightgrid.shadow_ray_length_multiplier",
     "Multiplier for the shadow ray length for direct lighting occlusion tests.",
-    0.995f
+    0.998f
 );
 
 
