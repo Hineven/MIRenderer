@@ -33,14 +33,14 @@ RWStructuredBuffer<uint>  LightGrid_ListActiveLightListIndexBuffer;
 RWStructuredBuffer<uint> LightGrid_GridLightListOffsetBuffer;
 RWStructuredBuffer<float> LightGrid_GridLightListCdfBuffer;
 RWStructuredBuffer<uint> LightGrid_GridLightListLengthBuffer;
-// Record the combination of light encodings that successfully illuminated geometries in the grid
-// 64 bits per grid cell per frame
-RWStructuredBuffer<uint2> LightGrid_BloomFilterBuffer;
 // Record the importance of environment light grids (2x2x6 cubic tiles)
 // (low end) | +x | -x | +y | -y | +z | -z | (high end) 
 // for each individual face with axis t, p = t+1, q = t+2, the 4 bits are arranged as:
 // 0: (p+, q+), 1: (p+, q-), 2: (p-, q+), 3: (p-, q-) 
 RWStructuredBuffer<uint> LightGrid_EnvironmentVisibilityHistoryBuffer;
+// Record the combination of light encodings that successfully illuminated geometries in the grid
+// 64 bits per grid cell per frame
+RWStructuredBuffer<uint2> LightGrid_BloomFilterBuffer;
 
 RWStructuredBuffer<uint2> LightGrid_NextBloomFilterBuffer;
 RWStructuredBuffer<uint>  LightGrid_NextEnvironmentVisibilityBuffer;

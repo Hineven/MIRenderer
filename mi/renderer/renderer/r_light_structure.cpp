@@ -9,6 +9,7 @@
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
 #include "../shaders/shared/SharedLight.hlsl"
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
@@ -45,6 +46,26 @@ static CVar<bool> CVar_DebugFreezeFrameSeed(
     false
 );
 
+bool LightStructurePersistentData::MakeSureExists(RendererView *view, RenderGraphBuilder &builder) {
+    bool flag = false;
+    auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
+    if (!environment_visibility_history_buffer) {
+        environment_visibility_history_buffer = builder.CreateBuffer<uint32_t>(num_light_grids * kLightGridNumHistories);
+        environment_visibility_history_buffer->SetName("LightGrid_EnvironmentVisibilityHistoryBuffer");
+        environment_visibility_history_buffer->SetExport();
+        flag = true;
+    }
+    if (!bloom_filter_buffer) {
+        bloom_filter_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids * kLightGridNumHistories);
+        bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
+        bloom_filter_buffer->SetExport();
+        flag = true;
+    }
+    need_reset_ |= flag;
+    return flag;
+}
+
+
 void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     auto & r = Renderer::Get();
     auto max_num_lights = r.GetDeviceAllocator()->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(RawLight);
@@ -68,10 +89,10 @@ void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     grid_light_list_length_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
     grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
 
-    environment_visibility_history_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries * kLightGridNumHistories);
-    environment_visibility_history_buffer->SetName("LightGrid_EnvironmentVisibilityHistoryBuffer");
-    bloom_filter_buffer = builder.CreateBuffer<glm::uvec2>(max_num_light_grid_entries * kLightGridNumHistories);
-    bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
+    next_bloom_filter_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids);
+    next_bloom_filter_buffer->SetName("LightGrid_NextBloomFilterBuffer");
+    next_environment_visibility_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
+    next_environment_visibility_buffer->SetName("LightGrid_NextEnvironmentVisibilityBuffer");
 }
 
 
@@ -109,5 +130,26 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     auto num_env_mips = view->scene_->GetSkyTexture()->GetMipLevels();
     UB->EnvironmentLightHemisphereSampleLOD = std::max(float(num_env_mips) - 1.75f, 0.f);
 }
+
+std::vector<std::string> GetLightStructureShaderMacros () {
+    return {
+        "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
+        "NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
+    };
+}
+
+void Renderer::Render_TryResetLightStructureHistory(RendererView *view, RenderGraphBuilder &builder) {
+    // Clear light structure history if needed
+    auto persistent = view->persistent_data_->light_structure_persistent_data_;
+    if (persistent->need_reset_) {
+        auto & lib = RDGShaderLibrary::Get();
+        auto shader = lib.GetShader<ClearLightStructureHistoryShader>(ini);
+        auto num_groups = DivideAndRoundUp(num_light_grids, kThreadGroupSize);
+        Helpers::AddComputePass<ClearLightStructureHistoryShader>(
+            builder, shader, params, num_groups
+        );
+    }
+}
+
 
 MI_NAMESPACE_END

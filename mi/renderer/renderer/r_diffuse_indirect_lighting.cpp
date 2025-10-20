@@ -208,7 +208,11 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
 
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
 
@@ -515,7 +519,7 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
     return flag;
 }
 
-void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, RenderGraphBuilder & builder) {
+void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
     RDGSectionGuard section(builder, "Render_ComputeIndirectDiffuseLighting");
 
     auto ini = RDGShaderInitializationInfo {};

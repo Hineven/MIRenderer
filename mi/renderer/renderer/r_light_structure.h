@@ -7,6 +7,9 @@
 #ifndef MI_R_LIGHT_STRUCTURE_H
 #define MI_R_LIGHT_STRUCTURE_H
 #include <renderer/mi_renderer_view.h>
+
+#include "r_persistent.h"
+
 MI_NAMESPACE_BEGIN
 
 extern CVar<int> CVar_MaxNumGridLights;
@@ -35,6 +38,19 @@ struct LightStructureUB {
     uint32_t Unused;
 };
 
+struct LightStructurePersistentData : RefCounted<> {
+    TRef<RDGBuffer> environment_visibility_history_buffer;
+    TRef<RDGBuffer> bloom_filter_buffer;
+
+    // If the buffers need to be reset to initial state (possibly upon first start or buffer
+    // reallocation)
+    bool need_reset_ {true};
+
+    bool MakeSureExists(
+        RendererView * view, RenderGraphBuilder & builder
+    );
+};
+
 struct LightStructureData : RefCounted<> {
     TRef<RDGBuffer> precomputed_active_light_buffer;
     TRef<RDGBuffer> active_light_list_count;
@@ -46,8 +62,8 @@ struct LightStructureData : RefCounted<> {
     TRef<RDGBuffer> grid_light_list_cdf_buffer;
     TRef<RDGBuffer> grid_light_list_length_buffer;
 
-    TRef<RDGBuffer> environment_visibility_history_buffer;
-    TRef<RDGBuffer> bloom_filter_buffer;
+    TRef<RDGBuffer> next_bloom_filter_buffer;
+    TRef<RDGBuffer> next_environment_visibility_buffer;
 
     void Allocate(
         RenderGraphBuilder & builder
@@ -82,15 +98,25 @@ void FillParametersForLightStructure (RendererView * view, T * params) {
     if constexpr(requires{params->LightGrid_GridLightListLengthBuffer;}) {
         params->LightGrid_GridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
     }
+    auto persistent = view->persistent_data_->light_structure_persistent_data_;
     if constexpr(requires{params->LightGrid_EnvironmentVisibilityHistoryBuffer;}) {
-        params->LightGrid_EnvironmentVisibilityHistoryBuffer = ls->environment_visibility_history_buffer.Raw();
+        params->LightGrid_EnvironmentVisibilityHistoryBuffer = persistent->environment_visibility_history_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_BloomFilterBuffer;}) {
-        params->LightGrid_BloomFilterBuffer = ls->bloom_filter_buffer.Raw();
+        params->LightGrid_BloomFilterBuffer = persistent->bloom_filter_buffer.Raw();
+    }
+
+    if constexpr(requires{params->LightGrid_NextBloomFilterBuffer;}) {
+        params->LightGrid_NextBloomFilterBuffer = ls->next_bloom_filter_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_NextEnvironmentVisibilityBuffer;}) {
+        params->LightGrid_NextEnvironmentVisibilityBuffer = ls->next_environment_visibility_buffer.Raw();
     }
 }
 
 void FillUniformBufferForLightStructure (RendererView * view, LightStructureUB * UB) ;
+
+std::vector<std::string> GetLightStructureShaderMacros () ;
 
 MI_NAMESPACE_END
 

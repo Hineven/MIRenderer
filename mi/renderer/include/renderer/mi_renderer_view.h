@@ -195,6 +195,7 @@ struct RendererView {
 
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
+    void MakeSureLightStructurePersistentDataExists (RenderGraphBuilder & builder);
     void MakeSureHashGridPersistentDataExists (RenderGraphBuilder & builder);
 };
 

@@ -287,19 +287,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
-    // Pre-allocate world radiance cache buffers that may be used among multiple lighting stages
-    if (!view->world_cache_) {
-        view->world_cache_ = new WorldRadianceCacheData();
-    }
-    view->world_cache_->Allocate(builder);
+    // Pre-allocate buffers that may be used among multiple lighting stages
     if (!view->light_structure_) {
         view->light_structure_ = new LightStructureData();
     }
     view->light_structure_->Allocate(builder);
-    // Pre-allocate view persistent data
+    if (!view->world_cache_) {
+        view->world_cache_ = new WorldRadianceCacheData();
+    }
+    view->world_cache_->Allocate(builder);
+
+    // Pre-allocate shared view persistent data among multiple lighting stages
+    view->MakeSureLightStructurePersistentDataExists(builder);
     view->MakeSureHashGridPersistentDataExists(builder);
 
     // Ready for rendering
+
+    // Try reset light structure history if needed
+    Render_TryResetLightStructureHistory(view, builder);
 
     // Draw the sky first.
     Render_DrawSky(view, builder);
@@ -307,7 +312,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Clear G buffers
     builder.AddPass("ClearBuffers", {},
         [view]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        // queue.ClearTexture(view->G_depth_->GetRHI(), {});
         queue.ClearTexture(view->G_normal_->GetRHI(), {});
         queue.ClearTexture(view->G_albedo_->GetRHI(), {});
         queue.ClearTexture(view->G_metallic_roughness_->GetRHI(), {});
@@ -315,7 +319,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         queue.ClearTexture(view->G_flags_->GetRHI(), {});
         queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
         queue.ClearTexture(view->shadow_map_moments_->GetRHI(), {});
-    })//->AddTextureH(view->G_depth_.Raw(), RDGTextureUsageType::kTransferWrite)
+    })
     ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
@@ -333,14 +337,22 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
 
+    // HiZ
     Render_ComputeHiZBuffer(view, builder);
 
-    Render_ComputeDirectDiffuseLighting(view, builder);
+    // Diffuse direct
+    Render_ComputeDiffuseDirectLighting(view, builder);
 
-    Render_ComputeIndirectDiffuseLighting(view, builder);
+    // Diffuse Indirect
+    Render_ComputeDiffuseIndirectLighting(view, builder);
 
+    // Stage light structure history
+    Render_UpdateLightStructureHistory(view, builder);
+
+    // Denoising
     Render_DenoiseLighting(view, builder);
 
+    // Final composition
     Render_LightingComposition(view, builder);
 
     Render_DebugView(view, builder);

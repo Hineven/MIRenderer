@@ -67,6 +67,8 @@ struct HashGridPersistentData : RefCounted<> {
     TRef<RDGBuffer> active_tile_count;
     TRef<RDGBuffer> active_tile_list_buffer;
 
+    // If the buffers need to be reset to inital state (possibly upon first start or buffer
+    // reallocation)
     bool need_reset_ {true};
 
     bool MakeSureExists(

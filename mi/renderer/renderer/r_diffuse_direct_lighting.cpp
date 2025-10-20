@@ -80,7 +80,11 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
@@ -199,15 +203,6 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(RenderDiffuseDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderDiffuseDirectLighting");
 
-static RDGShaderInitializationInfo GetDirectLightingShaderInitializationInfo() {
-    RDGShaderInitializationInfo ini {};
-    ini.optional_macros = {
-        "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
-        "NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
-    };
-    return ini;
-}
-
 BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
@@ -226,7 +221,11 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleColorAndLinearDepth)
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleTransmittanceAndPdf)
@@ -288,7 +287,7 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     RenderVolumeDirectLightingShader,
     "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderVolumeDirectLighting");
 
-void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGraphBuilder &builder) {
+void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
     RDGSectionGuard section(builder, "Render_ComputeDirectDiffuseLighting");
 
     auto & lib = RDGShaderLibrary::Get();
@@ -415,7 +414,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         params->Debug = view->debug_common_params_;
     }
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
-    // 1. Clear counters
+    // Clear counters
     {
         auto shader = lib.GetShader<ClearLightGridShader>(ini);
         auto num_groups = DivideAndRoundUp(num_light_grids, kThreadGroupSize);
@@ -423,7 +422,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
             builder, shader, params, num_groups
         );
     }
-    // 2. Precompute lights
+    // Precompute lights
     {
         auto shader = lib.GetShader<PrecomputeLightsShader>(ini);
         auto num_groups = DivideAndRoundUp(max_num_lights, kThreadGroupSize);

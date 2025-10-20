@@ -81,10 +81,20 @@ protected:
     void Render_ComputeHiZBuffer (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_ComputeDirectDiffuseLighting (
+
+    // Reset light structure history (when a reset is needed)
+    void Render_TryResetLightStructureHistory (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_ComputeIndirectDiffuseLighting (
+    // Update light structure history for temporal reuse, usually at the end of frames
+    void Render_UpdateLightStructureHistory (
+        RendererView * view, RenderGraphBuilder & builder
+    );
+
+    void Render_ComputeDiffuseDirectLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_ComputeDiffuseIndirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
     void Render_ReuseHashGridCache ( // Called by Render_ComputeIndirectDiffuseLighting()
