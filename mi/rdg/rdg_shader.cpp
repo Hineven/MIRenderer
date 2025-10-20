@@ -386,7 +386,9 @@ std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderIniti
     for (const auto & extra_macro : ini.optional_macros) {
         extra_options.emplace_back("-D" + extra_macro);
     }
-    // And some preset macros based on shader type and other stuffs
+    // And some system macros based on shader type and other stuffs
+    // Renderer environment
+    extra_options.emplace_back("-DMI_RENDERER");
     // Shader class name
     extra_options.emplace_back(std::string("-D") + "MI_SHADER_" + class_registry_->name);
     // Shader type

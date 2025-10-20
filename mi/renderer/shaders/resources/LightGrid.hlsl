@@ -26,7 +26,8 @@ struct LightStructureUB {
     float4 LightGridCascadeMax[LIGHT_GRID_NUM_CASCADES];
     uint FrameIndex;
     uint MaxNumLights;
-    uint2 Unused;
+    float EnvironmentLightHemisphereSampleLOD;
+    uint Unused;
 };
 
 ConstantBuffer<LightStructureUB> LightStructure_UB;

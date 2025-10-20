@@ -21,6 +21,8 @@
 #include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
+
+// An ususally static 2D (array) texture resource.
 class Texture : public RefCounted<>, public NonMovable {
 public:
     void InitializeFromBinary (std::span<uint8_t> data);
@@ -45,6 +47,9 @@ public:
 
     FORCEINLINE uint32_t GetWidth () const { return width_; }
     FORCEINLINE uint32_t GetHeight () const { return height_; }
+    FORCEINLINE uint32_t GetMipLevels () const { return mip_levels_; }
+    FORCEINLINE uint32_t GetArrayLayers () const { return layers_; }
+    FORCEINLINE RHITextureType GetType () const { return type_; }
     FORCEINLINE PixelFormatType GetFormat () const { return format_; }
 
     FORCEINLINE RHIBindlessSlotKeeper<RHITexture> * GetBindlessSlot () const {
@@ -84,14 +89,16 @@ public:
     // to become available.
     void UpdateOnDevice_Async (RHICommandQueueGraphics & queue);
 
+    // Convert the texture to bindless. If update_slot_immediately is true,
+    // the bindless slot will be allocated and updated on device immediately.
     void ConvertToBindless (bool update_slot_immediately = true);
     void ReleaseBindlessSlot ();
 
-    FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height, uint32_t array_layers = 1) {
-        return TRef(new Texture(RHITextureType::k2D, format, width, height, array_layers));
+    FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height, uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        return TRef(new Texture(RHITextureType::k2D, format, width, height, mip_levels, array_layers));
     }
-    FORCEINLINE static TRef<Texture> Create (RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t array_layers = 1) {
-        return TRef(new Texture(type, format, width, height, array_layers));
+    FORCEINLINE static TRef<Texture> Create (RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        return TRef(new Texture(type, format, width, height, mip_levels, array_layers));
     }
 
     FORCEINLINE const std::string & GetName () const {
@@ -99,12 +106,15 @@ public:
     }
 
 protected:
-    Texture(RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t layers);
+    Texture(RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t mip_levels, uint32_t layers);
 
     std::string name_;
 
     RHITextureType type_ {};
-    uint32_t width_ {}, height_ {}, layers_ {};
+
+    uint32_t width_ {}, height_ {};
+    uint32_t mip_levels_ {}, layers_ {};
+
     PixelFormatType format_ {PixelFormatType::kUnknown};
     std::vector<uint8_t> data_;
 

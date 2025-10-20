@@ -12,6 +12,7 @@
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
+#include "resources/EnvironmentLightResource.hlsl"
 
 struct TraceRadianceRaysUB {
     uint Seed;
@@ -32,7 +33,6 @@ StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 
 Texture2D<float> G_Depth;
-TextureCube<float4> EnvironmentMap;
 
 StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;
@@ -114,7 +114,7 @@ void TraceRadianceRaysRaygen() {
 [shader("miss")]
 void TraceRadianceRaysMiss(inout RayPayload Payload: SV_RayPayload) {
     float3 RayDirection = WorldRayDirection();
-    float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+    float3 EnvironmentColor = EvaluateEnvironmentMap(-RayDirection);
     Payload.Radiance = EnvironmentColor;
 }
 

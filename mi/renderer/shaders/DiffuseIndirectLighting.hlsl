@@ -129,6 +129,7 @@ RWStructuredBuffer<uint>   RWShadePointTransmittanceRayDirectionBuffer;
 RWStructuredBuffer<float3> RWShadePointTransmittanceRayOriginBuffer;
 RWStructuredBuffer<uint>   RWShadePointTransmittanceRayStateBuffer;
 RWStructuredBuffer<float>  RWShadePointTransmittanceRayTMaxBuffer;
+RWStructuredBuffer<uint>   RWShadePointTransmittanceRaySampledLightIndexBuffer;
 StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
 
 RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
@@ -142,7 +143,6 @@ RWStructuredBuffer<uint> RWDebugTracedRayStates;
 
 Texture2D<float> G_Depth;
 Texture2D<float3> G_Normal;
-TextureCube<float4> EnvironmentMap;
 
 Texture2D<float> PreviousDepthTexture;
 Texture2D<float3> PreviousNormalTexture;
@@ -248,8 +248,14 @@ float RecoverWeight (uint V) {
     return float(V) / 131072.f;
 }
 
-#ifndef TILE_SIZE
-#define TILE_SIZE 8
+#ifndef MI_RENDERER
+    #ifndef TILE_SIZE
+    #define TILE_SIZE 8
+    #endif
+#else
+    #ifndef TILE_SIZE
+    #error "TILE_SIZE must be specified!"
+    #endif
 #endif
 
 #ifdef TILE_SIZE
@@ -261,8 +267,14 @@ float RecoverWeight (uint V) {
 #define TILE_TEXEL_COUNT (TILE_SIZE * TILE_SIZE)
 #define TILE_TEXEL_COUNT_L2 6
 
-#ifndef WAVE_SIZE
-#define WAVE_SIZE 32
+#ifndef MI_RENDERER
+    #ifndef WAVE_SIZE
+    #define WAVE_SIZE 32
+    #endif
+#else
+    #ifndef WAVE_SIZE
+    #error "WAVE_SIZE must be specified!"
+    #endif
 #endif
 
 #if TILE_TEXEL_COUNT % WAVE_SIZE != 0
@@ -1035,8 +1047,8 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
 
         float RayPdf = OctPdf;
         if(UB.ProbeUpdateRaysNoImportanceSampling) {
-            RayPdf = UniformSampleHemispherePdf();
-            RayLocalDirection = UniformSampleHemisphere(u2);
+            RayPdf = SampleHemisphereUniformPdf();
+            RayLocalDirection = SampleHemisphereUniform(u2);
             RayWorldDirection = normalize(Tangent * RayLocalDirection.x + Bitangent * RayLocalDirection.y + Normal * RayLocalDirection.z);
         }
         // 24.06.23: This must be checked otherwise there're precision issues
@@ -1162,7 +1174,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			// Note: sky radiance is regarded an indirect lighting source
 			// due to it's low frequency nature (sun excluded)
             // uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
-            float3 Radiance = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+            float3 Radiance = EvaluateEnvironmentMap(RayDirection);
             if(UB.NoEnvironmentLight != 0) Radiance = 0;
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
 		}
@@ -1210,9 +1222,10 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	float3 ShadeViewDirection = -UpdateRayDirection;
 	// Till now rays to be traced have identical indices with the probe update rays
 	// After this kernel, rays to be traced will be cleared and re-assigned shadow rays for DI calculation.
-	uint2 PackedHitResult = RWScreenProbeUpdateRayResultBuffer[UpdateRayIndex];
+	uint2 PackedHitResult  = RWScreenProbeUpdateRayResultBuffer[UpdateRayIndex];
 	float3 ShadeNormal     = UnpackNormal(PackedHitResult.x);
 	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.y);
+    CameraParameters C     = GetActiveCamera();
 
 	// Offset the hit position to avoid self-intersection
     float ShadePositionOffsetLength = max(2e-5f, dot(abs(ShadePosition), 1.xxx) * 1e-5f);
@@ -1229,7 +1242,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float  LightGridLightListCdf = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         ShadePosition, ShadeNormal, ShadeViewDirection,
-        ShadeMaterial.bIsSurface, false, 
+        ShadeMaterial.bIsSurface, false, true, 
         R, SumResampleWeights3, NumValidSamples,
         LightGridLightListCdf
     );
@@ -1260,12 +1273,17 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 		// Calculate the real sample contribution. (cosine premultiplied)
 		ShadedRadiance = SumResampleWeights3 / (NumValidSamples * LightGridLightListCdf);
 
-		TransmittanceRayDirection = normalize(ReservedSample.Position - ShadePosition);
-		TransmittanceRayOcclusionThreshold = length(ReservedSample.Position - ShadePosition);
-        // Avoid self-intersection
-        float CoordinateEpsilon = max(TransmittanceRayOcclusionThreshold, dot(abs(ShadePosition), 1.xxx)) * OcclusionEpsilon;
-        TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(OcclusionEpsilon, CoordinateEpsilon), 0.f);
-
+        if(ReservedSample.bIsEnvironmentLightSample) {
+            // Environment light sample, trace to TMax
+            TransmittanceRayDirection = ReservedSample.Position;
+            TransmittanceRayOcclusionThreshold = C.FarPlane; // Far plane
+        } else {
+            TransmittanceRayDirection = normalize(ReservedSample.Position - ShadePosition);
+            TransmittanceRayOcclusionThreshold = length(ReservedSample.Position - ShadePosition);
+            // Avoid self-intersection
+            float CoordinateEpsilon = max(TransmittanceRayOcclusionThreshold, dot(abs(ShadePosition), 1.xxx)) * OcclusionEpsilon;
+            TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(OcclusionEpsilon, CoordinateEpsilon), 0.f);
+        }
 		// Account for shading
         ShadedRadiance *= EvaluateCachedMaterialBRDF(
             ShadeMaterial, ShadeNormal, ShadeViewDirection,
@@ -1293,6 +1311,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
         RWShadePointTransmittanceRayTMaxBuffer[TransmittanceRayIndex]      = TransmittanceRayOcclusionThreshold;
         // Store the sample contribution for direct illumination (if it passed the visibility test)
         RWShadePointTransmittanceRayContributionBuffer[TransmittanceRayIndex] = PackFp16x4Safe(float4(ShadedRadiance, 1.f));
+        // Keep lighting indirection
+        RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex] = ReservedSample.LightIndex;
     }
     // Trace results are used to shade the hit of a probe update ray (shade point). Store indirections
     RWShadePointToTransmittanceRayIndexBuffer[ShadePointIndex] = TransmittanceRayIndex;
@@ -1322,6 +1342,22 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
         // If the ray hits a solit surface before reaching the light, it is occluded.
         // Otherwise just multiply the estimated ray transmittance.
 		Radiance *= bHit ? 0 : Transmittance;
+        float3 WorldPosition = RWShadePointTransmittanceRayOriginBuffer[TransmittanceRayIndex];
+        float3 RayDirection  = UnpackNormal(RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex]);
+        if(!bHit) {
+            // Update light grid visibility for the sampled light
+            uint SampledLightIndex = RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex];
+            if(IsInvalid(SampledLightIndex)) {
+                // Environment light
+                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayDirection);
+            } else {
+                // Light grid area light
+                LightGrid_UpdateVisibilityForAreaLight(
+                    WorldPosition, 
+                    SampledLightIndex
+                );
+            }
+        }
 	}
 
 	// Accumulate the radiance to the hash grid cell

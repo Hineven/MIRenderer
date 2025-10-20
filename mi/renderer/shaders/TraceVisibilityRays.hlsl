@@ -32,7 +32,6 @@ StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 Texture2D<float> G_Depth;
-TextureCube<float4> EnvironmentMap;
 
 StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;

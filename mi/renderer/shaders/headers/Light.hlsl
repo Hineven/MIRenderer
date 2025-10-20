@@ -26,6 +26,7 @@ PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
         P.Normal = INVALID_UINT;
     }
     P.Intensity = L.Intensity;
+    P.Hash = L.Hash;
     return P;
 }
 
@@ -45,6 +46,7 @@ PrecomputedLight UnpackPrecomputedLight(PackedPrecomputedLight P) {
         L.Type = asuint(P.V2.x);
     }
     L.Intensity = P.Intensity;
+    L.Hash = P.Hash;
     return L;
 }
 
@@ -59,7 +61,7 @@ struct EvaluatedAreaLight {
 // Use an extra factor on the estimation of light contribution.
 #define LIGHT_PROJECTION_ESTIMATION
 
-// A coarse estimtion used for light -> point contribution
+// A coarse estimtion used for light -> point contribution (incoming irradiance)
 float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal, bool bVolume = false) {
     if(bVolume) {
         // Position is from a sample of volume scattering media. Normal is the view direction.
@@ -158,8 +160,14 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
 #endif
 
         float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
-        return L.Intensity * SolidAngle * CosineFactor / PI;
+        return L.Intensity * SolidAngle * CosineFactor;
     }
+}
+
+// A coarse estimation used for light -> hemisphere contribution (incoming irradiance)
+float EstimateEnvironmentLightContribution(float3 AvgRadiance, float3 WorldPosition, float3 WorldNormal) {
+    // Integral of cos(theta) over hemisphere = PI. Thus we easily estimate the irradiance by multiplying PI.
+    return AvgRadiance * PI;
 }
 
 #undef LIGHT_PROJECTION_ESTIMATION

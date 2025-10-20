@@ -21,7 +21,7 @@
 #include "renderer/mi_texture.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<float> CVar_ProbeSearchSize(
+static CVar<float> CVar_ProbeSearchSize(
     "r.diffuse_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     2.f
@@ -245,7 +245,8 @@ public:
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "TILE_SIZE=" + std::to_string(kTileSize)
+            "TILE_SIZE=" + std::to_string(kTileSize),
+            "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
         };
     }
     using RDGShader::RDGShader;

@@ -26,7 +26,6 @@ class RenderGraphBuilder;
 
 class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
-    // friend class DeviceScene;
     virtual ~Renderable();
     FORCEINLINE bool IsVisible() const { return visible_; }
     FORCEINLINE void SetVisible(bool visible) { visible_ = visible; }
@@ -39,15 +38,17 @@ public:
 
     // Override the functions if the renderable can be ray-traced.
     virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
-    constexpr static uint32_t kInvalidRenderableInde = 0xFFFFFFFFu;
+    constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
     // Note that the renderable index is at most 24 bits
-    virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableInde; }
+    virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableIndex; }
 
     virtual bool IsEmpty () const ;
 
     FORCEINLINE bool IsTransformDirty () const { return transform_dirty_; }
     FORCEINLINE void SetTransformDirty (bool dirty) { transform_dirty_ = dirty; }
     FORCEINLINE RenderableType GetType() const { return type_; }
+
+    // Called for dirty renderables before rendering each frame by the renderer.
     virtual void Update (RendererView * view, RenderGraphBuilder& builder) = 0;
 
     FORCEINLINE void SetTransform (const Transform& transform) {
@@ -95,7 +96,7 @@ protected:
     uint32_t index_ {UINT32_MAX};
 
     // Axis-aligned bounding box of the renderable in object space, used for culling & bounds calculation
-    // Should be updated in Update() method.
+    // Should be updated in Update().
     AABB aabb_ {};
 
     // Invisible renderables wont be rendered.
@@ -107,7 +108,7 @@ protected:
     // Transform dirty means the transform has changed.
     bool transform_dirty_ {true};
 
-    // If the renderable is ray-traced. Ray traced renderbles must override GetBLAS() and GetInstanceCustomIndex() methods
+    // If the renderable is ray-traced. Ray traced renderbles must override GetBLAS() and GetInstanceCustomIndex().
     bool ray_traced_ {true};
 
     RenderableType type_ {RenderableType::kStaticMeshInstance};

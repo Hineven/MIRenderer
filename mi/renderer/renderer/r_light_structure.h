@@ -15,6 +15,7 @@ extern CVar<int> CVar_MaxNumLightGridEntries;
 
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
+static constexpr uint32_t kLightGridNumHistories = 4; // Number of history frames for visibility caching
 
 // Must be consistent with the struct in LightGrid.hlsl
 struct LightStructureUB {
@@ -30,7 +31,8 @@ struct LightStructureUB {
     glm::vec4 LightGridCascadeMax[kLightGridNumCascades];
     uint32_t FrameIndex;
     uint32_t MaxNumLights;
-    glm::uvec2 Unused;
+    float    EnvironmentLightHemisphereSampleLOD;
+    uint32_t Unused;
 };
 
 struct LightStructureData : RefCounted<> {
@@ -43,6 +45,8 @@ struct LightStructureData : RefCounted<> {
     TRef<RDGBuffer> grid_light_list_offset_buffer;
     TRef<RDGBuffer> grid_light_list_cdf_buffer;
     TRef<RDGBuffer> grid_light_list_length_buffer;
+
+    TRef<RDGBuffer> environment_visibility_history_buffer;
     TRef<RDGBuffer> bloom_filter_buffer;
 
     void Allocate(
@@ -77,6 +81,9 @@ void FillParametersForLightStructure (RendererView * view, T * params) {
     }
     if constexpr(requires{params->LightGrid_GridLightListLengthBuffer;}) {
         params->LightGrid_GridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_EnvironmentVisibilityHistoryBuffer;}) {
+        params->LightGrid_EnvironmentVisibilityHistoryBuffer = ls->environment_visibility_history_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_BloomFilterBuffer;}) {
         params->LightGrid_BloomFilterBuffer = ls->bloom_filter_buffer.Raw();

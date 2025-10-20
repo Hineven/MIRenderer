@@ -9,6 +9,7 @@
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
+#include "resources/EnvironmentLightResource.hlsl"
 
 RaytracingAccelerationStructure TLAS;
 
@@ -23,7 +24,6 @@ StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutput;
-TextureCube<float4> EnvironmentMap;
 SamplerState LinearSampler;
 
 struct RayPayload {
@@ -74,7 +74,7 @@ void VisualizeRayTracingSceneRaygen() {
 [shader("miss")]
 void VisualizeRayTracingSceneMiss(inout RayPayload Payload: SV_RayPayload) {
     float3 RayDirection = WorldRayDirection();
-    float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearSampler, -RayDirection, 0).xyz;
+    float3 EnvironmentColor = EvaluateEnvironmentMap(-RayDirection);
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 

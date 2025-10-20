@@ -29,7 +29,7 @@ static CVar<float> CVar_ShadowRayLengthMultiplier(
 static CVar<bool> CVar_DebugOutputTransmittanceRaysForMesh(
     "r.direct_lighting.debug.output_transmittance_rays_for_mesh",
     "Write the transmittance of shadow rays to the output for the specified mesh index. 0 to disable.",
-    0
+    false
 );
 
 static CVar<bool> CVar_DebugFreezeFrameSeed(
@@ -125,88 +125,70 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
-class ClearLightGridShader : public RDGShader {
+class DiffuseDirectLightingShader : public RDGShader {
 public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
             "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+            "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
         };
     }
+    using RDGShader::RDGShader;
+};
+
+class ClearLightGridShader : public DiffuseDirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearLightGridShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ClearLightGrid");
 
-class PrecomputeLightsShader : public RDGShader {
+class PrecomputeLightsShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrecomputeLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "PrecomputeLights");
 
-class InjectLightsShader : public RDGShader {
+class InjectLightsShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "InjectLights");
 
-class SpawnLightSamplesShader : public RDGShader {
+class SpawnLightSamplesShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(DiffuseDirectLightingShader)
     constexpr static uint32_t kTileSize = 8;
     static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+        auto ret = DiffuseDirectLightingShader::GetShaderDefaultMacros();
+        ret.push_back(
             "TILE_SIZE=" + std::to_string(kTileSize)
-        };
+        );
+        return ret;
     }
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnLightSamplesShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "SpawnLightSamples");
 
-class ScreenSpaceTraceForDirectLightingShader : public RDGShader {
+class ScreenSpaceTraceForDirectLightingShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScreenSpaceTraceForDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ScreenSpaceTraceForDirectLighting");
 
-class RenderDiffuseDirectLightingShader : public RDGShader {
+class RenderDiffuseDirectLightingShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {
@@ -278,17 +260,17 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
 
-class VolumePrimitivesSpawnLightSamplesShader : public RDGShader {
+class VolumePrimitivesSpawnLightSamplesShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(DiffuseDirectLightingShader)
     constexpr static uint32_t kTileSize = 8;
     static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+        auto ret = DiffuseDirectLightingShader::GetShaderDefaultMacros();
+        ret.push_back(
             "TILE_SIZE=" + std::to_string(kTileSize)
-        };
+        );
+        return ret;
     }
 };
 
@@ -296,16 +278,10 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     VolumePrimitivesSpawnLightSamplesShader,
     "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "VolumePrimitivesSpawnLightSamples");
 
-class RenderVolumeDirectLightingShader : public RDGShader {
+class RenderVolumeDirectLightingShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(

@@ -10,6 +10,7 @@
 #include "renderer/mi_resource_allocator.h"
 #include "../shaders/shared/SharedLight.hlsl"
 #include "renderer/mi_scene.h"
+#include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
 CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
@@ -66,8 +67,10 @@ void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     grid_light_list_cdf_buffer->SetName("LightGrid_GridLightListCdfBuffer");
     grid_light_list_length_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
     grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
-    // 4 Histories
-    bloom_filter_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries * 4);
+
+    environment_visibility_history_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries * kLightGridNumHistories);
+    environment_visibility_history_buffer->SetName("LightGrid_EnvironmentVisibilityHistoryBuffer");
+    bloom_filter_buffer = builder.CreateBuffer<glm::uvec2>(max_num_light_grid_entries * kLightGridNumHistories);
     bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
 }
 
@@ -102,6 +105,9 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     if (CVar_DebugFreezeFrameSeed.Get()) UB->FrameIndex = 0;
     else UB->FrameIndex = view->persistent_data_->frame_index_;
     UB->MaxNumLights = (uint32_t)max_num_lights;
+
+    auto num_env_mips = view->scene_->GetSkyTexture()->GetMipLevels();
+    UB->EnvironmentLightHemisphereSampleLOD = std::max(float(num_env_mips) - 1.75f, 0.f);
 }
 
 MI_NAMESPACE_END

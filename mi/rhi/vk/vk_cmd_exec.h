@@ -32,6 +32,7 @@ public:
     void RHICopyBufferToTexture(RHICommandQueueBase * cmd, RHICommandCopyBufferToTexture * copy_buffer_to_texture) override ;
     void RHICopyTextureToBuffer(RHICommandQueueBase * cmd, RHICommandCopyTextureToBuffer * copy_texture_to_buffer) override ;
     void RHICopyTexture(RHICommandQueueBase * cmd, RHICommandCopyTexture * copy_texture) override ;
+    void RHIBlitTexture(RHICommandQueueBase *buffer, RHICommandBlitTexture *cmd) override;
     void RHIBeginRendering (RHICommandQueueBase * cmd, RHICommandBeginRendering * begin_rendering) override ;
     void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) override ;
     void RHIDraw(RHICommandQueueBase * cmd, RHICommandDraw * draw_primitive) override ;

@@ -162,12 +162,12 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
     auto depth = copy_texture->depth_ ? copy_texture->depth_ : src_texture->GetMipDepth(copy_texture->src_mip_);
     auto region = vk::ImageCopy2()
         .setSrcSubresource(vk::ImageSubresourceLayers()
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setAspectMask(src_texture->GetImageAspect())
             .setMipLevel(copy_texture->src_mip_)
             .setBaseArrayLayer(copy_texture->src_base_layer_)
             .setLayerCount(copy_texture->src_layer_count_))
         .setDstSubresource(vk::ImageSubresourceLayers()
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setAspectMask(dst_texture->GetImageAspect())
             .setMipLevel(copy_texture->dst_mip_)
             .setBaseArrayLayer(copy_texture->dst_base_layer_)
             .setLayerCount(copy_texture->dst_layer_count_))
@@ -184,6 +184,48 @@ void VulkanCommandExecutor::RHICopyTexture(RHICommandQueueBase *queue, RHIComman
     CheckImageLayout(dst_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
     cmd.copyImage2(copy_info);
 }
+
+void VulkanCommandExecutor::RHIBlitTexture(RHICommandQueueBase *queue, RHICommandBlitTexture *blit_texture) {
+    CHECK_RHI_THREAD();
+    auto & cmd = state_chains_[(uint32_t)queue->GetCommandQueueType()].Current().cmd;
+    auto src_texture = static_cast<VulkanTexture*>(blit_texture->src_);
+    auto dst_texture = static_cast<VulkanTexture*>(blit_texture->dst_);
+    // auto width = blit_texture->width_ ? blit_texture->width_ : src_texture->GetMipWidth(blit_texture->src_mip_);
+    // auto height = blit_texture->height_ ? blit_texture->height_ : src_texture->GetMipHeight(blit_texture->src_mip_);
+    // auto depth = blit_texture->depth_ ? blit_texture->depth_ : src_texture->GetMipDepth(blit_texture->src_mip_);
+    std::array src_offsets = {
+        vk::Offset3D{blit_texture->src_x_, blit_texture->src_y_, blit_texture->src_z_},
+        vk::Offset3D{blit_texture->src_end_x_, blit_texture->src_end_y_, blit_texture->src_end_z_}
+    };
+    std::array dst_offsets = {
+        vk::Offset3D{blit_texture->dst_x_, blit_texture->dst_y_, blit_texture->dst_z_},
+        vk::Offset3D{blit_texture->dst_end_x_, blit_texture->dst_end_y_, blit_texture->dst_end_z_}
+    };
+    auto region = vk::ImageBlit2()
+        .setSrcSubresource(vk::ImageSubresourceLayers()
+            .setAspectMask(src_texture->GetImageAspect())
+            .setMipLevel(blit_texture->src_mip_)
+            .setBaseArrayLayer(blit_texture->src_base_layer_)
+            .setLayerCount(blit_texture->src_layer_count_))
+        .setDstSubresource(vk::ImageSubresourceLayers()
+            .setAspectMask(dst_texture->GetImageAspect())
+            .setMipLevel(blit_texture->dst_mip_)
+            .setBaseArrayLayer(blit_texture->dst_base_layer_)
+            .setLayerCount(blit_texture->dst_layer_count_))
+        .setSrcOffsets(src_offsets)
+        .setDstOffsets(dst_offsets);
+    auto & blit_info = vk::BlitImageInfo2()
+            .setSrcImage(src_texture->GetImage())
+            .setDstImage(dst_texture->GetImage())
+            .setSrcImageLayout(src_texture->GetImageLayout())
+            .setDstImageLayout(dst_texture->GetImageLayout())
+            .setRegions(region)
+            .setFilter(GetVulkanFilter(blit_texture->filter_));
+    CheckImageLayout(src_texture, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral);
+    CheckImageLayout(dst_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
+    cmd.blitImage2(blit_info);
+}
+
 
 void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_unused]] RHICommandBeginRendering *begin_rendering) {
     CHECK_RHI_THREAD();

@@ -20,14 +20,8 @@
 #include "resources/LightEvaluation.hlsl"
 #include "resources/LightGridSampling.hlsl"
 
-// Input macros
-#ifndef MAX_NUM_GRID_LIGHTS
-#define MAX_NUM_GRID_LIGHTS 32
-#endif
-
 RWStructuredBuffer<uint> RWRayToTraceCount;
 RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
-
 
 #ifndef TILE_SIZE
 // Defaults to a smaller tile size for better thread coherency
@@ -122,6 +116,7 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
         L.V1 = Evaluated.V1;
         L.V2 = Evaluated.V2;
         L.Normal = N;
+        L.Hash = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
         float Area = length(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0)) * 0.5f;
         L.Intensity = RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area;
         if (L.Intensity > 1e-5f) {
@@ -203,7 +198,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
         }
     }
     // Write to grid
-     LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
+    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
     LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();
@@ -227,6 +222,7 @@ Texture2D<float> G_DepthTexture;
 Texture2D<float4> G_NormalTexture;
 
 RWStructuredBuffer<float> RWShadowRayToTraceTMaxBuffer;
+RWStructuredBuffer<uint>  RWShadowRayToTraceSampledLightIndexBuffer;
 StructuredBuffer<float> ShadowRayToTraceTMaxBuffer;
 StructuredBuffer<float> ShadowRayToTraceTransmittanceBuffer;
 
@@ -267,8 +263,8 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float3 ViewDirection = normalize(C.Position - WorldPosition);
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, WorldNormal, ViewDirection,
-        true, true, R,
-        SumResampleWeights3, NumValidSamples,
+        true, true, false, 
+        R, SumResampleWeights3, NumValidSamples,
         LightGridLightListCdf
     );
     if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
@@ -296,6 +292,8 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         RWRayToTraceOriginScreenCoordBuffer[RayIndex] = PackUint2x16(PixelIndex);
         RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
         RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
+        // Keep sampled light index for visibility update
+        RWShadowRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
         
         RWDirectLightingRayIndexTexture[PixelIndex] = RayIndex;
     }
@@ -439,6 +437,14 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         float Transmittance = ShadowRayToTraceTransmittanceBuffer[RayIndex];
         // Not multiplied by BSDF (multiplied later in the final composition pass)
         RWDiffuseDirectLightingTexture[PixelIndex] = float4(Estimate * Transmittance, 1.f);
+        // Update grid visibility bloom filter
+        {
+            float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
+            float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+            float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
+            uint LightIndex = RWShadowRayToTraceSampledLightIndexBuffer[RayIndex];
+            LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+        }
     }
 #ifdef DEBUG_OUTPUT_TRACED_RAY
     if (all(PixelIndex == Debug.CursorScreenCoords)) {
@@ -497,6 +503,8 @@ RWStructuredBuffer<float> RWVolumeRayToTraceTMaxBuffer;
 
 RWStructuredBuffer<uint> RWVolumeRayToTracePixelIndexBuffer;
 
+RWStructuredBuffer<uint> RWVolumeRayToTraceSampledLightIndexBuffer;
+
 // Trace results
 StructuredBuffer<float> VolumeRayToTraceTransmittanceBuffer;
 
@@ -531,7 +539,7 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
     float  LightGridLightListCdf = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, 0.xxx, ViewDirection,
-        false, true,
+        false, true, false,
         R, SumResampleWeights3, NumValidSamples, LightGridLightListCdf
     );
     if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
@@ -562,6 +570,8 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
         
         // Specify the pixel index for each transmittance ray
         RWVolumeRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
+        // Keep sampled light index for visibility update
+        RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
     }
     else {
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
@@ -605,5 +615,14 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         // Pdf canceled out with transmittance and scattering coefficient. No need to divide it here.
         // VolumeSampleTransmittance / VolumeSamplePdf;
         RWVolumeDirectLightingTexture[PixelIndex] = float4(Radiance, 1.f);
+
+        // Update grid visibility bloom filter
+        {
+            float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
+            float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+            float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
+            uint LightIndex = RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex];
+            LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+        }
     }
 }

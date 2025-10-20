@@ -18,6 +18,7 @@
 #include "stb_image.h"
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
+#include "rdg/rdg_helper.h"
 
 #define M_PI 3.14159265358979323846
 
@@ -54,9 +55,13 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         glm::dvec3(0.0, 0.0, -1.0), glm::dvec3(0.0, 0.0, 1.0), glm::dvec3(0.0, -1.0, 0.0),
         glm::dvec3(0.0, -1.0, 0.0)};
 
-    // 1k res
-    constexpr auto face_resolution = 1024;
-    auto env_cubemap = Texture::Create(RHITextureType::kCube, PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution, 6);
+    // defaults to 1k res
+    // TODO make this configurable
+    constexpr auto face_resolution = 1024u;
+    auto env_cubemap = Texture::Create(
+        RHITextureType::kCube, PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution,
+        6
+    );
     env_cubemap->SetName(name);
     env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
     env_cubemap->UpdateOnDevice();
@@ -66,9 +71,10 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         auto mapping_shader = RDGShaderLibrary::Get().GetShader<MappingShader>();
         MappingShader::ShaderParameters template_params;
         RenderGraphBuilder builder;
+        auto rdg_env_cubemap = builder.Import(env_cubemap->GetDeviceTexture());
         env_cubemap->UpdateOnDevice();
         template_params.InEnvironmentMap  = builder.Import(env_texture->GetDeviceTexture());
-        template_params.OutEnvironmentMap = builder.Import(env_cubemap->GetDeviceTexture());
+        template_params.OutEnvironmentMap = rdg_env_cubemap;
         template_params.OutEnvironmentMap.load_op = RHILoadOpType::kClear;
         template_params.InSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
@@ -90,6 +96,47 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
                 RDGCommandHelper::Draw<MappingShader>(queue, pass, mapping_shader, params, 3);
             });
         }
+        // Build mips
+        uint32_t num_mips = 1;
+        {
+            uint32_t dim = face_resolution;
+            while (dim > 1) {
+                dim /= 2;
+                num_mips++;
+            }
+        }
+        builder.AddPass(
+            "BlitCubeMap",
+            RDGPassFlagBits::kNeverCull,
+            [num_mips, rdg_env_cubemap](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                for (uint32_t mip = 1; mip < num_mips; ++mip) {
+                    uint32_t mip_width = std::max(face_resolution >> mip, 1u);
+                    uint32_t mip_height = std::max(face_resolution >> mip, 1u);
+                    for (uint32_t face = 0; face < 6; ++face) {
+                        queue.BlitTexture(
+                            rdg_env_cubemap->GetRHI(),
+                            rdg_env_cubemap->GetRHI(),
+                            0, 0, 0, mip_width, mip_height, 1,
+                            0, 0, 0, mip_width / 2, mip_height / 2, 1,
+                            mip - 1, mip,
+                            face, 1,
+                            face, 1
+                        );
+                    }
+                }
+                queue.TextureBarrier(
+                    rdg_env_cubemap->GetRHI(), RHITextureLayoutType::kShaderReadOnlyOptimal,
+                    RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kShaderRead, RHIGPUAccessFlagBits::kShaderRead
+                );
+                rdg_env_cubemap->Use(
+                    RHIPipelineStageFlagBits::kNone,
+                    RHIGPUAccessFlagBits::kNone,
+                    RHITextureLayoutType::kShaderReadOnlyOptimal
+                );
+            }
+        )->AddTexture(rdg_env_cubemap, RHITextureLayoutType::kGeneral, RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll);
+
         builder.Compile()->Execute(pool.Raw());
         // manual barrier
         RHI::Get().GetGraphicsCommandQueue().TextureBarrier(

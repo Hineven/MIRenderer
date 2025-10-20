@@ -111,7 +111,7 @@ bool GLTFLoader::LoadGLTF(
             gltf_material_pbr.base_color_factor[2], gltf_material_pbr.base_color_factor[3]}
         );
         material_ref->SetRoughness(gltf_material_pbr.roughness_factor);
-        // material.metallicity = gltf_material_pbr.metallic_factor;
+        material_ref->SetMetallic(gltf_material_pbr.metallic_factor);
         float const emissiveFactor = gltf_material.emissive_strength.emissive_strength;
         auto emissive = glm::vec3({
             gltf_material.emissive_factor[0], gltf_material.emissive_factor[1],
@@ -128,6 +128,8 @@ bool GLTFLoader::LoadGLTF(
         {
             material_ref->SetAlbedoTexture((*it).second.Raw());
         }
+        // FIXME: assume all materials are opaque for now
+        material_ref->SetOpaque(true);
         cgltf_texture const *metallicity_roughness_map_text = gltf_material_pbr.metallic_roughness_texture.texture;
         it = (metallicity_roughness_map_text != nullptr ? images.find(metallicity_roughness_map_text->basisu_image != nullptr ?
               metallicity_roughness_map_text->basisu_image : metallicity_roughness_map_text->image) : images.end());
