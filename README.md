@@ -1,5 +1,5 @@
-# MI
-A set of CG libraries.
+# MIRenderer
+一个用于研究实时光照的渲染框架和一些功能实现。
 ![cover](images/cover.png)
 ## 宇宙免责声明
 * 框架还在持续性修修补补之中，可能有bug，不要太信任此框架！
@@ -11,7 +11,6 @@ A set of CG libraries.
 安装vcpkg包管理器，并使用包管理器与`CMake`集成，然后安装以下依赖：
 * `glm`
 * `imgui[glfw-binding]`：必须安装`glfw-binding`特性！
-* `vulkan-memory-allocator-hpp`
 * `stb`
 * `gtest`
 * `cpptrace`
