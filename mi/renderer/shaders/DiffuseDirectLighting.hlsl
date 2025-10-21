@@ -151,6 +151,10 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     // TODO use multi level injection for a large number of lights
     uint NumActiveLights = LightGrid_ActiveLightListCount[0];
     uint NumGridLights = 0, WriteLocation = 0;
+    // Double buffering for unbiased selection of a group of lights
+    // Sampled: current selected, Candidate: new candidate group
+    // Initialy the candidate group is behind the sampled group, so naturally the sampled group
+    // is filled first.
     uint SampledOffset = 0, CandidateOffset = MAX_NUM_GRID_LIGHTS;
     Random R = MakeRandom(17419142u + DispatchID, LightStructure_UB.FrameIndex);
     float U = R.rand();
@@ -159,7 +163,8 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
         if (Weight > LightStructure_UB.LightInjectionIntensityThreshold) {
-            // Avoid bank conflicts
+            // Keep this light in the double buffer and accumulate weights depending on which
+            // group it is in
             SharedGridLightListIndices[WriteLocation * WAVE_SIZE + LocalID] = LightListIndex;
             if (SampledOffset <= WriteLocation && WriteLocation < SampledOffset + MAX_NUM_GRID_LIGHTS)
                 SumSampledWeights += Weight;
@@ -168,34 +173,38 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
             SumWeights += Weight;
             WriteLocation++, NumGridLights++;
             if (WriteLocation == CandidateOffset + MAX_NUM_GRID_LIGHTS) {
-                // Overflow, time to select which group to keep
+                // Candidate group is full, time to select which group to keep
                 float P = SumCandidateWeights / max(SumWeights, 1e-6f);
-                if (U < P) { // Replace the group with the candidate group
+                if (U < P) { 
+                    // Accept: replace the group with the candidate group
                     uint Temp = SampledOffset;
                     SampledOffset = CandidateOffset;
                     CandidateOffset = Temp;
                     SumSampledWeights = SumCandidateWeights;
                     U = U / P;
                 } else {
+                    // Drop the candidate group
                     U = (U - P) / (1.00001f - P);
                 }
                 // Reset candidate statistics
                 SumCandidateWeights = 0;
-                WriteLocation = SampledOffset;
+                // Replace write location to the start of the candidate group for refilling
+                WriteLocation = CandidateOffset;
             }
         }
     }
     uint NumSampledLights = min(NumGridLights, MAX_NUM_GRID_LIGHTS);
-    if (WriteLocation != CandidateOffset) {
-        // Final swapping
+    if (WriteLocation > CandidateOffset && WriteLocation < CandidateOffset + MAX_NUM_GRID_LIGHTS) {
+        // Final swapping if the sampled group is full and the candidate group is partially filled
         float P = SumCandidateWeights / (SumWeights + 1e-6f);
         if (U < P) { // Replace the group with the candidate group
+            // Replace the light count with the number of candidate lights
+            NumSampledLights = WriteLocation - CandidateOffset;
+            // Replace sampled offset with candidate offset
             uint Temp = SampledOffset;
             SampledOffset = CandidateOffset;
             CandidateOffset = Temp;
             SumSampledWeights = SumCandidateWeights;
-            // Also, replace the light count with the number of candidate lights
-            NumSampledLights = WriteLocation - CandidateOffset;
         }
     }
     // Write to grid
