@@ -83,7 +83,7 @@ protected:
     ) ;
 
     // Reset light structure history (when a reset is needed)
-    void Render_TryResetLightStructureHistory (
+    void Render_PrepareLightStructureHistory (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
     // Update light structure history for temporal reuse, usually at the end of frames

@@ -24,7 +24,6 @@ StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutput;
-SamplerState LinearSampler;
 
 struct RayPayload {
     float4 Color;
@@ -110,7 +109,7 @@ void VisualizeRayTracingSceneAnyHit(inout RayPayload Payload: SV_RayPayload,
         MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
         float4 ColorOpacity = float4(Material.Albedo, 1);
         if(IsValid(Material.AlbedoMap)) {
-            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearSampler, InterpolatedVertex.UV, 0);
+            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
         }
         if(ColorOpacity.a < 0.01f) {
             IgnoreHit();
@@ -152,7 +151,7 @@ void VisualizeRayTracingSceneClosestHit(inout RayPayload Payload: SV_RayPayload,
         MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
         float4 ColorOpacity = float4(Material.Albedo, 1);
         if(IsValid(Material.AlbedoMap)) {
-            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearSampler, InterpolatedVertex.UV, 0);
+            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
         }
         Payload.Color = ColorOpacity;
         Payload.bSurfaceHit = true;

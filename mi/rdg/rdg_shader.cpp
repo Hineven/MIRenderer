@@ -792,6 +792,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         mi_check(!class_registry_->any_hit_entry_.empty(),
             "Any hit shader should never be empty."
             "Supply an any hit shader to make the pipeline valid on non-opaque geometries.");
+
         {
             uint64_t ahit_hash = 0;
             std::wstring out_command;

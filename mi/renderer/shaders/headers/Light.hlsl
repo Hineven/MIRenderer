@@ -12,6 +12,21 @@
 #include "../resources/GeometryResources.hlsl"
 #include "../resources/MaterialResources.hlsl"
 
+uint GetLightHash32 (RawLight Light) {
+    return (Light.Data0.w & LIGHT_FLAG_HASH_MASK);
+}
+
+uint GetLightHash32 (AreaLight Light) {
+    return (Light.Flags & LIGHT_FLAG_HASH_MASK);
+}
+
+uint2 GetExpandedLightHash64(uint LightIndex, uint LightHash32) {
+    uint Shift = (LightIndex * 8) % 32;
+    uint HashLow = (LightHash32 << Shift);
+    uint HashHigh = (LightHash32 >> (32 - Shift));
+    return uint2(HashLow, HashHigh);
+}
+
 PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
     PackedPrecomputedLight P = (PackedPrecomputedLight)0;
     if(L.Type == PRECOMPUTED_LIGHT_TYPE_TRIANGLE) {
@@ -25,7 +40,7 @@ PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
         P.V2 = float3(asfloat(L.Type), 0, 0);
         P.Normal = INVALID_UINT;
     }
-    P.Intensity = L.Intensity;
+    P.PerceptualIntensity = L.PerceptualIntensity;
     P.Hash = L.Hash;
     return P;
 }
@@ -45,7 +60,7 @@ PrecomputedLight UnpackPrecomputedLight(PackedPrecomputedLight P) {
         L.Normal = INVALID_UINT;
         L.Type = asuint(P.V2.x);
     }
-    L.Intensity = P.Intensity;
+    L.PerceptualIntensity = P.PerceptualIntensity;
     L.Hash = P.Hash;
     return L;
 }
@@ -90,7 +105,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         // Take into account the cosine factor how much the sampled point is facing towards the light
         // Regarding the nature of volume scattering, lights that the sample is not facing towards will still have a lower
         // effect on the sample. So a constant bias of 1.5 and a scaling factor of 0.4 are applied.
-        float CosineFactor = saturate(CosineBias + (1.5f + dot(Normal, ToLightDirection)) * 0.4f);
+        float ReceiverCosineFactor = saturate(CosineBias + (1.5f + dot(Normal, ToLightDirection)) * 0.4f);
         // TODO take account of different parameterizations of HG phase function
 
         // Take account for how well is the light facing the shading point
@@ -103,13 +118,12 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
 #endif
 
         float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
-        return L.Intensity * SolidAngle * CosineFactor / PI;
+        return L.PerceptualIntensity * SolidAngle * ReceiverCosineFactor / PI;
     } else {
         float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
         float3 ToLightCenter = LightCenter - Position;
         float DistanceSq = dot(ToLightCenter, ToLightCenter);
 
-        
         float3 ToLightDirection = normalize(ToLightCenter);
 
         float3 ToV0 = L.V0 - Position;
@@ -147,7 +161,7 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
             CosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
         }
         // Take into account the cosine factor how much the sampled point is facing towards the light
-        float CosineFactor = saturate(CosineBias + MaxK);
+        float ReceiverCosineFactor = saturate(CosineBias + MaxK);
 
         // Take account for how well is the light facing the shading point
         float LightFacingCosineFactor = saturate(-dot(ToLightDirection, L.Normal));
@@ -160,14 +174,14 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
 #endif
 
         float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
-        return L.Intensity * SolidAngle * CosineFactor;
+        return L.PerceptualIntensity * SolidAngle * ReceiverCosineFactor;
     }
 }
 
 // A coarse estimation used for light -> hemisphere contribution (incoming irradiance)
 float EstimateEnvironmentLightContribution(float3 AvgRadiance, float3 WorldPosition, float3 WorldNormal) {
     // Integral of cos(theta) over hemisphere = PI. Thus we easily estimate the irradiance by multiplying PI.
-    return AvgRadiance * PI;
+    return RadianceToLuminance(AvgRadiance) * PI;
 }
 
 #undef LIGHT_PROJECTION_ESTIMATION

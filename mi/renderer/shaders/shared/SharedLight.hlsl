@@ -24,21 +24,6 @@ struct AreaLight {
     uint Flags;
 };
 
-uint GetLightHash32 (RawLight Light) {
-    return (Light.Data0.w & LIGHT_FLAG_HASH_MASK);
-}
-
-uint GetLightHash32 (AreaLight Light) {
-    return (Light.Flags & LIGHT_FLAG_HASH_MASK);
-}
-
-uint2 GetExpandedLightHash64(uint LightIndex, uint2 LightHash32) {
-    uint Shift = (LightIndex * 8) % 32;
-    uint HashLow = (LightHash32 << Shift);
-    uint HashHigh = (LightHash32 >> (32 - Shift));
-    return uint2(HashLow, HashHigh);
-}
-
 #define PRECOMPUTED_LIGHT_TYPE_TRIANGLE 0
 #define PRECOMPUTED_LIGHT_TYPE_AREA 1
 #define PRECOMPUTED_LIGHT_TYPE_DIRECTIONAL 2
@@ -51,7 +36,8 @@ struct PrecomputedLight {
     float3 V0, V1, V2;
     // Triangle normal. Makes sense only for triangle lights
     float3 Normal;
-    float Intensity;
+    // Perceptual intensity for the light. Usually log(total power)
+    float PerceptualIntensity;
     bool bInvalid;
     // One of the above types
     uint Type;
@@ -64,7 +50,7 @@ struct PackedPrecomputedLight {
     float3 V0, V1, V2;
     // Triangle normal. For non-triangle lights, this is INVALID_UINT
     uint  Normal;
-    float Intensity;
+    float PerceptualIntensity;
     uint2 Hash;
 };
 

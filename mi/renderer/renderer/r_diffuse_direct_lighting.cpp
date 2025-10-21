@@ -108,6 +108,8 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTMaxBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTransmittanceBuffer)
 
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadowRayToTraceSampledLightIndexBuffer)
+
     SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_NormalTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_HiZBuffer)
@@ -249,6 +251,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceStateBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceOriginBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceTMaxBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceSampledLightIndexBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTracePixelIndexBuffer)
 
@@ -291,7 +294,9 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
     RDGSectionGuard section(builder, "Render_ComputeDirectDiffuseLighting");
 
     auto & lib = RDGShaderLibrary::Get();
-    auto ini = GetDirectLightingShaderInitializationInfo();
+    auto ini_macros = GetLightStructureShaderMacros();
+    auto ini = RDGShaderInitializationInfo{};
+    ini.optional_macros = ini_macros;
 
     auto params = builder.Allocate<DirectLightingShaderParameters>();
     auto light_buffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
@@ -332,6 +337,9 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
 
     auto shadow_ray_to_trace_transmittance = builder.CreateBuffer<float>(num_screen_pixels);
     shadow_ray_to_trace_transmittance->SetName("ShadowRayToTraceTransmittanceBuffer");
+
+    auto shadow_ray_to_trace_sampled_light_index = builder.CreateBuffer<uint32_t>(num_screen_pixels);
+    shadow_ray_to_trace_sampled_light_index->SetName("ShadowRayToTraceSampledLightIndexBuffer");
     {
         params->View = view->view_common_params_;
 
@@ -380,6 +388,7 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         params->RWShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
         params->ShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
         params->ShadowRayToTraceTransmittanceBuffer = shadow_ray_to_trace_transmittance.Raw();
+        params->RWShadowRayToTraceSampledLightIndexBuffer = shadow_ray_to_trace_sampled_light_index.Raw();
 
         params->G_DepthTexture = view->G_depth_.Raw();
         params->G_NormalTexture = view->G_normal_.Raw();
@@ -505,6 +514,9 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
     auto volume_ray_to_trace_tmax = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
     );
+    auto volume_ray_to_trace_sampled_light_index = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
+    );
     FillParametersForLightStructure(view, volprims_params);
 
     volprims_params->VolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
@@ -534,6 +546,7 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
     volprims_params->RWVolumeRayToTraceStateBuffer = volume_ray_to_trace_state.Raw();
     volprims_params->RWVolumeRayToTraceOriginBuffer = volume_ray_to_trace_origins.Raw();
     volprims_params->RWVolumeRayToTraceTMaxBuffer = volume_ray_to_trace_tmax.Raw();
+    volprims_params->RWVolumeRayToTraceSampledLightIndexBuffer = volume_ray_to_trace_sampled_light_index.Raw();
 
     auto volume_ray_to_trace_pixel_index = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)

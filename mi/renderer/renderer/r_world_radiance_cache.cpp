@@ -227,10 +227,6 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
     // Clear newly allocated tiles and filter hash grids this frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
-    // const uint32_t max_num_tiles = kHashGridMaxNumTiles;
-    // const uint32_t num_buckets = kHashGridMaxNumBuckets;
-    // const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
-
     auto clear_cmd = builder.CreateBuffer<RHIDispatchIndirectCommand>(
         RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage
     );
@@ -241,7 +237,6 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
         params->HashGrids_UB = UB;
     }
     auto & lib = RDGShaderLibrary::Get();
-    auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     auto persistent = view->persistent_data_->hash_grid_persistent_data_;
     {
         auto shader = lib.GetShader<PrepareDispatchCommandForClearNewHashGridTileCellsShader>();

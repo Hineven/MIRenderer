@@ -58,9 +58,17 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
     // defaults to 1k res
     // TODO make this configurable
     constexpr auto face_resolution = 1024u;
+    uint32_t num_mips = 1;
+    {
+        uint32_t dim = face_resolution;
+        while (dim > 1) {
+            dim /= 2;
+            num_mips++;
+        }
+    }
     auto env_cubemap = Texture::Create(
         RHITextureType::kCube, PixelFormatType::kR8G8B8A8_UNORM, face_resolution, face_resolution,
-        6
+        num_mips, 6
     );
     env_cubemap->SetName(name);
     env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
@@ -97,14 +105,6 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
             });
         }
         // Build mips
-        uint32_t num_mips = 1;
-        {
-            uint32_t dim = face_resolution;
-            while (dim > 1) {
-                dim /= 2;
-                num_mips++;
-            }
-        }
         builder.AddPass(
             "BlitCubeMap",
             RDGPassFlagBits::kNeverCull,

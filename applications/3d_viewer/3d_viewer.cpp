@@ -565,7 +565,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                         }
                         ImGui::Unindent(20);
                     };
-                    DrawTree(0, time_periods.size(), 0);
+                    DrawTree(0, (int)time_periods.size(), 0);
                 }
                 ImGui::End();
             }

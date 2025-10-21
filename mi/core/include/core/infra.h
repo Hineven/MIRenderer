@@ -12,6 +12,7 @@
 #include <span>
 #include <format>
 #include <vector>
+#include <type_traits>
 #include <stdexcept>
 #include "core/common.h"
 #include "types.h"
@@ -196,9 +197,14 @@ MI_WARN(fmt, ##__VA_ARGS__); \
 #define mi_warning(cond, msg, ...)
 #endif
 
-// Different from assertions, checks are always active (also in release builds).
-#define mi_check(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::logic_error("assertion failure.");}}while(false)
-#define mi_check_nothrow(cond, fmt, ...) do{if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); }}while(false)
+// Different from mi_assert, these checks will always be active even in release builds.
+#define mi_check(cond, fmt, ...) do { \
+    if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); throw std::logic_error("assertion failure."); } \
+} while(false)
+
+#define mi_check_nothrow(cond, fmt, ...) do { \
+if (!(cond)) { MI_LOG(::MI_NAMESPACE::MIInfraLogType::kError, fmt, ##__VA_ARGS__); } \
+} while(false)
 
 MI_NAMESPACE_END
 

@@ -94,9 +94,9 @@ uint4 LightGrid_GetGridIndex(uint GridIndex1) {
 
 // A coarse estimtion used for light grid injection
 // Estimate Light -> grid contribution
-float LightGrid_EstimateLightGridContribution(PrecomputedLight L, float3 GridMin, float GridSize) {
+float LightGrid_EstimateLightGridPerceptualContribution(PrecomputedLight L, float3 GridMin, float GridSize) {
     // Estimate the contribution from the area light using appriximated solid angle
-    // Here, L.Intensity is the luminance of the light x the area of the light
+    // Here, L.PerceptualIntensity is the luminance of the light x the area of the light
 
     // Calculate the distance from the light to the grid
     float3 GridCenter = GridMin + GridSize * 0.5f;
@@ -115,8 +115,8 @@ float LightGrid_EstimateLightGridContribution(PrecomputedLight L, float3 GridMin
     float CosineFactor = max(saturate(DotProduct), Distance * Distance);
     float SolidAngle = CosineFactor / max(Distance * Distance, 1e-6f);
 
-    // Area is premultiplied to L.Intensity
-    return L.Intensity * SolidAngle;
+    // Area has been taken account by L.PerceptualIntensity
+    return L.PerceptualIntensity * SolidAngle;
 }
 
 #endif

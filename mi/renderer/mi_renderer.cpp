@@ -304,7 +304,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Ready for rendering
 
     // Try reset light structure history if needed
-    Render_TryResetLightStructureHistory(view, builder);
+    Render_PrepareLightStructureHistory(view, builder);
 
     // Draw the sky first.
     Render_DrawSky(view, builder);

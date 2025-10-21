@@ -162,6 +162,8 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayTMaxBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
 
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRaySampledLightIndexBuffer)
+
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayContributionBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointToTransmittanceRayIndexBuffer)
 
@@ -626,6 +628,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     auto shade_point_transmittance_ray_state = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
     auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
+    auto shade_point_transmittance_ray_sampled_light_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
     auto shade_point_to_transmittance_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
@@ -745,6 +748,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
             shade_point_transmittance_ray_tmax.Raw();
         params->ShadePointTransmittanceRayTransmittanceBuffer =
             shade_point_transmittance_ray_transmittance.Raw();
+
+        params->RWShadePointTransmittanceRaySampledLightIndexBuffer =
+            shade_point_transmittance_ray_sampled_light_index.Raw();
 
         params->RWShadePointTransmittanceRayContributionBuffer =
             shade_point_transmittance_ray_contribution.Raw();

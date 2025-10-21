@@ -118,8 +118,9 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
         L.Normal = N;
         L.Hash = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
         float Area = length(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0)) * 0.5f;
-        L.Intensity = RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area;
-        if (L.Intensity > 1e-5f) {
+        L.PerceptualIntensity = 
+            log2(1.f + RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area);
+        if (L.PerceptualIntensity > 1e-3f) {
             // Allocate active light list
             uint WaveNumActiveLights = WaveActiveCountBits(true);
             uint WaveLightListOffset = 0;
@@ -156,7 +157,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     float SumWeights = 0.0f, SumSampledWeights = 0.f, SumCandidateWeights = 0.f;
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
-        float Weight = LightGrid_EstimateLightGridContribution(L, GridMin, GridSize);
+        float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
         if (Weight > LightStructure_UB.LightInjectionIntensityThreshold) {
             // Avoid bank conflicts
             SharedGridLightListIndices[WriteLocation * WAVE_SIZE + LocalID] = LightListIndex;

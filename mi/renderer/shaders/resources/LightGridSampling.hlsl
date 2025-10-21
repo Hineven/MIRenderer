@@ -19,7 +19,7 @@
 #define NUM_LIGHT_SAMPELR_SAMPLES 6
 #endif
 
-#ifdef LIGHT_GRID_NUM_HISTORY_FRAMES
+#ifndef LIGHT_GRID_NUM_HISTORY_FRAMES
 #define LIGHT_GRID_NUM_HISTORY_FRAMES 4
 #endif
 
@@ -367,7 +367,7 @@ LightSample SampleOneLightSample_RIS (
         if(LSL.bValid) {
             float2 u2 = R.rand2();
             LightSample Sample;
-            if(LSL.bIsEnvironment) {
+            if(bWithEnvironment && LSL.bIsEnvironment) {
                 // Sample environment light
                 uint TileIndex = LSL.ActiveLightListIndex;
                 Sample = SampleEnvironmentLightDiffuseWithPreMultiplied(
@@ -420,7 +420,7 @@ LightSample SampleOneLightSample_RIS (
 void LightGrid_UpdateVisibilityForAreaLight(float3 WorldPosition, uint LightIndex, bool bWaveOp = false) {
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
-    RawLight LightData = LightBuffer[LightIndex];
+    AreaLight LightData = LightBuffer[LightIndex];
     uint2 Hash64 = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
     if(bWaveOp) {
         bool bWaveUniform = WaveActiveAllEqual(GridIndex1);

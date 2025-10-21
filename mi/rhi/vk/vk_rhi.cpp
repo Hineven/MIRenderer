@@ -118,11 +118,12 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 bool flag = false;
                 for (auto e: extension_props)
                     if (strcmp(e.extensionName, extension_name) == 0) flag = true;
-                if (!flag)
+                if (!flag) {
                     mi_assert(false,
                               "Required instance extension '{}' is not present, consider update your graphics driver.\n"
                               "{}",
                               extension_name, available_layer_names);
+                }
             }
             for (auto layer_name: enabled_layer_names) {
                 bool flag = false;

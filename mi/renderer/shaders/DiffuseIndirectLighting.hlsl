@@ -248,14 +248,8 @@ float RecoverWeight (uint V) {
     return float(V) / 131072.f;
 }
 
-#ifndef MI_RENDERER
-    #ifndef TILE_SIZE
-    #define TILE_SIZE 8
-    #endif
-#else
-    #ifndef TILE_SIZE
-    #error "TILE_SIZE must be specified!"
-    #endif
+#ifndef TILE_SIZE
+#define TILE_SIZE 8
 #endif
 
 #ifdef TILE_SIZE
@@ -267,14 +261,8 @@ float RecoverWeight (uint V) {
 #define TILE_TEXEL_COUNT (TILE_SIZE * TILE_SIZE)
 #define TILE_TEXEL_COUNT_L2 6
 
-#ifndef MI_RENDERER
-    #ifndef WAVE_SIZE
-    #define WAVE_SIZE 32
-    #endif
-#else
-    #ifndef WAVE_SIZE
-    #error "WAVE_SIZE must be specified!"
-    #endif
+#ifndef WAVE_SIZE
+#define WAVE_SIZE 32
 #endif
 
 #if TILE_TEXEL_COUNT % WAVE_SIZE != 0
