@@ -45,18 +45,19 @@ protected:
     );
 public:
 
+    // Allow the pass to use heuristics for convenience. Using AddTexture(texture, layout, ...) for precise controls.
     // Specify how are you using the texture in the pass. kNone for stgages will be replaced with auto-detected stages.
-    // This is a function mostly for convenience. Using AddTexture(texture, layout, ...) for precise controls.
     RDGPass * AddTextureH (RDGTexture * texture, RDGTextureUsageType usage, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
     // Describe how are you using the texture in the pass, without any heuristics
     RDGPass * AddTexture (RDGTexture * texture, RHITextureLayoutType layout, RHIGPUAccessFlags access, RHIPipelineStageFlags stages);
-    // Specify how are you using the buffer in the pass, with access flags. kNone for stgages will be replaced with auto-detected stages.
+    // Allow the pass to use heuristics for convenience.
+    // Specify how are you using the buffer in the pass, with access flags. kNone for stages will be replaced with auto-detected stages.
     RDGPass * AddBufferH (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
     // Describe how are you using the buffer in the pass, without any heuristics
     RDGPass * AddBuffer (RDGBuffer * buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) ;
     // Add an acceleration structure to the pass, with access flags. kNone for stages will be replaced with auto-detected stages.
     // NOTE: Unlike other RDG resources, this info is only used for pass dependency analysis and not used for automatic barrier placement.
-    // You still have to manually place barriers for acceleration structures inside passes.
+    // You are REQUIRED to manually place barriers for acceleration structures inside your pass lambda.
     RDGPass * AddASH_NoAutomaticBarrier (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
 
     FORCEINLINE void SetName (std::string name) {

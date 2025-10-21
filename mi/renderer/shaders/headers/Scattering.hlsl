@@ -317,12 +317,14 @@ float3 SampleGGXVNDFBounded(float roughnessAlpha, float3 localView, float2 sampl
  * @param samples Random number samples used to generate direction.
  * @return The sampled direction in local space.
  */
-float3 SampleHemisphere(float2 samples)
+float3 SampleHemisphereCosineWeighted(float2 samples, out float Pdf)
 {
     // Ray Tracing Gems - Sampling Transformations Zoo - Shirley
     float a = sqrt(samples.x);
     float b = TWO_PI * samples.y;
-    return float3(a * cos(b), a * sin(b), sqrt(1.0f - samples.x));
+    float z = sqrt(1.0f - samples.x);
+    Pdf = z / PI;
+    return float3(a * cos(b), a * sin(b), z);
 }
 
 /**
@@ -442,8 +444,9 @@ float3 CalculateGGXSpecularDirection(float3 normal, float3 viewDirection, float 
  */
 float3 SampleLambert(float3 albedo, float2 samples)
 {
+    float Pdf;
     // Sample the local space uniform hemisphere
-    return SampleHemisphere(samples);
+    return SampleHemisphereCosineWeighted(samples, Pdf);
 }
 
 /**

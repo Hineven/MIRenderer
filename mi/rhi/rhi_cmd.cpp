@@ -88,6 +88,11 @@ void RHICommandCopyTexture::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHICopyTexture(&cmd, this);
 }
 
+void RHICommandBlitTexture::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBlitTexture(&cmd, this);
+}
+
+
 void RHICommandBeginRendering::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBeginRendering(&cmd, this);
 }

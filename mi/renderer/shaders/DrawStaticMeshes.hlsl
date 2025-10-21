@@ -6,6 +6,7 @@
 #include "headers/Conventions.hlsl"
 #include "headers/Transform.hlsl"
 #include "headers/Math.hlsl"
+#include "headers/Random.hlsl"
 #include "resources/IntersectionEvaluationResources.hlsl"
 
 StructuredBuffer<uint2>            RenderableIndexAndDescriptorIndexBuffer;
@@ -17,6 +18,7 @@ struct DrawDeferredStaticMeshesVSOut {
     float2 UV : TEXCOORD2;
 };
 
+// TODO provide an optimized path for opaque materials
 DrawDeferredStaticMeshesVSOut DrawDeferredStaticMeshesVS (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID) {
     uint2 RenderableIndex_DescriptorIndex = RenderableIndexAndDescriptorIndexBuffer[InstanceIndex];
     uint RenderableIndex = RenderableIndex_DescriptorIndex.x;
@@ -24,7 +26,6 @@ DrawDeferredStaticMeshesVSOut DrawDeferredStaticMeshesVS (DefaultStaticMeshVerte
     float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
     float3 WorldPosition = mul(ToWorldTransform, float4(Vertex.Position, 1));
     float4 PositionW = mul(View.Camera.WorldToNDC_ReversedZ, float4(WorldPosition, 1));
-
     
     uint StaticMeshIndex = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]).StaticMeshIndex;
     StaticMeshHeader StaticMeshHeader = StaticMeshHeaderBuffer[StaticMeshIndex];
@@ -52,16 +53,22 @@ DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
     float3 Barycentrics : SV_BaryCentrics
 ) {
     DrawDeferredStaticMeshesPSOut Output = (DrawDeferredStaticMeshesPSOut)0;
-    // TODO: for opaque meshes, we can skip the alpha test here
     MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
-    float4 ColorOpacity = float4(Material.Albedo, 1);
-    if(IsValid(Material.AlbedoMap)) {
-        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV);
-    }
-    // TODO stochastic alpha test
-    if(ColorOpacity.a < 0.5f) {
-        // Discard the pixel
-        discard;
+    if(0 == (Material.Flags & MATERIAL_FLAG_OPAQUE)) {
+        float4 ColorOpacity = float4(Material.Albedo, 1);
+        if(IsValid(Material.AlbedoMap)) {
+            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV);
+        }
+        // stochastic alpha test
+        float MinAlpha = 0.3f;
+        float MaxAlpha = 0.7f;
+        CameraParameters C = GetActiveCamera();
+        float2 NoiseUV = float2(Input.UV.x * C.FilmAspectRatioAndInvAspectRatio.x, Input.UV.y);
+        float Threshold = lerp(MinAlpha, MaxAlpha, InterleavedGradientNoise(NoiseUV * 259, GetViewFrameIndex()));
+        if(ColorOpacity.a < Threshold) {
+            // Discard the pixel
+            discard;
+        }
     }
     Output.Visibility = uint4(
         Input.DescriptorRenderableIndex, 
@@ -119,7 +126,8 @@ void DecodeVisibility (uint2 DispatchThreadID : SV_DispatchThreadID) {
         
     // Write to G-Buffers
     {
-        RWAlbedo[DispatchThreadID] = float4(Intersection.Albedo, Intersection.Opacity);
+        // 25.10.21: Alpha should always be 1.
+        RWAlbedo[DispatchThreadID] = float4(Intersection.Albedo, 1.f);//Intersection.Opacity);
         // Squash normal to [0,1]
         float3 GBufferNormal = (Intersection.Normal.xyz * 0.5f) + 0.5f;
         RWNormal[DispatchThreadID] = float4(GBufferNormal, 1);

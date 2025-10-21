@@ -21,11 +21,13 @@
 // Simple material implementation. Only uber material supported
 MI_NAMESPACE_BEGIN
 
+// Must be consistent with the flag macros in SharedMaterial.hlsl
 enum class MaterialFlagBits : unsigned {
     kNone = 0,
     kPointSampled = 1 << 0, // Point sampled texture
     kForward = 1 << 1, // Simple forward material
     kDoubleSided = 1 << 2, // Double-sided material
+    kOpaque = 1 << 3, // Opaque material (no alpha blending)
 };
 
 MAKE_FLAGS(Material)
@@ -82,7 +84,7 @@ public:
     FORCEINLINE void SetDoubleSided (bool double_sided) {
         if (IsDoubleSided() != double_sided) SetDirty();
         if (double_sided) flags_ |= MaterialFlagBits::kDoubleSided;
-        else flags_ = flags_ & MaterialFlagBits::kDoubleSided;
+        else flags_ = flags_ & MaterialFlags(~MaterialFlagBits::kDoubleSided);
     }
 
     FORCEINLINE bool IsDoubleSided () const {
@@ -127,13 +129,15 @@ public:
         return Create("unnamed", albedo, roughness, emissive);
     }
 
+    // Opaque materials should always have alpha channel equals to 1.0f (not translucent)
     FORCEINLINE bool IsOpaque () const {
-        return opaque_;
+        return flags_ & MaterialFlagBits::kOpaque;
     }
 
     FORCEINLINE void SetOpaque (bool opaque) {
-        if (opaque != opaque_) SetDirty(true);
-        opaque_ = opaque;
+        if (opaque != IsOpaque()) SetDirty(true);
+        if (opaque) flags_ |= MaterialFlagBits::kOpaque;
+        else flags_ = flags_ & MaterialFlags(~MaterialFlagBits::kOpaque);
     }
 
     static TRef<Material> Create (
@@ -160,7 +164,7 @@ protected:
 
     std::string name_ {};
 
-    MaterialFlags flags_ {};
+    MaterialFlags flags_ {MaterialFlagBits::kOpaque};
 
     glm::vec4 albedo_ {1.f};
     float roughness_ {0.5f};
@@ -170,9 +174,6 @@ protected:
     TRef<Texture> normal_texture_;
     TRef<Texture> metallic_roughness_texture_;
     TRef<Texture> emissive_texture_;
-
-    // Opaque materials should always have alpha channel equals to 1.0f (not translucent)
-    bool opaque_ {false};
 
 
     DirtyTracker<Material> * tracker_ {};

@@ -10,6 +10,8 @@
 #include <renderer/mi_renderer.h>
 #include "r_view_common.h"
 #include "r_world_radiance_cache.h"
+
+#include "r_light_structure.h"
 #include "r_persistent.h"
 #include "../shaders/shared/SharedHashGridCache.hlsl"
 
@@ -64,8 +66,18 @@ bool HashGridPersistentData::MakeSureExists(
         active_tile_list_buffer->SetExport();
         flag = true;
     }
+    need_reset_ |= flag;
     return flag;
 }
+
+void RendererView::MakeSureLightStructurePersistentDataExists(RenderGraphBuilder &builder) {
+    if (!persistent_data_->light_structure_persistent_data_) {
+        persistent_data_->light_structure_persistent_data_ = new LightStructurePersistentData();
+    }
+    auto persistent = persistent_data_->light_structure_persistent_data_;
+    persistent->MakeSureExists(this, builder);
+}
+
 
 void RendererView::MakeSureHashGridPersistentDataExists(RenderGraphBuilder &builder) {
     const uint32_t max_num_tiles = kHashGridMaxNumTiles;
@@ -215,10 +227,6 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
     // Clear newly allocated tiles and filter hash grids this frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
-    // const uint32_t max_num_tiles = kHashGridMaxNumTiles;
-    // const uint32_t num_buckets = kHashGridMaxNumBuckets;
-    // const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
-
     auto clear_cmd = builder.CreateBuffer<RHIDispatchIndirectCommand>(
         RHIBufferUsageFlagBits::kIndirect | RHIBufferUsageFlagBits::kStorage
     );
@@ -229,7 +237,6 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
         params->HashGrids_UB = UB;
     }
     auto & lib = RDGShaderLibrary::Get();
-    auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     auto persistent = view->persistent_data_->hash_grid_persistent_data_;
     {
         auto shader = lib.GetShader<PrepareDispatchCommandForClearNewHashGridTileCellsShader>();

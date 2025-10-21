@@ -177,7 +177,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 #endif
     };
 
-    auto sync_active_period = [&] (RDGPass * pass, RHICommandQueueGraphics & queue) {
+    auto sync_active_period = [&] ([[maybe_unused]] RDGPass * pass, [[maybe_unused]] RHICommandQueueGraphics & queue) {
         insert_timestamp();
 #ifndef NDEBUG
         auto curr_class_path = pass ? pass->class_path_ : std::vector<std::string>{};
@@ -348,7 +348,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns
             prev_time_ticks = time_ticks;
             auto period = marker_periods[i];
-            period.duration = duration;
+            period.duration = (float)duration;
 
             timestamp_periods_.emplace_back(period);
         }

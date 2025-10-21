@@ -14,10 +14,11 @@
 
 MI_NAMESPACE_BEGIN
 
-Texture::Texture(RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t layers)
+Texture::Texture(RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t mip_levels, uint32_t layers)
     : type_(type),
     width_(width),
     height_(height),
+    mip_levels_(mip_levels),
     layers_(layers),
     format_(format),
     dirty_(true) {
@@ -60,7 +61,7 @@ void Texture::UpdateOnDevice_Async(RHICommandQueueGraphics& queue)
         assert(desc.array_layers == 6);
     }
     desc.dimensions = {width_, height_, 1};
-    desc.mip_levels = 1;
+    desc.mip_levels = mip_levels_;
     desc.array_layers = layers_;
     desc.format = format_;
     desc.usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransferDst | extra_device_usage_;
@@ -80,13 +81,13 @@ void Texture::ConvertToBindless(bool update_immediately)
     if (IsBindless()) {
         return;
     }
-    
-    // 确保纹理已在设备上创建
+
+    // Make sure the texture is uploaded to device
     if (!device_texture_) {
         UpdateOnDevice();
     }
-    
-    // 创建无绑定槽纹理
+
+    // Allocate a bindless slot
     device_bindless_slot = RHI::Get().GetBindlessManager().AllocateResourceSlot<RHITexture>();
     device_bindless_slot->Set(device_texture_.Raw());
     if (update_immediately) {

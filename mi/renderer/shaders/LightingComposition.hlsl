@@ -1,6 +1,7 @@
-#include "resources/CommonSamplerResources.hlsl"
 #include "headers/Camera.hlsl"
 #include "headers/Scattering.hlsl"
+#include "resources/CommonSamplerResources.hlsl"
+#include "resources/EnvironmentLightResource.hlsl"
 
 #ifndef TILE_SIZE
 #define TILE_SIZE 16
@@ -18,9 +19,6 @@ ConstantBuffer<LightingCompositionUB> UB;
 Texture2D<float4> DiffuseDirectLightingTexture;
 Texture2D<float4> DiffuseIndirectLightingTexture;
 Texture2D<float4> VolumeDirectLightingTexture;
-//Texture2D<float4> HistoryDiffuseDirectLightingTexture;
-
-TextureCube<float4> EnvironmentMap;
 
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
@@ -48,7 +46,7 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     float3 Emission = G_Emission.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     if(AlbedoAlpha.w == 0.f) {
         float3 RayDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
-        float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -RayDirection, 0).xyz;
+        float3 EnvironmentColor = EvaluateEnvironmentMap(-RayDirection);
         Emission = EnvironmentColor;
     }
 

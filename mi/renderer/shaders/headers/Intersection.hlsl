@@ -10,6 +10,7 @@ struct IntersectionMaterial {
     float3 Normal;
     float3 Emission;
     float2 MetallicRoughness;
+    bool bDoubleSided;
 };
 
 ShadingMaterial GetShadingMaterial(IntersectionMaterial M) {
@@ -19,6 +20,7 @@ ShadingMaterial GetShadingMaterial(IntersectionMaterial M) {
     Result.Normal = M.Normal;
     Result.Roughness = M.MetallicRoughness.y;
     Result.Metallic = M.MetallicRoughness.x;
+    Result.bDoubleSided = M.bDoubleSided;
     return Result;
 }
 

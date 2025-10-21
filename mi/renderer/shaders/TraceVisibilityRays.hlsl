@@ -32,7 +32,6 @@ StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 Texture2D<float> G_Depth;
-TextureCube<float4> EnvironmentMap;
 
 StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;
@@ -258,7 +257,7 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
 
-        Payload.PackedMaterial.x = 0;
+        Payload.PackedMaterial.x = INVALID_UINT;
         CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Primitive.Color, false);
         Payload.PackedMaterial.y = PackCachedHitMaterial(CachedHitMat);
     }

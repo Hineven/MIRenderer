@@ -18,11 +18,7 @@
 
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/IntersectionEvaluationResources.hlsl"
-
-// Input macros
-#ifndef MAX_NUM_GRID_LIGHTS
-#define MAX_NUM_GRID_LIGHTS 32
-#endif
+#include "resources/EnvironmentLightResource.hlsl"
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
@@ -38,8 +34,6 @@ StructuredBuffer<float> LightGrid_GridLightListCdfBuffer;
 StructuredBuffer<uint> LightGrid_GridLightListLengthBuffer;
 // Record the combination of light encodings that successfully illuminated geometries in the grid
 StructuredBuffer<uint4> LightGrid_BloomFilterBuffer;
-
-TextureCube<float4> EnvironmentMap;
 
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
@@ -197,7 +191,7 @@ void ReferencePathTracerRaygen() {
             bScatter = true;
         } else if(Payload.TCurrent >= Ray.TMax) { // Miss
             // No hits, accumulate environment lighting and terminate
-            float3 EnvironmentColor = EnvironmentMap.SampleLevel(LinearWrapSampler, -Ray.Direction, 0).xyz;
+            float3 EnvironmentColor = EvaluateEnvironmentMap(-Ray.Direction);
             Radiance += Throughput * EnvironmentColor;
             // Terminate directly
             break;

@@ -30,6 +30,9 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     add_definitions(-DMI_COMPILER_MSVC)
     # Disable stupid minmax macros
     add_definitions(-DNOMINMAX)
+    # Disable C4127, which is triggered by mi_check with constant conditions
+    # This is stupid, because it is impossible to detect if a condition is constant at compile time in C++ compiled by MSVC
+    add_definitions(-wd4127)
 endif()
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     add_definitions(-DMI_COMPILER_GNU)

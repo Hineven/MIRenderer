@@ -6,7 +6,7 @@
 MI_SHARED_HLSL_BEGIN
 
 #define LIGHT_FLAG_DIRTY (0x1u << 31)
-#define LIGHT_FLAG_HASH_MASK (0x7f000000u)
+#define LIGHT_FLAG_HASH_MASK (0x7fffffffu)
 struct RawLight {
     // LightData
     // Data.x: Renderable index (uint)
@@ -36,18 +36,22 @@ struct PrecomputedLight {
     float3 V0, V1, V2;
     // Triangle normal. Makes sense only for triangle lights
     float3 Normal;
-    float Intensity;
+    // Perceptual intensity for the light. Usually log(total power)
+    float PerceptualIntensity;
     bool bInvalid;
     // One of the above types
     uint Type;
+    // Expanded 64 bit light hash
+    uint2 Hash;
 };
 
 struct PackedPrecomputedLight {
     // Triangle vertices. For non-triangle lights, V2 packs the type using its lower bits
     float3 V0, V1, V2;
     // Triangle normal. For non-triangle lights, this is INVALID_UINT
-    uint Normal;       
-    float Intensity;
+    uint  Normal;
+    float PerceptualIntensity;
+    uint2 Hash;
 };
 
 MI_SHARED_HLSL_END
