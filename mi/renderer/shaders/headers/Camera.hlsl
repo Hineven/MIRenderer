@@ -9,6 +9,10 @@ CameraParameters GetActiveCamera() {
     return View.Camera;
 }
 
+uint GetViewFrameIndex () {
+    return View.FrameIndex;
+}
+
 CameraParameters GetPreviousCamera() {
     return View.PreviousCamera;
 }

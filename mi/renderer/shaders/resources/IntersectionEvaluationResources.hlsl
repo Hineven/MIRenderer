@@ -128,8 +128,8 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
             Intersection.MetallicRoughness = SampleTexture(GetBindlessSRV(Material.MetallicRoughnessMap), LinearWrapSampler, InterpolatedVertex.UV, LOD).xy;
         }
     }
+    Intersection.bDoubleSided = Material.Flags & MATERIAL_FLAG_DOUBLE_SIDED;
     return Intersection;
-    
 }
 
 

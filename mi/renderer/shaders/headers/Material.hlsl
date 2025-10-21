@@ -10,6 +10,7 @@ struct ShadingMaterial {
     float3 Normal;
     float Roughness;
     float Metallic;
+    bool bDoubleSided;
 };
 
 // A tiny representation of a material that can be cached in a few bytes.

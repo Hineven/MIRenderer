@@ -8,6 +8,7 @@ MI_SHARED_HLSL_BEGIN
 #define MATERIAL_FLAG_POINT_SAMPLED (0x1u)
 #define MATERIAL_FLAG_FORWARD       (0x2u)
 #define MATERIAL_FLAG_DOUBLE_SIDED  (0x4u)
+#define MATERIAL_FLAG_OPAQUE        (0x8u)
 
 // A header of a material. Describe the material in its minimum form.
 struct MaterialHeader {

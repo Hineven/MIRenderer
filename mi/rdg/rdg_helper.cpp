@@ -319,7 +319,7 @@ void Helpers::UploadWithRDG(RenderGraphBuilder &builder, RDGBuffer * buffer, con
 void Helpers::ReadbackWithRDG(RenderGraphBuilder &builder, RDGBuffer *buffer, size_t src_offset, RHIBufferSpan readback_buffer) {
     mi_assert(readback_buffer.buffer->GetBufferUsage() & RHIBufferUsageFlagBits::kReadback, "Must be a readback buffer with corresponding usage.");
     mi_assert(src_offset < buffer->GetRequestedSize(), "OOB: offset must be less than the source buffer size.");
-    size_t max_size = buffer->GetRequestedSize() - src_offset;
+    [[maybe_unused]] size_t max_size = buffer->GetRequestedSize() - src_offset;
     mi_assert(readback_buffer.size <= max_size, "OOB: no enough data in the source buffer to read into the readback buffer.");
 
     builder.AddPass("ReadbackWithRDG", RDGPassType::kGeneric, RDGPassFlagBits::kNeverCull, {}, {}, {},

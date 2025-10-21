@@ -1312,9 +1312,6 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 // Dispatched per shading point
 [numthreads(WAVE_SIZE, 1, 1)]
 void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_DispatchThreadID) {
-    if(DispatchID == 0) {
-        printf("Active tiles: %d\n", HashGrids_ActiveTileCount[0]);
-    }
 	int ShadePointIndex = DispatchID;
 	if(ShadePointIndex >= RWScreenProbeUpdateRayHitShadingPointAllocator[0]) return ;
 	CameraParameters C = GetActiveCamera();

@@ -29,7 +29,7 @@
 #include "renderer/r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<int> CVar_FinalOutputType(
+static CVar<int> CVar_FinalOutputType(
     "r.debug.final_output_type",
     "Final output on screen.\n"
     "0 - Radiance\n"

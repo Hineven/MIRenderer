@@ -108,7 +108,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         builder.AddPass(
             "BlitCubeMap",
             RDGPassFlagBits::kNeverCull,
-            [num_mips, rdg_env_cubemap](RDGPass * pass, RHICommandQueueGraphics & queue) {
+            [num_mips, rdg_env_cubemap]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
                 for (uint32_t mip = 1; mip < num_mips; ++mip) {
                     uint32_t mip_width = std::max(face_resolution >> mip, 1u);
                     uint32_t mip_height = std::max(face_resolution >> mip, 1u);
@@ -123,6 +123,11 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
                             face, 1
                         );
                     }
+                    queue.TextureBarrier(
+                        rdg_env_cubemap->GetRHI(), RHITextureLayoutType::kGeneral,
+                        RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kTransfer,
+                        RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kTransferRead
+                    );
                 }
                 queue.TextureBarrier(
                     rdg_env_cubemap->GetRHI(), RHITextureLayoutType::kShaderReadOnlyOptimal,
