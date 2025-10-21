@@ -25,6 +25,7 @@ public:
     virtual void RHICopyTextureToBuffer (RHICommandQueueBase * buffer, RHICommandCopyTextureToBuffer * cmd) = 0;
     virtual void RHICopyBuffer (RHICommandQueueBase * buffer, RHICommandCopyBuffer * cmd) = 0;
     virtual void RHICopyTexture (RHICommandQueueBase * buffer, RHICommandCopyTexture * cmd) = 0;
+    virtual void RHIBlitTexture (RHICommandQueueBase * buffer, RHICommandBlitTexture * cmd) = 0;
     virtual void RHIBeginRendering (RHICommandQueueBase * cmd, RHICommandBeginRendering * begin_rendering) = 0;
     virtual void RHIEndRendering (RHICommandQueueBase * cmd, RHICommandEndRendering * end_rendering) = 0;
     virtual void RHIDraw (RHICommandQueueBase * buffer, RHICommandDraw * cmd) = 0;

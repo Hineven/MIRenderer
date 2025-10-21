@@ -3,7 +3,7 @@
 
 #include "MathConstants.hlsl"
 
-float3 UniformSampleHemisphere (float2 u) {
+float3 SampleHemisphereUniform (float2 u) {
     float2 SinCos;
     sincos(2.f * PI * u.x, SinCos.x, SinCos.y);
     float Z = u.y;
@@ -11,7 +11,7 @@ float3 UniformSampleHemisphere (float2 u) {
     return float3(R * SinCos.y, R * SinCos.x, Z);
 }
 
-float UniformSampleHemispherePdf ()
+float SampleHemisphereUniformPdf ()
 {
     return 1.f / TWO_PI;
 }

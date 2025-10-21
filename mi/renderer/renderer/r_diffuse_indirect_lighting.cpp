@@ -21,7 +21,7 @@
 #include "renderer/mi_texture.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<float> CVar_ProbeSearchSize(
+static CVar<float> CVar_ProbeSearchSize(
     "r.diffuse_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     2.f
@@ -162,6 +162,8 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayTMaxBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadePointTransmittanceRayTransmittanceBuffer)
 
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRaySampledLightIndexBuffer)
+
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointTransmittanceRayContributionBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadePointToTransmittanceRayIndexBuffer)
 
@@ -208,7 +210,11 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
 
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
 
@@ -245,7 +251,8 @@ public:
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "TILE_SIZE=" + std::to_string(kTileSize)
+            "TILE_SIZE=" + std::to_string(kTileSize),
+            "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
         };
     }
     using RDGShader::RDGShader;
@@ -514,7 +521,7 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
     return flag;
 }
 
-void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, RenderGraphBuilder & builder) {
+void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
     RDGSectionGuard section(builder, "Render_ComputeIndirectDiffuseLighting");
 
     auto ini = RDGShaderInitializationInfo {};
@@ -621,6 +628,7 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
     auto shade_point_transmittance_ray_state = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
     auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
+    auto shade_point_transmittance_ray_sampled_light_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
     auto shade_point_to_transmittance_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
@@ -740,6 +748,9 @@ void Renderer::Render_ComputeIndirectDiffuseLighting(RendererView * view, Render
             shade_point_transmittance_ray_tmax.Raw();
         params->ShadePointTransmittanceRayTransmittanceBuffer =
             shade_point_transmittance_ray_transmittance.Raw();
+
+        params->RWShadePointTransmittanceRaySampledLightIndexBuffer =
+            shade_point_transmittance_ray_sampled_light_index.Raw();
 
         params->RWShadePointTransmittanceRayContributionBuffer =
             shade_point_transmittance_ray_contribution.Raw();

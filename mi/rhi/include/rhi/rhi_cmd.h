@@ -340,6 +340,41 @@ public:
     uint32_t dst_base_layer_, dst_layer_count_;
 };
 
+class RHICommandBlitTexture : public TRHICommand<RHICommandBlitTexture> {
+public:
+    FORCEINLINE RHICommandBlitTexture(
+            RHITexture * src, RHITexture * dst,
+            int src_x, int src_y, int src_z,
+            int src_end_x, int src_end_y, int src_end_z, // Exclusive
+            int dst_x, int dst_y, int dst_z,
+            int dst_end_x, int dst_end_y, int dst_end_z, // Exclusive
+            uint32_t src_mip, uint32_t dst_mip,
+            uint32_t src_base_layer, uint32_t src_layer_count,
+            uint32_t dst_base_layer, uint32_t dst_layer_count,
+            RHISamplerFilterType filter)
+        : src_(src), dst_(dst),
+          src_x_(src_x), src_y_(src_y), src_z_(src_z),
+            src_end_x_(src_end_x), src_end_y_(src_end_y), src_end_z_(src_end_z),
+          dst_x_(dst_x), dst_y_(dst_y), dst_z_(dst_z),
+            dst_end_x_(dst_end_x), dst_end_y_(dst_end_y), dst_end_z_(dst_end_z),
+          src_mip_(src_mip), dst_mip_(dst_mip),
+          src_base_layer_(src_base_layer), src_layer_count_(src_layer_count),
+          dst_base_layer_(dst_base_layer), dst_layer_count_(dst_layer_count),
+            filter_(filter) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+
+    RHITexture * src_;
+    RHITexture * dst_;
+    int src_x_, src_y_, src_z_;
+    int src_end_x_, src_end_y_, src_end_z_;
+    int dst_x_, dst_y_, dst_z_;
+    int dst_end_x_, dst_end_y_, dst_end_z_;
+    uint32_t src_mip_, dst_mip_;
+    uint32_t src_base_layer_, src_layer_count_;
+    uint32_t dst_base_layer_, dst_layer_count_;
+    RHISamplerFilterType filter_;
+};
+
 class RHICommandBeginRendering : public TRHICommand<RHICommandBeginRendering> {
 public:
     RHICommandBeginRendering() {}
@@ -734,6 +769,27 @@ public:
                 src_mip, dst_mip,
                 src_base_layer, src_layer_count,
                 dst_base_layer, dst_layer_count));
+    }
+
+    FORCEINLINE void BlitTexture (RHITexture * src, RHITexture * dst,
+                             int src_x, int src_y, int src_z,
+                             int src_end_x, int src_end_y, int src_end_z, // Exclusive
+                             int dst_x, int dst_y, int dst_z,
+                             int dst_end_x, int dst_end_y, int dst_end_z, // Exclusive
+                             uint32_t src_mip = 0, uint32_t dst_mip = 0,
+                             uint32_t src_base_layer = 0, uint32_t src_layer_count = 1,
+                             uint32_t dst_base_layer = 0, uint32_t dst_layer_count = 1,
+                             RHISamplerFilterType filter = RHISamplerFilterType::kLinear) {
+        AddCommand(AllocateCommand<RHICommandBlitTexture>(
+                src, dst,
+                src_x, src_y, src_z,
+                src_end_x, src_end_y, src_end_z,
+                dst_x, dst_y, dst_z,
+                dst_end_x, dst_end_y, dst_end_z,
+                src_mip, dst_mip,
+                src_base_layer, src_layer_count,
+                dst_base_layer, dst_layer_count,
+                filter));
     }
 
     // Unspecified src_image_width and src_image_height assumes that the texels are tightly packed

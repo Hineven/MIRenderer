@@ -140,8 +140,8 @@ public:
 
 protected:
 
-    // All device materials allocated
-    std::vector<TRef<DeviceMaterial>> materials_;
+
+
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
     TRef<RHIBuffer> material_header_buffer_;

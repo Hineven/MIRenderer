@@ -45,7 +45,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutput)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
-        SHADER_RESOURCE_PARAMETER(SamplerState, LinearSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
@@ -152,7 +152,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         );
         params->RWDebugOutput = view->debug_views_.visualize_ray_tracing_scene_output_.Raw();
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
-        params->LinearSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+        params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
         Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
     }
     // Visualize traced rays

@@ -22,14 +22,14 @@ MI_NAMESPACE_BEGIN
 static CVar<float> CVar_ShadowRayLengthMultiplier(
     "r.lightgrid.shadow_ray_length_multiplier",
     "Multiplier for the shadow ray length for direct lighting occlusion tests.",
-    0.995f
+    0.998f
 );
 
 
 static CVar<bool> CVar_DebugOutputTransmittanceRaysForMesh(
     "r.direct_lighting.debug.output_transmittance_rays_for_mesh",
     "Write the transmittance of shadow rays to the output for the specified mesh index. 0 to disable.",
-    0
+    false
 );
 
 static CVar<bool> CVar_DebugFreezeFrameSeed(
@@ -80,7 +80,11 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
@@ -104,6 +108,8 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTMaxBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ShadowRayToTraceTransmittanceBuffer)
 
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWShadowRayToTraceSampledLightIndexBuffer)
+
     SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_NormalTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_HiZBuffer)
@@ -125,88 +131,70 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
-class ClearLightGridShader : public RDGShader {
+class DiffuseDirectLightingShader : public RDGShader {
 public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
             "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+            "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
         };
     }
+    using RDGShader::RDGShader;
+};
+
+class ClearLightGridShader : public DiffuseDirectLightingShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearLightGridShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ClearLightGrid");
 
-class PrecomputeLightsShader : public RDGShader {
+class PrecomputeLightsShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrecomputeLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "PrecomputeLights");
 
-class InjectLightsShader : public RDGShader {
+class InjectLightsShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "InjectLights");
 
-class SpawnLightSamplesShader : public RDGShader {
+class SpawnLightSamplesShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(DiffuseDirectLightingShader)
     constexpr static uint32_t kTileSize = 8;
     static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+        auto ret = DiffuseDirectLightingShader::GetShaderDefaultMacros();
+        ret.push_back(
             "TILE_SIZE=" + std::to_string(kTileSize)
-        };
+        );
+        return ret;
     }
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnLightSamplesShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "SpawnLightSamples");
 
-class ScreenSpaceTraceForDirectLightingShader : public RDGShader {
+class ScreenSpaceTraceForDirectLightingShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScreenSpaceTraceForDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "ScreenSpaceTraceForDirectLighting");
 
-class RenderDiffuseDirectLightingShader : public RDGShader {
+class RenderDiffuseDirectLightingShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 
     static std::vector<std::string> GetShaderOptionalMacros() {
         return {
@@ -216,15 +204,6 @@ public:
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(RenderDiffuseDirectLightingShader, "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderDiffuseDirectLighting");
-
-static RDGShaderInitializationInfo GetDirectLightingShaderInitializationInfo() {
-    RDGShaderInitializationInfo ini {};
-    ini.optional_macros = {
-        "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
-        "NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
-    };
-    return ini;
-}
 
 BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -244,7 +223,11 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_GridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleColorAndLinearDepth)
     SHADER_RESOURCE_PARAMETER(Texture2D, VolumeSampleTransmittanceAndPdf)
@@ -268,6 +251,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceStateBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceOriginBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceTMaxBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTraceSampledLightIndexBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeRayToTracePixelIndexBuffer)
 
@@ -278,17 +262,17 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
 
-class VolumePrimitivesSpawnLightSamplesShader : public RDGShader {
+class VolumePrimitivesSpawnLightSamplesShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(DiffuseDirectLightingShader)
     constexpr static uint32_t kTileSize = 8;
     static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
+        auto ret = DiffuseDirectLightingShader::GetShaderDefaultMacros();
+        ret.push_back(
             "TILE_SIZE=" + std::to_string(kTileSize)
-        };
+        );
+        return ret;
     }
 };
 
@@ -296,27 +280,23 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     VolumePrimitivesSpawnLightSamplesShader,
     "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "VolumePrimitivesSpawnLightSamples");
 
-class RenderVolumeDirectLightingShader : public RDGShader {
+class RenderVolumeDirectLightingShader : public DiffuseDirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-        };
-    }
+    DECLARE_SHADER(DiffuseDirectLightingShader)
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
     RenderVolumeDirectLightingShader,
     "mi/renderer/shaders/DiffuseDirectLighting.hlsl", "RenderVolumeDirectLighting");
 
-void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGraphBuilder &builder) {
+void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
     RDGSectionGuard section(builder, "Render_ComputeDirectDiffuseLighting");
 
     auto & lib = RDGShaderLibrary::Get();
-    auto ini = GetDirectLightingShaderInitializationInfo();
+    auto ini_macros = GetLightStructureShaderMacros();
+    auto ini = RDGShaderInitializationInfo{};
+    ini.optional_macros = ini_macros;
 
     auto params = builder.Allocate<DirectLightingShaderParameters>();
     auto light_buffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
@@ -357,6 +337,9 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
 
     auto shadow_ray_to_trace_transmittance = builder.CreateBuffer<float>(num_screen_pixels);
     shadow_ray_to_trace_transmittance->SetName("ShadowRayToTraceTransmittanceBuffer");
+
+    auto shadow_ray_to_trace_sampled_light_index = builder.CreateBuffer<uint32_t>(num_screen_pixels);
+    shadow_ray_to_trace_sampled_light_index->SetName("ShadowRayToTraceSampledLightIndexBuffer");
     {
         params->View = view->view_common_params_;
 
@@ -405,6 +388,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         params->RWShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
         params->ShadowRayToTraceTMaxBuffer = shadow_ray_to_trace_tmax.Raw();
         params->ShadowRayToTraceTransmittanceBuffer = shadow_ray_to_trace_transmittance.Raw();
+        params->RWShadowRayToTraceSampledLightIndexBuffer = shadow_ray_to_trace_sampled_light_index.Raw();
 
         params->G_DepthTexture = view->G_depth_.Raw();
         params->G_NormalTexture = view->G_normal_.Raw();
@@ -439,7 +423,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
         params->Debug = view->debug_common_params_;
     }
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
-    // 1. Clear counters
+    // Clear counters
     {
         auto shader = lib.GetShader<ClearLightGridShader>(ini);
         auto num_groups = DivideAndRoundUp(num_light_grids, kThreadGroupSize);
@@ -447,7 +431,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
             builder, shader, params, num_groups
         );
     }
-    // 2. Precompute lights
+    // Precompute lights
     {
         auto shader = lib.GetShader<PrecomputeLightsShader>(ini);
         auto num_groups = DivideAndRoundUp(max_num_lights, kThreadGroupSize);
@@ -530,6 +514,9 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
     auto volume_ray_to_trace_tmax = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
     );
+    auto volume_ray_to_trace_sampled_light_index = builder.CreateBuffer(
+        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
+    );
     FillParametersForLightStructure(view, volprims_params);
 
     volprims_params->VolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
@@ -559,6 +546,7 @@ void Renderer::Render_ComputeDirectDiffuseLighting(RendererView *view, RenderGra
     volprims_params->RWVolumeRayToTraceStateBuffer = volume_ray_to_trace_state.Raw();
     volprims_params->RWVolumeRayToTraceOriginBuffer = volume_ray_to_trace_origins.Raw();
     volprims_params->RWVolumeRayToTraceTMaxBuffer = volume_ray_to_trace_tmax.Raw();
+    volprims_params->RWVolumeRayToTraceSampledLightIndexBuffer = volume_ray_to_trace_sampled_light_index.Raw();
 
     auto volume_ray_to_trace_pixel_index = builder.CreateBuffer(
         RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)

@@ -530,6 +530,8 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
 
     camera.WorldToNDC_ReversedZ = proj_matrix_reversed_z * view_matrix;
     camera.ViewToNDC_ReversedZ = proj_matrix_reversed_z;
+
+    view_common_params_->FrameIndex = persistent_data_->frame_index_;
 }
 
 CVar<int> CVar_DebugCursorScreenCoordsX("debug.cursor_screen_coords_x", "Debug cursor X in screen coords.", 0);

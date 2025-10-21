@@ -35,11 +35,6 @@ class DeviceUberBufferInterface;
 
 struct ViewCommonShaderParameters;
 
-enum class MinimumMaterialFlagBits : unsigned {
-    kNone = 0,
-    kDoubleSided = 1 << 0
-};
-
 template<typename T>
 concept CRenderable = std::derived_from<T, Renderable>;
 
