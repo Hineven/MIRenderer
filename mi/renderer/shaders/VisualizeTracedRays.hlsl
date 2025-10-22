@@ -18,7 +18,7 @@ struct VisualizeTracedRaysVSOut {
 };
 
 StructuredBuffer<float3> TracedRaysOriginBuffer;
-StructuredBuffer<uint> TracedRaysDirectionBuffer;
+StructuredBuffer<float3> TracedRaysDirectionBuffer;
 StructuredBuffer<uint> TracedRaysStateBuffer;
 
 #ifdef VISUALIZE_RAY_COLORS
@@ -31,7 +31,7 @@ VisualizeTracedRaysVSOut VisualizeTracedRaysVS (
 ) {
     VisualizeTracedRaysVSOut Output = (VisualizeTracedRaysVSOut)0;
     float3 RayOrigin = TracedRaysOriginBuffer[InstanceIndex];
-    float3 RayDirection = UnpackNormal(TracedRaysDirectionBuffer[InstanceIndex]);
+    float3 RayDirection = TracedRaysDirectionBuffer[InstanceIndex];
     uint RayState = TracedRaysStateBuffer[InstanceIndex];
     float RayT = asfloat(RayState & 0x7fffffffu);
     bool bHit = bool(RayState & 0x80000000u);
@@ -39,7 +39,6 @@ VisualizeTracedRaysVSOut VisualizeTracedRaysVS (
         Output.Position = mul(View.Camera.WorldToNDC_ReversedZ, float4(RayOrigin, 1));
         Output.RayT = 0;
     } else {
-        // printf("RayT %f\n", RayT);
         Output.Position = mul(View.Camera.WorldToNDC_ReversedZ, float4(RayOrigin + RayDirection * RayT, 1));
         Output.RayT = bHit ? RayT : 0;
     }

@@ -82,23 +82,58 @@ float2 UnpackUnorm2x16(uint Packed)
     return PackedUnsignedIntegers.xy / 65535.0f;
 }
 
+
+// Pack normal into 10 bits per channel
+// The highest 2 bits are unused
 uint PackNormal (float3 Normal) {
-    // Pack normal into 10 bits per channel
     uint Packed = 0;
     float3 U = saturateDown(Normal * 0.5f + 0.5f);
-    Packed |= (uint(U.x * 1023) & 0x3FFu) << 22;
-    Packed |= (uint(U.y * 1023) & 0x3FFu) << 12;
-    Packed |= (uint(U.z * 1023) & 0x3FFu) << 2;
+    Packed |= (uint(U.x * 1023) & 0x3FFu) << 20;
+    Packed |= (uint(U.y * 1023) & 0x3FFu) << 10;
+    Packed |= (uint(U.z * 1023) & 0x3FFu) << 0;
     return Packed;
 }
 
 float3 UnpackNormal (uint Packed) {
     // Unpack normal from 10 bits per channel
     float3 Normal;
-    Normal.x = (float((Packed >> 22) & 0x3FFu) / 1023.0f) * 2.0f - 1.0f;
-    Normal.y = (float((Packed >> 12) & 0x3FFu) / 1023.0f) * 2.0f - 1.0f;
-    Normal.z = (float((Packed >> 2) & 0x3FFu) / 1023.0f) * 2.0f - 1.0f;
+    Normal.x = (float((Packed >> 20) & 0x3FFu) / 1023.0f) * 2.0f - 1.0f;
+    Normal.y = (float((Packed >> 10) & 0x3FFu) / 1023.0f) * 2.0f - 1.0f;
+    Normal.z = (float((Packed >> 0) & 0x3FFu) / 1023.0f) * 2.0f - 1.0f;
     return normalize(Normal);
+}
+
+// Pack a unit vector with higher precision using octahedral coordinates
+uint PackTraceDirection (float3 Direction) {
+    // Ensure unit length
+    Direction = normalize(Direction);
+
+    // Standard octahedral encoding using L1 norm
+    float denom = abs(Direction.x) + abs(Direction.y) + abs(Direction.z);
+    float2 Oct = Direction.xy / max(denom, 1e-6f);
+    if (Direction.z < 0.0f) {
+        Oct = (1.0f - abs(Oct.yx)) * sign(Oct);
+    }
+
+    uint2 Packed = uint2(
+        clamp((Oct.x * 0.5f + 0.5f) * 65535.0f, 0.0f, 65535.0f),
+        clamp((Oct.y * 0.5f + 0.5f) * 65535.0f, 0.0f, 65535.0f)
+    );
+    return Packed.x | (Packed.y << 16);
+}
+
+float3 UnpackTraceDirection (uint Packed) {
+    // Unpack UNORM16 -> [-1, 1]
+    uint2 P = uint2(Packed & 0xFFFFu, Packed >> 16);
+    float2 Oct = float2(P) / 65535.0f;
+    Oct = Oct * 2.0f - 1.0f;
+
+    // Standard octahedral decoding
+    float3 N = float3(Oct.x, Oct.y, 1.0f - abs(Oct.x) - abs(Oct.y));
+    if (N.z < 0.0f) {
+        N.xy = (1.0f - abs(N.yx)) * sign(Oct);
+    }
+    return normalize(N);
 }
 
 uint PackUint2x16 (uint2 Value) {

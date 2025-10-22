@@ -37,7 +37,7 @@ Texture2D<float> G_Depth;
 StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;
 
-StructuredBuffer<uint> RayToTraceDirectionBuffer;
+StructuredBuffer<float3> RayToTraceDirectionBuffer;
 RWStructuredBuffer<uint> RWRayToTraceStateBuffer;
 RWStructuredBuffer<uint2> RWRayToTraceResultBuffer;
 
@@ -77,7 +77,7 @@ void TraceRadianceRaysRaygen() {
         float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
         Ray.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
 #endif
-        Ray.Direction = UnpackNormal(RayToTraceDirectionBuffer[RayIndex]);
+        Ray.Direction = RayToTraceDirectionBuffer[RayIndex];
         bool bHit = false;
         Ray.TMin = UnpackRayToTraceState(RWRayToTraceStateBuffer[RayIndex], bHit);
 #ifdef USE_RAY_TMAX_BUFFER
