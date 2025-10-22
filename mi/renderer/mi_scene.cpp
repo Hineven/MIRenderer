@@ -25,6 +25,8 @@ DeviceScene::DeviceScene () {
     d_renderable_normal_transforms_->SetName("RenderableNormalTransforms");
     d_renderable_headers_    = rhi.CreateBuffer(sizeof(RenderableHeader) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage);
     d_renderable_headers_->SetName("RenderableHeaders");
+    // Force first TLAS build
+    tlas_instance_count_ = UINT32_MAX;
 }
 
 DeviceScene::~DeviceScene() {

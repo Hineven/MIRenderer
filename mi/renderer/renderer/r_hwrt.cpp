@@ -290,7 +290,11 @@ void Renderer::Render_HardwareRadianceRayTracing(
     params->RWRayToTraceResultBuffer = ray_to_trace_result;
 
     params->G_Depth = view->G_depth_.Raw();
-    params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    if (view->scene_->GetSkyTexture()) {
+        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    } else {
+        params->EnvironmentMap = nullptr;
+    }
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
@@ -409,7 +413,11 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->RWRayToTraceResultBuffer = ray_to_trace_result;
 
     params->G_Depth = view->G_depth_.Raw();
-    params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    if (view->scene_->GetSkyTexture()) {
+        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    } else {
+        params->EnvironmentMap = nullptr;
+    }
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 

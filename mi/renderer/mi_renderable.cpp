@@ -16,7 +16,9 @@ Renderable::Renderable(RenderableType type, Scene * scene): type_(type), scene_(
 }
 
 RenderableHeader Renderable::GetDeviceRenderableHeader () const {
-    return {};
+    return {
+        {0, 0, 0, std::bit_cast<float>(GetRenderableFlags())}
+    };
 }
 
 Renderable::~Renderable() {

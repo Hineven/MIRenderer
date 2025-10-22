@@ -66,7 +66,7 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
     // Standalone path tracing renderer
     auto ini = RDGShaderInitializationInfo {};
     ini.optional_macros.push_back("MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()));
-    ini.optional_macros.push_back("NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()));
+    ini.optional_macros.push_back("NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()));
     auto shader = RDGShaderLibrary::Get().GetShader<ReferencePathTracerShader>(ini);
 
     if (!view->persistent_data_->path_tracing_film_) {
@@ -85,7 +85,6 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
 
     params->View = view->view_common_params_;
     params->UB = UB;
-    // 几何与场景资源
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
@@ -102,7 +101,11 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
         device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
     );
     params->RWRadiance = view->persistent_data_->path_tracing_film_.Raw();
-    params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    if (view->scene_->GetSkyTexture()) {
+        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    } else {
+        params->EnvironmentMap = nullptr;
+    }
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
