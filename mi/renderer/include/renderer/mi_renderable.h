@@ -24,17 +24,42 @@ MI_NAMESPACE_BEGIN
 class StaticMeshInstance;
 class RenderGraphBuilder;
 
+enum class RenderableFlagBits : uint32_t {
+    kNone = 0,
+    kVisible = 1 << 0,
+    kRayTraced = 1 << 1,
+};
+
+MAKE_FLAGS(Renderable);
+
 class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
     virtual ~Renderable();
-    FORCEINLINE bool IsVisible() const { return visible_; }
-    FORCEINLINE void SetVisible(bool visible) { visible_ = visible; }
+    // Invisible renderables wont be rendered & taken into consideration by lighting.
+    FORCEINLINE bool IsVisible() const { return flags_ & RenderableFlagBits::kVisible; }
+    FORCEINLINE void SetVisible(bool visible) {
+        if (visible) {
+            flags_ |= RenderableFlagBits::kVisible;
+        } else {
+            flags_ &= ~RenderableFlagBits::kVisible;
+        }
+    }
     // Dirty means that the renderer will make a call to Update before rendering.
     FORCEINLINE bool IsDirty () const { return dirty_; }
     FORCEINLINE void SetDirty (bool dirty = true) { dirty_ = dirty; }
 
-    FORCEINLINE bool IsRayTraced () const { return ray_traced_; }
-    FORCEINLINE void SetRayTraced (bool ray_traced) { ray_traced_ = ray_traced; SetDirty(); }
+    // If the renderable is ray-traced. Ray traced renderables must override GetBLAS() and GetInstanceCustomIndex().
+    FORCEINLINE bool IsRayTraced () const { return flags_ & RenderableFlagBits::kRayTraced; }
+    FORCEINLINE void SetRayTraced (bool ray_traced) {
+        if (ray_traced != IsRayTraced()) {
+            if (ray_traced) {
+                flags_ |= RenderableFlagBits::kRayTraced;
+            } else {
+                flags_ &= ~RenderableFlagBits::kRayTraced;
+            }
+            SetDirty();
+        }
+    }
 
     // Override the functions if the renderable can be ray-traced.
     virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
@@ -88,6 +113,8 @@ public:
         return aabb_;
     }
 
+    FORCEINLINE RenderableFlags GetRenderableFlags () const { return flags_; }
+
 protected:
 
     Renderable(RenderableType type, Scene * scene);
@@ -95,12 +122,12 @@ protected:
     Scene * scene_;
     uint32_t index_ {UINT32_MAX};
 
+    RenderableFlags flags_ {RenderableFlagBits::kVisible | RenderableFlagBits::kRayTraced};
+
     // Axis-aligned bounding box of the renderable in object space, used for culling & bounds calculation
     // Should be updated in Update().
     AABB aabb_ {};
 
-    // Invisible renderables wont be rendered.
-    bool visible_ {true};
 
     // Dirty means the data associated with the renderable (except transform) needs to be updated on device.
     bool dirty_ {true};
@@ -108,8 +135,6 @@ protected:
     // Transform dirty means the transform has changed.
     bool transform_dirty_ {true};
 
-    // If the renderable is ray-traced. Ray traced renderbles must override GetBLAS() and GetInstanceCustomIndex().
-    bool ray_traced_ {true};
 
     RenderableType type_ {RenderableType::kStaticMeshInstance};
 

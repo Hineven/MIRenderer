@@ -151,7 +151,11 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
             device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
         );
         params->RWDebugOutput = view->debug_views_.visualize_ray_tracing_scene_output_.Raw();
-        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+        if (view->scene_->GetSkyTexture()) {
+            params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+        } else {
+            params->EnvironmentMap = nullptr;
+        }
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
         Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
     }

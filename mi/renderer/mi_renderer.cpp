@@ -122,12 +122,12 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     std::vector<glm::mat4x3> renderable_inverse_transforms;
     std::vector<glm::mat3x3> renderable_normal_transforms;
     std::vector<RenderableHeader> renderable_headers;
-    std::vector<int> visible_renderable_indices;
+    std::vector<uint32_t> visible_renderable_indices;
     {
         renderable_transforms.reserve(all_renderables.size());
         renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
-        for (auto [i, e] : all_renderables | std::views::enumerate) {
+        for (const auto& [i, e] : all_renderables | std::views::enumerate) {
             glm::mat4x3 to_world {};
             glm::mat4x3 to_local {};
             glm::mat3x3 normal_transform {};
@@ -249,6 +249,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             {},{},
             instance_count
         };
+        // If instance count changes, we must rebuild TLAS instead of update.
+        const bool instance_count_changed = (view->scene_->GetDeviceScene()->tlas_instance_count_ != instance_count);
+        // Query sizes with current (default Update) build_info first; we may re-query if we need a Build.
         auto build_sizes = TLAS->GetBuildSizes(build_info);
         bool rebuild = false;
         if (build_sizes.acceleration_structure_size > TLAS->GetSize()) {
@@ -256,13 +259,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             TLAS->Create(build_sizes.acceleration_structure_size);
             rebuild = true;
         }
+        // Force rebuild if instance count changed (Update mode requires same primitive count)
+        if (instance_count_changed) {
+            rebuild = true;
+        }
+        // If we decided to rebuild, scratch size should use build_scratch_size; otherwise use update_scratch_size
+        if (rebuild) {
+            // Re-query sizes with Build mode to ensure scratch size is correct
+            auto build_mode_info = build_info;
+            build_mode_info.mode = RHIAccelerationStructureBuildMode::kBuild;
+            build_sizes = TLAS->GetBuildSizes(build_mode_info);
+        }
         auto scratch_buffer = builder.CreateBuffer(
             RHIBufferUsageFlagBits::kAccelerationStructureScratch,
             rebuild ? build_sizes.build_scratch_size : build_sizes.update_scratch_size
         );
         scratch_buffer->SetName("TLAS Update Scratch Buffer");
         builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
-            [instance_buffer = instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw()]
+            [instance_buffer = instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw(), scene_ds = view->scene_->GetDeviceScene()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             // Barrier the previous update & use of the acceleration structure
             queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
@@ -282,6 +296,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 RHIGPUAccessFlagBits::kAccelerationStructureRW,
                 RHIGPUAccessFlagBits::kAccelerationStructureRead
             );
+            // Record the instance count used for this TLAS build for future Update-vs-Build decisions
+            scene_ds->tlas_instance_count_ = as_build_info.instance_count;
         })->AddASH_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
         ->AddBufferH(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);

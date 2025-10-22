@@ -87,7 +87,11 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     }
     params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
     params->DiffuseIndirectLightingTexture = view->denoised_diffuse_indirect_lighting_.Raw();
-    params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    if (view->scene_->GetSkyTexture()) {
+        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+    } else {
+        params->EnvironmentMap = nullptr;
+    }
     params->G_Albedo = view->G_albedo_.Raw();
     params->G_Emission = view->G_emission_.Raw();
     params->G_Transmittance = view->G_transmittance_.Raw();

@@ -249,7 +249,8 @@ TRef<StaticMeshInstance> StaticMeshInstance::Create(Scene *scene, StaticMesh * s
 }
 RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
     return std::bit_cast<RenderableHeader>(StaticMeshInstanceHeader{
-        GetStaticMesh()->GetDeviceStaticMesh()->GetIndex(), 0, 0, 0
+        GetStaticMesh()->GetDeviceStaticMesh()->GetIndex(), 0, 0,
+        GetRenderableFlags()
     });
 }
 

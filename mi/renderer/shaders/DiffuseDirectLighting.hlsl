@@ -106,11 +106,12 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
     AreaLight LightData = LightBuffer[LightIndex];
     if (LightData.Flags == 0) return; // Invalid light, skip
     // Extract light data
-    EvaluatedAreaLight Evaluated = EvaluateLight(LightData);
+    bool bActive;
+    EvaluatedAreaLight Evaluated = EvaluateLight(LightData, bActive);
     // Evaluate other features
     float3 N = normalize(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0));
     // Precompute
-    {
+    if(bActive) {
         PrecomputedLight L = (PrecomputedLight)0;
         L.V0 = Evaluated.V0;
         L.V1 = Evaluated.V1;
@@ -277,22 +278,20 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
     Random R = MakeRandom(32618420u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
-    float3 SumResampleWeights3 = 0.f;
+    float SumResampleWeights = 0.f;
     uint NumValidSamples = 0;
     float LightGridLightListCdf = 1.f;
     float3 ViewDirection = normalize(C.Position - WorldPosition);
+    float3 RadianceEstimation = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, WorldNormal, ViewDirection,
         true, true, false, 
-        R, SumResampleWeights3, NumValidSamples,
+        R,
+        RadianceEstimation,
+        SumResampleWeights, NumValidSamples,
         LightGridLightListCdf
     );
-    if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
-        // Final sample acquired, prepare visibility trace
-        // Estimate the radiance from a single light.
-        float3 RadianceEstimation = SumResampleWeights3 / NumValidSamples;
-        // Account for overflowing lights that have not been injected into the grid.
-        RadianceEstimation /= LightGridLightListCdf;
+    if (ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0) {
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
         TraceDirection /= TraceDistance;
@@ -552,20 +551,19 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, ColorAndLinearDepth.w);
     float3 ViewDirection = normalize(C.Position - WorldPosition);
     Random R = MakeRandom(46315198u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
-    float3 SumResampleWeights3 = 0.f;
+    float  SumResampleWeights = 0.f;
     uint   NumValidSamples = 0;
     float  LightGridLightListCdf = 0;
+    float3 RadianceEstimation = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, 0.xxx, ViewDirection,
         false, true, false,
-        R, SumResampleWeights3, NumValidSamples, LightGridLightListCdf
+        R,
+        RadianceEstimation,
+        SumResampleWeights, NumValidSamples, LightGridLightListCdf
     );
-    if (ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0) {
+    if (ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0) {
         // Final sample acquired, prepare visibility trace
-        // Estimate the radiance from a single light.
-        float3 RadianceEstimation = SumResampleWeights3 / NumValidSamples;
-        // Account for overflowing lights that have not been injected into the grid.
-        RadianceEstimation /= LightGridLightListCdf;
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
         TraceDirection /= TraceDistance;
