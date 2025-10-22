@@ -31,7 +31,6 @@
 * `util`：一些实用工具，比如模型加载。
 * `micromc`：小玩具，用这个渲染器渲染几个mc区块。
 ### 调试
-* 请使用`Debug Build`，目前版本`Release Build`会编译错误。
 * 在使用`Vulkan Configurator`时，可以开启`Vulkan Validation Layer`与`Break on Validation Error`选项，此时，出现问题时程序会自动中断，你可以用IDE查看栈帧。
   * 开启`Vulkan Validation Layer`后性能下降是正常的。
 * 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。
