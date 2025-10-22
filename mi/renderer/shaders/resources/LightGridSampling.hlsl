@@ -15,8 +15,8 @@
 #define MAX_NUM_GRID_LIGHTS 32
 #endif
 
-#ifndef NUM_LIGHT_SAMPELR_SAMPLES
-#define NUM_LIGHT_SAMPELR_SAMPLES 6
+#ifndef NUM_LIGHT_SAMPLER_SAMPLES
+#define NUM_LIGHT_SAMPLER_SAMPLES 6
 #endif
 
 #ifndef LIGHT_GRID_NUM_HISTORY_FRAMES
@@ -51,9 +51,9 @@ RWStructuredBuffer<PackedPrecomputedLight> LightGrid_PrecomputedActiveLightBuffe
 struct LightSampler {
     uint NumResampledLights;
     float SumWeight;
-    float SampleU[NUM_LIGHT_SAMPELR_SAMPLES];
-    float Weights[NUM_LIGHT_SAMPELR_SAMPLES];
-    uint  PackedSamplerLights[NUM_LIGHT_SAMPELR_SAMPLES];
+    float SampleU[NUM_LIGHT_SAMPLER_SAMPLES];
+    float Weights[NUM_LIGHT_SAMPLER_SAMPLES];
+    uint  PackedSamplerLights[NUM_LIGHT_SAMPLER_SAMPLES];
 };
 
 struct LightSamplerLight {
@@ -88,8 +88,8 @@ LightSamplerLight MakeInvalidLightSamplerLight() {
 LightSampler InitLightSampler(inout Random R) {
     LightSampler LS = (LightSampler)0;
     // Scatter samples
-    for (int i = 0; i < NUM_LIGHT_SAMPELR_SAMPLES; i++) {
-        float Step = (1.f / NUM_LIGHT_SAMPELR_SAMPLES);
+    for (int i = 0; i < NUM_LIGHT_SAMPLER_SAMPLES; i++) {
+        float Step = (1.f / NUM_LIGHT_SAMPLER_SAMPLES);
         LS.SampleU[i] = saturateDown((R.rand() + i) * Step);
         LS.PackedSamplerLights[i] = PackLightSamplerLight(MakeInvalidLightSamplerLight());
         LS.Weights[i] = 0.f;
@@ -101,7 +101,7 @@ void LightSampler_AddLightToSampler(inout LightSampler LS, float Weight, LightSa
     float U = Weight / (LS.SumWeight + Weight + 1e-6f);
     LS.NumResampledLights ++;
     LS.SumWeight += Weight;
-    for (uint i = 0; i < NUM_LIGHT_SAMPELR_SAMPLES; i++) {
+    for (uint i = 0; i < NUM_LIGHT_SAMPLER_SAMPLES; i++) {
         bool bSelect = false;
         if (U > LS.SampleU[i]) bSelect = true;
         if (bSelect) {
@@ -262,11 +262,13 @@ float LightGrid_GridLightVisibilityWeight(LightGrid_GridLightVisibility GridVisi
 LightSample SampleOneLightSample_RIS (
     float3 WorldPosition, float3 WorldNormal, float3 ViewDirection,
     bool bSurface, bool bGroupedAccess, bool bWithEnvironment,
-    inout Random R, out float3 SumResampleWeights3, out uint NumValidSamples,
+    inout Random R, 
+    out float3 RadianceEstimation,
+    out float SumResampleWeights, out uint NumValidSamples,
     out float LightGridLightListCdf
 ) {
     NumValidSamples = 0;
-    SumResampleWeights3 = 0.f;
+    SumResampleWeights = 0.f;
     LightGridLightListCdf = 1.f;
 
     // Look up the light grid
@@ -359,13 +361,13 @@ LightSample SampleOneLightSample_RIS (
     }
 
     // Resample the candidates
-    float SumResampleWeights = 0.f, SumTargetWeigts = 0.f;
+    float SumTargetWeigts = 0.f;
     float U = R.rand();
     LightSample ReservedSample = (LightSample)0;
     // Simply assume all volumes have the same isotropic parameter g
     float g = 0.f;
     // Spawn 1 sample for each light, and resample from the samples
-    for (int SamplerLightListIndex = 0; SamplerLightListIndex < NUM_LIGHT_SAMPELR_SAMPLES; SamplerLightListIndex++) {
+    for (int SamplerLightListIndex = 0; SamplerLightListIndex < NUM_LIGHT_SAMPLER_SAMPLES; SamplerLightListIndex++) {
         LightSamplerLight LSL = UnpackLightSamplerLight(LS.PackedSamplerLights[SamplerLightListIndex]);
         if(LSL.bValid) {
             float2 u2 = R.rand2();
@@ -384,26 +386,26 @@ LightSample SampleOneLightSample_RIS (
                 // Sample area light    
                 uint ActiveLightListIndex = LSL.ActiveLightListIndex;
                 uint LightIndex = LightGrid_ActiveLightListBuffer[ActiveLightListIndex];
-                EvaluatedAreaLight Evaluated = EvaluateLight(LightBuffer[LightIndex]);
+                bool bActive;
+                EvaluatedAreaLight Evaluated = EvaluateLight(LightBuffer[LightIndex], bActive);
                 Sample = SampleAreaLightDiffuseWithPreMultiplied(WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2);
                 // Keep the light index
                 Sample.LightIndex = LightIndex;
             }
+            // 25.10.22: This must be placed OUTSIDE for unbiased normalization weight! 
+            NumValidSamples ++;
             // Clip samples with low pdf (to evade potential fireflies)
-            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.0001f) {
-                NumValidSamples ++;
+            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.005f) {
                 float LightCdf =  LS.Weights[SamplerLightListIndex] / LS.SumWeight;
-                // Pdf of the proposal unnormalized distribution (hemisphere)
-                float ProposedPdf = LightCdf;
-                // Target pdf (light contribution)
-                float3 TargetPdf3Unnormalized = Sample.Radiance / Sample.Pdf;
-                float TargetPdfUnnormalized = dot(TargetPdf3Unnormalized, 1.f.xxx);
+                // Pdf of the proposed unnormalized distribution (projected solid angle for all lights,
+                // a special integration domain different from both area and solid angle)
+                float ProposedPdf = LightCdf * Sample.Pdf;
+                // Target pdf (luminance on the hemisphere)
+                float TargetPdfUnnormalized = RadianceToLuminance(Sample.Radiance);
                 // RIS
-                float3 ResampleWeight3 = TargetPdf3Unnormalized / ProposedPdf;
                 float ResampleWeight = TargetPdfUnnormalized / max(ProposedPdf, 1e-7f);
                 if (ResampleWeight > 1e-4f) {
                     float CurrentLightU = ResampleWeight / (SumResampleWeights + ResampleWeight);
-                    SumResampleWeights3 += ResampleWeight3;
                     SumResampleWeights += ResampleWeight;
                     if (CurrentLightU > U) {
                         U /= CurrentLightU;
@@ -415,6 +417,12 @@ LightSample SampleOneLightSample_RIS (
             }
         }
     }
+    // Estimate the radiance using RIS.
+    float Norm = SumResampleWeights / max(NumValidSamples, 1u);
+    RadianceEstimation = Norm * ReservedSample.Radiance / (RadianceToLuminance(ReservedSample.Radiance) + 1e-6f);
+    // Account for overflowing lights that have not been injected into the grid.
+    if(LightGridLightListCdf > 0) RadianceEstimation /= LightGridLightListCdf;
+    else RadianceEstimation = 0;
     return ReservedSample;
 }
 

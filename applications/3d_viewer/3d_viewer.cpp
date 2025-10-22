@@ -200,6 +200,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     {
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
             GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
+        // Get ready for device rendering
+        sky_cube->UpdateOnDevice();
+        sky_cube->ConvertToBindless();
     }
 
     auto default_mat = Material::Create("default_mat", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
@@ -282,8 +285,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
-        auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
-        // auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
+        // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
+        auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
+        // auto model_path = std::filesystem::path("D:/TestScene/BugTest/Bug.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
@@ -328,10 +332,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         //     volprims_instance->EditTransform().Translate({0, 0.5, 0});
         // }
     }
-
-    // Get ready for device rendering
-    sky_cube->UpdateOnDevice();
-    sky_cube->ConvertToBindless();
 
     scene->SetSkyCube(sky_cube.Raw());
 
@@ -470,7 +470,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                         ImGui::Text("None");
                         if (ImGui::Button("Reveal All Hidden")) {
                             for (auto r : scene->GetRenderables()) {
-                                r->SetVisible(true);
+                                if (r) r->SetVisible(true);
                             }
                         }
                     }

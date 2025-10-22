@@ -329,7 +329,8 @@ void VolumePrimitivesInstance::Update([[maybe_unused]] RendererView *view, [[may
 
 RenderableHeader VolumePrimitivesInstance::GetDeviceRenderableHeader() const {
     return std::bit_cast<RenderableHeader>(VolumePrimitivesInstanceHeader{
-        GetVolumePrimitives()->GetDeviceVolumePrimitives()->GetIndex(), 0, 0, 0
+        GetVolumePrimitives()->GetDeviceVolumePrimitives()->GetIndex(), 0, 0,
+        GetRenderableFlags()
     });
 }
 

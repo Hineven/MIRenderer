@@ -127,17 +127,20 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     else UB->FrameIndex = view->persistent_data_->frame_index_;
     UB->MaxNumLights = (uint32_t)max_num_lights;
 
-    auto num_env_mips = view->scene_->GetSkyTexture()->GetMipLevels();
-    UB->EnvironmentLightHemisphereSampleLOD = std::max(float(num_env_mips) - 1.75f, 0.f);
+    if (auto env = view->scene_->GetSkyTexture()) {
+        auto num_env_mips = env->GetMipLevels();
+        UB->EnvironmentLightHemisphereSampleLOD = std::max(float(num_env_mips) - 1.75f, 0.f);
+    } else {
+        UB->EnvironmentLightHemisphereSampleLOD = 0;
+    }
 }
 
 std::vector<std::string> GetLightStructureShaderMacros () {
     return {
         "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
-        "NUM_LIGHT_SAMPELR_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
+        "NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
     };
 }
-
 
 class ClearLightStructureHistoryShader : public RDGShader {
 public:

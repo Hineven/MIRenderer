@@ -525,6 +525,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     RDGSectionGuard section(builder, "Render_ComputeIndirectDiffuseLighting");
 
     auto ini = RDGShaderInitializationInfo {};
+    ini.optional_macros = GetLightStructureShaderMacros();
     auto & lib = RDGShaderLibrary::Get();
 
     if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_) {
@@ -759,7 +760,11 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
 
         params->G_Depth = view->G_depth_.Raw();
         params->G_Normal = view->G_normal_.Raw();
-        params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+        if (view->scene_->GetSkyTexture()) {
+            params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
+        } else {
+            params->EnvironmentMap = nullptr;
+        }
         params->PreviousDepthTexture =
             view->persistent_data_->prev_G_depth.Raw();
         params->PreviousNormalTexture =

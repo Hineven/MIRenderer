@@ -44,6 +44,11 @@ protected:
 
     // Top level acceleration structure for ray-traced objects
     TRef<RHIAccelerationStructure> TLAS_;
+
+    // Track last built TLAS instance count to decide Build vs Update.
+    // Vulkan requires the number of primitives (instances) to remain the same for Update mode.
+    // Initialize to an invalid value to force a Build on first use.
+    uint32_t tlas_instance_count_ = UINT32_MAX;
 };
 
 // Device light structure used for light sampling. Held by the scene and organizes all lights.

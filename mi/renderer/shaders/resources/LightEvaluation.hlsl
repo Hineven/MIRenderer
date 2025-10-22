@@ -11,12 +11,17 @@
 #include "GeometryResources.hlsl"
 #include "MaterialResources.hlsl"
 
-EvaluatedAreaLight EvaluateLight(AreaLight Light) {
+EvaluatedAreaLight EvaluateLight(AreaLight Light, out bool bActive) {
     EvaluatedAreaLight EvaluatedLightData = (EvaluatedAreaLight)0;
     // Extract light data
     uint RenderableIndex = Light.RenderableIndex;
     uint StaticMeshDescriptionOffset = Light.StaticMeshDescriptionIndex;
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]);
+    if(InstanceHeader.Flags & RENDERABLE_VISIBLE_FLAG_BIT) {
+        bActive = true;
+    } else {
+        bActive = false;
+    }
     StaticMeshHeader StaticMesh = StaticMeshHeaderBuffer[InstanceHeader.StaticMeshIndex];
     uint DescriptionIndex = StaticMesh.DescriptionOffset + StaticMeshDescriptionOffset;
     uint2 GeometryMaterial = StaticMeshDescriptionBuffer[DescriptionIndex];

@@ -5,8 +5,12 @@
 
 MI_SHARED_HLSL_BEGIN
 
+#define RENDERABLE_VISIBLE_FLAG_BIT 0x1u
+#define RENDERABLE_RAY_TRACED_FLAG_BIT 0x2u
+
 // Default vertex format
 struct RenderableHeader {
+    // Metadata.w always store flags of a renderable
     float4 Metadata;
 };
 
@@ -15,7 +19,7 @@ struct StaticMeshInstanceHeader {
     uint StaticMeshIndex;
     uint Padding0;
     uint Padding1;
-    uint Padding2;
+    uint Flags;
 };
 
 struct VolumePrimitivesInstanceHeader {
@@ -23,7 +27,7 @@ struct VolumePrimitivesInstanceHeader {
     uint VolumePrimitivesIndex;
     uint Padding0;
     uint Padding1;
-    uint Padding2;
+    uint Flags;
 };
 
 // The instance custom index is a 20-bit index and a 4-bit flag field.
@@ -40,7 +44,7 @@ StaticMeshInstanceHeader GetStaticMeshInstanceHeader(RenderableHeader Header) {
     Result.StaticMeshIndex = asuint(Header.Metadata.x);
     Result.Padding0 = asuint(Header.Metadata.y);
     Result.Padding1 = asuint(Header.Metadata.z);
-    Result.Padding2 = asuint(Header.Metadata.w);
+    Result.Flags = asuint(Header.Metadata.w);
     return Result;
 }
 
@@ -50,7 +54,7 @@ VolumePrimitivesInstanceHeader GetVolumePrimitivesInstanceHeader(RenderableHeade
     Result.VolumePrimitivesIndex = asuint(Header.Metadata.x);
     Result.Padding0 = asuint(Header.Metadata.y);
     Result.Padding1 = asuint(Header.Metadata.z);
-    Result.Padding2 = asuint(Header.Metadata.w);
+    Result.Flags = asuint(Header.Metadata.w);
     return Result;
 }
 

@@ -1222,13 +1222,16 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
         + (asuint(UpdateRayDirection.x) + asuint(UpdateRayDirection.y) + asuint(UpdateRayDirection.z)),
         UB.ProbeUpdateRaySampleSeed
     );
-    float3 SumResampleWeights3 = 0;
+    float  SumResampleWeights = 0;
     uint   NumValidSamples = 0;
     float  LightGridLightListCdf = 0;
+    float3 ShadedRadiance = 0.f;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         ShadePosition, ShadeNormal, ShadeViewDirection,
         ShadeMaterial.bIsSurface, false, true, 
-        R, SumResampleWeights3, NumValidSamples,
+        R,
+        ShadedRadiance,
+        SumResampleWeights, NumValidSamples,
         LightGridLightListCdf
     );
 
@@ -1251,12 +1254,9 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	// Spawn shadow ray
 	float3 TransmittanceRayDirection         = 0;
 	float TransmittanceRayOcclusionThreshold = 0;
-	bool bValidRay = ReservedSample.IsValid() && dot(ReservedSample.Radiance, 1.f.xxx) > 0;
-    float3 ShadedRadiance = 0.f;
+	bool bValidRay = ReservedSample.IsValid() && dot(ShadedRadiance, 1.f.xxx) > 0;
     const float OcclusionEpsilon = 2e-3f; // 25.10.19: a too small value can cause false positives for shadow rays due to precision issues
 	if(bValidRay) {
-		// Calculate the real sample contribution. (cosine premultiplied)
-		ShadedRadiance = SumResampleWeights3 / (NumValidSamples * LightGridLightListCdf);
 
         if(ReservedSample.bIsEnvironmentLightSample) {
             // Environment light sample, trace to TMax
