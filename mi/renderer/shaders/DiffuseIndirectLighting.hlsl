@@ -106,12 +106,12 @@ RWStructuredBuffer<uint> RWScreenProbeSpawnCount;
 RWStructuredBuffer<uint> RWScreenProbeSpawnListBuffer;
 
 // Spawned rays
-RWStructuredBuffer<uint> RWScreenProbeUpdateRayOffsetsBuffer;
-RWStructuredBuffer<uint> RWScreenProbeUpdateRayCountsBuffer;
-RWStructuredBuffer<uint> RWScreenProbeUpdateRayDirectionBuffer;
-RWStructuredBuffer<uint> RWScreenProbeUpdateRayStateBuffer;
-RWStructuredBuffer<uint> RWScreenProbeUpdateRayOriginScreenCoordsBuffer;
-RWStructuredBuffer<uint> RWScreenProbeUpdateRayAllocator; // Number of all rays to be traced
+RWStructuredBuffer<uint>   RWScreenProbeUpdateRayOffsetsBuffer;
+RWStructuredBuffer<uint>   RWScreenProbeUpdateRayCountsBuffer;
+RWStructuredBuffer<float3> RWScreenProbeUpdateRayDirectionBuffer;
+RWStructuredBuffer<uint>   RWScreenProbeUpdateRayStateBuffer;
+RWStructuredBuffer<uint>   RWScreenProbeUpdateRayOriginScreenCoordsBuffer;
+RWStructuredBuffer<uint>   RWScreenProbeUpdateRayAllocator; // Number of all rays to be traced
 
 // Ray trace results
 RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed normal & material (material is packed as CachedHitMaterial)
@@ -125,7 +125,7 @@ RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitShadingPointListBuffer; // Sh
 
 // Transmittance ray traces
 RWStructuredBuffer<uint>   RWShadePointTransmittanceRayAllocator;
-RWStructuredBuffer<uint>   RWShadePointTransmittanceRayDirectionBuffer;
+RWStructuredBuffer<float3> RWShadePointTransmittanceRayDirectionBuffer;
 RWStructuredBuffer<float3> RWShadePointTransmittanceRayOriginBuffer;
 RWStructuredBuffer<uint>   RWShadePointTransmittanceRayStateBuffer;
 RWStructuredBuffer<float>  RWShadePointTransmittanceRayTMaxBuffer;
@@ -138,7 +138,7 @@ RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
 // For debugging
 RWStructuredBuffer<uint> RWDebugTracedRaysCount;
 RWStructuredBuffer<float3> RWDebugTracedRayOrigins;
-RWStructuredBuffer<uint> RWDebugTracedRayDirections;
+RWStructuredBuffer<float3> RWDebugTracedRayDirections;
 RWStructuredBuffer<uint> RWDebugTracedRayStates;
 
 Texture2D<float> G_Depth;
@@ -1047,7 +1047,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
 		if(RayPdf >= MIN_PDF_TO_TRACE && bValid) {
 			// A valid update ray is spawned
 			// Queue up for a ray trace
-            RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = PackNormal(RayWorldDirection);
+            RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = RayWorldDirection;
             RWScreenProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
             RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex] = PackUint2x16(Header.PixelCoords);
 			RWScreenProbeUpdateRayResultBuffer[RayIndex] = 0;
@@ -1056,7 +1056,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
             RWScreenProbeUpdateRayInvPdfBuffer[RayIndex] = RayInvPdf;
         } else {
             // Invalid update ray, mark it as invalid to skip tracing
-            RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = PackNormal(0.f.xxx);
+            RWScreenProbeUpdateRayDirectionBuffer[RayIndex] = 0.f.xxx;
             RWScreenProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
             RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex] = 0;
             RWScreenProbeUpdateRayResultBuffer[RayIndex] = 0;
@@ -1100,7 +1100,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	int RayIndex = DispatchID;
     if(RayIndex >= RWScreenProbeUpdateRayAllocator[0]) return ;
     float3 RayOrigin = GetScreenProbeUpdateRayOrigin(RayIndex);
-    float3 RayDirection = UnpackNormal(RWScreenProbeUpdateRayDirectionBuffer[RayIndex]);
+    float3 RayDirection = RWScreenProbeUpdateRayDirectionBuffer[RayIndex];
     uint PackedRayState = RWScreenProbeUpdateRayStateBuffer[RayIndex];
     bool bHit;
     float RayHitT = UnpackRayToTraceState(PackedRayState, bHit);
@@ -1193,8 +1193,6 @@ void UnpackBucketSlotAndCellOffset(uint Packed, out uint BucketSlotIndex, out ui
 // Sample light rays for DI calculation using light grid
 // Dispatched per shade point
 
-// FIXME also sample environment light here to reduce bias!
-
 [numthreads(WAVE_SIZE, 1, 1)]
 void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     uint ShadePointIndex = DispatchID;
@@ -1204,8 +1202,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float3 UpdateRayOrigin    = GetScreenProbeUpdateRayOrigin(UpdateRayIndex);
     bool bUpdateRayHit;
 	float  UpdateRayDepth     = UnpackRayToTraceState(RWScreenProbeUpdateRayStateBuffer[UpdateRayIndex], bUpdateRayHit);
-    uint   UpdateRayDirectionPacked = RWScreenProbeUpdateRayDirectionBuffer[UpdateRayIndex];
-	float3 UpdateRayDirection = UnpackNormal(UpdateRayDirectionPacked);
+	float3 UpdateRayDirection = RWScreenProbeUpdateRayDirectionBuffer[UpdateRayIndex];
 	float3 ShadePosition      = UpdateRayDirection * UpdateRayDepth + UpdateRayOrigin;
 	float3 ShadeViewDirection = -UpdateRayDirection;
 	// Till now rays to be traced have identical indices with the probe update rays
@@ -1222,7 +1219,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     Random R = MakeRandom(
         // Make random numbers consistent when freezing update ray seeds.
         (UpdateRayOriginScreenCoords.x + UpdateRayOriginScreenCoords.y * 6472) * MAX_NUM_UPDATE_RAYS_PER_PROBE
-        + UpdateRayDirectionPacked,
+        + (asuint(UpdateRayDirection.x) + asuint(UpdateRayDirection.y) + asuint(UpdateRayDirection.z)),
         UB.ProbeUpdateRaySampleSeed
     );
     float3 SumResampleWeights3 = 0;
@@ -1243,7 +1240,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     uint BucketSlotIndex = INVALID_UINT;
     uint2 CellOffset;
 	uint AllocatedTileIndex = HashGrids_AllocateTile(
-        ShadePosition, ShadeViewDirection,
+        ShadePosition, ShadeViewDirection, UpdateRayDepth,
         BucketSlotIndex, CellOffset
     );
 	// Probe update ray results should be resolved from cell within the tile referred by the bucket slot
@@ -1292,7 +1289,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 		TransmittanceRayIndex = TransmittanceRayIndexBase + TransmittanceRayWarpRank;
 
 	    // Write ray to memory for HWRT
-        RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex] = PackNormal(TransmittanceRayDirection);
+        RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex] = TransmittanceRayDirection;
         RWShadePointTransmittanceRayOriginBuffer[TransmittanceRayIndex]    = ShadePosition;
         RWShadePointTransmittanceRayStateBuffer[TransmittanceRayIndex]     = 0; // Initial state
         // Keep the occulusion threshold for direct illumination visibility testing
@@ -1328,7 +1325,7 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
         // Otherwise just multiply the estimated ray transmittance.
 		Radiance *= bHit ? 0 : Transmittance;
         float3 WorldPosition = RWShadePointTransmittanceRayOriginBuffer[TransmittanceRayIndex];
-        float3 RayDirection  = UnpackNormal(RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex]);
+        float3 RayDirection  = RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex];
         if(!bHit) {
             // Update light grid visibility for the sampled light
             uint SampledLightIndex = RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex];
@@ -1483,7 +1480,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         float RayInvPdf = RWScreenProbeUpdateRayInvPdfBuffer[RayIndex];
         bool bValid = RayInvPdf > 0 && RayResult.w > 0;
         if(bValid) {
-            float3 RayWorldDirection = UnpackNormal(RWScreenProbeUpdateRayDirectionBuffer[RayIndex]);
+            float3 RayWorldDirection = RWScreenProbeUpdateRayDirectionBuffer[RayIndex];
             float3 RayLocalDirection = float3(
                 dot(RayWorldDirection, ProbeTangent),
                 dot(RayWorldDirection, ProbeBitangent),

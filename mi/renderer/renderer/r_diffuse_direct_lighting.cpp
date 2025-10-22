@@ -502,21 +502,11 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
     volprims_params->PointWrapSampler  = RHI::Get().GetGlobalSamplers().point_wrap;
 
     volprims_params->LightBuffer = params->LightBuffer;
-    auto volume_ray_to_trace_direction = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::vec3)
-    );
-    auto volume_ray_to_trace_origins = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(glm::uvec2)
-    );
-    auto volume_ray_to_trace_state = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint)
-    );
-    auto volume_ray_to_trace_tmax = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(float)
-    );
-    auto volume_ray_to_trace_sampled_light_index = builder.CreateBuffer(
-        RHIBufferUsageFlagBits::kStorage, num_screen_pixels * sizeof(uint32_t)
-    );
+    auto volume_ray_to_trace_direction = builder.CreateBuffer<glm::vec3>(num_screen_pixels);
+    auto volume_ray_to_trace_origins = builder.CreateBuffer<glm::vec3>(num_screen_pixels);
+    auto volume_ray_to_trace_state = builder.CreateBuffer<uint32_t>(num_screen_pixels);
+    auto volume_ray_to_trace_tmax = builder.CreateBuffer<float>(num_screen_pixels);
+    auto volume_ray_to_trace_sampled_light_index = builder.CreateBuffer<uint32_t>(num_screen_pixels);
     FillParametersForLightStructure(view, volprims_params);
 
     volprims_params->VolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();

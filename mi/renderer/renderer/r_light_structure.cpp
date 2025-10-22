@@ -16,7 +16,7 @@ MI_NAMESPACE_BEGIN
 CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
     "Maximum number of lights in each grid cell.",
-    32
+    48
 );
 CVar<int> CVar_MaxNumLightGridEntries(
     "r.lightgrid.max_num_entries",
