@@ -283,6 +283,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         std::vector<TRef<Material>> materials;
         // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
         auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
+        // auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator,
@@ -462,8 +463,16 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                             renderable->GetAABB().min.x, renderable->GetAABB().min.y, renderable->GetAABB().min.z,
                             renderable->GetAABB().max.x, renderable->GetAABB().max.y, renderable->GetAABB().max.z
                         );
+                        bool hide = renderable->IsVisible();
+                        ImGui::Checkbox("Visible", &hide);
+                        renderable->SetVisible(hide);
                     } else {
                         ImGui::Text("None");
+                        if (ImGui::Button("Reveal All Hidden")) {
+                            for (auto r : scene->GetRenderables()) {
+                                r->SetVisible(true);
+                            }
+                        }
                     }
                 }
                 if (ImGui::CollapsingHeader("CVars")) {

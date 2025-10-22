@@ -40,7 +40,7 @@ RWStructuredBuffer<uint> RWVolumeRayToTraceCount;
 RWStructuredBuffer<uint> RWRayToTraceListAllocator;
 RWStructuredBuffer<uint> RWRayToTraceListBuffer;
 
-RWStructuredBuffer<uint> RWRayToTraceDirectionBuffer;
+RWStructuredBuffer<float3> RWRayToTraceDirectionBuffer;
 RWStructuredBuffer<uint> RWRayToTraceStateBuffer;
 
 // Optional (when the starting point is exactly on a pixel center)
@@ -65,7 +65,7 @@ ConstantBuffer<HybridTracingUB> HybridTracing_UB;
 RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
     RayToTrace Ray = (RayToTrace)0;
     Ray.Origin = RWRayToTraceOriginBuffer[RayIndex];
-    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
+    Ray.Direction = RWRayToTraceDirectionBuffer[RayIndex];
     uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
     Ray.TMax = TMax;
     Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
@@ -75,7 +75,7 @@ RayToTrace FetchRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
 RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
     RayToTrace Ray = (RayToTrace)0;
     Ray.OriginScreenCoord = UnpackUint2x16(RWRayToTraceOriginScreenCoordBuffer[RayIndex]);
-    Ray.Direction = UnpackNormal(RWRayToTraceDirectionBuffer[RayIndex]);
+    Ray.Direction = RWRayToTraceDirectionBuffer[RayIndex];
     uint RayToTraceState = RWRayToTraceStateBuffer[RayIndex];
     Ray.TMax = TMax;
     Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
@@ -158,11 +158,17 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     uint SampledOffset = 0, CandidateOffset = MAX_NUM_GRID_LIGHTS;
     Random R = MakeRandom(17419142u + DispatchID, LightStructure_UB.FrameIndex);
     float U = R.rand();
-    float SumWeights = 0.0f, SumSampledWeights = 0.f, SumCandidateWeights = 0.f;
+    float SumFilteredWeights = 0.0f, SumSampledWeights = 0.f, SumCandidateWeights = 0.f;
+    float SumFilteredOutWeights = 0.f;
+
+    // TODO this still introduces a lot of noise upon overflowing. Need a better strategy.
+
+    float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;//max(4 * R.rand(), LightStructure_UB.LightInjectionIntensityThreshold);
+
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
-        if (Weight > LightStructure_UB.LightInjectionIntensityThreshold) {
+        if (Weight > DynamicThreshold) {
             // Keep this light in the double buffer and accumulate weights depending on which
             // group it is in
             SharedGridLightListIndices[WriteLocation * WAVE_SIZE + LocalID] = LightListIndex;
@@ -170,12 +176,12 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
                 SumSampledWeights += Weight;
             if (CandidateOffset <= WriteLocation && WriteLocation < CandidateOffset + MAX_NUM_GRID_LIGHTS)
                 SumCandidateWeights += Weight;
-            SumWeights += Weight;
+            SumFilteredWeights += Weight;
             WriteLocation++, NumGridLights++;
             if (WriteLocation == CandidateOffset + MAX_NUM_GRID_LIGHTS) {
                 // Candidate group is full, time to select which group to keep
-                float P = SumCandidateWeights / max(SumWeights, 1e-6f);
-                if (U < P) { 
+                float P = SumCandidateWeights / max(SumFilteredWeights, 1e-6f);
+                if (U < P) {
                     // Accept: replace the group with the candidate group
                     uint Temp = SampledOffset;
                     SampledOffset = CandidateOffset;
@@ -191,12 +197,14 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
                 // Replace write location to the start of the candidate group for refilling
                 WriteLocation = CandidateOffset;
             }
+        } else {
+            SumFilteredOutWeights += Weight;
         }
     }
     uint NumSampledLights = min(NumGridLights, MAX_NUM_GRID_LIGHTS);
     if (WriteLocation > CandidateOffset && WriteLocation < CandidateOffset + MAX_NUM_GRID_LIGHTS) {
         // Final swapping if the sampled group is full and the candidate group is partially filled
-        float P = SumCandidateWeights / (SumWeights + 1e-6f);
+        float P = SumCandidateWeights / (SumFilteredWeights + 1e-6f);
         if (U < P) { // Replace the group with the candidate group
             // Replace the light count with the number of candidate lights
             NumSampledLights = WriteLocation - CandidateOffset;
@@ -209,6 +217,8 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     }
     // Write to grid
     LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
+    // It's mathematically incorrect to include filtered out weights here
+    float SumWeights = SumFilteredWeights;// + SumFilteredOutWeights;
     LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();
@@ -298,7 +308,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         uint WaveLocalRayOffset = WavePrefixCountBits(true);
         uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
         // Write ray trace data
-        RWRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
+        RWRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
         RWRayToTraceOriginScreenCoordBuffer[RayIndex] = PackUint2x16(PixelIndex);
         RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
         RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
@@ -334,8 +344,6 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     uint2 PixelIndex = RayToTrace.OriginScreenCoord;
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
     float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0);
-    // Screen space ray trace
-    float3 Estimate = RWDirectLightingRadianceEstimateTexture[PixelIndex].rgb;
     // Shadow ray trace
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
@@ -428,7 +436,7 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 
 RWStructuredBuffer<uint> RWDebugTracedRaysCount;
 RWStructuredBuffer<float3> RWDebugTracedRayOrigins;
-RWStructuredBuffer<uint> RWDebugTracedRayDirections;
+RWStructuredBuffer<float3> RWDebugTracedRayDirections;
 RWStructuredBuffer<uint> RWDebugTracedRayStates;
 
 // Render diffuse direct lighting using trace results
@@ -462,7 +470,7 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
         float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), ReversedZDepthToLinearDepth(C, ReversedZDepth));
         RWDebugTracedRaysCount[0] = 1;
-        RWDebugTracedRayDirections[0] = PackNormal(RayToTrace.Direction);
+        RWDebugTracedRayDirections[0] = RayToTrace.Direction;
         RWDebugTracedRayOrigins[0] = WorldPosition;
         RWDebugTracedRayStates[0] = PackRayToTraceState(RayToTrace.TCurrent, true);
     }
@@ -506,7 +514,7 @@ RWTexture2D<float4> RWVolumeDirectLightingRadianceEstimateTexture;
 Texture2D<float4> VolumeDirectLightingRadianceEstimateTexture;
 
 // Volume rays
-RWStructuredBuffer<uint> RWVolumeRayToTraceDirectionBuffer;
+RWStructuredBuffer<float3> RWVolumeRayToTraceDirectionBuffer;
 RWStructuredBuffer<uint> RWVolumeRayToTraceStateBuffer;
 RWStructuredBuffer<float3> RWVolumeRayToTraceOriginBuffer;
 RWStructuredBuffer<float> RWVolumeRayToTraceTMaxBuffer;
@@ -574,7 +582,7 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
         uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
         // Write ray trace data
         RWVolumeRayToTraceOriginBuffer[RayIndex] = WorldPosition;
-        RWVolumeRayToTraceDirectionBuffer[RayIndex] = PackNormal(TraceDirection);
+        RWVolumeRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
         RWVolumeRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
         RWVolumeRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
         
@@ -594,7 +602,7 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
 RayToTrace FetchVolumeRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
     RayToTrace Ray = (RayToTrace)0;
     Ray.Origin = RWVolumeRayToTraceOriginBuffer[RayIndex];
-    Ray.Direction = UnpackNormal(RWVolumeRayToTraceDirectionBuffer[RayIndex]);
+    Ray.Direction = RWVolumeRayToTraceDirectionBuffer[RayIndex];
     uint RayToTraceState = RWVolumeRayToTraceStateBuffer[RayIndex];
     Ray.TMax = TMax;
     Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);

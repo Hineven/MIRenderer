@@ -132,6 +132,7 @@ struct LightSample {
     // Keep the index of the sampled light. INVALID_UINT for environment light
     uint LightIndex;
     bool bIsEnvironmentLightSample;
+    // Returns true if the sample is valid: pdf > 0
     bool IsValid() {
         return Pdf > 0;
     }
@@ -150,7 +151,7 @@ float3 SampleAreaLightArea(float3 V0, float3 V1, float3 V2, float2 u, out float 
     return Position;
 }
 
-// sample a light with history info from the environment light with pre-multiplied cosine / phase function
+// sample a light with history info from an area light with pre-multiplied cosine / phase function
 LightSample SampleAreaLightDiffuseWithPreMultiplied(
     float3 Position, float3 Normal, float3 ViewDirection, EvaluatedAreaLight Evaluated, 
     bool bSurface,
@@ -163,14 +164,16 @@ LightSample SampleAreaLightDiffuseWithPreMultiplied(
     float Distance = length(Result.Position - Position);
     float3 Direction = normalize(Result.Position - Position);
     float3 LightNormal = normalize(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0));
-    float Cosine = dot(LightNormal, -Direction);
+    float LightCosine = dot(LightNormal, -Direction);
     float ReceiverCosine = bSurface ? dot(Direction, Normal) : dot(Direction, ViewDirection);
     // Convert surface domain pdf to solid angle domain pdf
-    Result.Pdf *= Distance * Distance / max(abs(Cosine), 1e-4f);
+    Result.Pdf *= Distance * Distance / max(abs(LightCosine), 1e-4f);
     float3 EvaluatedEmission = Evaluated.Emission;
     if (IsValid(Evaluated.EmissionTextureIndex))
         EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
-    float PreMultiplied = bSurface ? saturate(ReceiverCosine) : HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
+    float PreMultipliedSaturate = saturate(ReceiverCosine);
+    float PreMultipliedHG = HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
+    float PreMultiplied = bSurface ? PreMultipliedSaturate : PreMultipliedHG;
     Result.Radiance = EvaluatedEmission * PreMultiplied;
     return Result;
 }
@@ -387,7 +390,7 @@ LightSample SampleOneLightSample_RIS (
                 Sample.LightIndex = LightIndex;
             }
             // Clip samples with low pdf (to evade potential fireflies)
-            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.005f) {
+            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.0001f) {
                 NumValidSamples ++;
                 float LightCdf =  LS.Weights[SamplerLightListIndex] / LS.SumWeight;
                 // Pdf of the proposal unnormalized distribution (hemisphere)

@@ -609,7 +609,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     const uint32_t kMaxUpdateRays = 128 * 128 * 128; // Reasonable upper limit
     max_num_update_rays = std::min(max_num_update_rays, kMaxUpdateRays);
 
-    auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto screen_probe_update_ray_direction_buffer = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
     auto screen_probe_update_ray_state_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto screen_probe_update_ray_allocator = builder.CreateBuffer<uint32_t>();
@@ -623,7 +623,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     auto screen_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
 
     auto shade_point_transmittance_ray_allocator = builder.CreateBuffer<uint32_t>();
-    auto shade_point_transmittance_ray_direction = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto shade_point_transmittance_ray_direction = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
     auto shade_point_transmittance_ray_origin = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
     auto shade_point_transmittance_ray_state = builder.CreateBuffer<uint32_t>(max_num_update_rays);
     auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
