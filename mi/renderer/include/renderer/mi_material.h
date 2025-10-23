@@ -55,14 +55,27 @@ public:
     friend class DeviceMaterial;
 
     void SetAlbedoTexture(Texture * texture);
+    FORCEINLINE Texture * GetAlbedoTexture () const {
+        return albedo_texture_.Raw();
+    }
     void SetNormalTexture(Texture * texture);
+    FORCEINLINE Texture * GetNormalTexture () const {
+        return normal_texture_.Raw();
+    }
     void SetMetallicRoughnessTexture(Texture * texture);
+    FORCEINLINE Texture * GetMetallicRoughnessTexture () const {
+        return metallic_roughness_texture_.Raw();
+    }
     void SetEmissiveTexture(Texture * texture);
+    FORCEINLINE Texture * GetEmissiveTexture () const {
+        return emissive_texture_.Raw();
+    }
 
     FORCEINLINE void SetAlbedo (glm::vec4 albedo) {
         if (albedo_ != albedo) SetDirty();
         albedo_ = albedo;
     }
+
 
     FORCEINLINE void SetRoughness (float roughness) {
         if (roughness_ != roughness) SetDirty();

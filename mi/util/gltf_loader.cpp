@@ -98,6 +98,7 @@ bool GLTFLoader::LoadGLTF(
         images[gltf_image] = image_ref;
     }
     std::map<cgltf_material const *, TRef<Material>> materials;
+    std::map<Texture*, bool> is_opaque_albedo_texture;
     for(size_t i = 0; i < gltf_model->materials_count; ++i)
     {
         std::map<cgltf_image const *, TRef<Texture>>::const_iterator it;
@@ -128,8 +129,16 @@ bool GLTFLoader::LoadGLTF(
         {
             material_ref->SetAlbedoTexture((*it).second.Raw());
         }
-        // FIXME: assume all materials are opaque for now
-        material_ref->SetOpaque(true);
+        bool opaque = true;
+        if (auto albedo_tex = material_ref->GetAlbedoTexture()) {
+            if (is_opaque_albedo_texture.find(albedo_tex) != is_opaque_albedo_texture.end()) {
+                opaque = is_opaque_albedo_texture[albedo_tex];
+            } else {
+                opaque = TextureLoader::IsTextureOpaque(albedo_tex);
+                is_opaque_albedo_texture[albedo_tex] = opaque;
+            }
+        }
+        material_ref->SetOpaque(opaque);
         cgltf_texture const *metallicity_roughness_map_text = gltf_material_pbr.metallic_roughness_texture.texture;
         it = (metallicity_roughness_map_text != nullptr ? images.find(metallicity_roughness_map_text->basisu_image != nullptr ?
               metallicity_roughness_map_text->basisu_image : metallicity_roughness_map_text->image) : images.end());
