@@ -340,10 +340,18 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         uint64_t prev_time_ticks = 0;
         if (!marker_timestamps.empty())
             prev_time_ticks = marker_timestamps[0]->QueryTimestamp(); // This function implicitly waits for the GPU to finish.
+        auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
+        const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
         for (size_t i = 0; i < marker_timestamps.size() - 1; i++) {
             uint64_t time_ticks = marker_timestamps[i + 1]->QueryTimestamp();
 
-            uint64_t delta = time_ticks - prev_time_ticks;
+            uint64_t delta;
+            if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
+                // Counter wrapped around within the valid bit width
+                delta = (wrap_mod - prev_time_ticks) + time_ticks;
+            } else {
+                delta = time_ticks - prev_time_ticks;
+            }
             float device_timestamp_tick_period = rhi.GetDeviceProperties().timestamp_period;
             double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns
             prev_time_ticks = time_ticks;

@@ -1278,8 +1278,10 @@ void RDGShaderLibrary::Init() {
     compile_tasks.reserve(shaders_to_compile.size());
     std::mutex cache_mutex; // Ensure thread safety when updating the cache
 
+    std::atomic<uint32_t> num_shaders_compiled = 0;
+    auto num_all_shaders = shaders_to_compile.size();
     for (auto & shader : shaders_to_compile) {
-        auto task = TaskGraph::Get().CreateSimpleTask([this, &shader, &cache_mutex]() {
+        auto task = TaskGraph::Get().CreateSimpleTask([this, &shader, &cache_mutex, &num_shaders_compiled, num_all_shaders]() {
             RDGShaderInitializationInfo ini;
             ini.optional_macros = shader.macro_decls;
             auto new_shader = shader.shader_class->Creator(shader.shader_class);
@@ -1295,12 +1297,17 @@ void RDGShaderLibrary::Init() {
             {
                 std::lock_guard<std::mutex> lock(cache_mutex);
                 cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
+                num_shaders_compiled ++;
+                for (int i = 0; i < 256; i++) putchar('\b');
+                printf("ShaderLibrary: Compiled %u / %u shaders.", num_shaders_compiled.load(), (uint32_t)num_all_shaders);
+                fflush(stdout);
             }
         });
         compile_tasks.push_back(task);
     }
 
     TaskGraph::Get().WaitForTasks(compile_tasks);
+    putchar('\n');
     // Transfer the ownership of underlying RHI resources to the render thread (current thread)
     for (auto & shader : cached_shaders_) {
         shader.second->UpdateOwnerForRHIResources();
