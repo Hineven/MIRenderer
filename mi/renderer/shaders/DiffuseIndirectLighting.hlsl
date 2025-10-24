@@ -152,7 +152,7 @@ Texture2D<float3> PreviousNormalTexture;
 RWTexture2D<float4> RWDiffuseIndirectLightingTexture;
 
 struct DiffuseIndirectLightingUB {
-    uint  MaxNumUpdateRays;
+    uint  MaxNumUpdateRays; // Must be a multiple of WAVE_SIZE
     uint  HeaderTileDimension;
     uint2 TileDimensions;
 

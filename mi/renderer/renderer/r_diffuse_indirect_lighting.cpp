@@ -610,7 +610,10 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     auto screen_probe_update_ray_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
     auto screen_probe_update_ray_counts_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
 
+    // Wave size is the default thread group size in almost all shaders.
+    uint32_t wave_size = RHI::Get().GetDeviceProperties().wave_size;
     uint32_t max_num_update_rays = num_tiles * 64; // Theoretically this can be configured
+    mi_check(max_num_update_rays % wave_size == 0, "Must be a multiple of wave_size");
     
     // Add validation to prevent excessive memory allocation
     const uint32_t kMaxUpdateRays = 128 * 128 * 128; // Reasonable upper limit
@@ -857,8 +860,6 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->RWDebugTracedRayDirections = nullptr;
         params->RWDebugTracedRayStates = nullptr;
     }
-    // Wave size is the default thread group size in almost all shaders.
-    uint32_t wave_size = RHI::Get().GetDeviceProperties().wave_size;
     {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
         Helpers::AddComputePass<ClearCountersShader>(builder, shader, params);

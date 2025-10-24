@@ -71,7 +71,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         num_mips, 6
     );
     env_cubemap->SetName(name);
-    env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
+    env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     env_cubemap->UpdateOnDevice();
     // Make sure pool is destroyed after the render graph
     auto pool = RDGResourcePool::Create();
