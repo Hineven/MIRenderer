@@ -138,7 +138,8 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
 std::vector<std::string> GetLightStructureShaderMacros () {
     return {
         "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
-        "NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get())
+        "NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()),
+        "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
     };
 }
 
@@ -156,6 +157,9 @@ public:
         return {
             "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
         };
+    }
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return GetLightStructureShaderMacros();
     }
 };
 
@@ -177,6 +181,9 @@ public:
         return {
             "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
         };
+    }
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return GetLightStructureShaderMacros();
     }
 };
 

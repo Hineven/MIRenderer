@@ -29,6 +29,9 @@ public:
     void GetBinary (std::vector<uint8_t> & data) const {
         data = data_;
     }
+    const std::vector<uint8_t> & GetBinary () {
+        return data_;
+    }
     void GetBinaryForLayer (uint32_t layer, std::vector<uint8_t> & data) const {
         size_t needed_size = width_ * height_ * GetPixelFormatBytesPerPixel(format_);
         data.resize(needed_size);
