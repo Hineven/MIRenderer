@@ -197,7 +197,7 @@ LightSample SampleEnvironmentLightDiffuseWithPreMultiplied(
     float3 Direction = Tangent * LocalDirection.x + Bitangent * LocalDirection.y + Normal * LocalDirection.z; 
     Result.Position = Direction;
     float ReceiverCosine = bSurface ? LocalDirection.z : dot(Direction, ViewDirection);
-    float3 EvaluatedEmission = EvaluateEnvironmentMap(Direction).rgb;
+    float3 EvaluatedEmission = EvaluateEnvironmentMap(-Direction).rgb;
     float PreMultiplied = bSurface ? saturate(ReceiverCosine) : HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
     Result.Radiance = EvaluatedEmission * PreMultiplied;
     return Result;

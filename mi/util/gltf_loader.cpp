@@ -17,6 +17,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "core/infra.h"
+#include "core/task.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_texture.h"
@@ -67,35 +68,62 @@ bool GLTFLoader::LoadGLTF(
         MI_WARN("GLTFLoader: Omitting {} lights.", gltf_model->lights_count);
     }
     std::map<cgltf_image const *, TRef<Texture>> images;
+    std::mutex images_registry_mutex;
+    std::vector<TaskRef> image_loading_tasks;
+    std::atomic<uint32_t> num_images_loaded = 0;
     for(size_t i = 0; i < gltf_model->textures_count; ++i)
     {
         cgltf_texture const &gltf_texture = gltf_model->textures[i];
-        if(gltf_texture.image == nullptr && gltf_texture.basisu_image == nullptr)
+        if(gltf_texture.image == nullptr && gltf_texture.basisu_image == nullptr) {
+            num_images_loaded ++;
             continue;
+        }
         cgltf_image const *gltf_image = gltf_texture.has_basisu ? gltf_texture.basisu_image : gltf_texture.image;
-        TRef<Texture> image_ref;
-        if(gltf_image->uri != nullptr)
-        {
-            auto folder = path.parent_path();
-            auto image_file = folder / gltf_image->uri;
-            image_ref = TextureLoader::LoadFromFile(gltf_image->name ? gltf_image->name : "", image_file);
-        }
-        else if(gltf_image->buffer_view != nullptr)
-        {
-            const std::string mime(gltf_image->mime_type);
-            if(mime != "image/jpeg" && mime != "image/png")
+        auto task = TaskGraph::Get().CreateSimpleTask([
+            gltf_image, path,
+            &num_images_loaded, &images_registry_mutex, &images,
+            num_all_images = gltf_model->textures_count // not image count!
+        ] {
+            TRef<Texture> image_ref;
+            if(gltf_image->uri != nullptr)
             {
-                MI_WARN("Unsupported embedded texture type '{}' for {}", mime.c_str(), gltf_image->name ? gltf_image->name : "");
-                continue;
+                auto folder = path.parent_path();
+                auto image_file = folder / gltf_image->uri;
+                image_ref = TextureLoader::LoadFromFile(gltf_image->name ? gltf_image->name : "", image_file);
             }
-            void *ptr = (uint8_t*)gltf_image->buffer_view->buffer->data + gltf_image->buffer_view->offset;
-            image_ref = TextureLoader::LoadFromBuffer(gltf_image->name ? gltf_image->name : "", gltf_image->mime_type, ptr, gltf_image->buffer_view->size);
-        }
+            else if(gltf_image->buffer_view != nullptr)
+            {
+                const std::string mime(gltf_image->mime_type);
+                if(mime != "image/jpeg" && mime != "image/png")
+                {
+                    std::lock_guard guard(images_registry_mutex);
+                    MI_WARN("Unsupported embedded texture type '{}' for {}", mime.c_str(), gltf_image->name ? gltf_image->name : "");
+                    num_images_loaded ++;
+                    return ;
+                }
+                void *ptr = (uint8_t*)gltf_image->buffer_view->buffer->data + gltf_image->buffer_view->offset;
+                image_ref = TextureLoader::LoadFromBuffer(gltf_image->name ? gltf_image->name : "", gltf_image->mime_type, ptr, gltf_image->buffer_view->size);
+            }
+            {
+                std::lock_guard guard(images_registry_mutex);
+                images[gltf_image] = image_ref;
+                num_images_loaded ++;
+                for (int i = 0; i < 256; i++) putchar('\b');
+                printf("GLTFLoader: Loaded %u / %u textures.", num_images_loaded.load(), (uint32_t)num_all_images);
+                fflush(stdout);
+            }
+        });
+        image_loading_tasks.push_back(task);
+    }
+    TaskGraph::Get().WaitForTasks(image_loading_tasks);
+    putchar('\n');
+    for (auto e : images) {
+        auto image_ref = e.second;
         if (image_ref) {
+            // Building RHI commands have to be done on the main thread
             image_ref->UpdateOnDevice();
             image_ref->ConvertToBindless();
         }
-        images[gltf_image] = image_ref;
     }
     std::map<cgltf_material const *, TRef<Material>> materials;
     std::map<Texture*, bool> is_opaque_albedo_texture;

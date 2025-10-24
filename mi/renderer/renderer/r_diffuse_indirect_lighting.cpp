@@ -251,9 +251,11 @@ public:
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "TILE_SIZE=" + std::to_string(kTileSize),
-            "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
+            "TILE_SIZE=" + std::to_string(kTileSize)
         };
+    }
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return GetLightStructureShaderMacros();
     }
     using RDGShader::RDGShader;
 };
@@ -401,7 +403,9 @@ public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
     static std::vector<std::string> GetShaderOptionalMacros() {
-        return {"DEBUG_OUTPUT_TRACED_RAY"};
+        auto macros = DiffuseIndirectLightingShader::GetShaderOptionalMacros();
+        macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
+        return macros;
     }
 };
 
@@ -411,6 +415,11 @@ class FilterScreenProbesShader : public DiffuseIndirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        auto macros = DiffuseIndirectLightingShader::GetShaderOptionalMacros();
+        macros.push_back("FIRST_PASS_VERTICAL_FILTER_DIRECTION");
+        return macros;
+    }
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "FilterScreenProbes");
@@ -427,9 +436,6 @@ class UpdateScreenProbeCacheMRUQueueShader : public DiffuseIndirectLightingShade
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        return {"FIRST_PASS_VERTICAL_FILTER_DIRECTION"};
-    }
 };
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeCacheMRUQueueShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeCacheMRUQueue");
