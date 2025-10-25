@@ -297,7 +297,7 @@ LightSample SampleOneLightSample_RIS (
         for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
             uint ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
             PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
-            float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
+            float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
             // Estimate history visibility weight
             float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
             Weight *= VisibilityWeight;
@@ -317,7 +317,7 @@ LightSample SampleOneLightSample_RIS (
             uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
             if (WaveMinLightIndex == ActiveLightListIndex) {
                 PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
-                float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal);
+                float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
                 // Estimate history visibility weight
                 float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
                 Weight *= VisibilityWeight;
