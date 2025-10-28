@@ -209,38 +209,43 @@ void ReferencePathTracerRaygen() {
                     Payload.HitBarycentrics,
                     0
                 );
-                // Sample outgoing ray direction
-                ShadingMaterial M = GetShadingMaterial(Intersection);
-                // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
-                float3 SampledDirection;
-                float Pdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
-                
-                // Update ray
-                Ray.Origin = Intersection.WorldPosition + Intersection.Normal * 2e-5f;
-                Ray.Direction = SampledDirection;
-                Ray.TMin = 1e-4f;
-                Ray.TMax = C.FarPlane;
+                if(Intersection.Opacity > rng.rand()) {
+                    // Sample outgoing ray direction
+                    ShadingMaterial M = GetShadingMaterial(Intersection);
+                    // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
+                    float3 SampledDirection;
+                    float Pdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
+                    
+                    // Update ray
+                    Ray.Origin = Intersection.WorldPosition + Intersection.Normal * 2e-5f;
+                    Ray.Direction = SampledDirection;
+                    Ray.TMin = 1e-4f;
+                    Ray.TMax = C.FarPlane;
 
-                // Accumulate radiance
-                Radiance += Intersection.Emission * Throughput;
+                    // Accumulate radiance
+                    Radiance += Intersection.Emission * Throughput;
 
-                // Update throughput
-                Throughput *= 
-                    EvaluateBSDF(M, -Ray.Direction, SampledDirection)
-                    * saturate(dot(M.Normal, SampledDirection)) / max(Pdf, 1e-5f);
+                    // Update throughput
+                    Throughput *= 
+                        EvaluateBSDF(M, -Ray.Direction, SampledDirection)
+                        * saturate(dot(M.Normal, SampledDirection)) / max(Pdf, 1e-5f);
 
-                // Spawn new volume sample
-                VolumeSampledRayDistance = ResampleVolumePrimitives(
-                    Ray,
-                    OverlappingVolumePrimitivesInstanceIndices,
-                    OverlappingVolumePrimitiveIndices,
-                    CurrentOverlappingVolumePrimitiveCount,
-                    rng,
-                    VolumeSampledColor
-                );
+                    // Spawn new volume sample
+                    VolumeSampledRayDistance = ResampleVolumePrimitives(
+                        Ray,
+                        OverlappingVolumePrimitivesInstanceIndices,
+                        OverlappingVolumePrimitiveIndices,
+                        CurrentOverlappingVolumePrimitiveCount,
+                        rng,
+                        VolumeSampledColor
+                    );
 
-                // This is a scattring event
-                bScatter = true;
+                    // This is a scattring event
+                    bScatter = true;
+                } else {
+                    // Transparent surface, advance ray to next hit
+                    Ray.TMin = Payload.TCurrent + 1e-5f;
+                }
             } else {
                 // Ignore backface hits for surfaces
                 // Advance ray to next hit
