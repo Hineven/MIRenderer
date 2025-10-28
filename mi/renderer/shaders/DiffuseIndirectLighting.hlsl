@@ -152,7 +152,7 @@ Texture2D<float3> PreviousNormalTexture;
 RWTexture2D<float4> RWDiffuseIndirectLightingTexture;
 
 struct DiffuseIndirectLightingUB {
-    uint  MaxNumUpdateRays;
+    uint  MaxNumUpdateRays; // Must be a multiple of WAVE_SIZE
     uint  HeaderTileDimension;
     uint2 TileDimensions;
 
@@ -1162,7 +1162,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			// Note: sky radiance is regarded an indirect lighting source
 			// due to it's low frequency nature (sun excluded)
             // uint2 Result = RWScreenProbeUpdateRayRadianceBuffer[RayIndex];
-            float3 Radiance = EvaluateEnvironmentMap(RayDirection);
+            float3 Radiance = EvaluateEnvironmentMap(-RayDirection);
             if(UB.NoEnvironmentLight != 0) Radiance = 0;
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
 		}

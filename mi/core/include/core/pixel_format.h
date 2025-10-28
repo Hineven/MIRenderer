@@ -216,8 +216,6 @@ FORCEINLINE uint32_t GetPixelFormatBytesPerPixel(PixelFormatType type) {
     return bytesPerChannel * numChannels;
 }
 
-
-
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_PIXEL_FORMAT_H

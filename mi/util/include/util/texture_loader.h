@@ -21,6 +21,9 @@ public:
     static TRef<Texture> LoadFromFile (std::string name, std::filesystem::path resource_path);
     // Load a texture from a binary with a specific MIME type.
     static TRef<Texture> LoadFromBuffer(const std::string& name, const std::string & mime_type, const void *ptr, size_t size) ;
+
+    // Helper function. Runs on CPU
+    static bool IsTextureOpaque(Texture * texture);
 };
 
 MI_NAMESPACE_END

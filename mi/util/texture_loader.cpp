@@ -71,7 +71,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
         num_mips, 6
     );
     env_cubemap->SetName(name);
-    env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget);
+    env_cubemap->AddDeviceUsage(RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     env_cubemap->UpdateOnDevice();
     // Make sure pool is destroyed after the render graph
     auto pool = RDGResourcePool::Create();
@@ -321,4 +321,114 @@ TRef<Texture> TextureLoader::LoadFromBuffer(const std::string& name, const std::
 
     return texture;
 }
+
+static float DecodeValueWithPixelFormat (PixelFormatType type, const std::byte * data) {
+    auto data_type = GetPixelFormatDataType(type);
+    auto num_bytes = GetPixelFormatNumBytesPerChannel(type);
+    switch (data_type) {
+        case PixelFormatDataType::kFLOAT:
+            if (num_bytes == 4) {
+                float v;
+                std::memcpy(&v, data, sizeof(v));
+                return v;
+            } else if (num_bytes == 2) {
+                uint16_t half;
+                std::memcpy(&half, data, sizeof(half));
+
+                uint32_t sign = (half >> 15) & 0x1u;
+                uint32_t exp  = (half >> 10) & 0x1Fu;
+                uint32_t mant = half & 0x3FFu;
+
+                uint32_t bits = 0u;
+                if (exp == 0u) {
+                    if (mant == 0u) {
+                        bits = (sign << 31); // 保留 -0
+                    } else {
+                        int32_t e = -14; // 半精度非规格化的偏置后指数
+                        while ((mant & 0x0400u) == 0u) {
+                            mant <<= 1;
+                            --e;
+                        }
+                        mant &= 0x03FFu; // 去掉隐含的 1
+                        uint32_t exp32  = static_cast<uint32_t>(e + 127);
+                        uint32_t mant32 = mant << 13;
+                        bits = (sign << 31) | (exp32 << 23) | mant32;
+                    }
+                } else if (exp == 31u) {
+                    if (mant == 0u) {
+                        bits = (sign << 31) | 0x7F800000u; // +/-Inf
+                    } else {
+                        bits = 0x7FC00000u; // quiet NaN
+                    }
+                } else {
+                    uint32_t exp32  = (exp - 15u + 127u);
+                    uint32_t mant32 = mant << 13;
+                    bits = (sign << 31) | (exp32 << 23) | mant32;
+                }
+
+                float out;
+                std::memcpy(&out, &bits, sizeof(out));
+                return out;
+            }
+            break;
+
+        case PixelFormatDataType::kUNORM: {
+            if (num_bytes == 1) {
+                uint8_t v;
+                std::memcpy(&v, data, sizeof(v));
+                return static_cast<float>(v) / 255.0f;
+            } else if (num_bytes == 2) {
+                uint16_t v;
+                std::memcpy(&v, data, sizeof(v));
+                return static_cast<float>(v) / 65535.0f;
+            }
+            break;
+        }
+
+        case PixelFormatDataType::kSRGB: {
+            float s = 0.0f;
+            if (num_bytes == 1) {
+                uint8_t v;
+                std::memcpy(&v, data, sizeof(v));
+                s = static_cast<float>(v) / 255.0f;
+            } else if (num_bytes == 2) {
+                uint16_t v;
+                std::memcpy(&v, data, sizeof(v));
+                s = static_cast<float>(v) / 65535.0f;
+            } else {
+                break;
+            }
+            if (s <= 0.04045f) {
+                return s / 12.92f;
+            }
+            return pow((s + 0.055f) / 1.055f, 2.4f);
+        }
+
+        default:
+            assert(false && "DecodeValueFromPixelFormat only supports FLOAT / UNORM / SRGB types.");
+            break;
+    }
+    return 0.0f;
+}
+
+bool TextureLoader::IsTextureOpaque(Texture *texture) {
+    // Iterate over all texels and check if all of them >= 0.99
+    bool flag = true;
+    const auto & bytes = texture->GetBinary();
+    auto format = texture->GetFormat();
+    if (!IsPixelFormat4ComponentFloat(format)) return true;
+    auto stride = GetPixelFormatBytesPerPixel(format);
+    auto channel_stride = stride / 4;
+    for (auto ptr = bytes.data(); ptr < bytes.data() + bytes.size(); ptr += stride) {
+        auto alpha_ptr = ptr + 3 * channel_stride;
+        auto alpha = DecodeValueWithPixelFormat(format, (const std::byte*)alpha_ptr);
+        if (alpha < 0.99f) {
+            flag = false;
+            break;
+        }
+    }
+    return flag;
+}
+
+
 MI_NAMESPACE_END

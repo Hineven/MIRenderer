@@ -136,9 +136,11 @@ public:
     static std::vector<std::string> GetShaderDefaultMacros() {
         return {
             "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize),
-            "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
         };
+    }
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return GetLightStructureShaderMacros();
     }
     using RDGShader::RDGShader;
 };
@@ -197,9 +199,9 @@ public:
     DECLARE_SHADER(DiffuseDirectLightingShader)
 
     static std::vector<std::string> GetShaderOptionalMacros() {
-        return {
-            "DEBUG_OUTPUT_TRACED_RAY"
-        };
+        auto macros = DiffuseDirectLightingShader::GetShaderOptionalMacros();
+        macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
+        return macros;
     }
 };
 
