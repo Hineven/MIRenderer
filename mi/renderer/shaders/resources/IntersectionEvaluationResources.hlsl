@@ -68,7 +68,7 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
     // Reconstruct shading normal
     float3x3 NormalTransform  = RenderableNormalTransformBuffer[RenderableIndex];
-    Intersection.Normal = mul(NormalTransform, InterpolatedVertex.Normal);
+    Intersection.Normal = normalize(mul(NormalTransform, InterpolatedVertex.Normal));
     if(IsValid(Material.NormalMap)) {
         float3 PosA = TransformPoint(ToWorldTransform, VertexA.Position);
         float3 PosB = TransformPoint(ToWorldTransform, VertexB.Position);

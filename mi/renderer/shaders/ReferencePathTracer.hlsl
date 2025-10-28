@@ -211,6 +211,7 @@ void ReferencePathTracerRaygen() {
                 );
                 // Sample outgoing ray direction
                 ShadingMaterial M = GetShadingMaterial(Intersection);
+                // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
                 float3 SampledDirection;
                 float Pdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
                 
