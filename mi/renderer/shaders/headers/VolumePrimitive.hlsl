@@ -31,9 +31,17 @@ struct RayVolumePrimitiveIntersection {
     float3 Color;
 };
 
-// Uniform volume distribution
-struct RayVolumeDistribution {
+// Represent a segment of volume on the ray with uniform distribution
+struct RayUniformVolumeDistribution {
     float l, r;
+    float Density;
+    float3 Color;
+};
+
+// Represent a segment of volume on the ray with quadratics
+// (3 / 4) * Density * (1 - ((x - Mean) / Scale)^2) from [Mean - Scale, Mean + Scale]
+struct RayQuadraticVolumeDistribution {
+    float Mean, Scale;
     float Density;
     float3 Color;
 };

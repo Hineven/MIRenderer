@@ -274,7 +274,8 @@ public:
     DECLARE_SHADER(DiffuseIndirectLightingShader)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearTileScreenProbeCacheIndexListLengthsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClearTileScreenProbeCacheIndexListLengths");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearTileScreenProbeCacheIndexListLengthsShader,
+    "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClearTileScreenProbeCacheIndexListLengths");
 
 class InitializeScreenProbeCacheShader : public DiffuseIndirectLightingShader {
 public:

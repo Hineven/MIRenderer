@@ -522,8 +522,8 @@ RayFourierVolumeDistribution RenderRayFourier(
     return Result;
 }
 
-RayVolumeDistribution UpdateRayVolumeDistribution(
-    RayVolumeDistribution old_distr,
+RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionLinearScattering(
+    RayUniformVolumeDistribution old_distr,
     RayVolumePrimitiveIntersection intersection,
     inout float Cdf,
     inout float attenuation
@@ -532,7 +532,7 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     Cdf = 1.f;
     attenuation = 1.f;
 
-    RayVolumeDistribution new_distr;
+    RayUniformVolumeDistribution new_distr;
     new_distr.l = intersection.l;
     new_distr.r = intersection.r;
     new_distr.Density = intersection.Density;
@@ -561,7 +561,7 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     y_val[1] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[1]);
     y_val[2] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[2]);
     y_val[3] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[3]);
-    const float TARGET = 1.f;
+    const float TARGET = 1.f; // Linear integration up to 1
     float x_sol = x_val[3];
     for (int segment = 0; segment < 3; segment++) {
         float x1 = x_val[segment];
@@ -590,7 +590,7 @@ RayVolumeDistribution UpdateRayVolumeDistribution(
     float new_int = (new_r - new_l) * new_distr.Density;
     float total_int = max(1e-5, old_int + new_int);
 
-    RayVolumeDistribution result;
+    RayUniformVolumeDistribution result;
     // Strategy: Preserve boundaries
     result.l = min(old_l, new_l);
     result.r = max(old_r, new_r);
@@ -604,7 +604,7 @@ float ComputeTransmittance (float Depth, float Density) {
     return exp(-Density * Depth);
 }
 
-RayVolumeDistribution RenderRay(
+RayUniformVolumeDistribution RenderRay(
     float3 RayOrigin,
     float3 RayDirection,
     uint TileInstanceOffset,
@@ -616,10 +616,12 @@ RayVolumeDistribution RenderRay(
     inout float3 SampleColor,
     inout float SampleDepth,
     inout float SamplePdf,
+    inout float3 VolumeNormal,
+    inout float  RepresentativeDepth,
     inout float Cdf,
     inout float Attenuation
 ) {
-    RayVolumeDistribution Result;
+    RayUniformVolumeDistribution Result;
     Result.l = 0.f;
     Result.r = 0.f;
     Result.Density = 0.f;
@@ -628,6 +630,9 @@ RayVolumeDistribution RenderRay(
     SampleDepth = 1e9f;
     SampleColor = 0;
     TotalTransmittance = 1.f;
+    VolumeNormal = 0.f.xxx;
+    RepresentativeDepth = 0.f;
+    // First pass: compute total transmittance
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
         uint PrimitiveIndex, RenderableIndex;
@@ -662,10 +667,10 @@ RayVolumeDistribution RenderRay(
             }
 
             // Update the result distribution
-            Result = UpdateRayVolumeDistribution(Result, Intersection, Cdf, Attenuation);
+            Result = UpdateRayUniformVolumeDistributionLinearScattering(Result, Intersection, Cdf, Attenuation);
         }
     }
-
+    // Second pass: sample the medium
     SamplePdf = 1.f;
     SampleTransmittance = 1.f;
     // Used to compute the pdf
@@ -753,6 +758,7 @@ void DrawVolumePrimitives (
             float TotalTransmittance = 1.f;
             Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
             if(UB.EnableFourier) {
+                // Fourier volume rendering
                 RayFourierVolumeDistribution Rendered = RenderRayFourier(
                     RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
@@ -783,14 +789,15 @@ void DrawVolumePrimitives (
                 }
                 if(Density_valid == 1) OldFlags |= FLAG_BITS_TEXTURE_INVALID_FOR_SSRT;
                 RWFlags[PixelIndex] = OldFlags;
-            }
-            else {
-                RayVolumeDistribution Rendered = RenderRay(
+            } else {
+                // Uniform volume rendering
+                RayUniformVolumeDistribution Rendered = RenderRay(
                     RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
                     rng,
                     TotalTransmittance, SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
-                     Cdf, Attenuation);
+                     Cdf, Attenuation
+                );
                 RWVolumeDensity[PixelIndex] = Rendered.Density;
                 RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
                 RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
