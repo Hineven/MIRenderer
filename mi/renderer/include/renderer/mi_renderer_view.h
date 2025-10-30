@@ -68,10 +68,6 @@ public:
 
 };
 
-struct RendererViewPersistentData;
-struct WorldRadianceCacheData;
-struct LightStructureData;
-
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
 
@@ -93,20 +89,19 @@ struct RendererView {
 
     Scene * scene_ {};
 
-    // Used to index the material indices buffer for geometries within the renderable using renderable index.
-    TRef<RDGBuffer> static_mesh_geometry_material_indices_start_index;
-
     // Visibility buffer
     // 0: Renderable index, 1: Descriptor Index (8bits) + Primitive Index (24bits)
-    // 2, 3: Barycentrics
+    // 2, 3: Barycentrics (yz)
     TRef<RDGTexture> G_visibility_;
-
     TRef<RDGTexture> G_depth_;
+
+    // Decoded G-buffers
     TRef<RDGTexture> G_albedo_;
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
 
+    // Depth for forward rendering pass
     TRef<RDGTexture> forward_depth_;
 
 	TRef<RDGTexture> shadow_map_moments_;
@@ -114,37 +109,28 @@ struct RendererView {
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
 
-    // Min-max values for the rendered volume segment
-    TRef<RDGTexture> G_volume_min_max_;
-    // Volume density
-    TRef<RDGTexture> G_volume_density_;
-    // Albedo of the volume segment
-    TRef<RDGTexture> G_volume_color_;
-    // Volume density in fourier term
-    TRef<RDGTexture> G_volume_density_fourier_;
-    // Albedo of the volume segment multiplied by density in fourier term
-    TRef<RDGTexture> G_volume_weighted_color_fourier_;
-    // CDF of recorded volume segment
-    TRef<RDGTexture> G_volume_cdf_attenuation_;
-
     TRef<RDGTexture> G_transmittance_;
-
-    TRef<RDGTexture> volume_sample_color_and_linear_depth_;
-    TRef<RDGTexture> volume_sample_transmittance_and_pdf_;
 
     // HiZ buffer
     TRef<RDGTexture> hzb_;
-    // or flags
+    // Mipmapped G_flags_ using bitwise OR, has the same dimensions as hzb_
     TRef<RDGTexture> or_flags_;
 
+    // Shared outputs from volume primitive rendering
+    TRef<VolumePrimitivesViewData> volume_primitives_;
     // Shared world radiance cache data
     TRef<WorldRadianceCacheData> world_cache_;
     // Shared data for light sampling
     TRef<LightStructureData> light_structure_;
+    // Shared data from diffuse indirect lighting computation
+    TRef<DiffuseIndirectLightingData> diffuse_indirect_lighting_data_;
+    // Shared data from denoiser
+    TRef<DenoiserViewData> denoiser_view_data_;
 
     // Diffuse direct lighting
     TRef<RDGTexture> diffuse_direct_lighting_;
     TRef<RDGTexture> denoised_diffuse_direct_lighting_;
+    TRef<RDGTexture> denoised_volume_direct_lighting_;
 
     // Diffuse indirect lighting
     TRef<RDGTexture> diffuse_indirect_lighting_;
@@ -156,7 +142,7 @@ struct RendererView {
 
     // Final radiance
     TRef<RDGTexture> radiance_;
-    // Shaded radiance without emission, created & written by final composition
+    // Shaded radiance without emission, created & written by final composition, used for lighting reuse
     TRef<RDGTexture> shaded_radiance_no_emission_;
 
     // Debug output, can be written to for debug purposes
@@ -195,8 +181,7 @@ struct RendererView {
 
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
-    void MakeSureLightStructurePersistentDataExists (RenderGraphBuilder & builder);
-    void MakeSureHashGridPersistentDataExists (RenderGraphBuilder & builder);
+    void MakeSurePersistentDataExists (RenderGraphBuilder & builder);
 };
 
 // Used for setting cursor positions in debug uniform buffers

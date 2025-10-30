@@ -49,6 +49,11 @@ struct LightStructurePersistentData : RefCounted<> {
     bool MakeSureExists(
         RendererView * view, RenderGraphBuilder & builder
     );
+
+    // Called at the end of the frame to update persistent data
+    void FinalUpdate (
+        RendererView * view
+    );
 };
 
 struct LightStructureData : RefCounted<> {

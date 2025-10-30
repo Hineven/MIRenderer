@@ -386,8 +386,7 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     if (!HybridTracing_UB.SSRT_Disabled && bHit) {
         // Double checking using history buffer
         float3 PreviousUVZ = ReprojectToPreviousUVZFromUVZ(C, float3(HitUVZ.xy, 1 - HitUVZ.z));
-        float2 UV = ScreenCoordsToUV(C, PixelIndex);
-        float Noise = InterleavedGradientNoise(UV, DirectLighting_UB.FrameIndex);
+        float Noise = InterleavedGradientNoise(PixelIndex + 0.5f.xx, DirectLighting_UB.FrameIndex);
         if (all(PreviousUVZ.xy >= 0) && all(PreviousUVZ.xy < 1)) {
             // Calculate the expected depth of the pixel last frame
             float PrevZDepth = PreviousUVZ.z;

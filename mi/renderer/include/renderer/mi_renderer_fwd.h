@@ -25,6 +25,20 @@ class DeviceScene;
 class Scene;
 
 class BatchedUploadContext;
+
+struct VolumePrimitivesViewData;
+struct WorldRadianceCacheData;
+struct LightStructureData;
+struct DiffuseIndirectLightingData;
+struct DenoiserViewData;
+
+struct DiffuseIndirectLightingPersistentData;
+struct DenoiserPersistentData;
+struct LightStructurePersistentData;
+struct HashGridPersistentData;
+struct VolumePrimitivesViewPersistentData;
+
+struct RendererViewPersistentData;
 struct RendererView;
 
 class DeviceBindlessResourceAllocator;

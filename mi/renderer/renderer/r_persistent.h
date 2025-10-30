@@ -12,11 +12,6 @@
 
 MI_NAMESPACE_BEGIN
 
-struct DiffuseIndirectLightingPersistentData;
-struct DenoiserPersistentData;
-struct LightStructurePersistentData;
-struct HashGridPersistentData;
-
 // The data kept across frames for a view.
 struct RendererViewPersistentData {
 
@@ -43,10 +38,9 @@ struct RendererViewPersistentData {
     uint32_t view_index {};
     uint32_t frame_index_ {};
 
+    TRef<VolumePrimitivesViewPersistentData> volume_primitives_view_persistent_data_;
     TRef<DenoiserPersistentData> denoiser_persistent_data_;
-
     TRef<DiffuseIndirectLightingPersistentData> diffuse_indirect_lighting_persistent_data_;
-
     TRef<LightStructurePersistentData> light_structure_persistent_data_;
     TRef<HashGridPersistentData> hash_grid_persistent_data_;
 

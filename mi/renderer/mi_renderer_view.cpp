@@ -23,6 +23,7 @@
 #include "renderer/r_diffuse_indirect_lighting.h"
 #include "renderer/r_world_radiance_cache.h"
 #include "renderer/r_light_structure.h"
+#include "renderer/r_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
 RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {
@@ -278,6 +279,12 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
 
     prev_scene_ = view->scene_;
 
+    volume_primitives_view_persistent_data_->FinalUpdate(view);
+    denoiser_persistent_data_->FinalUpdate(view);
+    diffuse_indirect_lighting_persistent_data_->FinalUpdate(view);
+    light_structure_persistent_data_->FinalUpdate(view);
+    hash_grid_persistent_data_->FinalUpdate(view);
+
     frame_index_ ++;
 }
 
@@ -293,8 +300,6 @@ void RendererView::InitFrame () {
 
     view_common_params_ = {};
     debug_common_params_ = {};
-
-    static_mesh_geometry_material_indices_start_index = {};
 
     G_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kD32_FLOAT,
@@ -337,31 +342,6 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
 
-    G_volume_min_max_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_min_max_->SetName("GBuffer Volume Min Max");
-    G_volume_density_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR32_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_density_->SetName("GBuffer Volume Density");
-    G_volume_color_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_color_->SetName("GBuffer Volume Color");
-    G_volume_density_fourier_ = RDGTexture::Create2DArray(
-        film_width_, film_height_, 3, PixelFormatType::kR32_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_density_fourier_->SetName("GBuffer Volume Density Fourier");
-    G_volume_weighted_color_fourier_ = RDGTexture::Create2DArray(
-        film_width_, film_height_, 3, PixelFormatType::kR8G8B8A8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_weighted_color_fourier_->SetName("GBuffer Volume Weighted Color Fourier");
-    G_volume_cdf_attenuation_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    G_volume_cdf_attenuation_->SetName("GBuffer Volume CDF Attenuation");
-
     G_transmittance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
@@ -375,15 +355,6 @@ void RendererView::InitFrame () {
         | RHITextureUsageFlagBits::kTransfer
     );
     shadow_map_moments_->SetName("Shadow Map Moments");
-
-    volume_sample_color_and_linear_depth_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    volume_sample_color_and_linear_depth_->SetName("Volume Sample Color and Linear Depth");
-    volume_sample_transmittance_and_pdf_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess);
-    volume_sample_transmittance_and_pdf_->SetName("Volume Sample Transmittance and PDF");
 
     radiance_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
@@ -407,6 +378,11 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     denoised_diffuse_direct_lighting_->SetName("Denoised Diffuse Direct Lighting");
+    denoised_volume_direct_lighting_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
+    denoised_volume_direct_lighting_->SetName("Denoised Volume Direct Lighting");
 
     // Diffuse indirect lighting
     diffuse_indirect_lighting_ = RDGTexture::Create2D(

@@ -11,11 +11,12 @@
 #include "r_view_common.h"
 #include "r_persistent.h"
 #include "r_denoiser.h"
-MI_NAMESPACE_BEGIN
 
+#include "r_volume_primitives.h"
+MI_NAMESPACE_BEGIN
 static CVar<bool> CVar_UseDilatedConvolution("r.denoise_diffuse_direct_lighting.use_dilated_convolution",
-    "Whether to use dilated convolution for denoising diffuse direct lighting. If false, bypass that and output prefiltered result.",
-    true);
+     "Whether to use dilated convolution for denoising diffuse direct lighting. If false, bypass that and output prefiltered result.",
+     true);
 
 static CVar<float> CVar_DilatedConvolutionLuminanceSize("r.denoise_diffuse_direct_lighting.dilated_convolution_luminance_size",
     "Luminance similarity size for dilated convolution. Larger is more aggressive denoising but may lose details.",
@@ -32,6 +33,29 @@ static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable
     true
 );
 
+void DenoiserViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
+    history_length = builder.CreateTexture2D(
+    view->film_width_, view->film_height_,
+    PixelFormatType::kR8_UNORM
+);
+    history_length->SetName("CurrentLightingHistoryLength");
+    prefiltered_diffuse_direct_lighting = builder.CreateTexture2D(
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    prefiltered_diffuse_direct_lighting->SetName("CurrentPreFilteredDiffuseDirectLighting");
+    prefiltered_volume_direct_lighting = builder.CreateTexture2D(
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    prefiltered_volume_direct_lighting->SetName("CurrentPreFilteredVolumeDirectLighting");
+    denoised_diffuse_indirect_lighting = builder.CreateTexture2D(
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    denoised_diffuse_indirect_lighting->SetName("CurrentDenoisedDiffuseIndirectLighting");
+}
+
 bool DenoiserPersistentData::MakeSureExists(
     [[maybe_unused]] RendererView * view,
     [[maybe_unused]] RenderGraphBuilder & builder) {
@@ -44,11 +68,36 @@ bool DenoiserPersistentData::MakeSureExists(
     if (!prev_prefiltered_diffuse_direct_lighting) {
         flag = true;
     }
+    if (!prev_prefiltered_volume_direct_lighting) {
+        flag = true;
+    }
     if (!prev_denoised_diffuse_indirect_lighting) {
         flag = true;
     }
     return flag;
 }
+
+void DenoiserPersistentData::FinalUpdate(RendererView *view) {
+    // Finally, update persistent data
+    auto persistent = view->persistent_data_->denoiser_persistent_data_;
+    auto denoiser_data = view->denoiser_view_data_.Raw();
+    persistent->prev_lighting_history_length = denoiser_data->history_length;
+    persistent->prev_lighting_history_length->SetName("PrevLightingHistoryLength");
+    persistent->prev_lighting_history_length->SetExport();
+
+    persistent->prev_prefiltered_diffuse_direct_lighting = denoiser_data->prefiltered_diffuse_direct_lighting;
+    persistent->prev_prefiltered_diffuse_direct_lighting->SetName("PrevPreFilteredDiffuseDirectLighting");
+    persistent->prev_prefiltered_diffuse_direct_lighting->SetExport();
+
+    persistent->prev_prefiltered_volume_direct_lighting = denoiser_data->prefiltered_volume_direct_lighting;
+    persistent->prev_prefiltered_volume_direct_lighting->SetName("PrevPreFilteredVolumeDirectLighting");
+    persistent->prev_prefiltered_volume_direct_lighting->SetExport();
+
+    persistent->prev_denoised_diffuse_indirect_lighting = denoiser_data->denoised_diffuse_indirect_lighting;
+    persistent->prev_denoised_diffuse_indirect_lighting->SetName("PrevDenoisedDiffuseIndirectLighting");
+    persistent->prev_denoised_diffuse_indirect_lighting->SetExport();
+}
+
 
 struct DenoiseDiffuseLightingUB {
     uint  Reset;
@@ -59,6 +108,8 @@ struct DenoiseDiffuseLightingUB {
     float DilatedConvolutionLuminanceSize;
     float ConvolutionNormalDifferenceWeight;
     uint32_t DenoiseDiffuseIndirect;
+    float VolumeDepthHistoryThreshold;
+    glm::uvec3 Padding;
 };
 
 class PreFilterDiffuseLightingAndTemporalAccumulateShader : public RDGShader {
@@ -68,15 +119,23 @@ public:
         SHADER_UNIFORM_BUFFER(DenoiseDiffuseLightingUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseDirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, InputVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseIndirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWHistoryLengthTexture)
+
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousPreFilteredDiffuseDirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousPreFilteredVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDenoisedDiffuseIndirectRadianceTexture)
+
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWPreFilteredDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedDiffuseDirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWPreFilteredVolumeDirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedDiffuseIndirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder0Sampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
@@ -100,10 +159,14 @@ public:
         SHADER_UNIFORM_BUFFER(DenoiseDiffuseLightingUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryLengthTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputRadianceTexture)
-        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDilatedFilterOutputFilteredRadiance)
+        SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputDiffuseDirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputVolumeDirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDilatedFilterOutputFilteredDiffuseDirectRadiance)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDilatedFilterOutputFilteredVolumeDirectRadiance)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder0Sampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     END_SHADER_PARAMETERS()
@@ -135,21 +198,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
     }
     need_reset |= view->persistent_data_->denoiser_persistent_data_->MakeSureExists(view, builder);
 
-    auto history_length = builder.CreateTexture2D(
-        view->film_width_, view->film_height_,
-        PixelFormatType::kR8_UNORM
-    );
-    history_length->SetName("CurrentLightingHistoryLength");
-    auto prefiltered_diffuse_direct_lighting = builder.CreateTexture2D(
-        view->film_width_, view->film_height_,
-        PixelFormatType::kR16G16B16A16_FLOAT
-    );
-    prefiltered_diffuse_direct_lighting->SetName("CurrentPreFilteredDiffuseDirectLighting");
-    auto denoised_diffuse_indirect_lighting = builder.CreateTexture2D(
-        view->film_width_, view->film_height_,
-        PixelFormatType::kR16G16B16A16_FLOAT
-    );
-    denoised_diffuse_indirect_lighting->SetName("CurrentDenoisedDiffuseIndirectLighting");
+    auto denoiser_data = view->denoiser_view_data_.Raw();
 
     auto & lib = RDGShaderLibrary::Get();
     auto UB = builder.Allocate<DenoiseDiffuseLightingUB>();
@@ -162,6 +211,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         UB->DilatedConvolutionLuminanceSize = glm::clamp(CVar_DilatedConvolutionLuminanceSize.Get(), 0.01f, 100.f);
         UB->ConvolutionNormalDifferenceWeight = glm::clamp(CVar_ConvolutionNormalDifferenceWeight.Get(), 0.01f, 100.f);
         UB->DenoiseDiffuseIndirect = CVar_DenoiseDiffuseIndirect.Get() ? 1 : 0;
+        UB->VolumeDepthHistoryThreshold = 0.01f;
     }
     {
         auto ini = RDGShaderInitializationInfo {};
@@ -174,20 +224,28 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->UB = UB;
         params->G_Normal = view->G_normal_.Raw();
         params->G_Depth = view->G_depth_.Raw();
+        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
         params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
+        params->PreviousVolumeRepresentativeDepthAndVariation = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_representative_depth_and_variation_.Raw();
         params->InputDiffuseDirectRadianceTexture = view->diffuse_direct_lighting_.Raw();
+        params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_.Raw();
         params->InputDiffuseIndirectRadianceTexture = view->diffuse_indirect_lighting_.Raw();
         params->PreviousHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_lighting_history_length.Raw();
-        params->RWHistoryLengthTexture = history_length.Raw();
+        params->RWHistoryLengthTexture = denoiser_data->history_length.Raw();
         params->PreviousPreFilteredDiffuseDirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_prefiltered_diffuse_direct_lighting.Raw();
+        params->PreviousPreFilteredVolumeDirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_prefiltered_volume_direct_lighting.Raw();
         params->PreviousDenoisedDiffuseIndirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_denoised_diffuse_indirect_lighting.Raw();
-        params->RWPreFilteredDiffuseDirectRadianceTexture = prefiltered_diffuse_direct_lighting.Raw();
-        params->RWDenoisedDiffuseIndirectRadianceTexture = denoised_diffuse_indirect_lighting.Raw();
+        params->RWPreFilteredDiffuseDirectRadianceTexture = denoiser_data->prefiltered_diffuse_direct_lighting.Raw();
+        params->RWPreFilteredVolumeDirectRadianceTexture = denoiser_data->prefiltered_volume_direct_lighting.Raw();
+        params->RWDenoisedVolumeDirectRadianceTexture = denoiser_data->prefiltered_volume_direct_lighting.Raw();
+        params->RWDenoisedDiffuseIndirectRadianceTexture = denoiser_data->denoised_diffuse_indirect_lighting.Raw();
         if (!CVar_UseDilatedConvolution.Get()) {
             // Skip dilated convolution, output directly
             params->RWDenoisedDiffuseDirectRadianceTexture = view->denoised_diffuse_direct_lighting_.Raw();
+            params->RWDenoisedVolumeDirectRadianceTexture = view->denoised_volume_direct_lighting_.Raw();
         } else {
             params->RWDenoisedDiffuseDirectRadianceTexture = nullptr;
+            params->RWDenoisedVolumeDirectRadianceTexture = nullptr;
         }
         params->PointBorder0Sampler = RHI::Get().GetGlobalSamplers().point_border_0;
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
@@ -198,13 +256,15 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         );
 
         // Output denoised diffuse indirect lighting
-        view->denoised_diffuse_indirect_lighting_ = denoised_diffuse_indirect_lighting;
+        view->denoised_diffuse_indirect_lighting_ = denoiser_data->denoised_diffuse_indirect_lighting;
     }
     // Dilated convolution
     if (CVar_UseDilatedConvolution.Get()) {
         constexpr int kMaxPasses = 2;
         TRef<RDGTexture> input_texture, output_texture;
-        input_texture = prefiltered_diffuse_direct_lighting;
+        TRef<RDGTexture> volume_input_texture, volume_output_texture;
+        input_texture = denoiser_data->prefiltered_diffuse_direct_lighting;
+        volume_input_texture = denoiser_data->prefiltered_volume_direct_lighting;
         for (int i = 0; i < kMaxPasses; i++) {
             auto params = builder.Allocate<DilatedFilterDiffuseDirectLightingShader::Params>();
             auto ini = RDGShaderInitializationInfo {};
@@ -217,15 +277,21 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             params->UB = UB;
             params->G_Normal = view->G_normal_.Raw();
             params->G_Depth = view->G_depth_.Raw();
+            params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
             params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
-            params->HistoryLengthTexture = history_length.Raw();
-            params->DilatedFilterInputRadianceTexture = input_texture.Raw();
+            params->PreviousVolumeRepresentativeDepthAndVariation = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_representative_depth_and_variation_.Raw();
+            params->HistoryLengthTexture = denoiser_data->history_length.Raw();
+            params->DilatedFilterInputDiffuseDirectRadianceTexture = input_texture.Raw();
+            params->DilatedFilterInputVolumeDirectRadianceTexture = volume_input_texture.Raw();
             if (i != kMaxPasses - 1) {
                 output_texture = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
+                volume_output_texture = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
             } else {
                 output_texture = view->denoised_diffuse_direct_lighting_;
+                volume_output_texture = view->denoised_volume_direct_lighting_;
             }
-            params->RWDilatedFilterOutputFilteredRadiance = output_texture.Raw();
+            params->RWDilatedFilterOutputFilteredDiffuseDirectRadiance = output_texture.Raw();
+            params->RWDilatedFilterOutputFilteredVolumeDirectRadiance = volume_output_texture.Raw();
             params->PointBorder0Sampler = RHI::Get().GetGlobalSamplers().point_border_0;
             params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
             Helpers::AddComputePass<DilatedFilterDiffuseDirectLightingShader>(
@@ -235,22 +301,8 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             );
             // Ping pong
             input_texture = output_texture;
+            volume_input_texture = volume_output_texture;
         }
-    }
-    // Finally, update persistent data
-    {
-        auto persistent = view->persistent_data_->denoiser_persistent_data_;
-        persistent->prev_lighting_history_length = history_length;
-        persistent->prev_lighting_history_length->SetName("PrevLightingHistoryLength");
-        persistent->prev_lighting_history_length->SetExport();
-
-        persistent->prev_prefiltered_diffuse_direct_lighting = prefiltered_diffuse_direct_lighting;
-        persistent->prev_prefiltered_diffuse_direct_lighting->SetName("PrevPreFilteredDiffuseDirectLighting");
-        persistent->prev_prefiltered_diffuse_direct_lighting->SetExport();
-
-        persistent->prev_denoised_diffuse_indirect_lighting = denoised_diffuse_indirect_lighting;
-        persistent->prev_denoised_diffuse_indirect_lighting->SetName("PrevDenoisedDiffuseIndirectLighting");
-        persistent->prev_denoised_diffuse_indirect_lighting->SetExport();
     }
 }
 

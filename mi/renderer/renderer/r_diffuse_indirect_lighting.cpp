@@ -470,6 +470,36 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeDiffuseIndirectLightingShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ComputeDiffuseIndirectLighting");
 
+static glm::uvec2 GetTileDimensions(RendererView * view) {
+    return glm::uvec2(
+        DivideAndRoundUp(view->film_width_, DiffuseIndirectLightingShader::kTileSize),
+        DivideAndRoundUp(view->film_height_, DiffuseIndirectLightingShader::kTileSize)
+    );
+}
+
+static uint32_t GetTileIndexMipLevels(glm::uvec2 tile_dimensions) {
+    uint32_t tile_index_mip_levels = 0;
+    while ((1u << tile_index_mip_levels) < std::max(tile_dimensions.x, tile_dimensions.y))
+        tile_index_mip_levels++;
+    return tile_index_mip_levels;
+}
+
+void DiffuseIndirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView * view) {
+    auto tile_dimensions = GetTileDimensions(view);
+    auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
+    screen_probe_radiance_depth = builder.CreateTexture2D(
+        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    auto num_tiles = tile_dimensions.x * tile_dimensions.y;
+    screen_probe_cache_updated_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
+    tile_screen_probe_header_texture = builder.CreateTexture2D(
+        1 << tile_index_mip_levels, 1 << tile_index_mip_levels, PixelFormatType::kR32_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+        tile_index_mip_levels
+    );
+}
+
 bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions, uint32_t header_tile_dimension) {
     bool flag = true;
     auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
@@ -528,6 +558,18 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
     return flag;
 }
 
+void DiffuseIndirectLightingPersistentData::FinalUpdate(RendererView *view) {
+    // Update persistent data
+    auto persistent = view->persistent_data_->diffuse_indirect_lighting_persistent_data_;
+    persistent->ScreenProbeRadianceDepthTexture = view->diffuse_indirect_lighting_data_->screen_probe_radiance_depth;
+    persistent->ScreenProbeRadianceDepthTexture->SetExport();
+    persistent->ScreenProbeCacheMRUQueueBuffer = view->diffuse_indirect_lighting_data_->screen_probe_cache_updated_mru_queue_buffer;
+    persistent->ScreenProbeCacheMRUQueueBuffer->SetExport();
+    persistent->TileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture;
+    persistent->TileScreenProbeHeaderTexture->SetExport();
+}
+
+
 void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
     RDGSectionGuard section(builder, "Render_ComputeIndirectDiffuseLighting");
 
@@ -541,18 +583,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     bool need_reset = false;
     mi_check(view->film_width_ % DiffuseIndirectLightingShader::kTileSize == 0, "View width not a multiple of tile size");
     mi_check(view->film_height_ % DiffuseIndirectLightingShader::kTileSize == 0, "View height not a multiple of tile size");
-    auto tile_dimensions = glm::uvec2(
-        DivideAndRoundUp(view->film_width_, DiffuseIndirectLightingShader::kTileSize),
-        DivideAndRoundUp(view->film_height_, DiffuseIndirectLightingShader::kTileSize)
-    );
-    uint32_t tile_index_mip_levels = 0;
-    while ((1u << tile_index_mip_levels) < std::max(tile_dimensions.x, tile_dimensions.y))
-        tile_index_mip_levels++;
-    auto tile_screen_probe_header_texture = builder.CreateTexture2D(
-        1 << tile_index_mip_levels, 1 << tile_index_mip_levels, PixelFormatType::kR32_UINT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
-        tile_index_mip_levels
-    );
+    auto tile_dimensions = GetTileDimensions(view);
+    auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
+
     uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
 
     if (!view->persistent_data_->diffuse_indirect_lighting_persistent_data_
@@ -561,9 +594,6 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
     need_reset |= CVar_ResetDiffuseIndirectLighting.Get();
 
     auto atlas_dimensions = tile_dimensions * DiffuseIndirectLightingShader::kTileSize;
-    auto screen_probe_radiance_depth = builder.CreateTexture2D(
-        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
-    );
     auto screen_probe_vertical_filtered_radiance_depth = builder.CreateTexture2D(
         atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
@@ -599,7 +629,6 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
 
     auto screen_probe_spawn_cache_matches_buffer = builder.CreateBuffer<glm::uvec2>(num_tiles);
     auto screen_probe_cache_to_mru_queue_index_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto screen_probe_cache_updated_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
     auto screen_probe_cache_mru_flag_prefix_sum_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
     auto screen_probe_cache_mru_queue_entry_allocator = builder.CreateBuffer<uint32_t>();
 
@@ -650,7 +679,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->PreviousScreenProbeRadianceDepthTexture =
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeRadianceDepthTexture.Raw();
         params->RWScreenProbeRadianceDepthTexture =
-            screen_probe_radiance_depth.Raw();
+            view->diffuse_indirect_lighting_data_->screen_probe_radiance_depth.Raw();
         params->RWScreenProbeVerticalFilteredRadianceDepthTexture =
             screen_probe_vertical_filtered_radiance_depth.Raw();
         params->RWScreenProbeFilteredRadianceDepthTexture =
@@ -689,7 +718,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->RWScreenProbeCacheMRUQueueBuffer =
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeCacheMRUQueueBuffer.Raw();
         params->RWScreenProbeCacheUpdatedMRUQueueBuffer =
-            screen_probe_cache_updated_mru_queue_buffer.Raw();
+            view->diffuse_indirect_lighting_data_->screen_probe_cache_updated_mru_queue_buffer.Raw();
         params->RWScreenProbeCacheToMRUQueueIndexBuffer =
             screen_probe_cache_to_mru_queue_index_buffer.Raw();
         params->RWScreenProbeCacheMRUFlagBuffer =
@@ -707,9 +736,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->PreviousTileScreenProbeHeaderTexture =
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->TileScreenProbeHeaderTexture.Raw();
         params->RWTileScreenProbeHeaderTexture =
-            tile_screen_probe_header_texture.Raw();
+            view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
         params->TileScreenProbeHeaderTexture =
-            tile_screen_probe_header_texture.Raw();
+            view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
 
         params->RWReprojectionFailTileCount =
             reprojection_fail_tile_count.Raw();
@@ -1067,9 +1096,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         for (uint i = 1; i < tile_index_mip_levels; i++) {
             auto index_params = builder.Allocate<MakeTileScreenProbeHeaderIndexShader::Params>();
             {
-                index_params->RWInTileScreenProbeHeaderTexture = tile_screen_probe_header_texture.Raw();
+                index_params->RWInTileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
                 index_params->RWInTileScreenProbeHeaderTexture.mip_level = i - 1;
-                index_params->RWOutTileScreenProbeHeaderTexture = tile_screen_probe_header_texture.Raw();
+                index_params->RWOutTileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
                 index_params->RWOutTileScreenProbeHeaderTexture.mip_level = i;
             }
             auto shader = lib.GetShader<MakeTileScreenProbeHeaderIndexShader>(ini);
@@ -1102,17 +1131,6 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
             DivideAndRoundUp(view->film_width_, DiffuseIndirectLightingShader::kTileSize),
             DivideAndRoundUp(view->film_height_, DiffuseIndirectLightingShader::kTileSize)
         );
-    }
-
-    // Update persistent data
-    {
-        auto persistent = view->persistent_data_->diffuse_indirect_lighting_persistent_data_;
-        persistent->ScreenProbeRadianceDepthTexture = screen_probe_radiance_depth;
-        persistent->ScreenProbeRadianceDepthTexture->SetExport();
-        persistent->ScreenProbeCacheMRUQueueBuffer = screen_probe_cache_updated_mru_queue_buffer;
-        persistent->ScreenProbeCacheMRUQueueBuffer->SetExport();
-        persistent->TileScreenProbeHeaderTexture = tile_screen_probe_header_texture;
-        persistent->TileScreenProbeHeaderTexture->SetExport();
     }
 }
 

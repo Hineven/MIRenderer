@@ -65,7 +65,7 @@ bool LightStructurePersistentData::MakeSureExists([[maybe_unused]] RendererView 
     return flag;
 }
 
-void LightStructurePersistentData::FinalUpdate(RendererView *view) {
+void LightStructurePersistentData::FinalUpdate([[maybe_unused]] RendererView *view) {
     // No staged buffers, nothing to do here
 }
 

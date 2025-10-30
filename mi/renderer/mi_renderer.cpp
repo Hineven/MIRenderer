@@ -23,9 +23,12 @@
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
+#include "renderer/r_denoiser.h"
+#include "renderer/r_diffuse_indirect_lighting.h"
 #include "renderer/r_internal_common.h"
 #include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
+#include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
@@ -304,18 +307,30 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Pre-allocate buffers that may be used among multiple lighting stages
-    if (!view->light_structure_) {
-        view->light_structure_ = new LightStructureData();
+    if (!view->volume_primitives_) {
+        view->volume_primitives_ = new VolumePrimitivesViewData();
     }
-    view->light_structure_->Allocate(builder);
+    view->volume_primitives_->Allocate(builder, view);
     if (!view->world_cache_) {
         view->world_cache_ = new WorldRadianceCacheData();
     }
     view->world_cache_->Allocate(builder);
+    if (!view->light_structure_) {
+        view->light_structure_ = new LightStructureData();
+    }
+    view->light_structure_->Allocate(builder);
+    if (!view->diffuse_indirect_lighting_data_) {
+        view->diffuse_indirect_lighting_data_ = new DiffuseIndirectLightingData();
+    }
+    view->diffuse_indirect_lighting_data_->Allocate(builder, view);
+    if (!view->denoiser_view_data_) {
+        view->denoiser_view_data_ = new DenoiserViewData();
+    }
+    view->denoiser_view_data_->Allocate(builder, view);
+
 
     // Pre-allocate shared view persistent data among multiple lighting stages
-    view->MakeSureLightStructurePersistentDataExists(builder);
-    view->MakeSureHashGridPersistentDataExists(builder);
+    view->MakeSurePersistentDataExists(builder);
 
     // Ready for rendering
 

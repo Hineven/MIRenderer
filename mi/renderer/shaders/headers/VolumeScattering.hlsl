@@ -6,4 +6,9 @@ float SampleExponentialScatteringMedium (float ExtinctionFactor, float u) {
     return FreeFlightLength;
 }
 
+// Return the transmittance after traveling through a distance 'Depth' in the medium
+float IntegrateExponentialScatteringMedium (float ExtinctionFactor, float Depth) {
+    return exp(-ExtinctionFactor * max(Depth, 0));
+}
+
 #endif

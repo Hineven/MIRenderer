@@ -16,8 +16,59 @@
 
 #include "r_view_common.h"
 #include "r_persistent.h"
+#include "r_volume_primitives.h"
 
 MI_NAMESPACE_BEGIN
+
+void VolumePrimitivesViewData::Allocate(RenderGraphBuilder &builder, RendererView * view) {
+    G_volume_min_max_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR16G16_FLOAT);
+    G_volume_min_max_->SetName("GBuffer Volume Min Max");
+    G_volume_density_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR32_FLOAT);
+    G_volume_density_->SetName("GBuffer Volume Density");
+    G_volume_color_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR8G8B8A8_UNORM);
+    G_volume_color_->SetName("GBuffer Volume Color");
+    G_volume_density_fourier_ = builder.CreateTexture2DArray(
+        view->film_width_, view->film_height_, 3, PixelFormatType::kR32_FLOAT);
+    G_volume_density_fourier_->SetName("GBuffer Volume Density Fourier");
+    G_volume_weighted_color_fourier_ = builder.CreateTexture2DArray(
+        view->film_width_, view->film_height_, 3, PixelFormatType::kR8G8B8A8_UNORM);
+    G_volume_weighted_color_fourier_->SetName("GBuffer Volume Weighted Color Fourier");
+    G_volume_cdf_attenuation_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR16G16_FLOAT);
+    G_volume_cdf_attenuation_->SetName("GBuffer Volume CDF Attenuation");
+
+    volume_sample_color_and_linear_depth_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
+    volume_sample_color_and_linear_depth_->SetName("Volume Sample Color and Linear Depth");
+    volume_sample_transmittance_and_pdf_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR16G16_FLOAT);
+    volume_sample_transmittance_and_pdf_->SetName("Volume Sample Transmittance and PDF");
+
+    volume_representative_depth_and_variation_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR32G32_FLOAT);
+    volume_representative_depth_and_variation_->SetName("Volume Representative Depth and Variation");
+}
+
+bool VolumePrimitivesViewPersistentData::MakeSureExists([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
+    bool flag = false;
+    // Actually, we don't need to do anything. Passing null resources to shader
+    // fallbacks to a default and safe behavior. Just tell the shader not to use history.
+    if (!prev_volume_representative_depth_and_variation_) {
+        flag = true;
+    }
+    return flag;
+}
+
+void VolumePrimitivesViewPersistentData::FinalUpdate(RendererView *view) {
+    prev_volume_representative_depth_and_variation_ =
+        view->volume_primitives_->volume_representative_depth_and_variation_;
+    prev_volume_representative_depth_and_variation_->SetName("PrevVolumeRepresentativeDepthAndVariation");
+    prev_volume_representative_depth_and_variation_->SetExport();
+}
+
 
 struct RenderVolumePrimitivesUB {
     glm::uvec2 TileDimensions;
@@ -25,7 +76,8 @@ struct RenderVolumePrimitivesUB {
     uint32_t NumTiles;
     uint32_t MaxNumPrimitiveInstances;
     uint32_t FrameIndex;
-    glm::uvec2 Padding;
+    float    VolumeDistributionMergingEpsilon;
+    uint32_t Padding;
     uint32_t EnableFourier; // True:Use Fourier volume
     uint32_t DensityFourierOrder; // If IsFourier, the Fourier order of Density
     uint32_t ColorFourierOrder; // The Fourier order of Color
@@ -62,6 +114,7 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeCdfAttenuation)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleColorAndLinearDepth)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleTransmittanceAndPdf)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeRepresentativeDepthAndVariation)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWTransmittance)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
@@ -215,6 +268,9 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     common_ub->NumTiles = num_tiles;
     common_ub->MaxNumPrimitiveInstances = kMaxNumActiveVolumePrimitives;
     common_ub->FrameIndex = view->persistent_data_->frame_index_;
+    // Allowed relative distance for merging ray volume distributions rather than break them apart
+    // |vol1| ..(distance).. |vol2|: if distance < epsilon * (size_of_vol1 + size_of_vol2), then merge
+    common_ub->VolumeDistributionMergingEpsilon = 2e-2f;
     common_ub->EnableFourier = CVar_EnableFourier.Get() ? 1 : 0;
     common_ub->DensityFourierOrder = CVar_DensityFourierOrder.Get();
     common_ub->ColorFourierOrder = CVar_ColorFourierOrder.Get();
@@ -240,14 +296,16 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWTileInstanceOffsetBuffer = tile_instance_offset.Raw();
         params->TileInstanceCountBuffer = tile_instance_count.Raw();
         params->RWTileInstanceCountBuffer = tile_instance_count.Raw();
-        params->RWVolumeMinMax = view->G_volume_min_max_.Raw();
-        params->RWVolumeDensity = view->G_volume_density_.Raw();
-        params->RWVolumeColor = view->G_volume_color_.Raw();
-        params->RWVolumeDensityFourier = view->G_volume_density_fourier_.Raw();
-        params->RWVolumeWeightedColorFourier = view->G_volume_weighted_color_fourier_.Raw();
-        params->RWVolumeCdfAttenuation = view->G_volume_cdf_attenuation_.Raw();
-        params->RWVolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
-        params->RWVolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();
+        auto vol = view->volume_primitives_;
+        params->RWVolumeMinMax = vol->G_volume_min_max_.Raw();
+        params->RWVolumeDensity = vol->G_volume_density_.Raw();
+        params->RWVolumeColor = vol->G_volume_color_.Raw();
+        params->RWVolumeDensityFourier = vol->G_volume_density_fourier_.Raw();
+        params->RWVolumeWeightedColorFourier = vol->G_volume_weighted_color_fourier_.Raw();
+        params->RWVolumeCdfAttenuation = vol->G_volume_cdf_attenuation_.Raw();
+        params->RWVolumeSampleColorAndLinearDepth = vol->volume_sample_color_and_linear_depth_.Raw();
+        params->RWVolumeSampleTransmittanceAndPdf = vol->volume_sample_transmittance_and_pdf_.Raw();
+        params->RWVolumeRepresentativeDepthAndVariation = vol->volume_representative_depth_and_variation_.Raw();
         params->RWTransmittance = view->G_transmittance_.Raw();
 
         params->G_Depth = view->G_depth_.Raw();
@@ -261,7 +319,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     }
     {
         auto shader = RDGShaderLibrary::Get().GetShader<CollectVolumePrimitivesShader>();
-        for (auto e : ctx.visible_renderables) {
+        for (const auto& e : ctx.visible_renderables) {
             if (auto inst = e->As<VolumePrimitivesInstance>()) {
                 auto vol = inst->GetVolumePrimitives();
                 if (vol) {

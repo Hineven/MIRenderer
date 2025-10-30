@@ -10,15 +10,27 @@
 #include <rdg/rdg_resource.h>
 MI_NAMESPACE_BEGIN
 
-struct DenoiserPersistentData : RefCounted<> {
+struct DenoiserViewData : public RefCounted<> {
+    TRef<RDGTexture> history_length;
+    TRef<RDGTexture> prefiltered_diffuse_direct_lighting;
+    TRef<RDGTexture> prefiltered_volume_direct_lighting;
+    TRef<RDGTexture> denoised_diffuse_indirect_lighting;
+    void Allocate(RenderGraphBuilder & builder, RendererView * view);
+};
+
+struct DenoiserPersistentData : public RefCounted<> {
     // Denoiser history for diffuse lighting
     TRef<RDGTexture> prev_lighting_history_length;
     // RELAX: this is temporally accumulated (rgb + luminance variance)
     TRef<RDGTexture> prev_prefiltered_diffuse_direct_lighting;
+    TRef<RDGTexture> prev_prefiltered_volume_direct_lighting;
     TRef<RDGTexture> prev_denoised_diffuse_indirect_lighting;
 
     bool MakeSureExists(RendererView * view, RenderGraphBuilder & builder) ;
+
+    void FinalUpdate(RendererView * view);
 };
+
 
 MI_NAMESPACE_END
 #endif //MI_R_DENOISER_H

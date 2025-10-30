@@ -18,7 +18,8 @@ struct RenderVolumePrimitivesUB {
     uint NumTiles;
     uint MaxNumPrimitiveInstances;
     uint FrameIndex;
-    uint2 Padding;
+    float VolumeDistributionMergingEpsilon;
+    uint Padding;
     uint EnableFourier;
     uint DensityFourierOrder;
     uint ColorFourierOrder;
@@ -76,6 +77,8 @@ RWTexture2D<float2> RWVolumeCdfAttenuation;
 RWTexture2D<float4> RWVolumeSampleColorAndLinearDepth;
 [[vk::image_format("rg16f")]]
 RWTexture2D<float2> RWVolumeSampleTransmittanceAndPdf;
+[[vk::image_format("rg32f")]]
+RWTexture2D<float2> RWVolumeRepresentativeDepthAndVariation;
 [[vk::image_format("r8")]]
 RWTexture2D<float>  RWTransmittance;
 
@@ -522,7 +525,69 @@ RayFourierVolumeDistribution RenderRayFourier(
     return Result;
 }
 
-RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionLinearScattering(
+RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionExponentialScatteringApproax(
+    RayUniformVolumeDistribution old_distr,
+    RayVolumePrimitiveIntersection intersection,
+    float u,
+    inout float Cdf,
+    inout float Attenuation,
+    bool bSelected
+) {
+    // For selected pixels, we simply keep the old one
+    if(bSelected) return old_distr;
+
+    RayUniformVolumeDistribution new_distr;
+    new_distr.l = intersection.l;
+    new_distr.r = intersection.r;
+    new_distr.Density = intersection.Density;
+    new_distr.Color = intersection.Color;
+
+    // If the old distribution is zero, use the new one
+    if(old_distr.Density == 0) return new_distr;
+
+    // Determine if we should merge or break
+    bool bBreak = (old_distr.r - old_distr.l) * (1.f + UB.VolumeDistributionMergingEpsilon) < (new_distr.l - old_distr.r);
+
+    RayUniformVolumeDistribution result;
+    if(bBreak) {
+        // Select one of the two distributions based on transmittance and update attenuation
+        float Transmittance = IntegrateExponentialScatteringMedium(old_distr.Density, old_distr.r - old_distr.l);
+        if(u < Transmittance) {
+            // Keep old distribution
+            result = old_distr;
+            // Update Cdf
+            Cdf *= Transmittance;
+            // Mark the pixel as selected
+            bSelected = true;
+        } else {
+            // Use new distribution
+            result = new_distr;
+            // Update Cdf and attenuation
+            Cdf *= (1 - Transmittance);
+            Attenuation *= Transmittance;
+        }
+    } else {
+        // Simply merge the distributions
+        float old_l = old_distr.l;
+        float old_r = old_distr.r;
+        float new_l = new_distr.l;
+        float new_r = new_distr.r;
+        
+        float old_int = (old_r - old_l) * old_distr.Density;
+        float new_int = (new_r - new_l) * new_distr.Density;
+        float total_int = max(1e-5, old_int + new_int);
+
+        // Strategy: Preserve boundaries and integration
+        result.l = min(old_l, new_l);
+        result.r = max(old_r, new_r);
+        result.Density = total_int / (result.r - result.l);
+        // Blend color with weighted integration
+        result.Color = (old_distr.Color * old_int + new_distr.Color * new_int) / total_int;
+    }
+    return result;
+}
+
+RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionLinearScattering1(
     RayUniformVolumeDistribution old_distr,
     RayVolumePrimitiveIntersection intersection,
     inout float Cdf,
@@ -561,7 +626,7 @@ RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionLinearScattering(
     y_val[1] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[1]);
     y_val[2] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[2]);
     y_val[3] = TempFn(old_l, old_r, old_distr.Density, new_l, new_r, new_distr.Density, x_val[3]);
-    const float TARGET = 1.f; // Linear integration up to 1
+    const float TARGET = 1.f;
     float x_sol = x_val[3];
     for (int segment = 0; segment < 3; segment++) {
         float x1 = x_val[segment];
@@ -616,8 +681,7 @@ RayUniformVolumeDistribution RenderRay(
     inout float3 SampleColor,
     inout float SampleDepth,
     inout float SamplePdf,
-    inout float3 VolumeNormal,
-    inout float  RepresentativeDepth,
+    inout float RepresentativeDepth, // Used for reprojection
     inout float Cdf,
     inout float Attenuation
 ) {
@@ -627,12 +691,14 @@ RayUniformVolumeDistribution RenderRay(
     Result.Density = 0.f;
     Result.Color = float3(0.f, 0.f, 0.f);
     Cdf = 1.f;
+    Attenuation = 1.f;
     SampleDepth = 1e9f;
     SampleColor = 0;
     TotalTransmittance = 1.f;
-    VolumeNormal = 0.f.xxx;
     RepresentativeDepth = 0.f;
-    // First pass: compute total transmittance
+
+    bool bSelected = false;
+
     for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
         uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
         uint PrimitiveIndex, RenderableIndex;
@@ -659,18 +725,22 @@ RayUniformVolumeDistribution RenderRay(
             Intersection.l = max(lr.x, 0);
             Intersection.r = max(lr.y, 0);
             // Sample with decomposition tracking
-
             float CurrentSampledDepth = SampleRayVolumePrimitiveIntersection(Intersection, u);
             if(CurrentSampledDepth < SampleDepth) {
                 // Update the sample depth
                 SampleDepth = CurrentSampledDepth;
             }
-
+            float v = rng.rand();
             // Update the result distribution
-            Result = UpdateRayUniformVolumeDistributionLinearScattering(Result, Intersection, Cdf, Attenuation);
+            Result = UpdateRayUniformVolumeDistributionExponentialScatteringApproax(Result, Intersection, v, Cdf, Attenuation, bSelected);
         }
     }
-    // Second pass: sample the medium
+
+    if(Result.Density > 0.f) {
+        float Transmittance = IntegrateExponentialScatteringMedium(Result.Density, Result.r - Result.l);
+        RepresentativeDepth = Result.l + SampleExponentialScatteringMedium(Result.Density, rng.rand() * (1 - Transmittance));
+    }
+
     SamplePdf = 1.f;
     SampleTransmittance = 1.f;
     // Used to compute the pdf
@@ -695,7 +765,6 @@ RayUniformVolumeDistribution RenderRay(
         // Clamp volumes to the nearest seen surface
         lr.y = min(lr.y, MaxLinearDepth);
         if(bIntersected && lr.y > max(0.f, lr.x)) {
-
             float TMax = min(SampleDepth, lr.y);
             float TMin = max(lr.x, 0.f);
             float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
@@ -758,7 +827,6 @@ void DrawVolumePrimitives (
             float TotalTransmittance = 1.f;
             Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
             if(UB.EnableFourier) {
-                // Fourier volume rendering
                 RayFourierVolumeDistribution Rendered = RenderRayFourier(
                     RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
@@ -790,20 +858,20 @@ void DrawVolumePrimitives (
                 if(Density_valid == 1) OldFlags |= FLAG_BITS_TEXTURE_INVALID_FOR_SSRT;
                 RWFlags[PixelIndex] = OldFlags;
             } else {
-                // Uniform volume rendering
+                float RepresentativeDepth = 0.f;
                 RayUniformVolumeDistribution Rendered = RenderRay(
                     RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
                     rng,
                     TotalTransmittance, SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
-                     Cdf, Attenuation
-                );
+                     RepresentativeDepth, Cdf, Attenuation);
                 RWVolumeDensity[PixelIndex] = Rendered.Density;
                 RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
                 RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
                 RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
                 RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
+                RWVolumeRepresentativeDepthAndVariation[PixelIndex] = float2(RepresentativeDepth, Rendered.r - Rendered.l);
                 RWTransmittance[PixelIndex] = TotalTransmittance;
                 // Mark the pixel as invalid for SSRT if it overlaps with a volume
                 uint OldFlags = RWFlags[PixelIndex];

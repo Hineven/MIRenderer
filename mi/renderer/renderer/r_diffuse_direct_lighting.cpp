@@ -15,9 +15,9 @@
 #include "r_view_common.h"
 #include "r_persistent.h"
 #include "r_light_structure.h"
+#include "r_volume_primitives.h"
 MI_NAMESPACE_BEGIN
-
-// Some CVars are exposed through r_diffuse_direct_lighting.h
+    // Some CVars are exposed through r_diffuse_direct_lighting.h
 
 static CVar<float> CVar_ShadowRayLengthMultiplier(
     "r.lightgrid.shadow_ray_length_multiplier",
@@ -511,8 +511,8 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
     auto volume_ray_to_trace_sampled_light_index = builder.CreateBuffer<uint32_t>(num_screen_pixels);
     FillParametersForLightStructure(view, volprims_params);
 
-    volprims_params->VolumeSampleColorAndLinearDepth = view->volume_sample_color_and_linear_depth_.Raw();
-    volprims_params->VolumeSampleTransmittanceAndPdf = view->volume_sample_transmittance_and_pdf_.Raw();
+    volprims_params->VolumeSampleColorAndLinearDepth = view->volume_primitives_->volume_sample_color_and_linear_depth_.Raw();
+    volprims_params->VolumeSampleTransmittanceAndPdf = view->volume_primitives_->volume_sample_transmittance_and_pdf_.Raw();
     auto volume_di_radiance_estimate_texture = builder.CreateTexture(
         RHITextureDesc{RHITextureType::k2D, RHITextureDimensions {view->film_width_, view->film_height_, 1},
             1, 1, PixelFormatType::kR16G16B16A16_FLOAT,

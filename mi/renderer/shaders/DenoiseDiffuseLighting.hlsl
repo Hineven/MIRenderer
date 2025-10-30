@@ -18,6 +18,8 @@ struct DenoiseDiffuseDirectLightingUB {
 	float DilatedConvolutionLuminanceSize;
 	float ConvolutionNormalDifferenceWeight;
 	uint  DenoiseDiffuseIndirect;
+	float VolumeDepthHistoryThreshold;
+	uint3 Padding;
 };
 
 ConstantBuffer<DenoiseDiffuseDirectLightingUB> UB;
@@ -37,6 +39,12 @@ float GetFilterPositionWeight(float NeighborLinearDepth, float LinearDepth, floa
 float GetPlaneDistanceWeight(float3 WorldPosition, float3 CenterWorldPosition, float3 Normal, float RefLinearDepth, float Factor = 2000.f) {
 	float Distance = dot(WorldPosition - CenterWorldPosition, Normal);
 	float RelativeDepthDifference = Distance / RefLinearDepth;
+	return exp2(-Factor * (RelativeDepthDifference * RelativeDepthDifference));
+}
+
+float GetDepthWeight (float Depth1, float Depth2, float Factor = 2000.f) {
+	float Distance = abs(Depth1 - Depth2);
+	float RelativeDepthDifference = Distance / min(Depth1, Depth2);
 	return exp2(-Factor * (RelativeDepthDifference * RelativeDepthDifference));
 }
 
@@ -73,13 +81,11 @@ bool IsOutOfFilm(float2 PixelFilmPosition) {
 
 Texture2D<float4> G_Normal;
 Texture2D<float> G_Depth;
-// Volume transmittance
-Texture2D<float> G_Transmittance;
 // A representative depth & var for the volume scattering along the view ray. Used for bilateral
 // weights and temporal reprojection.
 Texture2D<float2> G_VolumeRepresentativeDepthAndVariation;
 // Volume normal is inferred with heuristics
-Texture2D<float4> G_VolumeNormal;
+// Texture2D<float4> G_VolumeNormal;
 
 Texture2D<float> PreviousDepthTexture;
 Texture2D<float> PreviousVolumeRepresentativeDepthAndVariation;
@@ -104,9 +110,9 @@ RWTexture2D<float4> RWDenoisedDiffuseDirectRadianceTexture;
 
 // Volume direct lighting
 [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> RWVolumePreFilteredDirectRadianceTexture;
+RWTexture2D<float4> RWPreFilteredVolumeDirectRadianceTexture;
 [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> RWVolumeDenoisedDirectRadianceTexture;
+RWTexture2D<float4> RWDenoisedVolumeDirectRadianceTexture;
 
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDenoisedDiffuseIndirectRadianceTexture;
@@ -136,8 +142,8 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 
 		// Volume
-		RWVolumePreFilteredDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
-		RWVolumeDenoisedDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
+		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
+		RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		
 		RWHistoryLengthTexture[CenterPixelCoords] = 0;
 		return ; // Empty pixel
@@ -155,7 +161,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 
 	for(int SampleIndex = 0; SampleIndex < 8; SampleIndex++) {
 		float3 PoissionSample = POISSON_8[SampleIndex];
-		float RotationAngle = InterleavedGradientNoise(CenterUV, UB.FrameIndex) * (2 * PI);
+		float RotationAngle = InterleavedGradientNoise(3761.f.xx + CenterFilmPosition, UB.FrameIndex) * (2 * PI);
 		PoissionSample.xy = RotateVector2D(PoissionSample.xy, RotationAngle);
 		float2 FilmOffset = PoissionSample.xy * KernelRadius;
 		float2 SampleFilmPosition = CenterFilmPosition + FilmOffset;
@@ -227,7 +233,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 				ZDepthToLinearDepth(C, HistoryZDepths.w)
 			);
 			float4 DepthDistances = abs(HistoryLinearDepths - PrevLinearDepth);
-			float  Noise = InterleavedGradientNoise(CenterUV * C.FilmDimensions, UB.FrameIndex);
+			float  Noise = InterleavedGradientNoise(CenterFilmPosition, UB.FrameIndex);
 			float4 DepthThresholds = UB.DepthHistoryThreshold * lerp(0.5, 1.5, Noise);
 			// UE's resolution for disocclusion misses on geometry edges
 			DepthThresholds /= clamp(saturate(dot(ViewDirection, Normal)), .1f, 1.0f); 
@@ -298,11 +304,11 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float4 HistoryVolumeVariations   = PreviousVolumeRepresentativeDepthAndVariation.GatherGreen(PointBorder0Sampler, HistoryGatherUV).wzxy;
 		float  PrevLinearDepth = ZDepthToLinearDepth(C, PreviousNDC.z);
 		float4 DepthDistances = abs(HistoryVolumeLinearDepths - PrevLinearDepth);
-		float  Noise = InterleavedGradientNoise(CenterUV * C.FilmDimensions, UB.FrameIndex);
+		float  Noise = InterleavedGradientNoise(CenterFilmPosition, UB.FrameIndex);
 		float4 DepthThresholds = UB.VolumeDepthHistoryThreshold * lerp(0.5, 1.5, Noise);
-		float3 VolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
+		// float3 VolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
 		// UE's resolution for disocclusion misses on geometry edges
-		DepthThresholds /= clamp(saturate(dot(ViewDirection, VolumeNormal)), .1f, 1.0f); 
+		// DepthThresholds /= clamp(saturate(dot(ViewDirection, VolumeNormal)), .1f, 1.0f); 
 		// Normalize by variation
 		DepthThresholds *= max(HistoryVolumeVariations, 1e-2f);
 		float4 OcclusionWeights   = select(DepthDistances < PrevLinearDepth * DepthThresholds, 1, 0);
@@ -369,10 +375,10 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 	// Write out
 	// Direct diffuse
 	RWPreFilteredDiffuseDirectRadianceTexture[CenterPixelCoords] = OutDiffuseDirectRadianceVariance;
-	RWVolumePreFilteredDirectRadianceTexture[CenterPixelCoords] = OutVolumeDirectRadianceVariance;
+	RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = OutVolumeDirectRadianceVariance;
 #ifdef OUTPUT_DIRECTLY
 	RWDenoisedDiffuseDirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseDirectRadianceVariance.rgb, NewHistoryLength);
-	RWVolumeDenoisedDirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeDirectRadianceVariance.rgb, NewHistoryLength);
+	RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeDirectRadianceVariance.rgb, NewHistoryLength);
 #endif
 
 	// Indirect diffuse
@@ -382,6 +388,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float3 OriginalDiffuseIndirect = InputDiffuseIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
 		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalDiffuseIndirect, 1);
 	}
+
 	RWHistoryLengthTexture[CenterPixelCoords] = NewHistoryLength / 255.f;
 }
 
@@ -421,12 +428,13 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 
 	
 	float3 CenterNormal = normalize(2.f * G_Normal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 1.f);
-	float3 CenterVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
+	// float3 CenterVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
 	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
 	float  CenterLinearDepth = ReversedZDepthToLinearDepth(C, CenterReversedZDepth);
 	float3 CenterWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(CenterUV), CenterLinearDepth);
 	
 	float4 CenterRadianceVariance = DilatedFilterInputDiffuseDirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0);
+	float4 CenterVolumeRadianceVariance = DilatedFilterInputVolumeDirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0);
 	float  HistoryLength = HistoryLengthTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).r * 255;
 
     // Diffuse normal weight is used for diffuse and can be used for specular depending on settings.
@@ -440,12 +448,20 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 		 KernelWeightGaussian3x3[0] * KernelWeightGaussian3x3[0] * CenterRadianceVariance.w * CenterRadianceVariance.w);
 	float SumDiffuseDirectWeight = KernelWeightGaussian3x3[0];
 
+	float4 SumVolumeDirectRadianceVariance = 
+		float4(KernelWeightGaussian3x3[0] * CenterVolumeRadianceVariance.rgb,
+		 KernelWeightGaussian3x3[0] * KernelWeightGaussian3x3[0] * CenterVolumeRadianceVariance.w * CenterVolumeRadianceVariance.w);
+	float SumVolumeDirectWeight = KernelWeightGaussian3x3[0];
+
 	// Variance based filtering
     float CenterLuminance = RadianceToLuminance(CenterRadianceVariance.rgb);
     float CenterVariance = CenterRadianceVariance.a;
 	// Compute tolerance for difference in luminance when filtering
     float CenterPhiLIlluminationInv = 1.0 / max(1.0e-4, UB.DilatedConvolutionLuminanceSize * sqrt(CenterVariance));
 
+	float CenterVolumeLuminance = RadianceToLuminance(CenterVolumeRadianceVariance.rgb);
+	float CenterVolumeVariance = CenterVolumeRadianceVariance.a;
+	float CenterVolumePhiLIlluminationInv = 1.0 / max(1.0e-4, UB.DilatedConvolutionLuminanceSize * sqrt(CenterVolumeVariance));
 
     float LuminanceWeightRelaxation = 1.0; // TODO make this useful
 
@@ -497,16 +513,26 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 
 			// Volume direct
 			{
-				float3 SampleVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, SampleUV, 0).xyz - 0.5);
+				// float3 SampleVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, SampleUV, 0).xyz - 0.5);
 				float2 SampleVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).xy;
 				float SampleLinearDepth = SampleVolumeDepthAndVariation.x;
 
 				float SampleWeight = GaussianWeight;
-				SampleWeight *= DistributionWeight;
+				SampleWeight *= GetDepthWeight(CenterVolumeDepthAndVariation.x, SampleLinearDepth);
 				if(SampleWeight > 1e-4)
 				{
-					float4 SampledRadianceVariance = DilatedFilterInputDiffuseDirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0);
-					
+					float4 SampledRadianceVariance = DilatedFilterInputVolumeDirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0);
+					float SampleLuminance = RadianceToLuminance(SampledRadianceVariance.rgb);
+
+					// Larget the variance, more tolerance for luminace differences
+					float LuminanceWeight = abs(CenterVolumeLuminance - SampleLuminance) * CenterVolumePhiLIlluminationInv;
+					LuminanceWeight = min(10.f, LuminanceWeight);
+					LuminanceWeight *= LuminanceWeightRelaxation;
+
+					SampleWeight *= exp(-LuminanceWeight);
+
+					SumVolumeDirectWeight += SampleWeight;
+					SumVolumeDirectRadianceVariance += float4(SampleWeight.xxx, SampleWeight * SampleWeight) * SampledRadianceVariance;
 				}
 			}
 
@@ -515,9 +541,12 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 
 
     float4 FilteredRadianceVariance = float4(SumDiffuseDirectRadianceVariance / float4(SumDiffuseDirectWeight.xxx, SumDiffuseDirectWeight * SumDiffuseDirectWeight));
+	float4 FilteredVolumeRadianceVariance = float4(SumVolumeDirectRadianceVariance / float4(SumVolumeDirectWeight.xxx, SumVolumeDirectWeight * SumVolumeDirectWeight));
 #ifdef LAST_PASS
 	// Write history back to the texture in the last pass for visualization purposes
 	FilteredRadianceVariance.w = HistoryLength;
+	FilteredVolumeRadianceVariance.w = HistoryLength;
 #endif
     RWDilatedFilterOutputFilteredDiffuseDirectRadiance[CenterPixelCoords] = FilteredRadianceVariance;
+	RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords] = FilteredVolumeRadianceVariance;
 }

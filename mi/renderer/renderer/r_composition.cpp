@@ -82,10 +82,11 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->UB = UB;
     if (!CVar_UseDenoisedDirectLighting.Get()) {
         params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_.Raw();
+        params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
     } else {
         params->DiffuseDirectLightingTexture = view->denoised_diffuse_direct_lighting_.Raw();
+        params->VolumeDirectLightingTexture = view->denoised_volume_direct_lighting_.Raw();
     }
-    params->VolumeDirectLightingTexture = view->volume_direct_lighting_.Raw();
     params->DiffuseIndirectLightingTexture = view->denoised_diffuse_indirect_lighting_.Raw();
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

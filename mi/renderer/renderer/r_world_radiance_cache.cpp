@@ -11,15 +11,19 @@
 #include "r_view_common.h"
 #include "r_world_radiance_cache.h"
 
+#include "r_denoiser.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
+#include "r_volume_primitives.h"
 #include "../shaders/shared/SharedHashGridCache.hlsl"
 
 MI_NAMESPACE_BEGIN
 
 bool HashGridPersistentData::MakeSureExists(
-    [[maybe_unused]] RendererView *view, RenderGraphBuilder &builder,
-    uint32_t max_num_tiles, [[maybe_unused]] uint32_t num_buckets, [[maybe_unused]] uint32_t num_elements_per_bucket) {
+    [[maybe_unused]] RendererView *view, RenderGraphBuilder &builder) {
+    const uint32_t max_num_tiles = kHashGridMaxNumTiles;
+    // const uint32_t num_buckets = kHashGridMaxNumBuckets;
+    // const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
     bool flag = false;
     if (!free_tile_count) {
         free_tile_count = builder.CreateBuffer<uint32_t>();
@@ -70,24 +74,36 @@ bool HashGridPersistentData::MakeSureExists(
     return flag;
 }
 
-void RendererView::MakeSureLightStructurePersistentDataExists(RenderGraphBuilder &builder) {
+void HashGridPersistentData::FinalUpdate(RendererView *view) {
+    auto w = view->world_cache_.Raw();
+    // Update persistent data
+    active_tile_count = w->active_tile_count;
+    active_tile_count->SetExport();
+    active_tile_list_buffer = w->active_tile_list_buffer;
+    active_tile_list_buffer->SetExport();
+}
+
+void RendererView::MakeSurePersistentDataExists(RenderGraphBuilder &builder) {
+    if (!persistent_data_->volume_primitives_view_persistent_data_) {
+        auto volume_primitives_persistent = new VolumePrimitivesViewPersistentData();
+        persistent_data_->volume_primitives_view_persistent_data_ = volume_primitives_persistent;
+    }
+    persistent_data_->volume_primitives_view_persistent_data_->MakeSureExists(this, builder);
+    if (!persistent_data_->denoiser_persistent_data_) {
+        auto denoiser_persistent = new DenoiserPersistentData();
+        persistent_data_->denoiser_persistent_data_ = denoiser_persistent;
+    }
+    persistent_data_->denoiser_persistent_data_->MakeSureExists(this, builder);
     if (!persistent_data_->light_structure_persistent_data_) {
         persistent_data_->light_structure_persistent_data_ = new LightStructurePersistentData();
     }
-    auto persistent = persistent_data_->light_structure_persistent_data_;
-    persistent->MakeSureExists(this, builder);
-}
-
-
-void RendererView::MakeSureHashGridPersistentDataExists(RenderGraphBuilder &builder) {
-    const uint32_t max_num_tiles = kHashGridMaxNumTiles;
-    const uint32_t num_buckets = kHashGridMaxNumBuckets;
-    const uint32_t num_elements_per_bucket = kHashGridNumElementsPerBucket;
+    persistent_data_->light_structure_persistent_data_->MakeSureExists(this, builder);
     if (!persistent_data_->hash_grid_persistent_data_) {
         persistent_data_->hash_grid_persistent_data_ = new HashGridPersistentData();
     }
-    auto persistent = persistent_data_->hash_grid_persistent_data_;
-    persistent->MakeSureExists(this, builder, max_num_tiles, num_buckets, num_elements_per_bucket);
+    persistent_data_->hash_grid_persistent_data_->MakeSureExists(
+        this, builder
+    );
 }
 
 
@@ -258,13 +274,6 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
         auto shader = lib.GetShader<FilterHashGridsShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, w->active_tile_count.Raw());
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
-    }
-    // Update persistent data
-    {
-        persistent->active_tile_count = w->active_tile_count;
-        persistent->active_tile_count->SetExport();
-        persistent->active_tile_list_buffer = w->active_tile_list_buffer;
-        persistent->active_tile_list_buffer->SetExport();
     }
 }
 

@@ -72,9 +72,11 @@ struct HashGridPersistentData : RefCounted<> {
     bool need_reset_ {true};
 
     bool MakeSureExists(
-        RendererView * view, RenderGraphBuilder & builder,
-        uint32_t max_num_tiles,
-        uint32_t num_buckets, uint32_t num_elements_per_bucket
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
+    void FinalUpdate (
+        RendererView * view
     ) ;
 };
 

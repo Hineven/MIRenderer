@@ -86,6 +86,19 @@ float ZDepthToLinearDepth(CameraParameters C, float ZDepth)
     }
 }
 
+float LinearDepthToPerspectiveZDepth(float Near, float Far, float LinearDepth)
+{
+    return (Far * (LinearDepth - Near)) / (LinearDepth * (Far - Near));
+}
+
+float LinearDepthToZDepth(CameraParameters C, float LinearDepth)
+{
+    if(true) {
+        float Far = C.FarPlane, Near = C.NearPlane;
+        return LinearDepthToPerspectiveZDepth(Near, Far, LinearDepth);
+    }
+}
+
 float PerspectiveReversedZDepthToLinearDepth(float Near, float Far, float ReversedZDepth)
 {
     return PerspectiveZDepthToLinearDepth(Near, Far, 1.0f - ReversedZDepth);
