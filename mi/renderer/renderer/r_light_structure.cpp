@@ -65,6 +65,10 @@ bool LightStructurePersistentData::MakeSureExists([[maybe_unused]] RendererView 
     return flag;
 }
 
+void LightStructurePersistentData::FinalUpdate(RendererView *view) {
+    // No staged buffers, nothing to do here
+}
+
 
 void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     auto & r = Renderer::Get();
@@ -209,6 +213,7 @@ void Renderer::Render_PrepareLightStructureHistory(RendererView *view, RenderGra
         Helpers::AddComputePass<ClearLightStructureHistoryShader>(
             builder, shader, params, num_groups
         );
+        persistent->need_reset_ = false;
     }
     {
         Helpers::Clear(builder, view->light_structure_->next_bloom_filter_buffer.Raw());
