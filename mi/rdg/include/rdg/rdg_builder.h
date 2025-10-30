@@ -136,7 +136,7 @@ public:
         uint32_t width, uint32_t height, uint32_t layers, PixelFormatType format,
         RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess) {
         return CreateTexture(RHITextureDesc{
-            RHITextureType::k2D,
+            RHITextureType::k2DArray,
             {width, height, 1},
             1, layers, format, usage
         });
