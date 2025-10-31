@@ -15,7 +15,12 @@ MI_NAMESPACE_BEGIN
 void Helpers::Clear(RenderGraphBuilder &builder, RDGBuffer *buffer, uint32_t value, size_t offset, size_t size) {
     builder.AddPass("ClearBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
         [buffer, value, offset, size]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto span = RHIBufferSpan{buffer->GetRHI().buffer, offset, size == SIZE_MAX ? buffer->GetDesc().size - offset : size};
+            // Default to logical requested size, not the underlying allocation size.
+            size_t requested = buffer->GetRequestedSize();
+            mi_assert(offset <= requested, "ClearBuffer offset OOB: offset > requested size.");
+            size_t clear_size = (size == SIZE_MAX) ? (requested - offset) : size;
+            mi_assert(offset + clear_size <= requested, "ClearBuffer size OOB: offset + size exceeds requested size.");
+            auto span = RHIBufferSpan{buffer->GetRHI().buffer, offset, clear_size};
             queue.ClearBuffer(span, value);
     })->AddBuffer(buffer,
         RHIGPUAccessFlagBits::kTransferWrite,
@@ -59,10 +64,16 @@ void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTextu
 void Helpers::CopyBuffer(RenderGraphBuilder &builder, RDGBuffer *src, RDGBuffer *dst,
     size_t size, size_t src_offset, size_t dst_offset) {
     if (size == SIZE_MAX) {
-        if (src->GetDesc().size - src_offset != dst->GetDesc().size - dst_offset) {
-            mi_assert(false, "CopyBuffer size is not specified, but the source and destination buffer sizes do not match.");
-        }
-        size = src->GetDesc().size - src_offset;
+        size_t src_req = src->GetRequestedSize();
+        size_t dst_req = dst->GetRequestedSize();
+        mi_assert(src_offset <= src_req && dst_offset <= dst_req, "CopyBuffer offset OOB.");
+        size_t src_avail = src_req - src_offset;
+        size_t dst_avail = dst_req - dst_offset;
+        mi_assert(src_avail == dst_avail, "CopyBuffer size is not specified, but the source and destination buffer sizes do not match.");
+        size = std::min(src_avail, dst_avail);
+    } else {
+        mi_assert(src_offset + size <= src->GetRequestedSize(), "CopyBuffer src range OOB.");
+        mi_assert(dst_offset + size <= dst->GetRequestedSize(), "CopyBuffer dst range OOB.");
     }
     builder.AddPass("CopyBuffer", RDGPassType::kGeneric, {}, {}, {}, {},
         [src, dst, size, src_offset, dst_offset]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {

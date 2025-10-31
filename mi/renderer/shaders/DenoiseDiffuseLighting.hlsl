@@ -44,7 +44,7 @@ float GetPlaneDistanceWeight(float3 WorldPosition, float3 CenterWorldPosition, f
 
 float GetDepthWeight (float Depth1, float Depth2, float Factor = 2000.f) {
 	float Distance = abs(Depth1 - Depth2);
-	float RelativeDepthDifference = Distance / min(Depth1, Depth2);
+	float RelativeDepthDifference = Distance / max(min(Depth1, Depth2), 1e-5f);
 	return exp2(-Factor * (RelativeDepthDifference * RelativeDepthDifference));
 }
 
@@ -76,7 +76,7 @@ bool IsOutOfFilm(int2 PixelCoords) {
 
 bool IsOutOfFilm(float2 PixelFilmPosition) {
 	CameraParameters C = GetActiveCamera();
-	return any(PixelFilmPosition <= 0) || any(PixelFilmPosition >= C.FilmDimensions);
+	return any(PixelFilmPosition < 0) || any(PixelFilmPosition >= C.FilmDimensions);
 }
 
 Texture2D<float4> G_Normal;
@@ -87,8 +87,8 @@ Texture2D<float2> G_VolumeRepresentativeDepthAndVariation;
 // Volume normal is inferred with heuristics
 // Texture2D<float4> G_VolumeNormal;
 
-Texture2D<float> PreviousDepthTexture;
-Texture2D<float> PreviousVolumeRepresentativeDepthAndVariation;
+Texture2D<float>  PreviousDepthTexture;
+Texture2D<float2> PreviousVolumeRepresentativeDepthAndVariation;
 
 SamplerState PointBorder0Sampler;
 
@@ -96,9 +96,12 @@ Texture2D<float4> InputDiffuseDirectRadianceTexture;
 Texture2D<float4> InputVolumeDirectRadianceTexture;
 Texture2D<float4> InputDiffuseIndirectRadianceTexture;
 Texture2D<float> PreviousHistoryLengthTexture;
+Texture2D<float> PreviousVolumeHistoryLengthTexture;
 
 [[vk::image_format("r8")]]
 RWTexture2D<float> RWHistoryLengthTexture;
+[[vk::image_format("r8")]]
+RWTexture2D<float> RWVolumeHistoryLengthTexture;
 
 Texture2D<float4> PreviousPreFilteredDiffuseDirectRadianceTexture;
 Texture2D<float4> PreviousPreFilteredVolumeDirectRadianceTexture;
@@ -132,28 +135,34 @@ float GetGaussianDistributionSimilarityWeight (float mu1, float sigma1, float mu
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_DispatchThreadID) {
 	CameraParameters C = GetActiveCamera();
+	CameraParameters PrevC = GetPreviousCamera();
 	if(IsOutOfFilm(DispatchID)) return; // Out of film
 	int2 CenterPixelCoords = int2(DispatchID);
 	float2 CenterFilmPosition = float2(CenterPixelCoords) + 0.5f;
 	float2 CenterUV = CenterFilmPosition * C.InvFilmDimensions;
 	float CenterReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, CenterUV, 0).r;
+	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
+	bool bSurface = true, bVolume = true;
 	if(CenterReversedZDepth == 0) {
+		bSurface = false;
 		RWPreFilteredDiffuseDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
-
-		// Volume
-		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
-		RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		
 		RWHistoryLengthTexture[CenterPixelCoords] = 0;
-		return ; // Empty pixel
+	}
+
+	if(CenterVolumeDepthAndVariation.x == 0) {	
+		bVolume = false;
+		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
+		RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
+
+		RWVolumeHistoryLengthTexture[CenterPixelCoords] = 0;
 	}
 
 	// Prefilter input diffuse lighting
 	float KernelRadius = 2.8;
 	float3 CenterNormal = normalize(2.f * G_Normal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 1.f);
 	float  CenterLinearDepth = ReversedZDepthToLinearDepth(C, CenterReversedZDepth);
-	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
 	float3 CenterWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(CenterUV), CenterLinearDepth);
 	float3 SumDiffuseDirectRadiance = 0, SumVolumeDirectRadiance = 0;
 	float3 SumDiffuseIndirectRadiance = 0;
@@ -167,7 +176,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float2 SampleFilmPosition = CenterFilmPosition + FilmOffset;
 		float2 SampleUV = SampleFilmPosition * C.InvFilmDimensions;
 		// Mesh Diffuse
-		{
+		if(bSurface) {
 			float SampleReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, SampleUV, 0).r;
 			float3 SampleNormal = normalize(2.f * G_Normal.SampleLevel(PointEdgeSampler, SampleUV, 0).xyz - 1.f);
 			float3 SampleDiffuseDirectRadiance = InputDiffuseDirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0).rgb;
@@ -185,7 +194,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 			SumDiffuseWeight += Weight;
 		}
 		// Volume Diffuse (using G_VolumeRepresentativeDepth)
-		{
+		if(bVolume) {
 			float2 SampleVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).rg;
 			float SampleLinearDepth = SampleVolumeDepthAndVariation.x;
 			float SampleDepthVariation = SampleVolumeDepthAndVariation.y;
@@ -200,32 +209,36 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 			SumVolumeDirectWeight += Weight;
 		}
 	}
-	float3 NewDiffuseDirectRadiance = SumDiffuseDirectRadiance / SumDiffuseWeight;
-	float NewDiffuseDirectLuminance = RadianceToLuminance(NewDiffuseDirectRadiance);
+	float3 NewDiffuseDirectRadiance = SumDiffuseDirectRadiance / max(SumDiffuseWeight, 1e-5f);
+	float  NewDiffuseDirectLuminance = RadianceToLuminance(NewDiffuseDirectRadiance);
 	float4 NewDiffuseDirectRadianceVariance = float4(NewDiffuseDirectRadiance, NewDiffuseDirectLuminance * NewDiffuseDirectLuminance);
+	float3 NewVolumeDirectRadiance = SumVolumeDirectRadiance / max(SumVolumeDirectWeight, 1e-5f);
+	float  NewVolumeDirectLuminance = RadianceToLuminance(NewVolumeDirectRadiance);
+	float4 NewVolumeDirectRadianceVariance = float4(NewVolumeDirectRadiance, NewVolumeDirectLuminance * NewVolumeDirectLuminance);
 	
 	// Fetch history data
 	float4 OldDiffuseDirectRadianceVariance = 0;
 	float4 OldDiffuseIndirectRadianceVariance = 0;
 	float4 OldVolumeDirectRadianceVariance = 0;
 	float OldHistoryLength = 0;
+	float OldVolumeHistoryLength = 0;
 	// Reproject from previous frame to get history information
-	{
+	if(bSurface) {
 		float3 CenterNDC = float3(UVToNDC2(CenterUV), 1 - CenterReversedZDepth);
 		float3 PreviousNDC  = ReprojectToPreviousNDCFromNDC(C, CenterNDC);
 		float3 ViewDirection = -NDC2ToCameraDirection(C, CenterNDC.xy);
 		// TODO: the normal should be a low frequency one.
-		float3 Normal = normalize(G_Normal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
+		float3 Normal = normalize(2.f * G_Normal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 1.f);
 		
 		if(all(PreviousNDC.xy >= -1) && all(PreviousNDC.xy <= 1)) {
-			float2 PreviousScreenPosition = NDC2ToScreenPosition(C, PreviousNDC.xy);
+			float2 PreviousScreenPosition = NDC2ToScreenPosition(PrevC, PreviousNDC.xy);
 			// Make sure the billinear weights are consistent with gathered texels
 			float2 HistoryBillinearPos = PreviousScreenPosition - 0.5f;
 			float2 HistoryBillinearSubPixel = frac(HistoryBillinearPos);
 			float2 HistoryBillinearPixel = floor(HistoryBillinearPos);
 			float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * C.InvFilmDimensions;
 			float4 HistoryZDepths = 1 - PreviousDepthTexture.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
-			float  PrevLinearDepth = ZDepthToLinearDepth(C, PreviousNDC.z);
+			float  PrevLinearDepth = ZDepthToLinearDepth(PrevC, PreviousNDC.z);
 			float4 HistoryLinearDepths = float4(
 				ZDepthToLinearDepth(C, HistoryZDepths.x),
 				ZDepthToLinearDepth(C, HistoryZDepths.y),
@@ -289,12 +302,12 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		}
 	}
 
-	{
+	if(bVolume) {
 		float  CenterVolumeZDepth = LinearDepthToZDepth(C, CenterVolumeDepthAndVariation.x);
 		float3 CenterVolumeNDC = float3(UVToNDC2(CenterUV), CenterVolumeZDepth);
 		float3 PreviousNDC  = ReprojectToPreviousNDCFromNDC(C, CenterVolumeNDC);
 		float3 ViewDirection = -NDC2ToCameraDirection(C, CenterVolumeNDC.xy);
-		float2 PreviousScreenPosition = NDC2ToScreenPosition(C, PreviousNDC.xy);
+		float2 PreviousScreenPosition = NDC2ToScreenPosition(PrevC, PreviousNDC.xy);
 		// Make sure the billinear weights are consistent with gathered texels
 		float2 HistoryBillinearPos = PreviousScreenPosition - 0.5f;
 		float2 HistoryBillinearSubPixel = frac(HistoryBillinearPos);
@@ -302,7 +315,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * C.InvFilmDimensions;
 		float4 HistoryVolumeLinearDepths = PreviousVolumeRepresentativeDepthAndVariation.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
 		float4 HistoryVolumeVariations   = PreviousVolumeRepresentativeDepthAndVariation.GatherGreen(PointBorder0Sampler, HistoryGatherUV).wzxy;
-		float  PrevLinearDepth = ZDepthToLinearDepth(C, PreviousNDC.z);
+		float  PrevLinearDepth = ZDepthToLinearDepth(PrevC, PreviousNDC.z);
 		float4 DepthDistances = abs(HistoryVolumeLinearDepths - PrevLinearDepth);
 		float  Noise = InterleavedGradientNoise(CenterFilmPosition, UB.FrameIndex);
 		float4 DepthThresholds = UB.VolumeDepthHistoryThreshold * lerp(0.5, 1.5, Noise);
@@ -334,13 +347,30 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 			float4 R11 = HistoryVolumeDD.Load(int3(P11, 0));
 			OldVolumeDirectRadianceVariance = R00 * Weights.x + R10 * Weights.y + R01 * Weights.z + R11 * Weights.w;
 		} 
+		Texture2D<float> HistoryLength = PreviousVolumeHistoryLengthTexture;
+		{
+			int2 BasePixel = HistoryBillinearPixel;
+			int2 P00 = clamp(BasePixel, int2(0, 0), int2(C.FilmDimensions - 1));
+			int2 P10 = clamp(BasePixel + int2(1, 0), int2(0, 0), int2(C.FilmDimensions - 1));
+			int2 P01 = clamp(BasePixel + int2(0, 1), int2(0, 0), int2(C.FilmDimensions - 1));
+			int2 P11 = clamp(BasePixel + int2(1, 1), int2(0, 0), int2(C.FilmDimensions - 1));
+			float R00 = HistoryLength.Load(int3(P00, 0)).r;
+			float R10 = HistoryLength.Load(int3(P10, 0)).r;
+			float R01 = HistoryLength.Load(int3(P01, 0)).r;
+			float R11 = HistoryLength.Load(int3(P11, 0)).r;
+			OldVolumeHistoryLength = dot(float4(R00, R10, R01, R11), Weights) * 255.f;
+		}
 	}
 
 	float NewHistoryLength = min(OldHistoryLength + 1, UB.MaxHistoryLength);
+	float NewVolumeHistoryLength = min(OldVolumeHistoryLength + 1, UB.MaxHistoryLength);
 	float NewFastHistoryLength = min(OldHistoryLength, UB.MaxFastHistoryLength);
+	float NewFastVolumeHistoryLength = min(OldVolumeHistoryLength, UB.MaxFastHistoryLength);
 
 	float OutAlpha = 1 / NewHistoryLength;
+	float OutVolumeAlpha = 1 / NewVolumeHistoryLength;
 	float OutFastAlpha = 1 / max(NewFastHistoryLength, 1);
+	float OutFastVolumeAlpha = 1 / max(NewFastVolumeHistoryLength, 1);
 
 	// Update fast history
 	// float3 OldFastRadiance = RWPreFilteredFastRadianceTexture[CenterPixelCoords].xyz;
@@ -349,47 +379,53 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 	// Update history
 	float4 OutDiffuseDirectRadianceVariance = float4(
 		lerp(OldDiffuseDirectRadianceVariance.rgb, NewDiffuseDirectRadianceVariance.rgb, OutAlpha),
-		NewDiffuseDirectRadianceVariance.a
+		NewDiffuseDirectRadianceVariance.a // Use newest filtered luminance variance (no blending)
 	);
 	OutDiffuseDirectRadianceVariance = clamp(OutDiffuseDirectRadianceVariance, 0, FP16_MAX);
 	float4 OutDiffuseIndirectRadianceVariance = float4(
-		lerp(OldDiffuseIndirectRadianceVariance.rgb, SumDiffuseIndirectRadiance / SumDiffuseWeight, OutAlpha),
+		lerp(OldDiffuseIndirectRadianceVariance.rgb, SumDiffuseIndirectRadiance / max(SumDiffuseWeight, 1e-5f), OutAlpha),
 		0
 	);
 	OutDiffuseIndirectRadianceVariance = clamp(OutDiffuseIndirectRadianceVariance, 0, FP16_MAX);
 	float4 OutVolumeDirectRadianceVariance = float4(
-		lerp(OldVolumeDirectRadianceVariance.rgb, SumVolumeDirectRadiance / SumVolumeDirectWeight, OutAlpha),
-		0
+		lerp(OldVolumeDirectRadianceVariance.rgb, NewVolumeDirectRadianceVariance.rgb, OutVolumeAlpha),
+		NewVolumeDirectRadianceVariance.a
 	);
 	OutVolumeDirectRadianceVariance = clamp(OutVolumeDirectRadianceVariance, 0, FP16_MAX);
 	
 	// Reset history if requested
 	if(UB.Reset == 1) {
 		OutDiffuseDirectRadianceVariance = NewDiffuseDirectRadianceVariance;
-		OutDiffuseIndirectRadianceVariance = float4(SumDiffuseIndirectRadiance / SumDiffuseWeight, 0);
-		NewHistoryLength = 1;
+		OutVolumeDirectRadianceVariance = NewVolumeDirectRadianceVariance;
+		OutDiffuseIndirectRadianceVariance = float4(SumDiffuseIndirectRadiance / max(SumDiffuseWeight, 1e-5f), 0);
+		NewHistoryLength = bSurface;
+		NewVolumeHistoryLength = bVolume;
 	}
 
 	// TODO history acceleration
 
 	// Write out
-	// Direct diffuse
-	RWPreFilteredDiffuseDirectRadianceTexture[CenterPixelCoords] = OutDiffuseDirectRadianceVariance;
-	RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = OutVolumeDirectRadianceVariance;
+	if(bSurface) {
+		RWPreFilteredDiffuseDirectRadianceTexture[CenterPixelCoords] = OutDiffuseDirectRadianceVariance;
 #ifdef OUTPUT_DIRECTLY
-	RWDenoisedDiffuseDirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseDirectRadianceVariance.rgb, NewHistoryLength);
-	RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeDirectRadianceVariance.rgb, NewHistoryLength);
+		RWDenoisedDiffuseDirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseDirectRadianceVariance.rgb, NewHistoryLength);
 #endif
-
-	// Indirect diffuse
-	if(UB.DenoiseDiffuseIndirect) {
-		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseIndirectRadianceVariance.rgb, 1);
-	} else {
-		float3 OriginalDiffuseIndirect = InputDiffuseIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
-		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalDiffuseIndirect, 1);
+		if(UB.DenoiseDiffuseIndirect) {
+			RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseIndirectRadianceVariance.rgb, 1);
+		} else {
+			float3 OriginalDiffuseIndirect = InputDiffuseIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
+			RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalDiffuseIndirect, 1);
+		}
+	}
+	if(bVolume) {
+		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = OutVolumeDirectRadianceVariance;
+#ifdef OUTPUT_DIRECTLY
+		RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeDirectRadianceVariance.rgb, NewVolumeDirectLuminance);
+#endif
 	}
 
 	RWHistoryLengthTexture[CenterPixelCoords] = NewHistoryLength / 255.f;
+	RWVolumeHistoryLengthTexture[CenterPixelCoords] = NewVolumeHistoryLength / 255.f;
 }
 
 
@@ -398,6 +434,7 @@ float GetNormalWeightRelaxation (float Fraction) {
 }
 
 Texture2D<float> HistoryLengthTexture;
+Texture2D<float> VolumeHistoryLengthTexture;
 Texture2D<float4> DilatedFilterInputDiffuseDirectRadianceTexture;
 Texture2D<float4> DilatedFilterInputVolumeDirectRadianceTexture;
 [[vk::image_format("rgba16f")]]
@@ -417,25 +454,35 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 	float2 CenterFilmPosition = float2(CenterPixelCoords) + 0.5f;
 	float2 CenterUV = CenterFilmPosition * C.InvFilmDimensions;
 	float CenterReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, CenterUV, 0).r;
-	if(CenterReversedZDepth == 0) {
+	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
+	bool bSurface = CenterReversedZDepth != 0, bVolume = CenterVolumeDepthAndVariation.x != 0;
+	if(!bSurface) {
+		// Empty pixel
 		RWDilatedFilterOutputFilteredDiffuseDirectRadiance[CenterPixelCoords] = float4(0, 0, 0, 0);
-		return ; // Empty pixel
+	}
+	if(!bVolume) {
+		// Empty pixel (volume)
+		RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords] = float4(0, 0, 0, 0);
+	}
+	// Early out if the pixel is empty
+	if(!bSurface && !bVolume) {
+		return ;
 	}
 
 	float DilatedStepSize = 1 << (DILATED_FILTER_PASS + 1);
 
     static const float KernelWeightGaussian3x3[2] = { 0.44198, 0.27901 };
 
+	float  HistoryLength = HistoryLengthTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).r * 255;
+	float  VolumeHistoryLength = VolumeHistoryLengthTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).r * 255;
 	
 	float3 CenterNormal = normalize(2.f * G_Normal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 1.f);
 	// float3 CenterVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
-	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
 	float  CenterLinearDepth = ReversedZDepthToLinearDepth(C, CenterReversedZDepth);
 	float3 CenterWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(CenterUV), CenterLinearDepth);
 	
 	float4 CenterRadianceVariance = DilatedFilterInputDiffuseDirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0);
 	float4 CenterVolumeRadianceVariance = DilatedFilterInputVolumeDirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0);
-	float  HistoryLength = HistoryLengthTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).r * 255;
 
     // Diffuse normal weight is used for diffuse and can be used for specular depending on settings.
     // Weight strictness is higher as the Atrous step size increases.
@@ -477,10 +524,10 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
             float2 SampleFilmPosition = CenterFilmPosition + float2(PixelXOffset, PixelYOffset) * DilatedStepSize;
 			if(IsOutOfFilm(SampleFilmPosition)) continue; // Out of film
             float2 SampleUV = SampleFilmPosition * C.InvFilmDimensions;
-			float GaussianWeight = KernelWeightGaussian3x3[abs(PixelXOffset)] * KernelWeightGaussian3x3[abs(PixelYOffset)];
+			float KernelWeight = KernelWeightGaussian3x3[abs(PixelXOffset)] * KernelWeightGaussian3x3[abs(PixelYOffset)];
 
 			// Diffuse direct
-			{
+			if(bSurface) {
 				float3 SampleNormal = normalize(2.f * G_Normal.SampleLevel(PointEdgeSampler, SampleUV, 0).xyz - 1.f);
 				float SampleReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, SampleUV, 0).r;
 				float SampleLinearDepth = ReversedZDepthToLinearDepth(C, SampleReversedZDepth);
@@ -490,7 +537,7 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 
 				// Calculating geometry weight for diffuse and specular
 				float SampleWeight = GetPlaneDistanceWeight(SampleWorldPosition, CenterWorldPosition, CenterNormal, CenterLinearDepth);
-				SampleWeight *= GaussianWeight;
+				SampleWeight *= KernelWeight;
 
 				SampleWeight *= NormalWeight(CenterNormal, SampleNormal, NormalWeightRelaxation);
 
@@ -512,12 +559,12 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 			}
 
 			// Volume direct
-			{
+			if(bVolume) {
 				// float3 SampleVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, SampleUV, 0).xyz - 0.5);
 				float2 SampleVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).xy;
 				float SampleLinearDepth = SampleVolumeDepthAndVariation.x;
 
-				float SampleWeight = GaussianWeight;
+				float SampleWeight = KernelWeight;
 				SampleWeight *= GetDepthWeight(CenterVolumeDepthAndVariation.x, SampleLinearDepth);
 				if(SampleWeight > 1e-4)
 				{
@@ -539,14 +586,13 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
         }
     }
 
-
     float4 FilteredRadianceVariance = float4(SumDiffuseDirectRadianceVariance / float4(SumDiffuseDirectWeight.xxx, SumDiffuseDirectWeight * SumDiffuseDirectWeight));
 	float4 FilteredVolumeRadianceVariance = float4(SumVolumeDirectRadianceVariance / float4(SumVolumeDirectWeight.xxx, SumVolumeDirectWeight * SumVolumeDirectWeight));
 #ifdef LAST_PASS
 	// Write history back to the texture in the last pass for visualization purposes
 	FilteredRadianceVariance.w = HistoryLength;
-	FilteredVolumeRadianceVariance.w = HistoryLength;
+	FilteredVolumeRadianceVariance.w = VolumeHistoryLength;
 #endif
-    RWDilatedFilterOutputFilteredDiffuseDirectRadiance[CenterPixelCoords] = FilteredRadianceVariance;
-	RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords] = FilteredVolumeRadianceVariance;
+	if(bSurface) RWDilatedFilterOutputFilteredDiffuseDirectRadiance[CenterPixelCoords] = FilteredRadianceVariance;
+	if(bVolume) RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords] = FilteredVolumeRadianceVariance;
 }

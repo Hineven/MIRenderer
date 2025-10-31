@@ -12,6 +12,7 @@ MI_NAMESPACE_BEGIN
 
 struct DenoiserViewData : public RefCounted<> {
     TRef<RDGTexture> history_length;
+    TRef<RDGTexture> volume_history_length;
     TRef<RDGTexture> prefiltered_diffuse_direct_lighting;
     TRef<RDGTexture> prefiltered_volume_direct_lighting;
     TRef<RDGTexture> denoised_diffuse_indirect_lighting;
@@ -20,7 +21,8 @@ struct DenoiserViewData : public RefCounted<> {
 
 struct DenoiserPersistentData : public RefCounted<> {
     // Denoiser history for diffuse lighting
-    TRef<RDGTexture> prev_lighting_history_length;
+    TRef<RDGTexture> prev_history_length;
+    TRef<RDGTexture> prev_volume_history_length;
     // RELAX: this is temporally accumulated (rgb + luminance variance)
     TRef<RDGTexture> prev_prefiltered_diffuse_direct_lighting;
     TRef<RDGTexture> prev_prefiltered_volume_direct_lighting;

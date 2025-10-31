@@ -572,12 +572,12 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eNone,
             {}, {}, {}, {});
         // 25.8.14: Vulkan validation layer synchronization false positive. Adding a mega barrier for now.
-        // FIXME this should not be necessary. Remove it when the validation layer is fixed.
-        state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
-            {}, vk::MemoryBarrier{
-                vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
-                vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
-            }, {}, {});
+        // 25.10.31: this seems to be a bug relating to my ClearBuffer command. Removing the mega barrier.
+        // state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
+        //     {}, vk::MemoryBarrier{
+        //         vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
+        //         vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
+        //     }, {}, {});
         // 3. end and submit command buffer.
         state.CloseCmd();
         vk::Semaphore present_ready_sem = vk_rhi->vk_swapchain_render_finished_semaphores_[

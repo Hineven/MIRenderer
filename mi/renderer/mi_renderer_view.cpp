@@ -510,8 +510,8 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
     view_common_params_->FrameIndex = persistent_data_->frame_index_;
 }
 
-CVar<int> CVar_DebugCursorScreenCoordsX("debug.cursor_screen_coords_x", "Debug cursor X in screen coords.", 0);
-CVar<int> CVar_DebugCursorScreenCoordsY("debug.cursor_screen_coords_y", "Debug cursor Y in screen coords.", 0);
+CVar<int> CVar_DebugCursorScreenCoordsX("r.debug.cursor_screen_coords_x", "Debug cursor X in screen coords.", 0);
+CVar<int> CVar_DebugCursorScreenCoordsY("r.debug.cursor_screen_coords_y", "Debug cursor Y in screen coords.", 0);
 
 void RendererView::SetupDebugCommonShaderParameters(RenderGraphBuilder &builder) {
     debug_common_params_ = builder.Allocate<DebugCommonShaderParameters>();

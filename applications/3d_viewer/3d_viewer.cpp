@@ -1,10 +1,4 @@
 /*
- * Project Project: main.cpp
- * Created: 2024/6/27
- * This program uses MulanPSL2. See LICENSE for more.
- */
-
-/*
  * Created: 2024/7/23
  * Author:  hineven
  * See LICENSE for licensing.
@@ -93,10 +87,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     glfwInit();
 
     // Initialize RHI
-	//向 GLFW 询问实例扩展
-    //用扩展创建 RHI 
-    //重置管线缓存
-    {
+	{
         uint32_t extension_count = 0;
         auto extra_extensions =  glfwGetRequiredInstanceExtensions(&extension_count);
         if (extension_count != 0) {
@@ -151,12 +142,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             ImGuiIO& io = ImGui::GetIO();
             io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
             auto & rhi = RHI::Get();
-            // 创建字体纹理
             font_texture = rhi.CreateTexture(RHITextureType::k2D,
                 {(uint32_t)width, (uint32_t)height, 1},
                 PixelFormatType::kR8G8B8A8_UNORM,
                 RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransferDst);
-            // 上传数据
             auto staging = rhi.CreateBuffer(width * height * 4, RHIBufferUsageFlagBits::kStaging);
             memcpy(staging->Map(), pixels, width * height * 4);
             auto  & cmd = rhi.GetGraphicsCommandQueue();
@@ -167,9 +156,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll, RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kRead);
             cmd.EnqueueTranslateAndSubmit();
             rhi.WaitForIdle();
-            // 设置ImGui纹理ID
             io.Fonts->SetTexID((ImTextureID)font_texture.Raw());
-            io.Fonts->ClearTexData(); // 清理CPU端数据
+            io.Fonts->ClearTexData();
         }
     }
 
@@ -376,11 +364,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             // Camera control
             {
-                // 相机移动参数
                 const float move_speed = 0.02f;
                 const float mouse_sensitivity = 0.002f;
                 glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
-                // 获取键盘输入控制移动
                 if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
                     view->camera_.position += view->camera_.direction * move_speed;
                 if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -394,7 +380,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
                     view->camera_.position -= view->camera_.up * move_speed;
 
-                // 鼠标控制视角旋转
                 static double last_mouse_x = 0.0, last_mouse_y = 0.0;
                 static bool first_mouse = true;
 
@@ -408,20 +393,15 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 }
 
                 if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-                    // 计算鼠标偏移量
                     float delta_x = static_cast<float>(mouse_x - last_mouse_x) * mouse_sensitivity;
                     float delta_y = static_cast<float>(mouse_y - last_mouse_y) * mouse_sensitivity;
 
-                    // 更新相机方向
-                    // 水平旋转（偏航角）
                     glm::mat4 rotate_y = glm::rotate(glm::mat4(1.0f), -delta_x, glm::vec3(0, 1, 0));
                     view->camera_.direction = glm::vec3(rotate_y * glm::vec4(view->camera_.direction, 0.0f));
 
-                    // 垂直旋转（俯仰角）- 围绕右向量旋转
                     glm::mat4 rotate_x = glm::rotate(glm::mat4(1.0f), -delta_y, camera_right);
                     view->camera_.direction = glm::vec3(rotate_x * glm::vec4(view->camera_.direction, 0.0f));
 
-                    // 确保所有向量都是单位向量
                     view->camera_.direction = glm::normalize(view->camera_.direction);
                 }
 
@@ -478,57 +458,109 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 if (ImGui::CollapsingHeader("CVars")) {
                     // CVars
                     auto & cvar_registry = CVarRegistry::GetInstance();
-                    for (auto e : cvar_registry.GetAllCVars()) {
-                        if (e->GetType() == CVarType::kBool) {
-                            auto cvar = static_cast<CVar<bool>*>(e);
-                            bool value = cvar->Get();
-                            if (ImGui::Checkbox(cvar->GetId().c_str(), &value)) {
-                                cvar->Set(value);
-                            }
-                        } else if (e->GetType() == CVarType::kFloat) {
-                            auto cvar = static_cast<CVar<float>*>(e);
-                            float value = cvar->Get();
-                            if (ImGui::DragFloat(cvar->GetId().c_str(), &value, 0.01f)) {
-                                cvar->Set(value);
-                            }
-                        } else if (e->GetType() == CVarType::kFloat2) {
-                            auto cvar = static_cast<CVar<glm::vec2>*>(e);
-                            glm::vec2 value = cvar->Get();
-                            if (ImGui::DragFloat2(cvar->GetId().c_str(), &value[0], 0.01f)) {
-                                cvar->Set(value);
-                            }
-                        } else if (e->GetType() == CVarType::kFloat3) {
-                            auto cvar = static_cast<CVar<glm::vec3>*>(e);
-                            glm::vec3 value = cvar->Get();
-                            if (ImGui::DragFloat3(cvar->GetId().c_str(), &value[0], 0.01f)) {
-                                cvar->Set(value);
-                            }
-                        } else if (e->GetType() == CVarType::kFloat4) {
-                            auto cvar = static_cast<CVar<glm::vec4>*>(e);
-                            glm::vec4 value = cvar->Get();
-                            if (ImGui::DragFloat4(cvar->GetId().c_str(), &value[0], 0.01f)) {
-                                cvar->Set(value);
-                            }
-                        } else if (e->GetType() == CVarType::kInt) {
-                            auto cvar = static_cast<CVar<int>*>(e);
-                            int value = cvar->Get();
-                            if (ImGui::DragInt(cvar->GetId().c_str(), &value)) {
-                                cvar->Set(value);
-                            }
-                        } else if (e->GetType() == CVarType::kString) {
-                            auto cvar = static_cast<CVar<std::string>*>(e);
-                            std::string value = cvar->Get();
-                            char buffer[256];
-                            strncpy_s(buffer, value.c_str(), sizeof(buffer));
-                            if (ImGui::InputText(cvar->GetId().c_str(), buffer, sizeof(buffer))) {
-                                cvar->Set(std::string(buffer));
-                            }
+                    auto cvar_list = cvar_registry.GetAllCVars();
+                    std::sort(cvar_list.begin(), cvar_list.end(),
+                        [](CVarBase* a, CVarBase* b) {
+                            return a->GetId() < b->GetId();
                         }
-                    }
+                    );
+                    // Display CVars, organized in a tree
+                    std::function<void(uint32_t,uint32_t, std::string, uint32_t)> DisplayCVars
+                        = [&](uint32_t begin, uint32_t end, std::string category, uint32_t prefix_length) {
+                        // Get common prefix
+                        if (begin >= end) return;
+                        // Display roots
+                        while (begin < end) {
+                            auto id = cvar_list[begin]->GetId();
+                            if (id.length() >= prefix_length) {
+                                break;
+                            }
+                            // Display
+                            auto e = cvar_list[begin];
+                            auto cvar_name = category;
+                            if (e->GetType() == CVarType::kBool) {
+                                auto cvar = static_cast<CVar<bool>*>(e);
+                                bool value = cvar->Get();
+                                if (ImGui::Checkbox(cvar_name.c_str(), &value)) {
+                                    cvar->Set(value);
+                                }
+                            } else if (e->GetType() == CVarType::kFloat) {
+                                auto cvar = static_cast<CVar<float>*>(e);
+                                float value = cvar->Get();
+                                if (ImGui::DragFloat(cvar_name.c_str(), &value, 0.01f)) {
+                                    cvar->Set(value);
+                                }
+                            } else if (e->GetType() == CVarType::kFloat2) {
+                                auto cvar = static_cast<CVar<glm::vec2>*>(e);
+                                glm::vec2 value = cvar->Get();
+                                if (ImGui::DragFloat2(cvar_name.c_str(), &value[0], 0.01f)) {
+                                    cvar->Set(value);
+                                }
+                            } else if (e->GetType() == CVarType::kFloat3) {
+                                auto cvar = static_cast<CVar<glm::vec3>*>(e);
+                                glm::vec3 value = cvar->Get();
+                                if (ImGui::DragFloat3(cvar_name.c_str(), &value[0], 0.01f)) {
+                                    cvar->Set(value);
+                                }
+                            } else if (e->GetType() == CVarType::kFloat4) {
+                                auto cvar = static_cast<CVar<glm::vec4>*>(e);
+                                glm::vec4 value = cvar->Get();
+                                if (ImGui::DragFloat4(cvar_name.c_str(), &value[0], 0.01f)) {
+                                    cvar->Set(value);
+                                }
+                            } else if (e->GetType() == CVarType::kInt) {
+                                auto cvar = static_cast<CVar<int>*>(e);
+                                int value = cvar->Get();
+                                if (ImGui::DragInt(cvar_name.c_str(), &value)) {
+                                    cvar->Set(value);
+                                }
+                            } else if (e->GetType() == CVarType::kString) {
+                                auto cvar = static_cast<CVar<std::string>*>(e);
+                                std::string value = cvar->Get();
+                                char buffer[256];
+                                strncpy_s(buffer, value.c_str(), sizeof(buffer));
+                                if (ImGui::InputText(cvar_name.c_str(), buffer, sizeof(buffer))) {
+                                    cvar->Set(std::string(buffer));
+                                }
+                            }
+                            begin ++;
+                        }
+                        // Tree push
+                        if (begin < end && ImGui::TreeNode(category.empty() ? "Root" : category.c_str())) {
+                            // Recurse into next levels
+                            for (uint32_t start = begin; start < end;) {
+                                auto id = cvar_list[start]->GetId();
+                                // Find next different prefix
+                                size_t next_delim = id.find('.', prefix_length);
+                                std::string next_category;
+                                if (next_delim != std::string::npos) {
+                                    next_category = id.substr(prefix_length, next_delim - prefix_length);
+                                } else {
+                                    next_category = id.substr(prefix_length);
+                                }
+                                auto next_prefix_length = (uint32_t)(prefix_length + next_category.length() + 1);
+                                size_t finish;
+                                for (finish = start + 1; finish < end; finish++) {
+                                    auto next_id = cvar_list[finish]->GetId();
+                                    if (next_id.length() < next_prefix_length
+                                    || next_id.substr(0, next_prefix_length - 1) != id.substr(0, next_prefix_length - 1)) {
+                                        DisplayCVars(start, finish, next_category, next_prefix_length);
+                                        start = finish;
+                                        break;
+                                    }
+                                }
+                                if (finish == end) {
+                                    DisplayCVars(start, end, next_category, next_prefix_length);
+                                    break;
+                                }
+                            }
+                            ImGui::TreePop();
+                        }
+                    };
+                    DisplayCVars(0, (uint32_t)cvar_list.size(), "", 0);
                 }
                 if (ImGui::CollapsingHeader("Performance")) {
                     ImGui::Text("CPU: %.2f ms", cpu_duration * 1000.0);
-                    // 构建树状结构
                     std::function<void(int, int, int)> DrawTree;
                     DrawTree = [&](int start, int end, int depth) {
                         ImGui::Indent(20);

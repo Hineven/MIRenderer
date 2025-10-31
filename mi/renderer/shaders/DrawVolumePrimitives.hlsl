@@ -19,7 +19,7 @@ struct RenderVolumePrimitivesUB {
     uint MaxNumPrimitiveInstances;
     uint FrameIndex;
     float VolumeDistributionMergingEpsilon;
-    uint Padding;
+    uint VolumeDistributionAlwaysUseClosest;
     uint EnableFourier;
     uint DensityFourierOrder;
     uint ColorFourierOrder;
@@ -552,7 +552,7 @@ RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionExponentialScatte
     if(bBreak) {
         // Select one of the two distributions based on transmittance and update attenuation
         float Transmittance = IntegrateExponentialScatteringMedium(old_distr.Density, old_distr.r - old_distr.l);
-        if(u < Transmittance) {
+        if(UB.VolumeDistributionAlwaysUseClosest || u < Transmittance) {
             // Keep old distribution
             result = old_distr;
             // Update Cdf

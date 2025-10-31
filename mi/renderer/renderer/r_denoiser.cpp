@@ -33,12 +33,23 @@ static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable
     true
 );
 
+static CVar<float> CVar_DenoiseVolumeLightingDepthOcclusionThreshold(
+    "r.denoise_volume_lighting.depth_occlusion_threshold",
+    "Depth occlusion threshold for volume lighting denoising. Larger values allow more history reuse across depth changes.",
+    0.05f
+);
+
 void DenoiserViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
     history_length = builder.CreateTexture2D(
-    view->film_width_, view->film_height_,
-    PixelFormatType::kR8_UNORM
-);
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR8_UNORM
+    );
     history_length->SetName("CurrentLightingHistoryLength");
+    volume_history_length = builder.CreateTexture2D(
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR8_UNORM
+    );
+    volume_history_length->SetName("CurrentVolumeLightingHistoryLength");
     prefiltered_diffuse_direct_lighting = builder.CreateTexture2D(
         view->film_width_, view->film_height_,
         PixelFormatType::kR16G16B16A16_FLOAT
@@ -62,7 +73,10 @@ bool DenoiserPersistentData::MakeSureExists(
     bool flag = false;
     // Actually, we don't need to do anything. Passing null resources to shader
     // fallbacks to a default and safe behavior. Just tell the shader not to use history.
-    if (!prev_lighting_history_length) {
+    if (!prev_history_length) {
+        flag = true;
+    }
+    if (!prev_volume_history_length) {
         flag = true;
     }
     if (!prev_prefiltered_diffuse_direct_lighting) {
@@ -81,9 +95,13 @@ void DenoiserPersistentData::FinalUpdate(RendererView *view) {
     // Finally, update persistent data
     auto persistent = view->persistent_data_->denoiser_persistent_data_;
     auto denoiser_data = view->denoiser_view_data_.Raw();
-    persistent->prev_lighting_history_length = denoiser_data->history_length;
-    persistent->prev_lighting_history_length->SetName("PrevLightingHistoryLength");
-    persistent->prev_lighting_history_length->SetExport();
+    persistent->prev_history_length = denoiser_data->history_length;
+    persistent->prev_history_length->SetName("PrevLightingHistoryLength");
+    persistent->prev_history_length->SetExport();
+
+    persistent->prev_volume_history_length = denoiser_data->volume_history_length;
+    persistent->prev_volume_history_length->SetName("PrevVolumeLightingHistoryLength");
+    persistent->prev_volume_history_length->SetExport();
 
     persistent->prev_prefiltered_diffuse_direct_lighting = denoiser_data->prefiltered_diffuse_direct_lighting;
     persistent->prev_prefiltered_diffuse_direct_lighting->SetName("PrevPreFilteredDiffuseDirectLighting");
@@ -126,7 +144,9 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, InputVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseIndirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousHistoryLengthTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWHistoryLengthTexture)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeHistoryLengthTexture)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousPreFilteredDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousPreFilteredVolumeDirectRadianceTexture)
@@ -163,6 +183,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryLengthTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, VolumeHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDilatedFilterOutputFilteredDiffuseDirectRadiance)
@@ -211,7 +232,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         UB->DilatedConvolutionLuminanceSize = glm::clamp(CVar_DilatedConvolutionLuminanceSize.Get(), 0.01f, 100.f);
         UB->ConvolutionNormalDifferenceWeight = glm::clamp(CVar_ConvolutionNormalDifferenceWeight.Get(), 0.01f, 100.f);
         UB->DenoiseDiffuseIndirect = CVar_DenoiseDiffuseIndirect.Get() ? 1 : 0;
-        UB->VolumeDepthHistoryThreshold = 0.01f;
+        UB->VolumeDepthHistoryThreshold = CVar_DenoiseVolumeLightingDepthOcclusionThreshold.Get();
     }
     {
         auto ini = RDGShaderInitializationInfo {};
@@ -230,14 +251,15 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->InputDiffuseDirectRadianceTexture = view->diffuse_direct_lighting_.Raw();
         params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_.Raw();
         params->InputDiffuseIndirectRadianceTexture = view->diffuse_indirect_lighting_.Raw();
-        params->PreviousHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_lighting_history_length.Raw();
+        params->PreviousHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_history_length.Raw();
+        params->PreviousVolumeHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_volume_history_length.Raw();
         params->RWHistoryLengthTexture = denoiser_data->history_length.Raw();
+        params->RWVolumeHistoryLengthTexture = denoiser_data->volume_history_length.Raw();
         params->PreviousPreFilteredDiffuseDirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_prefiltered_diffuse_direct_lighting.Raw();
         params->PreviousPreFilteredVolumeDirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_prefiltered_volume_direct_lighting.Raw();
         params->PreviousDenoisedDiffuseIndirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_denoised_diffuse_indirect_lighting.Raw();
         params->RWPreFilteredDiffuseDirectRadianceTexture = denoiser_data->prefiltered_diffuse_direct_lighting.Raw();
         params->RWPreFilteredVolumeDirectRadianceTexture = denoiser_data->prefiltered_volume_direct_lighting.Raw();
-        params->RWDenoisedVolumeDirectRadianceTexture = denoiser_data->prefiltered_volume_direct_lighting.Raw();
         params->RWDenoisedDiffuseIndirectRadianceTexture = denoiser_data->denoised_diffuse_indirect_lighting.Raw();
         if (!CVar_UseDilatedConvolution.Get()) {
             // Skip dilated convolution, output directly
@@ -281,6 +303,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
             params->PreviousVolumeRepresentativeDepthAndVariation = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_representative_depth_and_variation_.Raw();
             params->HistoryLengthTexture = denoiser_data->history_length.Raw();
+            params->VolumeHistoryLengthTexture = denoiser_data->volume_history_length.Raw();
             params->DilatedFilterInputDiffuseDirectRadianceTexture = input_texture.Raw();
             params->DilatedFilterInputVolumeDirectRadianceTexture = volume_input_texture.Raw();
             if (i != kMaxPasses - 1) {

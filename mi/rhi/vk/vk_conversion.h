@@ -706,7 +706,8 @@ FORCEINLINE vk::PipelineStageFlags2 GetVulkanPipelineStageFlags (RHIPipelineStag
         vk_stages |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
     }
     if (stages & RHIPipelineStageFlagBits::kTransfer) {
-        vk_stages |= vk::PipelineStageFlagBits2::eTransfer;
+        vk_stages |= vk::PipelineStageFlagBits2::eTransfer
+                   | vk::PipelineStageFlagBits2::eClear; // Include CLEAR for sync2 precise stages
     }
     if (stages & RHIPipelineStageFlagBits::kIndirect) {
         vk_stages |= vk::PipelineStageFlagBits2::eDrawIndirect;

@@ -20,6 +20,20 @@
 
 MI_NAMESPACE_BEGIN
 
+static CVar<float> CVar_VolumeDistributionMergingEpsilon(
+    "r.volume_primitives.distribution_merging_epsilon",
+    "Epsilon value for merging volume distributions when rendering volume primitives. "
+    "Smaller values preserve more details but may increase noise.",
+    0.02f
+);
+
+static CVar<bool> CVar_VolumePrimitivesUseCloserRepresentativeDepth(
+    "r.volume_primitives.use_closer_representative_depth",
+    "Whether to always use the closer representative depth when updating volume primitive history. "
+    "This can help reduce ghosting artifacts in some cases.",
+    true
+);
+
 void VolumePrimitivesViewData::Allocate(RenderGraphBuilder &builder, RendererView * view) {
     G_volume_min_max_ = builder.CreateTexture2D(
         view->film_width_, view->film_height_, PixelFormatType::kR16G16_FLOAT);
@@ -48,7 +62,9 @@ void VolumePrimitivesViewData::Allocate(RenderGraphBuilder &builder, RendererVie
     volume_sample_transmittance_and_pdf_->SetName("Volume Sample Transmittance and PDF");
 
     volume_representative_depth_and_variation_ = builder.CreateTexture2D(
-        view->film_width_, view->film_height_, PixelFormatType::kR32G32_FLOAT);
+        view->film_width_, view->film_height_, PixelFormatType::kR32G32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
     volume_representative_depth_and_variation_->SetName("Volume Representative Depth and Variation");
 }
 
@@ -77,7 +93,7 @@ struct RenderVolumePrimitivesUB {
     uint32_t MaxNumPrimitiveInstances;
     uint32_t FrameIndex;
     float    VolumeDistributionMergingEpsilon;
-    uint32_t Padding;
+    uint32_t VolumeDistributionAlwaysUseClosest;
     uint32_t EnableFourier; // True:Use Fourier volume
     uint32_t DensityFourierOrder; // If IsFourier, the Fourier order of Density
     uint32_t ColorFourierOrder; // The Fourier order of Color
@@ -214,25 +230,25 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DrawVolumePrimitivesShader,
 constexpr static uint32_t kTileSize = 16;
 
 static CVar<bool> CVar_EnableFourier(
-    "enable_fourier",
+    "r.volume_primitives.enable_fourier",
     "Enable Fourier Volume",
     true
 );
 
 static CVar<int> CVar_DensityFourierOrder(
-    "density_fourier_order",
+    "r.volume_primitives.density_fourier_order",
     "The Fourier order of volume density",
     3
 );
 
 static CVar<int> CVar_ColorFourierOrder(
-    "color_fourier_order",
+    "r.volume_primitives.color_fourier_order",
     "The Fourier order of volume color",
     3
 );
 
 static CVar<int> CVar_FourierSampleNum(
-    "fourier_sample_num",
+    "r.volume_primitives.fourier_sample_num",
     "The sample num of each intersection in calculating Fourier series",
     4
 );
@@ -270,7 +286,8 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     common_ub->FrameIndex = view->persistent_data_->frame_index_;
     // Allowed relative distance for merging ray volume distributions rather than break them apart
     // |vol1| ..(distance).. |vol2|: if distance < epsilon * (size_of_vol1 + size_of_vol2), then merge
-    common_ub->VolumeDistributionMergingEpsilon = 2e-2f;
+    common_ub->VolumeDistributionMergingEpsilon = CVar_VolumeDistributionMergingEpsilon.Get();
+    common_ub->VolumeDistributionAlwaysUseClosest = CVar_VolumePrimitivesUseCloserRepresentativeDepth.Get() ? 1 : 0;
     common_ub->EnableFourier = CVar_EnableFourier.Get() ? 1 : 0;
     common_ub->DensityFourierOrder = CVar_DensityFourierOrder.Get();
     common_ub->ColorFourierOrder = CVar_ColorFourierOrder.Get();

@@ -13,6 +13,7 @@
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
 #include "r_view_common.h"
+#include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
 #include "../shaders/shared/SharedLight.hlsl"
 MI_NAMESPACE_BEGIN
@@ -220,6 +221,8 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         Helpers::CopyTexture(builder, view->debug_views_.visualize_traced_rays_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 2) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_world_cache_output_.Raw(), view->debug_output_.Raw());
+    } else if (CVar_DebugViewMode.Get() == 3) {
+        Helpers::CopyTexture(builder, view->volume_primitives_->volume_representative_depth_and_variation_.Raw(), view->debug_output_.Raw());
     }
 }
 
