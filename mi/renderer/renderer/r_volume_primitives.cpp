@@ -232,7 +232,11 @@ constexpr static uint32_t kTileSize = 16;
 static CVar<bool> CVar_EnableFourier(
     "r.volume_primitives.enable_fourier",
     "Enable Fourier Volume",
+#ifdef MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT
     true
+#else
+    false
+#endif
 );
 
 static CVar<int> CVar_DensityFourierOrder(

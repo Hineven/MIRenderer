@@ -36,7 +36,7 @@ static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable
 static CVar<float> CVar_DenoiseVolumeLightingDepthOcclusionThreshold(
     "r.denoise_volume_lighting.depth_occlusion_threshold",
     "Depth occlusion threshold for volume lighting denoising. Larger values allow more history reuse across depth changes.",
-    0.05f
+    0.5f // This seems to work well in practice (though it is very large)
 );
 
 void DenoiserViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {

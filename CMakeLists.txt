@@ -50,6 +50,16 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions("-DMI_PROJECT_ROOT=\"${CMAKE_SOURCE_DIR}\"")
 endif()
 
+# Options
+option(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT "Enable Fourier primitives by default" OFF)
+# Macro to enable Fourier primitives by default
+if(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
+    add_definitions(-DMI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
+endif()
+
+##################
+#  Dependencies  #
+##################
 find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
 # Emit include directories for vma
 if(NOT MI_USE_VCPKG_VMA_HPP)

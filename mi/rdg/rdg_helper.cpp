@@ -34,7 +34,6 @@ void Helpers::Clear(RenderGraphBuilder &builder, RDGTexture *texture, glm::vec4 
         [texture, clear_value, mip_level, base_layer, num_layers]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             std::array<float, 4> arr = {clear_value.x, clear_value.y, clear_value.z, clear_value.w};
             queue.ClearTexture(texture->GetRHI(), arr, mip_level, base_layer, num_layers);
-
     })->AddTexture(texture,
         RHITextureLayoutType::kTransferDstOptimal,
         RHIGPUAccessFlagBits::kTransferWrite,
