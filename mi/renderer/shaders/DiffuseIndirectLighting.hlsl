@@ -135,6 +135,46 @@ StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
 RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
 RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
 
+// Volume probes
+RWTexture2D<float4> RWVolumeProbeRadianceAtlasTexture;
+// Volume probe header
+RWTexture2D<uint4>  RWVolumeProbeHeaderTexture;
+
+struct VolumeProbeHeader {
+    float3 WorldPosition;
+    bool bActive;
+};
+
+VolumeProbeHeader UnpackVolumeProbeHeader (uint4 HeaderData) {
+    VolumeProbeHeader Header;
+    Header.WorldPosition = HeaderData.xyz;
+    Header.bActive = (HeaderData.w != 0);
+    return Header;
+}
+
+uint4 PackVolumeProbeHeader (VolumeProbeHeader Header) {
+    uint4 HeaderData;
+    HeaderData.xyz = Header.WorldPosition;
+    HeaderData.w = Header.bActive ? 1 : 0;
+    return HeaderData;
+}
+
+// Active volume probes in the previous frame
+StructuredBuffer<uint> PreviousActiveVolumeProbeCount;
+StructuredBuffer<uint> PreviousActiveVolumeProbeListBuffer;
+
+// All active volume probe atlas indices.
+RWStructuredBuffer<uint> RWActiveVolumeProbeCount;
+RWStructuredBuffer<uint> RWActiveVolumeProbeListBuffer;
+
+// Indexing structure: per-tile lists of volume probe atlas indices
+RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListBuffer;
+RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListLengthsBuffer;
+RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListOffsetsBuffer;
+RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListAllocator; // Used to allocate RWTileVolumeProbeIndexListBuffer entries to tiles
+RWStructuredBuffer<uint>  RWTileVolumeProbeReprojectionEntryAllocator;
+RWStructuredBuffer<uint3> RWTileVolumeProbeReprojectionEntryBuffer;
+
 // For debugging
 RWStructuredBuffer<uint> RWDebugTracedRaysCount;
 RWStructuredBuffer<float3> RWDebugTracedRayOrigins;
@@ -605,7 +645,7 @@ void ReprojectCachedProbes (uint DispatchID : SV_DispatchThreadID) {
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
-void AllocateTileScreenProbeMRULists (uint DispatchID : SV_DispatchThreadID) {
+void AllocateTileCachedScreenProbeLists (uint DispatchID : SV_DispatchThreadID) {
     uint TileIndex1 = DispatchID;
     if(TileIndex1 >= UB.TileCount) return;
 
@@ -616,7 +656,7 @@ void AllocateTileScreenProbeMRULists (uint DispatchID : SV_DispatchThreadID) {
 
 // Scatter the reprojected probes to finish the reprojected cached probe list index for each tile
 [numthreads(WAVE_SIZE, 1, 1)]
-void ScatterReprojectedCachedProbesToMRUList (uint DispatchID : SV_DispatchThreadID) {
+void ScatterReprojectedCachedProbesToTileList (uint DispatchID : SV_DispatchThreadID) {
     uint ReprojectionEntryIndex = DispatchID;
     if(ReprojectionEntryIndex >= RWScreenProbeCacheIndexReprojectionCount[0]) return;
     uint4 ReprojectionEntry = RWScreenProbeCacheIndexReprojectionEntryBuffer[ReprojectionEntryIndex];
@@ -627,6 +667,59 @@ void ScatterReprojectedCachedProbesToMRUList (uint DispatchID : SV_DispatchThrea
     uint TileEntryIndex = ReprojectionEntry.x;
     uint PreviousCacheEntryIndex = ReprojectionEntry.z;
     RWTileScreenProbeCacheIndexListBuffer[TileEntryBase + TileEntryIndex] = PreviousCacheEntryIndex;
+}
+
+// Inject volume probes from last frame to the index of this frame
+[numthreads(WAVE_SIZE, 1, 1)]
+void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
+    uint PreviousProbeActiveListIndex = DispatchID;
+    if(PreviousProbeActiveListIndex >= PreviousActiveVolumeProbeCount[0]) return;
+    uint  PreviousProbeIndex1 = PreviousProbeActiveListIndex;
+    uint2 PreviousProbeIndex = UnpackProbeIndex(PreviousProbeIndex1);
+    VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[PreviousProbeIndex]);
+    CameraParameters C = GetActiveCamera();
+    if(Header.bActive) {
+        uint CurrentProbeIndex;
+        InterlockedAdd(RWActiveVolumeProbeCount[0], 1, CurrentProbeIndex);
+        RWActiveVolumeProbeListBuffer[CurrentProbeIndex] = PreviousProbeIndex1;
+
+        // Inject to the tile's volume probe index list
+        float3 NDC = TransformPoint(C.WorldToNDC, Header.WorldPosition);
+        float2 UV  = NDC2ToUV(NDC.xy);
+        if (all(UV > 0.0f) && all(UV < 1.0f))
+        {
+            uint2 TileIndex = floor(UV * UB.TileDimensions);
+            uint TileIndex1 = TileIndex.x + TileIndex.y * UB.TileDimensions.x;
+            uint TileEntryIndex;
+            InterlockedAdd(RWTileVolumeProbeIndexListLengthsBuffer[TileIndex1], 1, TileEntryIndex);
+
+            uint GlobalEntryIndex;
+            InterlockedAdd(RWTileVolumeProbeReprojectionEntryAllocator[0], 1, GlobalEntryIndex);
+            RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex] = uint3(TileIndex1, TileEntryIndex, CurrentProbeIndex);
+        }
+    }
+}
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void AllocateTileVolumeProbeLists (uint DispatchID : SV_DispatchThreadID) {
+    uint TileIndex1 = DispatchID;
+    if(TileIndex1 >= UB.TileCount) return;
+
+    uint TileEntryBase;
+    InterlockedAdd(RWTileVolumeProbeIndexListAllocator[0], RWTileVolumeProbeIndexListLengthsBuffer[TileIndex1], TileEntryBase);
+    RWTileVolumeProbeIndexListOffsetsBuffer[TileIndex1] = TileEntryBase;
+}
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void ScatterReprojectedVolumeProbesToTileList (uint DispatchID : SV_DispatchThreadID) {
+    uint GlobalEntryIndex = DispatchID;
+    if(GlobalEntryIndex >= RWTileVolumeProbeReprojectionEntryAllocator[0]) return;
+    uint3 ReprojectionEntry = RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex];
+    uint TileIndex1       = ReprojectionEntry.x;
+    uint TileEntryIndex   = ReprojectionEntry.y;
+    uint VolumeProbeIndex = ReprojectionEntry.z;
+    uint TileEntryBase = RWTileVolumeProbeIndexListOffsetsBuffer[TileIndex1];
+    RWTileVolumeProbeIndexListBuffer[TileEntryBase + TileEntryIndex] = VolumeProbeIndex;
 }
 
 // Spawn a fraction of new probes for interleaved tiles each frame
@@ -722,7 +815,6 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
     }
 }
 
-
 [numthreads(1, 1, 1)]
 void UpdateScreenProbeSpawnCount () {
     // printf("ProbeCount: %d %d\n", RWScreenProbeSpawnCount[0], RWReprojectionFailTileCount[0]);
@@ -731,6 +823,52 @@ void UpdateScreenProbeSpawnCount () {
             RWScreenProbeSpawnCount[0] + RWReprojectionFailTileCount[0],
             UB.MaxProbesToSpawnPerFrame
         );
+}
+
+// Spawn volume probes
+[numthreads(WAVE_SIZE, 1, 1)]
+void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
+    uint TileIndex1 = DispatchID;
+    if(TileIndex1 >= UB.TileCount) return;
+    uint2 TileIndex = uint2(TileIndex1 % UB.TileDimensions.x, TileIndex1 / UB.TileDimensions.x);
+
+    // Spawn one probe per tile. This can be adjusted to spawn interleaved probes.
+    if(ShouldSpawnProbe(TileIndex)) {
+        CameraParameters C = GetActiveCamera();
+        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
+        uint2 ScreenCoords  = min(TileIndex * TILE_SIZE + SubTileJitter, C.FilmDimensions - 1);
+        float2 UV = ScreenCoords * C.InvFilmDimensions;
+        float LinearDepth   = G_VolumeSampleDepth.SampleLevel(PointEdgeSampler, UV, 0).x;
+        
+        if (LinearDepth > 0)
+        {
+            uint SpawnListWaveRank = 0;
+            SpawnListWaveRank = WavePrefixCountBits(true);
+            uint SpawnListWaveSum = WaveActiveCountBits(true);
+            uint SpawnListWaveIndexBase = 0;
+            if(WaveIsFirstLane()) {
+                InterlockedAdd(
+                    RWScreenProbeSpawnCount[0],
+                    SpawnListWaveSum, SpawnListWaveIndexBase
+                );
+            }
+            SpawnListWaveIndexBase = WaveReadLaneFirst(SpawnListWaveIndexBase);
+            uint SpawnListIndex = SpawnListWaveIndexBase + SpawnListWaveRank;
+            if(SpawnListIndex < UB.MaxProbesToSpawnPerFrame) {
+                ScreenProbeHeader PreviousHeader = UnpackProbeHeader(RWTileScreenProbeHeaderTexture[TileIndex]);
+                // Write the header to the spawn list
+                ScreenProbeHeader Header = (ScreenProbeHeader)0;
+                Header.bValid = true;
+                if(!PreviousHeader.bValid) {
+                    // We do not have a valid previous probe, so we need to spawn a new probe with aggresive spatial filtering configuration
+                    // to supress noise
+                    Header.bNeedFiltering = true;
+                }
+                Header.PixelCoords = ScreenCoords;
+                RWScreenProbeSpawnListBuffer[SpawnListIndex] = PackProbeHeader(Header);
+            }
+        }
+    }
 }
 
 float RadianceToSampleWeight (float3 Radiance) {

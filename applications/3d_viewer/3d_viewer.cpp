@@ -311,13 +311,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
         TRef<VolumePrimitives> volprims;
         VolumePrimitivesLoader::LoadPLY(
-            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud.ply"),
             *resource_allocator, volprims
         );
         if (volprims) {
             volprims->UpdateOnDevice(resource_allocator.get());
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
             volprims_instance->EditTransform().Translate({0, 0.5, 0});
+            // volprims_instance->EditTransform().Scale({0.1f, 0.1f, 0.1f});
         }
     }
 
