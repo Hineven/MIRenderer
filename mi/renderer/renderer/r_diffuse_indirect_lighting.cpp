@@ -301,21 +301,21 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReprojectCachedProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ReprojectCachedProbes");
 
-class AllocateTileScreenProbeMRUListsShader : public DiffuseIndirectLightingShader {
+class AllocateTileCachedScreenProbeListsShader : public DiffuseIndirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(AllocateTileScreenProbeMRUListsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "AllocateTileScreenProbeMRULists");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(AllocateTileCachedScreenProbeListsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "AllocateTileCachedScreenProbeLists");
 
-class ScatterReprojectedCachedProbesToMRUListShader : public DiffuseIndirectLightingShader {
+class ScatterReprojectedCachedProbesToTileListShader : public DiffuseIndirectLightingShader {
 public:
     RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
     DECLARE_SHADER(DiffuseIndirectLightingShader)
 };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScatterReprojectedCachedProbesToMRUListShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ScatterReprojectedCachedProbesToMRUList");
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScatterReprojectedCachedProbesToTileListShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ScatterReprojectedCachedProbesToTileList");
 
 class SpawnScreenProbesShader : public DiffuseIndirectLightingShader {
 public:
@@ -920,16 +920,16 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         );
     }
     {
-        auto shader = lib.GetShader<AllocateTileScreenProbeMRUListsShader>(ini);
-        Helpers::AddComputePass<AllocateTileScreenProbeMRUListsShader>(
+        auto shader = lib.GetShader<AllocateTileCachedScreenProbeListsShader>(ini);
+        Helpers::AddComputePass<AllocateTileCachedScreenProbeListsShader>(
             builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
         // Actual num of threads required: ScreenProbeCacheIndexReprojectionCount.
         // Anyway num_tiles won't be a big overestimate.
-        auto shader = lib.GetShader<ScatterReprojectedCachedProbesToMRUListShader>(ini);
-        Helpers::AddComputePass<ScatterReprojectedCachedProbesToMRUListShader>(
+        auto shader = lib.GetShader<ScatterReprojectedCachedProbesToTileListShader>(ini);
+        Helpers::AddComputePass<ScatterReprojectedCachedProbesToTileListShader>(
             builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
