@@ -11,6 +11,7 @@
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/HybridTracing.hlsl"
 #include "headers/MaterialEvaluation.hlsl"
+#include "headers/CommonIndirectLighting.hlsl"
 #include "resources/HashGridCacheResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/LightGridSampling.hlsl"
@@ -50,7 +51,7 @@ RWStructuredBuffer<uint> RWScreenProbeCacheIndexReprojectionCount;
 
 // A temporary buffer of reconstructed radiance (when sampling update rays) for newly spawned probes. Used for temporal blending.
 [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> RWScreenProbeReconstructedRadianceDepthBuffer;
+RWTexture2D<float4> RWScreenProbeReconstructedRadianceDepthTexture;
 
 // Buffers holding the cache entries to update & evict upon probe spawning.
 // Indexed with SpawnListIndex
@@ -135,46 +136,6 @@ StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
 RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
 RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
 
-// Volume probes
-RWTexture2D<float4> RWVolumeProbeRadianceAtlasTexture;
-// Volume probe header
-RWTexture2D<uint4>  RWVolumeProbeHeaderTexture;
-
-struct VolumeProbeHeader {
-    float3 WorldPosition;
-    bool bActive;
-};
-
-VolumeProbeHeader UnpackVolumeProbeHeader (uint4 HeaderData) {
-    VolumeProbeHeader Header;
-    Header.WorldPosition = HeaderData.xyz;
-    Header.bActive = (HeaderData.w != 0);
-    return Header;
-}
-
-uint4 PackVolumeProbeHeader (VolumeProbeHeader Header) {
-    uint4 HeaderData;
-    HeaderData.xyz = Header.WorldPosition;
-    HeaderData.w = Header.bActive ? 1 : 0;
-    return HeaderData;
-}
-
-// Active volume probes in the previous frame
-StructuredBuffer<uint> PreviousActiveVolumeProbeCount;
-StructuredBuffer<uint> PreviousActiveVolumeProbeListBuffer;
-
-// All active volume probe atlas indices.
-RWStructuredBuffer<uint> RWActiveVolumeProbeCount;
-RWStructuredBuffer<uint> RWActiveVolumeProbeListBuffer;
-
-// Indexing structure: per-tile lists of volume probe atlas indices
-RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListBuffer;
-RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListLengthsBuffer;
-RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListOffsetsBuffer;
-RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListAllocator; // Used to allocate RWTileVolumeProbeIndexListBuffer entries to tiles
-RWStructuredBuffer<uint>  RWTileVolumeProbeReprojectionEntryAllocator;
-RWStructuredBuffer<uint3> RWTileVolumeProbeReprojectionEntryBuffer;
-
 // For debugging
 RWStructuredBuffer<uint> RWDebugTracedRaysCount;
 RWStructuredBuffer<float3> RWDebugTracedRayOrigins;
@@ -256,58 +217,6 @@ uint PackProbeHeader (ScreenProbeHeader Header) {
 uint ProbeHeaderMarkTemporalBlendable (uint Packed) {
     return Packed | 0x40000000u;
 }
-
-// Quantilization
-// May overflow if the radiance is too large (e.g. 1000)
-uint QuantilizeRadiance (float V, float Noise = 0) {
-    // Add precision check to prevent overflow and ensure stability
-    V = clamp(V, 0.0f, 1000.0f);
-    return floor(V * 16384.0f + Noise);
-}
-uint4 QuantilizeRadiance (float4 V, float Noise = 0) {
-    return uint4(
-        QuantilizeRadiance(V.x, Noise), QuantilizeRadiance(V.y, Noise),
-        QuantilizeRadiance(V.z, Noise), QuantilizeRadiance(V.w, Noise));
-}
-
-float RecoverRadiance (uint V) {
-    return float(V) / 16384;
-}
-float3 RecoverRadiance (uint3 V) {
-    return float3(V) / 16384;
-}
-float4 RecoverRadiance (uint4 V) {
-    return float4(V) / 16384;
-}
-uint QuantilizeWeight (float V, float Noise = 0) {
-    // 2^17 = 131,072 (fp32: 2^23 precision)
-    // Note: InvPdf < 100, no worries about overflowing
-    return floor(V * 131072.f + Noise);
-}
-float RecoverWeight (uint V) {
-    return float(V) / 131072.f;
-}
-
-#ifndef TILE_SIZE
-#define TILE_SIZE 8
-#endif
-
-#ifdef TILE_SIZE
-    #if TILE_SIZE != 8
-    #error "TILE_SIZE must be 8"
-    #endif
-#endif
-
-#define TILE_TEXEL_COUNT (TILE_SIZE * TILE_SIZE)
-#define TILE_TEXEL_COUNT_L2 6
-
-#ifndef WAVE_SIZE
-#define WAVE_SIZE 32
-#endif
-
-#if TILE_TEXEL_COUNT % WAVE_SIZE != 0
-#error "TILE_TEXEL_COUNT must be a multiple of WAVE_SIZE"
-#endif
 
 // Finds the closest probe to the specified location on the probe grid.
 // Here, we start at the highest mip level in the probe mask and fall back
@@ -669,59 +578,6 @@ void ScatterReprojectedCachedProbesToTileList (uint DispatchID : SV_DispatchThre
     RWTileScreenProbeCacheIndexListBuffer[TileEntryBase + TileEntryIndex] = PreviousCacheEntryIndex;
 }
 
-// Inject volume probes from last frame to the index of this frame
-[numthreads(WAVE_SIZE, 1, 1)]
-void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
-    uint PreviousProbeActiveListIndex = DispatchID;
-    if(PreviousProbeActiveListIndex >= PreviousActiveVolumeProbeCount[0]) return;
-    uint  PreviousProbeIndex1 = PreviousProbeActiveListIndex;
-    uint2 PreviousProbeIndex = UnpackProbeIndex(PreviousProbeIndex1);
-    VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[PreviousProbeIndex]);
-    CameraParameters C = GetActiveCamera();
-    if(Header.bActive) {
-        uint CurrentProbeIndex;
-        InterlockedAdd(RWActiveVolumeProbeCount[0], 1, CurrentProbeIndex);
-        RWActiveVolumeProbeListBuffer[CurrentProbeIndex] = PreviousProbeIndex1;
-
-        // Inject to the tile's volume probe index list
-        float3 NDC = TransformPoint(C.WorldToNDC, Header.WorldPosition);
-        float2 UV  = NDC2ToUV(NDC.xy);
-        if (all(UV > 0.0f) && all(UV < 1.0f))
-        {
-            uint2 TileIndex = floor(UV * UB.TileDimensions);
-            uint TileIndex1 = TileIndex.x + TileIndex.y * UB.TileDimensions.x;
-            uint TileEntryIndex;
-            InterlockedAdd(RWTileVolumeProbeIndexListLengthsBuffer[TileIndex1], 1, TileEntryIndex);
-
-            uint GlobalEntryIndex;
-            InterlockedAdd(RWTileVolumeProbeReprojectionEntryAllocator[0], 1, GlobalEntryIndex);
-            RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex] = uint3(TileIndex1, TileEntryIndex, CurrentProbeIndex);
-        }
-    }
-}
-
-[numthreads(WAVE_SIZE, 1, 1)]
-void AllocateTileVolumeProbeLists (uint DispatchID : SV_DispatchThreadID) {
-    uint TileIndex1 = DispatchID;
-    if(TileIndex1 >= UB.TileCount) return;
-
-    uint TileEntryBase;
-    InterlockedAdd(RWTileVolumeProbeIndexListAllocator[0], RWTileVolumeProbeIndexListLengthsBuffer[TileIndex1], TileEntryBase);
-    RWTileVolumeProbeIndexListOffsetsBuffer[TileIndex1] = TileEntryBase;
-}
-
-[numthreads(WAVE_SIZE, 1, 1)]
-void ScatterReprojectedVolumeProbesToTileList (uint DispatchID : SV_DispatchThreadID) {
-    uint GlobalEntryIndex = DispatchID;
-    if(GlobalEntryIndex >= RWTileVolumeProbeReprojectionEntryAllocator[0]) return;
-    uint3 ReprojectionEntry = RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex];
-    uint TileIndex1       = ReprojectionEntry.x;
-    uint TileEntryIndex   = ReprojectionEntry.y;
-    uint VolumeProbeIndex = ReprojectionEntry.z;
-    uint TileEntryBase = RWTileVolumeProbeIndexListOffsetsBuffer[TileIndex1];
-    RWTileVolumeProbeIndexListBuffer[TileEntryBase + TileEntryIndex] = VolumeProbeIndex;
-}
-
 // Spawn a fraction of new probes for interleaved tiles each frame
 [numthreads(WAVE_SIZE, 1, 1)]
 void SpawnScreenProbes (uint DispatchID : SV_DispatchThreadID) {
@@ -823,52 +679,6 @@ void UpdateScreenProbeSpawnCount () {
             RWScreenProbeSpawnCount[0] + RWReprojectionFailTileCount[0],
             UB.MaxProbesToSpawnPerFrame
         );
-}
-
-// Spawn volume probes
-[numthreads(WAVE_SIZE, 1, 1)]
-void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
-    uint TileIndex1 = DispatchID;
-    if(TileIndex1 >= UB.TileCount) return;
-    uint2 TileIndex = uint2(TileIndex1 % UB.TileDimensions.x, TileIndex1 / UB.TileDimensions.x);
-
-    // Spawn one probe per tile. This can be adjusted to spawn interleaved probes.
-    if(ShouldSpawnProbe(TileIndex)) {
-        CameraParameters C = GetActiveCamera();
-        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
-        uint2 ScreenCoords  = min(TileIndex * TILE_SIZE + SubTileJitter, C.FilmDimensions - 1);
-        float2 UV = ScreenCoords * C.InvFilmDimensions;
-        float LinearDepth   = G_VolumeSampleDepth.SampleLevel(PointEdgeSampler, UV, 0).x;
-        
-        if (LinearDepth > 0)
-        {
-            uint SpawnListWaveRank = 0;
-            SpawnListWaveRank = WavePrefixCountBits(true);
-            uint SpawnListWaveSum = WaveActiveCountBits(true);
-            uint SpawnListWaveIndexBase = 0;
-            if(WaveIsFirstLane()) {
-                InterlockedAdd(
-                    RWScreenProbeSpawnCount[0],
-                    SpawnListWaveSum, SpawnListWaveIndexBase
-                );
-            }
-            SpawnListWaveIndexBase = WaveReadLaneFirst(SpawnListWaveIndexBase);
-            uint SpawnListIndex = SpawnListWaveIndexBase + SpawnListWaveRank;
-            if(SpawnListIndex < UB.MaxProbesToSpawnPerFrame) {
-                ScreenProbeHeader PreviousHeader = UnpackProbeHeader(RWTileScreenProbeHeaderTexture[TileIndex]);
-                // Write the header to the spawn list
-                ScreenProbeHeader Header = (ScreenProbeHeader)0;
-                Header.bValid = true;
-                if(!PreviousHeader.bValid) {
-                    // We do not have a valid previous probe, so we need to spawn a new probe with aggresive spatial filtering configuration
-                    // to supress noise
-                    Header.bNeedFiltering = true;
-                }
-                Header.PixelCoords = ScreenCoords;
-                RWScreenProbeSpawnListBuffer[SpawnListIndex] = PackProbeHeader(Header);
-            }
-        }
-    }
 }
 
 float RadianceToSampleWeight (float3 Radiance) {
@@ -1095,7 +905,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
             uint TexelSampleCount = SharedProbeTexelWeight[ProbeTexelIndex];
             // Write out reconstructed radiance to a separate buffer for later blending
             float4 ReconstructedRadianceDepth = (TexelSampleCount > 0) ? (RadianceDepthSum / TexelSampleCount) : float4(BackupRadiance, 1000);
-            RWScreenProbeReconstructedRadianceDepthBuffer[TileIndex * TILE_SIZE + ProbeTexelCoords] = ReconstructedRadianceDepth;
+            RWScreenProbeReconstructedRadianceDepthTexture[TileIndex * TILE_SIZE + ProbeTexelCoords] = ReconstructedRadianceDepth;
             float3 Radiance = ReconstructedRadianceDepth.xyz;
             float AreaCorrectionFactor = 1.f;
             float  SampleWeight = RadianceToSampleWeight(Radiance) * AreaCorrectionFactor;
@@ -1167,7 +977,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
         float2 OctahedronUV = (TexelInnerUV + TexelCoords) * (1.f / TILE_SIZE);
         float3 RayLocalDirection = HemiOctahedron01ToUnitVectorA(OctahedronUV);
         float3 RayWorldDirection = RayLocalDirection.x * Tangent + RayLocalDirection.y * Bitangent + RayLocalDirection.z * Normal;
-        // Convert from [0, 1]^2 to S^2
+        // Convert from [0, 1]^2 to H^2
         float AreaCorrectionFactor = 1.f;
         OctPdf = OctPdf * AreaCorrectionFactor * (1.f / TWO_PI);
 
@@ -1204,12 +1014,12 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
-void ClipUpdateRayCount () {
+void ClipUpdateRayCounts () {
     RWScreenProbeUpdateRayAllocator[0] = min(RWScreenProbeUpdateRayAllocator[0], UB.MaxNumUpdateRays);
 }
 
 // The sampled rays are traced in separate shaders via hybrid tracing (no written here)
-// HWRT trace shading rays (without indirection ray index list)
+// HWRT trace visibility rays (without indirection ray index list)
 
 float3 GetScreenProbeUpdateRayOrigin (int RayIndex) {
     uint2 ScreenCoords = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex]);
@@ -1695,7 +1505,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         // Temporal blending with the reconstructed radiance from previous frames.
         if (Header.bTemporalBlendable)
         {
-            float4 ReconstructedRadiance = RWScreenProbeReconstructedRadianceDepthBuffer[AtlasTexelCoords];
+            float4 ReconstructedRadiance = RWScreenProbeReconstructedRadianceDepthTexture[AtlasTexelCoords];
             float lumaA = RadianceToLuminance(NewRadiance.xyz);
             float lumaB = RadianceToLuminance(ReconstructedRadiance.xyz);
 

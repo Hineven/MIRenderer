@@ -3,6 +3,7 @@
 
 #include "Math.hlsl"
 
+// This is not area preserving
 float2 UnitVectorToOctahedron(float3 N)
 {
 	N.xy /= dot( 1, abs(N) );
@@ -13,11 +14,22 @@ float2 UnitVectorToOctahedron(float3 N)
 	return N.xy;
 }
 
+// This is not area preserving
+// Use dSphericalAngle_dOctahedronArea01 to get the differential
 float2 UnitVectorToOctahedron01(float3 N)
 {
     return (UnitVectorToOctahedron(N) + 1) * 0.5;
 }
 
+// dW / dA (dW for differential solid angle, dA for differential area on the unit square (0, 1) from UnitVectorToOctahedron01)
+float dSphericalAngle_dOctahedronArea01 (float3 LocalDirection) {
+    float3 OctTriangleNormal = normalize(select(LocalDirection > 0, 1.0f.xxx, -1.0f.xxx));
+    float  Cosine = dot(OctTriangleNormal, LocalDirection);
+    // dW = 12 * PI * cos(theta) dA (assuming unit sphere and unit square (0, 1) x (0, 1))
+    return 12.0f * PI * Cosine;
+}
+
+// This is not area preserving
 float3 OctahedronToUnitVector( float2 Oct )
 {
 	float3 N = float3( Oct, 1 - dot( 1, abs(Oct) ) );
@@ -26,18 +38,21 @@ float3 OctahedronToUnitVector( float2 Oct )
 	return normalize(N);
 }
 
+// This is not area preserving
+// Use dSphericalAngle_dOctahedronArea01 to get the differential
 float3 Octahedron01ToUnitVector (float2 Oct)
 {
     return OctahedronToUnitVector(Oct * 2 - 1);
 }
 
+// This is not area preserving
 float2 UnitVectorToHemiOctahedron( float3 N )
 {
 	N.xy /= dot( 1, abs(N) );
 	return float2( N.x + N.y, N.x - N.y );
 }
 
-// Area preserving mapping
+// Area preserving mapping, the differential is constant
 float2 UnitVectorToHemiOctahedron01A( float3 direction )
 {
     // Modified version of "Fast Equal-Area Mapping of the (Hemi)Sphere using SIMD" - Clarberg
@@ -66,6 +81,7 @@ float2 UnitVectorToHemiOctahedron01A( float3 direction )
     return saturateDown(st);
 }
 
+// This is not area preserving
 float3 HemiOctahedronToUnitVector( float2 Oct )
 {
 	Oct = float2( Oct.x + Oct.y, Oct.x - Oct.y );
