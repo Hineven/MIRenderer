@@ -89,7 +89,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     // Initialize RHI
 	{
         uint32_t extension_count = 0;
-        auto extra_extensions =  glfwGetRequiredInstanceExtensions(&extension_count);
+        auto extra_extensions = glfwGetRequiredInstanceExtensions(&extension_count);
         if (extension_count != 0) {
             VulkanRHICreateInfo info {};
             info.extra_instance_extension_count = extension_count;
@@ -837,7 +837,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     assert(pool.GetRefCount() == 1);
     pool.SafeRelease();
 
-    resource_allocator.release();
+    resource_allocator.reset();
 
     RDGShaderLibrary::Get().Deinit();
 
