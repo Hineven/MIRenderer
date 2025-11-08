@@ -16,6 +16,19 @@ float SampleHemisphereUniformPdf ()
     return 1.f / TWO_PI;
 }
 
+float3 SampleSphereUniform (float2 u) {
+    float2 SinCos;
+    sincos(2.f * PI * u.x, SinCos.x, SinCos.y);
+    float Z = 1.f - 2.f * u.y;
+    float R = sqrt(max(1.f - Z * Z, 0.f));
+    return float3(R * SinCos.y, R * SinCos.x, Z);
+}
+
+float SampleSphereUniformPdf ()
+{
+    return 1.f / FOUR_PI;
+}
+
 float CalculateHaltonNumber(in uint index, in uint base)
 {
     float f      = 1.0f;

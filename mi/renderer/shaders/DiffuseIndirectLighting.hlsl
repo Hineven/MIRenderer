@@ -1755,7 +1755,7 @@ void WriteScreenProbeSHCoefficients (uint2 ProbeIndex, float3 SHCoefficients[9])
     RWScreenProbeSHCoefficientsGTexture[ProbeIndex + int2(UB.TileDimensions.x, 0)] = G2;
 }
 
-void GetScreenProbeSHCoefficients (int2 ProbeIndex, out float3 ProbeSH[9]) {
+void GetScreenProbeSHCoefficients (uint2 ProbeIndex, out float3 ProbeSH[9]) {
     float4 R1 = RWScreenProbeSHCoefficientsRTexture[ProbeIndex];
     float4 R2 = RWScreenProbeSHCoefficientsRTexture[ProbeIndex + int2(UB.TileDimensions.x, 0)];
     float4 G1 = RWScreenProbeSHCoefficientsGTexture[ProbeIndex];
@@ -1830,7 +1830,7 @@ void ComputeScreenProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
 
 // Modified from GI1.0
 // Evaluates the irradiance from the probe's SH representation using a bent cone.
-float3 ProbeIntegrateBentCone(float3 Normal, float AO, int2 TileIndex)
+float3 ProbeIntegrateBentCone(float3 Normal, float AO, uint2 TileIndex)
 {
     float ClampedCosineSH[9];
     SH_GetCoefficients_ClampedCosine_Cone(Normal, acos(sqrt(saturate(1.0f - AO))), ClampedCosineSH);
@@ -1937,9 +1937,4 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
     }
 
     RWDiffuseIndirectLightingTexture[PixelCoords] = float4(Irradiance, bUseBackup ? 0 : 1);
-    // {
-    //     float3 Radiance = RWScreenProbeRadianceDepthTexture[PixelCoords].xyz;
-    //     RWDiffuseIndirectLightingTexture[PixelCoords] = float4(Radiance, 1);
-    // }
-
 }

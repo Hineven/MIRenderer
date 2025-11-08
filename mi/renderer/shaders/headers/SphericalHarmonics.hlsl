@@ -135,4 +135,29 @@ void SH_GetCoefficients_ClampedCosine_Cone_Window(in float3 cosine_lobe_dir, in 
     coefficients[8] = +0.4290427654048917f * band2_factor * window2 * (cosine_lobe_dir.x * cosine_lobe_dir.x - cosine_lobe_dir.y * cosine_lobe_dir.y);
 }
 
+void SH_GetCoefficients_HenyeyGreenstein(in float3 direction, in float g, out float coefficients[9])
+{
+    float base[9];
+    SH_GetCoefficients(direction, base);
+
+    g = clamp(g, -0.99f, 0.99f);
+
+    // l=0 (index 0)
+    coefficients[0] = base[0];                       // g^0
+
+    // l=1 (indices 1,2,3)
+    float g1 = g;
+    coefficients[1] = base[1] * g1;
+    coefficients[2] = base[2] * g1;
+    coefficients[3] = base[3] * g1;
+
+    // l=2 (indices 4..8)
+    float g2 = g * g;
+    coefficients[4] = base[4] * g2;
+    coefficients[5] = base[5] * g2;
+    coefficients[6] = base[6] * g2;
+    coefficients[7] = base[7] * g2;
+    coefficients[8] = base[8] * g2;
+}
+
 #endif // SPHERICAL_HARMONICS_HLSL

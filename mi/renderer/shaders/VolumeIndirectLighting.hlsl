@@ -17,8 +17,10 @@
 #include "resources/LightGridSampling.hlsl"
 
 // Volume probes
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeProbeRadianceDepthTexture;
 // Volume probe header
+[[vk::image_format("rgba32ui")]]
 RWTexture2D<uint4>  RWVolumeProbeHeaderTexture;
 
 // SH projection of foreground probes
@@ -33,6 +35,7 @@ RWTexture2D<float4> RWVolumeProbeSHCoefficientsBTexture;
 
 RWStructuredBuffer<uint4> RWSpawnedVolumeProbeHeaderBuffer; // Used to keep new volume probe headers spawned this frame
 // Atlas for newly spawned probes
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeProbeReconstructedRadianceDepthTexture;
 RWStructuredBuffer<uint> RWVolumeProbeSpawnAllocator; // Spawn allocator for volume probes
 RWStructuredBuffer<uint> RWVolumeProbeMRUQueueBuffer; // A MRU queue of volume probe indices (overwrite LRU elements first when spawnning)
@@ -104,6 +107,16 @@ StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
 
 RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
 RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
+
+Texture2D<float4> PreviousNormalTexture;
+Texture2D<float>  PreviousDepthTexture;
+Texture2D<float4> PreviousShadedDiffuseRadianceWithoutEmission;
+
+Texture2D<float>  G_VolumeSampleDepth;
+Texture2D<float4> G_VolumeSampleColor;
+
+[[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWVolumeIndirectLightingTexture;
 
 struct VolumeDiffuseIndirectLightingUB {
     uint  MaxNumUpdateRays; // Must be a multiple of WAVE_SIZE
@@ -234,6 +247,10 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
             }
         }
     }
+}
+
+float RadianceToSampleWeight (float3 Radiance) {
+    return RadianceToLuminance(Radiance) + 0.001f; // Avoid zero weight
 }
 
 #define MAX_NUM_UPDATE_RAYS_PER_PROBE  (2 * TILE_TEXEL_COUNT)
@@ -481,7 +498,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
 			// Queue up for a ray trace
             RWVolumeProbeUpdateRayDirectionBuffer[RayIndex] = RayDirection;
             RWVolumeProbeUpdateRayStateBuffer[RayIndex] = 0; // Initial state
-            RWVolumeProbeUpdateRayOriginBuffer[RayIndex] = PackUint2x16(Header.PixelCoords);
+            RWVolumeProbeUpdateRayOriginBuffer[RayIndex] = Header.WorldPosition;
 			RWVolumeProbeUpdateRayResultBuffer[RayIndex] = 0;
 			// Keep extra data for later probe update
 			float RayInvPdf = 1.f / RayPdf;
@@ -1044,7 +1061,7 @@ void WriteVolumeProbeSHCoefficients (uint2 ProbeIndex, float3 SHCoefficients[9])
     RWVolumeProbeSHCoefficientsGTexture[ProbeIndex + int2(UB.TileDimensions.x, 0)] = G2;
 }
 
-void GetVolumeProbeSHCoefficients (int2 ProbeIndex, out float3 ProbeSH[9]) {
+void GetVolumeProbeSHCoefficients (uint2 ProbeIndex, out float3 ProbeSH[9]) {
     float4 R1 = RWVolumeProbeSHCoefficientsRTexture[ProbeIndex];
     float4 R2 = RWVolumeProbeSHCoefficientsRTexture[ProbeIndex + int2(UB.TileDimensions.x, 0)];
     float4 G1 = RWVolumeProbeSHCoefficientsGTexture[ProbeIndex];
@@ -1065,16 +1082,16 @@ void GetVolumeProbeSHCoefficients (int2 ProbeIndex, out float3 ProbeSH[9]) {
 
 [numthreads(WAVE_SIZE, 1, 1)]
 void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupThreadID) {
-    uint2 TileIndex = GroupID;
-    VolumeProbeHeader Header = UnpackProbeHeader(RWTileVolumeProbeHeaderTexture[TileIndex]);
-    if(!Header.bValid) return;
+    uint2 ProbeIndex = GroupID;
+    VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[ProbeIndex]);
+    if(!Header.bActive) return;
     CameraParameters C = GetActiveCamera();
-    float2 ProbeUV = (Header.PixelCoords + 0.5f) * C.InvFilmDimensions;
-    float3 ProbeNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, ProbeUV, 0).rgb * 2 - 1);
-    float3 ProbeTangent, ProbeBitangent;
-    GetOrthoVectors(ProbeNormal, ProbeTangent, ProbeBitangent);
+    // float2 ProbeUV = (Header.PixelCoords + 0.5f) * C.InvFilmDimensions;
+    // float3 ProbeNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, ProbeUV, 0).rgb * 2 - 1);
+    // float3 ProbeTangent, ProbeBitangent;
+    // GetOrthoVectors(ProbeNormal, ProbeTangent, ProbeBitangent);
 
-    uint2 ProbeAtlasBaseCoords = TileIndex * TILE_SIZE;
+    uint2 ProbeAtlasBaseCoords = ProbeIndex * TILE_SIZE;
 
     // Clear SH coefficients
     float3 SHCoefficients[9];
@@ -1087,40 +1104,120 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         uint TexelIndex = BaseTexelIndex + LocalID;
         uint2 TexelCoords = uint2(TexelIndex % TILE_SIZE, TexelIndex / TILE_SIZE);
         uint2 AtlasTexelCoords = ProbeAtlasBaseCoords + TexelCoords;
-        float4 RadianceDepth = RWVolumeProbeFilteredRadianceDepthTexture[AtlasTexelCoords];
+        float4 RadianceDepth = RWVolumeProbeRadianceDepthTexture[AtlasTexelCoords];
         float3 Radiance = RadianceDepth.xyz;
         float2 TexelUV = (float2(TexelCoords) + 0.5f) / TILE_SIZE;
-        float3 LocalTexelDirection = HemiOctahedron01ToUnitVectorA(TexelUV);
-        float3 ProbeWorldTexelDirection = 
-            LocalTexelDirection.x * ProbeTangent 
-            + LocalTexelDirection.y * ProbeBitangent
-            + LocalTexelDirection.z * ProbeNormal;
+        float3 TexelDirection = HemiOctahedron01ToUnitVectorA(TexelUV);
+        // float3 ProbeWorldTexelDirection = 
+            // LocalTexelDirection.x * ProbeTangent 
+            // + LocalTexelDirection.y * ProbeBitangent
+            // + LocalTexelDirection.z * ProbeNormal;
         
-        float AreaCorrectionFactor = 1.f;
-        // float Weight = AreaCorrectionFactor * (TWO_PI / TILE_TEXEL_COUNT);
+        // Approximated with center sample differentials
+        float AreaCorrectionFactor = dSphericalAngle_dOctahedronArea01(TexelDirection);
         // Accumulate SH coefficients
         float  Coefficients[9];
-        SH_GetCoefficients(ProbeWorldTexelDirection, Coefficients);
-        float AreaCorrection = 1.f;
+        SH_GetCoefficients(TexelDirection, Coefficients);
         for(int i = 0; i < 9; i++) {
-            SHCoefficients[i] += Coefficients[i] * Radiance * AreaCorrection;
+            SHCoefficients[i] += Coefficients[i] * Radiance * AreaCorrectionFactor;
         }
     }
     // Write SH coefficients
     for(uint i = 0; i<9; i++) {
-        // Multiply by TWO_PI to monte-carlo integrate to retrieve the coefficients
-        // (TWO_PI: Hemispherical integration)
-        SHCoefficients[i] = WaveActiveSum(SHCoefficients[i]) * (1.f / TILE_TEXEL_COUNT) * TWO_PI;
+        // Multiply by FOUR_PI to monte-carlo integrate to retrieve the coefficients
+        // (FOUR_PI: Spherical integration)
+        SHCoefficients[i] = WaveActiveSum(SHCoefficients[i]) * (1.f / TILE_TEXEL_COUNT) * FOUR_PI;
     }
     if(WaveIsFirstLane()) {
-        WriteVolumeProbeSHCoefficients(TileIndex, SHCoefficients);
+        WriteVolumeProbeSHCoefficients(ProbeIndex, SHCoefficients);
     }
 }
 
+// Modified from GI1.0
+// Evaluates the irradiance from the probe's SH representation using a bent cone.
+float3 ProbeIntegrateHenyeyGreenstein(float3 ViewDirection, float g, uint2 ProbeIndex)
+{
+    float PhaseSH[9];
+    SH_GetCoefficients_HenyeyGreenstein(ViewDirection, g, PhaseSH);
+
+    float3 Irradiance = float3(0.0f, 0.0f, 0.0f);
+    float3 ProbeSH[9];
+    GetVolumeProbeSHCoefficients(ProbeIndex, ProbeSH);
+    for (uint i = 0; i < 9; ++i)
+    {
+        Irradiance += PhaseSH[i] * ProbeSH[i];
+    }
+
+    return max(Irradiance, 0.0f);
+}
+
+
 // Shade volume with indirect lighting from probes
 [numthreads(WAVE_SIZE, 1, 1)]
-void ShadeVolumeProbes () {
+void ComputVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
+    uint2 PixelCoords = GroupID * TILE_SIZE + LocalID;
+    CameraParameters C = GetActiveCamera();
+    if (any(PixelCoords >= C.FilmDimensions)) return;
+    float  SampleDepth = G_VolumeSampleDepth.Load(int3(PixelCoords, 0));
+    float3 SampleColor = G_VolumeSampleColor.Load(int3(PixelCoords, 0)).xyz;
+    if (SampleDepth == 0)
+    {
+        RWVolumeIndirectLightingTexture[PixelCoords] = 0;
+        return; 
+    }
+    float3 ViewDirection = NDC2ToCameraDirection(C, PixelCoords);
+    float2 UV = (PixelCoords + 0.5f) * C.InvFilmDimensions;
+    // float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+    float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), SampleDepth);
+    float  SearchSize = SampleDepth * UB.ProbeReprojectionSearchSize
+            * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
 
+    uint  ProbeIndex = INVALID_UINT;
+    uint2 TileIndex = PixelCoords / TILE_SIZE;
+    float  SumProbeWeights = 0;
+    float3 SumIrradiance = 0;
+
+    float g = 0.0f; // Lambertian
+
+    int2 Corner = select((PixelCoords % TILE_SIZE) < (TILE_SIZE / 2), -1, 0);
+    for(int dX = 0; dX < 2; dX ++) {
+        for(int dY = 0; dY < 2; dY ++) {
+            int2 SearchTileIndex = int2(TileIndex) + int2(Corner.x + dX, Corner.y + dY);
+            if(any(SearchTileIndex < 0) || any(SearchTileIndex >= int2(UB.TileDimensions))) {
+                continue;
+            }
+            uint SearchTileIndex1 = uint(
+                SearchTileIndex.x + SearchTileIndex.y * UB.TileDimensions.x
+            );
+            uint NumProbesInTile     = RWTileVolumeProbeIndexListLengthsBuffer[SearchTileIndex1];
+            uint TileProbeListOffset = RWTileVolumeProbeIndexListOffsetsBuffer[SearchTileIndex1];
+            for(uint Rank = 0; Rank < NumProbesInTile; Rank ++) {
+                uint  CurrentProbeIndex1 = RWTileVolumeProbeIndexListBuffer[TileProbeListOffset + Rank];
+                uint2 CurrentProbeIndex  = uint2(
+                    CurrentProbeIndex1 % UB.TileDimensions.x,
+                    CurrentProbeIndex1 / UB.TileDimensions.x
+                );
+                VolumeProbeHeader CurrentProbeHeader = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[CurrentProbeIndex]);
+                if(CurrentProbeHeader.bActive) {
+                    float3 ProbeWorldPosition = CurrentProbeHeader.WorldPosition;
+                    float  Distance = length(ProbeWorldPosition - WorldPosition);
+                    if(Distance < SearchSize) {
+                        float ProbeWeight = saturate(1.0f - Distance / SearchSize);
+                        SumProbeWeights += ProbeWeight;
+                        float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, CurrentProbeIndex);
+                        SumIrradiance += ProbeWeight * Irradiance * SampleColor;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if(SumProbeWeights > 0.01f) {
+        float3 Irradiance = (SumIrradiance / SumProbeWeights); 
+        RWVolumeIndirectLightingTexture[PixelCoords] = float4(Irradiance, 1);
+    } else {
+        RWVolumeIndirectLightingTexture[PixelCoords] = 0;
+    }
 }
 
 
