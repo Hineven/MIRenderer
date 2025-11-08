@@ -759,7 +759,8 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             vk::DebugUtilsObjectNameInfoEXT name_info3 {};
             name_info3.objectType = vk::ObjectType::eImage;
             name_info3.objectHandle = (uint64_t)(VkImage)swapchain_images[i];
-            name_info3.pObjectName = (std::string("Swapchain image ") + std::to_string(i)).c_str();
+            auto image_name = std::string("Swapchain image ") + std::to_string(i);
+            name_info3.pObjectName = image_name.c_str();
             device_.setDebugUtilsObjectNameEXT(name_info3);
 #endif
         }
@@ -770,7 +771,8 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
         auto tex = new VulkanTexture(RHITextureType::k2D, {width, height, 1},
                             GetPixelFormatFromVulkanFormat(surface_format.format),
                             RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc
-                            | RHITextureUsageFlagBits::kTransferDst | RHITextureUsageFlagBits::kShaderResource, 1, 1
+                            | RHITextureUsageFlagBits::kTransferDst | RHITextureUsageFlagBits::kShaderResource,
+                            1, 1
         );
         tex->SetName("BackBuffer#" + std::to_string(i));
         rhi_backbuffer_textures[i] = tex;
