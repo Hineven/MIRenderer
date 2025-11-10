@@ -490,14 +490,21 @@ void DiffuseIndirectLightingData::Allocate(RenderGraphBuilder &builder, Renderer
     screen_probe_radiance_depth = builder.CreateTexture2D(
         atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    screen_probe_radiance_depth->SetName("ScreenProbeRadianceDepth");
     auto num_tiles = tile_dimensions.x * tile_dimensions.y;
     screen_probe_cache_updated_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    screen_probe_cache_updated_mru_queue_buffer->SetName("ScreenProbeCacheUpdatedMRUQueue");
     auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
     tile_screen_probe_header_texture = builder.CreateTexture2D(
         1 << tile_index_mip_levels, 1 << tile_index_mip_levels, PixelFormatType::kR32_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
         tile_index_mip_levels
     );
+    tile_screen_probe_header_texture->SetName("TileScreenProbeHeader");
+    radiance = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    radiance->SetName("DiffuseIndirectLightingRadiance");
 }
 
 bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions, uint32_t header_tile_dimension) {
@@ -560,20 +567,24 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
 
 void DiffuseIndirectLightingPersistentData::FinalUpdate(RendererView *view) {
     // Update persistent data
-    auto persistent = view->persistent_data_->diffuse_indirect_lighting_persistent_data_;
-    persistent->ScreenProbeRadianceDepthTexture = view->diffuse_indirect_lighting_data_->screen_probe_radiance_depth;
-    persistent->ScreenProbeRadianceDepthTexture->SetExport();
-    persistent->ScreenProbeCacheMRUQueueBuffer = view->diffuse_indirect_lighting_data_->screen_probe_cache_updated_mru_queue_buffer;
-    persistent->ScreenProbeCacheMRUQueueBuffer->SetExport();
-    persistent->TileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture;
-    persistent->TileScreenProbeHeaderTexture->SetExport();
+    ScreenProbeRadianceDepthTexture = view->diffuse_indirect_lighting_->screen_probe_radiance_depth;
+    ScreenProbeRadianceDepthTexture->SetExport();
+    ScreenProbeCacheMRUQueueBuffer = view->diffuse_indirect_lighting_->screen_probe_cache_updated_mru_queue_buffer;
+    ScreenProbeCacheMRUQueueBuffer->SetExport();
+    TileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_->tile_screen_probe_header_texture;
+    TileScreenProbeHeaderTexture->SetExport();
 }
 
-
-void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
-    RDGSectionGuard section(builder, "Render_ComputeIndirectDiffuseLighting");
-
+static RDGShaderInitializationInfo GetDiffuseIndirectLightingShaderInitializationInfo() {
     auto ini = RDGShaderInitializationInfo {};
+    ini.optional_macros = GetLightStructureShaderMacros();
+    return ini;
+}
+
+void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
+    RDGSectionGuard section(builder, "Render_UpdateDiffuseIndirectLighting");
+
+    auto ini = GetDiffuseIndirectLightingShaderInitializationInfo();
     ini.optional_macros = GetLightStructureShaderMacros();
     auto & lib = RDGShaderLibrary::Get();
 
@@ -679,7 +690,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->PreviousScreenProbeRadianceDepthTexture =
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeRadianceDepthTexture.Raw();
         params->RWScreenProbeRadianceDepthTexture =
-            view->diffuse_indirect_lighting_data_->screen_probe_radiance_depth.Raw();
+            view->diffuse_indirect_lighting_->screen_probe_radiance_depth.Raw();
         params->RWScreenProbeVerticalFilteredRadianceDepthTexture =
             screen_probe_vertical_filtered_radiance_depth.Raw();
         params->RWScreenProbeFilteredRadianceDepthTexture =
@@ -718,7 +729,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->RWScreenProbeCacheMRUQueueBuffer =
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeCacheMRUQueueBuffer.Raw();
         params->RWScreenProbeCacheUpdatedMRUQueueBuffer =
-            view->diffuse_indirect_lighting_data_->screen_probe_cache_updated_mru_queue_buffer.Raw();
+            view->diffuse_indirect_lighting_->screen_probe_cache_updated_mru_queue_buffer.Raw();
         params->RWScreenProbeCacheToMRUQueueIndexBuffer =
             screen_probe_cache_to_mru_queue_index_buffer.Raw();
         params->RWScreenProbeCacheMRUFlagBuffer =
@@ -736,9 +747,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->PreviousTileScreenProbeHeaderTexture =
             view->persistent_data_->diffuse_indirect_lighting_persistent_data_->TileScreenProbeHeaderTexture.Raw();
         params->RWTileScreenProbeHeaderTexture =
-            view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
+            view->diffuse_indirect_lighting_->tile_screen_probe_header_texture.Raw();
         params->TileScreenProbeHeaderTexture =
-            view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
+            view->diffuse_indirect_lighting_->tile_screen_probe_header_texture.Raw();
 
         params->RWReprojectionFailTileCount =
             reprojection_fail_tile_count.Raw();
@@ -810,7 +821,7 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
             view->persistent_data_->prev_G_normal.Raw();
 
         params->RWDiffuseIndirectLightingTexture =
-            view->diffuse_indirect_lighting_.Raw();
+            view->diffuse_direct_lighting_->radiance.Raw();
 
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
@@ -890,6 +901,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         params->RWDebugTracedRayDirections = nullptr;
         params->RWDebugTracedRayStates = nullptr;
     }
+
+    view->diffuse_indirect_lighting_->shader_params = params;
+
     {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
         Helpers::AddComputePass<ClearCountersShader>(builder, shader, params);
@@ -955,14 +969,14 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
             builder, shader, params
         );
     }
-    auto spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
+    view->diffuse_indirect_lighting_->spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
         builder, screen_probe_spawn_count.Raw(), 1
     );
     {
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader>(ini);
         Helpers::AddComputeIndirectPass<ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader>(
             builder, shader, params,
-            spawn_list_command.Raw()
+            view->diffuse_indirect_lighting_->spawn_list_command.Raw()
         );
     }
     {
@@ -996,18 +1010,13 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         );
     }
 
-    {
-        // Initialize & reuse the hash grid cache from the previous frame before updating.
-        Render_ReuseHashGridCache(view, builder);
-    }
-
-    auto shading_point_cmd = Helpers::SpawnDispatchIndirectCommand1D(
+    view->diffuse_indirect_lighting_->shading_point_command = Helpers::SpawnDispatchIndirectCommand1D(
         builder, screen_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
     );
     {
         auto shader = lib.GetShader<SampleLightRaysForUpdateRayHitsShader>(ini);
         Helpers::AddComputeIndirectPass<SampleLightRaysForUpdateRayHitsShader>(
-            builder, shader, params, shading_point_cmd.Raw()
+            builder, shader, params, view->diffuse_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -1033,12 +1042,16 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         );
     }
 
-    Render_UpdateHashGridCache(view, builder);
+}
 
+void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
+    auto & lib = RDGShaderLibrary::Get();
+    auto ini = GetDiffuseIndirectLightingShaderInitializationInfo();
+    auto params = view->diffuse_indirect_lighting_->shader_params;
     {
         auto shader = lib.GetShader<ResolveProbeUpdateRayRadianceFromCellsShader>(ini);
         Helpers::AddComputeIndirectPass<ResolveProbeUpdateRayRadianceFromCellsShader>(
-            builder, shader, params, shading_point_cmd.Raw()
+            builder, shader, params, view->diffuse_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -1048,11 +1061,12 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         auto shader = lib.GetShader<UpdateScreenProbesAndCacheShader>(ini_s);
         Helpers::AddComputeIndirectPass<UpdateScreenProbesAndCacheShader>(
             builder, shader, params,
-            spawn_list_command.Raw()
+            view->diffuse_indirect_lighting_->spawn_list_command.Raw()
         );
     }
 
     // Filter probes
+    auto tile_dimensions = GetTileDimensions(view);
     {
         auto ini_s = ini;
         ini_s.optional_macros.push_back("FIRST_PASS_VERTICAL_FILTER_DIRECTION");
@@ -1078,13 +1092,15 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
             tile_dimensions.x, tile_dimensions.y
         );
     }
-
+    auto num_tiles = tile_dimensions.x * tile_dimensions.y;
+    auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
     // Scan sum
     DeviceScanSum::AddScanSum32BitsPass(builder, num_tiles,
         view->persistent_data_->diffuse_indirect_lighting_persistent_data_->ScreenProbeCacheMRUFlagBuffer.Raw(),
-        screen_probe_cache_mru_flag_prefix_sum_buffer.Raw()
+        params->RWScreenProbeCacheMRUFlagPrefixSumBuffer
     );
 
+    auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     {
         auto shader = lib.GetShader<UpdateScreenProbeCacheMRUQueueShader>(ini);
         Helpers::AddComputePass<UpdateScreenProbeCacheMRUQueueShader>(
@@ -1096,9 +1112,9 @@ void Renderer::Render_ComputeDiffuseIndirectLighting(RendererView * view, Render
         for (uint i = 1; i < tile_index_mip_levels; i++) {
             auto index_params = builder.Allocate<MakeTileScreenProbeHeaderIndexShader::Params>();
             {
-                index_params->RWInTileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
+                index_params->RWInTileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_->tile_screen_probe_header_texture.Raw();
                 index_params->RWInTileScreenProbeHeaderTexture.mip_level = i - 1;
-                index_params->RWOutTileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_data_->tile_screen_probe_header_texture.Raw();
+                index_params->RWOutTileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_->tile_screen_probe_header_texture.Raw();
                 index_params->RWOutTileScreenProbeHeaderTexture.mip_level = i;
             }
             auto shader = lib.GetShader<MakeTileScreenProbeHeaderIndexShader>(ini);

@@ -9,10 +9,19 @@
 #include "renderer/mi_renderer.h"
 MI_NAMESPACE_BEGIN
 
+struct DiffuseIndirectLightingParams;
+
 struct DiffuseIndirectLightingData : public RefCounted<> {
     TRef<RDGTexture> screen_probe_radiance_depth;
+    // Exposed for updating persistent data
     TRef<RDGBuffer>  screen_probe_cache_updated_mru_queue_buffer;
     TRef<RDGTexture> tile_screen_probe_header_texture;
+    TRef<RDGTexture> radiance;
+
+    // Internally used for state keeping.
+    DiffuseIndirectLightingParams * shader_params;
+    TRef<RDGBuffer> shading_point_command; // 1 thread per shading point from update rays
+    TRef<RDGBuffer> spawn_list_command; // 1 thread per probe spawn list entry
 
     void Allocate (RenderGraphBuilder & builder, RendererView * view) ;
 };

@@ -24,10 +24,12 @@
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
 #include "renderer/r_denoiser.h"
+#include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
 #include "renderer/r_internal_common.h"
 #include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
+#include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 
@@ -307,26 +309,20 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Pre-allocate buffers that may be used among multiple lighting stages
-    if (!view->volume_primitives_) {
-        view->volume_primitives_ = new VolumePrimitivesViewData();
-    }
+    if (!view->volume_primitives_) view->volume_primitives_ = new VolumePrimitivesViewData();
     view->volume_primitives_->Allocate(builder, view);
-    if (!view->world_cache_) {
-        view->world_cache_ = new WorldRadianceCacheData();
-    }
+    if (!view->world_cache_) view->world_cache_ = new WorldRadianceCacheData();
     view->world_cache_->Allocate(builder);
-    if (!view->light_structure_) {
-        view->light_structure_ = new LightStructureData();
-    }
+    if (!view->light_structure_) view->light_structure_ = new LightStructureData();
     view->light_structure_->Allocate(builder);
-    if (!view->diffuse_indirect_lighting_data_) {
-        view->diffuse_indirect_lighting_data_ = new DiffuseIndirectLightingData();
-    }
-    view->diffuse_indirect_lighting_data_->Allocate(builder, view);
-    if (!view->denoiser_view_data_) {
-        view->denoiser_view_data_ = new DenoiserViewData();
-    }
-    view->denoiser_view_data_->Allocate(builder, view);
+    if (!view->diffuse_direct_lighting_) view->diffuse_direct_lighting_ = new DiffuseDirectLightingData();
+    view->diffuse_direct_lighting_->Allocate(builder, view);
+    if (!view->volume_indirect_lighting_) view->volume_indirect_lighting_ = new VolumeIndirectLightingData();
+    view->volume_indirect_lighting_->Allocate(builder, view);
+    if (!view->diffuse_indirect_lighting_) view->diffuse_indirect_lighting_ = new DiffuseIndirectLightingData();
+    view->diffuse_indirect_lighting_->Allocate(builder, view);
+    if (!view->denoiser_) view->denoiser_ = new DenoiserViewData();
+    view->denoiser_->Allocate(builder, view);
 
 
     // Pre-allocate shared view persistent data among multiple lighting stages
@@ -374,8 +370,21 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Diffuse direct
     Render_ComputeDiffuseDirectLighting(view, builder);
 
-    // Diffuse Indirect
-    Render_ComputeDiffuseIndirectLighting(view, builder);
+    {
+        RDGSectionGuard section(builder, "IndirectLighting");
+
+        // Initialize & reuse the hash grid cache from the previous frame before updating.
+        Render_ReuseHashGridCache(view, builder);
+
+        // Indirect lighting
+        Render_UpdateDiffuseIndirectLighting(view, builder);
+        Render_UpdateVolumeIndirectLighting(view, builder);
+
+        Render_UpdateHashGridCache(view, builder);
+
+        Render_FinishDiffuseIndirectLighting(view, builder);
+        Render_FinishVolumeIndirectLighting(view, builder);
+    }
 
     // Stage light structure history
     Render_UpdateLightStructureHistory(view, builder);
@@ -400,11 +409,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     else if (type == 4)
         Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
     else if (type == 5)
-        Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_.Raw());
+        Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)
-        Render_DrawToOutput(view, builder, view->volume_direct_lighting_.Raw());
+        Render_DrawToOutput(view, builder, view->volume_direct_lighting_->radiance.Raw());
     else if (type == 7)
-        Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_.Raw());
+        Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_->radiance.Raw());
     else if (type == 8) {
         Render_PathTracing(view, builder);
         Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());

@@ -106,7 +106,6 @@ void RendererView::MakeSurePersistentDataExists(RenderGraphBuilder &builder) {
     );
 }
 
-
 void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
     // TODO CVar system does not support dirty tracking currently.
     // So we have to make these parameters constant.

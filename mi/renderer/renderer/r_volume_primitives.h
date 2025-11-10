@@ -24,8 +24,9 @@ struct VolumePrimitivesViewData : RefCounted<> {
     TRef<RDGTexture> G_volume_weighted_color_fourier_;
     // CDF of recorded volume segment
     TRef<RDGTexture> G_volume_cdf_attenuation_;
-    // Sampled volume data for light sampling
-    TRef<RDGTexture> volume_sample_color_and_linear_depth_;
+    // Sampled volume data for shading
+    TRef<RDGTexture> volume_sample_color_;
+    TRef<RDGTexture> volume_sample_linear_depth_;
     // Sampled volume data for transmittance and pdf
     TRef<RDGTexture> volume_sample_transmittance_and_pdf_;
     // Representative depth and variation for each volume pixel (for reprojection)

@@ -6,9 +6,15 @@
 
 #ifndef MI_R_DIFFUSE_DIRECT_LIGHTING_H
 #define MI_R_DIFFUSE_DIRECT_LIGHTING_H
-#include "renderer/mi_cvar.h"
+#include <renderer/mi_renderer_fwd.h>
 
 MI_NAMESPACE_BEGIN
+
+struct DiffuseDirectLightingData : public RefCounted<> {
+    TRef<RDGTexture> radiance;
+
+    void Allocate (RenderGraphBuilder & builder, RendererView * view) ;
+};
 
 MI_NAMESPACE_END
 

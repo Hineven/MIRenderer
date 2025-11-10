@@ -102,8 +102,9 @@ RWStructuredBuffer<float3> RWShadePointTransmittanceRayDirectionBuffer;
 RWStructuredBuffer<float3> RWShadePointTransmittanceRayOriginBuffer;
 RWStructuredBuffer<uint>   RWShadePointTransmittanceRayStateBuffer;
 RWStructuredBuffer<float>  RWShadePointTransmittanceRayTMaxBuffer;
-RWStructuredBuffer<uint>   RWShadePointTransmittanceRaySampledLightIndexBuffer;
 StructuredBuffer<float>    ShadePointTransmittanceRayTransmittanceBuffer;
+
+RWStructuredBuffer<uint>   RWShadePointTransmittanceRaySampledLightIndexBuffer;
 
 RWStructuredBuffer<uint2>  RWShadePointTransmittanceRayContributionBuffer;
 RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
@@ -152,7 +153,7 @@ ConstantBuffer<VolumeDiffuseIndirectLightingUB> UB;
 void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
     uint PreviousProbeActiveListIndex = DispatchID;
     if(PreviousProbeActiveListIndex >= PreviousActiveVolumeProbeCount[0]) return;
-    uint  PreviousProbeIndex1 = PreviousProbeActiveListIndex;
+    uint  PreviousProbeIndex1 = PreviousActiveVolumeProbeListBuffer[PreviousProbeActiveListIndex];
     uint2 PreviousProbeIndex = uint2(PreviousProbeIndex1 % UB.TileDimensions.x, PreviousProbeIndex1 / UB.TileDimensions.x);
     VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[PreviousProbeIndex]);
     CameraParameters C = GetActiveCamera();
@@ -515,7 +516,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
-void ClipUpdateRayCounts () {
+void ClipUpdateRayCount () {
     RWVolumeProbeUpdateRayAllocator[0] = min(RWVolumeProbeUpdateRayAllocator[0], UB.MaxNumUpdateRays);
 }
 

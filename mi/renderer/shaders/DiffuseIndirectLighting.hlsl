@@ -1014,7 +1014,7 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]
-void ClipUpdateRayCounts () {
+void ClipUpdateRayCount () {
     RWScreenProbeUpdateRayAllocator[0] = min(RWScreenProbeUpdateRayAllocator[0], UB.MaxNumUpdateRays);
 }
 

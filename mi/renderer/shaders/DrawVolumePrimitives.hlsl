@@ -73,8 +73,10 @@ RWTexture2DArray<float4> RWVolumeWeightedColorFourier;
 [[vk::image_format("rg16f")]]
 RWTexture2D<float2> RWVolumeCdfAttenuation;
 
-[[vk::image_format("rgba16f")]]
-RWTexture2D<float4> RWVolumeSampleColorAndLinearDepth;
+[[vk::image_format("rgba8")]]
+RWTexture2D<float4> RWVolumeSampleColor;
+[[vk::image_format("r32f")]]
+RWTexture2D<float4> RWVolumeSampleLinearDepth;
 [[vk::image_format("rg16f")]]
 RWTexture2D<float2> RWVolumeSampleTransmittanceAndPdf;
 [[vk::image_format("rg32f")]]
@@ -843,7 +845,8 @@ void DrawVolumePrimitives (
                 }
                 RWVolumeMinMax[PixelIndex] = float2(Rendered.Density.l, Rendered.Density.r);
                 RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
-                RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
+                RWVolumeSampleColor[PixelIndex] = float4(SampleColor, 1);
+                RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth;
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
                 RWTransmittance[PixelIndex] = TotalTransmittance;
                 // Mark the pixel as invalid for SSRT if it overlaps with a volume
@@ -869,7 +872,8 @@ void DrawVolumePrimitives (
                 RWVolumeColor[PixelIndex] = float4(Rendered.Color, 1);
                 RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
                 RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
-                RWVolumeSampleColorAndLinearDepth[PixelIndex] = float4(SampleColor, SampleDepth);
+                RWVolumeSampleColor[PixelIndex] = float4(SampleColor, 1);
+                RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth;
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
                 RWVolumeRepresentativeDepthAndVariation[PixelIndex] = float2(RepresentativeDepth, Rendered.r - Rendered.l);
                 RWTransmittance[PixelIndex] = TotalTransmittance;

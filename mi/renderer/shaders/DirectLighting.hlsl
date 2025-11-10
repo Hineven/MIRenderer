@@ -503,8 +503,9 @@ PixelVolume FetchVolume(float2 UV) {
 }
 
 // Volume samples
-Texture2D<float4> VolumeSampleColorAndLinearDepth;
-Texture2D<float2> VolumeSampleTransmittanceAndPdf;
+Texture2D<float4> VolumeSampleColorTexture;
+Texture2D<float>  VolumeSampleLinearDepthTexture;
+Texture2D<float2> VolumeSampleTransmittanceAndPdfTexture;
 
 // DI textures
 [[vk::image_format("rgba16f")]]
@@ -528,10 +529,14 @@ StructuredBuffer<float> VolumeRayToTraceTransmittanceBuffer;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeDirectLightingTexture;
 
+[numthreads(1, 1, 1)]
+void VolumeDirectLightingClearCounters() {
+    RWVolumeRayToTraceCount[0] = 0;
+}
 
 // Dispatch a thread for each tile
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
-void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
+void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
     uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
     if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
     
@@ -540,14 +545,14 @@ void VolumePrimitivesSpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID 
     CameraParameters C = GetActiveCamera();
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
 
-    float4 ColorAndLinearDepth = VolumeSampleColorAndLinearDepth.SampleLevel(PointEdgeSampler, PixelUV, 0);
-    float2 TransmittanceAndPdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointEdgeSampler, PixelUV, 0);
+    float  VolumeSampleLinearDepth = VolumeSampleLinearDepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0);
+    float2 TransmittanceAndPdf = VolumeSampleTransmittanceAndPdfTexture.SampleLevel(PointEdgeSampler, PixelUV, 0);
     if(TransmittanceAndPdf.y == 0) {
         // No valid volume sample found. No need to spawn light samples for it.
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
         return ;
     }
-    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, ColorAndLinearDepth.w);
+    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, VolumeSampleLinearDepth);
     float3 ViewDirection = normalize(C.Position - WorldPosition);
     Random R = MakeRandom(46315198u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
     float  SumResampleWeights = 0.f;
@@ -622,8 +627,8 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
         float3 Estimate = VolumeDirectLightingRadianceEstimateTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
         float3 Radiance = RayTransmittance * Estimate;
         // Resemble volume sampling
-        float3 VolumeSampleColor = VolumeSampleColorAndLinearDepth.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-        float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdf.SampleLevel(PointEdgeSampler, UV, 0);
+        float3 VolumeSampleColor = VolumeSampleColorTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+        float2 VolumeSampleTransmittancePdf = VolumeSampleTransmittanceAndPdfTexture.SampleLevel(PointEdgeSampler, UV, 0);
         float  VolumeSampleTransmittance = VolumeSampleTransmittancePdf.x;
         float  VolumeSamplePdf = VolumeSampleTransmittancePdf.y;
         Radiance = Radiance * VolumeSampleColor;

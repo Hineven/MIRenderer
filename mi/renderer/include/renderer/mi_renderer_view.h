@@ -7,15 +7,14 @@
 #ifndef MI_RENDERER_VIEW_H
 #define MI_RENDERER_VIEW_H
 
-#include "rdg/rdg_fwd.h"
+#include <core/util/alloc.h>
+#include <rhi/rhi_fwd.h>
+#include <rhi/rhi_desc.h>
+#include <rdg/rdg_fwd.h>
+#include <renderer/mi_renderer_fwd.h>
 #include "mi_camera.h"
 #include "mi_cvar.h"
-#include "core/util/alloc.h"
-#include "renderer/mi_renderer_fwd.h"
-#include "rhi/rhi_fwd.h"
-#include "rhi/rhi_desc.h"
 MI_NAMESPACE_BEGIN
-struct DebugCommonShaderParameters;
 
 class BatchedUploadContext : public NonCopyable, public NonMovable {
 protected:
@@ -89,6 +88,7 @@ struct RendererView {
 
     Scene * scene_ {};
 
+    // TODO move geometry buffers to a separate structure
     // Visibility buffer
     // 0: Renderable index, 1: Descriptor Index (8bits) + Primitive Index (24bits)
     // 2, 3: Barycentrics (yz)
@@ -103,12 +103,12 @@ struct RendererView {
 
     // Depth for forward rendering pass
     TRef<RDGTexture> forward_depth_;
-
+    // Shadow map (d, blurred d2) for the main directional light
 	TRef<RDGTexture> shadow_map_moments_;
 
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
-
+    // Transmittance for visible volume primitives in front of solid meshes
     TRef<RDGTexture> G_transmittance_;
 
     // HiZ buffer
@@ -122,23 +122,16 @@ struct RendererView {
     TRef<WorldRadianceCacheData> world_cache_;
     // Shared data for light sampling
     TRef<LightStructureData> light_structure_;
-    // Shared data from diffuse indirect lighting computation
-    TRef<DiffuseIndirectLightingData> diffuse_indirect_lighting_data_;
+    // Shared data from diffuse direct lighting (mesh)
+    TRef<DiffuseDirectLightingData> diffuse_direct_lighting_;
+    // Shared data from volume direct lighting
+    TRef<VolumeDirectLightingData> volume_direct_lighting_;
+    // Shared data from diffuse indirect lighting (mesh)
+    TRef<DiffuseIndirectLightingData> diffuse_indirect_lighting_;
+    // Shared data from volume indirect lighting
+    TRef<VolumeIndirectLightingData> volume_indirect_lighting_;
     // Shared data from denoiser
-    TRef<DenoiserViewData> denoiser_view_data_;
-
-    // Diffuse direct lighting
-    TRef<RDGTexture> diffuse_direct_lighting_;
-    TRef<RDGTexture> denoised_diffuse_direct_lighting_;
-    TRef<RDGTexture> denoised_volume_direct_lighting_;
-
-    // Diffuse indirect lighting
-    TRef<RDGTexture> diffuse_indirect_lighting_;
-    // Special: this is set by the denoiser. Not created by the view itself.
-    TRef<RDGTexture> denoised_diffuse_indirect_lighting_;
-
-    // Volume direct lighting
-    TRef<RDGTexture> volume_direct_lighting_;
+    TRef<DenoiserViewData> denoiser_;
 
     // Final radiance
     TRef<RDGTexture> radiance_;

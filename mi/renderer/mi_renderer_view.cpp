@@ -367,37 +367,6 @@ void RendererView::InitFrame () {
     );
     shaded_radiance_no_emission_->SetName("Shaded Radiance No Emission");
 
-    // Diffuse direct lighting
-    diffuse_direct_lighting_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransfer);
-    diffuse_direct_lighting_->SetName("Diffuse Direct Lighting");
-    denoised_diffuse_direct_lighting_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransfer);
-    denoised_diffuse_direct_lighting_->SetName("Denoised Diffuse Direct Lighting");
-    denoised_volume_direct_lighting_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransfer);
-    denoised_volume_direct_lighting_->SetName("Denoised Volume Direct Lighting");
-
-    // Diffuse indirect lighting
-    diffuse_indirect_lighting_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransfer);
-    diffuse_indirect_lighting_->SetName("Diffuse Indirect Lighting");
-    // Denoised diffuse indirect lighting is handled by the denoiser.
-
-    volume_direct_lighting_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransfer);
-    volume_direct_lighting_->SetName("Volume Direct Lighting");
-
     debug_output_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kRenderTarget
         | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransfer);

@@ -54,9 +54,12 @@ void VolumePrimitivesViewData::Allocate(RenderGraphBuilder &builder, RendererVie
         view->film_width_, view->film_height_, PixelFormatType::kR16G16_FLOAT);
     G_volume_cdf_attenuation_->SetName("GBuffer Volume CDF Attenuation");
 
-    volume_sample_color_and_linear_depth_ = builder.CreateTexture2D(
-        view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
-    volume_sample_color_and_linear_depth_->SetName("Volume Sample Color and Linear Depth");
+    volume_sample_color_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR8G8B8A8_UNORM);
+    volume_sample_color_->SetName("Volume Sample Color");
+    volume_sample_linear_depth_ = builder.CreateTexture2D(
+        view->film_width_, view->film_height_, PixelFormatType::kR32_FLOAT);
+    volume_sample_linear_depth_->SetName("Volume Sample Linear Depth");
     volume_sample_transmittance_and_pdf_ = builder.CreateTexture2D(
         view->film_width_, view->film_height_, PixelFormatType::kR16G16_FLOAT);
     volume_sample_transmittance_and_pdf_->SetName("Volume Sample Transmittance and PDF");
@@ -128,7 +131,8 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWTexture2DArray, RWVolumeDensityFourier)
     SHADER_RESOURCE_PARAMETER(RWTexture2DArray, RWVolumeWeightedColorFourier)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeCdfAttenuation)
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleColorAndLinearDepth)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleColor)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleLinearDepth)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeSampleTransmittanceAndPdf)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeRepresentativeDepthAndVariation)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWTransmittance)
@@ -324,7 +328,8 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWVolumeDensityFourier = vol->G_volume_density_fourier_.Raw();
         params->RWVolumeWeightedColorFourier = vol->G_volume_weighted_color_fourier_.Raw();
         params->RWVolumeCdfAttenuation = vol->G_volume_cdf_attenuation_.Raw();
-        params->RWVolumeSampleColorAndLinearDepth = vol->volume_sample_color_and_linear_depth_.Raw();
+        params->RWVolumeSampleColor = vol->volume_sample_color_.Raw();
+        params->RWVolumeSampleLinearDepth = vol->volume_sample_linear_depth_.Raw();
         params->RWVolumeSampleTransmittanceAndPdf = vol->volume_sample_transmittance_and_pdf_.Raw();
         params->RWVolumeRepresentativeDepthAndVariation = vol->volume_representative_depth_and_variation_.Raw();
         params->RWTransmittance = view->G_transmittance_.Raw();

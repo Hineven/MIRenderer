@@ -31,6 +31,10 @@ struct WorldRadianceCacheData;
 struct LightStructureData;
 struct DiffuseIndirectLightingData;
 struct DenoiserViewData;
+struct VolumeDirectLightingData;
+struct DiffuseDirectLightingData;
+struct VolumeIndirectLightingData;
+struct DebugCommonShaderParameters;
 
 struct DiffuseIndirectLightingPersistentData;
 struct DenoiserPersistentData;

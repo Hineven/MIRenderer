@@ -23,8 +23,11 @@ set(SOURCES
         renderer/r_shadow_map.cpp
         renderer/r_hzb.cpp
         renderer/r_hwrt.cpp
+        renderer/r_direct_lighting.cpp
         renderer/r_diffuse_direct_lighting.cpp
+        renderer/r_volume_direct_lighting.cpp
         renderer/r_diffuse_indirect_lighting.cpp
+        renderer/r_volume_indirect_lighting.cpp
         renderer/r_path_tracing.cpp
         renderer/r_debug_views.cpp
         renderer/r_denoiser.cpp
