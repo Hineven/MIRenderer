@@ -275,8 +275,8 @@ struct TGetShaderOptionalMacros<T, std::void_t<decltype(T::GetShaderOptionalMacr
 protected: \
 using RDGShader::RDGShader; \
 public: \
-template<typename T> friend class RDGShaderClassRegistrator; \
-friend class RDGShaderLibrary; \
+template<typename T> friend class ::MI_NAMESPACE::RDGShaderClassRegistrator; \
+friend class ::MI_NAMESPACE::RDGShaderLibrary; \
 static RDGPassType GetRDGPassType (); \
 static const char * GetShaderTypeName ();
 
@@ -284,8 +284,8 @@ static const char * GetShaderTypeName ();
 protected: \
 using Super::Super; \
 public: \
-template<typename T> friend class RDGShaderClassRegistrator; \
-friend class RDGShaderLibrary; \
+template<typename T> friend class ::MI_NAMESPACE::RDGShaderClassRegistrator; \
+friend class ::MI_NAMESPACE::RDGShaderLibrary; \
 static RDGPassType GetRDGPassType (); \
 static const char * GetShaderTypeName ();
 

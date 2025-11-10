@@ -9,6 +9,9 @@
 #include <rdg/rdg_helper.h>
 #include <renderer/mi_renderer.h>
 #include <renderer/util/scan_sum.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_scene.h>
+#include <renderer/mi_texture.h>
 #include "r_view_common.h"
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
@@ -16,9 +19,6 @@
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_world_radiance_cache.h"
-#include "renderer/mi_resource_allocator.h"
-#include "renderer/mi_scene.h"
-#include "renderer/mi_texture.h"
 
 MI_NAMESPACE_BEGIN
 static CVar<float> CVar_ProbeSearchSize(
@@ -118,7 +118,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeCacheIndexReprojectionEntryBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeCacheIndexReprojectionCount)
 
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeReconstructedRadianceDepthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeReconstructedRadianceDepthTexture)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeSpawnCacheMatchesBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWScreenProbeCacheMRUQueueBuffer)
@@ -245,230 +245,234 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
-class DiffuseIndirectLightingShader : public RDGShader {
-public:
-    constexpr static uint32_t kTileSize = 8;
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "TILE_SIZE=" + std::to_string(kTileSize)
-        };
-    }
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        return GetLightStructureShaderMacros();
-    }
-    using RDGShader::RDGShader;
-};
+namespace DiffuseIndirectLightingShaders {
+    class DiffuseIndirectLightingShader : public RDGShader {
+    public:
+        constexpr static uint32_t kTileSize = 8;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+                "TILE_SIZE=" + std::to_string(kTileSize)
+            };
+        }
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            return GetLightStructureShaderMacros();
+        }
+        using RDGShader::RDGShader;
+    };
 
-class ClearCountersShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ClearCountersShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClearCounters");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClearCounters");
 
-class ClearTileScreenProbeCacheIndexListLengthsShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ClearTileScreenProbeCacheIndexListLengthsShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearTileScreenProbeCacheIndexListLengthsShader,
-    "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClearTileScreenProbeCacheIndexListLengths");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearTileScreenProbeCacheIndexListLengthsShader,
+        "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClearTileScreenProbeCacheIndexListLengths");
 
-class InitializeScreenProbeCacheShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class InitializeScreenProbeCacheShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InitializeScreenProbeCacheShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "InitializeScreenProbeCache");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InitializeScreenProbeCacheShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "InitializeScreenProbeCache");
 
-class ReprojectScreenProbesShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ReprojectScreenProbesShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReprojectScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ReprojectScreenProbes");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReprojectScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ReprojectScreenProbes");
 
-class ReprojectCachedProbesShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ReprojectCachedProbesShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReprojectCachedProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ReprojectCachedProbes");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReprojectCachedProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ReprojectCachedProbes");
 
-class AllocateTileCachedScreenProbeListsShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class AllocateTileCachedScreenProbeListsShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(AllocateTileCachedScreenProbeListsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "AllocateTileCachedScreenProbeLists");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(AllocateTileCachedScreenProbeListsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "AllocateTileCachedScreenProbeLists");
 
-class ScatterReprojectedCachedProbesToTileListShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ScatterReprojectedCachedProbesToTileListShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScatterReprojectedCachedProbesToTileListShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ScatterReprojectedCachedProbesToTileList");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScatterReprojectedCachedProbesToTileListShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ScatterReprojectedCachedProbesToTileList");
 
-class SpawnScreenProbesShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class SpawnScreenProbesShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SpawnScreenProbes");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SpawnScreenProbes");
 
-class SubstituteScreenProbesShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class SubstituteScreenProbesShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SubstituteScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SubstituteScreenProbes");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SubstituteScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SubstituteScreenProbes");
 
-class UpdateScreenProbeSpawnCountShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class UpdateScreenProbeSpawnCountShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeSpawnCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeSpawnCount");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeSpawnCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeSpawnCount");
 
-class ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
-    ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader,
-    "mi/renderer/shaders/DiffuseIndirectLighting.hlsl",
-    "ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader,
+        "mi/renderer/shaders/DiffuseIndirectLighting.hlsl",
+        "ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries");
 
-class ClipUpdateRayCountShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    class ClipUpdateRayCountShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClipUpdateRayCount");
-
-
-// Trace update rayus...
-
-class ResolveHitLightingFromScreenHistoryShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
-
-class SampleLightRaysForUpdateRayHitsShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SampleLightRaysForUpdateRayHitsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SampleLightRaysForUpdateRayHits");
-
-// Trace light rays ... (stochastic transmittance rays)
-
-class ResolveUpdateRayHitsDirectLightingFromTraceResultShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveUpdateRayHitsDirectLightingFromTraceResultShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveUpdateRayHitsDirectLightingFromTraceResult");
-
-// Hash grid update ...
-
-class ResolveProbeUpdateRayRadianceFromCellsShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveProbeUpdateRayRadianceFromCellsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveProbeUpdateRayRadianceFromCells");
-
-class UpdateScreenProbesAndCacheShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        auto macros = DiffuseIndirectLightingShader::GetShaderOptionalMacros();
-        macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
-        return macros;
-    }
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbesAndCacheShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbesAndCache");
-
-class FilterScreenProbesShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        auto macros = DiffuseIndirectLightingShader::GetShaderOptionalMacros();
-        macros.push_back("FIRST_PASS_VERTICAL_FILTER_DIRECTION");
-        return macros;
-    }
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "FilterScreenProbes");
-
-class WriteBackFilteredScreenProbesShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(WriteBackFilteredScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "WriteBackFilteredScreenProbes");
-
-class UpdateScreenProbeCacheMRUQueueShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeCacheMRUQueueShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeCacheMRUQueue");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ClipUpdateRayCount");
 
 
-class MakeTileScreenProbeHeaderIndexShader : public RDGShader {
-public:
-    BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWInTileScreenProbeHeaderTexture)
-        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutTileScreenProbeHeaderTexture)
-    END_SHADER_PARAMETERS()
-    RDG_SHADER_USE_PARAMETERS(Params)
-    DECLARE_SHADER()
-};
+    // Trace update rayus...
 
-IMPLEMENT_RDG_COMPUTE_SHADER(MakeTileScreenProbeHeaderIndexShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "MakeTileScreenProbeHeaderIndex");
+    class ResolveHitLightingFromScreenHistoryShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-class ComputeScreenProbeSHCoefficientsShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeScreenProbeSHCoefficientsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ComputeScreenProbeSHCoefficients");
+    class SampleLightRaysForUpdateRayHitsShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
 
-class ComputeDiffuseIndirectLightingShader : public DiffuseIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
-    DECLARE_SHADER(DiffuseIndirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SampleLightRaysForUpdateRayHitsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "SampleLightRaysForUpdateRayHits");
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeDiffuseIndirectLightingShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ComputeDiffuseIndirectLighting");
+    // Trace light rays ... (stochastic transmittance rays)
+
+    class ResolveUpdateRayHitsDirectLightingFromTraceResultShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveUpdateRayHitsDirectLightingFromTraceResultShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveUpdateRayHitsDirectLightingFromTraceResult");
+
+    // Hash grid update ...
+
+    class ResolveProbeUpdateRayRadianceFromCellsShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveProbeUpdateRayRadianceFromCellsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveProbeUpdateRayRadianceFromCells");
+
+    class UpdateScreenProbesAndCacheShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            auto macros = DiffuseIndirectLightingShader::GetShaderOptionalMacros();
+            macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
+            return macros;
+        }
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbesAndCacheShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbesAndCache");
+
+    class FilterScreenProbesShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            auto macros = DiffuseIndirectLightingShader::GetShaderOptionalMacros();
+            macros.push_back("FIRST_PASS_VERTICAL_FILTER_DIRECTION");
+            return macros;
+        }
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "FilterScreenProbes");
+
+    class WriteBackFilteredScreenProbesShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(WriteBackFilteredScreenProbesShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "WriteBackFilteredScreenProbes");
+
+    class UpdateScreenProbeCacheMRUQueueShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateScreenProbeCacheMRUQueueShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "UpdateScreenProbeCacheMRUQueue");
+
+
+    class MakeTileScreenProbeHeaderIndexShader : public RDGShader {
+    public:
+        BEGIN_SHADER_PARAMETERS(Params)
+            SHADER_RESOURCE_PARAMETER(RWTexture2D, RWInTileScreenProbeHeaderTexture)
+            SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOutTileScreenProbeHeaderTexture)
+        END_SHADER_PARAMETERS()
+        RDG_SHADER_USE_PARAMETERS(Params)
+        DECLARE_SHADER()
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER(MakeTileScreenProbeHeaderIndexShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "MakeTileScreenProbeHeaderIndex");
+
+    class ComputeScreenProbeSHCoefficientsShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeScreenProbeSHCoefficientsShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ComputeScreenProbeSHCoefficients");
+
+    class ComputeDiffuseIndirectLightingShader : public DiffuseIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
+        DECLARE_SHADER(DiffuseIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeDiffuseIndirectLightingShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ComputeDiffuseIndirectLighting");
+}
+
+using namespace DiffuseIndirectLightingShaders;
 
 static glm::uvec2 GetTileDimensions(RendererView * view) {
     return glm::uvec2(
@@ -634,7 +638,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
     auto screen_probe_cache_index_reprojection_entry_buffer = builder.CreateBuffer<glm::uvec4>(num_tiles);
     auto screen_probe_cache_index_reprojection_count = builder.CreateBuffer<uint32_t>();
 
-    auto screen_probe_reconstructed_radiance_depth_buffer = builder.CreateTexture2D(
+    auto screen_probe_reconstructed_radiance_depth_texture = builder.CreateTexture2D(
         atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
 
@@ -721,8 +725,8 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
         params->RWScreenProbeCacheIndexReprojectionCount =
             screen_probe_cache_index_reprojection_count.Raw();
 
-        params->RWScreenProbeReconstructedRadianceDepthBuffer =
-            screen_probe_reconstructed_radiance_depth_buffer.Raw();
+        params->RWScreenProbeReconstructedRadianceDepthTexture =
+            screen_probe_reconstructed_radiance_depth_texture.Raw();
 
         params->RWScreenProbeSpawnCacheMatchesBuffer =
             screen_probe_spawn_cache_matches_buffer.Raw();
@@ -1045,6 +1049,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
 }
 
 void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
+    RDGSectionGuard section(builder, "Render_FinishDiffuseIndirectLighting");
     auto & lib = RDGShaderLibrary::Get();
     auto ini = GetDiffuseIndirectLightingShaderInitializationInfo();
     auto params = view->diffuse_indirect_lighting_->shader_params;

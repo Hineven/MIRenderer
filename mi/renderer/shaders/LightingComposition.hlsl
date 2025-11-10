@@ -19,6 +19,7 @@ ConstantBuffer<LightingCompositionUB> UB;
 Texture2D<float4> DiffuseDirectLightingTexture;
 Texture2D<float4> DiffuseIndirectLightingTexture;
 Texture2D<float4> VolumeDirectLightingTexture;
+Texture2D<float4> VolumeIndirectLightingTexture;
 
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
@@ -58,9 +59,12 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     float3 DiffuseIndirectLighting = DiffuseIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     SurfaceRadiance += DiffuseIndirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
 
+    // Volume direct
     // Color is premultiplied.
     float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-    float3 VolumeRadiance = VolumeDirectLighting;
+    // Volume indirect
+    float3 VolumeIndirectLighting = VolumeIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+    float3 VolumeRadiance = VolumeDirectLighting + VolumeIndirectLighting;
 
     float Transmittance = G_Transmittance.SampleLevel(PointEdgeSampler, UV, 0);
 

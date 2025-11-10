@@ -32,7 +32,6 @@ void VolumeDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererVie
     radiance->SetName("VolumeDirectLightingTexture");
 }
 
-
 BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
@@ -91,62 +90,64 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
 
+namespace VolumeDirectLightingShaders {
+    class VolumeDirectLightingShader : public RDGShader {
+    public:
+        static constexpr uint32_t kThreadGroupSize = 128;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+                "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
+            };
+        }
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            return GetLightStructureShaderMacros();
+        }
+        using RDGShader::RDGShader;
+    };
 
-class VolumeDirectLightingShader : public RDGShader {
-public:
-    static constexpr uint32_t kThreadGroupSize = 128;
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
-        };
-    }
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        return GetLightStructureShaderMacros();
-    }
-    using RDGShader::RDGShader;
-};
+    class VolumeDirectLightingClearCounters : public VolumeDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+        DECLARE_SHADER(VolumeDirectLightingShader)
+    };
 
-class VolumeDirectLightingClearCounters : public VolumeDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER(VolumeDirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        VolumeDirectLightingClearCounters,
+        "mi/renderer/shaders/DirectLighting.hlsl", "VolumeDirectLightingClearCounters");
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
-    VolumeDirectLightingClearCounters,
-    "mi/renderer/shaders/DirectLighting.hlsl", "VolumeDirectLightingClearCounters");
+    class VolumeDirectLightingSpawnLightSamplesShader : public VolumeDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+        DECLARE_SHADER(VolumeDirectLightingShader)
+        constexpr static uint32_t kTileSize = 8;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            auto ret = VolumeDirectLightingShader::GetShaderDefaultMacros();
+            ret.push_back(
+                "TILE_SIZE=" + std::to_string(kTileSize)
+            );
+            return ret;
+        }
+    };
 
-class VolumeDirectLightingSpawnLightSamplesShader : public VolumeDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER(VolumeDirectLightingShader)
-    constexpr static uint32_t kTileSize = 8;
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        auto ret = VolumeDirectLightingShader::GetShaderDefaultMacros();
-        ret.push_back(
-            "TILE_SIZE=" + std::to_string(kTileSize)
-        );
-        return ret;
-    }
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        VolumeDirectLightingSpawnLightSamplesShader,
+        "mi/renderer/shaders/DirectLighting.hlsl", "VolumeDirectLightingSpawnLightSamples");
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
-    VolumeDirectLightingSpawnLightSamplesShader,
-    "mi/renderer/shaders/DirectLighting.hlsl", "VolumeDirectLightingSpawnLightSamples");
+    class RenderVolumeDirectLightingShader : public VolumeDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
+        DECLARE_SHADER(VolumeDirectLightingShader)
+    };
 
-class RenderVolumeDirectLightingShader : public VolumeDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
-    DECLARE_SHADER(VolumeDirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        RenderVolumeDirectLightingShader,
+        "mi/renderer/shaders/DirectLighting.hlsl", "RenderVolumeDirectLighting");
+}
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
-    RenderVolumeDirectLightingShader,
-    "mi/renderer/shaders/DirectLighting.hlsl", "RenderVolumeDirectLighting");
-
-void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
-
+void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
+    using namespace VolumeDirectLightingShaders;
+    RDGSectionGuard section(builder, "Render_ComputeVolumeDirectLighting");
     auto & lib = RDGShaderLibrary::Get();
     auto ini_macros = GetLightStructureShaderMacros();
     auto ini = RDGShaderInitializationInfo{};

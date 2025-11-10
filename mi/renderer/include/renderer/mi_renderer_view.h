@@ -12,8 +12,8 @@
 #include <rhi/rhi_desc.h>
 #include <rdg/rdg_fwd.h>
 #include <renderer/mi_renderer_fwd.h>
-#include "mi_camera.h"
-#include "mi_cvar.h"
+#include <renderer/mi_camera.h>
+#include <renderer/mi_cvar.h>
 MI_NAMESPACE_BEGIN
 
 class BatchedUploadContext : public NonCopyable, public NonMovable {

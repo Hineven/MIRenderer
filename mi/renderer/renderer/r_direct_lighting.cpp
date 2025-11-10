@@ -29,7 +29,7 @@ static CVar<bool> CVar_SSRT_Disabled(
 
 
 
-void FillUniformBuffersForDirectLighting(RendererView * view, DirectLightingUB* DI_UB) {
+void FillUniformBufferForDirectLighting(RendererView * view, DirectLightingUB* DI_UB) {
     if (CVar_DebugFreezeFrameSeed.Get()) DI_UB->FrameIndex = 0;
     else DI_UB->FrameIndex = view->persistent_data_->frame_index_;
     DI_UB->ShadowRayTMax = view->camera_.far_plane;

@@ -262,8 +262,6 @@ void ClearCounters () {
     RWTileScreenProbeCacheIndexListAllocator[0] = 0;
     RWScreenProbeUpdateRayHitShadingPointAllocator[0] = 0;
     RWShadePointTransmittanceRayAllocator[0] = 0;
-    HashGrids_ActiveTileCount[0] = 0;
-    HashGrids_UpdateTileCount[0] = 0;
 }
 
 [numthreads(WAVE_SIZE, 1, 1)]

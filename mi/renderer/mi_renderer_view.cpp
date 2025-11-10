@@ -18,12 +18,14 @@
 #include "rhi/rhi_desc.h"
 #include "renderer/r_persistent.h"
 #include "renderer/r_view_common.h"
-#include "renderer/r_diffuse_direct_lighting.h"
+#include "renderer/r_volume_primitives.h"
 #include "renderer/r_denoiser.h"
-#include "renderer/r_diffuse_indirect_lighting.h"
 #include "renderer/r_world_radiance_cache.h"
 #include "renderer/r_light_structure.h"
-#include "renderer/r_volume_primitives.h"
+#include "renderer/r_diffuse_direct_lighting.h"
+#include "renderer/r_diffuse_indirect_lighting.h"
+#include "renderer/r_volume_direct_lighting.h"
+#include "renderer/r_volume_indirect_lighting.h"
 
 MI_NAMESPACE_BEGIN
 RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {
@@ -241,12 +243,12 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
 }
 
 RendererViewPersistentData::RendererViewPersistentData() {
+
 }
 
 RendererViewPersistentData::~RendererViewPersistentData() {
+
 }
-
-
 
 RendererView::RendererView() {
 

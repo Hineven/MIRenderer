@@ -107,84 +107,88 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
-class DiffuseDirectLightingShader : public RDGShader {
-public:
-    static constexpr uint32_t kThreadGroupSize = 128;
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
-        };
-    }
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        return GetLightStructureShaderMacros();
-    }
-    using RDGShader::RDGShader;
-};
+namespace DiffuseDirectLightingShaders {
+    class DiffuseDirectLightingShader : public RDGShader {
+    public:
+        static constexpr uint32_t kThreadGroupSize = 128;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+                "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
+            };
+        }
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            return GetLightStructureShaderMacros();
+        }
+        using RDGShader::RDGShader;
+    };
 
-class ClearLightGridShader : public DiffuseDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER(DiffuseDirectLightingShader)
-};
+    class ClearLightGridShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearLightGridShader, "mi/renderer/shaders/DirectLighting.hlsl", "ClearLightGrid");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearLightGridShader, "mi/renderer/shaders/DirectLighting.hlsl", "ClearLightGrid");
 
-class PrecomputeLightsShader : public DiffuseDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER(DiffuseDirectLightingShader)
-};
+    class PrecomputeLightsShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrecomputeLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "PrecomputeLights");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrecomputeLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "PrecomputeLights");
 
-class InjectLightsShader : public DiffuseDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER(DiffuseDirectLightingShader)
-};
+    class InjectLightsShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "InjectLights");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "InjectLights");
 
-class SpawnLightSamplesShader : public DiffuseDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER(DiffuseDirectLightingShader)
-    constexpr static uint32_t kTileSize = 8;
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        auto ret = DiffuseDirectLightingShader::GetShaderDefaultMacros();
-        ret.push_back(
-            "TILE_SIZE=" + std::to_string(kTileSize)
-        );
-        return ret;
-    }
-};
+    class SpawnLightSamplesShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
+        constexpr static uint32_t kTileSize = 8;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            auto ret = DiffuseDirectLightingShader::GetShaderDefaultMacros();
+            ret.push_back(
+                "TILE_SIZE=" + std::to_string(kTileSize)
+            );
+            return ret;
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnLightSamplesShader, "mi/renderer/shaders/DirectLighting.hlsl", "SpawnLightSamples");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnLightSamplesShader, "mi/renderer/shaders/DirectLighting.hlsl", "SpawnLightSamples");
 
-class ScreenSpaceTraceForDirectLightingShader : public DiffuseDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER(DiffuseDirectLightingShader)
-};
+    class ScreenSpaceTraceForDirectLightingShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScreenSpaceTraceForDirectLightingShader, "mi/renderer/shaders/DirectLighting.hlsl", "ScreenSpaceTraceForDirectLighting");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScreenSpaceTraceForDirectLightingShader, "mi/renderer/shaders/DirectLighting.hlsl", "ScreenSpaceTraceForDirectLighting");
 
-class RenderDiffuseDirectLightingShader : public DiffuseDirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-    DECLARE_SHADER(DiffuseDirectLightingShader)
+    class RenderDiffuseDirectLightingShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
 
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        auto macros = DiffuseDirectLightingShader::GetShaderOptionalMacros();
-        macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
-        return macros;
-    }
-};
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            auto macros = DiffuseDirectLightingShader::GetShaderOptionalMacros();
+            macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
+            return macros;
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(RenderDiffuseDirectLightingShader, "mi/renderer/shaders/DirectLighting.hlsl", "RenderDiffuseDirectLighting");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(RenderDiffuseDirectLightingShader, "mi/renderer/shaders/DirectLighting.hlsl", "RenderDiffuseDirectLighting");
+}
 
+// TODO separate shaders for light grid construction and direct lighting computation
 void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGraphBuilder &builder) {
+    using namespace DiffuseDirectLightingShaders;
     RDGSectionGuard section(builder, "Render_ComputeDirectDiffuseLighting");
 
     auto & lib = RDGShaderLibrary::Get();

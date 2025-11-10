@@ -124,82 +124,97 @@ void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
     active_tile_list_buffer = builder.CreateBuffer<uint32_t>(max_num_tiles);
 }
 
-
 IMPLEMENT_SHADER_PARAMETERS(HashGridCommonParameters)
 
-class ResetHashGridsShader : public RDGShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros () {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
-        };
-    }
-};
+namespace WorldRadianceCacheShaders {
+    class ClearCountersShader : public RDGShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
+        DECLARE_SHADER()
+        static std::vector<std::string> GetShaderDefaultMacros () {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResetHashGridsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ResetHashGrids")
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ClearCounters")
 
-class ReInsertHashGridTilesShader : public RDGShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros () {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
-        };
-    }
-};
+    class ResetHashGridsShader : public RDGShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
+        DECLARE_SHADER()
+        static std::vector<std::string> GetShaderDefaultMacros () {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReInsertHashGridTilesShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ReInsertHashGridTiles")
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResetHashGridsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ResetHashGrids")
 
-class PrepareDispatchCommandForClearNewHashGridTileCellsShader : public RDGShader {
-public:
-    BEGIN_SHADER_PARAMETERS(Params)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileCount)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCount)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCountBeforeAllocationBuffer)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWClearNewHashGridTileCellsIndirectCommandBuffer)
-    END_SHADER_PARAMETERS()
-    DECLARE_SHADER()
-    RDG_SHADER_USE_PARAMETERS(Params)
-    static std::vector<std::string> GetShaderDefaultMacros () {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
-        };
-    }
-};
+    class ReInsertHashGridTilesShader : public RDGShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
+        DECLARE_SHADER()
+        static std::vector<std::string> GetShaderDefaultMacros () {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER(PrepareDispatchCommandForClearNewHashGridTileCellsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "PrepareDispatchCommandForClearNewHashGridTileCells")
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReInsertHashGridTilesShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ReInsertHashGridTiles")
 
-class ClearNewHashGridTileCellsShader : public RDGShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros () {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
-        };
-    }
-};
+    class PrepareDispatchCommandForClearNewHashGridTileCellsShader : public RDGShader {
+    public:
+        BEGIN_SHADER_PARAMETERS(Params)
+            SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_FreeTileCount)
+            SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCount)
+            SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, HashGrids_ActiveTileCountBeforeAllocationBuffer)
+            SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWClearNewHashGridTileCellsIndirectCommandBuffer)
+        END_SHADER_PARAMETERS()
+        DECLARE_SHADER()
+        RDG_SHADER_USE_PARAMETERS(Params)
+        static std::vector<std::string> GetShaderDefaultMacros () {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearNewHashGridTileCellsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ClearNewHashGridTileCells")
+    IMPLEMENT_RDG_COMPUTE_SHADER(PrepareDispatchCommandForClearNewHashGridTileCellsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "PrepareDispatchCommandForClearNewHashGridTileCells")
 
-class FilterHashGridsShader : public RDGShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
-    DECLARE_SHADER()
-    static std::vector<std::string> GetShaderDefaultMacros () {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
-        };
-    }
-};
+    class ClearNewHashGridTileCellsShader : public RDGShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
+        DECLARE_SHADER()
+        static std::vector<std::string> GetShaderDefaultMacros () {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+    };
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterHashGridsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "FilterHashGrids")
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearNewHashGridTileCellsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "ClearNewHashGridTileCells")
 
+    class FilterHashGridsShader : public RDGShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(HashGridCommonParameters)
+        DECLARE_SHADER()
+        static std::vector<std::string> GetShaderDefaultMacros () {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+    };
 
-void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(FilterHashGridsShader, "mi/renderer/shaders/HashGridWorldCache.hlsl", "FilterHashGrids")
+}
+
+void Renderer::Render_PrepareHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
+    using namespace WorldRadianceCacheShaders;
+    RDGSectionGuard section(builder, "Render_PrepareHashGridCache");
     // Initialize and reuse the hash grid cache from the previous frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 
@@ -228,6 +243,10 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
     }
 
     {
+        auto shader = lib.GetShader<ClearCountersShader>();
+        Helpers::AddComputePass(builder, shader, params);
+    }
+    {
         Helpers::Clear(builder, view->world_cache_->bucket_hash_buffer.Raw());
         auto shader = lib.GetShader<ReInsertHashGridTilesShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, persistent->active_tile_count.Raw(), wave_size);
@@ -239,6 +258,8 @@ void Renderer::Render_ReuseHashGridCache(RendererView *view, RenderGraphBuilder 
 }
 
 void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder &builder) {
+    using namespace WorldRadianceCacheShaders;
+    RDGSectionGuard section(builder, "Render_UpdateHashGridCache");
     // Clear newly allocated tiles and filter hash grids this frame.
     auto params = builder.Allocate<HashGridCommonParameters>();
 

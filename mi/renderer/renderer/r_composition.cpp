@@ -48,8 +48,9 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(LightingCompositionUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseDirectLightingTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseIndirectLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, VolumeIndirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
@@ -91,6 +92,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         params->VolumeDirectLightingTexture = view->denoiser_->denoised_volume_direct_lighting.Raw();
     }
     params->DiffuseIndirectLightingTexture = view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
+    params->VolumeIndirectLightingTexture = view->denoiser_->denoised_volume_indirect_lighting.Raw();
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {

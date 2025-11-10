@@ -101,6 +101,9 @@ bool DenoiserPersistentData::MakeSureExists(
     if (!prev_denoised_diffuse_indirect_lighting) {
         flag = true;
     }
+    if (!prev_denoised_volume_indirect_lighting) {
+        flag = true;
+    }
     return flag;
 }
 
@@ -127,6 +130,10 @@ void DenoiserPersistentData::FinalUpdate(RendererView *view) {
     persistent->prev_denoised_diffuse_indirect_lighting = denoiser_data->denoised_diffuse_indirect_lighting;
     persistent->prev_denoised_diffuse_indirect_lighting->SetName("PrevDenoisedDiffuseIndirectLighting");
     persistent->prev_denoised_diffuse_indirect_lighting->SetExport();
+
+    persistent->prev_denoised_volume_indirect_lighting = denoiser_data->denoised_volume_direct_lighting;
+    persistent->prev_denoised_volume_indirect_lighting->SetName("PrevDenoisedVolumeDirectLighting");
+    persistent->prev_denoised_volume_indirect_lighting->SetExport();
 }
 
 
@@ -164,12 +171,14 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousPreFilteredDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousPreFilteredVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDenoisedDiffuseIndirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDenoisedVolumeIndirectRadianceTexture)
 
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWPreFilteredDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWPreFilteredVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedDiffuseIndirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDenoisedVolumeIndirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder0Sampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     END_SHADER_PARAMETERS()
@@ -271,9 +280,9 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->PreviousPreFilteredDiffuseDirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_prefiltered_diffuse_direct_lighting.Raw();
         params->PreviousPreFilteredVolumeDirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_prefiltered_volume_direct_lighting.Raw();
         params->PreviousDenoisedDiffuseIndirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_denoised_diffuse_indirect_lighting.Raw();
+        params->PreviousDenoisedVolumeIndirectRadianceTexture = view->persistent_data_->denoiser_persistent_data_->prev_denoised_volume_indirect_lighting.Raw();
         params->RWPreFilteredDiffuseDirectRadianceTexture = denoiser_data->prefiltered_diffuse_direct_lighting.Raw();
         params->RWPreFilteredVolumeDirectRadianceTexture = denoiser_data->prefiltered_volume_direct_lighting.Raw();
-        params->RWDenoisedDiffuseIndirectRadianceTexture = denoiser_data->denoised_diffuse_indirect_lighting.Raw();
         if (!CVar_UseDilatedConvolution.Get()) {
             // Skip dilated convolution, output directly
             params->RWDenoisedDiffuseDirectRadianceTexture = denoiser_data->denoised_diffuse_direct_lighting.Raw();
@@ -282,6 +291,8 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             params->RWDenoisedDiffuseDirectRadianceTexture = nullptr;
             params->RWDenoisedVolumeDirectRadianceTexture = nullptr;
         }
+        params->RWDenoisedDiffuseIndirectRadianceTexture = denoiser_data->denoised_diffuse_indirect_lighting.Raw();
+        params->RWDenoisedVolumeIndirectRadianceTexture = denoiser_data->denoised_volume_direct_lighting.Raw();
         params->PointBorder0Sampler = RHI::Get().GetGlobalSamplers().point_border_0;
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
         Helpers::AddComputePass<PreFilterDiffuseLightingAndTemporalAccumulateShader>(

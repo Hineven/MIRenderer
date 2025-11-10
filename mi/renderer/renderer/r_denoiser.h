@@ -6,8 +6,8 @@
 
 #ifndef MI_R_DENOISER_H
 #define MI_R_DENOISER_H
-#include <renderer/mi_cvar.h>
-#include <rdg/rdg_resource.h>
+#include <rdg/rdg_fwd.h>
+#include <renderer/mi_renderer_fwd.h>
 MI_NAMESPACE_BEGIN
 
 struct DenoiserViewData : public RefCounted<> {
@@ -30,6 +30,7 @@ struct DenoiserPersistentData : public RefCounted<> {
     TRef<RDGTexture> prev_prefiltered_diffuse_direct_lighting;
     TRef<RDGTexture> prev_prefiltered_volume_direct_lighting;
     TRef<RDGTexture> prev_denoised_diffuse_indirect_lighting;
+    TRef<RDGTexture> prev_denoised_volume_indirect_lighting;
 
     bool MakeSureExists(RendererView * view, RenderGraphBuilder & builder) ;
 

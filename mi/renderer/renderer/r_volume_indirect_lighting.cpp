@@ -19,37 +19,37 @@
 #include "r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
-static CVar<float> CVar_VolumeProbeSearchSize(
+static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     2.f
 );
 
-static CVar<bool> CVar_VolumeProbesRayImportanceSampling(
+static CVar CVar_VolumeProbesRayImportanceSampling(
     "r.volume_indirect_lighting.volume_probes_ray_importance_sampling",
     "Whether to use importance sampling when generating probe update rays. If disabled, uniform hemisphere sampling will be used.",
     true
 );
 
-static CVar<bool> CVar_VolumeProbesRayFreezeSeed(
+static CVar CVar_VolumeProbesRayFreezeSeed(
     "r.volume_indirect_lighting.volume_probes_ray_freeze_seed",
     "Whether to freeze the random seed for probe update rays. This is used for debugging only.",
     false
 );
 
-static CVar<bool> CVar_ResetVolumeIndirectLighting(
+static CVar CVar_ResetVolumeIndirectLighting(
     "r.volume_indirect_lighting.reset",
     "Reset the volume indirect lighting system. This will clear all cache and reinitialize.",
     false
 );
 
-static CVar<bool> CVar_Debug_OutputProbeUpdateRays(
+static CVar CVar_Debug_OutputProbeUpdateRays(
     "r.volume_indirect_lighting.debug.output_probe_update_rays",
     "Output the probe update rays for debugging purposes.",
     false
 );
 
-static CVar<bool> CVar_NoEnvironmentLight(
+static CVar CVar_NoEnvironmentLight(
     "r.volume_indirect_lighting.no_environment_light",
     "Disable the environment light when updating probes.",
     false
@@ -114,8 +114,6 @@ BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileVolumeProbeReprojectionEntryAllocator)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileVolumeProbeReprojectionEntryBuffer)
-
-    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeProbeReconstructedRadianceDepthBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeProbeUpdateRayOffsetsBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeProbeUpdateRayCountsBuffer)
@@ -223,149 +221,160 @@ END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(VolumeIndirectLightingParams)
 
-class VolumeIndirectLightingShader : public RDGShader {
-public:
-    constexpr static uint32_t kTileSize = 8;
-    static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-            "TILE_SIZE=" + std::to_string(kTileSize)
-        };
-    }
-    static std::vector<std::string> GetShaderOptionalMacros() {
-        return GetLightStructureShaderMacros();
-    }
-    using RDGShader::RDGShader;
-};
+namespace VolumeIndirectLightingShaders {
+    class VolumeIndirectLightingShader : public RDGShader {
+    public:
+        constexpr static uint32_t kTileSize = 8;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+                "TILE_SIZE=" + std::to_string(kTileSize)
+            };
+        }
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            return GetLightStructureShaderMacros();
+        }
+        using RDGShader::RDGShader;
+    };
+
+    class InitializeVolumeProbeCacheShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InitializeVolumeProbeCacheShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "InitializeVolumeProbeCache");
+
+    class ClearCountersShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClearCounters");
+
+    class InjectVolumeProbesShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectVolumeProbesShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "InjectVolumeProbes");
+
+    class AllocateTileVolumeProbeListsShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(AllocateTileVolumeProbeListsShader,
+        "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "AllocateTileVolumeProbeLists");
+
+    class ScatterReprojectedVolumeProbesToTileListShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScatterReprojectedVolumeProbesToTileListShader,
+        "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ScatterReprojectedVolumeProbesToTileList");
+
+    class SpawnVolumeProbesShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnVolumeProbesShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "SpawnVolumeProbes");
+
+    class ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays");
+
+    class ClipUpdateRayCountShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClipUpdateRayCount");
+
+    class ResolveHitLightingFromScreenHistoryShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
+
+    class SampleLightRaysForUpdateRayHitsShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SampleLightRaysForUpdateRayHitsShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "SampleLightRaysForUpdateRayHits");
+
+    class ResolveUpdateRayHitsDirectLightingFromTraceResultShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveUpdateRayHitsDirectLightingFromTraceResultShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveUpdateRayHitsDirectLightingFromTraceResult");
+
+    class ResolveProbeUpdateRayRadianceFromCellsShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        ResolveProbeUpdateRayRadianceFromCellsShader,
+        "mi/renderer/shaders/VolumeIndirectLighting.hlsl",
+        "ResolveProbeUpdateRayRadianceFromCells");
+
+    class UpdateVolumeProbesAndCacheShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateVolumeProbesAndCacheShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "UpdateVolumeProbesAndCache");
 
 
-class ClearCountersShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
+    // Trace update rayus...
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClearCounters");
+    class UpdateVolumeProbeCacheMRUQueueShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
 
-class InjectVolumeProbesShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateVolumeProbeCacheMRUQueueShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "UpdateVolumeProbeCacheMRUQueue");
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectVolumeProbesShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "InjectVolumeProbes");
+    class ComputeVolumeProbeSHCoefficientsShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
 
-class AllocateTileVolumeProbeListsShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeVolumeProbeSHCoefficientsShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ComputeVolumeProbeSHCoefficients");
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(AllocateTileVolumeProbeListsShader,
-    "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "AllocateTileVolumeProbeLists");
+    class ComputeVolumeIndirectLightingShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
 
-class ScatterReprojectedVolumeProbesToTileListShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeVolumeIndirectLightingShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ComputeVolumeIndirectLighting");
+}
 
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ScatterReprojectedVolumeProbesToTileListShader,
-    "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ScatterReprojectedVolumeProbesToTileList");
-
-class SpawnVolumeProbesShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnVolumeProbesShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "SpawnVolumeProbes");
-
-class ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays");
-
-class ClipUpdateRayCountShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClipUpdateRayCount");
-
-class ResolveHitLightingFromScreenHistoryShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
-
-class SampleLightRaysForUpdateRayHitsShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SampleLightRaysForUpdateRayHitsShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "SampleLightRaysForUpdateRayHits");
-
-class ResolveUpdateRayHitsDirectLightingFromTraceResultShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveUpdateRayHitsDirectLightingFromTraceResultShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveUpdateRayHitsDirectLightingFromTraceResult");
-
-class ResolveProbeUpdateRayRadianceFromCellsShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
-    ResolveProbeUpdateRayRadianceFromCellsShader,
-    "mi/renderer/shaders/VolumeIndirectLighting.hlsl",
-    "ResolveProbeUpdateRayRadianceFromCells");
-
-class UpdateVolumeProbesAndCacheShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateVolumeProbesAndCacheShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "UpdateVolumeProbesAndCache");
-
-
-// Trace update rayus...
-
-class UpdateVolumeProbeCacheMRUQueueShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(UpdateVolumeProbeCacheMRUQueueShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "UpdateVolumeProbeCacheMRUQueue");
-
-class ComputeVolumeProbeSHCoefficientsShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeVolumeProbeSHCoefficientsShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ComputeVolumeProbeSHCoefficients");
-
-class ComputVolumeIndirectLightingShader : public VolumeIndirectLightingShader {
-public:
-    RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
-    DECLARE_SHADER(VolumeIndirectLightingShader)
-};
-
-IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputVolumeIndirectLightingShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ComputVolumeIndirectLighting");
+using namespace VolumeIndirectLightingShaders;
 
 static glm::uvec2 GetTileDimensions(RendererView * view) {
     return {
@@ -393,7 +402,7 @@ void VolumeIndirectLightingData::Allocate(RenderGraphBuilder &builder, RendererV
     volume_probe_radiance_depth = builder.CreateTexture2D(atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT);
 }
 
-bool VolumeIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions, uint32_t header_tile_dimension) {
+bool VolumeIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions) {
     bool flag = true;
     auto atlas_dimensions = tile_dimensions * VolumeIndirectLightingShader::kTileSize;
 
@@ -426,12 +435,16 @@ void VolumeIndirectLightingPersistentData::FinalUpdate(RendererView *view) {
     VolumeProbeMRUQueueBuffer->SetExport();
 }
 
-
-void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
-    RDGSectionGuard section(builder, "Render_ComputeVolumeIndirectLighting");
-
+static RDGShaderInitializationInfo GetVolumeIndirectLightingShaderInitializationInfo() {
     auto ini = RDGShaderInitializationInfo {};
     ini.optional_macros = GetLightStructureShaderMacros();
+    return ini;
+}
+
+void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
+    RDGSectionGuard section(builder, "Render_UpdateVolumeIndirectLighting");
+
+    auto ini = GetVolumeIndirectLightingShaderInitializationInfo();
     auto & lib = RDGShaderLibrary::Get();
 
     if (!view->persistent_data_->volume_indirect_lighting_persistent_data_) {
@@ -446,17 +459,11 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
 
     if (!view->persistent_data_->volume_indirect_lighting_persistent_data_
-        ->MakeSureExists(builder, tile_dimensions, header_tile_dimension))
+        ->MakeSureExists(builder, tile_dimensions))
         need_reset = true;
     need_reset |= CVar_ResetVolumeIndirectLighting.Get();
 
     auto atlas_dimensions = tile_dimensions * VolumeIndirectLightingShader::kTileSize;
-    auto volume_probe_vertical_filtered_radiance_depth = builder.CreateTexture2D(
-        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
-    );
-    auto volume_probe_filtered_radiance_depth = builder.CreateTexture2D(
-        atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
-    );
     auto sh_coeff_atlas_dimensions = glm::uvec2{tile_dimensions.x * 2, tile_dimensions.y};
     auto volume_probe_irradiance = builder.CreateTexture2D(
         sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
@@ -472,27 +479,24 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     );
 
     auto num_tiles = tile_dimensions.x * tile_dimensions.y;
-    auto tile_volume_probe_cache_index_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto tile_volume_probe_cache_index_list_lengths_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto tile_volume_probe_cache_index_list_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto tile_volume_probe_cache_index_list_allocator = builder.CreateBuffer<uint32_t>();
-
-    auto volume_probe_cache_index_reprojection_entry_buffer = builder.CreateBuffer<glm::uvec4>(num_tiles);
-    auto volume_probe_cache_index_reprojection_count = builder.CreateBuffer<uint32_t>();
-
-    auto volume_probe_reconstructed_radiance_depth_buffer = builder.CreateTexture2D(
+    auto spawned_volume_probe_header_buffer = builder.CreateBuffer<glm::uvec4>(num_tiles);
+    auto volume_probe_reconstructed_radiance_depth_texture = builder.CreateTexture2D(
         atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
 
-    auto volume_probe_spawn_cache_matches_buffer = builder.CreateBuffer<glm::uvec2>(num_tiles);
-    auto volume_probe_cache_to_mru_queue_index_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto volume_probe_cache_mru_flag_prefix_sum_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto volume_probe_cache_mru_queue_entry_allocator = builder.CreateBuffer<uint32_t>();
+    auto volume_probe_spawn_allocator = builder.CreateBuffer<uint32_t>();
+    auto volume_probes_next_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
 
-    auto reprojection_fail_tile_count = builder.CreateBuffer<uint32_t>();
-    auto reprojection_fail_tile_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-    auto volume_probe_spawn_count = builder.CreateBuffer<uint32_t>();
-    auto volume_probe_spawn_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto active_volume_probe_count = builder.CreateBuffer<uint32_t>();
+    auto active_volume_probe_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+
+    auto tile_volume_probe_index_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_volume_probe_index_list_lengths_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_volume_probe_index_list_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    auto tile_volume_probe_index_list_allocator = builder.CreateBuffer<uint32_t>();
+
+    auto tile_volume_probe_reprojection_entry_allocator = builder.CreateBuffer<uint32_t>();
+    auto tile_volume_probe_reprojection_entry_buffer = builder.CreateBuffer<glm::uvec3>(num_tiles);
 
     auto volume_probe_update_ray_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
     auto volume_probe_update_ray_counts_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
@@ -508,7 +512,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
 
     auto volume_probe_update_ray_direction_buffer = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
     auto volume_probe_update_ray_state_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
-    auto volume_probe_update_ray_origin_screen_coords_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    auto volume_probe_update_ray_origin_buffer = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
     auto volume_probe_update_ray_allocator = builder.CreateBuffer<uint32_t>();
 
     auto volume_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
@@ -581,9 +585,6 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             tile_volume_probe_reprojection_entry_allocator.Raw();
         params->RWTileVolumeProbeReprojectionEntryBuffer =
             tile_volume_probe_reprojection_entry_buffer.Raw();
-
-        params->RWVolumeProbeReconstructedRadianceDepthBuffer =
-            volume_probe_reconstructed_radiance_depth_buffer.Raw();
 
         params->RWVolumeProbeUpdateRayOffsetsBuffer =
             volume_probe_update_ray_offsets_buffer.Raw();
@@ -741,8 +742,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     }
     {
         auto shader = lib.GetShader<InjectVolumeProbesShader>(ini);
-        Helpers::AddComputeIndirectPass<InjectVolumeProbesShader>(
-            builder, shader, params, prev_active_list_command.Raw()
+        Helpers::AddComputePass<InjectVolumeProbesShader>(
+            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
@@ -754,7 +755,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     }
     {
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
-            builder, volume_probe_cache_index_reprojection_count.Raw(), wave_size
+            builder, tile_volume_probe_reprojection_entry_allocator.Raw(), wave_size
         );
         auto shader = lib.GetShader<ScatterReprojectedVolumeProbesToTileListShader>(ini);
         Helpers::AddComputeIndirectPass<ScatterReprojectedVolumeProbesToTileListShader>(
@@ -768,14 +769,14 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             DivideAndRoundUp(num_tiles, wave_size)
         );
     }
-    auto spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
-        builder, volume_probe_spawn_count.Raw(), 1
+    view->volume_indirect_lighting_->spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
+        builder, volume_probe_spawn_allocator.Raw(), 1
     );
     {
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(ini);
         Helpers::AddComputeIndirectPass<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(
             builder, shader, params,
-            spawn_list_command.Raw()
+            view->volume_indirect_lighting_->spawn_list_command .Raw()
         );
     }
     {
@@ -809,18 +810,13 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         );
     }
 
-    {
-        // Initialize & reuse the hash grid cache from the previous frame before updating.
-        Render_ReuseHashGridCache(view, builder);
-    }
-
-    auto shading_point_cmd = Helpers::SpawnDispatchIndirectCommand1D(
+    view->volume_indirect_lighting_->shading_point_command = Helpers::SpawnDispatchIndirectCommand1D(
         builder, volume_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
     );
     {
         auto shader = lib.GetShader<SampleLightRaysForUpdateRayHitsShader>(ini);
         Helpers::AddComputeIndirectPass<SampleLightRaysForUpdateRayHitsShader>(
-            builder, shader, params, shading_point_cmd.Raw()
+            builder, shader, params, view->volume_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -845,13 +841,17 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             builder, shader, params, cmd.Raw()
         );
     }
+}
 
-    Render_UpdateHashGridCache(view, builder);
-
+void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGraphBuilder &builder) {
+    RDGSectionGuard section(builder, "Render_FinishVolumeIndirectLighting");
+    auto & lib = RDGShaderLibrary::Get();
+    auto params = view->volume_indirect_lighting_->shader_params;
+    auto ini = GetVolumeIndirectLightingShaderInitializationInfo();
     {
         auto shader = lib.GetShader<ResolveProbeUpdateRayRadianceFromCellsShader>(ini);
         Helpers::AddComputeIndirectPass<ResolveProbeUpdateRayRadianceFromCellsShader>(
-            builder, shader, params, shading_point_cmd.Raw()
+            builder, shader, params, view->volume_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -861,11 +861,14 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         auto shader = lib.GetShader<UpdateVolumeProbesAndCacheShader>(ini_s);
         Helpers::AddComputeIndirectPass<UpdateVolumeProbesAndCacheShader>(
             builder, shader, params,
-            spawn_list_command.Raw()
+            view->volume_indirect_lighting_->spawn_list_command.Raw()
         );
     }
 
     {
+        auto tile_dimensions = GetTileDimensions(view);
+        auto num_tiles = tile_dimensions.x * tile_dimensions.y;
+        auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
         auto shader = lib.GetShader<UpdateVolumeProbeCacheMRUQueueShader>(ini);
         Helpers::AddComputePass<UpdateVolumeProbeCacheMRUQueueShader>(
             builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
@@ -873,11 +876,11 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     }
 
     {
-        auto shader = lib.GetShader<ComputVolumeIndirectLightingShader>(ini);
-        Helpers::AddComputePass<ComputVolumeIndirectLightingShader>(
+        auto shader = lib.GetShader<ComputeVolumeIndirectLightingShader>(ini);
+        Helpers::AddComputePass<ComputeVolumeIndirectLightingShader>(
             builder, shader, params,
-            DivideAndRoundUp(view->film_width_, ComputVolumeIndirectLightingShader::kTileSize),
-            DivideAndRoundUp(view->film_height_, ComputVolumeIndirectLightingShader::kTileSize)
+            DivideAndRoundUp(view->film_width_, ComputeVolumeIndirectLightingShader::kTileSize),
+            DivideAndRoundUp(view->film_height_, ComputeVolumeIndirectLightingShader::kTileSize)
         );
     }
 }

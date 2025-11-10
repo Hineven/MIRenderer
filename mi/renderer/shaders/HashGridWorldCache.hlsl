@@ -10,6 +10,12 @@ void ResetHashGrids (uint DispatchID : SV_DispatchThreadID) {
 	HashGrids_FreeTileListBuffer[DispatchID] = HashGrids_UB.MaxNumTiles - DispatchID - 1;
 }
 
+[numthreads(1, 1, 1)]
+void ClearCounters () {
+    HashGrids_ActiveTileCount[0] = 0;
+    HashGrids_UpdateTileCount[0] = 0;
+}
+
 [numthreads(WAVE_SIZE, 1, 1)]
 void ReInsertHashGridTiles (uint DispatchID : SV_DispatchThreadID) {
 	if(DispatchID >= HashGrids_HistoryActiveTileCount[0]) return;

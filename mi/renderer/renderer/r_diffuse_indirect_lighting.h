@@ -9,7 +9,7 @@
 #include "renderer/mi_renderer.h"
 MI_NAMESPACE_BEGIN
 
-struct DiffuseIndirectLightingParams;
+class DiffuseIndirectLightingParams;
 
 struct DiffuseIndirectLightingData : public RefCounted<> {
     TRef<RDGTexture> screen_probe_radiance_depth;

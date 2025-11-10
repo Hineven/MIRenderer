@@ -47,18 +47,26 @@ struct VolumeProbeHeader {
     bool bTemporalBlendable;
 };
 
-VolumeProbeHeader UnpackVolumeProbeHeader (uint4 HeaderData) {
+VolumeProbeHeader UnpackVolumeProbeHeader (uint4 Packed) {
     VolumeProbeHeader Header;
-    Header.WorldPosition = HeaderData.xyz;
-    Header.bActive = (HeaderData.w != 0);
+    Header.WorldPosition = Packed.xyz;
+    Header.bActive = Packed.w & 0x1;
+    Header.bTemporalBlendable = Packed & 0x2f;
     return Header;
 }
 
 uint4 PackVolumeProbeHeader (VolumeProbeHeader Header) {
-    uint4 HeaderData;
-    HeaderData.xyz = Header.WorldPosition;
-    HeaderData.w = Header.bActive ? 1 : 0;
-    return HeaderData;
+    uint4 Packed;
+    Packed.xyz = Header.WorldPosition;
+    Packed.w = 0;
+    Packed.w |= (Header.bActive ? 0x1 : 0x0);
+    Packed.w |= (Header.bTemporalBlendable ? 0x2 : 0x0);
+    return Packed;
+}
+
+uint4 ProbeHeaderMarkTemporalBlendable (uint4 Packed) {
+    Packed.w |= 0x2;
+    return Packed;
 }
 
 // Active volume probes in the previous frame
@@ -148,12 +156,34 @@ struct VolumeDiffuseIndirectLightingUB {
 
 ConstantBuffer<VolumeDiffuseIndirectLightingUB> UB;
 
+[numthreads(1, 1, 1)]
+void ClearCounters () {
+    RWVolumeProbeSpawnAllocator[0] = 0;
+    RWActiveVolumeProbeCount[0] = 0;
+    RWTileVolumeProbeIndexListAllocator[0] = 0;
+    RWTileVolumeProbeReprojectionEntryAllocator[0] = 0;
+    RWVolumeProbeUpdateRayAllocator[0] = 0;
+    // RWTileScreenProbeCacheIndexListAllocator[0] = 0;
+    RWVolumeProbeUpdateRayHitShadingPointAllocator[0] = 0;
+    RWShadePointTransmittanceRayAllocator[0] = 0;
+}
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void InitializeVolumeProbeCache (uint DispatchID : SV_DispatchThreadID) {
+    uint ProbeIndex1 = DispatchID;
+    if(ProbeIndex1 >= UB.TileCount) return;
+    // Initialize the MRU queue.
+    RWVolumeProbeMRUQueueBuffer[ProbeIndex1] = ProbeIndex1;
+    // De-activate all probes
+    uint2 ProbeIndex = uint2(ProbeIndex1 % UB.TileDimensions.x, ProbeIndex1 / UB.TileDimensions.x);
+    RWVolumeProbeHeaderTexture[ProbeIndex] = PackVolumeProbeHeader((VolumeProbeHeader)0);
+}
+
 // Inject volume probes from last frame to the index of this frame
 [numthreads(WAVE_SIZE, 1, 1)]
 void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
-    uint PreviousProbeActiveListIndex = DispatchID;
-    if(PreviousProbeActiveListIndex >= PreviousActiveVolumeProbeCount[0]) return;
-    uint  PreviousProbeIndex1 = PreviousActiveVolumeProbeListBuffer[PreviousProbeActiveListIndex];
+    uint PreviousProbeIndex1 = DispatchID;
+    if(PreviousProbeIndex1 >= UB.TileCount) return;
     uint2 PreviousProbeIndex = uint2(PreviousProbeIndex1 % UB.TileDimensions.x, PreviousProbeIndex1 / UB.TileDimensions.x);
     VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[PreviousProbeIndex]);
     CameraParameters C = GetActiveCamera();
@@ -293,11 +323,6 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     float  SumReusedWeight = 0;
 
     // // Try to recover radiance at the new probe from probes in neighboring tiles
-    // float MinUpdateProbeScoreFromCache = 1e+10f;
-    // uint  MinUpdateProbeScoreCacheEntryIndex = INVALID_UINT;
-    // // And finding a possible matching cache entry for the existing old probe to evict
-    // float MinReprojectedProbeScoreFromCache = 1e+10f;
-    // uint  MinReprojectedProbeScoreCacheEntryIndex = INVALID_UINT;
     for(int dx = -1; dx <= 1; dx++) {
         for(int dy = -1; dy <= 1; dy++) {
             int2 NeighborTileIndex = int2(TileIndex) + int2(dx, dy);
@@ -308,10 +333,6 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
             for(uint ProbeMRUListRank = 0; ProbeMRUListRank < TileInjectedListLength; ProbeMRUListRank++) {
                 uint TileIndexListIndex = TileInjectedListOffset + ProbeMRUListRank;
                 uint InjectedVolumeProbeIndex1 = RWTileVolumeProbeIndexListBuffer[TileIndexListIndex];
-                // uint4 PackedCacheEntry = RWVolumeProbeCacheDataBuffer[CacheEntryIndex];
-                // CacheEntryData CacheEntry = UnpackCacheEntry(PackedCacheEntry);
-                // float3 CachedProbeWorldPos = CacheEntry.WorldPosition;
-                // float3 CachedProbeNormal = CacheEntry.Normal;
                 uint2 InjectedVolumeProbeIndex = uint2(InjectedVolumeProbeIndex1 % UB.TileDimensions.x, InjectedVolumeProbeIndex1 / UB.TileDimensions.x);
                 VolumeProbeHeader InjectedProbeHeader = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[InjectedVolumeProbeIndex]);
                 if(length(InjectedProbeHeader.WorldPosition - Header.WorldPosition) < SearchSize) {
@@ -322,17 +343,20 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
                         float4 ProbeRadianceDepth = RWVolumeProbeRadianceDepthTexture[VolumeProbeAtlasTexelCoords];
                         float2 ProbeTexelUV = (ProbeTexelCoords + 0.5f) / TILE_SIZE;
                         // For volume probes, there're no local frame
-                        float3 ProbeDirection = HemiOctahedron01ToUnitVectorA(ProbeTexelUV);
+                        float3 ProbeDirection = Octahedron01ToUnitVector(ProbeTexelUV);
                         float3 HitPosition = InjectedProbeHeader.WorldPosition + ProbeDirection * ProbeRadianceDepth.w;
                         float3 ReprojectedDirection = HitPosition - Header.WorldPosition;
                         {
                             float  ReprojectedDepth = length(ReprojectedDirection);
-                            float2 ReprojectedTexelUV = UnitVectorToHemiOctahedron01A(ReprojectedDirection);
+                            float2 ReprojectedTexelUV = UnitVectorToOctahedron01(ReprojectedDirection);
                             uint2  ReprojectedTexelCoords = uint2(ReprojectedTexelUV * TILE_SIZE);
                             uint   ReprojectedTexelIndex = ReprojectedTexelCoords.x + ReprojectedTexelCoords.y * TILE_SIZE;
                             // Use differential to weight the contribution for unbiased approximation
                             // (Note: not InvPdf, because we're just averaging the contributions per texel here)
                             float  Weight = dSphericalAngle_dOctahedronArea01(ReprojectedDirection);
+                            // TODO texel reprojection
+                            float  TexelReprojectionWeight = 1.f;
+                            Weight *= TexelReprojectionWeight;
                             float3 WeightedProbeRadianceDepth = ProbeRadianceDepth.xyz * Weight;
                             InterlockedAdd(SharedProbeBlendedRadiance[ReprojectedTexelIndex].x, QuantilizeRadiance(WeightedProbeRadianceDepth.x));
                             InterlockedAdd(SharedProbeBlendedRadiance[ReprojectedTexelIndex].y, QuantilizeRadiance(WeightedProbeRadianceDepth.y));
@@ -343,19 +367,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
                             SumReusedWeight += Weight;
                         }
                     }
-                    // float ProbeScore = distance(CachedProbeWorldPos, WorldPosition);
-                    // if(dot(Normal, CachedProbeNormal) >= 0.95f && ProbeScore < MinUpdateProbeScoreFromCache) {
-                    //     MinUpdateProbeScoreFromCache = ProbeScore;
-                    //     MinUpdateProbeScoreCacheEntryIndex = CacheEntryIndex;
-                    // }
                 }
-                // if(abs(dot(CachedProbeWorldPos - ReprojectedProbeWorldPos, Normal)) < SearchSize && ReprojectedProbe.bValid) {
-                //     float ProbeScore = distance(CachedProbeWorldPos, ReprojectedProbeWorldPos);
-                //     if(dot(ReprojectedProbeNormal, CachedProbeNormal) >= 0.95f && ProbeScore < MinReprojectedProbeScoreFromCache) {
-                //         MinReprojectedProbeScoreFromCache = ProbeScore;
-                //         MinReprojectedProbeScoreCacheEntryIndex = CacheEntryIndex;
-                //     }
-                // }
             }
         }
     }
@@ -365,30 +377,6 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     SumReusedWeight = WaveActiveSum(SumReusedWeight);
     float3 BackupRadiance = SumWeightedRadiance / max(1.f / FOUR_PI, SumReusedWeight);
 
-    // // Write out the cache to substitute & update if the reprojected probe is present
-    // if(WaveIsFirstLane()) {
-    //     if(ReprojectedProbe.bValid) {
-    //         if(IsValid(MinReprojectedProbeScoreCacheEntryIndex)) {
-    //             // Make sure that we're not starting multiple writes to one cache entry
-    //             uint Original;
-    //             InterlockedCompareExchange(RWVolumeProbeCacheMRUFlagBuffer[MinReprojectedProbeScoreCacheEntryIndex], 0, 1, Original);
-    //             if(Original != 0) {
-    //                 // Someone else has taken this cache entry, so we just drop the cache write
-    //                 MinReprojectedProbeScoreCacheEntryIndex = INVALID_UINT;
-    //             }
-    //         }
-    //     }
-    //     if(IsValid(MinUpdateProbeScoreCacheEntryIndex)) {
-    //         // Make sure that we're not starting multiple writes to one cache entry
-    //         uint Original;
-    //         InterlockedCompareExchange(RWVolumeProbeCacheMRUFlagBuffer[MinUpdateProbeScoreCacheEntryIndex], 0, 1, Original);
-    //         if(Original != 0) {
-    //             // Someone else has taken this cache entry, so we just drop the cache update
-    //             MinUpdateProbeScoreCacheEntryIndex = INVALID_UINT;
-    //         }
-    //     }
-    //     RWVolumeProbeSpawnCacheMatchesBuffer[SpawnListIndex] = uint2(MinReprojectedProbeScoreCacheEntryIndex, MinUpdateProbeScoreCacheEntryIndex);
-    // }
     // Sample rays
     // We assume that ray count is always a multiple of WAVE_SIZE
 
@@ -410,7 +398,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
             float4 ReconstructedRadianceDepth = (TexelSampleCount > 0) ? (RadianceDepthSum / TexelSampleCount) : float4(BackupRadiance, 1000);
             RWVolumeProbeReconstructedRadianceDepthTexture[TileIndex * TILE_SIZE + ProbeTexelCoords] = ReconstructedRadianceDepth;
             float3 Radiance = ReconstructedRadianceDepth.xyz;
-            float3 RepresentativeDirection = HemiOctahedron01ToUnitVectorA((float2(ProbeTexelCoords) + 0.5f) / TILE_SIZE);
+            float3 RepresentativeDirection = Octahedron01ToUnitVector((float2(ProbeTexelCoords) + 0.5f) / TILE_SIZE);
             // Use a representative direction approximating the differential for better weighted sampling
             float AreaCorrectionFactor = dSphericalAngle_dOctahedronArea01(RepresentativeDirection);
             float  SampleWeight = RadianceToSampleWeight(Radiance) * AreaCorrectionFactor;
@@ -434,14 +422,14 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     // Allocate a number of rays to sample the probe octahedron
     int NumProbeOctahedronSamples = TILE_TEXEL_COUNT;
     // Round to a multiple of WAVE_SIZE with russian roulette for maximum wave coherence & occupancy
-    {
-        float P = saturate(1 - float(ReusedProbeTexelCount) / 128);
-        // For the case that we have no history for reuse, double the number of samples
-        bool FirstFrame = (UB.ResetCache != 0) || (UB.FrameIndex == 0); // In case we're just starting to render the cache, do not do adaptive balancing
-        if(rng.rand() < P && UB.ProbeUpdateRaysNoAdaptiveAllocation == 0 && !FirstFrame) {
-            NumProbeOctahedronSamples += TILE_TEXEL_COUNT;
-        }
-    }
+    // {
+    //     float P = saturate(1 - float(ReusedProbeTexelCount) / 128);
+    //     // For the case that we have no history for reuse, double the number of samples
+    //     bool FirstFrame = (UB.ResetCache != 0) || (UB.FrameIndex == 0); // In case we're just starting to render the cache, do not do adaptive balancing
+    //     if(rng.rand() < P && UB.ProbeUpdateRaysNoAdaptiveAllocation == 0 && !FirstFrame) {
+    //         NumProbeOctahedronSamples += TILE_TEXEL_COUNT;
+    //     }
+    // }
     NumProbeOctahedronSamples = min(NumProbeOctahedronSamples, MAX_NUM_UPDATE_RAYS_PER_PROBE);
     uint UpdateRayIndexBase = 0;
     if(WaveIsFirstLane()) {
@@ -457,7 +445,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
 
     // If the probe has adequate samples from radiance reconstruction, mark it as temporal blendable
     if(WaveIsFirstLane()) {
-        if(ReusedProbeTexelCount >= 32) {
+        if(SumReusedWeight >= 32.f * FOUR_PI) {
             RWSpawnedVolumeProbeHeaderBuffer[SpawnListIndex] = 
                 ProbeHeaderMarkTemporalBlendable(RWSpawnedVolumeProbeHeaderBuffer[SpawnListIndex]); // Mark as temporal blendable
         }
@@ -1108,7 +1096,7 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         float4 RadianceDepth = RWVolumeProbeRadianceDepthTexture[AtlasTexelCoords];
         float3 Radiance = RadianceDepth.xyz;
         float2 TexelUV = (float2(TexelCoords) + 0.5f) / TILE_SIZE;
-        float3 TexelDirection = HemiOctahedron01ToUnitVectorA(TexelUV);
+        float3 TexelDirection = Octahedron01ToUnitVector(TexelUV);
         // float3 ProbeWorldTexelDirection = 
             // LocalTexelDirection.x * ProbeTangent 
             // + LocalTexelDirection.y * ProbeBitangent

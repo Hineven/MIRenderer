@@ -374,7 +374,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         RDGSectionGuard section(builder, "IndirectLighting");
 
         // Initialize & reuse the hash grid cache from the previous frame before updating.
-        Render_ReuseHashGridCache(view, builder);
+        Render_PrepareHashGridCache(view, builder);
 
         // Indirect lighting
         Render_UpdateDiffuseIndirectLighting(view, builder);
