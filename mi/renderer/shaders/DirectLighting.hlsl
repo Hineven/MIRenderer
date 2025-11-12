@@ -87,15 +87,18 @@ void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
     if(DispatchID == 0) {
         LightGrid_ListAllocator[0] = 0;
         LightGrid_ActiveLightListCount[0] = 0;
-        RWRayToTraceCount[0] = 0;
-        RWRayToTraceListAllocator[0] = 0;
-        RWVolumeRayToTraceCount[0] = 0;
     }
     uint Index = DispatchID;
     if (Index >= LightStructure_UB.LighGridNumCascadesUsed * LightStructure_UB.LightGridNumGrids) {
         return;
     }
      LightGrid_GridLightListLengthBuffer[Index] = 0;
+}
+
+[numthreads(1, 1, 1)]
+void DiffuseDirectLightingClearCounters () {
+    RWRayToTraceCount[0] = 0;
+    RWRayToTraceListAllocator[0] = 0;
 }
 
 // Precompute lights, filter active lights and gather light data for later injection

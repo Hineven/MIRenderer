@@ -317,6 +317,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     view->light_structure_->Allocate(builder);
     if (!view->diffuse_direct_lighting_) view->diffuse_direct_lighting_ = new DiffuseDirectLightingData();
     view->diffuse_direct_lighting_->Allocate(builder, view);
+    if (!view->volume_direct_lighting_) view->volume_direct_lighting_ = new VolumeDirectLightingData();
+    view->volume_direct_lighting_->Allocate(builder, view);
     if (!view->volume_indirect_lighting_) view->volume_indirect_lighting_ = new VolumeIndirectLightingData();
     view->volume_indirect_lighting_->Allocate(builder, view);
     if (!view->diffuse_indirect_lighting_) view->diffuse_indirect_lighting_ = new DiffuseIndirectLightingData();

@@ -17,27 +17,32 @@
 #include "r_volume_direct_lighting.h"
 #include "r_volume_primitives.h"
 MI_NAMESPACE_BEGIN
-static CVar<bool> CVar_UseDilatedConvolution("r.denoise_diffuse_direct_lighting.use_dilated_convolution",
+static CVar<bool> CVar_UseDilatedConvolution("r.denoiser.diffuse_direct_lighting.use_dilated_convolution",
      "Whether to use dilated convolution for denoising diffuse direct lighting. If false, bypass that and output prefiltered result.",
      true);
 
-static CVar<float> CVar_DilatedConvolutionLuminanceSize("r.denoise_diffuse_direct_lighting.dilated_convolution_luminance_size",
+static CVar<float> CVar_DilatedConvolutionLuminanceSize("r.denoiser.diffuse_direct_lighting.dilated_convolution_luminance_size",
     "Luminance similarity size for dilated convolution. Larger is more aggressive denoising but may lose details.",
     1.0f
 );
 
-static CVar<float> CVar_ConvolutionNormalDifferenceWeight("r.denoise_diffuse_direct_lighting.convolution_normal_difference_weight",
+static CVar<float> CVar_ConvolutionNormalDifferenceWeight("r.denoiser.diffuse_direct_lighting.convolution_normal_difference_weight",
     "Weight for normal difference when computing weights in the dilated convolution. Larger, the stricter.",
     5.0f
 );
 
-static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoise_diffuse_indirect.enable",
+static CVar<bool> CVar_DenoiseDiffuseIndirect("r.denoiser.diffuse_indirect.enable",
     "Whether to denoise diffuse indirect lighting.",
     true
 );
 
+static CVar<bool> CVar_DenoiseVolumeIndirect("r.denoiser.volume_indirect.enable",
+    "Whether to denoise volume indirect lighting.",
+    true
+);
+
 static CVar<float> CVar_DenoiseVolumeLightingDepthOcclusionThreshold(
-    "r.denoise_volume_lighting.depth_occlusion_threshold",
+    "r.denoiser.volume_lighting_depth_occlusion_threshold",
     "Depth occlusion threshold for volume lighting denoising. Larger values allow more history reuse across depth changes.",
     0.5f // This seems to work well in practice (though it is very large)
 );
@@ -78,6 +83,11 @@ void DenoiserViewData::Allocate(RenderGraphBuilder &builder, RendererView *view)
         PixelFormatType::kR16G16B16A16_FLOAT
     );
     denoised_volume_direct_lighting->SetName("CurrentDenoisedVolumeDirectLighting");
+    denoised_volume_indirect_lighting = builder.CreateTexture2D(
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    denoised_volume_indirect_lighting->SetName("CurrentDenoisedVolumeIndirectLighting");
 }
 
 bool DenoiserPersistentData::MakeSureExists(
@@ -147,7 +157,8 @@ struct DenoiseDiffuseLightingUB {
     float ConvolutionNormalDifferenceWeight;
     uint32_t DenoiseDiffuseIndirect;
     float VolumeDepthHistoryThreshold;
-    glm::uvec3 Padding;
+    uint32_t DenoiseVolumeIndirect;
+    glm::uvec2 Padding;
 };
 
 class PreFilterDiffuseLightingAndTemporalAccumulateShader : public RDGShader {
@@ -163,6 +174,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseIndirectRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, InputVolumeIndirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWHistoryLengthTexture)
@@ -255,6 +267,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         UB->ConvolutionNormalDifferenceWeight = glm::clamp(CVar_ConvolutionNormalDifferenceWeight.Get(), 0.01f, 100.f);
         UB->DenoiseDiffuseIndirect = CVar_DenoiseDiffuseIndirect.Get() ? 1 : 0;
         UB->VolumeDepthHistoryThreshold = CVar_DenoiseVolumeLightingDepthOcclusionThreshold.Get();
+        UB->DenoiseVolumeIndirect = CVar_DenoiseVolumeIndirect.Get() ? 1 : 0;
     }
     {
         auto ini = RDGShaderInitializationInfo {};
@@ -273,6 +286,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->InputDiffuseDirectRadianceTexture = view->diffuse_direct_lighting_->radiance.Raw();
         params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_->radiance.Raw();
         params->InputDiffuseIndirectRadianceTexture = view->diffuse_indirect_lighting_->radiance.Raw();
+        params->InputVolumeIndirectRadianceTexture = view->volume_indirect_lighting_->radiance.Raw();
         params->PreviousHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_history_length.Raw();
         params->PreviousVolumeHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_volume_history_length.Raw();
         params->RWHistoryLengthTexture = denoiser_data->history_length.Raw();

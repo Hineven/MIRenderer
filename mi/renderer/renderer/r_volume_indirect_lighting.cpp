@@ -726,9 +726,12 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->RWDebugTracedRayDirections = nullptr;
         params->RWDebugTracedRayStates = nullptr;
     }
+
+    view->volume_indirect_lighting_->shader_params = params; // Save for further use
+
     {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
-        Helpers::AddComputePass<ClearCountersShader>(builder, shader, params);
+        Helpers::AddComputePass(builder, shader, params);
     }
     auto prev_active_list_command = Helpers::SpawnDispatchIndirectCommand1D(builder,
         view->persistent_data_->volume_indirect_lighting_persistent_data_->ActiveVolumeProbeCount.Raw(),

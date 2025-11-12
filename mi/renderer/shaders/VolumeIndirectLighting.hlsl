@@ -50,8 +50,8 @@ struct VolumeProbeHeader {
 VolumeProbeHeader UnpackVolumeProbeHeader (uint4 Packed) {
     VolumeProbeHeader Header;
     Header.WorldPosition = Packed.xyz;
-    Header.bActive = Packed.w & 0x1;
-    Header.bTemporalBlendable = Packed & 0x2f;
+    Header.bActive = Packed.w & 0x1u;
+    Header.bTemporalBlendable = Packed.w & 0x2u;
     return Header;
 }
 
@@ -59,8 +59,8 @@ uint4 PackVolumeProbeHeader (VolumeProbeHeader Header) {
     uint4 Packed;
     Packed.xyz = Header.WorldPosition;
     Packed.w = 0;
-    Packed.w |= (Header.bActive ? 0x1 : 0x0);
-    Packed.w |= (Header.bTemporalBlendable ? 0x2 : 0x0);
+    Packed.w |= (Header.bActive ? 0x1u : 0x0u);
+    Packed.w |= (Header.bTemporalBlendable ? 0x2u : 0x0u);
     return Packed;
 }
 
@@ -91,7 +91,7 @@ RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayOffsetsBuffer;
 RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayCountsBuffer;
 RWStructuredBuffer<float3> RWVolumeProbeUpdateRayDirectionBuffer;
 RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayStateBuffer;
-RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayOriginBuffer;
+RWStructuredBuffer<float3> RWVolumeProbeUpdateRayOriginBuffer;
 RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayAllocator; // Number of all rays to be traced
 
 // Ray trace results
@@ -148,10 +148,7 @@ struct VolumeDiffuseIndirectLightingUB {
     uint ProbeUpdateRaysNoAdaptiveAllocation;
     uint ProbeSpawnSubTileJitterSeed;
     uint TileProbeSpawnSeed;
-    uint EnableSpatialProbeFiltering;
-
     uint NoEnvironmentLight; // For debugging
-    uint3 Padding;
 };
 
 ConstantBuffer<VolumeDiffuseIndirectLightingUB> UB;
@@ -1143,7 +1140,7 @@ float3 ProbeIntegrateHenyeyGreenstein(float3 ViewDirection, float g, uint2 Probe
 
 // Shade volume with indirect lighting from probes
 [numthreads(WAVE_SIZE, 1, 1)]
-void ComputVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
+void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
     uint2 PixelCoords = GroupID * TILE_SIZE + LocalID;
     CameraParameters C = GetActiveCamera();
     if (any(PixelCoords >= C.FilmDimensions)) return;

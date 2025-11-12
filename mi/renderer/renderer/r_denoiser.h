@@ -18,6 +18,7 @@ struct DenoiserViewData : public RefCounted<> {
     TRef<RDGTexture> denoised_diffuse_indirect_lighting;
     TRef<RDGTexture> denoised_diffuse_direct_lighting;
     TRef<RDGTexture> denoised_volume_direct_lighting;
+    TRef<RDGTexture> denoised_volume_indirect_lighting;
 
     void Allocate(RenderGraphBuilder & builder, RendererView * view);
 };

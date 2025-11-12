@@ -145,6 +145,15 @@ namespace DiffuseDirectLightingShaders {
         DECLARE_SHADER(DiffuseDirectLightingShader)
     };
 
+    class DiffuseDirectLightingClearCountersShader : public DiffuseDirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
+        DECLARE_SHADER(DiffuseDirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DiffuseDirectLightingClearCountersShader, "mi/renderer/shaders/DirectLighting.hlsl", "DiffuseDirectLightingClearCounters");
+
+
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "InjectLights");
 
     class SpawnLightSamplesShader : public DiffuseDirectLightingShader {
@@ -329,6 +338,10 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         Helpers::AddComputePass<InjectLightsShader>(
             builder, shader, params, num_groups
         );
+    }
+    {
+        auto shader = lib.GetShader<DiffuseDirectLightingClearCountersShader>(ini);
+        Helpers::AddComputePass(builder, shader, params);
     }
     {
         auto shader = lib.GetShader<SpawnLightSamplesShader>(ini);
