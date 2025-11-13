@@ -5,6 +5,9 @@
  */
 #include <queue>
 #include <ranges>
+#ifndef NDEBUG
+#include <unordered_set>
+#endif
 
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_builder.h"
@@ -139,6 +142,12 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
     }
     std::map<void*, std::vector<RDGPass*>> in_resource_pass_map;
     std::map<void*, std::vector<RDGPass*>> out_resource_pass_map;
+    // Debug-only: track writers seen so far to validate ordering contract
+#ifndef NDEBUG
+    std::unordered_map<void*, bool> has_prior_writer_texture;
+    std::unordered_map<void*, bool> has_prior_writer_buffer;
+    std::unordered_map<void*, bool> has_prior_writer_as;
+#endif
     std::vector<std::unique_ptr<RDGPass>> culled_passes;
     std::vector<int> culled_pass_heads, pass_heads_rev;
     culled_pass_heads.resize(passes_.size(), -1);
@@ -155,9 +164,33 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
         pass_heads_rev[from] = edge_index_rev;
     };
     for(auto & pass : passes_) {
-        // Find execution dependencies (to prior passes)
-        std::vector<RDGPass*> dependencies;
-        // W-R
+        // Debug validation: reading-before-writing within this RDG execution is illegal (unless imported/exported)
+#ifndef NDEBUG
+        // Collect resources written by this pass (to allow same-pass RW without warnings)
+        std::unordered_set<void*> current_written_textures;
+        std::unordered_set<void*> current_written_buffers;
+        for (auto * tex_out : pass->compiled_.out_textures) current_written_textures.insert(tex_out);
+        for (auto * buf_out : pass->compiled_.out_buffers) current_written_buffers.insert(buf_out);
+         for (auto * tex : pass->compiled_.in_textures) {
+             if (!(tex->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
+                 if (!has_prior_writer_texture[tex] && !current_written_textures.count(tex)) {
+                     MI_WARN("RDG Warning: Pass '{}' reads texture '{}' before any prior pass writes it (illegal per RDG ordering contract).",
+                         pass->GetName(), tex->GetName());
+                 }
+             }
+         }
+         for (auto * buf : pass->compiled_.in_buffers) {
+             if (!(buf->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
+                 if (!has_prior_writer_buffer[buf] && !current_written_buffers.count(buf)) {
+                     MI_WARN("RDG Warning: Pass '{}' reads buffer '{}' before any prior pass writes it (illegal per RDG ordering contract).",
+                         pass->GetName(), buf->GetName());
+                 }
+             }
+         }
+#endif
+         // Find execution dependencies (to prior passes)
+         std::vector<RDGPass*> dependencies;
+         // W-R
         for(auto & in_texture : pass->compiled_.in_textures) {
             for(auto & out_pass : out_resource_pass_map[in_texture]) {
                 dependencies.push_back(out_pass);
@@ -220,12 +253,21 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
         }
         for(auto & out_texture : pass->compiled_.out_textures) {
             out_resource_pass_map[out_texture].emplace_back(pass.get());
+#ifndef NDEBUG
+            has_prior_writer_texture[out_texture] = true;
+#endif
         }
         for(auto & out_buffer : pass->compiled_.out_buffers) {
             out_resource_pass_map[out_buffer].emplace_back(pass.get());
+#ifndef NDEBUG
+            has_prior_writer_buffer[out_buffer] = true;
+#endif
         }
         for (auto & out_as : pass->compiled_.out_acceleration_structures) {
             out_resource_pass_map[out_as].emplace_back(pass.get());
+#ifndef NDEBUG
+            has_prior_writer_as[out_as] = true;
+#endif
         }
     }
     {

@@ -20,7 +20,8 @@ MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & fi
     infra_ = infra;
     file_.open(file_path, std::ios::in | std::ios::out | std::ios::binary);
     if(!file_.good()) {
-        infra_->LogMessage(MIInfraLogType::kError, "Failed to open file: " + file_path.string());
+        infra_->LogMessage(MIInfraLogType::kWarning, "Failed to open file: " + file_path.string()
+            + ", err: " + std::strerror(errno));
     } else {
         file_.seekg(0, std::ios::end);
         file_size_ = file_.tellg();
@@ -126,7 +127,7 @@ void MyBlobResource::WriteTaskRelease() {
     rw_mutex_.unlock();
 }
 
-//ÎÄ¼þIOÏß³ÌÖ÷º¯Êý£¬¸ºÔðÒì²½´¦ÀíÎÄ¼þ¶ÁÐ´µÈÈÎÎñ
+//ï¿½Ä¼ï¿½IOï¿½ß³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì²½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 void MyInfra::FIO_ThreadMain () {
     while(!fio_stop_) {
         fio_task_semaphore_.acquire();
@@ -179,7 +180,7 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
             // Try to create file if not exists
             std::ofstream file(file_path);
             if(!file.good()) {
-                MI_LOG(MIInfraLogType::kError,
+                MI_LOG(MIInfraLogType::kWarning,
                        "Failed to create file: {}, err: {}",
                        file_path.string().c_str(), errno);
                 return nullptr;

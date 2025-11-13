@@ -372,6 +372,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Diffuse direct
     Render_ComputeDiffuseDirectLighting(view, builder);
 
+    // Volume direct (must run before denoiser prefilter which reads VolumeDirectLightingTexture)
+    Render_ComputeVolumeDirectLighting(view, builder);
+
     {
         RDGSectionGuard section(builder, "IndirectLighting");
 

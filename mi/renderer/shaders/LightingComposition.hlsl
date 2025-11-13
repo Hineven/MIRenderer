@@ -9,6 +9,10 @@
 
 struct LightingCompositionUB {
     uint EnableAccumulation;
+    uint EnableDiffuseDirect;
+    uint EnableDiffuseIndirect;
+    uint EnableVolumeDirect;
+    uint EnableVolumeIndirect;
     uint Padding0;
     uint Padding1;
     uint Padding2;
@@ -52,18 +56,17 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     }
 
     // Diffuse direct
-    float3 DiffuseDirectLighting = DiffuseDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-    SurfaceRadiance += DiffuseDirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
-
+    float3 DiffuseDirectLighting = UB.EnableDiffuseDirect != 0 ? DiffuseDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb : 0;
     // Diffuse indirect
-    float3 DiffuseIndirectLighting = DiffuseIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
-    SurfaceRadiance += DiffuseIndirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
+    float3 DiffuseIndirectLighting = UB.EnableDiffuseIndirect != 0 ? DiffuseIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb : 0;
 
+    SurfaceRadiance += DiffuseDirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
+    SurfaceRadiance += DiffuseIndirectLighting * EvaluateLambert(AlbedoAlpha.rgb);
     // Volume direct
-    // Color is premultiplied.
-    float3 VolumeDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+    float3 VolumeDirectLighting = UB.EnableVolumeDirect != 0 ? VolumeDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb : 0;
     // Volume indirect
-    float3 VolumeIndirectLighting = VolumeIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+    float3 VolumeIndirectLighting = UB.EnableVolumeIndirect != 0 ? VolumeIndirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb : 0;
+
     float3 VolumeRadiance = VolumeDirectLighting + VolumeIndirectLighting;
 
     float Transmittance = G_Transmittance.SampleLevel(PointEdgeSampler, UV, 0);

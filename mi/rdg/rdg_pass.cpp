@@ -275,7 +275,8 @@ void RDGPass::PreCompile() {
             const void* field_data = static_cast<const char*>(shader_param_data_) + field.cpp_offset;
             // Check resource type
             if (field.type == RHIParamType::kSRVTexture || field.type == RHIParamType::kSRVTextureArray) { // SRV
-                RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
+                RDGShaderTextureParameter texture_desc = *static_cast<RDGShaderTextureParameter const*>(field_data);
+                RDGTexture* texture = texture_desc.texture;
                 if (!texture) continue ;
                 if (RDGParameter_IsUnsetPointer(texture)) {
                     MI_WARN("Pass {}: Unset parameter pointer {}."
@@ -292,7 +293,8 @@ void RDGPass::PreCompile() {
                 );
             }
             else if (field.type == RHIParamType::kUAVTexture || field.type == RHIParamType::kUAVTextureArray) { // UAV
-                RDGTexture* texture = *static_cast<RDGTexture* const*>(field_data);
+                RDGShaderTextureParameter texture_desc = *static_cast<RDGShaderTextureParameter const*>(field_data);
+                RDGTexture* texture = texture_desc.texture;
                 if (!texture) continue;
                 if (RDGParameter_IsUnsetPointer(texture)) {
                     MI_WARN("Pass {}: Unset parameter pointer {}."

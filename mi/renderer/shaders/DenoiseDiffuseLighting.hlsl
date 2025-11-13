@@ -619,9 +619,9 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 	float4 FilteredVolumeRadianceVariance = float4(SumVolumeDirectRadianceVariance / float4(SumVolumePreFilterWeight.xxx, SumVolumePreFilterWeight * SumVolumePreFilterWeight));
 #ifdef LAST_PASS
 	// Write history back to the texture in the last pass for visualization purposes
-	FilteredRadianceVariance.w = HistoryLength;
+	FilteredRadianceVariance.w       = HistoryLength;
 	FilteredVolumeRadianceVariance.w = VolumeHistoryLength;
 #endif
 	if(bSurface) RWDilatedFilterOutputFilteredDiffuseDirectRadiance[CenterPixelCoords] = FilteredRadianceVariance;
-	if(bVolume) RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords] = FilteredVolumeRadianceVariance;
+	if(bVolume)  RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords]  = FilteredVolumeRadianceVariance;
 }

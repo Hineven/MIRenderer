@@ -5,6 +5,9 @@
  */
 #include "r_denoiser.h"
 #include "r_diffuse_direct_lighting.h"
+#include "r_diffuse_indirect_lighting.h"
+#include "r_volume_direct_lighting.h"
+#include "r_volume_indirect_lighting.h"
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
@@ -17,7 +20,7 @@
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
-    static CVar<float> CVar_Exposure(
+static CVar<float> CVar_Exposure(
     "r.exposure",
     "Exposure value for the final output. "
     "This is used to adjust the brightness of the final image.",
@@ -36,11 +39,42 @@ static CVar<bool> CVar_UseDenoisedDirectLighting(
     true
 );
 
+static CVar<bool> CVar_UseDenoisedIndirectLighting(
+    "r.use_denoised_indirect_lighting",
+    "Use denoised indirect (diffuse & volume) lighting in final composition",
+    true
+);
+
+static CVar<bool> CVar_EnableDiffuseDirect(
+    "r.composition.enable_diffuse_direct",
+    "Enable diffuse direct contribution in composition",
+    true
+);
+static CVar<bool> CVar_EnableDiffuseIndirect(
+    "r.composition.enable_diffuse_indirect",
+    "Enable diffuse indirect contribution in composition",
+    true
+);
+static CVar<bool> CVar_EnableVolumeDirect(
+    "r.composition.enable_volume_direct",
+    "Enable volume direct contribution in composition",
+    true
+);
+static CVar<bool> CVar_EnableVolumeIndirect(
+    "r.composition.enable_volume_indirect",
+    "Enable volume indirect contribution in composition",
+    true
+);
+
 class LightingCompositionShader : public RDGShader {
 public:
     struct LightingCompositionUB {
         uint32_t EnableAccumulation;
-        uint32_t Padding[3]; // Padding to make it 16 bytes aligned
+        uint32_t EnableDiffuseDirect;
+        uint32_t EnableDiffuseIndirect;
+        uint32_t EnableVolumeDirect;
+        uint32_t EnableVolumeIndirect;
+        uint32_t Padding[3]; // keep 16-byte alignment
     };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -79,7 +113,12 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->View = view->view_common_params_;
     auto UB = builder.Allocate<LightingCompositionShader::LightingCompositionUB>();
     {
-        UB->EnableAccumulation = CVar_EnableAccumulation.Get() ? 1 : 0;
+        UB->EnableAccumulation   = CVar_EnableAccumulation.Get() ? 1 : 0;
+        UB->EnableDiffuseDirect  = CVar_EnableDiffuseDirect.Get() ? 1 : 0;
+        UB->EnableDiffuseIndirect= CVar_EnableDiffuseIndirect.Get() ? 1 : 0;
+        UB->EnableVolumeDirect   = CVar_EnableVolumeDirect.Get() ? 1 : 0;
+        UB->EnableVolumeIndirect = CVar_EnableVolumeIndirect.Get() ? 1 : 0;
+        UB->Padding[0] = UB->Padding[1] = UB->Padding[2] = 0;
     }
     params->UB = UB;
     if (!CVar_UseDenoisedDirectLighting.Get()) {
@@ -89,8 +128,13 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         params->DiffuseDirectLightingTexture = view->denoiser_->denoised_diffuse_direct_lighting.Raw();
         params->VolumeDirectLightingTexture = view->denoiser_->denoised_volume_direct_lighting.Raw();
     }
-    params->DiffuseIndirectLightingTexture = view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
-    params->VolumeIndirectLightingTexture = view->denoiser_->denoised_volume_indirect_lighting.Raw();
+    if (CVar_UseDenoisedIndirectLighting.Get()) {
+        params->DiffuseIndirectLightingTexture = view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
+        params->VolumeIndirectLightingTexture = view->denoiser_->denoised_volume_indirect_lighting.Raw();
+    } else {
+        params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_->radiance.Raw();
+        params->VolumeIndirectLightingTexture = view->volume_indirect_lighting_->radiance.Raw();
+    }
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {

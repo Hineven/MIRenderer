@@ -1164,6 +1164,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
     float2 UV = (PixelCoords + 0.5f) * C.InvFilmDimensions;
     // float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), SampleDepth);
+    // FIXME
     float  SearchSize = SampleDepth * UB.ProbeReprojectionSearchSize
             * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
 
@@ -1209,6 +1210,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
     }
     if(SumProbeWeights > 0.01f) {
         float3 Irradiance = (SumIrradiance / SumProbeWeights); 
+        // Irradiance = float3(1, 1, 0);
         RWVolumeIndirectLightingTexture[PixelCoords] = float4(Irradiance, 1);
     } else {
         RWVolumeIndirectLightingTexture[PixelCoords] = 0;

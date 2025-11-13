@@ -131,6 +131,10 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
                 // Upload the renderable & material indices
                 view->upload_context_.Add(data.d_static_mesh_draw_command_renderable_descriptor_indices.Raw(),
                     draw_indirect_renderable_and_descriptor_indices, data.draw_indirect_commands.size() * sizeof(uint32_t) * 2);
+                // Even if there are zero bytes to upload (no forward/deferred draws), register a prior write to satisfy ordering
+                // and prevent debug read-before-write warnings when the buffers are later bound for indirect draws.
+                view->upload_context_.AddExtraBarrier(data.d_static_draw_commands.Raw());
+                view->upload_context_.AddExtraBarrier(data.d_static_mesh_draw_command_renderable_descriptor_indices.Raw());
             }
         }
     };

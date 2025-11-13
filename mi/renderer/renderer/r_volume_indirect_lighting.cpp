@@ -416,7 +416,6 @@ void VolumeIndirectLightingData::Allocate(RenderGraphBuilder &builder, RendererV
 
     radiance = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
     radiance->SetName("VolumeIndirectLightingRadiance");
-
 }
 
 bool VolumeIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions) {

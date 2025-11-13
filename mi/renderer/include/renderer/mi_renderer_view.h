@@ -133,7 +133,7 @@ struct RendererView {
     // Shared data from denoiser
     TRef<DenoiserViewData> denoiser_;
 
-    // Final radiance
+    // Final radiance (after composition)
     TRef<RDGTexture> radiance_;
     // Shaded radiance without emission, created & written by final composition, used for lighting reuse
     TRef<RDGTexture> shaded_radiance_no_emission_;

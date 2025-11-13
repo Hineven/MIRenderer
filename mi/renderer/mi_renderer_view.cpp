@@ -232,12 +232,13 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     );
     // Add RDG buffer dependencies
     for (auto e : rdg_upload_buffers) {
-        pass->AddBufferH(e, RHIGPUAccessFlagBits::kWrite);
+        pass->AddBuffer(e, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
     }
     // Add extra barriers
     std::sort(extra_barriers_.begin(), extra_barriers_.end());
     extra_barriers_.erase(std::unique(extra_barriers_.begin(), extra_barriers_.end()), extra_barriers_.end());
     for (auto e : extra_barriers_) {
+        // TODO more precise access flags?
         pass->AddBufferH(e, RHIGPUAccessFlagBits::kWrite);
     }
 }
