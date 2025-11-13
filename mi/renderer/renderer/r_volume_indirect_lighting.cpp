@@ -447,7 +447,7 @@ void VolumeIndirectLightingPersistentData::FinalUpdate(RendererView *view) {
     ActiveVolumeProbeCount = view->volume_indirect_lighting_->active_volume_probe_count;
     ActiveVolumeProbeCount->SetExport();
     ActiveVolumeProbeListBuffer = view->volume_indirect_lighting_->active_volume_probe_list_buffer;
-    ActiveVolumeProbeCount->SetExport();
+    ActiveVolumeProbeListBuffer->SetExport();
     VolumeProbeMRUQueueBuffer = view->volume_indirect_lighting_->volume_probe_next_mru_queue_buffer;
     VolumeProbeMRUQueueBuffer->SetExport();
 }
@@ -459,7 +459,6 @@ static RDGShaderInitializationInfo GetVolumeIndirectLightingShaderInitialization
 }
 
 void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
-    puts("Start!!!");
     RDGSectionGuard section(builder, "Render_UpdateVolumeIndirectLighting");
 
     auto ini = GetVolumeIndirectLightingShaderInitializationInfo();
@@ -896,7 +895,6 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             builder, shader, params, cmd.Raw()
         );
     }
-    puts("End!!!");
 }
 
 void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGraphBuilder &builder) {

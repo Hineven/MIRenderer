@@ -154,10 +154,10 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWHistoryLengthTexture[CenterPixelCoords] = 0;
 	}
-	if(CenterVolumeDepthAndVariation.x == 0) {	
+	if(CenterVolumeDepthAndVariation.x == 0) {
 		bVolume = false;
 		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
-		RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
+		RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWVolumeHistoryLengthTexture[CenterPixelCoords] = 0;
 	}
 
@@ -167,7 +167,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 	float  CenterLinearDepth = ReversedZDepthToLinearDepth(C, CenterReversedZDepth);
 	float3 CenterWorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(CenterUV), CenterLinearDepth);
 	float3 SumDiffuseDirectRadiance = 0, SumVolumeDirectRadiance = 0;
-	float3 SumDiffuseIndirectRadiance = 0, SumVolumeIndirectRadiance;
+	float3 SumDiffuseIndirectRadiance = 0, SumVolumeIndirectRadiance = 0;
 	float SumDiffusePreFilterWeight = 0, SumVolumePreFilterWeight = 0;
 
 	for(int SampleIndex = 0; SampleIndex < 8; SampleIndex++) {
@@ -429,34 +429,32 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 	// TODO history acceleration
 
 	// Write out
-	if(bSurface) {
-		RWPreFilteredDiffuseDirectRadianceTexture[CenterPixelCoords] = OutDiffuseDirectRadianceVariance;
+    if(bSurface) {
+        RWPreFilteredDiffuseDirectRadianceTexture[CenterPixelCoords] = OutDiffuseDirectRadianceVariance;
 #ifdef OUTPUT_DIRECTLY
-		RWDenoisedDiffuseDirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseDirectRadianceVariance.rgb, NewHistoryLength);
+        RWDenoisedDiffuseDirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseDirectRadianceVariance.rgb, NewHistoryLength);
 #endif
-		if(UB.DenoiseDiffuseIndirect) {
-			RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseIndirectRadianceVariance.rgb, 1);
-		} else {
-			float3 OriginalDiffuseIndirect = InputDiffuseIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
-			RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalDiffuseIndirect, 1);
-		}
-
-		if(UB.DenoiseVolumeIndirect) {
-			RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeIndirectRadianceVariance.rgb, 1);
-		} else {
-			float3 OriginalVolumeIndirect = InputVolumeIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
-			RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalVolumeIndirect, 1);
-		}
-	}
-	if(bVolume) {
-		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = OutVolumeDirectRadianceVariance;
+        if(UB.DenoiseDiffuseIndirect) {
+            RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OutDiffuseIndirectRadianceVariance.rgb, 1);
+        } else {
+            float3 OriginalDiffuseIndirect = InputDiffuseIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
+            RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalDiffuseIndirect, 1);
+        }
+        RWHistoryLengthTexture[CenterPixelCoords] = NewHistoryLength / 255.f;
+    }
+    if(bVolume) {
+        RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = OutVolumeDirectRadianceVariance;
 #ifdef OUTPUT_DIRECTLY
-		RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeDirectRadianceVariance.rgb, NewVolumeDirectLuminance);
+        RWDenoisedVolumeDirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeDirectRadianceVariance.rgb, NewVolumeDirectLuminance);
 #endif
-	}
-
-	RWHistoryLengthTexture[CenterPixelCoords] = NewHistoryLength / 255.f;
-	RWVolumeHistoryLengthTexture[CenterPixelCoords] = NewVolumeHistoryLength / 255.f;
+        if(UB.DenoiseVolumeIndirect) {
+            RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = float4(OutVolumeIndirectRadianceVariance.rgb, 1);
+        } else {
+            float3 OriginalVolumeIndirect = InputVolumeIndirectRadianceTexture.SampleLevel(PointEdgeSampler, CenterUV, 0).rgb;
+            RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = float4(OriginalVolumeIndirect, 1);
+        }
+        RWVolumeHistoryLengthTexture[CenterPixelCoords] = NewVolumeHistoryLength / 255.f;
+    }
 }
 
 

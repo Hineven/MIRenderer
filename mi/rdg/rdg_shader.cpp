@@ -69,7 +69,14 @@ static std::string LoadFile(const std::string & path) {
     auto reader = GetInfra().RIO_Open(path, MIInfraResourceHintType::kShaderSource);
     if (!reader) {
         MI_LOG(MIInfraLogType::kError, "Failed to open resource: {}", path);
-        return {};
+        MI_LOG(MIInfraLogType::kInfo, "This may be due to temporary file system issue. Retrying...");
+        // 25.11.13: try again after a short delay, in case of temporary file system issue.
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        reader = GetInfra().RIO_Open(path, MIInfraResourceHintType::kShaderSource);
+        if (!reader) {
+            MI_LOG(MIInfraLogType::kError, "Failed to open resource (2nd attempt): {}", path);
+            return {};
+        }
     }
     auto size = reader->GetSize();
     std::string content(size, '\0');

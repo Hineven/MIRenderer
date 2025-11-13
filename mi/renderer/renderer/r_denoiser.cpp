@@ -141,8 +141,8 @@ void DenoiserPersistentData::FinalUpdate(RendererView *view) {
     persistent->prev_denoised_diffuse_indirect_lighting->SetName("PrevDenoisedDiffuseIndirectLighting");
     persistent->prev_denoised_diffuse_indirect_lighting->SetExport();
 
-    persistent->prev_denoised_volume_indirect_lighting = denoiser_data->denoised_volume_direct_lighting;
-    persistent->prev_denoised_volume_indirect_lighting->SetName("PrevDenoisedVolumeDirectLighting");
+    persistent->prev_denoised_volume_indirect_lighting = denoiser_data->denoised_volume_indirect_lighting;
+    persistent->prev_denoised_volume_indirect_lighting->SetName("PrevDenoisedVolumeIndirectLighting");
     persistent->prev_denoised_volume_indirect_lighting->SetExport();
 }
 
@@ -306,7 +306,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             params->RWDenoisedVolumeDirectRadianceTexture = nullptr;
         }
         params->RWDenoisedDiffuseIndirectRadianceTexture = denoiser_data->denoised_diffuse_indirect_lighting.Raw();
-        params->RWDenoisedVolumeIndirectRadianceTexture = denoiser_data->denoised_volume_direct_lighting.Raw();
+        params->RWDenoisedVolumeIndirectRadianceTexture = denoiser_data->denoised_volume_indirect_lighting.Raw();
         params->PointBorder0Sampler = RHI::Get().GetGlobalSamplers().point_border_0;
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
         Helpers::AddComputePass<PreFilterDiffuseLightingAndTemporalAccumulateShader>(

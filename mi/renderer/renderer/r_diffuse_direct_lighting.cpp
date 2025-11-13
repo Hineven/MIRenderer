@@ -30,7 +30,9 @@ void DiffuseDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererVi
     radiance = builder.CreateTexture2D(
         view->film_width_, view->film_height_,
         PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransfer
+        RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kShaderResource
+        | RHITextureUsageFlagBits::kTransfer
     );
     radiance->SetName("DiffuseDirectLightingTexture");
 }

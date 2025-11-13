@@ -28,10 +28,12 @@ struct VolumeIndirectLightingData : public RefCounted<> {
 };
 
 struct VolumeIndirectLightingPersistentData : public RefCounted<> {
+    // Rolling updated each frame
     TRef<RDGBuffer> ActiveVolumeProbeCount;
     TRef<RDGBuffer> ActiveVolumeProbeListBuffer;
     TRef<RDGBuffer>  VolumeProbeMRUQueueBuffer;
 
+    // Persistent across frames
     TRef<RDGTexture> VolumeProbeRadianceDepthTexture;
     TRef<RDGTexture> VolumeProbeHeaderTexture;
 

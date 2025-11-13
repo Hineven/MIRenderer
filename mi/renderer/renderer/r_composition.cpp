@@ -36,8 +36,6 @@ static CVar<bool> CVar_UseDenoisedDirectLighting(
     true
 );
 
-
-
 class LightingCompositionShader : public RDGShader {
 public:
     struct LightingCompositionUB {

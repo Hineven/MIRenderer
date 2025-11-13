@@ -825,7 +825,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
             view->persistent_data_->prev_G_normal.Raw();
 
         params->RWDiffuseIndirectLightingTexture =
-            view->diffuse_direct_lighting_->radiance.Raw();
+            view->diffuse_indirect_lighting_->radiance.Raw();
 
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
