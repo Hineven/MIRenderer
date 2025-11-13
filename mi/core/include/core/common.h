@@ -36,4 +36,6 @@
 // TODO
 #define CHECK_THREAD(...)
 
+#define MI_DEBUG_CANARY 0xDEADBEEF
+
 #endif //MIRENDERER_CORE_COMMON_H

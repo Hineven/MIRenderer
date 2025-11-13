@@ -21,6 +21,9 @@ RDGTexture::~RDGTexture() {
 RDGBuffer::~RDGBuffer() {
     // Ref count approaching zero, recycle the resource and release corresponding RHI resource.
     RDGBuffer::ReleaseRHI();
+#ifndef NDEBUG
+    canary_ = 0x12341234;
+#endif
 }
 
 void RDGTexture::RequestRHI(RDGResourcePool * pool) {

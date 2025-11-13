@@ -18,6 +18,12 @@ MI_NAMESPACE_BEGIN
 // Only the render thread can access its references, so no need for thread-safe reference counting.
 class RDGResource : public NonCopyable, public NonMovable, public RefCounted<false> {
 public:
+#ifndef NDEBUG
+    uint32_t canary_ = MI_DEBUG_CANARY;
+    FORCEINLINE bool IsCanaryAlive () const {
+        return canary_ == MI_DEBUG_CANARY;
+    }
+#endif
     friend class RDGResourcePool;
     friend class RenderGraph;
     RDGResource () ;

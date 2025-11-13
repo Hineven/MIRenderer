@@ -70,7 +70,7 @@ struct VolumeIndirectLightingUB {
 
     uint32_t FrameIndex;
     uint32_t ProbeUpdateRaysNoImportanceSampling;
-    uint32_t ProbeHeaderIndexMipLevelCount;
+    uint32_t Unused2;
     uint32_t ProbeUpdateRaySampleSeed;
 
     uint32_t ProbeUpdateRaysNoAdaptiveAllocation;
@@ -253,6 +253,14 @@ namespace VolumeIndirectLightingShaders {
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClearCounters");
 
+    // Added shader to clear per-tile index list lengths/offsets
+    class ClearTileVolumeProbeIndexListsShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearTileVolumeProbeIndexListsShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClearTileVolumeProbeIndexLists");
+
     class InjectVolumeProbesShader final : public VolumeIndirectLightingShader {
     public:
         RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
@@ -394,12 +402,21 @@ void VolumeIndirectLightingData::Allocate(RenderGraphBuilder &builder, RendererV
     auto tile_dimensions = GetTileDimensions(view);
     auto atlas_dimensions = tile_dimensions * VolumeIndirectLightingShader::kTileSize;
     active_volume_probe_count = builder.CreateBuffer<uint32_t>();
+    active_volume_probe_count->SetName("ActiveVolumeProbeCount");
 
     auto num_tiles = tile_dimensions.x * tile_dimensions.y;
     active_volume_probe_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    active_volume_probe_list_buffer->SetName("ActiveVolumeProbeListBuffer");
+
     volume_probe_next_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    volume_probe_next_mru_queue_buffer->SetName("VolumeProbeNextMRUQueueBuffer");
 
     volume_probe_radiance_depth = builder.CreateTexture2D(atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT);
+    volume_probe_radiance_depth->SetName("VolumeProbeRadianceDepth");
+
+    radiance = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
+    radiance->SetName("VolumeIndirectLightingRadiance");
+
 }
 
 bool VolumeIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & builder, glm::uvec2 tile_dimensions) {
@@ -442,6 +459,7 @@ static RDGShaderInitializationInfo GetVolumeIndirectLightingShaderInitialization
 }
 
 void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGraphBuilder & builder) {
+    puts("Start!!!");
     RDGSectionGuard section(builder, "Render_UpdateVolumeIndirectLighting");
 
     auto ini = GetVolumeIndirectLightingShaderInitializationInfo();
@@ -468,38 +486,49 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     auto volume_probe_irradiance = builder.CreateTexture2D(
         sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    volume_probe_irradiance->SetName("VolumeProbeIrradiance");
     auto volume_probe_sh_coefficients_r = builder.CreateTexture2D(
         sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    volume_probe_sh_coefficients_r->SetName("VolumeProbeSHCoefficientsR");
     auto volume_probe_sh_coefficients_g = builder.CreateTexture2D(
         sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    volume_probe_sh_coefficients_g->SetName("VolumeProbeSHCoefficientsG");
     auto volume_probe_sh_coefficients_b = builder.CreateTexture2D(
         sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    volume_probe_sh_coefficients_b->SetName("VolumeProbeSHCoefficientsB");
 
     auto num_tiles = tile_dimensions.x * tile_dimensions.y;
     auto spawned_volume_probe_header_buffer = builder.CreateBuffer<glm::uvec4>(num_tiles);
+    spawned_volume_probe_header_buffer->SetName("SpawnedVolumeProbeHeaderBuffer");
     auto volume_probe_reconstructed_radiance_depth_texture = builder.CreateTexture2D(
         atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
+    volume_probe_reconstructed_radiance_depth_texture->SetName("VolumeProbeReconstructedRadianceDepthTexture");
 
     auto volume_probe_spawn_allocator = builder.CreateBuffer<uint32_t>();
-    auto volume_probes_next_mru_queue_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
-
-    auto active_volume_probe_count = builder.CreateBuffer<uint32_t>();
-    auto active_volume_probe_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    volume_probe_spawn_allocator->SetName("VolumeProbeSpawnAllocator");
 
     auto tile_volume_probe_index_list_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    tile_volume_probe_index_list_buffer->SetName("TileVolumeProbeIndexListBuffer");
     auto tile_volume_probe_index_list_lengths_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    tile_volume_probe_index_list_lengths_buffer->SetName("TileVolumeProbeIndexListLengthsBuffer");
     auto tile_volume_probe_index_list_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    tile_volume_probe_index_list_offsets_buffer->SetName("TileVolumeProbeIndexListOffsetsBuffer");
     auto tile_volume_probe_index_list_allocator = builder.CreateBuffer<uint32_t>();
+    tile_volume_probe_index_list_allocator->SetName("TileVolumeProbeIndexListAllocator");
 
     auto tile_volume_probe_reprojection_entry_allocator = builder.CreateBuffer<uint32_t>();
+    tile_volume_probe_reprojection_entry_allocator->SetName("TileVolumeProbeReprojectionEntryAllocator");
     auto tile_volume_probe_reprojection_entry_buffer = builder.CreateBuffer<glm::uvec3>(num_tiles);
+    tile_volume_probe_reprojection_entry_buffer->SetName("TileVolumeProbeReprojectionEntryBuffer");
 
     auto volume_probe_update_ray_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    volume_probe_update_ray_offsets_buffer->SetName("VolumeProbeUpdateRayOffsetsBuffer");
     auto volume_probe_update_ray_counts_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
+    volume_probe_update_ray_counts_buffer->SetName("VolumeProbeUpdateRayCountsBuffer");
 
     // Wave size is the default thread group size in almost all shaders.
     uint32_t wave_size = RHI::Get().GetDeviceProperties().wave_size;
@@ -511,28 +540,47 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     max_num_update_rays = std::min(max_num_update_rays, kMaxUpdateRays);
 
     auto volume_probe_update_ray_direction_buffer = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    volume_probe_update_ray_direction_buffer->SetName("VolumeProbeUpdateRayDirectionBuffer");
     auto volume_probe_update_ray_state_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    volume_probe_update_ray_state_buffer->SetName("VolumeProbeUpdateRayStateBuffer");
     auto volume_probe_update_ray_origin_buffer = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    volume_probe_update_ray_origin_buffer->SetName("VolumeProbeUpdateRayOriginBuffer");
     auto volume_probe_update_ray_allocator = builder.CreateBuffer<uint32_t>();
+    volume_probe_update_ray_allocator->SetName("VolumeProbeUpdateRayAllocator");
 
     auto volume_probe_update_ray_result_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
+    volume_probe_update_ray_result_buffer->SetName("VolumeProbeUpdateRayResultBuffer");
     auto volume_probe_update_ray_radiance_buffer = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
+    volume_probe_update_ray_radiance_buffer->SetName("VolumeProbeUpdateRayRadianceBuffer");
     auto volume_probe_update_ray_inv_pdf_buffer = builder.CreateBuffer<float>(max_num_update_rays);
+    volume_probe_update_ray_inv_pdf_buffer->SetName("VolumeProbeUpdateRayInvPdfBuffer");
     auto volume_probe_update_ray_hit_resolve_bucket_and_cell_offset_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    volume_probe_update_ray_hit_resolve_bucket_and_cell_offset_buffer->SetName("VolumeProbeUpdateRayHitResolveBucketAndCellOffsetBuffer");
 
     auto volume_probe_update_ray_hit_shading_point_allocator = builder.CreateBuffer<uint32_t>();
+    volume_probe_update_ray_hit_shading_point_allocator->SetName("VolumeProbeUpdateRayHitShadingPointAllocator");
     auto volume_probe_update_ray_hit_shading_point_list_buffer = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    volume_probe_update_ray_hit_shading_point_list_buffer->SetName("VolumeProbeUpdateRayHitShadingPointListBuffer");
 
     auto shade_point_transmittance_ray_allocator = builder.CreateBuffer<uint32_t>();
+    shade_point_transmittance_ray_allocator->SetName("ShadePointTransmittanceRayAllocator");
     auto shade_point_transmittance_ray_direction = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    shade_point_transmittance_ray_direction->SetName("ShadePointTransmittanceRayDirectionBuffer");
     auto shade_point_transmittance_ray_origin = builder.CreateBuffer<glm::vec3>(max_num_update_rays);
+    shade_point_transmittance_ray_origin->SetName("ShadePointTransmittanceRayOriginBuffer");
     auto shade_point_transmittance_ray_state = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    shade_point_transmittance_ray_state->SetName("ShadePointTransmittanceRayStateBuffer");
     auto shade_point_transmittance_ray_tmax = builder.CreateBuffer<float>(max_num_update_rays);
+    shade_point_transmittance_ray_tmax->SetName("ShadePointTransmittanceRayTMaxBuffer");
     auto shade_point_transmittance_ray_transmittance = builder.CreateBuffer<float>(max_num_update_rays);
+    shade_point_transmittance_ray_transmittance->SetName("ShadePointTransmittanceRayTransmittanceBuffer");
     auto shade_point_transmittance_ray_sampled_light_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    shade_point_transmittance_ray_sampled_light_index->SetName("ShadePointTransmittanceRaySampledLightIndexBuffer");
 
     auto shade_point_transmittance_ray_contribution = builder.CreateBuffer<glm::uvec2>(max_num_update_rays);
+    shade_point_transmittance_ray_contribution->SetName("ShadePointTransmittanceRayContributionBuffer");
     auto shade_point_to_transmittance_ray_index = builder.CreateBuffer<uint32_t>(max_num_update_rays);
+    shade_point_to_transmittance_ray_index->SetName("ShadePointToTransmittanceRayIndexBuffer");
 
     auto params = builder.Allocate<VolumeIndirectLightingParams>();
     {
@@ -560,7 +608,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->RWVolumeProbeMRUQueueBuffer =
             view->persistent_data_->volume_indirect_lighting_persistent_data_->VolumeProbeMRUQueueBuffer.Raw();
         params->RWVolumeProbeNextMRUQueueBuffer =
-            volume_probes_next_mru_queue_buffer.Raw();
+            view->volume_indirect_lighting_->volume_probe_next_mru_queue_buffer.Raw();
 
         params->PreviousActiveVolumeProbeCount =
             view->persistent_data_->volume_indirect_lighting_persistent_data_->ActiveVolumeProbeCount.Raw();
@@ -568,9 +616,9 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             view->persistent_data_->volume_indirect_lighting_persistent_data_->ActiveVolumeProbeListBuffer.Raw();
 
         params->RWActiveVolumeProbeCount =
-            active_volume_probe_count.Raw();
+            view->volume_indirect_lighting_->active_volume_probe_count.Raw();
         params->RWActiveVolumeProbeListBuffer =
-            active_volume_probe_list_buffer.Raw();
+            view->volume_indirect_lighting_->active_volume_probe_list_buffer.Raw();
 
         params->RWTileVolumeProbeIndexListBuffer =
             tile_volume_probe_index_list_buffer.Raw();
@@ -667,7 +715,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             UB->FrameIndex = view->persistent_data_->frame_index_;
             UB->ProbeUpdateRaysNoImportanceSampling =
                 CVar_VolumeProbesRayImportanceSampling.Get() ? 0 : 1;
-            UB->ProbeHeaderIndexMipLevelCount = tile_index_mip_levels;
+            UB->Unused2 = 0;
             UB->ProbeUpdateRaySampleSeed =
                 CVar_VolumeProbesRayFreezeSeed.Get() ? 0 : (view->persistent_data_->frame_index_ + 7198272u);
 
@@ -733,10 +781,14 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         auto shader = lib.GetShader<ClearCountersShader>(ini);
         Helpers::AddComputePass(builder, shader, params);
     }
-    auto prev_active_list_command = Helpers::SpawnDispatchIndirectCommand1D(builder,
-        view->persistent_data_->volume_indirect_lighting_persistent_data_->ActiveVolumeProbeCount.Raw(),
-        wave_size
-    );
+    // Clear per-tile lists before reuse (avoid reading garbage causing OOB)
+    {
+        auto shader = lib.GetShader<ClearTileVolumeProbeIndexListsShader>(ini);
+        Helpers::AddComputePass<ClearTileVolumeProbeIndexListsShader>(
+            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
+        );
+    }
+
     if (need_reset) {
         auto shader = lib.GetShader<InitializeVolumeProbeCacheShader>(ini);
         Helpers::AddComputePass<InitializeVolumeProbeCacheShader>(
@@ -844,6 +896,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             builder, shader, params, cmd.Raw()
         );
     }
+    puts("End!!!");
 }
 
 void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGraphBuilder &builder) {
@@ -882,8 +935,8 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
         auto shader = lib.GetShader<ComputeVolumeIndirectLightingShader>(ini);
         Helpers::AddComputePass<ComputeVolumeIndirectLightingShader>(
             builder, shader, params,
-            DivideAndRoundUp(view->film_width_, ComputeVolumeIndirectLightingShader::kTileSize),
-            DivideAndRoundUp(view->film_height_, ComputeVolumeIndirectLightingShader::kTileSize)
+            DivideAndRoundUp(view->film_width_, VolumeIndirectLightingShader::kTileSize),
+            DivideAndRoundUp(view->film_height_, VolumeIndirectLightingShader::kTileSize)
         );
     }
 }

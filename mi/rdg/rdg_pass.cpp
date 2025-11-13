@@ -134,7 +134,11 @@ RDGPass * RDGPass::AddTextureH(RDGTexture *texture, RDGTextureUsageType usage, R
 }
 
 RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
-    RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
+RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
+    // Reference the rdg resource no matter how it is used to prevent some free-after-use cases.
+    // (because shader parameter struct does not keep the references. They can be reused across
+    // multiple passes. If we do not keep references here some buffers may be freed too early.)
+    if (texture) AddResourceReference(texture);
     if (!texture) return this; // Do nothing if the texture is null
     if (stages == RHIPipelineStageFlagBits::kNone || access == RHIGPUAccessFlagBits::kNone)
         return this; // If no access or stages are specified, do not add the texture.
@@ -192,6 +196,10 @@ RDGPass * RDGPass::AddBufferH(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPi
 }
 
 RDGPass *RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
+    // Reference the rdg resource no matter how it is used to prevent some free-after-use cases.
+    // (because shader parameter struct does not keep the references. They can be reused across
+    // multiple passes. If we do not keep references here some buffers may be freed too early.)
+    if (buffer) AddResourceReference(buffer);
     if (access == RHIGPUAccessFlagBits::kNone || stages == RHIPipelineStageFlagBits::kNone) {
         // If the access is kNone, we don't care about the buffer.
         return this;
@@ -199,12 +207,6 @@ RDGPass *RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipe
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_buffers.emplace_back(buffer);
     used_buffers.emplace_back(access, stages, buffer);
-    // if (access & RHIGPUAccessFlagBits::kRead) {
-    //     compiled_.in_buffers.emplace_back(buffer);
-    // }
-    // if (access & RHIGPUAccessFlagBits::kWrite) {
-    //     compiled_.out_buffers.emplace_back(buffer);
-    // }
     return this;
 }
 
@@ -238,6 +240,10 @@ RDGPass *RDGPass::AddASH_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPU
     }
     used_acceleration_structures.emplace_back(access, stages, as);
     return this;
+}
+
+void RDGPass::AddResourceReference(RDGResource *resource) {
+    rdg_resource_keepers_.emplace_back(resource);
 }
 
 

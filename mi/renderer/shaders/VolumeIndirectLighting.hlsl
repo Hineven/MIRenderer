@@ -165,6 +165,15 @@ void ClearCounters () {
     RWShadePointTransmittanceRayAllocator[0] = 0;
 }
 
+// Clear per-tile list lengths and offsets to avoid reading garbage from previous frames
+[numthreads(WAVE_SIZE, 1, 1)]
+void ClearTileVolumeProbeIndexLists (uint DispatchID : SV_DispatchThreadID) {
+    uint idx = DispatchID;
+    if (idx >= UB.TileCount) return;
+    RWTileVolumeProbeIndexListLengthsBuffer[idx] = 0;
+    RWTileVolumeProbeIndexListOffsetsBuffer[idx] = 0;
+}
+
 [numthreads(WAVE_SIZE, 1, 1)]
 void InitializeVolumeProbeCache (uint DispatchID : SV_DispatchThreadID) {
     uint ProbeIndex1 = DispatchID;
@@ -1021,10 +1030,10 @@ void UpdateVolumeProbeCacheMRUQueue (uint DispatchID : SV_DispatchThreadID) {
     uint Value = 0;
     if(QueueIndex < RWVolumeProbeSpawnAllocator[0]) {
         uint Index = UB.TileCount - (RWVolumeProbeSpawnAllocator[0] - QueueIndex);
-        uint Value = RWVolumeProbeMRUQueueBuffer[Index];
+        Value = RWVolumeProbeMRUQueueBuffer[Index];
     } else {
         uint Index = RWVolumeProbeSpawnAllocator[0] + QueueIndex;
-        uint Value = RWVolumeProbeMRUQueueBuffer[Index];
+        Value = RWVolumeProbeMRUQueueBuffer[Index];
     }
     RWVolumeProbeNextMRUQueueBuffer[QueueIndex] = Value;
 }
@@ -1139,7 +1148,7 @@ float3 ProbeIntegrateHenyeyGreenstein(float3 ViewDirection, float g, uint2 Probe
 
 
 // Shade volume with indirect lighting from probes
-[numthreads(WAVE_SIZE, 1, 1)]
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
 void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
     uint2 PixelCoords = GroupID * TILE_SIZE + LocalID;
     CameraParameters C = GetActiveCamera();

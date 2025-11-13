@@ -176,10 +176,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     auto pool = RDGResourcePool::Create();
 
     // Resource allocator
-    auto resource_allocator = std::make_unique<DeviceBindlessResourceAllocator>();
+    auto resource_allocator = Create<DeviceBindlessResourceAllocator>();
 
     // Renderer
-    Renderer::Get().Init(resource_allocator.get(), pool.Raw());
+    Renderer::Get().Init(resource_allocator.Raw(), pool.Raw());
 
     auto scene = std::make_unique<Scene>();
     TRef<Texture> sky_cube;
@@ -315,7 +315,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             *resource_allocator, volprims
         );
         if (volprims) {
-            volprims->UpdateOnDevice(resource_allocator.get());
+            volprims->UpdateOnDevice(resource_allocator.Raw());
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
             volprims_instance->EditTransform().Translate({0, 0.5, 0});
             // volprims_instance->EditTransform().Scale({0.1f, 0.1f, 0.1f});
@@ -837,7 +837,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     assert(pool.GetRefCount() == 1);
     pool.SafeRelease();
 
-    resource_allocator.reset();
+    resource_allocator.SafeRelease();
 
     RDGShaderLibrary::Get().Deinit();
 

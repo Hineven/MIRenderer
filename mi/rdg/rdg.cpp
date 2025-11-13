@@ -210,7 +210,30 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 #endif
     };
 
+    // RDG buffer corruption check for debugging
+#ifndef NDEBUG
+    auto IsRDGResourceCorrupted = [&] (RDGResource * resource) -> bool {
+        if (!resource) return false;
+        return !resource->IsCanaryAlive();
+    };
+#endif
+
     while (!ready_passes.empty()) {
+#ifndef NDEBUG
+        for (auto & validating_pass : passes_) {
+            if (!validating_pass) continue ;
+            for (auto & texture_use : validating_pass->compiled_.textures) {
+                mi_assert(!IsRDGResourceCorrupted(texture_use.texture.Raw()),
+                    "RDG Texture resource {} corruption for pass {} detected",
+                    (void*)texture_use.texture.Raw(), validating_pass->name_.c_str());
+            }
+            for (auto & buffer_use : validating_pass->compiled_.buffers) {
+                mi_assert(!IsRDGResourceCorrupted(buffer_use.buffer.Raw()),
+                    "RDG Buffer resource {} corruption for pass {} detected",
+                    (void*)buffer_use.buffer.Raw(), validating_pass->name_.c_str());
+            }
+        }
+#endif
         int pass_index = ready_passes.front();
         ready_passes.pop();
         auto &pass = passes_[pass_index];

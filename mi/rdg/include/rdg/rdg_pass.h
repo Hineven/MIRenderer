@@ -60,6 +60,9 @@ public:
     // You are REQUIRED to manually place barriers for acceleration structures inside your pass lambda.
     RDGPass * AddASH_NoAutomaticBarrier (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
 
+    // Add a reference to a resource to extend its lifetime until the pass is destroyed.
+    void AddResourceReference(RDGResource * resource) ;
+
     FORCEINLINE void SetName (std::string name) {
         name_ = std::move(name);
     }
@@ -150,6 +153,12 @@ protected:
     RDGPassLambda pass_;
 
     RenderGraph * graph_ {};
+
+    // Keep references to resources to extend their lifetimes until the pass is destroyed.
+    // Note: this is not overlapping with used_textures / used_buffers. All resources here
+    // should be kept (even if they may not be actually used in the pass) to prevent corruption.
+    // Because shader parameter structs does not keep references to resources.
+    std::vector<TRef<RDGResource>> rdg_resource_keepers_;
 };
 
 MI_NAMESPACE_END

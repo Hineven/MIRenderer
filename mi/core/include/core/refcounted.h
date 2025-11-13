@@ -411,6 +411,12 @@ concept CWeakReferenceCounted =
 //     int * weak_ref_count_ {};
 // };
 
+template<typename T>
+TRef<T> Create(auto...Args)
+{
+    return TRef<T>(new T(Args...));
+}
+
 MI_NAMESPACE_END
 
 #endif //MIRENDERER_CORE_REFCOUNTED_H
