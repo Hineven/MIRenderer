@@ -31,12 +31,13 @@ struct VolumeIndirectLightingPersistentData : public RefCounted<> {
     // Rolling updated each frame
     TRef<RDGBuffer> ActiveVolumeProbeCount;
     TRef<RDGBuffer> ActiveVolumeProbeListBuffer;
-    TRef<RDGBuffer>  VolumeProbeMRUQueueBuffer;
+    TRef<RDGBuffer>  VolumeProbeMRUQueueBuffer; // <- this has to be created first though it's rolling updated
 
     // Persistent across frames
     TRef<RDGTexture> VolumeProbeRadianceDepthTexture;
     TRef<RDGTexture> VolumeProbeHeaderTexture;
 
+    // Returns false if any resource is newly created
     bool MakeSureExists (RenderGraphBuilder & builder, glm::uvec2 tile_dimensions) ;
 
     void FinalUpdate (RendererView * view);

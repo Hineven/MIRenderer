@@ -285,6 +285,7 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     volume_primitives_view_persistent_data_->FinalUpdate(view);
     denoiser_persistent_data_->FinalUpdate(view);
     diffuse_indirect_lighting_persistent_data_->FinalUpdate(view);
+    volume_indirect_lighting_persistent_data_->FinalUpdate(view);
     light_structure_persistent_data_->FinalUpdate(view);
     hash_grid_persistent_data_->FinalUpdate(view);
 

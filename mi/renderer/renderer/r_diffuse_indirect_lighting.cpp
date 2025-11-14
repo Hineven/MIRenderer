@@ -617,7 +617,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
     );
     auto sh_coeff_atlas_dimensions = glm::uvec2{tile_dimensions.x * 2, tile_dimensions.y};
     auto screen_probe_irradiance = builder.CreateTexture2D(
-        sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
+        tile_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     auto screen_probe_sh_coefficients_r = builder.CreateTexture2D(
         sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT

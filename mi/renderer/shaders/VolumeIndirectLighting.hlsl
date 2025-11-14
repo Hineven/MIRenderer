@@ -49,7 +49,7 @@ struct VolumeProbeHeader {
 
 VolumeProbeHeader UnpackVolumeProbeHeader (uint4 Packed) {
     VolumeProbeHeader Header;
-    Header.WorldPosition = Packed.xyz;
+    Header.WorldPosition = asfloat(Packed.xyz);
     Header.bActive = Packed.w & 0x1u;
     Header.bTemporalBlendable = Packed.w & 0x2u;
     return Header;
@@ -57,7 +57,7 @@ VolumeProbeHeader UnpackVolumeProbeHeader (uint4 Packed) {
 
 uint4 PackVolumeProbeHeader (VolumeProbeHeader Header) {
     uint4 Packed;
-    Packed.xyz = Header.WorldPosition;
+    Packed.xyz = asuint(Header.WorldPosition);
     Packed.w = 0;
     Packed.w |= (Header.bActive ? 0x1u : 0x0u);
     Packed.w |= (Header.bTemporalBlendable ? 0x2u : 0x0u);
@@ -174,6 +174,8 @@ void ClearTileVolumeProbeIndexLists (uint DispatchID : SV_DispatchThreadID) {
     RWTileVolumeProbeIndexListOffsetsBuffer[idx] = 0;
 }
 
+// Called when application requests a history reset. Drop all history probes
+// and re-initialize the MRU queue.
 [numthreads(WAVE_SIZE, 1, 1)]
 void InitializeVolumeProbeCache (uint DispatchID : SV_DispatchThreadID) {
     uint ProbeIndex1 = DispatchID;
@@ -255,7 +257,7 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
 
     // Spawn one probe per tile. This can be adjusted to spawn interleaved probes.
     if(ShouldSpawnProbe(TileIndex)) {
-        CameraParameters C = GetActiveCamera();
+        CameraParameters C  = GetActiveCamera();
         uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
         uint2 ScreenCoords  = min(TileIndex * TILE_SIZE + SubTileJitter, C.FilmDimensions - 1);
         float2 UV = ScreenCoords * C.InvFilmDimensions;
@@ -352,8 +354,9 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
                         float3 ProbeDirection = Octahedron01ToUnitVector(ProbeTexelUV);
                         float3 HitPosition = InjectedProbeHeader.WorldPosition + ProbeDirection * ProbeRadianceDepth.w;
                         float3 ReprojectedDirection = HitPosition - Header.WorldPosition;
+                        float  ReprojectedDepth = length(ReprojectedDirection);
+                        ReprojectedDirection /= ReprojectedDepth;
                         {
-                            float  ReprojectedDepth = length(ReprojectedDirection);
                             float2 ReprojectedTexelUV = UnitVectorToOctahedron01(ReprojectedDirection);
                             uint2  ReprojectedTexelCoords = uint2(ReprojectedTexelUV * TILE_SIZE);
                             uint   ReprojectedTexelIndex = ReprojectedTexelCoords.x + ReprojectedTexelCoords.y * TILE_SIZE;
@@ -399,9 +402,9 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
                                                   SharedProbeBlendedRadiance[ProbeTexelIndex].y,
                                                   SharedProbeBlendedRadiance[ProbeTexelIndex].z,
                                                   SharedProbeBlendedRadiance[ProbeTexelIndex].w));
-            uint TexelSampleCount = SharedProbeTexelWeight[ProbeTexelIndex];
+            float TexelSampleWeightSum = RecoverWeight(SharedProbeTexelWeight[ProbeTexelIndex]);
             // Write out reconstructed radiance to a separate buffer for later blending
-            float4 ReconstructedRadianceDepth = (TexelSampleCount > 0) ? (RadianceDepthSum / TexelSampleCount) : float4(BackupRadiance, 1000);
+            float4 ReconstructedRadianceDepth = (TexelSampleWeightSum > 0) ? (RadianceDepthSum / TexelSampleWeightSum) : float4(BackupRadiance, 1000);
             RWVolumeProbeReconstructedRadianceDepthTexture[TileIndex * TILE_SIZE + ProbeTexelCoords] = ReconstructedRadianceDepth;
             float3 Radiance = ReconstructedRadianceDepth.xyz;
             float3 RepresentativeDirection = Octahedron01ToUnitVector((float2(ProbeTexelCoords) + 0.5f) / TILE_SIZE);
@@ -850,15 +853,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
 
     // Clear the shared memory for later ray radiance accumulation
     VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWSpawnedVolumeProbeHeaderBuffer[SpawnListIndex]);
-    // uint2 ProbePixelCoords = Header.PixelCoords;
     CameraParameters C = GetActiveCamera();
-    // float2 ProbeUV = (ProbePixelCoords + 0.5f) * C.InvFilmDimensions;
-    // float  ProbeReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, ProbeUV, 0).x;
-    // float  ProbeLinearDepth = ReversedZDepthToLinearDepth(C, ProbeReversedZDepth);
-    // float3 ProbeWorldPos = RecoverWorldPositionPixelCoords(C, ProbePixelCoords, ProbeLinearDepth);
-    // float3 ProbeNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, ProbeUV, 0).xyz * 2 - 1);
-    // float3 ProbeTangent, ProbeBitangent;
-    // GetOrthoVectors(ProbeNormal, ProbeTangent, ProbeBitangent);
     float3 ProbeNDC = TransformPoint(C.WorldToNDC, Header.WorldPosition);
     float2 ProbeScreenUV = NDC2ToUV(ProbeNDC.xy);
     uint2  ProbeScreenCoords = uint2(ProbeScreenUV * C.FilmDimensions);
@@ -869,11 +864,6 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         SharedProbeBlendedRadiance[TexelIndex] = 0;
         SharedProbeSampleWeightSums[TexelIndex] = 0;
     }
-    // uint4 PackedReprojectedProbeHeader = RWSpawnedVolumeProbeHeaderBuffer[TileIndex];
-    // VolumeProbeHeader ReprojectedProbe = UnpackVolumeProbeHeader(PackedReprojectedProbeHeader);
-    // bool bReprojectedProbeValid = ReprojectedProbe.bValid;
-    // uint2 ReprojectedProbeIndex = ReprojectedProbe.PixelCoords / TILE_SIZE;
-    // float2 ReprojectedProbeUV = (ReprojectedProbe.PixelCoords + 0.5f) * C.InvFilmDimensions;
 
     GroupMemoryBarrierWithGroupSync();
 
@@ -945,44 +935,8 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
 
     float4 BackupRayResult = AverageRayResult;
 
-    // Decode new radiance values and update
-    // uint2 CacheMatches = RWVolumeProbeSpawnCacheMatchesBuffer[SpawnListIndex];
-    // uint ProbeToEvictCacheEntryIndex = CacheMatches.x;
-    // uint ProbeToUpdateCacheEntryIndex = CacheMatches.y;
-
-    // if(bReprojectedProbeValid && IsInvalid(ProbeToEvictCacheEntryIndex)) {
-    //     float ReprojectedProbeReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, ReprojectedProbeUV, 0).x;
-    //     float ReprojectedProbeLinearDepth = ReversedZDepthToLinearDepth(C, ReprojectedProbeReversedZDepth);
-    //     float3 ReprojectedProbeWorldPos = RecoverWorldPositionPixelCoords(C, ReprojectedProbe.PixelCoords, ReprojectedProbeLinearDepth);
-    //     float3 ReprojectedProbeNormal = normalize(G_Normal.SampleLevel(PointEdgeSampler, ReprojectedProbeUV, 0).rgb * 2 - 1);
-
-    //     // The reprojected probe have to be allocated a new cache entry
-    //     // Try to allocate a new cache entry
-    //     uint CacheEntryIndex = INVALID_UINT;
-    //     if(WaveIsFirstLane()) {
-    //         uint QueueIndex = 0;
-    //         InterlockedAdd(RWVolumeProbeCacheMRUQueueEntryAllocator[0], 1, QueueIndex);
-    //         if(QueueIndex < UB.TileCount) {
-    //             // Use the oldest elements in the MRU queue first.
-    //             CacheEntryIndex = RWVolumeProbeCacheMRUQueueBuffer[UB.TileCount - QueueIndex - 1];
-    //             // Write metadata
-    //             CacheEntryData NewCacheEntry = (CacheEntryData)0;
-    //             NewCacheEntry.bAlive = true;
-    //             NewCacheEntry.WorldPosition = ReprojectedProbeWorldPos;
-    //             NewCacheEntry.Normal = ReprojectedProbeNormal;
-    //             RWVolumeProbeCacheDataBuffer[CacheEntryIndex] 
-    //                 = PackCacheEntry(NewCacheEntry);
-    //         }
-    //     }
-    //     CacheEntryIndex = WaveReadLaneFirst(CacheEntryIndex);
-    //     if(IsValid(CacheEntryIndex)) {
-    //         // Allocated cache entry to be written to later.
-    //         ProbeToEvictCacheEntryIndex = CacheEntryIndex;
-    //     }
-    // }
-
     // Find a least recently used probe to overwrite. (Allocate the last N elements from the MRU queue)
-    uint  OverwriteProbeIndex1 = RWVolumeProbeMRUQueueBuffer[SpawnListIndex];
+    uint  OverwriteProbeIndex1 = RWVolumeProbeMRUQueueBuffer[UB.TileCount - SpawnListIndex - 1];
     uint2 OverwriteProbeIndex = uint2(
         OverwriteProbeIndex1 % UB.TileDimensions.x,
         OverwriteProbeIndex1 / UB.TileDimensions.x
@@ -1022,7 +976,8 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
     }
 }
 
-// Update MRU queue, putting recently used entries to the front
+// Update MRU queue, putting recently used entries (last RWVolumeProbeSpawnAllocator elements) to the front
+// TODO use touched flags
 [numthreads(WAVE_SIZE, 1, 1)]
 void UpdateVolumeProbeCacheMRUQueue (uint DispatchID : SV_DispatchThreadID) {
     uint QueueIndex = DispatchID;
@@ -1032,7 +987,7 @@ void UpdateVolumeProbeCacheMRUQueue (uint DispatchID : SV_DispatchThreadID) {
         uint Index = UB.TileCount - (RWVolumeProbeSpawnAllocator[0] - QueueIndex);
         Value = RWVolumeProbeMRUQueueBuffer[Index];
     } else {
-        uint Index = RWVolumeProbeSpawnAllocator[0] + QueueIndex;
+        uint Index = QueueIndex - RWVolumeProbeSpawnAllocator[0];
         Value = RWVolumeProbeMRUQueueBuffer[Index];
     }
     RWVolumeProbeNextMRUQueueBuffer[QueueIndex] = Value;
@@ -1120,8 +1075,9 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
     // Write SH coefficients
     for(uint i = 0; i<9; i++) {
         // Multiply by FOUR_PI to monte-carlo integrate to retrieve the coefficients
-        // (FOUR_PI: Spherical integration)
-        SHCoefficients[i] = WaveActiveSum(SHCoefficients[i]) * (1.f / TILE_TEXEL_COUNT) * FOUR_PI;
+        // Note: the area correction factor has been applied. So no extra area correction is needed here.
+        // (mapping square to sphere)
+        SHCoefficients[i] = WaveActiveSum(SHCoefficients[i]) * (1.f / TILE_TEXEL_COUNT);
     }
     if(WaveIsFirstLane()) {
         WriteVolumeProbeSHCoefficients(ProbeIndex, SHCoefficients);
@@ -1160,12 +1116,12 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
         RWVolumeIndirectLightingTexture[PixelCoords] = 0;
         return; 
     }
-    float3 ViewDirection = NDC2ToCameraDirection(C, PixelCoords);
     float2 UV = (PixelCoords + 0.5f) * C.InvFilmDimensions;
-    // float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+    float3 ViewDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
     float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), SampleDepth);
     // FIXME
-    float  SearchSize = SampleDepth * UB.ProbeReprojectionSearchSize
+    why so large?
+    float  SearchSize = SampleDepth * 32//UB.ProbeReprojectionSearchSize
             * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
 
     uint  ProbeIndex = INVALID_UINT;
@@ -1175,7 +1131,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
 
     float g = 0.0f; // Lambertian
 
-    int2 Corner = select((PixelCoords % TILE_SIZE) < (TILE_SIZE / 2), -1, 0);
+    int2 Corner = select((PixelCoords % TILE_SIZE) < (TILE_SIZE / 2), -1.xx, 0.xx);
     for(int dX = 0; dX < 2; dX ++) {
         for(int dY = 0; dY < 2; dY ++) {
             int2 SearchTileIndex = int2(TileIndex) + int2(Corner.x + dX, Corner.y + dY);
@@ -1202,15 +1158,13 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                         SumProbeWeights += ProbeWeight;
                         float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, CurrentProbeIndex);
                         SumIrradiance += ProbeWeight * Irradiance * SampleColor;
-                        break;
                     }
                 }
             }
         }
     }
     if(SumProbeWeights > 0.01f) {
-        float3 Irradiance = (SumIrradiance / SumProbeWeights); 
-        // Irradiance = float3(1, 1, 0);
+        float3 Irradiance = (SumIrradiance / SumProbeWeights);
         RWVolumeIndirectLightingTexture[PixelCoords] = float4(Irradiance, 1);
     } else {
         RWVolumeIndirectLightingTexture[PixelCoords] = 0;

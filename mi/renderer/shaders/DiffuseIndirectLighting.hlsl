@@ -761,10 +761,10 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
                 float3 ProbeLocalDirection = HemiOctahedron01ToUnitVectorA(ProbeTexelUV);
                 float3 ProbeWorldDirection = ProbeLocalDirection.x * NeighborProbeTangent + ProbeLocalDirection.y * NeighborProbeBitangent + ProbeLocalDirection.z * NeightborProbeNormal;
                 float3 HitPosition = NeighborProbeWorldPos + ProbeWorldDirection * ProbeRadianceDepth.w;
-                float3 ReprojectedDirection = HitPosition - WorldPosition;
-                if(dot(Normal, ReprojectedDirection) > 1e-4f) {
-                    float  ReprojectedDepth = length(ReprojectedDirection);
-                    float3 ReprojectedWorldDirection = ReprojectedDirection / ReprojectedDepth;
+                float3 UnnormalizedReprojectedDirection = HitPosition - WorldPosition;
+                if(dot(Normal, UnnormalizedReprojectedDirection) > 1e-4f) {
+                    float  ReprojectedDepth = length(UnnormalizedReprojectedDirection);
+                    float3 ReprojectedWorldDirection = UnnormalizedReprojectedDirection / ReprojectedDepth;
                     float3 ReprojectedLocalDirection = 
                         float3(dot(ReprojectedWorldDirection, Tangent), 
                             dot(ReprojectedWorldDirection, Bitangent), 
@@ -818,10 +818,10 @@ void ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries (ui
                         float3 ProbeLocalDirection = HemiOctahedron01ToUnitVectorA(ProbeTexelUV);
                         float3 ProbeWorldDirection = ProbeLocalDirection.x * CachedProbeTangent + ProbeLocalDirection.y * CachedProbeBitangent + ProbeLocalDirection.z * CachedProbeNormal;
                         float3 HitPosition = CachedProbeWorldPos + ProbeWorldDirection * ProbeRadianceDepth.w;
-                        float3 ReprojectedDirection = HitPosition - WorldPosition;
-                        if(dot(Normal, ReprojectedDirection) > 1e-4f) {
-                            float  ReprojectedDepth = length(ReprojectedDirection);
-                            float3 ReprojectedWorldDirection = ReprojectedDirection / ReprojectedDepth;
+                        float3 UnnormalizedReprojectedDirection = HitPosition - WorldPosition;
+                        if(dot(Normal, UnnormalizedReprojectedDirection) > 1e-4f) {
+                            float  ReprojectedDepth = length(UnnormalizedReprojectedDirection);
+                            float3 ReprojectedWorldDirection = UnnormalizedReprojectedDirection / ReprojectedDepth;
                             float3 ReprojectedLocalDirection = 
                                 float3(dot(ReprojectedWorldDirection, Tangent), 
                                     dot(ReprojectedWorldDirection, Bitangent), 

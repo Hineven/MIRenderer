@@ -694,10 +694,13 @@ RayUniformVolumeDistribution RenderRay(
     Result.Color = float3(0.f, 0.f, 0.f);
     Cdf = 1.f;
     Attenuation = 1.f;
-    SampleDepth = 1e9f;
+    SampleDepth = 0;
+    float ClosestSampleDepth = 1e9f;
     SampleColor = 0;
     TotalTransmittance = 1.f;
     RepresentativeDepth = 0.f;
+    SamplePdf = 0;
+    SampleTransmittance = 1;
 
     bool bSelected = false;
 
@@ -728,9 +731,9 @@ RayUniformVolumeDistribution RenderRay(
             Intersection.r = max(lr.y, 0);
             // Sample with decomposition tracking
             float CurrentSampledDepth = SampleRayVolumePrimitiveIntersection(Intersection, u);
-            if(CurrentSampledDepth < SampleDepth) {
+            if(CurrentSampledDepth < ClosestSampleDepth) {
                 // Update the sample depth
-                SampleDepth = CurrentSampledDepth;
+                ClosestSampleDepth = CurrentSampledDepth;
             }
             float v = rng.rand();
             // Update the result distribution
@@ -743,55 +746,60 @@ RayUniformVolumeDistribution RenderRay(
         RepresentativeDepth = Result.l + SampleExponentialScatteringMedium(Result.Density, rng.rand() * (1 - Transmittance));
     }
 
-    SamplePdf = 1.f;
-    SampleTransmittance = 1.f;
-    // Used to compute the pdf
-    float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
-    float SumDensity = 0.f;
-    // Iterate again and calculate sample pdf
-    for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
-        uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
-        uint PrimitiveIndex, RenderableIndex;
-        UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
-        VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
+    bool bValidSample = ClosestSampleDepth < 1e9f;
+    if(bValidSample) {
+        SampleDepth = ClosestSampleDepth;
+        SamplePdf = 1.f;
+        SampleTransmittance = 1.f;
+        // Used to compute the pdf
+        float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
+        float SumDensity = 0.f;
+        // Iterate again and calculate sample pdf
+        for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
+            uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
+            uint PrimitiveIndex, RenderableIndex;
+            UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
+            VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
-        // Transform the primitive to world space
-        float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
+            // Transform the primitive to world space
+            float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
 
-        // Calculate intersection with the primitive
-        float2 lr; float Dist;
-        bool bIntersected = RayIntersect(
-            RayOrigin, RayDirection, Primitive, ToObjectTransform,
-            lr, Dist
-        );
-        // Clamp volumes to the nearest seen surface
-        lr.y = min(lr.y, MaxLinearDepth);
-        if(bIntersected && lr.y > max(0.f, lr.x)) {
-            float TMax = min(SampleDepth, lr.y);
-            float TMin = max(lr.x, 0.f);
-            float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
-            float Transmittance = exp(-Opacity * max(TMax - TMin, 0));
-            // Calculate the sample pdf (derived by differentating 1 - transmittance)
-            if(lr.y <= SampleDepth) {
-                // The intersection is before the sampled depth.
-                Pdf_C *= Transmittance;
-            } else if(lr.x <= SampleDepth) {
-                // Sample falls into the primitive.
-                Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Opacity * Transmittance;
-                Pdf_Prod *= Transmittance;
-                // Calculate the sample color
-                SampleColor += Opacity * Primitive.Color;
-                SumDensity += Opacity;
+            // Calculate intersection with the primitive
+            float2 lr; float Dist;
+            bool bIntersected = RayIntersect(
+                RayOrigin, RayDirection, Primitive, ToObjectTransform,
+                lr, Dist
+            );
+            // Clamp volumes to the nearest seen surface
+            lr.y = min(lr.y, MaxLinearDepth);
+            if(bIntersected && lr.y > max(0.f, lr.x)) {
+                float TMax = min(SampleDepth, lr.y);
+                float TMin = max(lr.x, 0.f);
+                float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+                float Transmittance = exp(-Opacity * max(TMax - TMin, 0));
+                // Calculate the sample pdf (derived by differentating 1 - transmittance)
+                if(lr.y <= SampleDepth) {
+                    // The intersection is before the sampled depth.
+                    Pdf_C *= Transmittance;
+                } else if(lr.x <= SampleDepth) {
+                    // Sample falls into the primitive.
+                    Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Opacity * Transmittance;
+                    Pdf_Prod *= Transmittance;
+                    // Calculate the sample color
+                    SampleColor += Opacity * Primitive.Color;
+                    SumDensity += Opacity;
+                }
+                SampleTransmittance *= Transmittance;
             }
-            SampleTransmittance *= Transmittance;
         }
-    }
-    if(SumDensity > 0) {
-        SampleColor /= max(SumDensity, 1e-6f);
-        SamplePdf = Pdf_C * Pdf_Sigma;
-    } else {
-        // The sample have not falled into any primitive. No valid sample.
-        SamplePdf = 0.f;
+        if(SumDensity > 0) {
+            SampleColor /= max(SumDensity, 1e-6f);
+            SamplePdf = Pdf_C * Pdf_Sigma;
+        } else {
+            // This should never occur. But anyway the sample have not falled into any primitive.
+            // Mark as an invalid sample.
+            SamplePdf = 0.f;
+        }
     }
     return Result;
 }

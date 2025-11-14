@@ -311,7 +311,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
         TRef<VolumePrimitives> volprims;
         VolumePrimitivesLoader::LoadPLY(
-            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud.ply"),
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
             *resource_allocator, volprims
         );
         if (volprims) {

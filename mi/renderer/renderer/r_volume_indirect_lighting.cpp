@@ -422,6 +422,12 @@ bool VolumeIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & b
     bool flag = true;
     auto atlas_dimensions = tile_dimensions * VolumeIndirectLightingShader::kTileSize;
 
+    if (!VolumeProbeMRUQueueBuffer) {
+        VolumeProbeMRUQueueBuffer = builder.CreateBuffer<uint32_t>(tile_dimensions.x * tile_dimensions.y);
+        VolumeProbeMRUQueueBuffer->SetName("VolumeProbeMRUQueue");
+        VolumeProbeMRUQueueBuffer->SetExport();
+        flag = false;
+    }
     if (!VolumeProbeRadianceDepthTexture) {
         VolumeProbeRadianceDepthTexture = builder.CreateTexture2D(
             atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR16G16B16A16_FLOAT
@@ -432,7 +438,7 @@ bool VolumeIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & b
     }
     if (!VolumeProbeHeaderTexture) {
         VolumeProbeHeaderTexture = builder.CreateTexture2D(
-            atlas_dimensions.x, atlas_dimensions.y, PixelFormatType::kR32G32B32A32_UINT
+            tile_dimensions.x, tile_dimensions.y, PixelFormatType::kR32G32B32A32_UINT
         );
         VolumeProbeHeaderTexture->SetName("VolumeProbeHeader");
         VolumeProbeHeaderTexture->SetExport();
@@ -482,7 +488,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     auto atlas_dimensions = tile_dimensions * VolumeIndirectLightingShader::kTileSize;
     auto sh_coeff_atlas_dimensions = glm::uvec2{tile_dimensions.x * 2, tile_dimensions.y};
     auto volume_probe_irradiance = builder.CreateTexture2D(
-        sh_coeff_atlas_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
+        tile_dimensions, PixelFormatType::kR16G16B16A16_FLOAT
     );
     volume_probe_irradiance->SetName("VolumeProbeIrradiance");
     auto volume_probe_sh_coefficients_r = builder.CreateTexture2D(
@@ -793,6 +799,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
+
     {
         auto shader = lib.GetShader<InjectVolumeProbesShader>(ini);
         Helpers::AddComputePass<InjectVolumeProbesShader>(
@@ -918,8 +925,8 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
         );
     }
 
+    auto tile_dimensions = GetTileDimensions(view);
     {
-        auto tile_dimensions = GetTileDimensions(view);
         auto num_tiles = tile_dimensions.x * tile_dimensions.y;
         auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
         auto shader = lib.GetShader<UpdateVolumeProbeCacheMRUQueueShader>(ini);
@@ -929,11 +936,19 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
     }
 
     {
+        auto shader = lib.GetShader<ComputeVolumeProbeSHCoefficientsShader>(ini);
+        Helpers::AddComputePass<ComputeVolumeProbeSHCoefficientsShader>(
+            builder, shader, params,
+            tile_dimensions.x, tile_dimensions.y
+        );
+    }
+
+    {
         auto shader = lib.GetShader<ComputeVolumeIndirectLightingShader>(ini);
         Helpers::AddComputePass<ComputeVolumeIndirectLightingShader>(
             builder, shader, params,
-            DivideAndRoundUp(view->film_width_, VolumeIndirectLightingShader::kTileSize),
-            DivideAndRoundUp(view->film_height_, VolumeIndirectLightingShader::kTileSize)
+            tile_dimensions.x,
+            tile_dimensions.y
         );
     }
 }

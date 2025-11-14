@@ -433,7 +433,6 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
                 }
             }
             for (auto e : barrier_buffers) {
-                // Destructors of temporaries created in one line of code will destruct after the line
                 raster_pass->AddBufferH(
                     builder.Import(e, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer),
                     RHIGPUAccessFlagBits::kVertexAttributeRead | RHIGPUAccessFlagBits::kIndexRead
