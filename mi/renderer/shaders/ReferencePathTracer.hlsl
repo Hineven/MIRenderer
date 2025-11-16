@@ -93,7 +93,7 @@ float ResampleVolumePrimitives (
             Distr.Color   = Primitive.Color;
             // Make a volume sample
             float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());
-            // Compare with VolumeSampledRayDistance
+            // Compare with current sample
             if(Distance < SampledDistance) {
                 // Pick the closer one
                 SampledDistance = Distance;
@@ -109,6 +109,9 @@ void ReferencePathTracerRaygen() {
 
     uint2 RayIndex = DispatchRaysIndex().xy;
     uint2 DispatchSize = DispatchRaysDimensions().xy;
+
+    // TODO variable g
+    float g = 0.f;
 
     RayDesc Ray = (RayDesc)0;
     CameraParameters C = GetActiveCamera();
@@ -135,7 +138,6 @@ void ReferencePathTracerRaygen() {
     uint   OverlappingVolumePrimitivesInstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
     uint   OverlappingVolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
     uint   CurrentOverlappingVolumePrimitiveCount = 0;
-    float  VolumeSampledRayDistance = Infinity;
     float3 VolumeSampledColor = 0;
 
     uint MaxNumBounces = UB.MaxNumBounces;
@@ -155,47 +157,49 @@ void ReferencePathTracerRaygen() {
             Payload
         );
         bool bScatter = false;
-        if(Payload.TCurrent >= VolumeSampledRayDistance) // Hits something (or nothing), stepping over the volume sample
+        if(Payload.TCurrent >= Ray.TMax) // Hits nothing, stepping over the volume sample
         {
-            // Volume intersection detected.
-            // Ray hit a surface or hits nothing, overpassing the current volume sample.
-            // Scatter the ray at the current volume sample position.
-            float Pdf;
-            float3 LocalSampledDirection = SampleHenyeyGreenstein(0.5, rng.rand2(), Pdf);
-            // We do not need to take account of the value and pdf because of perfect sampling
-            
-            // Forward and restart the ray
-            Ray.Origin = Ray.Origin + Ray.Direction * VolumeSampledRayDistance;
-            float3 Tangent, Bitangent;
-            GetOrthoVectors(Ray.Direction, Tangent, Bitangent);
-            Ray.Direction = 
-                LocalSampledDirection.x * Tangent 
-                + LocalSampledDirection.y * Bitangent
-                + LocalSampledDirection.z * Ray.Direction;
-            Ray.TMin = 1e-4f;
-            Ray.TMax = C.FarPlane;
+            if(CurrentOverlappingVolumePrimitiveCount == 0) {
+                // No pending volume hit is present, accumulate environment lighting and terminate
+                float3 EnvironmentColor = EvaluateEnvironmentMap(-Ray.Direction);
+                Radiance += Throughput * EnvironmentColor;
+                // Terminate directly
+                break;
+            } else {
+                // Volume intersection detected.
+                // Ray hit a surface or hits nothing, overpassing the current volume sample.
+                // Scatter the ray at the current volume sample position.
+                float Pdf;
+                float3 LocalSampledDirection = SampleHenyeyGreenstein(g, rng.rand2(), Pdf);
+                // We do not need to take account of the value and pdf because of perfect sampling
+                
+                // Forward and restart the ray
+                Ray.Origin = Ray.Origin + Ray.Direction * Ray.TMax;
+                float3 Tangent, Bitangent;
+                GetOrthoVectors(Ray.Direction, Tangent, Bitangent);
+                Ray.Direction = 
+                    LocalSampledDirection.x * Tangent 
+                    + LocalSampledDirection.y * Bitangent
+                    + LocalSampledDirection.z * Ray.Direction;
+                Ray.TMin = 1e-4f;
 
-            Throughput *= VolumeSampledColor;
+                // Phase function cancelled out naturally due to perfect sampling
+                Throughput *= VolumeSampledColor;
 
-            // Spawn new volume sample
-            VolumeSampledRayDistance = ResampleVolumePrimitives(
-                Ray,
-                OverlappingVolumePrimitivesInstanceIndices,
-                OverlappingVolumePrimitiveIndices,
-                CurrentOverlappingVolumePrimitiveCount,
-                rng,
-                VolumeSampledColor
-            );
+                // Spawn new volume sample, trace till volume hit.
+                Ray.TMax = ResampleVolumePrimitives(
+                    Ray,
+                    OverlappingVolumePrimitivesInstanceIndices,
+                    OverlappingVolumePrimitiveIndices,
+                    CurrentOverlappingVolumePrimitiveCount,
+                    rng,
+                    VolumeSampledColor
+                );
 
-            // This is a scattering event;
-            bScatter = true;
-        } else if(Payload.TCurrent >= Ray.TMax) { // Miss
-            // No hits, accumulate environment lighting and terminate
-            float3 EnvironmentColor = EvaluateEnvironmentMap(-Ray.Direction);
-            Radiance += Throughput * EnvironmentColor;
-            // Terminate directly
-            break;
-        } else if(Payload.bIsSurfaceHit) { // Hits a mesh surface
+                // This is a scattering event;
+                bScatter = true;
+            }
+        } else if(Payload.bIsSurfaceHit) { // Hits a mesh surface before pending volume scattering / miss
             // Second case: Surface hit (ray hit a surface before passing through the volume sample).
             if(Payload.bIsFrontFace) {
                 // The surface hit is closer than the volume hit. Spawn a surface hit
@@ -220,7 +224,6 @@ void ReferencePathTracerRaygen() {
                     Ray.Origin = Intersection.WorldPosition + Intersection.Normal * 2e-5f;
                     Ray.Direction = SampledDirection;
                     Ray.TMin = 1e-4f;
-                    Ray.TMax = C.FarPlane;
 
                     // Accumulate radiance
                     Radiance += Intersection.Emission * Throughput;
@@ -231,7 +234,7 @@ void ReferencePathTracerRaygen() {
                         * saturate(dot(M.Normal, SampledDirection)) / max(Pdf, 1e-5f);
 
                     // Spawn new volume sample
-                    VolumeSampledRayDistance = ResampleVolumePrimitives(
+                    Ray.TMax = ResampleVolumePrimitives(
                         Ray,
                         OverlappingVolumePrimitivesInstanceIndices,
                         OverlappingVolumePrimitiveIndices,
@@ -251,8 +254,7 @@ void ReferencePathTracerRaygen() {
                 // Advance ray to next hit
                 Ray.TMin = Payload.TCurrent + 1e-5f;
             }
-        } else { // Hit a volume boundary.
-            // Volume boundary hit.
+        } else { // Hit a volume primitive boundary before pending volume scattering / miss
             // Fetch the volume primitive
             // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry)
             uint InstanceVolPrimitiveIndex = Payload.HitPrimitiveIndex / 20;
@@ -278,10 +280,10 @@ void ReferencePathTracerRaygen() {
                     Distr.Color   = Primitive.Color;
                     // Make a volume sample
                     float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());
-                    // Compare with VolumeSampledRayDistance
-                    if(Distance < VolumeSampledRayDistance) {
+                    // Compare with the pending volume hit
+                    if(Distance < Ray.TMax) {
                         // Pick the closer one
-                        VolumeSampledRayDistance = Distance;
+                        Ray.TMax = Distance;
                         VolumeSampledColor = Primitive.Color;
                     }
                 }
@@ -298,10 +300,10 @@ void ReferencePathTracerRaygen() {
                 // when sampling next volume hits aroud surfaces. The overhead introduced for precisely 
                 // tracking and sampling the volume is too high. 
                 bool bFound = false;
-                for(int i = 0; i < min(CurrentOverlappingVolumePrimitiveCount, MAX_OVERLAPPING_VOLUME_PRIMITIVES); i ++) {
+                for(int i = 0; i < min(CurrentOverlappingVolumePrimitiveCount, MAX_OVERLAPPING_VOLUME_PRIMITIVES); i++) {
                     bFound |= 
                         (OverlappingVolumePrimitiveIndices[i] == PrimitiveIndex)
-                        && (OverlappingVolumePrimitiveIndices[i] == InstanceIndex);
+                        && (OverlappingVolumePrimitivesInstanceIndices[i] == InstanceIndex);
                     if(bFound && i < MAX_OVERLAPPING_VOLUME_PRIMITIVES - 1) {
                         // Overwrite with the next element
                         OverlappingVolumePrimitiveIndices[i] = OverlappingVolumePrimitiveIndices[i + 1];
@@ -313,7 +315,7 @@ void ReferencePathTracerRaygen() {
                 }
             }
             // Forward the ray a little bit
-            Ray.TMin = Payload.TCurrent + 2e-5f;
+            Ray.TMin = min(Payload.TCurrent + 2e-5f, Ray.TMax);
         }
 
         if(bScatter) {
