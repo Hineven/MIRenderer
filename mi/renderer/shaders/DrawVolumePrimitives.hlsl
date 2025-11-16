@@ -722,7 +722,7 @@ RayUniformVolumeDistribution RenderRay(
         float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
         // Clamp volumes to the nearest seen surface
         lr.y = min(lr.y, MaxLinearDepth);
-        // Transform depth to actual ray length
+        // Transform linear depth to actual ray length
         lr *= RayLenghtCorrection;
         float u = rng.rand();
         if(bIntersected && lr.y > max(0.f, lr.x)) {

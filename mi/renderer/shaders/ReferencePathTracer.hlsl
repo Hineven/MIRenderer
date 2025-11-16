@@ -263,9 +263,9 @@ void ReferencePathTracerRaygen() {
             uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
             uint PrimitiveIndex = VolPrimitiveOffset + InstanceVolPrimitiveIndex;
             VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
+            float3x4 ToObject = RenderableInverseTransformBuffer[InstanceIndex];
             if(!Payload.bIsFrontFace) {
                 // Backface hits: entering the volume. Spawn a volume sample for the primitive.
-                float3x4 ToObject = RenderableInverseTransformBuffer[InstanceIndex];
                 float2 lr = 0;
                 float Dist = 0;
                 bool bIntersected = RayIntersect(Ray.Origin, Ray.Direction, Primitive, ToObject, lr, Dist);
@@ -301,9 +301,10 @@ void ReferencePathTracerRaygen() {
                 // tracking and sampling the volume is too high. 
                 bool bFound = false;
                 for(int i = 0; i < min(CurrentOverlappingVolumePrimitiveCount, MAX_OVERLAPPING_VOLUME_PRIMITIVES); i++) {
-                    bFound |= 
+                    bool bIsCurrentOne = 
                         (OverlappingVolumePrimitiveIndices[i] == PrimitiveIndex)
                         && (OverlappingVolumePrimitivesInstanceIndices[i] == InstanceIndex);
+                    bFound |= bIsCurrentOne;
                     if(bFound && i < MAX_OVERLAPPING_VOLUME_PRIMITIVES - 1) {
                         // Overwrite with the next element
                         OverlappingVolumePrimitiveIndices[i] = OverlappingVolumePrimitiveIndices[i + 1];

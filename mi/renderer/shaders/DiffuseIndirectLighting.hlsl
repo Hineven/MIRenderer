@@ -1055,19 +1055,20 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	bool bBypass = false;
 	if(bHit) {
 		float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
-		float4 PreviousHomogeneousW = mul(GetPreviousCamera().WorldToNDC, float4(HitWorldPosition, 1));
+        CameraParameters PrevC = GetPreviousCamera();
+		float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
 		float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
 		if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
 		&& PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
-			float2 HistoryScreenPosition = C.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
+			float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
 			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
 			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
 			uint2  PackedHitResult = RWScreenProbeUpdateRayResultBuffer[RayIndex];
 			float3 HitNormal     = UnpackNormal(PackedHitResult.x);
 			float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
 			if(HistoryReversedZDepth > 0) {
-				float  HistoryDepth  = ReversedZDepthToLinearDepth(C, HistoryReversedZDepth);
-				float  PreviousDepth = ZDepthToLinearDepth(C, PreviousHomogeneous.z);
+				float  HistoryDepth  = ReversedZDepthToLinearDepth(PrevC, HistoryReversedZDepth);
+				float  PreviousDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
 				bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
 				bool   bDepthVisible  = 
 							abs(HistoryDepth - PreviousDepth) 

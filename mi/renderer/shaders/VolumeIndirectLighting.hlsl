@@ -556,11 +556,12 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	bool bBypass = false;
 	if(bHit) {
 		float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
-		float4 PreviousHomogeneousW = mul(GetPreviousCamera().WorldToNDC, float4(HitWorldPosition, 1));
+        CameraParameters PrevC = GetPreviousCamera();
+		float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
 		float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
 		if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
 		&& PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
-			float2 HistoryScreenPosition = C.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
+			float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
 			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
 			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
 			uint2  PackedHitResult = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
@@ -571,8 +572,8 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
                 bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
                 float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
                 if(HistoryReversedZDepth > 0) {
-                    float  HistoryDepth  = ReversedZDepthToLinearDepth(C, HistoryReversedZDepth);
-                    float  PreviousDepth = ZDepthToLinearDepth(C, PreviousHomogeneous.z);
+                    float  HistoryDepth  = ReversedZDepthToLinearDepth(PrevC, HistoryReversedZDepth);
+                    float  PreviousDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
                     bool   bDepthVisible  = 
                                 abs(HistoryDepth - PreviousDepth) 
                                 / max(PreviousDepth, HistoryDepth) < 5e-2f;
@@ -592,7 +593,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
                 HistoryMinMax.x = max(0, HistoryMinMax.x * 0.999f);
                 HistoryMinMax.y = HistoryMinMax.y * 1.001f;
                 CameraParameters PrevC = GetPreviousCamera();
-                float  PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
+                float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
                 float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
                 float  PreviousDepth    = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
                 float  PreviousDistance = PreviousDepth * PrevCosineFactor;
@@ -644,7 +645,6 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			// Sample the sky radiance and store it in the result buffer
 			// Note: sky radiance is regarded an indirect lighting source
 			// due to it's low frequency nature (sun excluded)
-            // uint2 Result = RWVolumeProbeUpdateRayRadianceBuffer[RayIndex];
             float3 Radiance = EvaluateEnvironmentMap(-RayDirection);
             if(UB.NoEnvironmentLight != 0) Radiance = 0;
             RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(Radiance, true);
@@ -1006,8 +1006,8 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             float lumaA = RadianceToLuminance(NewRadiance.xyz);
             float lumaB = RadianceToLuminance(ReconstructedRadiance.xyz);
 
-            // Shadow-preserving biased temporal hysteresis (inspired by: https://www.youtube.com/watch?v=WzpLWzGvFK4&t=630s)
-            float temporal_blend = Squared(clamp(max(lumaA - lumaB - min(lumaA, lumaB), 0.0f) / max(max(lumaA, lumaB), 1e-4f), 0.0f, 0.95f));
+            // Unbiased blending 
+            float temporal_blend = 0.15f;
             
             NewRadiance = lerp(NewRadiance, ReconstructedRadiance, temporal_blend);
         }
@@ -1097,6 +1097,7 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         SHCoefficients[i] = 0;
     }
 
+    float SumAreaCorrectionFactor = 0.f;
     // Accumulate SH coefficients
     for(uint BaseTexelIndex = 0; BaseTexelIndex < TILE_TEXEL_COUNT; BaseTexelIndex += WAVE_SIZE) {
         uint TexelIndex = BaseTexelIndex + LocalID;
@@ -1106,11 +1107,6 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         float3 Radiance = RadianceDepth.xyz;
         float2 TexelUV = (float2(TexelCoords) + 0.5f) / TILE_SIZE;
         float3 TexelDirection = Octahedron01ToUnitVector(TexelUV);
-        // float3 ProbeWorldTexelDirection = 
-            // LocalTexelDirection.x * ProbeTangent 
-            // + LocalTexelDirection.y * ProbeBitangent
-            // + LocalTexelDirection.z * ProbeNormal;
-        
         // Approximated with center sample differentials
         float AreaCorrectionFactor = dSphericalAngle_dOctahedronArea01(TexelDirection);
         // Accumulate SH coefficients
@@ -1118,6 +1114,13 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         SH_GetCoefficients(TexelDirection, Coefficients);
         for(int i = 0; i < 9; i++) {
             SHCoefficients[i] += Coefficients[i] * Radiance * AreaCorrectionFactor;
+        }
+        SumAreaCorrectionFactor += AreaCorrectionFactor;
+    }
+    SumAreaCorrectionFactor = WaveActiveSum(SumAreaCorrectionFactor);
+    if(GroupID.x == 0 && GroupID.y == 0) {
+        if(WaveIsFirstLane()) {
+            printf("%f\n", SumAreaCorrectionFactor);
         }
     }
     // Write SH coefficients

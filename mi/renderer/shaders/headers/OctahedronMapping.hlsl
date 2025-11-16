@@ -22,11 +22,17 @@ float2 UnitVectorToOctahedron01(float3 N)
 }
 
 // dW / dA (dW for differential solid angle, dA for differential area on the unit square (0, 1) from UnitVectorToOctahedron01)
-float dSphericalAngle_dOctahedronArea01 (float3 LocalDirection) {
-    float3 OctTriangleNormal = normalize(select(LocalDirection > 0, 1.0f.xxx, -1.0f.xxx));
-    float  Cosine = dot(OctTriangleNormal, LocalDirection);
-    // dW = 12 * PI * cos(theta) dA (assuming unit sphere and unit square (0, 1) x (0, 1))
-    return 12.0f * PI * Cosine;
+// incorrect math!
+// float dSphericalAngle_dOctahedronArea01 (float3 LocalDirection) {
+//     float3 OctTriangleNormal = normalize(select(LocalDirection > 0, 1.0f.xxx, -1.0f.xxx));
+//     float  Cosine = dot(OctTriangleNormal, LocalDirection);
+//     // dW = 12 * PI * cos(theta) dA (assuming unit sphere and unit square (0, 1) x (0, 1))
+//     return 12.0f * PI * Cosine;
+// }
+float dSphericalAngle_dOctahedronArea01(float3 dir)
+{
+    float S = abs(dir.x) + abs(dir.y) + abs(dir.z);
+    return S > 0 ? 4.0f * S * S * S : 0.0f;
 }
 
 // This is not area preserving

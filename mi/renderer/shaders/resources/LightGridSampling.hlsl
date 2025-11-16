@@ -171,9 +171,9 @@ LightSample SampleAreaLightDiffuseWithPreMultiplied(
     float3 EvaluatedEmission = Evaluated.Emission;
     if (IsValid(Evaluated.EmissionTextureIndex))
         EvaluatedEmission += GetBindlessSRV(Evaluated.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
-    float PreMultipliedSaturate = saturate(ReceiverCosine);
+    float PreMultipliedCosine = saturate(ReceiverCosine);
     float PreMultipliedHG = HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
-    float PreMultiplied = bSurface ? PreMultipliedSaturate : PreMultipliedHG;
+    float PreMultiplied = bSurface ? PreMultipliedCosine : PreMultipliedHG;
     Result.Radiance = EvaluatedEmission * PreMultiplied;
     return Result;
 }
@@ -340,7 +340,7 @@ LightSample SampleOneLightSample_RIS (
         [unroll(LIGHT_GRID_NUM_HISTORY_FRAMES)]
         for (uint i = 0; i < LIGHT_GRID_NUM_HISTORY_FRAMES; i++) {
             uint HistoryVisible = GridCubicVisibility.GridCubicHistory[i];
-            // Coarse visibility condition: if any face in the direction is visible in history, consider it visible
+            // Coarse visibility condition: if any face in the direction is visible in history, it is visible
             VisibilityMask |= HistoryVisible;
         }
         // Estimate ambient occlusion
@@ -388,7 +388,9 @@ LightSample SampleOneLightSample_RIS (
                 uint LightIndex = LightGrid_ActiveLightListBuffer[ActiveLightListIndex];
                 bool bActive;
                 EvaluatedAreaLight Evaluated = EvaluateLight(LightBuffer[LightIndex], bActive);
-                Sample = SampleAreaLightDiffuseWithPreMultiplied(WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2);
+                Sample = SampleAreaLightDiffuseWithPreMultiplied(
+                    WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2
+                );
                 // Keep the light index
                 Sample.LightIndex = LightIndex;
             }
