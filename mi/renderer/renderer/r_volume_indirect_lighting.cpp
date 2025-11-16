@@ -55,6 +55,12 @@ static CVar CVar_NoEnvironmentLight(
     false
 );
 
+static CVar CVar_VolumeScreenReuseNoDepthTesting(
+    "r.volume_indirect_lighting.screen_reuse_no_depth_testing",
+    "Whether to skip screen space depth testing when reusing history radiance. (always reuse)",
+    false
+);
+
 struct VolumeIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     uint32_t HeaderTileDimension;
@@ -70,7 +76,7 @@ struct VolumeIndirectLightingUB {
 
     uint32_t FrameIndex;
     uint32_t ProbeUpdateRaysNoImportanceSampling;
-    uint32_t Unused2;
+    uint32_t ScreenReuseNoDepthTesting;
     uint32_t ProbeUpdateRaySampleSeed;
 
     uint32_t ProbeUpdateRaysNoAdaptiveAllocation;
@@ -114,6 +120,7 @@ BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileVolumeProbeReprojectionEntryAllocator)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileVolumeProbeReprojectionEntryBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWTileSpawnedVolumeProbeBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeProbeUpdateRayOffsetsBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWVolumeProbeUpdateRayCountsBuffer)
@@ -148,6 +155,9 @@ BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeSampleDepth)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeSampleColor)
+    SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeMinMaxTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeDensityTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeRadianceTexture)
 
     SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
 
@@ -528,6 +538,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     tile_volume_probe_reprojection_entry_allocator->SetName("TileVolumeProbeReprojectionEntryAllocator");
     auto tile_volume_probe_reprojection_entry_buffer = builder.CreateBuffer<glm::uvec3>(num_tiles);
     tile_volume_probe_reprojection_entry_buffer->SetName("TileVolumeProbeReprojectionEntryBuffer");
+    auto tile_spawned_volume_probe_header_buffer = builder.CreateBuffer<glm::uvec4>(num_tiles);
+    tile_spawned_volume_probe_header_buffer->SetName("TileSpawnedVolumeProbeBuffer");
 
     auto volume_probe_update_ray_offsets_buffer = builder.CreateBuffer<uint32_t>(num_tiles);
     volume_probe_update_ray_offsets_buffer->SetName("VolumeProbeUpdateRayOffsetsBuffer");
@@ -637,6 +649,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             tile_volume_probe_reprojection_entry_allocator.Raw();
         params->RWTileVolumeProbeReprojectionEntryBuffer =
             tile_volume_probe_reprojection_entry_buffer.Raw();
+        params->RWTileSpawnedVolumeProbeBuffer =
+            tile_spawned_volume_probe_header_buffer.Raw();
 
         params->RWVolumeProbeUpdateRayOffsetsBuffer =
             volume_probe_update_ray_offsets_buffer.Raw();
@@ -693,6 +707,9 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
 
         params->G_VolumeSampleDepth = view->volume_primitives_->volume_sample_linear_depth_.Raw();
         params->G_VolumeSampleColor = view->volume_primitives_->volume_sample_color_.Raw();
+        params->PreviousVolumeMinMaxTexture = view->persistent_data_->prev_volume_min_max_.Raw();
+        params->PreviousVolumeRadianceTexture = view->persistent_data_->prev_shaded_volume_radiance_.Raw();
+        params->PreviousVolumeDensityTexture = view->persistent_data_->prev_volume_density_.Raw();
 
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
@@ -719,7 +736,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             UB->FrameIndex = view->persistent_data_->frame_index_;
             UB->ProbeUpdateRaysNoImportanceSampling =
                 CVar_VolumeProbesRayImportanceSampling.Get() ? 0 : 1;
-            UB->Unused2 = 0;
+            UB->ScreenReuseNoDepthTesting = CVar_VolumeScreenReuseNoDepthTesting.Get() ? 1 : 0;
             UB->ProbeUpdateRaySampleSeed =
                 CVar_VolumeProbesRayFreezeSeed.Get() ? 0 : (view->persistent_data_->frame_index_ + 7198272u);
 

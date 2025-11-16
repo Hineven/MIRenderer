@@ -21,26 +21,26 @@
 #include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
 static CVar<float> CVar_Exposure(
-    "r.exposure",
+    "r.output.exposure",
     "Exposure value for the final output. "
     "This is used to adjust the brightness of the final image.",
     0.0f
 );
 
 static CVar<bool> CVar_EnableAccumulation(
-    "r.enable_accumulation",
+    "r.composition.enable_accumulation",
     "Enable accumulation for final radiance across frames",
     false
 );
 
 static CVar<bool> CVar_UseDenoisedDirectLighting(
-    "r.use_denoised_direct_lighting",
+    "r.composition.use_denoised_direct_lighting",
     "Use denoised direct lighting for the final composition",
     true
 );
 
 static CVar<bool> CVar_UseDenoisedIndirectLighting(
-    "r.use_denoised_indirect_lighting",
+    "r.composition.use_denoised_indirect_lighting",
     "Use denoised indirect (diffuse & volume) lighting in final composition",
     true
 );
@@ -90,6 +90,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWShadedRadianceWithoutEmission)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWShadedVolumeRadiance)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
@@ -146,6 +147,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
     params->RWShadedRadianceWithoutEmission = view->shaded_radiance_no_emission_.Raw();
+    params->RWShadedVolumeRadiance = view->shaded_volume_radiance_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     auto groups_x = DivideAndRoundUp(view->film_width_, LightingCompositionShader::kTileSize);

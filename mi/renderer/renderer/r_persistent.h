@@ -27,8 +27,11 @@ struct RendererViewPersistentData {
     // Denoised results from last frame
     TRef<RDGTexture> prev_radiance_;
     // Denoised results from last frame (shaded radiance without emission)
-    // Written by final composition
     TRef<RDGTexture> prev_shaded_radiance_no_emission_;
+    // Denoised volume radiance from last frame
+    TRef<RDGTexture> prev_shaded_volume_radiance_;
+    TRef<RDGTexture> prev_volume_min_max_;
+    TRef<RDGTexture> prev_volume_density_;
 
     TRef<RDGTexture> path_tracing_film_;
 

@@ -17,17 +17,22 @@
 #include "r_light_structure.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<bool> CVar_PathTracingEnableAccumulation(
+static CVar CVar_PathTracingEnableAccumulation(
     "r.pathtracing.enable_accumulation",
     "Enable accumulation for path tracing.",
     false
+);
+static CVar CVar_MaxNumBounces(
+    "r.pathtracing.max_num_bounces",
+    "Maximum number of bounces for path tracing.",
+    8
 );
 
 struct ReferencePathTracerUB {
     uint FrameIndex;
     uint EnableAccumulation;
-    uint Padding0;
-    uint Padding1;
+    uint MaxNumBounces;
+    uint Padding;
 };
 
 class ReferencePathTracerShader : public RDGShader {
@@ -81,6 +86,15 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
     {
         UB->FrameIndex = view->persistent_data_->frame_index_;
         UB->EnableAccumulation = CVar_PathTracingEnableAccumulation.Get() ? 1 : 0;
+        UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
+        bool camera_dirty = false;
+        if (view->camera_ != view->persistent_data_->prev_camera) {
+            camera_dirty = true;
+        }
+        if (CVar_MaxNumBounces.IsDirty() || camera_dirty) {
+            UB->EnableAccumulation = 0;
+            CVar_MaxNumBounces.ClearDirty();
+        }
     }
 
     params->View = view->view_common_params_;

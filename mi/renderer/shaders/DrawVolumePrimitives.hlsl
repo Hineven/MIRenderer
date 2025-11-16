@@ -435,7 +435,7 @@ RayFourierVolumeDistribution UpdateRayFourierVolumeDistribution(
 
 RayFourierVolumeDistribution RenderRayFourier(
     float3 RayOrigin,
-    float3 RayDirection,
+    float3 UnnormalizedRayDirection,
     uint TileInstanceOffset,
     uint NumTilePrimitiveInstances,
     float MaxLinearDepth,
@@ -482,7 +482,7 @@ RayFourierVolumeDistribution RenderRayFourier(
         // Calculate intersection with the primitive
         float2 lr; float Dist;
         bool bIntersected = RayIntersect(
-            RayOrigin, RayDirection, Primitive, ToObjectTransform,
+            RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
             lr, Dist
         );
 
@@ -673,7 +673,7 @@ float ComputeTransmittance (float Depth, float Density) {
 
 RayUniformVolumeDistribution RenderRay(
     float3 RayOrigin,
-    float3 RayDirection,
+    float3 UnnormalizedRayDirection,
     uint TileInstanceOffset,
     uint NumTilePrimitiveInstances,
     float MaxLinearDepth,
@@ -701,6 +701,7 @@ RayUniformVolumeDistribution RenderRay(
     RepresentativeDepth = 0.f;
     SamplePdf = 0;
     SampleTransmittance = 1;
+    float RayLenghtCorrection = length(UnnormalizedRayDirection);
 
     bool bSelected = false;
 
@@ -715,12 +716,14 @@ RayUniformVolumeDistribution RenderRay(
         // Calculate intersection with the primitive
         float2 lr; float Dist;
         bool bIntersected = RayIntersect(
-            RayOrigin, RayDirection, Primitive, ToObjectTransform,
+            RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
             lr, Dist
         );
         float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
         // Clamp volumes to the nearest seen surface
         lr.y = min(lr.y, MaxLinearDepth);
+        // Transform depth to actual ray length
+        lr *= RayLenghtCorrection;
         float u = rng.rand();
         if(bIntersected && lr.y > max(0.f, lr.x)) {
             TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Opacity);
@@ -767,11 +770,13 @@ RayUniformVolumeDistribution RenderRay(
             // Calculate intersection with the primitive
             float2 lr; float Dist;
             bool bIntersected = RayIntersect(
-                RayOrigin, RayDirection, Primitive, ToObjectTransform,
+                RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
                 lr, Dist
             );
             // Clamp volumes to the nearest seen surface
             lr.y = min(lr.y, MaxLinearDepth);
+            // Transform depth to actual ray length
+            lr *= RayLenghtCorrection;
             if(bIntersected && lr.y > max(0.f, lr.x)) {
                 float TMax = min(SampleDepth, lr.y);
                 float TMin = max(lr.x, 0.f);
@@ -827,7 +832,7 @@ void DrawVolumePrimitives (
         if (all(PixelIndex < C.FilmDimensions)) {
             float3 RayOrigin = C.Position;
             float2 UV = ScreenCoordsToUV(C, PixelIndex);
-            float3 RayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(UV));
+            float3 UnnormalizedRayDirection = NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(UV));
             float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float Cdf = 1.f, Attenuation = 1.f;
@@ -836,9 +841,10 @@ void DrawVolumePrimitives (
             float SampleDepth = 0, SamplePdf = 0;
             float TotalTransmittance = 1.f;
             Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
+            float CorrectionFactor = length(UnnormalizedRayDirection);
             if(UB.EnableFourier) {
                 RayFourierVolumeDistribution Rendered = RenderRayFourier(
-                    RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
+                    RayOrigin, UnnormalizedRayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
                     rng,
                     TotalTransmittance, SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
@@ -854,7 +860,7 @@ void DrawVolumePrimitives (
                 RWVolumeMinMax[PixelIndex] = float2(Rendered.Density.l, Rendered.Density.r);
                 RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
                 RWVolumeSampleColor[PixelIndex] = float4(SampleColor, 1);
-                RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth;
+                RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth / CorrectionFactor;
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
                 RWTransmittance[PixelIndex] = TotalTransmittance;
                 // Mark the pixel as invalid for SSRT if it overlaps with a volume
@@ -871,7 +877,7 @@ void DrawVolumePrimitives (
             } else {
                 float RepresentativeDepth = 0.f;
                 RayUniformVolumeDistribution Rendered = RenderRay(
-                    RayOrigin, RayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
+                    RayOrigin, UnnormalizedRayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
                     rng,
                     TotalTransmittance, SampleTransmittance, SampleColor, SampleDepth, SamplePdf,
@@ -881,7 +887,7 @@ void DrawVolumePrimitives (
                 RWVolumeMinMax[PixelIndex] = float2(Rendered.l, Rendered.r);
                 RWVolumeCdfAttenuation[PixelIndex] = float2(Cdf, Attenuation);
                 RWVolumeSampleColor[PixelIndex] = float4(SampleColor, 1);
-                RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth;
+                RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth / CorrectionFactor;
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
                 RWVolumeRepresentativeDepthAndVariation[PixelIndex] = float2(RepresentativeDepth, Rendered.r - Rendered.l);
                 RWTransmittance[PixelIndex] = TotalTransmittance;

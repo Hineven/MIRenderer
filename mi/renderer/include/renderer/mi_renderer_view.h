@@ -137,6 +137,8 @@ struct RendererView {
     TRef<RDGTexture> radiance_;
     // Shaded radiance without emission, created & written by final composition, used for lighting reuse
     TRef<RDGTexture> shaded_radiance_no_emission_;
+    // Shaded volume radiance, created & written by final composition, used for lighting reuse
+    TRef<RDGTexture> shaded_volume_radiance_;
 
     // Debug output, can be written to for debug purposes
     // This is tone mapped the same as radiance_

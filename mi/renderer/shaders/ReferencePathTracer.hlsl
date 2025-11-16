@@ -44,7 +44,7 @@ RaytracingAccelerationStructure TLAS;
 struct ReferencePathTracerUB {
     uint FrameIndex;
     uint EnableAccumulation;
-    uint Padding0;
+    uint MaxNumBounces;
     uint Padding1;
 };
 
@@ -138,7 +138,7 @@ void ReferencePathTracerRaygen() {
     float  VolumeSampledRayDistance = Infinity;
     float3 VolumeSampledColor = 0;
 
-    uint MaxNumBounces = 16;
+    uint MaxNumBounces = UB.MaxNumBounces;
     
     while(BounceIndex < MaxNumBounces) {
         RayPayload Payload = (RayPayload)0;

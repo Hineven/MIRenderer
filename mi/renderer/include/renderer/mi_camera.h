@@ -18,7 +18,14 @@ struct Camera {
     float near_plane {0.1f};
     float far_plane {1000.f};
 
-
+    FORCEINLINE bool operator == (const Camera & other) const {
+        return position == other.position &&
+               direction == other.direction &&
+               up == other.up &&
+               fov_Y == other.fov_Y &&
+               near_plane == other.near_plane &&
+               far_plane == other.far_plane;
+    }
 
     FORCEINLINE glm::vec3 GetRight () const {
         return glm::normalize(glm::cross(direction, up));

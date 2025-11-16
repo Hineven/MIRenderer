@@ -279,6 +279,13 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_radiance_->SetExport();
     prev_shaded_radiance_no_emission_ = view->shaded_radiance_no_emission_;
     prev_shaded_radiance_no_emission_->SetExport();
+    prev_shaded_volume_radiance_ = view->shaded_volume_radiance_;
+    prev_shaded_volume_radiance_->SetExport();
+
+    prev_volume_min_max_ = view->volume_primitives_->G_volume_min_max_;
+    prev_volume_min_max_->SetExport();
+    prev_volume_density_ = view->volume_primitives_->G_volume_density_;
+    prev_volume_density_->SetExport();
 
     prev_scene_ = view->scene_;
 
@@ -370,6 +377,11 @@ void RendererView::InitFrame () {
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT
     );
     shaded_radiance_no_emission_->SetName("Shaded Radiance No Emission");
+
+    shaded_volume_radiance_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT
+    );
+    shaded_volume_radiance_->SetName("Shaded Volume Radiance");
 
     debug_output_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kRenderTarget

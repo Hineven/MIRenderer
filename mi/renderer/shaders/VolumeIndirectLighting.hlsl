@@ -86,6 +86,8 @@ RWStructuredBuffer<uint>  RWTileVolumeProbeIndexListAllocator; // Used to alloca
 RWStructuredBuffer<uint>  RWTileVolumeProbeReprojectionEntryAllocator;
 RWStructuredBuffer<uint3> RWTileVolumeProbeReprojectionEntryBuffer;
 
+RWStructuredBuffer<uint>  RWTileSpawnedVolumeProbeBuffer; // Post-injection for per-tile newly spawned probes this frame
+
 // Spawned rays
 RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayOffsetsBuffer;
 RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayCountsBuffer;
@@ -124,6 +126,10 @@ Texture2D<float4> PreviousShadedDiffuseRadianceWithoutEmission;
 Texture2D<float>  G_VolumeSampleDepth;
 Texture2D<float4> G_VolumeSampleColor;
 
+Texture2D<float2> PreviousVolumeMinMaxTexture;
+Texture2D<float>  PreviousVolumeDensityTexture;
+Texture2D<float4> PreviousVolumeRadianceTexture;
+
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeIndirectLightingTexture;
 
@@ -142,7 +148,7 @@ struct VolumeDiffuseIndirectLightingUB {
     
     uint FrameIndex;
     uint ProbeUpdateRaysNoImportanceSampling;
-    uint Unused2;
+    uint ScreenReuseNoDepthTesting;
     uint ProbeUpdateRaySampleSeed;
 
     uint ProbeUpdateRaysNoAdaptiveAllocation;
@@ -168,10 +174,11 @@ void ClearCounters () {
 // Clear per-tile list lengths and offsets to avoid reading garbage from previous frames
 [numthreads(WAVE_SIZE, 1, 1)]
 void ClearTileVolumeProbeIndexLists (uint DispatchID : SV_DispatchThreadID) {
-    uint idx = DispatchID;
-    if (idx >= UB.TileCount) return;
-    RWTileVolumeProbeIndexListLengthsBuffer[idx] = 0;
-    RWTileVolumeProbeIndexListOffsetsBuffer[idx] = 0;
+    uint TileIndex1 = DispatchID;
+    if (TileIndex1 >= UB.TileCount) return;
+    RWTileVolumeProbeIndexListLengthsBuffer[TileIndex1] = 0;
+    RWTileVolumeProbeIndexListOffsetsBuffer[TileIndex1] = 0;
+    RWTileSpawnedVolumeProbeBuffer[TileIndex1] = INVALID_UINT;
 }
 
 // Called when application requests a history reset. Drop all history probes
@@ -245,7 +252,10 @@ bool ShouldSpawnProbe (uint2 TileIndex) {
 }
 
 uint2 GetProbeSpawnSubTileJitter () {
-    return min(CalculateHaltonSequence(UB.ProbeSpawnSubTileJitterSeed) * TILE_SIZE, TILE_SIZE - 1.0f);
+    return min(
+        uint2(CalculateHaltonSequence(UB.ProbeSpawnSubTileJitterSeed) * TILE_SIZE),
+        TILE_SIZE - 1
+    );
 }
 
 // Spawn volume probes
@@ -334,7 +344,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     for(int dx = -1; dx <= 1; dx++) {
         for(int dy = -1; dy <= 1; dy++) {
             int2 NeighborTileIndex = int2(TileIndex) + int2(dx, dy);
-            if(any(NeighborTileIndex < 0) || any(NeighborTileIndex >= UB.TileDimensions)) continue ;
+            if(any(NeighborTileIndex < 0) || any(NeighborTileIndex >= int2(UB.TileDimensions))) continue ;
             uint NeighborTileIndex1 = NeighborTileIndex.x + NeighborTileIndex.y * UB.TileDimensions.x;
             uint TileInjectedListLength = RWTileVolumeProbeIndexListLengthsBuffer[NeighborTileIndex1];
             uint TileInjectedListOffset = RWTileVolumeProbeIndexListOffsetsBuffer[NeighborTileIndex1];
@@ -538,7 +548,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
     if(RayIndex >= RWVolumeProbeUpdateRayAllocator[0]) return ;
     float3 RayOrigin = RWVolumeProbeUpdateRayOriginBuffer[RayIndex];
     float3 RayDirection = RWVolumeProbeUpdateRayDirectionBuffer[RayIndex];
-    uint PackedRayState = RWVolumeProbeUpdateRayStateBuffer[RayIndex];
+    uint  PackedRayState = RWVolumeProbeUpdateRayStateBuffer[RayIndex];
     bool bHit;
     float RayHitT = UnpackRayToTraceState(PackedRayState, bHit);
 	CameraParameters C = GetActiveCamera();
@@ -554,24 +564,60 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
 			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
 			uint2  PackedHitResult = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
-			float3 HitNormal     = UnpackNormal(PackedHitResult.x);
-			float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
-			if(HistoryReversedZDepth > 0) {
-				float  HistoryDepth  = ReversedZDepthToLinearDepth(C, HistoryReversedZDepth);
-				float  PreviousDepth = ZDepthToLinearDepth(C, PreviousHomogeneous.z);
-				bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
-				bool   bDepthVisible  = 
-							abs(HistoryDepth - PreviousDepth) 
-							/ max(PreviousDepth, HistoryDepth) < 5e-2f;
-				if(bNormalVisible && bDepthVisible) {
-					// The irradiance is directly attained from reprojected history radiance
-					// The radiance has been multiplied by BRDF. So no need to do shading again.
-					float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
+            CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedHitResult.y);
+            if(MCached.bIsSurface) {
+                // Surface hit, resolve from screen space history
+			    float3 HitNormal      = UnpackNormal(PackedHitResult.x);
+                bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
+                float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
+                if(HistoryReversedZDepth > 0) {
+                    float  HistoryDepth  = ReversedZDepthToLinearDepth(C, HistoryReversedZDepth);
+                    float  PreviousDepth = ZDepthToLinearDepth(C, PreviousHomogeneous.z);
+                    bool   bDepthVisible  = 
+                                abs(HistoryDepth - PreviousDepth) 
+                                / max(PreviousDepth, HistoryDepth) < 5e-2f;
+                    if(bNormalVisible && bDepthVisible) {
+                        // The irradiance is directly attained from reprojected history radiance
+                        // The radiance has been multiplied by BRDF. So no need to do shading again.
+                        float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
+                        bBypass = true;
+                        uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
+                        RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+                    }
+                }
+            } else {
+                // Volume hit, resolve from volume history texture
+                float2 HistoryMinMax = PreviousVolumeMinMaxTexture.Load(int3(HistoryScreenCoords, 0)).xy;
+                // Relax min-max ranges a bit to avoid precision issues (fp16)
+                HistoryMinMax.x = max(0, HistoryMinMax.x * 0.999f);
+                HistoryMinMax.y = HistoryMinMax.y * 1.001f;
+                CameraParameters PrevC = GetPreviousCamera();
+                float  PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
+                float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
+                float  PreviousDepth    = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
+                float  PreviousDistance = PreviousDepth * PrevCosineFactor;
+                // FIXME this introduced very prominent artifacts!!!!
+                bool bDepthVisible = 
+                    PreviousDistance >= HistoryMinMax.x &&
+                    PreviousDistance <= HistoryMinMax.y;
+                if(UB.ScreenReuseNoDepthTesting || bDepthVisible) {
+                    // Approximate the volume radiance from the volume history texture
+                    // Assume that the volume radiance decreases exponentially with the depth
+                    // and the overall integral equals to volume radiance
+                    float4 HistoryVolumeRadiance = PreviousVolumeRadianceTexture.SampleLevel(PointEdgeSampler,
+                                                HistoryScreenPosition * C.InvFilmDimensions, 0);
+                    float  HistoryVolumeDensity  = PreviousVolumeDensityTexture.Load(int3(HistoryScreenCoords, 0)).x;
+                    float  MediaTraverseDistance = abs(PreviousDistance - HistoryMinMax.x);
+                    float  MediaLength = (HistoryMinMax.y - HistoryMinMax.x);
+                    // TODO better approximation
+                    float  NormalizationFactor = 1.f;//2.f * HistoryVolumeDensity / max(1e-2f, (1.f - exp(-2 * HistoryVolumeDensity * MediaLength)));
+                    float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor;// * exp(-HistoryVolumeDensity * RayHitT);
+
                     bBypass = true;
-                    uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
+                    uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                     RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
-				}
-			}
+                }
+            }
 		}
 	}
 	if(!bBypass) {
@@ -971,8 +1017,10 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
     }
 
     if(WaveIsFirstLane()) {
-        // Finally, update the header for indexing the newly spawned probe
+        // Finally, update the header for the newly spawned probe
         RWVolumeProbeHeaderTexture[OverwriteProbeIndex] = PackVolumeProbeHeader(Header);
+        // Post-injection for indexing the new probe in this frame
+        RWTileSpawnedVolumeProbeBuffer[TileIndex1] = OverwriteProbeIndex1;
     }
 }
 
@@ -1120,11 +1168,9 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
     float3 ViewDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
     float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), SampleDepth);
     // FIXME
-    why so large?
+    // why so large???
     float  SearchSize = SampleDepth * 32//UB.ProbeReprojectionSearchSize
             * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
-
-    uint  ProbeIndex = INVALID_UINT;
     uint2 TileIndex = PixelCoords / TILE_SIZE;
     float  SumProbeWeights = 0;
     float3 SumIrradiance = 0;
@@ -1141,6 +1187,27 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
             uint SearchTileIndex1 = uint(
                 SearchTileIndex.x + SearchTileIndex.y * UB.TileDimensions.x
             );
+            // Check for newly spawned probe first
+            if(RWTileSpawnedVolumeProbeBuffer[SearchTileIndex1] != INVALID_UINT) {
+                uint SpawnedProbeIndex1 = RWTileSpawnedVolumeProbeBuffer[SearchTileIndex1];
+                uint2 SpawnedProbeIndex = uint2(
+                    SpawnedProbeIndex1 % UB.TileDimensions.x,
+                    SpawnedProbeIndex1 / UB.TileDimensions.x
+                );
+                VolumeProbeHeader SpawnedProbeHeader = 
+                    UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[SpawnedProbeIndex]);
+                if(SpawnedProbeHeader.bActive) {
+                    float3 ProbeWorldPosition = SpawnedProbeHeader.WorldPosition;
+                    float  Distance = length(ProbeWorldPosition - WorldPosition);
+                    if(Distance < SearchSize) {
+                        float ProbeWeight = saturate(1.0f - Distance / SearchSize);
+                        SumProbeWeights += ProbeWeight;
+                        float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, SpawnedProbeIndex);
+                        SumIrradiance += ProbeWeight * Irradiance * SampleColor;
+                    }
+                }
+            }
+            // Check for previous probes (injected to the tile-probe index)
             uint NumProbesInTile     = RWTileVolumeProbeIndexListLengthsBuffer[SearchTileIndex1];
             uint TileProbeListOffset = RWTileVolumeProbeIndexListOffsetsBuffer[SearchTileIndex1];
             for(uint Rank = 0; Rank < NumProbesInTile; Rank ++) {
@@ -1149,7 +1216,8 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                     CurrentProbeIndex1 % UB.TileDimensions.x,
                     CurrentProbeIndex1 / UB.TileDimensions.x
                 );
-                VolumeProbeHeader CurrentProbeHeader = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[CurrentProbeIndex]);
+                VolumeProbeHeader CurrentProbeHeader = 
+                    UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[CurrentProbeIndex]);
                 if(CurrentProbeHeader.bActive) {
                     float3 ProbeWorldPosition = CurrentProbeHeader.WorldPosition;
                     float  Distance = length(ProbeWorldPosition - WorldPosition);

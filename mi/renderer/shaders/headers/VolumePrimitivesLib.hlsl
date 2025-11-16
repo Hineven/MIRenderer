@@ -26,7 +26,7 @@ bool RayIntersect(float3 Origin, float3 Direction, VolumePrimitive Primitive, fl
     intersection_t = float2(t1, t2);
     float3 Ortho = cross(LocalOrigin, LocalDirection);
     float3 ProjectedAxis = normalize(cross(LocalDirection, Ortho));
-    // Minimum distance of line-to-origin
+    // Minimum distance of line-to-origin (normalized to unit sphere)
     std_dist_t = abs(dot(ProjectedAxis, LocalOrigin));
     return true;
 }
