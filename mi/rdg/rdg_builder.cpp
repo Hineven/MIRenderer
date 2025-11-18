@@ -163,6 +163,9 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
         edges_rev.emplace_back(from, to, pass_heads_rev[from]);
         pass_heads_rev[from] = edge_index_rev;
     };
+#ifndef NDEBUG
+    static std::set<std::string> warned_reading_before_writing;
+#endif
     for(auto & pass : passes_) {
         // Debug validation: reading-before-writing within this RDG execution is illegal (unless imported/exported)
 #ifndef NDEBUG
@@ -174,16 +177,20 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
          for (auto * tex : pass->compiled_.in_textures) {
              if (!(tex->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
                  if (!has_prior_writer_texture[tex] && !current_written_textures.count(tex)) {
-                     MI_WARN("RDG Warning: Pass '{}' reads texture '{}' before any prior pass writes it (illegal per RDG ordering contract).",
-                         pass->GetName(), tex->GetName());
+                     if (warned_reading_before_writing.insert(pass->GetName() + "|" + tex->GetName()).second) {
+                         MI_WARN("RDG Warning (once): Pass '{}' reads texture '{}' before any prior pass writes it (illegal per RDG ordering contract).",
+                             pass->GetName(), tex->GetName());
+                     }
                  }
              }
          }
          for (auto * buf : pass->compiled_.in_buffers) {
              if (!(buf->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
                  if (!has_prior_writer_buffer[buf] && !current_written_buffers.count(buf)) {
-                     MI_WARN("RDG Warning: Pass '{}' reads buffer '{}' before any prior pass writes it (illegal per RDG ordering contract).",
-                         pass->GetName(), buf->GetName());
+                     if (warned_reading_before_writing.insert(pass->GetName() + "|" + buf->GetName()).second) {
+                         MI_WARN("RDG Warning (once): Pass '{}' reads buffer '{}' before any prior pass writes it (illegal per RDG ordering contract).",
+                             pass->GetName(), buf->GetName());
+                     }
                  }
              }
          }

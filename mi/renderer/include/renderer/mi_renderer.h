@@ -44,8 +44,10 @@ public:
         return device_allocator_.Raw();
     }
 
-    // 4 million at most
+    // at most 4M
     constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
+    // at most 16M
+    constexpr static uint32_t kMaxNumVolumePrimitiveInstances = 16 * 1024 * 1024;
 
     // Default shadow map resolution
     constexpr static uint32_t kDefaultShadowMapResolution = 1024;

@@ -394,7 +394,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     GroupMemoryBarrierWithGroupSync();
     SumWeightedRadiance = WaveActiveSum(SumWeightedRadiance);
     SumReusedWeight = WaveActiveSum(SumReusedWeight);
-    float3 BackupRadiance = SumWeightedRadiance / max(1.f / FOUR_PI, SumReusedWeight);
+    float3 BackupRadiance = SumWeightedRadiance / max(1e-3f, SumReusedWeight);
 
     // Sample rays
     // We assume that ray count is always a multiple of WAVE_SIZE
@@ -440,15 +440,6 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
 #endif
     // Allocate a number of rays to sample the probe octahedron
     int NumProbeOctahedronSamples = TILE_TEXEL_COUNT;
-    // Round to a multiple of WAVE_SIZE with russian roulette for maximum wave coherence & occupancy
-    // {
-    //     float P = saturate(1 - float(ReusedProbeTexelCount) / 128);
-    //     // For the case that we have no history for reuse, double the number of samples
-    //     bool FirstFrame = (UB.ResetCache != 0) || (UB.FrameIndex == 0); // In case we're just starting to render the cache, do not do adaptive balancing
-    //     if(rng.rand() < P && UB.ProbeUpdateRaysNoAdaptiveAllocation == 0 && !FirstFrame) {
-    //         NumProbeOctahedronSamples += TILE_TEXEL_COUNT;
-    //     }
-    // }
     NumProbeOctahedronSamples = min(NumProbeOctahedronSamples, MAX_NUM_UPDATE_RAYS_PER_PROBE);
     uint UpdateRayIndexBase = 0;
     if(WaveIsFirstLane()) {
@@ -994,8 +985,8 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         uint2 SrcAtlasTexelCoords = TileIndex * TILE_SIZE + TexelCoords;
         uint2 DstAtlasTexelCoords = OverwriteProbeIndex * TILE_SIZE + TexelCoords;
         uint4 NewRadianceQuantized = SharedProbeBlendedRadiance[TexelIndex];
-        uint   SampleWeightSum = SharedProbeSampleWeightSums[TexelIndex];
-        float4 NewRadiance = RecoverRadiance(NewRadianceQuantized) / float(max(SampleWeightSum, 1));
+        float SampleWeightSum = RecoverWeight(SharedProbeSampleWeightSums[TexelIndex]);
+        float4 NewRadiance = RecoverRadiance(NewRadianceQuantized) / max(SampleWeightSum, 1e-3f);
         if(SampleWeightSum == 0) {
             NewRadiance = BackupRayResult;
         }
@@ -1007,9 +998,10 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             float lumaB = RadianceToLuminance(ReconstructedRadiance.xyz);
 
             // Unbiased blending 
+            // FIXME: < 1 blending overdarkens the result!!!! why?
             float temporal_blend = 0.15f;
             
-            NewRadiance = lerp(NewRadiance, ReconstructedRadiance, temporal_blend);
+            NewRadiance = lerp(ReconstructedRadiance, NewRadiance, temporal_blend);
         }
 
         // Update foreground radiance weight atlas
@@ -1118,11 +1110,6 @@ void ComputeVolumeProbeSHCoefficients (uint2 GroupID : SV_GroupID, uint LocalID 
         SumAreaCorrectionFactor += AreaCorrectionFactor;
     }
     SumAreaCorrectionFactor = WaveActiveSum(SumAreaCorrectionFactor);
-    if(GroupID.x == 0 && GroupID.y == 0) {
-        if(WaveIsFirstLane()) {
-            printf("%f\n", SumAreaCorrectionFactor);
-        }
-    }
     // Write SH coefficients
     for(uint i = 0; i<9; i++) {
         // Multiply by FOUR_PI to monte-carlo integrate to retrieve the coefficients
@@ -1170,9 +1157,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
     float2 UV = (PixelCoords + 0.5f) * C.InvFilmDimensions;
     float3 ViewDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
     float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), SampleDepth);
-    // FIXME
-    // why so large???
-    float  SearchSize = SampleDepth * 32//UB.ProbeReprojectionSearchSize
+    float  SearchSize = SampleDepth * UB.ProbeReprojectionSearchSize
             * max(C.FilmPixelWorldSize.x, C.FilmPixelWorldSize.y);
     uint2 TileIndex = PixelCoords / TILE_SIZE;
     float  SumProbeWeights = 0;

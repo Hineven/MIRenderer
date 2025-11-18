@@ -131,7 +131,7 @@ void CollectVolumePrimitives (
     float3 NDCCenter = NDCCenterW.xyz / NDCCenterW.w;
     // Check if the center is within the view frustum
     uint bIsActive = 1;
-    if (NDCCenterW.w < 0 || any(NDCCenter.xy < -1.3) || any(NDCCenter.xy > 1.3) || NDCCenter.z < 0.01 || NDCCenter.z > 1) {
+    if (NDCCenterW.w < 0 || any(NDCCenter.xy < -1.05) || any(NDCCenter.xy > 1.05) || NDCCenter.z < 0.01 || NDCCenter.z > 1) {
         // Outside of the view frustum, skip this primitive
         bIsActive = 0;
     }
@@ -265,12 +265,16 @@ void ProjectVolumePrimitives (
     CameraParameters C = GetActiveCamera();
     float4 ClipPosW; uint QuantizedDepth;
 
-    float3 Covariance2D = GetCovariance2DMatrix(RenderableTransformBuffer[RenderableIndex], Primitive, ClipPosW, QuantizedDepth, DispatchID);
+    float3 Covariance2D = GetCovariance2DMatrix(
+        RenderableTransformBuffer[RenderableIndex], Primitive, ClipPosW, QuantizedDepth, DispatchID
+    );
 
     // 3. Determine screen space bounding box of the projected 2D ellipse
     // For uniform distributions, K_SQ_ELLIPSE_BOUNDARY == 1
     float RadiusXApproax = sqrt(K_SQ_ELLIPSE_BOUNDARY * max(0.0f, Covariance2D.x));
     float RadiusYApproax = sqrt(K_SQ_ELLIPSE_BOUNDARY * max(0.0f, Covariance2D.z));
+    RadiusXApproax = clamp(RadiusXApproax, 0.f, float(C.FilmDimensions.x));
+    RadiusYApproax = clamp(RadiusYApproax, 0.f, float(C.FilmDimensions.y));
 
     float ndc_center_x = ClipPosW.x / ClipPosW.w;
     float ndc_center_y = ClipPosW.y / ClipPosW.w;
@@ -279,21 +283,19 @@ void ProjectVolumePrimitives (
     float screen_center_y = ((1.0f - ndc_center_y) * 0.5f) * float(C.FilmDimensions.y);
     float2 ellipse_screen_center = float2(screen_center_x, screen_center_y);
 
-    // if(DispatchID == 0) {
-    //     printf("Approax: %f %f\n", RadiusXApproax, RadiusYApproax);
-    // }
-
-    float min_sx_bb = screen_center_x - RadiusXApproax;
-    float max_sx_bb = screen_center_x + RadiusXApproax;
-    float min_sy_bb = screen_center_y - RadiusYApproax;
-    float max_sy_bb = screen_center_y + RadiusYApproax;
+    float MinScreenSpaceX = screen_center_x - RadiusXApproax;
+    float MaxScreenSpaceX = screen_center_x + RadiusXApproax;
+    float MinScreenSpaceY = screen_center_y - RadiusYApproax;
+    float MaxScreenSpaceY = screen_center_y + RadiusYApproax;
 
     // 4. Determine overlapping tiles based on the bounding box
-
-    int tile_min_x = clamp((int)floor(max(0.0f, min_sx_bb) / 16.0f), 0, UB.TileDimensions.x - 1);
-    int tile_max_x = clamp((int)floor(min(float(C.FilmDimensions.x) - 1.0f, max_sx_bb) / 16.0f), 0, UB.TileDimensions.x - 1);
-    int tile_min_y = clamp((int)floor(max(0.0f, min_sy_bb) / 16.0f), 0, UB.TileDimensions.y - 1);
-    int tile_max_y = clamp((int)floor(min(float(C.FilmDimensions.y) - 1.0f, max_sy_bb) / 16.0f), 0, UB.TileDimensions.y - 1);
+    // 25.11.18: Be careful when using uint and int together!
+    // int tile_min_x = clamp((int)floor(MinScreenSpaceX / 16.f), 0, UB.TileDimensions.x - 1); <- this is incorrect!
+    // (dxc: sure, I'll silently upcasting to uint for all parameters. That was totally what the programmer intended to do...)
+    int tile_min_x = clamp((int)floor(MinScreenSpaceX / 16.f), 0, (int)UB.TileDimensions.x - 1);
+    int tile_max_x = clamp((int)floor(MaxScreenSpaceX / 16.f), 0, (int)UB.TileDimensions.x - 1);
+    int tile_min_y = clamp((int)floor(MinScreenSpaceY / 16.f), 0, (int)UB.TileDimensions.y - 1);
+    int tile_max_y = clamp((int)floor(MaxScreenSpaceY / 16.f), 0, (int)UB.TileDimensions.y - 1);
 
     if (LocalID == 0) {
         SharedNumSortKeysCompacted = 0;
@@ -301,11 +303,10 @@ void ProjectVolumePrimitives (
 
     GroupMemoryBarrierWithGroupSync();
 
-    int coarse_allocation = (tile_max_x - tile_min_x + 1) * (tile_max_y - tile_min_y + 1);
-
+    uint coarse_allocation = (tile_max_x - tile_min_x + 1) * (tile_max_y - tile_min_y + 1);
 
     uint GroupWriteOffset = 0;
-    InterlockedAdd(SharedNumSortKeysCompacted, (uint)coarse_allocation, GroupWriteOffset);
+    InterlockedAdd(SharedNumSortKeysCompacted, coarse_allocation, GroupWriteOffset);
     GroupMemoryBarrierWithGroupSync();
     uint WriteOffset = 0;
     if (LocalID == 0) {
@@ -324,16 +325,23 @@ void ProjectVolumePrimitives (
         {
             uint tile_id = (uint)tx + (uint)ty * UB.TileDimensions.x;
             if (tile_id >= (1u << 13)) continue;
-
+            // TODO precise intersection test
             uint SortKey = PackSortKey(tile_id, QuantizedDepth);
             // Write directly, bypass the cache for compaction.
             uint WriteIndex = WriteOffset + NumSortKeysCompacted;
             if (WriteIndex < UB.MaxNumPrimitiveInstances) {
                 RWPrimitiveInstanceListKeyBuffer[WriteIndex] = SortKey;
-                RWPrimitiveInstanceListBuffer[WriteIndex] = RenderablePrimitiveIndex;
-                NumSortKeysCompacted++;
+                RWPrimitiveInstanceListBuffer[WriteIndex]    = RenderablePrimitiveIndex;
             }
+            NumSortKeysCompacted++;
         }
+    }
+}
+
+[numthreads(1, 1, 1)]
+void ClampPrimitiveInstanceCount() {
+    if (RWPrimitiveInstanceCount[0] > UB.MaxNumPrimitiveInstances) {
+        RWPrimitiveInstanceCount[0] = UB.MaxNumPrimitiveInstances;
     }
 }
 
@@ -344,17 +352,16 @@ void CollectTileInstanceOffsets(
     if (DispatchID >= PrimitiveInstanceCount[0]) {
         return; // No active instances to process
     }
-
     // Each thread processes one active primitive sort key
-    uint sort_key = PrimitiveInstanceListKeySortedBuffer[DispatchID];
-    uint prev_sort_key = 0;
-    if (DispatchID > 0) prev_sort_key = PrimitiveInstanceListKeySortedBuffer[DispatchID - 1];
-    else prev_sort_key = 0xffffffff; // Use a sentinel value for the first element
-    uint current_tile = 0, prev_tile = 0, current_quant_depth = 0, prev_quant_depth = 0;
-    UnpackSortKey(sort_key, current_tile, current_quant_depth);
-    UnpackSortKey(prev_sort_key, prev_tile, prev_quant_depth);
-    if (current_tile != prev_tile) {
-        RWTileInstanceOffsetBuffer[current_tile] = DispatchID;
+    uint SortKey = PrimitiveInstanceListKeySortedBuffer[DispatchID];
+    uint PrevSortKey = 0;
+    if (DispatchID > 0) PrevSortKey = PrimitiveInstanceListKeySortedBuffer[DispatchID - 1];
+    else PrevSortKey = 0xffffffff; // Use a sentinel value for the first element
+    uint CurrentTile = 0, PrevTile = 0, CurrentQuantDepth = 0, PrevQuantDepth = 0;
+    UnpackSortKey(SortKey, CurrentTile, CurrentQuantDepth);
+    UnpackSortKey(PrevSortKey, PrevTile, PrevQuantDepth);
+    if (CurrentTile != PrevTile) {
+        RWTileInstanceOffsetBuffer[CurrentTile] = DispatchID;
     }
 }
 
@@ -842,7 +849,8 @@ void DrawVolumePrimitives (
             float TotalTransmittance = 1.f;
             Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + UB.FrameIndex);
             float CorrectionFactor = length(UnnormalizedRayDirection);
-            if(UB.EnableFourier) {
+#ifdef ENABLE_FOURIER_VOLUME_RENDERING
+            {
                 RayFourierVolumeDistribution Rendered = RenderRayFourier(
                     RayOrigin, UnnormalizedRayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
                     LinearDepth,
@@ -874,7 +882,9 @@ void DrawVolumePrimitives (
                 }
                 if(Density_valid == 1) OldFlags |= FLAG_BITS_TEXTURE_INVALID_FOR_SSRT;
                 RWFlags[PixelIndex] = OldFlags;
-            } else {
+            }
+#else
+            {
                 float RepresentativeDepth = 0.f;
                 RayUniformVolumeDistribution Rendered = RenderRay(
                     RayOrigin, UnnormalizedRayDirection, TileInstanceOffset, NumTilePrimitiveInstances,
@@ -896,6 +906,7 @@ void DrawVolumePrimitives (
                 if(Rendered.Density > 0.f) OldFlags |= FLAG_BITS_TEXTURE_INVALID_FOR_SSRT;
                 RWFlags[PixelIndex] = OldFlags;
             }
+#endif
         }
     }
 }

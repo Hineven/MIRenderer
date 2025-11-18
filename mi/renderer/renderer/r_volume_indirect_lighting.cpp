@@ -22,7 +22,7 @@ MI_NAMESPACE_BEGIN
 static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
-    2.f
+    24.f
 );
 
 static CVar CVar_VolumeProbesRayImportanceSampling(
