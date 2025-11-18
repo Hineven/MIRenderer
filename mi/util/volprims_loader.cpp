@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <random>
 #include <happly.h>
 #include "util/volprims_loader.h"
 #include "renderer/mi_volume_primitives.h"
@@ -10,7 +11,11 @@
 MI_NAMESPACE_BEGIN
 struct PackedVolumePrimitive;
 
-bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator, TRef<VolumePrimitives> &out_volprims) {
+bool VolumePrimitivesLoader::LoadPLY(
+    const std::filesystem::path& path, [[maybe_unused]] DeviceBindlessResourceAllocator &allocator,
+    TRef<VolumePrimitives> &out_volprims,
+    float percentage
+) {
     if (path.extension() != ".ply") {
         MI_WARN("VolumePrimitivesLoader: Not a PLY file: {}", path.string());
         return false;
@@ -25,6 +30,20 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
     // No larger gaussian models is supported.
     mi_check(element.count < (1 << 24), "A PLY file with too many volume primitives is not supported: {}", path.string());
     int num_prims = (int)element.count;
+    if (num_prims <= 0) {
+        MI_WARN("VolumePrimitivesLoader: No volume primitive found in PLY file: {}", path.string());
+        return false;
+    }
+    std::vector<uint32_t> shuffle_indices (num_prims);
+    for (uint32_t i = 0; i < (uint32_t)num_prims; i++) {
+        shuffle_indices[i] = i;
+    }
+    std::shuffle(shuffle_indices.begin(), shuffle_indices.end(), std::mt19937{std::random_device{}()});
+    if (percentage < 1.0f) {
+        num_prims = std::max(static_cast<int>(num_prims * percentage), 1);
+        MI_INFO("VolumePrimitivesLoader: Loading {}% of the volume primitives, total {}.", percentage * 100.f, num_prims);
+    }
+
 
     std::vector<PackedVolumePrimitive> data;
     data.resize(num_prims);
@@ -35,7 +54,8 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
         auto y = element.getProperty<float>("y");
         auto z = element.getProperty<float>("z");
         for (int i = 0; i < num_prims; i++) {
-            data[i].Position = {x[i], y[i], z[i]};
+            auto src = shuffle_indices[i];
+            data[i].Position = {x[src], y[src], z[src]};
         }
     }
 
@@ -86,13 +106,14 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
 
         auto opacities = element.getProperty<float>("opacity");
         for (int i = 0; i < num_prims; i++) {
-            float in_opacity = opacities[i];
+            auto src = shuffle_indices[i];
+            float in_opacity = opacities[src];
             if (with_activation) {
                 // Apply sigmoid activation for 3D Gaussian data
                 in_opacity = 1.f / (1.f + exp(-in_opacity));
             }
             if (should_solidify) in_opacity *= 50;
-            glm::vec3 in_color = {color_0[i], color_1[i], color_2[i]};
+            glm::vec3 in_color = {color_0[src], color_1[src], color_2[src]};
             if (with_activation) {
                 if (scaled_sigmoid_activation) {
                     in_color = 0.03f + 0.77f / (1.f + exp(-in_color));
@@ -102,8 +123,6 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
             }
             in_color = glm::clamp(in_color, 0.f, 1.f);
             if (should_solidify) in_color = sqrt(in_color); // Empirically making albedo lighter for volume scattering
-            // FIXME
-            in_opacity = 50;
             auto opacity = glm::packHalf2x16({in_opacity, 0});
             data[i].PackedColor_OpacityLo = (glm::packUnorm4x8(
             {in_color.x, in_color.y, in_color.z, 0}
@@ -117,21 +136,20 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
             auto rotation_y = element.getProperty<float>("rot_2");
             auto rotation_z = element.getProperty<float>("rot_3");
             for (int i = 0; i < num_prims; i++) {
-                auto q = glm::vec4(rotation_x[i], rotation_y[i], rotation_z[i], rotation_w[i]);
+                auto src = shuffle_indices[i];
+                auto q = glm::vec4(rotation_x[src], rotation_y[src], rotation_z[src], rotation_w[src]);
                 if (q.w < 0) q = -q;
                 float len = sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
                 q /= len;
                 // q = {0, 0, 0, 1};
                 // Pack quaternion to 4xunorm8
                 uint32_t packed = (uint32_t)(glm::packSnorm4x8(glm::vec4(q.x, q.y, q.z, q.w)));
-                float in_opacity = opacities[i];
+                float in_opacity = opacities[src];
                 if (with_activation) {
                     // Apply sigmoid activation for 3D Gaussian data
                     in_opacity = 1.f / (1.f + exp(-in_opacity));
                 }
                 if (should_solidify) in_opacity *= 50;
-                // FIXME
-                in_opacity = 50;
                 auto opacity = glm::packHalf2x16({in_opacity, 0});
                 data[i].PackedRotation_OpacityHi = (packed & 0x00FFFFFFu) | ((opacity & 0xFF00) << 16);
             }
@@ -150,12 +168,12 @@ bool VolumePrimitivesLoader::LoadPLY(const std::filesystem::path& path, [[maybe_
         auto scale_y = element.getProperty<float>("scale_1");
         auto scale_z = element.getProperty<float>("scale_2");
         for (int i = 0; i < num_prims; i++) {
-            glm::vec3 in_scale = {scale_x[i], scale_y[i], scale_z[i]};
+            auto src = shuffle_indices[i];
+            glm::vec3 in_scale = {scale_x[src], scale_y[src], scale_z[src]};
             if (with_activation) in_scale = exp(in_scale);
-            if (should_solidify) in_scale *= 2.0f;
+            if (should_solidify) in_scale *= 2.0f * sqrt(1.f / percentage);
             // Too small scales will cause precision issues in primitive ray intersecting
-            in_scale = glm::max(in_scale, glm::vec3(0.001f));
-            // in_scale = glm::vec3(0.01f);
+            in_scale = glm::max(in_scale, glm::vec3(0.002f));
             data[i].Scales = in_scale;
         }
     }

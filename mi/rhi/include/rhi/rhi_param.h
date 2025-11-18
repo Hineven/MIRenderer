@@ -36,7 +36,7 @@ enum class RHIParamType : uint32_t {
     kRenderTarget,
     kVertexBuffer,
     kIndexBuffer,
-    kDispatchCommand,
+    kDispatchCommand, // TODO remove this
     kMax,
 };
 

@@ -121,6 +121,8 @@ RWStructuredBuffer<uint>   RWShadePointToTransmittanceRayIndexBuffer;
 
 Texture2D<float4> PreviousNormalTexture;
 Texture2D<float>  PreviousDepthTexture;
+Texture2D<float>  PreviousTransmittanceTexture;
+Texture2D<float4> PreviousVolumeColorTexture;
 Texture2D<float4> PreviousShadedDiffuseRadianceWithoutEmission;
 
 Texture2D<float>  G_VolumeSampleDepth;
@@ -602,8 +604,15 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
                     float  MediaTraverseDistance = abs(PreviousDistance - HistoryMinMax.x);
                     float  MediaLength = (HistoryMinMax.y - HistoryMinMax.x);
                     // TODO better approximation
-                    float  NormalizationFactor = 1.f;//2.f * HistoryVolumeDensity / max(1e-2f, (1.f - exp(-2 * HistoryVolumeDensity * MediaLength)));
-                    float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor;// * exp(-HistoryVolumeDensity * RayHitT);
+                    float  HistoryTransparency = PreviousTransmittanceTexture.SampleLevel(PointEdgeSampler,
+                                                    HistoryScreenPosition * C.InvFilmDimensions, 0).x;
+                    float  NormalizationFactor = 1.f / (1.f + 0.05f - HistoryTransparency);
+                    float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
+                                                    HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
+                    float  EnergyDecay = max(saturate(1.f + 0.02f - dot(HistoryVolumeColor, 0.3333f)), 0.02f);
+                    float  DepthEnergyDecayFactor = 1;//exp(-HistoryVolumeDensity * MediaTraverseDistance / EnergyDecay);
+                    float  L = MediaTraverseDistance;
+                    float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor * DepthEnergyDecayFactor * L;
 
                     bBypass = true;
                     uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);

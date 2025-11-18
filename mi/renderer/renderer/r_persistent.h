@@ -32,6 +32,8 @@ struct RendererViewPersistentData {
     TRef<RDGTexture> prev_shaded_volume_radiance_;
     TRef<RDGTexture> prev_volume_min_max_;
     TRef<RDGTexture> prev_volume_density_;
+    TRef<RDGTexture> prev_transmittance_;
+    TRef<RDGTexture> prev_volume_color_;
 
     TRef<RDGTexture> path_tracing_film_;
 

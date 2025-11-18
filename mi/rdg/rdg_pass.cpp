@@ -278,8 +278,8 @@ void RDGPass::PreCompile() {
                 RDGShaderTextureParameter texture_desc = *static_cast<RDGShaderTextureParameter const*>(field_data);
                 RDGTexture* texture = texture_desc.texture;
                 if (!texture) continue ;
-                if (RDGParameter_IsUnsetPointer(texture)) {
-                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                if (access != RHIGPUAccessFlagBits::kNone && RDGParameter_IsUnsetPointer(texture)) {
+                    MI_WARN("Pass {}: Unset resource parameter {} used in shader."
                             "If you really want it set to null in the pass, "
                             "use nullptr as initial value to disable this warning.",
                             name_, field.name);
@@ -296,8 +296,8 @@ void RDGPass::PreCompile() {
                 RDGShaderTextureParameter texture_desc = *static_cast<RDGShaderTextureParameter const*>(field_data);
                 RDGTexture* texture = texture_desc.texture;
                 if (!texture) continue;
-                if (RDGParameter_IsUnsetPointer(texture)) {
-                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                if (access != RHIGPUAccessFlagBits::kNone && RDGParameter_IsUnsetPointer(texture)) {
+                    MI_WARN("Pass {}: Unset resource parameter {} used in shader."
                             "If you really want it set to null in the pass, "
                             "use nullptr as initial value to disable this warning.",
                             name_, field.name);
@@ -310,8 +310,8 @@ void RDGPass::PreCompile() {
             } else if (field.type == RHIParamType::kStorageBuffer) { // Storage buffer
                 RDGBuffer* buffer = *static_cast<RDGBuffer* const*>(field_data);
                 if (!buffer) continue;
-                if (RDGParameter_IsUnsetPointer(buffer)) {
-                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                if (access != RHIGPUAccessFlagBits::kNone && RDGParameter_IsUnsetPointer(buffer)) {
+                    MI_WARN("Pass {}: Unset resource parameter {} used in shader."
                             "If you really want it set to null in the pass, "
                             "use nullptr as initial value to disable this warning.",
                             name_, field.name);
@@ -325,7 +325,7 @@ void RDGPass::PreCompile() {
                 RDGBuffer * buffer = *static_cast<RDGBuffer* const*>(field_data);
                 if (!buffer) continue;
                 if (RDGParameter_IsUnsetPointer(buffer)) {
-                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                    MI_WARN("Pass {}: Unset vertx/index/dispatch command {}."
                             "If you really want it set to null in the pass, "
                             "use nullptr as initial value to disable this warning.",
                             name_, field.name);

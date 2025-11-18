@@ -158,6 +158,8 @@ BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeMinMaxTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeDensityTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeRadianceTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, PreviousTransmittanceTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeColorTexture)
 
     SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
 
@@ -710,6 +712,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->PreviousVolumeMinMaxTexture = view->persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeRadianceTexture = view->persistent_data_->prev_shaded_volume_radiance_.Raw();
         params->PreviousVolumeDensityTexture = view->persistent_data_->prev_volume_density_.Raw();
+        params->PreviousTransmittanceTexture = view->persistent_data_->prev_transmittance_.Raw();
+        params->PreviousVolumeColorTexture   = view->persistent_data_->prev_volume_color_.Raw();
 
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

@@ -286,6 +286,10 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_volume_min_max_->SetExport();
     prev_volume_density_ = view->volume_primitives_->G_volume_density_;
     prev_volume_density_->SetExport();
+    prev_transmittance_ = view->G_transmittance_;
+    prev_transmittance_->SetExport();
+    prev_volume_color_ = view->volume_primitives_->G_volume_color_;
+    prev_volume_color_->SetExport();
 
     prev_scene_ = view->scene_;
 
