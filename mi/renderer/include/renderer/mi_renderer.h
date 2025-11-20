@@ -199,7 +199,7 @@ protected:
         // For normal tracing: uint2 (packed normal, packed cached material)
         // For full tracing: uint4 (full visibility)
         RDGBuffer * ray_to_trace_result,
-        uint32_t seed, bool full_visibility = false
+        uint32_t seed, VisibilityTraceType trace_type
     );
 
     struct FrameContext {

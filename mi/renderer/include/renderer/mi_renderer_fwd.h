@@ -56,5 +56,11 @@ struct ViewCommonShaderParameters;
 template<typename T>
 concept CRenderable = std::derived_from<T, Renderable>;
 
+enum class VisibilityTraceType {
+    kCoarse = 0,
+    kCoarseWithExactVolumeScattering = 1,
+    kFull = 2
+};
+
 MI_NAMESPACE_END
 #endif //MI_RENDERER_FWD_H

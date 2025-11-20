@@ -878,7 +878,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         nullptr,
         volume_probe_update_ray_result_buffer.Raw(),
         view->persistent_data_->frame_index_ + 18461821u,
-        false // Coarse visibility will be okay
+        VisibilityTraceType::kCoarseWithExactVolumeScattering
     );
 
     {

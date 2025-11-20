@@ -14,9 +14,18 @@
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
 
+#ifndef VISIBILITY_TRACE_TYPE
+#define VISIBILITY_TRACE_TYPE 1
+#endif
+
+#define VISIBILITY_TRACE_TYPE_COARSE 0
+#define VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING 1
+#define VISIBILITY_TRACE_TYPE_FULL 2
+
 struct TraceVisibilityRaysUB {
     uint Seed;
-    uint3 Padding;
+    float VolumeScatteringEventShellHitCullingBias;
+    uint2 Padding;
 };
 ConstantBuffer<TraceVisibilityRaysUB> UB;
 
@@ -38,7 +47,7 @@ StructuredBuffer<uint> RayToTraceListBuffer;
 
 StructuredBuffer<float3> RayToTraceDirectionBuffer;
 RWStructuredBuffer<uint> RWRayToTraceStateBuffer;
-#ifdef FULL_VISIBILITY
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
 RWStructuredBuffer<uint4> RWRayToTraceResultBuffer;
 #else
 RWStructuredBuffer<uint2> RWRayToTraceResultBuffer;
@@ -54,9 +63,12 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
 struct RayPayload {
-    float HitDistance; // Hit on meshes / proxy meshes, TMax for no hits
+    // Hit on meshes / proxy meshes, TMax for no hits
+    // For coarse visibility with exact volume scattering sampling, this is the hit distance for 
+    // volume hits / surface hits.
+    float HitDistance;
     float U; // Random number
-#ifdef FULL_VISIBILITY
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
     #error "not implemented yet"
 #else
     // Packed normal (x) and CachedHitMaterial (y) on the hit for coarse shading.
@@ -97,7 +109,7 @@ void TraceVisibilityRaysRaygen() {
 
     RayPayload Payload = (RayPayload)0;
     Payload.HitDistance = Ray.TMax; // Default to TMax, will only be updated in a closest hit on meshes
-#ifdef FULL_VISIBILITY
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
     #error "not implemented yet"
 #else
     Payload.PackedMaterial = uint2(INVALID_UINT, MakePackedInvalidCachedHitMaterial());
@@ -120,7 +132,7 @@ void TraceVisibilityRaysRaygen() {
     uint PackedTraceState = PackRayToTraceState(Payload.HitDistance, Payload.HitDistance < Ray.TMax);
     RWRayToTraceStateBuffer[RayIndex] = PackedTraceState;
     // Write back Radiance
-#ifdef FULL_VISIBILITY
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
 #error "not implemented yet"
 #else
     RWRayToTraceResultBuffer[RayIndex] = Payload.PackedMaterial;
@@ -173,6 +185,8 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             // Semi-transparent surfaces, continue tracing
  		    IgnoreHit();
 	    } else {
+            // There'll be systematically more 'transparent' volumes near surfaces
+            // with this tracing method. We just let that happen.
             Payload.U = Payload.U / max(ColorOpacity.a, 1e-5f);
         }
     } else {
@@ -193,6 +207,39 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             lr.y = max(lr.y, TMin);
             float Length = max(lr.y - lr.x, 0);
             float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+            
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
+// Full visibility
+            #error "not implemented yet"
+#elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
+// Coarse visibility with precise intersection sampling
+            float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
+            float Transmittance = IntegrateExponentialScatteringMedium(Opacity, Length);
+            if(FlyDist < Length) {
+                // The ray spawned a scattering event in the volume
+                Payload.U = saturate(Payload.U / max(1e-6f, 1 - Transmittance));
+                if(Payload.HitDistance > lr.x + FlyDist) {
+                    // Closer than previous hit, update the hit info
+                    Payload.HitDistance = lr.x + FlyDist;
+                    Payload.PackedMaterial.y = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, false)); 
+                }
+            } else {
+                // The ray passed through the volume
+                Payload.U = saturate(Payload.U / max(1e-6f, Transmittance));
+            }
+            bool bShouldIgnoreHit = true;
+            // Report a hit event if the closer-volume boundary is further than the current hit distance
+            // with an adaptive bias. Thus we can cull volume primitives that are not likely to generate
+            // a scattering event before the current hit distance.
+            float Bias = UB.VolumeScatteringEventShellHitCullingBias;
+            if(Payload.HitDistance + Bias < lr.x) {
+                bShouldIgnoreHit = false;
+            }
+            if(bShouldIgnoreHit) {
+                IgnoreHit();
+            }
+#else
+// Coarse visibility
             float Transmittance = exp(-Length * Opacity);
             if(Transmittance < Payload.U) {
                 // The ray is absorbed in the volume
@@ -202,6 +249,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                 Payload.U = Payload.U / max(Transmittance, 1e-5f);
                 IgnoreHit();
             }
+#endif
         }
     }
 }
@@ -215,9 +263,49 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
     Payload.HitDistance = RayTCurrent();
-#ifdef FULL_VISIBILITY
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
+// Full visibility
 #error "not implemented yet"
-#else
+#elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
+// Coarse output, but precise intersection sampling is applied in volume primitives
+    if(InstanceFlags == 0) {
+        // Mesh surface hit
+        StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+        uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+        uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+        uint GeometryIndex = GeometryMaterialPair.x;
+        uint MaterialIndex = GeometryMaterialPair.y;
+        GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+        uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+        uint VertexOffset = Geometry.VertexOffset;
+
+        uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+        uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+        uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+        DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+        DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+        DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+
+        // Interpolate the vertex
+        DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+
+        MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+        float4 ColorOpacity = float4(Material.Albedo, 1);
+        if(IsValid(Material.AlbedoMap)) {
+            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+        }
+        float3 Normal = InterpolatedVertex.Normal;
+        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
+        Normal = normalize(mul(NormalTransform, Normal));
+        Payload.PackedMaterial.x = PackNormal(Normal);
+        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(ColorOpacity.rgb, true);
+        Payload.PackedMaterial.y = PackCachedHitMaterial(CachedHitMat);
+    } else {
+        // Leaving the data coming from the any-hit shader unchanged is ok. 
+    }
+#else // VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE
+// Coarse visibility
     if(InstanceFlags == 0) {
         // Mesh surface hit
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);

@@ -12,7 +12,7 @@
 #include "rhi/rhi_as.h"
 
 MI_NAMESPACE_BEGIN
-    // DeviceVolumePrimitives implementation
+// DeviceVolumePrimitives implementation
 DeviceVolumePrimitives::DeviceVolumePrimitives(DeviceBindlessResourceAllocator * allocator) {
     index_ = allocator->AllocateVolumePrimitivesSlot();
 }
@@ -137,7 +137,8 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
             build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : RHIAccelerationStructureBuildFlagBits::kNone);
 
             RHIASGeometryFlags geometry_flags =
-                // We rely on any-hit to accumulate transmittance
+                // We rely on stochastic process on any-hits when tracing rays.
+                // Thus, duplicating any-hit invocations may cause issues.
                 RHIASGeometryFlagBits::kNoDuplicateAnyHitInvocation;
             // Spawn and upload buffers
 

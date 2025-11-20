@@ -3,6 +3,8 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include "r_hwrt.h"
+
 #include <ranges>
 #include <renderer/mi_renderer.h>
 #include <rdg/rdg_cmd.h>
@@ -17,8 +19,15 @@
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
-
+#include "renderer/mi_cvar.h"
 MI_NAMESPACE_BEGIN
+
+static CVar<float> CVar_VolumeScatteringEventShellHitCullingBias(
+    "r.hwrt.volume_scattering_event_shell_hit_culling_bias",
+    "Bias to apply when culling volume scattering events for acceleration."
+    "Smaller values trade performance with quality. Better setting this close to a x radius of volume primitives ( a > 1 ).",
+    0.05f
+);
 class TraceShadowRaysShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
@@ -320,7 +329,8 @@ class TraceVisibilityRaysShader : public RDGShader {
 public:
     struct TraceVisibilityRaysUB {
         uint32_t Seed;
-        glm::uvec3 Padding;
+        float VolumeScatteringEventShellHitCullingBias;
+        glm::uvec2 Padding;
     };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(TraceVisibilityRaysUB, UB)
@@ -354,10 +364,7 @@ public:
     DECLARE_SHADER()
 
     static std::vector<std::string> GetShaderDefaultMacros() {
-        return {
-            // TODO: move this to optional macros
-            // "FULL_VISIBILITY" // Full visibility
-        };
+        return {};
     }
 
     static std::vector<std::string> GetShaderOptionalMacros() {
@@ -365,6 +372,8 @@ public:
             "USE_SCREEN_COORDS", // This shader can be compiled with or without origins as screen coordinates
             "USE_RAY_TMAX_BUFFER", // Sometimes the shader allows extra input to specify the TMax values for rays
             "USE_RAY_LIST", // Sometimes the rays are not compact, ray indices are stored in a list to be traced
+            "VISIBILITY_TRACE_TYPE=0", // VISIBILITY_TRACE_TYPE_COARSE
+            "VISIBILITY_TRACE_TYPE=1", // VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
         };
     }
 };
@@ -379,9 +388,9 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     RDGBuffer *ray_to_trace_direction, RDGBuffer *ray_to_trace_state,
     RDGBuffer *ray_to_trace_origin_screen_coords, RDGBuffer *ray_to_trace_origin,
     RDGBuffer *ray_to_trace_tmax, RDGBuffer *ray_to_trace_result,
-    uint32_t seed, bool full_visibility
+    uint32_t seed, VisibilityTraceType trace_type
 ) {
-    if (full_visibility) {
+    if (trace_type == VisibilityTraceType::kFull) {
         mi_assert(false, "Not implemented");
     }
     mi_assert(ray_to_trace_list_length && ray_to_trace_direction && ray_to_trace_state, "Essential tracing buffers must be provided.");
@@ -394,13 +403,15 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     if (ray_to_trace_origin_screen_coords) ini.optional_macros.push_back("USE_SCREEN_COORDS");
     if (ray_to_trace_tmax) ini.optional_macros.push_back("USE_RAY_TMAX_BUFFER");
     if (ray_to_trace_list) ini.optional_macros.push_back("USE_RAY_LIST");
-    if (full_visibility) ini.optional_macros.push_back("FULL_VISIBILITY");
+    auto trace_type_value = static_cast<uint32_t>(trace_type);
+    ini.optional_macros.push_back("VISIBILITY_TRACE_TYPE=" + std::to_string(trace_type_value));
     auto shader = lib.GetShader<TraceVisibilityRaysShader>(ini);
     auto params = builder.Allocate<TraceVisibilityRaysShader::Params>();
     params->View = view->view_common_params_;
     auto UB = builder.Allocate<TraceVisibilityRaysShader::TraceVisibilityRaysUB>();
     {
         UB->Seed = seed;
+        UB->VolumeScatteringEventShellHitCullingBias = CVar_VolumeScatteringEventShellHitCullingBias.Get();
     }
     params->UB = UB;
     params->RayToTraceListLengthBuffer = ray_to_trace_list_length;

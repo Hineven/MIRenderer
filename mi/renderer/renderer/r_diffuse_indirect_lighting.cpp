@@ -1001,7 +1001,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
         nullptr,
         screen_probe_update_ray_result_buffer.Raw(),
         view->persistent_data_->frame_index_ * 718 + 21,
-        false // Coarse visibility will be okay
+        VisibilityTraceType::kCoarse // Coarse visibility will be okay
     );
 
     {
