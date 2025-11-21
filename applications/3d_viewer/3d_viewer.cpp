@@ -397,7 +397,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     first_mouse = false;
                 }
 
-                if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+                if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
                     float delta_x = static_cast<float>(mouse_x - last_mouse_x) * mouse_sensitivity;
                     float delta_y = static_cast<float>(mouse_y - last_mouse_y) * mouse_sensitivity;
 
