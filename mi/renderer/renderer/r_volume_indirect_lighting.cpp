@@ -155,6 +155,8 @@ BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeSampleDepth)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeSampleColor)
+    SHADER_RESOURCE_PARAMETER(Texture2D, VolumeMinMaxTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDensityTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeMinMaxTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeDensityTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeRadianceTexture)
@@ -709,6 +711,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
 
         params->G_VolumeSampleDepth = view->volume_primitives_->volume_sample_linear_depth_.Raw();
         params->G_VolumeSampleColor = view->volume_primitives_->volume_sample_color_.Raw();
+        params->VolumeMinMaxTexture = view->volume_primitives_->G_volume_min_max_.Raw();
+        params->VolumeDensityTexture = view->volume_primitives_->G_volume_density_.Raw();
         params->PreviousVolumeMinMaxTexture = view->persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeRadianceTexture = view->persistent_data_->prev_shaded_volume_radiance_.Raw();
         params->PreviousVolumeDensityTexture = view->persistent_data_->prev_volume_density_.Raw();

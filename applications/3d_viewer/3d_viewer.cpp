@@ -295,6 +295,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
+        // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
         auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
@@ -311,10 +312,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
         TRef<VolumePrimitives> volprims;
         VolumePrimitivesLoader::LoadPLY(
-            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
             // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
             // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
-            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
+            GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
             // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
             *resource_allocator, volprims//, 0.1f
         );
@@ -357,6 +358,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
         bool first_frame = true;
 
+        static bool dragging = false;
         // Main loop
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -397,7 +399,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     first_mouse = false;
                 }
 
-                if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+                if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !dragging) {
                     float delta_x = static_cast<float>(mouse_x - last_mouse_x) * mouse_sensitivity;
                     float delta_y = static_cast<float>(mouse_y - last_mouse_y) * mouse_sensitivity;
 
@@ -727,7 +729,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // Left mouse Drag
             static glm::vec2 drag_mouse_start_pos = {};
             static glm::vec3 drag_start_obj_pos = {};
-            static bool dragging = false;
             if (io.MouseDown[GLFW_MOUSE_BUTTON_LEFT]) {
                 int axis = -1;
                 if (selected_renderable_index == arrow_mesh_x_instance->GetIndex()) axis = 0;

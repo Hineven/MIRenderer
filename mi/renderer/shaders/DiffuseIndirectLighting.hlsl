@@ -285,8 +285,11 @@ void InitializeScreenProbeCache (uint DispatchID : SV_DispatchThreadID) {
     RWScreenProbeCacheDataBuffer[CacheEntryIndex] = PackCacheEntry(NoData);
 }
 
-uint2 GetProbeSpawnSubTileJitter () {
-    return min(CalculateHaltonSequence(UB.ProbeSpawnSubTileJitterSeed) * TILE_SIZE, TILE_SIZE - 1.0f);
+uint2 GetProbeSpawnSubTileJitter (uint2 ProbeIndex) {
+    uint ProbeRank = ProbeIndex.x + ProbeIndex.y * UB.TileDimensions.x;
+    uint ProbeSequenceOffset = ProbeRank * 8;
+    uint SequenceIndex = (ProbeSequenceOffset + UB.ProbeSpawnSubTileJitterSeed) % TILE_TEXEL_COUNT; 
+    return min(CalculateHaltonSequence(SequenceIndex) * TILE_SIZE, TILE_SIZE - 1.0f);
 }
 
 bool ShouldSpawnProbe (uint2 TileIndex) {
@@ -460,7 +463,7 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
     // Check if we can spawn a new probe in this tile
     bool bCanSpawnProbe = false;
     {
-        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
+        uint2 SubTileJitter = GetProbeSpawnSubTileJitter(TileIndex);
         uint2 SpawnPixelCoords = TileIndex * TILE_SIZE + SubTileJitter;
         float2 SpawnUV = ScreenCoordsToUV(C, SpawnPixelCoords);
         float SpawnReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, SpawnUV, 0);
@@ -586,7 +589,7 @@ void SpawnScreenProbes (uint DispatchID : SV_DispatchThreadID) {
     // Spawn one probe per tile. This can be adjusted to spawn interleaved probes.
     if(ShouldSpawnProbe(TileIndex)) {
         CameraParameters C = GetActiveCamera();
-        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
+        uint2 SubTileJitter = GetProbeSpawnSubTileJitter(TileIndex);
         uint2 ScreenCoords  = min(TileIndex * TILE_SIZE + SubTileJitter, C.FilmDimensions - 1);
         float2 UV = ScreenCoords * C.InvFilmDimensions;
         float ReversedZDepth       = G_Depth.SampleLevel(PointEdgeSampler, UV, 0).x;
@@ -631,7 +634,7 @@ void SubstituteScreenProbes (uint DispatchID : SV_DispatchThreadID) {
     if(FailListIndex >= FailTileCount) return;
     uint2 FailTileIndex = UnpackUint2x16(RWReprojectionFailTileListBuffer[FailListIndex]);
     uint SpawnProbeCount = min(RWScreenProbeSpawnCount[0], UB.MaxProbesToSpawnPerFrame);
-    uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
+    uint2 SubTileJitter = GetProbeSpawnSubTileJitter(FailTileIndex);
     ScreenProbeHeader Header = (ScreenProbeHeader)0;
     Header.bValid = true;
     Header.bNeedFiltering = true; // Always enable filtering for probes spawned in reprojection fail tiles

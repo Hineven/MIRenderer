@@ -12,6 +12,7 @@
 #include "headers/HybridTracing.hlsl"
 #include "headers/MaterialEvaluation.hlsl"
 #include "headers/CommonIndirectLighting.hlsl"
+#include "headers/VolumeScattering.hlsl"
 #include "resources/HashGridCacheResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/LightGridSampling.hlsl"
@@ -127,6 +128,8 @@ Texture2D<float4> PreviousShadedDiffuseRadianceWithoutEmission;
 
 Texture2D<float>  G_VolumeSampleDepth;
 Texture2D<float4> G_VolumeSampleColor;
+Texture2D<float2> VolumeMinMaxTexture;
+Texture2D<float>  VolumeDensityTexture;
 
 Texture2D<float2> PreviousVolumeMinMaxTexture;
 Texture2D<float>  PreviousVolumeDensityTexture;
@@ -249,7 +252,7 @@ void ScatterReprojectedVolumeProbesToTileList (uint DispatchID : SV_DispatchThre
 }
 
 bool ShouldSpawnProbe (uint2 TileIndex) {
-    // Simple uniform spawn pattern: one probe per tile
+    // Simple uniform spawnning pattern: one probe per tile
     return true;
 }
 
@@ -270,12 +273,29 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
     // Spawn one probe per tile. This can be adjusted to spawn interleaved probes.
     if(ShouldSpawnProbe(TileIndex)) {
         CameraParameters C  = GetActiveCamera();
-        uint2 SubTileJitter = GetProbeSpawnSubTileJitter();
-        uint2 ScreenCoords  = min(TileIndex * TILE_SIZE + SubTileJitter, C.FilmDimensions - 1);
-        float2 UV = ScreenCoords * C.InvFilmDimensions;
-        float LinearDepth   = G_VolumeSampleDepth.SampleLevel(PointEdgeSampler, UV, 0).x;
+        uint2  SpawnSubTileJitter = GetProbeSpawnSubTileJitter();
+        uint2  SpawnScreenCoords  = min(TileIndex * TILE_SIZE + SpawnSubTileJitter, C.FilmDimensions - 1);
+        float2 SpawnUV = SpawnScreenCoords * C.InvFilmDimensions;
+        float  SpawnLinearDepth   = G_VolumeSampleDepth.SampleLevel(PointEdgeSampler, SpawnUV, 0).x;
         
-        if (LinearDepth > 0)
+
+        if (SpawnLinearDepth == 0) {
+            // Failed, fallback to spawnning via ray volume statistics
+            float2 VolumeMinMax  = VolumeMinMaxTexture.SampleLevel(PointEdgeSampler, SpawnUV, 0).xy;
+            if(VolumeMinMax.y > VolumeMinMax.x) {
+                float  VolumeDensity = VolumeDensityTexture.SampleLevel(PointEdgeSampler, SpawnUV, 0).r;
+                float  Transmittance = IntegrateExponentialScatteringMedium(VolumeDensity, VolumeMinMax.y - VolumeMinMax.x);
+                float  U = MakeRandom(TileIndex1, 53719371u + UB.FrameIndex).rand();
+                // Modify the random number, making sure that we don't sample beyond the volume bounds
+                float  FlyDist = SampleExponentialScatteringMedium(VolumeDensity, U * (1.f - Transmittance));
+                if(FlyDist + VolumeMinMax.x < VolumeMinMax.y) { // Safety check
+                    float RayLengthModifier = 1.f / length(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(SpawnUV)));
+                    SpawnLinearDepth = (FlyDist + VolumeMinMax.x) * RayLengthModifier;
+                }
+            }
+        }
+
+        if (SpawnLinearDepth > 0)
         {
             uint AllocatedWaveRank = 0;
             AllocatedWaveRank = WavePrefixCountBits(true);
@@ -292,7 +312,7 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
             if(AllocatedIndex < UB.MaxProbesToSpawnPerFrame) {
                 // Write header data
                 VolumeProbeHeader Header = (VolumeProbeHeader)0;
-                Header.WorldPosition = RecoverWorldPositionPixelCoords(C, ScreenCoords, LinearDepth);
+                Header.WorldPosition = RecoverWorldPositionPixelCoords(C, SpawnScreenCoords, SpawnLinearDepth);
                 Header.bActive = true;
                 RWSpawnedVolumeProbeHeaderBuffer[AllocatedIndex] = PackVolumeProbeHeader(Header);
             }
