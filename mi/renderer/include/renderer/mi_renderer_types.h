@@ -15,6 +15,8 @@ enum class RenderableType {
     kStaticMeshInstance = 0,
     // Volume primitives + transform
     kVolumePrimitivesInstance,
+    // Gaussian radiance field + transform (3D Gaussian Radiance Field)
+    kGaussianRadianceFieldInstance,
     kMax
 };
 
@@ -22,6 +24,7 @@ FORCEINLINE std::string ToString (RenderableType type) {
     switch (type) {
         case RenderableType::kStaticMeshInstance: return "StaticMeshInstance";
         case RenderableType::kVolumePrimitivesInstance: return "VolumePrimitivesInstance";
+        case RenderableType::kGaussianRadianceFieldInstance: return "GaussianRadianceFieldInstance";
         default: return "Unknown";
     }
 }

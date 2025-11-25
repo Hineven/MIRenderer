@@ -202,6 +202,10 @@ protected:
         uint32_t seed, VisibilityTraceType trace_type
     );
 
+    void Render_DrawGaussianRadianceFields (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;
         struct StaticMeshes {

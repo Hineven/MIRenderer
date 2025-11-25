@@ -160,4 +160,65 @@ void SH_GetCoefficients_HenyeyGreenstein(in float3 direction, in float g, out fl
     coefficients[8] = base[8] * g2;
 }
 
+struct SH3Coefficents {
+    float3 Coefficients[16]; // 16x3 coefficients
+};
+
+
+float3 SH3Evaluate(float3 ViewDirection, SH3Coefficents SH3, int Degree)
+{
+	const float SH_C0 = 0.28209479177387814f;
+	const float SH_C1 = 0.4886025119029199f;
+	const float SH_C2[] = {
+		1.0925484305920792f,
+		-1.0925484305920792f,
+		0.31539156525252005f,
+		-1.0925484305920792f,
+		0.5462742152960396f
+	};
+	const float SH_C3[] = {
+		-0.5900435899266435f,
+		2.890611442640554f,
+		-0.4570457994644658f,
+		0.3731763325901154f,
+		-0.4570457994644658f,
+		1.445305721320277f,
+		-0.5900435899266435f
+	};
+	// The SH stored in the gaussians is "flipped" compared to ordinary computer graphics
+	// conventions.
+	float3 NViewDirection = -ViewDirection;
+
+	float3 result = SH_C0 * SH3.Coefficients[0];
+
+	if(Degree >= 1) {
+		float x = NViewDirection.x;
+		float y = NViewDirection.y;
+		float z = NViewDirection.z;
+		result = result - SH_C1 * y * SH3.Coefficients[1] + SH_C1 * z * SH3.Coefficients[2] - SH_C1 * x * SH3.Coefficients[3];
+
+		if(Degree >= 2) {
+			float xx = x * x, yy = y * y, zz = z * z;
+			float xy = x * y, yz = y * z, xz = x * z;
+			result = result +
+				SH_C2[0] * xy * SH3.Coefficients[4] +
+				SH_C2[1] * yz * SH3.Coefficients[5] +
+				SH_C2[2] * (2.0f * zz - xx - yy) * SH3.Coefficients[6] +
+				SH_C2[3] * xz * SH3.Coefficients[7] +
+				SH_C2[4] * (xx - yy) * SH3.Coefficients[8];
+			if(Degree >= 3) {
+				result = result +
+					SH_C3[0] * y * (3.0f * xx - yy) * SH3.Coefficients[9] +
+					SH_C3[1] * xy * z * SH3.Coefficients[10] +
+					SH_C3[2] * y * (4.0f * zz - xx - yy) * SH3.Coefficients[11] +
+					SH_C3[3] * z * (2.0f * zz - 3.0f * xx - 3.0f * yy) * SH3.Coefficients[12] +
+					SH_C3[4] * x * (4.0f * zz - xx - yy) * SH3.Coefficients[13] +
+					SH_C3[5] * z * (xx - yy) * SH3.Coefficients[14] +
+					SH_C3[6] * x * (xx - 3.0f * yy) * SH3.Coefficients[15];
+			}
+		}
+	}
+	return result;
+}
+
 #endif // SPHERICAL_HARMONICS_HLSL

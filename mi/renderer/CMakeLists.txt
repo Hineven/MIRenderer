@@ -6,6 +6,7 @@ set(SOURCES
         mi_geometry.cpp
         mi_static_mesh.cpp
         mi_volume_primitives.cpp
+        mi_gaussian_radiance_field.cpp
         mi_renderable.cpp
         mi_scene.cpp
         mi_renderer_view.cpp
@@ -33,6 +34,7 @@ set(SOURCES
         renderer/r_denoiser.cpp
         renderer/r_world_radiance_cache.cpp
         renderer/r_light_structure.cpp
+        renderer/r_gaussian_radiance_field.cpp
         util/radix_sort.cpp
         util/scan_sum.cpp
 )

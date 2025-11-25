@@ -2,6 +2,7 @@ set(SOURCES
         gltf_loader.cpp
         texture_loader.cpp
         volprims_loader.cpp
+        gaussian_radiance_field_loader.cpp
 )
 
 add_library(util ${SOURCES})

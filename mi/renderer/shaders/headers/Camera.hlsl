@@ -132,4 +132,22 @@ float3 ReprojectToPreviousUVZFromUVZ(CameraParameters C, float3 UVZ) {
     return float3(NDC2ToUV(ReprojectedNDC.xy), ReprojectedNDC.z);
 }
 
+bool IsPointInFrustrum (CameraParameters C, float3 Position, out float3 ViewSpacePosition, bool Ortho = false, float NearClip = 0.f, float Expand = 0.f) {
+    ViewSpacePosition = mul(C.WorldToView, float4(Position, 1.0f)).xyz;
+    // -z axis is aligned with camera direction
+    if(ViewSpacePosition.z >= -NearClip) return false;
+    float4 Homogeneous = mul(C.ViewToNDC, float4(ViewSpacePosition, 1.0f));
+    if(Ortho) {
+        return all(abs(Homogeneous.xy) < 1.0f + Expand) && Homogeneous.z >= 0 && Homogeneous.z <= (1.0f + Expand);
+    } else {
+        if(Homogeneous.w > 0) {
+            float3 Projected = Homogeneous.xyz / Homogeneous.w;
+            return all(abs(Projected.xy) < 1.0f + Expand) && Projected.z >= 0.15 && Projected.z <= 1.0f;
+        } else {
+            return false;
+        }
+    }
+}
+
+
 #endif
