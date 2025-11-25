@@ -22,16 +22,14 @@ MI_NAMESPACE_BEGIN
 // Layout matches SharedGaussianRadianceField.hlsl.
 struct PackedGaussianRadiancePoint {
     glm::vec3 Position; // World-space center
-    uint32_t  PackedRotation_OpacityHi; // xyz quaternion (snorm3x8) + opacity high 8 bits
+    uint32_t  PackedRotation_Opacity; // xyz quaternion (snorm3x8) + unorm1x8
     glm::vec3 Scales; // Principal axes scaling (pre-exponential activation applied)
-    uint32_t  PackedColor_OpacityLo; // RGB color (unorm3x8) + opacity low 8 bits
 };
 
 struct GaussianRadiancePoint {
     glm::vec3 Position;
     glm::vec4 Rotation;
     glm::vec3 Scales;
-    glm::vec3 C0; // SH0 coeff
     float     Opacity;
 };
 
@@ -76,7 +74,11 @@ public:
     FORCEINLINE bool IsRayTraced() const { return ray_traced_; }
     void SetRayTraced(bool rt);
 
+    void SetSHCoefficients(const std::vector<glm::vec3> & coeffs) { sh_coeffs_ = coeffs; SetDirty(); }
+    const std::vector<glm::vec3> & GetSHCoefficients() const { return sh_coeffs_; }
+
     constexpr static uint32_t kGaussianRadianceAllocatorUberBufferIndex = 1; // Distinct from volume primitives
+    constexpr static uint32_t kGaussianRadianceSHAllocatorUberBufferIndex = 2; // SH coefficients uber buffer
 protected:
     static void SetupAllocatorUberBuffer(DeviceBindlessResourceAllocator * alloc);
     TRef<DeviceGaussianRadianceField> device_field_;
@@ -86,6 +88,7 @@ protected:
     bool ray_traced_ {false}; // Usually not participating in lighting; raster only by default
     bool dynamic_ {false};
     DirtyTracker<GaussianRadianceField> * tracker_ {};
+    std::vector<glm::vec3> sh_coeffs_; // 16 * NumPoints (RGB) fourth-order SH coefficients (bands l=0..3)
 };
 
 class GaussianRadianceFieldInstance : public Renderable {

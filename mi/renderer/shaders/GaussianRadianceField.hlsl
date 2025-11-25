@@ -30,17 +30,17 @@ Gaussian3D FetchGaussian(uint GaussianIndex) {
 }
 
 StructuredBuffer<float3> GaussianSHBuffer;
-SH3Coefficents FetchGaussianSHCoefficients(uint GaussianIndex, uint Offset) {
+SH3Coefficents FetchGaussianSHCoefficients(uint GaussianIndex) {
     SH3Coefficents SH;
+    // Degree 3: 16x3 coefficients
     [unroll]
-    for(int i = 0; i < 9; ++i) {
-        SH.Coefficients[i] = GaussianSHBuffer[GaussianIndex * 9 + i + Offset * 9];
+    for(uint i = 0; i < 16; ++i) {
+        SH.Coefficients[i] = GaussianSHBuffer[GaussianIndex * 16 + i];
     }
     return SH;
 }
 StructuredBuffer<uint> InstanceGaussianIndexOffsetBuffer;
 StructuredBuffer<uint> InstanceGaussianCountBuffer;
-
 
 RWStructuredBuffer<uint> RWActiveGaussianColorBuffer;
 RWStructuredBuffer<uint> RWActiveGaussianCount;
@@ -55,6 +55,13 @@ RWStructuredBuffer<uint> RWActiveGaussianQuadNDCVector1Buffer;
 
 StructuredBuffer<uint> ActiveGaussianRenderableCount;
 StructuredBuffer<uint> ActiveGaussianRenderableListBuffer; // Maintained on host side
+
+struct GaussianRadianceFieldUB {
+    float GaussianClampingScale;
+    float GaussianExpandFactor;
+    uint2 Padding;
+};
+ConstantBuffer<GaussianRadianceFieldUB> UB;
 
 [numthreads(1, 1, 1)]
 void ClearCounters () {
@@ -242,7 +249,7 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 
     float  Det           = Cov2D.x * Cov2D.z - Cov2D.y * Cov2D.y;
 
-	SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex, 2);
+	SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
 	float3 ViewDirection = normalize(C.Position - GaussianWorldPosition);
 	float3 Color = SH3Evaluate(ViewDirection, SH3, 2);
     Color = max(Color + 0.5f, 0.f); // Gaussian color biasing. Coherent with training process.
@@ -285,6 +292,9 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	RWActiveGaussianQuadNDCVector1Buffer[ActiveIndex] = PackUnorm2x16(saturateDown(ClampedVector2 * 0.5 + 0.5));
 }
 
+// Dummy pixel shader for filter pass (writes nothing, required for graphics pipeline creation)
+float4 FilterActiveGaussiansPS() : SV_Target0 { return float4(0,0,0,0); }
+
 struct DrawActiveGaussians_GSInput
 {
     uint PrimitiveIndex : TEXCOORD0;
@@ -318,6 +328,38 @@ struct DrawActiveGaussians_GSOutput
 //     return all(AlphaMask & DepthMask);
 // }
 
+// Compute the ray t to evaluate max respose of a ray-gaussian intersection according to the paper.
+// @param Origin The origin of the ray
+// @param Direction The direction of the ray
+// @param G The gaussian to evaluate
+// @return The ray t to evaluate the maximum response of the gaussian along the ray
+float EvaluateGaussianResponseRayT (float3 Origin, float3 Direction, Gaussian3D G, inout float3x3 InvCov) {
+    // Clamp the scale to avoid numerical issues
+    G.Scale = max(G.Scale, 2e-4f);
+    float3x3 InvScaleM = float3x3(
+        1.0f / G.Scale.x, 0, 0,
+        0, 1.0f / G.Scale.y, 0,
+        0, 0, 1.0f / G.Scale.z
+    );
+    float3x3 R = BuildRotationMatrix(G.Rotation);
+    InvCov = mul(InvScaleM, transpose(R));
+    InvCov = mul(transpose(InvCov), InvCov);
+    float3 Temp = mul(InvCov, Direction);
+    float  Numerator  = dot(G.Position - Origin, Temp);
+    float  Denominator = dot(Direction, Temp);
+    return Numerator / max(Denominator, 1e-7f);
+}
+
+float Evaluate2DUnnormalizedGaussian (float2 P) {
+    // float NormalizationFactor = 1 / (2 * PI);
+    return exp(-dot(P, P) / 2);
+}
+
+float Evaluate2DGaussian (float2 P) {
+    float NormalizationFactor = 1 / (2 * PI);
+    return NormalizationFactor * exp(-dot(P, P) / 2);
+}
+
 [maxvertexcount(6)]
 void DrawActiveGaussians(point DrawActiveGaussians_GSInput Input[1], inout TriangleStream<DrawActiveGaussians_GSOutput> TriStream)
 {
@@ -346,18 +388,20 @@ void DrawActiveGaussians(point DrawActiveGaussians_GSInput Input[1], inout Trian
     // float2 Depth01 = g_RWActiveGaussianQuadLinearDepthSrcBuffer[ActiveListIndex];
     // Magnify according to the expand parameter
     // Depth01 = Depth + (Depth - Depth01) * Expand;
-    int GaussianIndex, InstanceIndex;
-    UnpackActiveGaussianIndex(RWActiveGaussianListBuffer[ActiveListIndex], InstanceIndex, GaussianIndex);
+    uint GaussianIndex, ActiveRenderableListIndex;
+    UnpackActiveGaussianIndex(RWActiveGaussianListBuffer[ActiveListIndex], ActiveRenderableListIndex, GaussianIndex);
+    uint RenderableIndex = ActiveGaussianRenderableListBuffer[ActiveRenderableListIndex];
+    float3x4 RenderableToWorld = RenderableTransformBuffer[RenderableIndex];
     Gaussian3D G = FetchGaussian(GaussianIndex);
     float3x3 InvCov;
     float3 Direction0 = NDC2ToCameraDirectionUnnormalized(C, Top);
     float3 Direction1 = NDC2ToCameraDirectionUnnormalized(C, 0.5 * (Left1 + Left2));
     float3 RayOrigin0 = NDC2ToCameraOrigin(C, Top);
     float3 RayOrigin1 = NDC2ToCameraOrigin(C, 0.5 * (Left1 + Left2));
-    float3 InstanceLocalOrigin0    = GaussianInstance_TransformWorldToLocal(RayOrigin0, InstanceIndex);
-    float3 InstanceLocalOrigin1    = GaussianInstance_TransformWorldToLocal(RayOrigin1, InstanceIndex);
-    float3 InstanceLocalDirection0 = GaussianInstance_TransformWorldToLocal_Vector(Direction0, InstanceIndex);
-    float3 InstanceLocalDirection1 = GaussianInstance_TransformWorldToLocal_Vector(Direction1, InstanceIndex);
+    float3 InstanceLocalOrigin0    = TransformPoint(RenderableToWorld, RayOrigin0);
+    float3 InstanceLocalOrigin1    = TransformPoint(RenderableToWorld, RayOrigin1);
+    float3 InstanceLocalDirection0 = TransformVector(RenderableToWorld, Direction0);
+    float3 InstanceLocalDirection1 = TransformVector(RenderableToWorld, Direction1);
     float2 Depth01 = float2(
         EvaluateGaussianResponseRayT(InstanceLocalOrigin0, InstanceLocalDirection0, G, InvCov),
         EvaluateGaussianResponseRayT(InstanceLocalOrigin1, InstanceLocalDirection1, G, InvCov)
@@ -380,14 +424,14 @@ void DrawActiveGaussians(point DrawActiveGaussians_GSInput Input[1], inout Trian
     //     G_PBR.Roughness = saturate(G_PBR.Roughness * M.Roughness);
     // }
     
-    float4 ColorAlpha = float4(saturateDown(RWActiveGaussianColorBuffer[ActiveListIndex]), G.Alpha);
+    float3 Color = saturate(UnpackUnorm4x8(RWActiveGaussianColorBuffer[ActiveListIndex]).rgb);
+    float4 ColorAlpha = float4(Color, G.Alpha);
     
     // Is the quantilization affecting render quality?
     // int Seed = UB.FrameIndex + InstanceIndex * 77183 + GaussianIndex * 81937121;
     // float Q_Noise = 0.2 * (frac(sin(Seed) * 43758.5453) - 0.5f);
     // ColorAlpha.rgb = saturate(ColorAlpha.rgb + Q_Noise);
 
-    float3 Color = ColorAlpha.xyz;
     float  Alpha = ColorAlpha.w;
     float InvFarPlane = 1 / C.FarPlane;
 
@@ -397,27 +441,27 @@ void DrawActiveGaussians(point DrawActiveGaussians_GSInput Input[1], inout Trian
     Output.RGB = Color.rgb;
 
     Output.UVW.xy = Expand * float2(-1, -0.5);
-    Output.Position = float4(Left1, LinearToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
+    Output.Position = float4(Left1, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(-1,  0.5);
-    Output.Position = float4(Left2, LinearToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75))), 1);
+    Output.Position = float4(Left2, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(0, -1);
-    Output.Position = float4(Top, LinearToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0))), 1);
+    Output.Position = float4(Top, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(0, 1);
-    Output.Position = float4(Bottom, LinearToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1))), 1);
+    Output.Position = float4(Bottom, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(1, -0.5);
-    Output.Position = float4(Right1, LinearToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.25))), 1);
+    Output.Position = float4(Right1, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.25))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(1,  0.5);
-    Output.Position = float4(Right2, LinearToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.75))), 1);
+    Output.Position = float4(Right2, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.75))), 1);
     TriStream.Append(Output);
     
     TriStream.RestartStrip();
@@ -440,8 +484,8 @@ GBufferOutput DrawActiveGaussians (DrawActiveGaussians_FSInput Input) {
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
     
     float3 Color = saturate(RGBA.xyz);
-    CameraParameters C = GetMainCamera();
-    float  LinearDepth  = ZDepthToLinear(C, Input.Position.z);
+    CameraParameters C = GetActiveCamera();
+    float  LinearDepth  = ZDepthToLinearDepth(C, Input.Position.z);
     GBufferOutput Result = (GBufferOutput)0;
     Result.ColorAlpha    = float4(Color, Alpha);
     return Result;

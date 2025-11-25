@@ -42,7 +42,7 @@ public:
     static constexpr uint32_t kMaxNumGeometries = 64 * 1024; // 64K geometries
     static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
     // static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
-    static constexpr uint32_t kMaxNumVolumePrimitives = 1024; // 1K volume primitives (assume that there're not many)
+    static constexpr uint32_t kMaxNumVolumePrimitiveGroups = 1024; // 1K volume primitive groups (assume that there are not many)
     static constexpr uint32_t kMaxNumGaussianRadianceFields = 256; // Assume fewer GRF datasets
 
     FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
@@ -148,8 +148,8 @@ public:
     FORCEINLINE RHIBuffer * GetGaussianRadianceFieldHeaderBuffer() const {
         return gaussian_radiance_field_header_buffer_.Raw();
     }
-
-
+    FORCEINLINE RHIBuffer * GetGaussianInstanceOffsetBuffer() const { return gaussian_instance_offset_buffer_.Raw(); }
+    FORCEINLINE RHIBuffer * GetGaussianInstanceCountBuffer() const { return gaussian_instance_count_buffer_.Raw(); }
 
 protected:
 
@@ -173,6 +173,8 @@ protected:
     TRef<RHIBuffer> volume_primitives_header_buffer_;
     // A buffer holding the Gaussian Radiance Field headers.
     TRef<RHIBuffer> gaussian_radiance_field_header_buffer_;
+    TRef<RHIBuffer> gaussian_instance_offset_buffer_;
+    TRef<RHIBuffer> gaussian_instance_count_buffer_;
 
     // A buffer holding all area lights (RawLight structs).
     TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;

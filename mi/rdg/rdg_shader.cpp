@@ -1042,6 +1042,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             desc.depth_stencil.depth_test_enable = pipeline_config.depth_test_enabled;
             desc.depth_stencil.depth_write_enable = pipeline_config.depth_write_enabled;
         }
+        desc.rasterization_discard = pipeline_config.rasterization_discard;
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, class_registry_->name.c_str()
         );

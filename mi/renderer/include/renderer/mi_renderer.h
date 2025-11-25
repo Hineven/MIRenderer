@@ -206,6 +206,8 @@ protected:
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
+    void Render_PrepareGaussianRadianceFields(RendererView * view, RenderGraphBuilder & builder);
+
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;
         struct StaticMeshes {
@@ -216,6 +218,13 @@ protected:
             // Used to index the renderable & material for draw commands, used for viewport rasterization
             TRef<RDGBuffer> d_static_mesh_draw_command_renderable_descriptor_indices;
         } deferred_static_meshes, forward_static_meshes;
+
+        struct GaussianRadianceFields {
+            std::vector<RHIDrawIndirectCommand> draw_indirect_commands; // one per instance for Filter pass
+            TRef<RDGBuffer> d_filter_draw_commands; // uploaded indirect commands
+            TRef<RDGBuffer> d_active_renderable_list_buffer; // ActiveGaussianRenderableListBuffer
+            TRef<RDGBuffer> d_active_renderable_count_buffer; // ActiveGaussianRenderableCount
+        } gaussian_radiance_fields;
 
         void Init ();
         void Deinit ();

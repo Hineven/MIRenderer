@@ -18,6 +18,7 @@
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_renderer_view.h>
 #include <renderer/mi_material.h>
+#include <renderer/mi_gaussian_radiance_field.h>
 
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_cvar.h"
@@ -232,6 +233,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Prepare static mesh draw commands
     Render_PrepareStaticMeshes(view, builder);
+    // Prepare gaussian radiance fields (instance offsets/counts, renderable list, filter draw commands)
+    Render_PrepareGaussianRadianceFields(view, builder);
 
     // Fire batched uploads to the RDG
     view->upload_context_.Fire(builder);
@@ -423,6 +426,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         Render_PathTracing(view, builder);
         Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
     } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());
+
+    // Draw gaussian radiance fields directly to back buffer (color does not participate in lighting composition)
+    Render_DrawGaussianRadianceFields(view, builder);
 
     // Extra pass for forward rendering
     Render_DrawForwardStaticMeshes(view, builder);

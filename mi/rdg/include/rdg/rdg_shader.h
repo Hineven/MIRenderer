@@ -24,6 +24,7 @@ struct RDGShaderPipelineConfig {
     RHIDepthCompareOpType depth_compare_op {RHIDepthCompareOpType::kLess}; // Depth compare operation
     bool depth_write_enabled {true}; // Whether depth write is enabled
     bool depth_test_enabled {true}; // Whether depth test is enabled
+    bool rasterization_discard {false}; // Whether to discard all rasterization. Running vertex processing only.
     // std::vector<RHIColorAttachmentDesc> color_attachments;
     struct {
         uint32_t max_recursion_depth {1}; // Maximum ray recursion depth

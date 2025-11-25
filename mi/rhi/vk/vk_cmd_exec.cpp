@@ -365,7 +365,6 @@ void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
     );
 }
 
-
 void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDispatch *dispatch) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
@@ -381,7 +380,6 @@ void VulkanCommandExecutor::RHIDispatchIndirect(RHICommandQueueBase *cmd, RHICom
     assert(vk_buffer && vk_buffer->GetBuffer() != nullptr);
     state.cmd.dispatchIndirect(vk_buffer->GetBuffer(), dispatch_indirect->offset_);
 }
-
 
 void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
                                                     RHICommandBindGraphicsPipeline *bind_graphics_pipeline) {
@@ -408,7 +406,6 @@ void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHIComm
     CHECK_RHI_THREAD();
     state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.cull_mode = set_cull_mode->cull_mode_;
 }
-
 
 void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) {
     CHECK_RHI_THREAD();

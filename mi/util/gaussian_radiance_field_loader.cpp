@@ -6,8 +6,9 @@
 #include <random>
 #include <happly.h>
 #include "util/gaussian_radiance_field_loader.h"
-MI_NAMESPACE_BEGIN
 
+#include <numeric>
+MI_NAMESPACE_BEGIN
 bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, DeviceBindlessResourceAllocator & alloc, TRef<GaussianRadianceField> & out_field, float percentage) {
     if (path.extension() != ".ply") {
         MI_WARN("GaussianRadianceFieldLoader: Not a PLY file: {}", path.string());
@@ -36,7 +37,11 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
         num_pts = std::max((int)(num_pts * percentage), 1);
         MI_INFO("GaussianRadianceFieldLoader: Loading {}% -> {} points.", percentage * 100.f, num_pts);
     }
-    std::vector<Packed3DGaussian> data;
+
+    // Use default activations for 3d gaussian radiance field data (consistent with relating paper implementations)
+    bool use_activation = true;
+
+    std::vector<PackedGaussianRadiancePoint> data;
     data.resize(num_pts);
     // Positions
     auto x = element.getProperty<float>("x");
@@ -46,37 +51,13 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
         auto src = shuffle[i];
         data[i].Position = {x[src], y[src], z[src]};
     }
-    // Radiance / color channels
-    std::vector<float> c0, c1, c2;
-    if (element.hasProperty("f_dc_0")) {
-        c0 = element.getProperty<float>("f_dc_0");
-        c1 = element.getProperty<float>("f_dc_1");
-        c2 = element.getProperty<float>("f_dc_2");
-    } else if (element.hasProperty("color_0")) {
-        c0 = element.getProperty<float>("color_0");
-        c1 = element.getProperty<float>("color_1");
-        c2 = element.getProperty<float>("color_2");
-    } else {
-        MI_WARN("GaussianRadianceFieldLoader: No radiance/color property. Fallback to white.");
-        c0.assign(element.count, 1.f);
-        c1.assign(element.count, 1.f);
-        c2.assign(element.count, 1.f);
-    }
-    // Opacity (optional)
+    // Opacity
     std::vector<float> opacities;
     if (element.hasProperty("opacity")) {
         opacities = element.getProperty<float>("opacity");
     } else {
-        opacities.assign(element.count, 0.f); // Non participating default
-    }
-    for (int i=0;i<num_pts;i++) {
-        auto src = shuffle[i];
-        glm::vec3 col = {c0[src], c1[src], c2[src]};
-        col = glm::clamp(col, 0.f, 32.f); // Allow HDR local radiance; will be tone mapped later
-        // Pack color (clamp to [0,1] for now to reuse packing path)
-        glm::vec3 pack_col = glm::clamp(col, 0.f, 1.f);
-        auto opacity_half = glm::packHalf2x16({opacities[src], 0});
-        data[i].PackedColor_OpacityLo = (glm::packUnorm4x8({pack_col.x, pack_col.y, pack_col.z, 0}) & 0x00FFFFFFu) | ((opacity_half & 0x00FF) << 24);
+        MI_WARN("GaussianRadianceFieldLoader: No opacity property. Fallback to opaque.");
+        opacities.assign(element.count, 1.f); // Defaults to opaque
     }
     // Rotation (optional quaternion rot_0..rot_3 with w first or fallback identity) & opacity high bits
     std::vector<float> rot_w, rot_x, rot_y, rot_z;
@@ -92,26 +73,68 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
         glm::vec4 q = has_rot ? glm::vec4(rot_x[src], rot_y[src], rot_z[src], rot_w[src]) : glm::vec4(0,0,0,1);
         if (q.w < 0) q = -q;
         q = glm::normalize(q);
-        uint32_t packed = (uint32_t)glm::packSnorm4x8(q);
-        auto opacity_half = glm::packHalf2x16({opacities[src], 0});
-        data[i].PackedRotation_OpacityHi = (packed & 0x00FFFFFFu) | ((opacity_half & 0xFF00) << 16);
+        auto opacity = opacities[src];
+        if (use_activation) {
+            // Apply sigmoid activation for 3D Gaussian data
+            opacity = 1.f / (1.f + exp(-opacity));
+        }
+        q.w = opacity;
+        auto packed = glm::packSnorm4x8(q) & 0x00FFFFFFu; // Clear highest 8 bits for opacity
+        packed |= glm::packUnorm4x8(q) & 0xFF000000u; // Store opacity in highest 8 bits
+        data[i].PackedRotation_Opacity = packed;
     }
     // Scales (log-scale optional)
     auto sx = element.getProperty<float>("scale_0");
     auto sy = element.getProperty<float>("scale_1");
     auto sz = element.getProperty<float>("scale_2");
-    bool log_scale = false; // Keep simple for now
+
     for (int i=0;i<num_pts;i++) {
         auto src = shuffle[i];
         glm::vec3 sc = {sx[src], sy[src], sz[src]};
-        if (log_scale) sc = exp(sc);
+        if (use_activation) sc = exp(sc);
         sc = glm::max(sc, glm::vec3(0.001f));
         data[i].Scales = sc;
     }
+    // Attempt to load SH radiance coefficients for 4th-order (16 coefficients). If absent use DC color.
+    std::vector<glm::vec3> sh_coeffs; sh_coeffs.resize(num_pts * 16, glm::vec3(0));
+    bool has_color_rgb = element.hasProperty("red") && element.hasProperty("green") && element.hasProperty("blue");
+    bool has_color = has_color_rgb || (element.hasProperty("r") && element.hasProperty("g") && element.hasProperty("b"));
+    std::vector<float> cr, cg, cb;
+    if (has_color_rgb) {
+        cr = element.getProperty<float>("red"); cg = element.getProperty<float>("green"); cb = element.getProperty<float>("blue");
+    } else if (has_color) {
+        cr = element.getProperty<float>("r"); cg = element.getProperty<float>("g"); cb = element.getProperty<float>("b");
+    }
+    // If SH per-coefficient properties exist (sh0_r,...), try gather them; else just fill DC and zero others.
+    bool has_sh = true;
+    for (int c=0;c<16;c++) {
+        std::string base = "sh" + std::to_string(c) + "_"; // expecting sh0_r etc
+        bool present = element.hasProperty(base + "r") && element.hasProperty(base + "g") && element.hasProperty(base + "b");
+        if (!present) { has_sh = false; break; }
+    }
+    if (has_sh) {
+        for (int c=0;c<16;c++) {
+            auto rr = element.getProperty<float>("f_rest_" + std::to_string(c));
+            auto gg = element.getProperty<float>("f_rest_" + std::to_string(c)sadfsadfasdfas);
+            auto bb = element.getProperty<float>("f_rest_" + std::to_string(c));
+            for (int i=0;i<num_pts;i++) {
+                auto src = shuffle[i];
+                sh_coeffs[i*16 + c] = glm::vec3(rr[src], gg[src], bb[src]);
+            }
+        }
+    } else if (has_color) {
+        for (int i=0;i<num_pts;i++) {
+            auto src = shuffle[i];
+            // DC coefficient only
+            sh_coeffs[i*16 + 0] = glm::vec3(cr[src], cg[src], cb[src]);
+        }
+    } else {
+        MI_WARN("GaussianRadianceFieldLoader: No SH or color properties found; radiance defaults to zero.");
+    }
     out_field = GaussianRadianceField::Create();
     out_field->SetPoints(data);
+    out_field->SetSHCoefficients(sh_coeffs);
     return true;
 }
 
 MI_NAMESPACE_END
-

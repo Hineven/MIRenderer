@@ -30,6 +30,13 @@ struct VolumePrimitivesInstanceHeader {
     uint Flags;
 };
 
+struct GaussianRadianceFieldInstanceHeader {
+    uint FieldIndex;
+    uint Padding0;
+    uint Padding1;
+    uint Flags;
+};
+
 // The instance custom index is a 20-bit index and a 4-bit flag field.
 #define INSTANCE_CUSTOM_INDEX_INDEX_MASK 0x000FFFFFu
 // Flags marking the kind of the instance. defaults to static mesh instance (0).

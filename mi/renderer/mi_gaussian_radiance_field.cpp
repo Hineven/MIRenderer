@@ -62,16 +62,25 @@ void GaussianRadianceField::SetupAllocatorUberBuffer(DeviceBindlessResourceAlloc
             DefaultDeviceUberBuffer::Create(RHIBufferUsageFlagBits::kStorage, 16).Raw()
         );
     }
+    auto sh_ub = alloc->GetCustomUberBuffer(kGaussianRadianceSHAllocatorUberBufferIndex);
+    if (!sh_ub) {
+        alloc->RegisterCustomUberBuffer(
+            kGaussianRadianceSHAllocatorUberBufferIndex,
+            DefaultDeviceUberBuffer::Create(RHIBufferUsageFlagBits::kStorage, 16).Raw()
+        );
+    }
 }
 
 static GaussianRadiancePoint UnpackPoint(PackedGaussianRadiancePoint packed) {
-    GaussianRadiancePoint pt;
+    GaussianRadiancePoint pt {};
     pt.Position = packed.Position;
     pt.Scales = packed.Scales;
-    pt.Rotation = glm::unpackSnorm4x8(packed.PackedRotation_OpacityHi);
-    pt.Rotation.w = sqrt(glm::max(0.f, 1.f - glm::dot(glm::vec3(pt.Rotation), glm::vec3(pt.Rotation))));
-    pt.Radiance = glm::vec3(glm::unpackUnorm4x8(packed.PackedColor_OpacityLo));
-    pt.Opacity = glm::unpackHalf2x16(((packed.PackedRotation_OpacityHi & 0xFF000000u) >> 16) | ((packed.PackedColor_OpacityLo & 0xFF000000u) >> 24)).x;
+    auto rotation_3 = glm::vec3(glm::unpackSnorm4x8(packed.PackedRotation_Opacity));
+    float rotation_w = sqrt(glm::max(0.f, 1.f - glm::dot(rotation_3, rotation_3)));
+    pt.Rotation = glm::vec4(rotation_3.x, rotation_3.y, rotation_3.z, rotation_w);
+    // Normalize quaternion to avoid precision issues
+    pt.Rotation = glm::normalize(pt.Rotation);
+    pt.Opacity = glm::unpackUnorm4x8(packed.PackedRotation_Opacity).w;
     return pt;
 }
 
@@ -89,8 +98,17 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
         device_field_->point_buffer_ = alloc->GetCustomUberBuffer(kGaussianRadianceAllocatorUberBufferIndex)
             ->AllocateRefCounted(static_cast<uint32_t>(required_size)).first;
     }
-
     Helpers::Upload_Async(queue, device_field_->point_buffer_->GetRHI(), points_.data(), required_size);
+
+    // Upload SH coefficients (layout expects 16 coefficients per point for 4th-order)
+    if (!sh_coeffs_.empty()) {
+        size_t sh_required_size = sh_coeffs_.size() * sizeof(glm::vec3);
+        if (!device_field_->sh_buffer_ || device_field_->sh_buffer_->GetRHI().size < sh_required_size) {
+            device_field_->sh_buffer_ = alloc->GetCustomUberBuffer(kGaussianRadianceSHAllocatorUberBufferIndex)
+                ->AllocateRefCounted(static_cast<uint32_t>(sh_required_size)).first;
+        }
+        Helpers::Upload_Async(queue, device_field_->sh_buffer_->GetRHI(), sh_coeffs_.data(), sh_required_size);
+    }
 
     GaussianRadianceFieldHeader header {
         static_cast<uint32_t>(points_.size()),

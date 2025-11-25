@@ -5,9 +5,9 @@ MI_SHARED_HLSL_BEGIN
 // Matches PackedGaussianRadiance in C++
 struct PackedGaussianRadiancePoint {
     float3 Position; // xyz
-    uint   PackedRotation_OpacityHi; // snorm xyz + opacity hi8
+    uint   PackedRotation; // snorm xyz + opacity hi8
     float3 Scales; // principal axes
-    uint   PackedColor_OpacityLo; // unorm rgb + opacity lo8
+    uint   PackedC0_Opacity; // unorm rgb + opacity lo8
 };
 struct GaussianRadiancePoint {
     float3 Position;

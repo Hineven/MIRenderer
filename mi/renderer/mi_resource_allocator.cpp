@@ -18,7 +18,7 @@
 MI_NAMESPACE_BEGIN
 
 DeviceBindlessResourceAllocator::DeviceBindlessResourceAllocator():
-material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_mesh_slots_(kMaxNumStaticMeshes), volume_primitives_slots_(kMaxNumVolumePrimitives), gaussian_radiance_field_slots_(kMaxNumGaussianRadianceFields) {
+material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_mesh_slots_(kMaxNumStaticMeshes), volume_primitives_slots_(kMaxNumVolumePrimitiveGroups), gaussian_radiance_field_slots_(kMaxNumGaussianRadianceFields) {
     vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
         128
@@ -52,13 +52,17 @@ material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_me
     );
     area_lights_uber_buffer_->SetName("AreaLightsUberBuffer");
     volume_primitives_header_buffer_ = RHI::Get().CreateBuffer(
-        {sizeof(VolumePrimitivesHeader) * kMaxNumVolumePrimitives, RHIBufferUsageFlagBits::kStorage}
+        {sizeof(VolumePrimitivesHeader) * kMaxNumVolumePrimitiveGroups, RHIBufferUsageFlagBits::kStorage}
     );
     volume_primitives_header_buffer_->SetName("VolumePrimitivesHeaderBuffer");
     gaussian_radiance_field_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(GaussianRadianceFieldHeader) * kMaxNumGaussianRadianceFields, RHIBufferUsageFlagBits::kStorage}
     );
     gaussian_radiance_field_header_buffer_->SetName("GaussianRadianceFieldHeaderBuffer");
+    gaussian_instance_offset_buffer_ = RHI::Get().CreateBuffer({sizeof(uint32_t) * kMaxNumGaussianRadianceFields, RHIBufferUsageFlagBits::kStorage});
+    gaussian_instance_offset_buffer_->SetName("GaussianInstanceOffsetBuffer");
+    gaussian_instance_count_buffer_ = RHI::Get().CreateBuffer({sizeof(uint32_t) * kMaxNumGaussianRadianceFields, RHIBufferUsageFlagBits::kStorage});
+    gaussian_instance_count_buffer_->SetName("GaussianInstanceCountBuffer");
 
 
 }
