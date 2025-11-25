@@ -107,19 +107,19 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
     }
     // If SH per-coefficient properties exist (sh0_r,...), try gather them; else just fill DC and zero others.
     bool has_sh = true;
-    for (int c=0;c<16;c++) {
-        std::string base = "sh" + std::to_string(c) + "_"; // expecting sh0_r etc
-        bool present = element.hasProperty(base + "r") && element.hasProperty(base + "g") && element.hasProperty(base + "b");
+    for (int c = 0; c < 15 * 3; c++) {
+        std::string base = "f_rest_" + std::to_string(c) + "_"; // expecting sh0_r etc
+        bool present = element.hasProperty(base);
         if (!present) { has_sh = false; break; }
     }
-    if (has_sh) {
-        for (int c=0;c<16;c++) {
-            auto rr = element.getProperty<float>("f_rest_" + std::to_string(c));
-            auto gg = element.getProperty<float>("f_rest_" + std::to_string(c)sadfsadfasdfas);
-            auto bb = element.getProperty<float>("f_rest_" + std::to_string(c));
+    if (has_sh) {asfdasdfasd
+        for (int c = 0;c < 15; c++) {
+            auto rr = element.getProperty<float>("f_rest_" + std::to_string(0 + c));
+            auto gg = element.getProperty<float>("f_rest_" + std::to_string(15 + c));
+            auto bb = element.getProperty<float>("f_rest_" + std::to_string(30 + c));
             for (int i=0;i<num_pts;i++) {
                 auto src = shuffle[i];
-                sh_coeffs[i*16 + c] = glm::vec3(rr[src], gg[src], bb[src]);
+                sh_coeffs[i * 16 + c] = glm::vec3(rr[src], gg[src], bb[src]);
             }
         }
     } else if (has_color) {
