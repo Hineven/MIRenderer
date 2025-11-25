@@ -98,28 +98,36 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
     // Attempt to load SH radiance coefficients for 4th-order (16 coefficients). If absent use DC color.
     std::vector<glm::vec3> sh_coeffs; sh_coeffs.resize(num_pts * 16, glm::vec3(0));
     bool has_color_rgb = element.hasProperty("red") && element.hasProperty("green") && element.hasProperty("blue");
-    bool has_color = has_color_rgb || (element.hasProperty("r") && element.hasProperty("g") && element.hasProperty("b"));
+    bool has_color_dc = element.hasProperty("f_dc_0") && element.hasProperty("f_dc_1") && element.hasProperty("f_dc_2");
+    bool has_color = has_color_rgb || has_color_dc;
     std::vector<float> cr, cg, cb;
     if (has_color_rgb) {
         cr = element.getProperty<float>("red"); cg = element.getProperty<float>("green"); cb = element.getProperty<float>("blue");
     } else if (has_color) {
-        cr = element.getProperty<float>("r"); cg = element.getProperty<float>("g"); cb = element.getProperty<float>("b");
+        cr = element.getProperty<float>("f_dc_0"); cg = element.getProperty<float>("f_dc_1"); cb = element.getProperty<float>("f_dc_2");
     }
     // If SH per-coefficient properties exist (sh0_r,...), try gather them; else just fill DC and zero others.
-    bool has_sh = true;
+    bool has_sh = element.hasProperty("f_dc_0") && element.hasProperty("f_dc_1") && element.hasProperty("f_dc_2");
     for (int c = 0; c < 15 * 3; c++) {
         std::string base = "f_rest_" + std::to_string(c) + "_"; // expecting sh0_r etc
         bool present = element.hasProperty(base);
         if (!present) { has_sh = false; break; }
     }
-    if (has_sh) {asfdasdfasd
+    if (has_sh) {
+        auto r = element.getProperty<float>("f_dc_0");
+        auto g = element.getProperty<float>("f_dc_1");
+        auto b = element.getProperty<float>("f_dc_2");
+        for (int i=0;i<num_pts;i++) {
+            auto src = shuffle[i];
+            sh_coeffs[i * 16 + 0] = glm::vec3(r[src], g[src], b[src]);
+        }
         for (int c = 0;c < 15; c++) {
             auto rr = element.getProperty<float>("f_rest_" + std::to_string(0 + c));
             auto gg = element.getProperty<float>("f_rest_" + std::to_string(15 + c));
             auto bb = element.getProperty<float>("f_rest_" + std::to_string(30 + c));
             for (int i=0;i<num_pts;i++) {
                 auto src = shuffle[i];
-                sh_coeffs[i * 16 + c] = glm::vec3(rr[src], gg[src], bb[src]);
+                sh_coeffs[i * 16 + c + 1] = glm::vec3(rr[src], gg[src], bb[src]);
             }
         }
     } else if (has_color) {

@@ -211,6 +211,7 @@ RDGShaderContext RDGCommandHelper::BindGraphicsShader (
     }
     RHIDrawStateDesc ds {};
     if (!info->render_targets_.empty()) {
+        auto reflected_frag_outputs = graphics_shader->graphics_pipeline_->GetFragmentOutputDesc();
         for (const auto& [i, e] : std::views::enumerate(info->render_targets_)) {
             auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)params + e.cpp_offset);
             RHITexture * to_bound = nullptr;
@@ -219,13 +220,15 @@ RDGShaderContext RDGCommandHelper::BindGraphicsShader (
                     graphics_shader->class_registry_->name, e.info->name);
                 continue ;
             }
+            auto target_index = e.info->cpp_extra.render_targets_info->target_index;
             to_bound = param.texture->GetRHI();
-            if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
+            if (target_index != UINT32_MAX) {
+                if (reflected_frag_outputs.size() <= target_index) continue ; // Output not used in the shader
                 mi_warning(param.texture->GetDesc().usage & RHITextureUsageFlagBits::kRenderTarget,
                     "Shader {}: Assigned render target texture for {} is not created with kRenderTarget usage.",
                     graphics_shader->class_registry_->name, e.info->name);
                 ds.SetAttachment(
-                    e.info->cpp_extra.render_targets_info->target_index, to_bound,
+                    target_index, to_bound,
                     param.load_op, param.store_op, param.clear_value,
                     param.array_layer == UINT64_MAX ? 0 : param.array_layer
                 );

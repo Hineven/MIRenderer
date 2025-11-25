@@ -50,6 +50,7 @@ protected:
     ~DeviceGaussianRadianceField();
     uint32_t index_ {UINT32_MAX};
     TRef<DeviceUberBufferAllocation> point_buffer_;
+    TRef<DeviceUberBufferAllocation> sh_coeff_buffer_;
     TRef<RHIAccelerationStructure> BLAS_;
     friend class GaussianRadianceField;
 };

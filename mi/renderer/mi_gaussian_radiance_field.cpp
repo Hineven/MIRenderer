@@ -103,11 +103,11 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
     // Upload SH coefficients (layout expects 16 coefficients per point for 4th-order)
     if (!sh_coeffs_.empty()) {
         size_t sh_required_size = sh_coeffs_.size() * sizeof(glm::vec3);
-        if (!device_field_->sh_buffer_ || device_field_->sh_buffer_->GetRHI().size < sh_required_size) {
-            device_field_->sh_buffer_ = alloc->GetCustomUberBuffer(kGaussianRadianceSHAllocatorUberBufferIndex)
+        if (!device_field_->sh_coeff_buffer_ || device_field_->sh_coeff_buffer_->GetRHI().size < sh_required_size) {
+            device_field_->sh_coeff_buffer_ = alloc->GetCustomUberBuffer(kGaussianRadianceSHAllocatorUberBufferIndex)
                 ->AllocateRefCounted(static_cast<uint32_t>(sh_required_size)).first;
         }
-        Helpers::Upload_Async(queue, device_field_->sh_buffer_->GetRHI(), sh_coeffs_.data(), sh_required_size);
+        Helpers::Upload_Async(queue, device_field_->sh_coeff_buffer_->GetRHI(), sh_coeffs_.data(), sh_required_size);
     }
 
     GaussianRadianceFieldHeader header {

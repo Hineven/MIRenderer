@@ -57,6 +57,22 @@ public:
     }
 
     template<CShaderType T>
+    FORCEINLINE static RDGPass * AddDrawIndirectPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer, uint32_t count = 1) {
+        if (!shader || !indirect_buffer) return nullptr;
+        mi_assert(shader->GetPipelineType() == RHIPipelineType::kGraphics, "Only graphics shaders are supported in DrawIndirectPass.");
+        return builder.AddPass<T>({}, shader, params,
+            [shader, params, indirect_buffer, draw_count=count](RDGPass* pass, RHICommandQueueGraphics &q){
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<T>(q, pass, shader, params, false)) {
+                    q.BeginRendering();
+                    q.DrawIndirect(indirect_buffer->GetRHI());
+                    q.EndRendering();
+                }
+            }
+        )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
+
+
+    template<CShaderType T>
     FORCEINLINE static RDGPass * AddTraceRaysPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
         if (!shader) return nullptr;
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchRayTracingPass.");

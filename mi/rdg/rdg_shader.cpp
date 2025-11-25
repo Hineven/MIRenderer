@@ -564,6 +564,14 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
             if (is_valid) shader_hash.AddUnordered("VertexShader", result);
             else MI_WARN("Failed to compute vertex shader hash.");
         }
+        if (!class_registry_->geometry_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("GeometryShader", result);
+            else MI_WARN("Failed to compute geometry shader hash.");
+        }
         if (!class_registry_->fragment_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
@@ -714,21 +722,39 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             }
             shader_hash_.AddUnordered("VertexShader", vs_hash);
         }
-
+        {
+            uint64_t gs_hash = 0;
+            std::wstring out_command;
+            // Then compile geometry shader if any
+            if (!class_registry_->geometry_entry_.empty()) {
+                auto gs_result = GetInfra().CompileHLSLToSPIRV(
+                        source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs_6_6",
+                        std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &gs_hash
+                );
+                if (gs_result.empty()) {
+                    MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile geometry shader: {}", class_registry_->name, errmsg);
+                    MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
+                    return false;
+                }
+                shader_hash_.AddUnordered("GeometryShader", gs_hash);
+            }
+        }
         {
             uint64_t fs_hash = 0;
             std::wstring out_command;
-            // Then compile fragment shader
-            fs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_6",
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
-            );
-            if (fs_result.empty()) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile fragment shader: {}", class_registry_->name, errmsg);
-                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
-                return false;
+            // Then compile fragment shader if any
+            if (class_registry_->fragment_entry_.empty()) {
+                fs_result = GetInfra().CompileHLSLToSPIRV(
+                        source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_6",
+                        std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
+                );
+                if (fs_result.empty()) {
+                    MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile fragment shader: {}", class_registry_->name, errmsg);
+                    MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
+                    return false;
+                }
+                shader_hash_.AddUnordered("FragmentShader", fs_hash);
             }
-            shader_hash_.AddUnordered("FragmentShader", fs_hash);
         }
 
         // Create the vertex shader
@@ -748,22 +774,47 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         shaders_.vertex = vertex_shader;
         shaders_.vertex->SetSourceFilePath(class_registry_->source_location);
 
-        // Create the fragment shader
-        auto fs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(fs_result.data()), fs_result.size() * sizeof(uint32_t));
-        auto fragment_shader = RHI::Get().CreateShader(
-                RHIShaderFrequencyFlagBits::kFragment, class_registry_->fragment_entry_,
-                RHIShaderIRType::kSPIRV, fs_bytecode_span
-        );
-        if (!fragment_shader) {
-            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create fragment shader", class_registry_->source_location);
-            return false;
+        // Create the geometry shader (if any)
+        if (!class_registry_->geometry_entry_.empty()) {
+            auto gs_result = GetInfra().CompileHLSLToSPIRV(
+                    source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs_6_6",
+                    std::span(source_code.data(), source_code.size()), extra_options, errmsg
+            );
+            auto gs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(gs_result.data()), gs_result.size() * sizeof(uint32_t));
+            auto geometry_shader = RHI::Get().CreateShader(
+                    RHIShaderFrequencyFlagBits::kGeometry, class_registry_->geometry_entry_,
+                    RHIShaderIRType::kSPIRV, gs_bytecode_span
+            );
+            if (!geometry_shader) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create geometry shader", class_registry_->source_location);
+                return false;
+            }
+            if (!CheckShaderReflection(geometry_shader.Raw(), param_info)) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Geometry shader reflection check failed", class_registry_->source_location);
+                return false;
+            }
+            shaders_.geometry = geometry_shader;
+            shaders_.geometry->SetSourceFilePath(class_registry_->source_location);
         }
-        if (!CheckShaderReflection(fragment_shader.Raw(), param_info)) {
-            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Fragment shader reflection check failed", class_registry_->source_location);
-            return false;
+
+        // Create the fragment shader (if any)
+        if (!fs_result.empty()) {
+            auto fs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(fs_result.data()), fs_result.size() * sizeof(uint32_t));
+            auto fragment_shader = RHI::Get().CreateShader(
+                    RHIShaderFrequencyFlagBits::kFragment, class_registry_->fragment_entry_,
+                    RHIShaderIRType::kSPIRV, fs_bytecode_span
+            );
+            if (!fragment_shader) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create fragment shader", class_registry_->source_location);
+                return false;
+            }
+            if (!CheckShaderReflection(fragment_shader.Raw(), param_info)) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Fragment shader reflection check failed", class_registry_->source_location);
+                return false;
+            }
+            shaders_.fragment = fragment_shader;
+            shaders_.fragment->SetSourceFilePath(class_registry_->source_location);
         }
-        shaders_.fragment = fragment_shader;
-        shaders_.vertex->SetSourceFilePath(class_registry_->source_location);
     }
 
     if(class_registry_->type == RHIPipelineType::kRayTracing) {
@@ -986,7 +1037,8 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     }
     if (class_registry_->type == RHIPipelineType::kGraphics) {
         RHIGraphicsPipelineDesc desc {};
-        desc.stages.vertex_shader = shaders_.vertex.Raw();
+        desc.stages.vertex_shader   = shaders_.vertex.Raw();
+        desc.stages.geometry_shader = shaders_.geometry.Raw();
         desc.stages.fragment_shader = shaders_.fragment.Raw();
         auto vertex_inputs = shaders_.vertex->GetVertexInputDesc();
         std::vector<RHIVertexInputBindingDesc> rhi_bindings;
@@ -1008,39 +1060,40 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         desc.vertex_input.vertex_attributes = rhi_attributes;
         desc.topology = pipeline_config.topology;
 
-
-        auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
-        std::vector<RHIColorAttachmentDesc> color_attachments;
-        RHIDepthStencilAttachmentDesc depth_stencil {};
-        // Gather color attachment configurations from shader param struct info
-        if (!params->render_targets_.empty()) {
-            for (auto & e : params->render_targets_) {
-                if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
-                    RHIColorAttachmentBlendDesc blend {};
-                    if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
-                        // TODO support more blending operations
-                        blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
-                        blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
-                        blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
-                        blend.alpha_blend_op = RHIBlendOpType::kBlendAdd;
-                        blend.src_alpha_blend_factor = RHIBlendFactorType::kOne;
-                        blend.dst_alpha_blend_factor = RHIBlendFactorType::kOneMinusSrcAlpha;
+        if (shaders_.fragment) {
+            auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
+            std::vector<RHIColorAttachmentDesc> color_attachments;
+            RHIDepthStencilAttachmentDesc depth_stencil {};
+            // Gather color attachment configurations from shader param struct info
+            if (!params->render_targets_.empty()) {
+                for (auto & e : params->render_targets_) {
+                    if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
+                        RHIColorAttachmentBlendDesc blend {};
+                        if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
+                            // TODO support more blending operations
+                            blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
+                            blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
+                            blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
+                            blend.alpha_blend_op = RHIBlendOpType::kBlendAdd;
+                            blend.src_alpha_blend_factor = RHIBlendFactorType::kOne;
+                            blend.dst_alpha_blend_factor = RHIBlendFactorType::kOneMinusSrcAlpha;
+                        }
+                        color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
+                    } else {
+                        // Enable depth testing
+                        depth_stencil = {
+                            e.info->cpp_extra.render_targets_info->format
+                        };
                     }
-                    color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
-                } else {
-                    // Enable depth testing
-                    depth_stencil = {
-                        e.info->cpp_extra.render_targets_info->format
-                    };
                 }
             }
-        }
-        desc.color_attachments = color_attachments;
-        desc.depth_stencil_attachment = depth_stencil;
-        if (depth_stencil.format != PixelFormatType::kUnknown) {
-            desc.depth_stencil.depth_compare_op = pipeline_config.depth_compare_op;
-            desc.depth_stencil.depth_test_enable = pipeline_config.depth_test_enabled;
-            desc.depth_stencil.depth_write_enable = pipeline_config.depth_write_enabled;
+            desc.color_attachments = color_attachments;
+            desc.depth_stencil_attachment = depth_stencil;
+            if (depth_stencil.format != PixelFormatType::kUnknown) {
+                desc.depth_stencil.depth_compare_op = pipeline_config.depth_compare_op;
+                desc.depth_stencil.depth_test_enable = pipeline_config.depth_test_enabled;
+                desc.depth_stencil.depth_write_enable = pipeline_config.depth_write_enabled;
+            }
         }
         desc.rasterization_discard = pipeline_config.rasterization_discard;
         auto pipeline = RHI::Get().CreateGraphicsPipeline(

@@ -78,7 +78,7 @@ void UnpackActiveGaussianIndex(uint PackedIndex, out uint ActiveRenderableListIn
 }
 
 // Filter the active gaussians that are visible in the view frustrum
-void FilterActiveGaussians (uint ActiveGaussianRenderableListIndex : SV_InstanceID, uint InstanceGaussianRank : SV_VertexID) {
+void FilterActiveGaussiansVS (uint ActiveGaussianRenderableListIndex : SV_InstanceID, uint InstanceGaussianRank : SV_VertexID) {
 
 	// OPTIMIZE: also filter out the gaussians that failed the visibility test
 	// for RasterizationDepth and history depth buffer.
@@ -253,7 +253,7 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	float3 ViewDirection = normalize(C.Position - GaussianWorldPosition);
 	float3 Color = SH3Evaluate(ViewDirection, SH3, 2);
     Color = max(Color + 0.5f, 0.f); // Gaussian color biasing. Coherent with training process.
-	RWActiveGaussianColorBuffer[ActiveIndex] = Color;
+	RWActiveGaussianColorBuffer[ActiveIndex] = PackUnorm4x8(float4(Color, 0.f));
 
     // Compute extent in screen space (by finding eigenvalues of
     // 2D covariance matrix). Use extent to compute a bounding rectangle
@@ -300,7 +300,7 @@ struct DrawActiveGaussians_GSInput
     uint PrimitiveIndex : TEXCOORD0;
 };
 
-DrawActiveGaussians_GSInput DrawActiveGaussians (
+DrawActiveGaussians_GSInput DrawActiveGaussians_VS (
     uint VertexIndex : SV_VertexID
 ) {
     DrawActiveGaussians_GSInput Input;
@@ -361,7 +361,7 @@ float Evaluate2DGaussian (float2 P) {
 }
 
 [maxvertexcount(6)]
-void DrawActiveGaussians(point DrawActiveGaussians_GSInput Input[1], inout TriangleStream<DrawActiveGaussians_GSOutput> TriStream)
+void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout TriangleStream<DrawActiveGaussians_GSOutput> TriStream)
 {
     int ActiveListIndex = ActiveGaussianIndirectionBuffer[Input[0].PrimitiveIndex];
     // if(ActiveListIndex % 4 != UB.FrameIndex % 4) return ;
@@ -467,7 +467,7 @@ void DrawActiveGaussians(point DrawActiveGaussians_GSInput Input[1], inout Trian
     TriStream.RestartStrip();
 }
 
-struct DrawActiveGaussians_FSInput
+struct DrawActiveGaussians_PSInput
 {
     float4 Position : SV_Position;
     float3 UVW : TEXCOORD0;
@@ -478,7 +478,7 @@ struct GBufferOutput {
     float4 ColorAlpha    : SV_Target0;
 };
 
-GBufferOutput DrawActiveGaussians (DrawActiveGaussians_FSInput Input) {
+GBufferOutput DrawActiveGaussians_PS (DrawActiveGaussians_PSInput Input) {
     float2 UV     = Input.UVW.xy;
     float4 RGBA   = float4(Input.RGB.rgb, Input.UVW.z);
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);

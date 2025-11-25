@@ -75,13 +75,11 @@ void Renderer::FrameContext::Init() {
 
 }
 
-
 void Renderer::FrameContext::Deinit() {
     visible_renderables.clear();
     deferred_static_meshes = {};
     forward_static_meshes = {};
 }
-
 
 void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 

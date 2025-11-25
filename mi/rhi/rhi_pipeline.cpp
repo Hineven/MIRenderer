@@ -211,7 +211,8 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
     // TryLocateAndStripBindlessTableUniformBuffer();
     depth_test_enable_ = desc.depth_stencil.depth_test_enable;
     vertex_inputs_    = desc.stages.vertex_shader->GetVertexInputDesc();
-    fragment_outputs_ = desc.stages.fragment_shader->GetFragmentOutputDesc();
+    if (desc.stages.fragment_shader)
+        fragment_outputs_ = desc.stages.fragment_shader->GetFragmentOutputDesc();
     if(desc.color_attachments.size() != fragment_outputs_.size()) {
         MI_LOG(MIInfraLogType::kWarning, "Color attachment count mismatch");
         return ;

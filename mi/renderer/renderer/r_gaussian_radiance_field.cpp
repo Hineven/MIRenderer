@@ -13,8 +13,9 @@
 #include <cstring>
 
 #include "renderer/util/radix_sort.h"
+#include "rhi/rhi_buffer.h"
 MI_NAMESPACE_BEGIN
-struct GaussianRadianceFieldUB {
+    struct GaussianRadianceFieldUB {
     float GaussianClampingScale;
     float GaussianExpandFactor;
     glm::uvec2 Padding;
@@ -24,6 +25,10 @@ struct GaussianRadianceFieldUB {
 BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
     SHADER_UNIFORM_BUFFER(GaussianRadianceFieldUB, UB)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, InstanceGaussianIndexOffsetBuffer)
@@ -44,19 +49,29 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
     SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {})
 END_SHADER_PARAMETERS()
 
-class GRF_ClearCountersShader : public RDGShader {
+class GRF_Shader : public RDGShader {
 public:
     RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
     DECLARE_SHADER()
-    constexpr static uint32_t kThreadGroupSize = 128;
-    static std::vector<std::string> GetShaderDefaultMacros() { return {"THREAD_GROUP_SIZE=128"}; }
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
+        return {
+            "WAVE_SIZE=" + std::to_string(wave_size)
+        };
+    }
+};
+
+class GRF_ClearCountersShader : public GRF_Shader {
+public:
+    RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
+    DECLARE_SHADER(GRF_Shader)
 };
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_ClearCountersShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "ClearCounters");
 
-class GRF_FilterShader : public RDGShader {
+class GRF_FilterShader : public GRF_Shader {
 public:
     RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(GRF_Shader)
     static RDGShaderPipelineConfig GetShaderPipelineConfig() {
         RDGShaderPipelineConfig cfg{};
         cfg.depth_test_enabled = false;
@@ -66,19 +81,19 @@ public:
         return cfg;
     }
 };
-IMPLEMENT_RDG_GRAPHICS_SHADER(GRF_FilterShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "FilterActiveGaussians", "");
+IMPLEMENT_RDG_GRAPHICS_SHADER(GRF_FilterShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "FilterActiveGaussiansVS", "FilterActiveGaussiansPS");
 
-class GRF_ProjectShader : public RDGShader {
+class GRF_ProjectShader : public GRF_Shader {
 public:
     RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(GRF_Shader)
 };
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_ProjectShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "ProjectActiveGaussians");
 
-class GRF_DrawShader : public RDGShader {
+class GRF_DrawShader : public GRF_Shader {
 public:
     RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
-    DECLARE_SHADER()
+    DECLARE_SHADER(GRF_Shader)
     static RDGShaderPipelineConfig GetShaderPipelineConfig() {
         RDGShaderPipelineConfig cfg{};
         cfg.depth_test_enabled = true;
@@ -88,7 +103,12 @@ public:
         return cfg;
     }
 };
-IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(GRF_DrawShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "DrawActiveGaussians", "DrawActiveGaussians");
+IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(GRF_DrawShader,
+    "mi/renderer/shaders/GaussianRadianceField.hlsl",
+    "DrawActiveGaussians_VS",
+    "DrawActiveGaussians_GS",
+    "DrawActiveGaussians_PS"
+);
 
 void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGraphBuilder &builder) {
     // Build per-instance draw indirect commands for FilterActiveGaussians pass
@@ -209,6 +229,8 @@ void Renderer::Render_DrawGaussianRadianceFields(
     }
     params->UB=UB;
     params->View=view->view_common_params_;
+    params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+    params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
     // Bind resources
     params->Gaussian3DBuffer = packed_gaussians_buffer;
     params->GaussianSHBuffer = sh_buffer;
@@ -231,22 +253,16 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->Color = builder.Import(RHI::Get().GetBackBuffer());
 
     auto & lib = RDGShaderLibrary::Get();
+    auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     // Pass 1: ClearCounters
     auto clear_shader = lib.GetShader<GRF_ClearCountersShader>();
     Helpers::AddComputePass(builder, clear_shader, params, 1);
     // Pass 2: FilterActiveGaussians
     if (ctx.gaussian_radiance_fields.d_filter_draw_commands) {
-        auto filter_shader = lib.GetShader<GRF_FilterShader>();
-        builder.AddPass<GRF_FilterShader>({}, filter_shader, params,
-            [filter_shader, params, draw_buffer=ctx.gaussian_radiance_fields.d_filter_draw_commands.Raw(), draw_count=(uint32_t)ctx.gaussian_radiance_fields.draw_indirect_commands.size()](RDGPass* pass, RHICommandQueueGraphics &q){
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<GRF_FilterShader>(q, pass, filter_shader, params)) {
-                    q.BeginRendering();
-                    // No vertex buffer binding needed; vertex shader fetches from buffers directly.
-                    q.DrawIndirect(draw_buffer->GetRHI(), draw_count);
-                    q.EndRendering();
-                }
-            }
-        );
+        auto shader = lib.GetShader<GRF_FilterShader>();
+        Helpers::AddDrawIndirectPass(builder, shader, params,
+            ctx.gaussian_radiance_fields.d_filter_draw_commands.Raw(),
+            (uint32_t)ctx.gaussian_radiance_fields.draw_indirect_commands.size());
     }
     // Pass 3: Radix Sort active gaussians by linear depth
     DeviceRadixSort::AddRadixSort32BitsPass(builder, total_gaussians,
@@ -255,21 +271,18 @@ void Renderer::Render_DrawGaussianRadianceFields(
         active_gaussian_count_buffer.Raw()
     );
     // Pass 4: ProjectActiveGaussians
-    auto project_shader = lib.GetShader<GRF_ProjectShader>();
-    auto groups = DivideAndRoundUp(total_gaussians, GRF_ClearCountersShader::kThreadGroupSize);
-    Helpers::AddComputePass(builder, project_shader, params, groups);
+    {
+        auto shader = lib.GetShader<GRF_ProjectShader>();
+        auto groups = DivideAndRoundUp(total_gaussians, wave_size);
+        Helpers::AddComputePass(builder, shader, params, groups);
+    }
     // Pass 5: DrawActiveGaussians
-    auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
-    auto draw_shader = lib.GetShader<GRF_DrawShader>();
-    builder.AddPass<GRF_DrawShader>({}, draw_shader, params,
-        [draw_shader, params, draw_buffer=final_draw_command.Raw(), draw_count=(uint32_t)ctx.gaussian_radiance_fields.draw_indirect_commands.size()](RDGPass* pass, RHICommandQueueGraphics &q){
-            if (auto ctx = RDGCommandHelper::BindGraphicsShader<GRF_DrawShader>(q, pass, draw_shader, params, true)) {
-                q.BeginRendering();
-                q.DrawIndirect(draw_buffer->GetRHI());
-                q.EndRendering();
-            }
-        }
-    );
+    {
+        auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
+        auto shader = lib.GetShader<GRF_DrawShader>();
+        Helpers::AddDrawIndirectPass(builder, shader, params, final_draw_command.Raw());
+    }
+
 }
 
 // Delete legacy definitions above this line in final cleanup.
