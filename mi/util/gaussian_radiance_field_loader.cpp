@@ -38,10 +38,13 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
         MI_INFO("GaussianRadianceFieldLoader: Loading {}% -> {} points.", percentage * 100.f, num_pts);
     }
 
+    // FIXME
+    num_pts = 10;
+
     // Use default activations for 3d gaussian radiance field data (consistent with relating paper implementations)
     bool use_activation = true;
 
-    std::vector<PackedGaussianRadiancePoint> data;
+    std::vector<PackedGaussian3D> data;
     data.resize(num_pts);
     // Positions
     auto x = element.getProperty<float>("x");

@@ -15,35 +15,15 @@
 #include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_dirty_tracker.h"
+#include "../shaders/shared/SharedGaussianRadianceField.hlsl"
 
 MI_NAMESPACE_BEGIN
-
-// Packed representation for a single 3D Gaussian radiance point.
-// Layout matches SharedGaussianRadianceField.hlsl.
-struct PackedGaussianRadiancePoint {
-    glm::vec3 Position; // World-space center
-    uint32_t  PackedRotation_Opacity; // xyz quaternion (snorm3x8) + unorm1x8
-    glm::vec3 Scales; // Principal axes scaling (pre-exponential activation applied)
-};
-
-struct GaussianRadiancePoint {
-    glm::vec3 Position;
-    glm::vec4 Rotation;
-    glm::vec3 Scales;
-    float     Opacity;
-};
-
-struct GaussianRadianceFieldHeader {
-    uint32_t NumPoints;
-    uint32_t PointOffset; // Offset in the uber buffer
-    glm::uvec2 Padding;
-};
 
 class DeviceGaussianRadianceField : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
     FORCEINLINE bool IsValid() const { return index_ != UINT32_MAX; }
     FORCEINLINE uint32_t GetIndex() const { return index_; }
-    FORCEINLINE uint32_t GetPointOffset() const { return (uint32_t)(point_buffer_->GetOffset() / sizeof(PackedGaussianRadiancePoint)); }
+    FORCEINLINE uint32_t GetPointOffset() const { return (uint32_t)(point_buffer_->GetOffset() / sizeof(PackedGaussian3D)); }
     FORCEINLINE RHIAccelerationStructure * GetBLAS() const { return BLAS_.Raw(); }
 protected:
     DeviceGaussianRadianceField(DeviceBindlessResourceAllocator * alloc);
@@ -59,7 +39,7 @@ class GaussianRadianceField : public NonCopyable, public NonMovable, public RefC
 public:
     friend class Renderer;
     static TRef<GaussianRadianceField> Create();
-    void SetPoints(const std::vector<PackedGaussianRadiancePoint> & points);
+    void SetPoints(const std::vector<PackedGaussian3D> & points);
     void UpdateOnDevice_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue);
     void UpdateOnDevice(DeviceBindlessResourceAllocator * alloc);
 
@@ -83,7 +63,7 @@ public:
 protected:
     static void SetupAllocatorUberBuffer(DeviceBindlessResourceAllocator * alloc);
     TRef<DeviceGaussianRadianceField> device_field_;
-    std::vector<PackedGaussianRadiancePoint> points_;
+    std::vector<PackedGaussian3D> points_;
     AABB aabb_ {};
     bool dirty_ {true};
     bool ray_traced_ {false}; // Usually not participating in lighting; raster only by default

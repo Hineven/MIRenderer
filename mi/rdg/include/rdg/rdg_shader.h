@@ -20,7 +20,7 @@ class RHIComputePipeline;
 
 // Some configuration that can be used to configure the shader pipeline
 struct RDGShaderPipelineConfig {
-    RHIPrimitiveTopologyType topology {};
+    RHIPrimitiveTopologyType topology {RHIPrimitiveTopologyType::kTriangleList};
     RHIDepthCompareOpType depth_compare_op {RHIDepthCompareOpType::kLess}; // Depth compare operation
     bool depth_write_enabled {true}; // Whether depth write is enabled
     bool depth_test_enabled {true}; // Whether depth test is enabled
@@ -139,9 +139,7 @@ public:
     }
     // Modify the shader pipeline configuration, e.g. topology type.
     FORCEINLINE static RDGShaderPipelineConfig  GetShaderPipelineConfig () {
-        return RDGShaderPipelineConfig {
-            RHIPrimitiveTopologyType::kTriangleList
-        };
+        return {};
     }
 
     FORCEINLINE const RDGShaderHash & GetShaderHash () const {
@@ -322,6 +320,11 @@ static const char * GetShaderTypeName ();
 // Graphics
 #define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
     INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, "", EntryPoint_PS, "", "", "", "") \
+    IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
+
+// Added: Graphics shader variant with geometry stage (non-shared parameter struct)
+#define IMPLEMENT_RDG_GRAPHICS_SHADER_GS(ClassName, SourcePath, EntryPoint_VS, EntryPoint_GS, EntryPoint_PS) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, "", "", "", "") \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // Ray tracing

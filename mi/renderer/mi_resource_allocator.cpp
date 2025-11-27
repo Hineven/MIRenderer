@@ -59,12 +59,6 @@ material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_me
         {sizeof(GaussianRadianceFieldHeader) * kMaxNumGaussianRadianceFields, RHIBufferUsageFlagBits::kStorage}
     );
     gaussian_radiance_field_header_buffer_->SetName("GaussianRadianceFieldHeaderBuffer");
-    gaussian_instance_offset_buffer_ = RHI::Get().CreateBuffer({sizeof(uint32_t) * kMaxNumGaussianRadianceFields, RHIBufferUsageFlagBits::kStorage});
-    gaussian_instance_offset_buffer_->SetName("GaussianInstanceOffsetBuffer");
-    gaussian_instance_count_buffer_ = RHI::Get().CreateBuffer({sizeof(uint32_t) * kMaxNumGaussianRadianceFields, RHIBufferUsageFlagBits::kStorage});
-    gaussian_instance_count_buffer_->SetName("GaussianInstanceCountBuffer");
-
-
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {

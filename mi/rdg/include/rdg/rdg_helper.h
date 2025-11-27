@@ -25,7 +25,7 @@ public:
                          uint32_t dst_mip_level = 0, uint32_t dst_base_layer = 0, uint32_t dst_layer_count = 1);
     static void CopyBuffer(RenderGraphBuilder & builder, RDGBuffer * src, RDGBuffer * dst, size_t size = SIZE_MAX, size_t src_offset = 0, size_t dst_offset = 0);
 
-    static TRef<RDGBuffer> SpawnDrawIndirectCommand (RenderGraphBuilder & builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count = nullptr, uint32_t first_vertex = 0, uint32_t first_instance = 0) ;
+    static TRef<RDGBuffer> SpawnDrawIndirectCommand (RenderGraphBuilder & builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) ;
 
     // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);

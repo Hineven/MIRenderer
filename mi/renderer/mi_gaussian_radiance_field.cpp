@@ -42,7 +42,7 @@ void GaussianRadianceField::SetRayTraced(bool rt) {
     }
 }
 
-void GaussianRadianceField::SetPoints(const std::vector<PackedGaussianRadiancePoint> & points) {
+void GaussianRadianceField::SetPoints(const std::vector<PackedGaussian3D> & points) {
     points_ = points;
     // Recompute AABB (rough: max scale as half size cube)
     aabb_ = AABB::Empty();
@@ -71,8 +71,8 @@ void GaussianRadianceField::SetupAllocatorUberBuffer(DeviceBindlessResourceAlloc
     }
 }
 
-static GaussianRadiancePoint UnpackPoint(PackedGaussianRadiancePoint packed) {
-    GaussianRadiancePoint pt {};
+static Gaussian3D UnpackPoint(PackedGaussian3D packed) {
+    Gaussian3D pt {};
     pt.Position = packed.Position;
     pt.Scales = packed.Scales;
     auto rotation_3 = glm::vec3(glm::unpackSnorm4x8(packed.PackedRotation_Opacity));
@@ -93,7 +93,7 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
     }
 
     // Upload packed points to uber buffer
-    size_t required_size = points_.size() * sizeof(PackedGaussianRadiancePoint);
+    size_t required_size = points_.size() * sizeof(PackedGaussian3D);
     if (!device_field_->point_buffer_ || device_field_->point_buffer_->GetRHI().size < required_size) {
         device_field_->point_buffer_ = alloc->GetCustomUberBuffer(kGaussianRadianceAllocatorUberBufferIndex)
             ->AllocateRefCounted(static_cast<uint32_t>(required_size)).first;
@@ -112,7 +112,7 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
 
     GaussianRadianceFieldHeader header {
         static_cast<uint32_t>(points_.size()),
-        static_cast<uint32_t>(device_field_->point_buffer_->GetRHI().offset / sizeof(PackedGaussianRadiancePoint))
+        static_cast<uint32_t>(device_field_->point_buffer_->GetRHI().offset / sizeof(PackedGaussian3D))
     };
     Helpers::Upload_Async(queue, alloc->GetGaussianRadianceFieldHeaderBuffer(), sizeof(GaussianRadianceFieldHeader) * device_field_->index_, header);
 

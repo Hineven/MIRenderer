@@ -1,28 +1,19 @@
+#include "shared/SharedGaussianRadianceField.hlsl"
 #include "headers/Packing.hlsl"
 #include "headers/Transform.hlsl"
 #include "headers/Conventions.hlsl"
 #include "headers/Camera.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "resources/RenderableResources.hlsl"
-struct Gaussian3D {
-    float3 Position;
-    float3 Scale;
-    float4 Rotation; // Quaternion
-    float  Alpha;
-};
-struct PackedGaussian3D {
-    float3 Position;
-    uint Rotation;
-    float3 Scale;
-    float Alpha;
-};
+
 StructuredBuffer<PackedGaussian3D> Gaussian3DBuffer;
 Gaussian3D UnpackGaussian(PackedGaussian3D PackedG) {
     Gaussian3D G;
     G.Position = PackedG.Position;
-    G.Scale    = PackedG.Scale;
-    G.Rotation = UnpackQuaternion(PackedG.Rotation);
-    G.Alpha    = PackedG.Alpha;
+    G.Scales   = PackedG.Scales;
+    float3 Rotation_xyz = UnpackSnorm4x8(PackedG.PackedRotation_Opacity).rgb;
+    G.Rotation = normalize(float4(Rotation_xyz, sqrt(max(0.0f, 1.0f - dot(Rotation_xyz, Rotation_xyz)))));
+    G.Opacity  = UnpackUnorm4x8(PackedG.PackedRotation_Opacity).a;
     return G;
 }
 Gaussian3D FetchGaussian(uint GaussianIndex) {
@@ -39,14 +30,14 @@ SH3Coefficents FetchGaussianSHCoefficients(uint GaussianIndex) {
     }
     return SH;
 }
-StructuredBuffer<uint> InstanceGaussianIndexOffsetBuffer;
-StructuredBuffer<uint> InstanceGaussianCountBuffer;
+StructuredBuffer<GaussianRadianceFieldHeader> GaussianRadianceFieldHeaderBuffer;
 
 RWStructuredBuffer<uint> RWActiveGaussianColorBuffer;
 RWStructuredBuffer<uint> RWActiveGaussianCount;
 RWStructuredBuffer<uint> RWActiveGaussianListBuffer;
 RWStructuredBuffer<float> RWActiveGaussianLinearDepthSrcBuffer;
 RWStructuredBuffer<uint>  RWActiveGaussianIndirectionSrcBuffer;
+RWStructuredBuffer<uint> RWActiveGaussianIndirectionBuffer;
 StructuredBuffer<uint> ActiveGaussianIndirectionBuffer;
 
 RWStructuredBuffer<uint> RWActiveGaussianNDCPositionBuffer;
@@ -86,8 +77,10 @@ void FilterActiveGaussiansVS (uint ActiveGaussianRenderableListIndex : SV_Instan
     RenderableHeader RH = RenderableHeaderBuffer[RenderableIndex];
     // Unpack the gaussian radiance field index
     uint RadianceFieldIndex = asuint(RH.Metadata.x);
-	uint InstanceBaseGaussianIndex = InstanceGaussianIndexOffsetBuffer[RadianceFieldIndex];
-	uint InstanceNumGaussians = InstanceGaussianCountBuffer[RadianceFieldIndex];
+    GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
+
+	uint InstanceBaseGaussianIndex = FieldHeader.PointOffset;
+	uint InstanceNumGaussians      = FieldHeader.NumPoints;
 	if(InstanceGaussianRank >= InstanceNumGaussians) return ;
 	uint GaussianIndex = InstanceBaseGaussianIndex + InstanceGaussianRank;
 	float3x4 Transform = RenderableTransformBuffer[RenderableIndex];
@@ -219,7 +212,7 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	// Employ EWA jacobian if the camera is perspective.
     float3x3 J = EWAJacobian2(GaussianWorldPosition, C.TanFoVY, C.WorldToView);
 
-    SymmetricMatrix WorldCov3D = ComputeCovarianceMatrix(G.Scale, G.Rotation, To3x3(InstanceTransform));
+    SymmetricMatrix WorldCov3D = ComputeCovarianceMatrix(G.Scales, G.Rotation, To3x3(InstanceTransform));
 
     // float4x4 LocalToView = mul(C.View, ExpandMatrixWithIdentities(InstanceTransform));
 	float4 HomogeneousW = mul(C.WorldToNDC, float4(GaussianWorldPosition, 1));
@@ -292,9 +285,6 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	RWActiveGaussianQuadNDCVector1Buffer[ActiveIndex] = PackUnorm2x16(saturateDown(ClampedVector2 * 0.5 + 0.5));
 }
 
-// Dummy pixel shader for filter pass (writes nothing, required for graphics pipeline creation)
-float4 FilterActiveGaussiansPS() : SV_Target0 { return float4(0,0,0,0); }
-
 struct DrawActiveGaussians_GSInput
 {
     uint PrimitiveIndex : TEXCOORD0;
@@ -335,11 +325,11 @@ struct DrawActiveGaussians_GSOutput
 // @return The ray t to evaluate the maximum response of the gaussian along the ray
 float EvaluateGaussianResponseRayT (float3 Origin, float3 Direction, Gaussian3D G, inout float3x3 InvCov) {
     // Clamp the scale to avoid numerical issues
-    G.Scale = max(G.Scale, 2e-4f);
+    G.Scales = max(G.Scales, 2e-4f);
     float3x3 InvScaleM = float3x3(
-        1.0f / G.Scale.x, 0, 0,
-        0, 1.0f / G.Scale.y, 0,
-        0, 0, 1.0f / G.Scale.z
+        1.0f / G.Scales.x, 0, 0,
+        0, 1.0f / G.Scales.y, 0,
+        0, 0, 1.0f / G.Scales.z
     );
     float3x3 R = BuildRotationMatrix(G.Rotation);
     InvCov = mul(InvScaleM, transpose(R));
@@ -363,7 +353,7 @@ float Evaluate2DGaussian (float2 P) {
 [maxvertexcount(6)]
 void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout TriangleStream<DrawActiveGaussians_GSOutput> TriStream)
 {
-    int ActiveListIndex = ActiveGaussianIndirectionBuffer[Input[0].PrimitiveIndex];
+    uint ActiveListIndex = ActiveGaussianIndirectionBuffer[Input[0].PrimitiveIndex];
     // if(ActiveListIndex % 4 != UB.FrameIndex % 4) return ;
     // if(CullActiveListGaussian(ActiveListIndex)) return ;
     
@@ -425,7 +415,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     // }
     
     float3 Color = saturate(UnpackUnorm4x8(RWActiveGaussianColorBuffer[ActiveListIndex]).rgb);
-    float4 ColorAlpha = float4(Color, G.Alpha);
+    float4 ColorAlpha = float4(Color, G.Opacity);
     
     // Is the quantilization affecting render quality?
     // int Seed = UB.FrameIndex + InstanceIndex * 77183 + GaussianIndex * 81937121;

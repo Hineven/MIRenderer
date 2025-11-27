@@ -31,8 +31,7 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, InstanceGaussianIndexOffsetBuffer)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, InstanceGaussianCountBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianRenderableCount)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianRenderableListBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianColorBuffer)
@@ -81,7 +80,7 @@ public:
         return cfg;
     }
 };
-IMPLEMENT_RDG_GRAPHICS_SHADER(GRF_FilterShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "FilterActiveGaussiansVS", "FilterActiveGaussiansPS");
+IMPLEMENT_RDG_GRAPHICS_SHADER(GRF_FilterShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "FilterActiveGaussiansVS", "");
 
 class GRF_ProjectShader : public GRF_Shader {
 public:
@@ -114,9 +113,6 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
     // Build per-instance draw indirect commands for FilterActiveGaussians pass
     ctx.gaussian_radiance_fields.draw_indirect_commands.clear();
     auto & allocator = *device_allocator_;
-    // Prepare host side arrays for persistent instance offset/count buffers
-    std::vector<uint32_t> instance_offsets(DeviceBindlessResourceAllocator::kMaxNumGaussianRadianceFields, 0);
-    std::vector<uint32_t> instance_counts(DeviceBindlessResourceAllocator::kMaxNumGaussianRadianceFields, 0);
     // Also build renderable list mapping for instances participating this frame
     std::vector<uint32_t> renderable_indices;
     renderable_indices.reserve(ctx.visible_renderables.size());
@@ -127,8 +123,6 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
             if (!field || field->IsEmpty()) continue;
             auto dev = field->GetDeviceField();
             uint32_t slot = dev->GetIndex();
-            instance_offsets[slot] = dev->GetPointOffset();
-            instance_counts[slot] = field->GetNumPoints();
             RHIDrawIndirectCommand cmd {};
             cmd.vertex_count = field->GetNumPoints();
             cmd.instance_count = 1;
@@ -139,12 +133,6 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
         }
     }
     if (ctx.gaussian_radiance_fields.draw_indirect_commands.empty()) return; // nothing
-
-    // Upload persistent instance buffers via BatchedUploadContext
-    auto offsets_rdg = builder.Import(allocator.GetGaussianInstanceOffsetBuffer(), RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll);
-    auto counts_rdg  = builder.Import(allocator.GetGaussianInstanceCountBuffer(), RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll);
-    view->upload_context_.Add(offsets_rdg, instance_offsets.data(), instance_offsets.size()*sizeof(uint32_t));
-    view->upload_context_.Add(counts_rdg, instance_counts.data(), instance_counts.size()*sizeof(uint32_t));
 
     // Upload indirect draw commands buffer
     ctx.gaussian_radiance_fields.d_filter_draw_commands = RDGBuffer::Create(
@@ -170,8 +158,8 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
     ctx.gaussian_radiance_fields.d_active_renderable_count_buffer->SetName("ActiveGaussianRenderableCountBuffer");
     uint32_t renderable_count = (uint32_t)renderable_indices.size();
     view->upload_context_.Add(ctx.gaussian_radiance_fields.d_active_renderable_list_buffer.Raw(), renderable_indices.data(), renderable_indices.size()*sizeof(uint32_t));
-    view->upload_context_.Add(ctx.gaussian_radiance_fields.d_active_renderable_count_buffer.Raw(), &renderable_count, sizeof(uint32_t));
     view->upload_context_.AddExtraBarrier(ctx.gaussian_radiance_fields.d_active_renderable_list_buffer.Raw());
+    view->upload_context_.Add(ctx.gaussian_radiance_fields.d_active_renderable_count_buffer.Raw(), &renderable_count, sizeof(uint32_t));
     view->upload_context_.AddExtraBarrier(ctx.gaussian_radiance_fields.d_active_renderable_count_buffer.Raw());
 }
 
@@ -205,9 +193,6 @@ void Renderer::Render_DrawGaussianRadianceFields(
         device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceSHAllocatorUberBufferIndex)->GetRHI()
     );
 
-    // Remove previous temporary per-frame buffers and use persistent ones from allocator
-    auto instance_offset_buffer = builder.Import(device_allocator_->GetGaussianInstanceOffsetBuffer());
-    auto instance_count_buffer = builder.Import(device_allocator_->GetGaussianInstanceCountBuffer());
     // Active buffers sized by total_gaussians
     auto active_gaussian_color_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
     auto active_gaussian_count_buffer = builder.CreateBuffer<uint32_t>();
@@ -234,8 +219,9 @@ void Renderer::Render_DrawGaussianRadianceFields(
     // Bind resources
     params->Gaussian3DBuffer = packed_gaussians_buffer;
     params->GaussianSHBuffer = sh_buffer;
-    params->InstanceGaussianIndexOffsetBuffer = instance_offset_buffer;
-    params->InstanceGaussianCountBuffer = instance_count_buffer;
+    params->GaussianRadianceFieldHeaderBuffer = builder.Import(
+        device_allocator_->GetGaussianRadianceFieldHeaderBuffer()
+    );
     params->ActiveGaussianRenderableCount = ctx.gaussian_radiance_fields.d_active_renderable_count_buffer.Raw();
     params->ActiveGaussianRenderableListBuffer = ctx.gaussian_radiance_fields.d_active_renderable_list_buffer.Raw();
     params->RWActiveGaussianColorBuffer = active_gaussian_color_buffer.Raw();
@@ -256,7 +242,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
     // Pass 1: ClearCounters
     auto clear_shader = lib.GetShader<GRF_ClearCountersShader>();
-    Helpers::AddComputePass(builder, clear_shader, params, 1);
+    Helpers::AddComputePass(builder, clear_shader, params);
     // Pass 2: FilterActiveGaussians
     if (ctx.gaussian_radiance_fields.d_filter_draw_commands) {
         auto shader = lib.GetShader<GRF_FilterShader>();
@@ -264,18 +250,18 @@ void Renderer::Render_DrawGaussianRadianceFields(
             ctx.gaussian_radiance_fields.d_filter_draw_commands.Raw(),
             (uint32_t)ctx.gaussian_radiance_fields.draw_indirect_commands.size());
     }
-    // Pass 3: Radix Sort active gaussians by linear depth
+    // Pass 3: ProjectActiveGaussians
+    {
+        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_gaussian_count_buffer.Raw(), wave_size);
+        auto shader = lib.GetShader<GRF_ProjectShader>();
+        Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
+    }
+    // Pass 4: Radix Sort active gaussians by linear depth
     DeviceRadixSort::AddRadixSort32BitsPass(builder, total_gaussians,
         active_gaussian_linear_depth_src_buffer.Raw(), active_gaussian_linear_depth_dst_buffer.Raw(),
         active_gaussian_indirection_src_buffer.Raw(), active_gaussian_indirection_buffer.Raw(),
         active_gaussian_count_buffer.Raw()
     );
-    // Pass 4: ProjectActiveGaussians
-    {
-        auto shader = lib.GetShader<GRF_ProjectShader>();
-        auto groups = DivideAndRoundUp(total_gaussians, wave_size);
-        Helpers::AddComputePass(builder, shader, params, groups);
-    }
     // Pass 5: DrawActiveGaussians
     {
         auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
