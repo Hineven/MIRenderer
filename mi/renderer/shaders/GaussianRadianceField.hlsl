@@ -5,32 +5,7 @@
 #include "headers/Camera.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "resources/RenderableResources.hlsl"
-
-StructuredBuffer<PackedGaussian3D> Gaussian3DBuffer;
-Gaussian3D UnpackGaussian(PackedGaussian3D PackedG) {
-    Gaussian3D G;
-    G.Position = PackedG.Position;
-    G.Scales   = PackedG.Scales;
-    float3 Rotation_xyz = UnpackSnorm4x8(PackedG.PackedRotation_Opacity).rgb;
-    G.Rotation = normalize(float4(Rotation_xyz, sqrt(max(0.0f, 1.0f - dot(Rotation_xyz, Rotation_xyz)))));
-    G.Opacity  = UnpackUnorm4x8(PackedG.PackedRotation_Opacity).a;
-    return G;
-}
-Gaussian3D FetchGaussian(uint GaussianIndex) {
-    return UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
-}
-
-StructuredBuffer<float3> GaussianSHBuffer;
-SH3Coefficents FetchGaussianSHCoefficients(uint GaussianIndex) {
-    SH3Coefficents SH;
-    // Degree 3: 16x3 coefficients
-    [unroll]
-    for(uint i = 0; i < 16; ++i) {
-        SH.Coefficients[i] = GaussianSHBuffer[GaussianIndex * 16 + i];
-    }
-    return SH;
-}
-StructuredBuffer<GaussianRadianceFieldHeader> GaussianRadianceFieldHeaderBuffer;
+#include "resources/GaussianRadianceFieldResources.hlsl"
 
 RWStructuredBuffer<uint> RWActiveGaussianColorBuffer;
 RWStructuredBuffer<uint> RWActiveGaussianCount;
@@ -74,9 +49,7 @@ void FilterActiveGaussiansVS (
     uint InstanceID   : SV_InstanceID,
     uint InstanceGaussianRank : SV_VertexID
 ) {
-    // Under multi-draw indirect, the per-draw base instance carries the index into the
-    // ActiveGaussianRenderableListBuffer. Use BaseInstance (+ InstanceID when instance_count > 1).
-    uint ActiveGaussianRenderableListIndex = BaseInstance;// + InstanceID;
+    uint ActiveGaussianRenderableListIndex = InstanceID; // + BaseInstance;
 
 	// OPTIMIZE: also filter out the gaussians that failed the visibility test
 	// for RasterizationDepth and history depth buffer.
@@ -214,10 +187,14 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
     Gaussian3D G = FetchGaussian(GaussianIndex);
     // Project to 2D covariance
 
-	float3x4 InstanceTransform = RenderableTransformBuffer[RenderableIndex];
-	float3 GaussianWorldPosition = TransformPoint(InstanceTransform, G.Position);
-	// Employ EWA jacobian if the camera is perspective.
-    float3x3 J = EWAJacobian2(GaussianWorldPosition, C.TanFoVY, C.WorldToView);
+    float3x4 InstanceTransform = RenderableTransformBuffer[RenderableIndex];
+    float3 GaussianWorldPosition = TransformPoint(InstanceTransform, G.Position);
+    // Employ EWA jacobian if the camera is perspective.
+    // Build 2D FoV in tangent space: X depends on aspect ratio
+    float TanHalfFovY = C.TanFoVY_2;
+    float2 TanFoV = float2(2.0f * C.FilmAspectRatioAndInvAspectRatio.x * TanHalfFovY,
+                           2.0f * TanHalfFovY);
+    float3x3 J = EWAJacobian2(GaussianWorldPosition, TanFoV, C.WorldToView);
 
     SymmetricMatrix WorldCov3D = ComputeCovarianceMatrix(G.Scales, G.Rotation, To3x3(InstanceTransform));
 
@@ -409,18 +386,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     float  D_TL    =  Depth01.x +Depth01.y - Depth;
     float  D_TR    =  Depth01.x -Depth01.y + Depth;
     float  D_BL    =  Depth01.y -Depth01.x + Depth;
-    // GaussianIndex = max(0, min(GaussianIndex, 10000));
-    // GaussianPBR G_PBR = FetchGaussianPBR(GaussianIndex);
 
-    // SimpleMaterial M = g_MaterialBuffer[InstanceIndex];
-    // Scale color & roughness
-    // {
-    //     float3 ColorScaler = M.Albedo;
-    //     G_PBR.Albedo = saturate(G_PBR.Albedo * ColorScaler);
-    //     G_PBR.Albedo = max(G_PBR.Albedo, M.Emissive);
-    //     G_PBR.Roughness = saturate(G_PBR.Roughness * M.Roughness);
-    // }
-    
     float3 Color = saturate(UnpackUnorm4x8(RWActiveGaussianColorBuffer[ActiveListIndex]).rgb);
     float4 ColorAlpha = float4(Color, G.Opacity);
     
@@ -438,27 +404,27 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     Output.RGB = Color.rgb;
 
     Output.UVW.xy = Expand * float2(-1, -0.5);
-    Output.Position = float4(Left1, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
+    Output.Position = float4(Left1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(-1,  0.5);
-    Output.Position = float4(Left2, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75))), 1);
+    Output.Position = float4(Left2, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(0, -1);
-    Output.Position = float4(Top, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0))), 1);
+    Output.Position = float4(Top, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(0, 1);
-    Output.Position = float4(Bottom, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1))), 1);
+    Output.Position = float4(Bottom, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(1, -0.5);
-    Output.Position = float4(Right1, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.25))), 1);
+    Output.Position = float4(Right1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.25))), 1);
     TriStream.Append(Output);
 
     Output.UVW.xy = Expand * float2(1,  0.5);
-    Output.Position = float4(Right2, LinearDepthToZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.75))), 1);
+    Output.Position = float4(Right2, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.75))), 1);
     TriStream.Append(Output);
     
     TriStream.RestartStrip();

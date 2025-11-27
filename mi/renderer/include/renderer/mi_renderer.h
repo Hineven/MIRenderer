@@ -224,6 +224,9 @@ protected:
             TRef<RDGBuffer> d_filter_draw_commands; // uploaded indirect commands
             TRef<RDGBuffer> d_active_renderable_list_buffer; // ActiveGaussianRenderableListBuffer
             TRef<RDGBuffer> d_active_renderable_count_buffer; // ActiveGaussianRenderableCount
+
+            std::vector<uint32_t> active_renderable_indices; // host side copy for preparing active lists
+            uint32_t active_renderable_count;
         } gaussian_radiance_fields;
 
         void Init ();

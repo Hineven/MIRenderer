@@ -115,7 +115,7 @@ RWStructuredBuffer<uint>   RWScreenProbeUpdateRayOriginScreenCoordsBuffer;
 RWStructuredBuffer<uint>   RWScreenProbeUpdateRayAllocator; // Number of all rays to be traced
 
 // Ray trace results
-RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed normal & material (material is packed as CachedHitMaterial)
+RWStructuredBuffer<uint2> RWScreenProbeUpdateRayResultBuffer; // Packed CachedHitMaterial
 RWStructuredBuffer<uint2> RWScreenProbeUpdateRayRadianceBuffer; // Fp16x4 packed radiance + flag
 RWStructuredBuffer<float> RWScreenProbeUpdateRayInvPdfBuffer;
 RWStructuredBuffer<uint>  RWScreenProbeUpdateRayHitResolveBucketAndCellOffsetBuffer;
@@ -1157,14 +1157,14 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	float3 ShadeViewDirection = -UpdateRayDirection;
 	// Till now rays to be traced have identical indices with the probe update rays
 	// After this kernel, rays to be traced will be cleared and re-assigned shadow rays for DI calculation.
-	uint2 PackedHitResult  = RWScreenProbeUpdateRayResultBuffer[UpdateRayIndex];
-	float3 ShadeNormal     = UnpackNormal(PackedHitResult.x);
-	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.y);
+	uint2 PackedHitMaterial  = RWScreenProbeUpdateRayResultBuffer[UpdateRayIndex];
+	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitMaterial);
+	float3 ShadeNormal     = ShadeMaterial.Normal;
     CameraParameters C     = GetActiveCamera();
 
 	// Offset the hit position to avoid self-intersection
     float ShadePositionOffsetLength = max(2e-5f, dot(abs(ShadePosition), 1.xxx) * 1e-5f);
-	if(ShadeMaterial.bIsSurface) ShadePosition += ShadeNormal * ShadePositionOffsetLength;
+	if(ShadeMaterial.IsSurface()) ShadePosition += ShadeNormal * ShadePositionOffsetLength;
 
     Random R = MakeRandom(
         // Make random numbers consistent when freezing update ray seeds.
@@ -1178,7 +1178,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float3 ShadedRadiance = 0.f;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         ShadePosition, ShadeNormal, ShadeViewDirection,
-        ShadeMaterial.bIsSurface, false, true, 
+        ShadeMaterial.IsSurface(), false, true, 
         R,
         ShadedRadiance,
         SumResampleWeights, NumValidSamples,
@@ -1221,7 +1221,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
         }
 		// Account for shading
         ShadedRadiance *= EvaluateCachedMaterialBRDF(
-            ShadeMaterial, ShadeNormal, ShadeViewDirection,
+            ShadeMaterial, ShadeViewDirection,
             TransmittanceRayDirection, VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G
         );
 	}

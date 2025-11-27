@@ -98,7 +98,7 @@ RWStructuredBuffer<float3> RWVolumeProbeUpdateRayOriginBuffer;
 RWStructuredBuffer<uint>   RWVolumeProbeUpdateRayAllocator; // Number of all rays to be traced
 
 // Ray trace results
-RWStructuredBuffer<uint2> RWVolumeProbeUpdateRayResultBuffer; // Packed normal & material (material is packed as CachedHitMaterial)
+RWStructuredBuffer<uint2> RWVolumeProbeUpdateRayResultBuffer; // Packed CachedHitMaterial
 RWStructuredBuffer<uint2> RWVolumeProbeUpdateRayRadianceBuffer; // Fp16x4 packed radiance + flag
 RWStructuredBuffer<float> RWVolumeProbeUpdateRayInvPdfBuffer;
 RWStructuredBuffer<uint>  RWVolumeProbeUpdateRayHitResolveBucketAndCellOffsetBuffer;
@@ -577,11 +577,11 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 			float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
 			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
 			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
-			uint2  PackedHitResult = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
-            CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedHitResult.y);
-            if(MCached.bIsSurface) {
+			uint2  PackedMaterial = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
+            CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedMaterial);
+            if(MCached.IsSurface()) {
                 // Surface hit, resolve from screen space history
-			    float3 HitNormal      = UnpackNormal(PackedHitResult.x);
+			    float3 HitNormal      = MCached.Normal;
                 bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
                 float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
                 if(HistoryReversedZDepth > 0) {
@@ -599,7 +599,7 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
                     }
                 }
-            } else {
+            } else if(MCached.IsVolume()) {
                 // Volume hit, resolve from volume history texture
                 float2 HistoryMinMax = PreviousVolumeMinMaxTexture.Load(int3(HistoryScreenCoords, 0)).xy;
                 // Relax min-max ranges a bit to avoid precision issues (fp16)
@@ -638,6 +638,8 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
                     uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                     RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
                 }
+            } else {
+                // Unknown material type, do not bypass
             }
 		}
 	}
@@ -709,14 +711,14 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	float3 ShadeViewDirection = -UpdateRayDirection;
 	// Till now rays to be traced have identical indices with the probe update rays
 	// After this kernel, rays to be traced will be cleared and re-assigned shadow rays for DI calculation.
-	uint2 PackedHitResult  = RWVolumeProbeUpdateRayResultBuffer[UpdateRayIndex];
-	float3 ShadeNormal     = UnpackNormal(PackedHitResult.x);
-	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedHitResult.y);
+	uint2 PackedMaterial      = RWVolumeProbeUpdateRayResultBuffer[UpdateRayIndex];
+	CachedHitMaterial ShadeMaterial = UnpackCachedHitMaterial(PackedMaterial);
+	float3 ShadeNormal     = ShadeMaterial.Normal;
     CameraParameters C     = GetActiveCamera();
 
 	// Offset the hit position to avoid self-intersection
     float ShadePositionOffsetLength = max(2e-5f, dot(abs(ShadePosition), 1.xxx) * 1e-5f);
-	if(ShadeMaterial.bIsSurface) ShadePosition += ShadeNormal * ShadePositionOffsetLength;
+	if(ShadeMaterial.IsSurface()) ShadePosition += ShadeNormal * ShadePositionOffsetLength;
 
     float3 ProbeNDC = TransformPoint(C.WorldToNDC, UpdateRayOrigin);
     float2 ProbeScreenUV = NDC2ToUV(ProbeNDC.xy);
@@ -733,7 +735,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float3 ShadedRadiance = 0.f;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         ShadePosition, ShadeNormal, ShadeViewDirection,
-        ShadeMaterial.bIsSurface, false, true, 
+        ShadeMaterial.IsSurface(), false, true, 
         R,
         ShadedRadiance,
         SumResampleWeights, NumValidSamples,
@@ -775,7 +777,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
         }
 		// Account for shading
         ShadedRadiance *= EvaluateCachedMaterialBRDF(
-            ShadeMaterial, ShadeNormal, ShadeViewDirection,
+            ShadeMaterial, ShadeViewDirection,
             TransmittanceRayDirection, VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G
         );
 	}
@@ -1026,8 +1028,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             float lumaA = RadianceToLuminance(NewRadiance.xyz);
             float lumaB = RadianceToLuminance(ReconstructedRadiance.xyz);
 
-            // Unbiased blending 
-            // FIXME: < 1 blending overdarkens the result!!!! why?
+            // Unbiased blending
             float temporal_blend = 0.15f;
             
             NewRadiance = lerp(ReconstructedRadiance, NewRadiance, temporal_blend);

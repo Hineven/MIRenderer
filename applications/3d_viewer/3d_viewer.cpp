@@ -270,7 +270,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
 
     // Load default model
-    if (true) {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
@@ -328,7 +328,26 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (false) {
+    if (true) {
+
+        std::vector<TRef<Geometry>> geometries;
+        std::vector<TRef<Material>> materials;
+        // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene, default_mat.Raw(),
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+        }
+        auto & r = Renderer::Get();
+        for (auto e : meshes) {
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+        }
+
         auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
         TRef<GaussianRadianceField> field;
         if (!GaussianRadianceFieldLoader::LoadPLY(
@@ -342,8 +361,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         if (field) {
             field->UpdateOnDevice(resource_allocator.Raw());
             auto field_instance = GaussianRadianceFieldInstance::Create(scene.get(), field.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
-            field_instance->EditTransform().Translate({0, 0, 0});
-            field_instance->EditTransform().Scale({1.0f, 1.0f, 1.0f});
+            // field_instance->EditTransform().Translate({0, 0, 0});
+            // field_instance->EditTransform().Scale({1.0f, 1.0f, 1.0f});
         }
     }
 

@@ -99,6 +99,11 @@ float LinearDepthToZDepth(CameraParameters C, float LinearDepth)
     }
 }
 
+float LinearDepthToReversedZDepth(CameraParameters C, float LinearDepth)
+{
+    return 1.0f - LinearDepthToZDepth(C, LinearDepth);
+}
+
 float PerspectiveReversedZDepthToLinearDepth(float Near, float Far, float ReversedZDepth)
 {
     return PerspectiveZDepthToLinearDepth(Near, Far, 1.0f - ReversedZDepth);

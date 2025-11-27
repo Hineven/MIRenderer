@@ -43,9 +43,9 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector0Buffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector1Buffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
-    SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
-    SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {})
+    SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
+    SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
 END_SHADER_PARAMETERS()
 
 class GRF_Shader : public RDGShader {
@@ -114,7 +114,8 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
     ctx.gaussian_radiance_fields.draw_indirect_commands.clear();
     auto & allocator = *device_allocator_;
     // Also build renderable list mapping for instances participating this frame
-    std::vector<uint32_t> renderable_indices;
+    auto & renderable_indices = ctx.gaussian_radiance_fields.active_renderable_indices;
+    renderable_indices.clear();
     renderable_indices.reserve(ctx.visible_renderables.size());
     // Collect visible gaussian instances
     for (auto & r : ctx.visible_renderables) {
@@ -156,7 +157,8 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
         sizeof(uint32_t)
     );
     ctx.gaussian_radiance_fields.d_active_renderable_count_buffer->SetName("ActiveGaussianRenderableCountBuffer");
-    uint32_t renderable_count = (uint32_t)renderable_indices.size();
+    auto & renderable_count = ctx.gaussian_radiance_fields.active_renderable_count;
+    renderable_count = (uint32_t)renderable_indices.size();
     view->upload_context_.Add(ctx.gaussian_radiance_fields.d_active_renderable_list_buffer.Raw(), renderable_indices.data(), renderable_indices.size()*sizeof(uint32_t));
     view->upload_context_.AddExtraBarrier(ctx.gaussian_radiance_fields.d_active_renderable_list_buffer.Raw());
     view->upload_context_.Add(ctx.gaussian_radiance_fields.d_active_renderable_count_buffer.Raw(), &renderable_count, sizeof(uint32_t));
@@ -208,7 +210,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     auto params = builder.Allocate<GaussianRadianceFieldParameters>();
     auto UB = builder.Allocate<GaussianRadianceFieldUB>();
     {
-        UB->GaussianClampingScale = 0.3f;
+        UB->GaussianClampingScale = 1e-3f;
         UB->GaussianExpandFactor  = 2.25f;
         UB->Padding[0] = UB->Padding[1] = 0;
     }
@@ -233,10 +235,11 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->RWActiveGaussianQuadNDCVector0Buffer = active_gaussian_quad_vec0_buffer.Raw();
     params->RWActiveGaussianQuadNDCVector1Buffer = active_gaussian_quad_vec1_buffer.Raw();
     params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_buffer.Raw();
-    params->G_Depth = view->G_depth_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     // Draw to back buffer directly.
     params->Color = builder.Import(RHI::Get().GetBackBuffer());
+    // Test against the depth buffer.
+    params->Depth = view->G_depth_.Raw();
 
     auto & lib = RDGShaderLibrary::Get();
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;

@@ -11,6 +11,7 @@
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
+#include "resources/GaussianRadianceFieldResources.hlsl"
 
 RaytracingAccelerationStructure TLAS;
 
@@ -114,7 +115,7 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    if(InstanceFlags == 0) {
+    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Static mesh instance
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -146,7 +147,7 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
 	    if(ColorOpacity.a < 0.99f) {
  		    IgnoreHit();
 	    }
-    } else {
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         float3 RayOrigin = WorldRayOrigin();
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
@@ -174,6 +175,42 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         }
         // Always ignore hits on volume primitives
         IgnoreHit();
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
+        // 3D gaussian radiance field instance
+        float3 RayOrigin = WorldRayOrigin();
+        float3 RayDirection = WorldRayDirection();
+        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
+        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
+        Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
+        RayDesc Ray = GetRayDesc();
+        float RayScaler = 1, RayT = 0;
+        float3x4 WorldToObject = WorldToObject3x4();
+        float3x3 WorldToObjectNormal = RenderableNormalTransformBuffer[Instance];
+        float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
+        float3 RayTangent, RayBitangent;
+        GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);
+        float3 LocalRayDirection = TransformVector(WorldToObject, Ray.Direction);
+        float3 LocalRayTangent   = TransformVector(WorldToObjectNormal, RayTangent);
+        float3 LocalRayBitangent = TransformVector(WorldToObjectNormal, RayBitangent);
+        float3x3 RaySpace = float3x3(
+            LocalRayTangent   / dot(LocalRayTangent, LocalRayTangent),
+            LocalRayBitangent / dot(LocalRayBitangent, LocalRayBitangent),
+            LocalRayDirection / dot(LocalRayDirection, LocalRayDirection)
+        );
+        float Alpha = 
+            EvaluateGaussianResponseRast(LocalRayOrigin, RaySpace, G, RayT);
+        Payload.Transmittance *= Alpha;
+        if(Payload.Transmittance < 0.001f) {
+            // Early termination if transmittance is too small
+            AcceptHitAndEndSearch();
+        }
+        // Always ignore hits on gaussian RF
+        IgnoreHit();
+    } else {
+        // Always ignore hits on unknown instance types
+        IgnoreHit();
     }
 }
 
@@ -185,7 +222,7 @@ void TraceTransmittanceRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    if(InstanceFlags == 0) {
+    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Found a static mesh instance. Return the hit distance.
         Payload.HitDistance = RayTCurrent();
         Payload.Transmittance = 0;
