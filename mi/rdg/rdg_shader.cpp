@@ -1074,6 +1074,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
                         RHIColorAttachmentBlendDesc blend {};
                         if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
                             // TODO support more blending operations
+                            blend.blend_enable = true;
                             blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
                             blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
                             blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
