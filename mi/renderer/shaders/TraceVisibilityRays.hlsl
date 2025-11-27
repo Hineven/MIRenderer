@@ -62,7 +62,8 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 // Optional (when the ray tmax is passed as a parameter, otherwise defaults to far plane)
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     // Hit on meshes / proxy meshes, TMax for no hits
     // For coarse visibility with exact volume scattering sampling, this is the hit distance for 
     // volume hits / surface hits.

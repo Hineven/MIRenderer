@@ -50,7 +50,8 @@ struct ReferencePathTracerUB {
 
 ConstantBuffer<ReferencePathTracerUB> UB;
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     bool bIsSurfaceHit; // True if hit a surface, false if miss or hit a volume
     bool bIsFrontFace;
     float TCurrent;

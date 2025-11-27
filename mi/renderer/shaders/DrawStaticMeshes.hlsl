@@ -19,7 +19,12 @@ struct DrawDeferredStaticMeshesVSOut {
 };
 
 // TODO provide an optimized path for opaque materials
-DrawDeferredStaticMeshesVSOut DrawDeferredStaticMeshesVS (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID) {
+DrawDeferredStaticMeshesVSOut DrawDeferredStaticMeshesVS (
+    DefaultStaticMeshVertex Vertex,
+    uint InstanceIndex : SV_InstanceID,
+    uint BaseInstance : SV_StartInstanceLocation
+) {
+    // InstanceIndex += BaseInstance;
     uint2 RenderableIndex_DescriptorIndex = RenderableIndexAndDescriptorIndexBuffer[InstanceIndex];
     uint RenderableIndex = RenderableIndex_DescriptorIndex.x;
     uint DescriptorIndex = RenderableIndex_DescriptorIndex.y;
@@ -146,7 +151,12 @@ struct DrawForwardStaticMeshesVSOut {
     float2 UV : TEXCOORD2;
 };
 
-DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID) {
+DrawForwardStaticMeshesVSOut DrawForwardStaticMeshesVS (
+    DefaultStaticMeshVertex Vertex,
+    uint InstanceIndex : SV_InstanceID,
+    uint BaseInstance : SV_StartInstanceLocation
+) {
+    // InstanceIndex += BaseInstance;
     uint2 RenderableIndex_DescriptorIndex = RenderableIndexAndDescriptorIndexBuffer[InstanceIndex];
     uint RenderableIndex = RenderableIndex_DescriptorIndex.x;
     uint DescriptorIndex = RenderableIndex_DescriptorIndex.y;

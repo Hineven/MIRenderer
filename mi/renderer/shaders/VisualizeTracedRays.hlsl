@@ -27,8 +27,10 @@ StructuredBuffer<float3> TracedRaysColorBuffer;
 
 VisualizeTracedRaysVSOut VisualizeTracedRaysVS (
     uint VertexIndex : SV_VertexID,
-    uint InstanceIndex : SV_InstanceID
+    uint InstanceIndex : SV_InstanceID,
+    uint BaseInstance : SV_StartInstanceLocation
 ) {
+    // InstanceIndex += BaseInstance;
     VisualizeTracedRaysVSOut Output = (VisualizeTracedRaysVSOut)0;
     float3 RayOrigin = TracedRaysOriginBuffer[InstanceIndex];
     float3 RayDirection = TracedRaysDirectionBuffer[InstanceIndex];

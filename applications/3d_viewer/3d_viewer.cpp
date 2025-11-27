@@ -270,7 +270,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
 
     // Load default model
-    if (false) {
+    if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene.gltf");
@@ -328,7 +328,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (true) {
+    if (false) {
         auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
         TRef<GaussianRadianceField> field;
         if (!GaussianRadianceFieldLoader::LoadPLY(

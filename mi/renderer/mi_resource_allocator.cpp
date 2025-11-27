@@ -65,6 +65,4 @@ DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {
 
 }
 
-
-
 MI_NAMESPACE_END

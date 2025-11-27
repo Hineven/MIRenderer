@@ -25,7 +25,8 @@ StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutput;
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     float4 Color;
     float Transmittance; // For volume primitives
     float THit;

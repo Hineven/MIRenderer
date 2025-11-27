@@ -68,7 +68,7 @@ RDGShader::~RDGShader () {
 static std::string LoadFile(const std::string & path) {
     auto reader = GetInfra().RIO_Open(path, MIInfraResourceHintType::kShaderSource);
     if (!reader) {
-        MI_LOG(MIInfraLogType::kWarning, "Failed to open resource: {}", path);
+        MI_LOG(MIInfraLogType::kInfo, "Failed to open resource: {}", path);
         MI_LOG(MIInfraLogType::kInfo, "This may be due to temporary file system issue. Retrying...");
         // 25.11.13: try again after a short delay, in case of temporary file system issue.
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -679,7 +679,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         uint64_t cs_hash = 0;
         std::wstring out_command;
         auto result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
@@ -713,7 +713,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t vs_hash = 0;
             std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_6",
+                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_8",
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
@@ -729,7 +729,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 uint64_t gs_hash = 0;
                 std::wstring out_command;
                 gs_result = GetInfra().CompileHLSLToSPIRV(
-                        source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs_6_6",
+                        source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs_6_8",
                         std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &gs_hash
                 );
                 if (gs_result.empty()) {
@@ -746,7 +746,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 uint64_t fs_hash = 0;
                 std::wstring out_command;
                 fs_result = GetInfra().CompileHLSLToSPIRV(
-                        source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_6",
+                        source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_8",
                         std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
                 );
                 if (fs_result.empty()) {
@@ -822,7 +822,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t raygen_hash = 0;
             std::wstring out_command;
             raygen_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib_6_6",
+                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib_6_8",
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &raygen_hash
             );
             if (raygen_result.empty()) {
@@ -836,7 +836,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t chit_hash = 0;
             std::wstring out_command;
             chit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &chit_hash
             );
             if (chit_result.empty()) {
@@ -854,7 +854,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t ahit_hash = 0;
             std::wstring out_command;
             ahit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &ahit_hash
             );
             if (ahit_result.empty()) {
@@ -868,7 +868,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t miss_hash = 0;
             std::wstring out_command;
             miss_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &miss_hash
             );
             if (miss_result.empty()) {

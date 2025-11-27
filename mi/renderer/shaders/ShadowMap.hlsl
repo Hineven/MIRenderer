@@ -19,8 +19,12 @@ struct Shadow_VS_Out
     float2 UV : TEXCOORD1;
 };
 
-Shadow_VS_Out Shadow_VS_Main(DefaultStaticMeshVertex Vertex, uint InstanceIndex : SV_InstanceID)
-{
+Shadow_VS_Out Shadow_VS_Main(
+    DefaultStaticMeshVertex Vertex,
+    uint InstanceIndex : SV_InstanceID,
+    uint BaseInstance : SV_StartInstanceLocation
+) {
+    // InstanceIndex += BaseInstance;
     uint2 RenderableIndex_DescriptorIndex = RenderableIndexAndDescriptorIndexBuffer[InstanceIndex];
     uint RenderableIndex = RenderableIndex_DescriptorIndex.x;
     uint DescriptorIndex = RenderableIndex_DescriptorIndex.y;

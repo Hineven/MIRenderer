@@ -69,7 +69,14 @@ void UnpackActiveGaussianIndex(uint PackedIndex, out uint ActiveRenderableListIn
 }
 
 // Filter the active gaussians that are visible in the view frustrum
-void FilterActiveGaussiansVS (uint ActiveGaussianRenderableListIndex : SV_InstanceID, uint InstanceGaussianRank : SV_VertexID) {
+void FilterActiveGaussiansVS (
+    uint BaseInstance : SV_StartInstanceLocation,
+    uint InstanceID   : SV_InstanceID,
+    uint InstanceGaussianRank : SV_VertexID
+) {
+    // Under multi-draw indirect, the per-draw base instance carries the index into the
+    // ActiveGaussianRenderableListBuffer. Use BaseInstance (+ InstanceID when instance_count > 1).
+    uint ActiveGaussianRenderableListIndex = BaseInstance;// + InstanceID;
 
 	// OPTIMIZE: also filter out the gaussians that failed the visibility test
 	// for RasterizationDepth and history depth buffer.

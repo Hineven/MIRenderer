@@ -37,7 +37,8 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 // Optional (when the ray tmax is passed as a parameter, otherwise defaults to far plane)
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     float HitDistance;
 };
 
