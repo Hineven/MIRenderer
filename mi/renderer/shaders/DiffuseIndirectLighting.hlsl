@@ -1045,7 +1045,7 @@ float3 UnpackUpdateRayRadianceFlag (uint2 Packed, out bool bBypass) {
 // Try to resolve hit lighting from screen space history directly (that spares the effort for further light ray tracing & shading)
 // Dispatched per probe update ray, spawn candidate shading points
 [numthreads(WAVE_SIZE, 1, 1)]
-void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID) {
+void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_DispatchThreadID) {
 	int RayIndex = DispatchID;
     if(RayIndex >= RWScreenProbeUpdateRayAllocator[0]) return ;
     float3 RayOrigin = GetScreenProbeUpdateRayOrigin(RayIndex);
@@ -1057,35 +1057,52 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	// Whether we should bypass the second level radiance cache. 
 	bool bBypass = false;
 	if(bHit) {
-		float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
-        CameraParameters PrevC = GetPreviousCamera();
-		float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
-		float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
-		if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
-		&& PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
-			float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
-			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
-			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
-			uint2  PackedHitResult = RWScreenProbeUpdateRayResultBuffer[RayIndex];
-			float3 HitNormal     = UnpackNormal(PackedHitResult.x);
-			float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
-			if(HistoryReversedZDepth > 0) {
-				float  HistoryDepth  = ReversedZDepthToLinearDepth(PrevC, HistoryReversedZDepth);
-				float  PreviousDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
-				bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
-				bool   bDepthVisible  = 
-							abs(HistoryDepth - PreviousDepth) 
-							/ max(PreviousDepth, HistoryDepth) < 5e-2f;
-				if(bNormalVisible && bDepthVisible) {
-					// The irradiance is directly attained from reprojected history radiance
-					// The radiance has been multiplied by BRDF. So no need to do shading again.
-					float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
-                    bBypass = true;
-                    uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
-                    RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
-				}
-			}
-		}
+        uint2  PackedHitResult = RWScreenProbeUpdateRayResultBuffer[RayIndex];
+        CachedHitMaterial CM = UnpackCachedHitMaterial(PackedHitResult);
+        // Specially, for GRF hits, simply decode color from hit albedo
+        if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN) {
+            // Use a simple non-linear mapping to approximate radiance
+            float3 Radiance = ColorToRadiance(CM.Albedo);
+            uint2 Packed = PackUpdateRayRadianceFlag(Radiance, true);
+            bBypass = true;
+            RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+        } else if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE) {
+            float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
+            CameraParameters PrevC = GetPreviousCamera();
+            float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
+            float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
+            if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
+            && PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
+                float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
+                int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
+                float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
+                float3 HitNormal     = CM.Normal;
+                float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
+                if(HistoryReversedZDepth > 0) {
+                    float  HistoryDepth  = ReversedZDepthToLinearDepth(PrevC, HistoryReversedZDepth);
+                    float  PreviousDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
+                    bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
+                    bool   bDepthVisible  = 
+                                abs(HistoryDepth - PreviousDepth) 
+                                / max(PreviousDepth, HistoryDepth) < 5e-2f;
+                    if(bNormalVisible && bDepthVisible) {
+                        // The irradiance is directly attained from reprojected history radiance
+                        // The radiance has been multiplied by BRDF. So no need to do shading again.
+                        float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
+                        bBypass = true;
+                        uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
+                        RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+                    }
+                }
+            }
+        } else if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE) {
+            // Volume hit, resort to radiance cache
+            // TODO resolve from screen history
+        } else {
+            // Unknown material type, bypass (black)
+            bBypass = true;
+            RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(0.f.xxx, true);
+        }
 	}
 	if(!bBypass) {
 		if(bHit) {

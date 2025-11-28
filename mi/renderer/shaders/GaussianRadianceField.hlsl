@@ -4,6 +4,7 @@
 #include "headers/Conventions.hlsl"
 #include "headers/Camera.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
+#include "headers/GaussianSplatting.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
 
@@ -93,88 +94,6 @@ void FilterActiveGaussiansVS (
 	}
 }
 
-// TanFoV: 2 * tan(fov / 2)
-// @return The first two rows of Jacobian Matrix.
-float3x3 EWAJacobian2 (float3 Mean, float2 TanFoV, float4x4 View) {
-    float3 P = mul(View, float4(Mean, 1.0)).xyz;
-    const float limx = 0.65f * TanFoV.x;
-    const float limy = 0.65f * TanFoV.y;
-    const float txtz = P.x / P.z;
-    const float tytz = P.y / P.z;
-    // Clamp to (fov expanded) frustum
-    P.x = clamp(txtz, -limx, limx) * P.z;
-    P.y = clamp(tytz, -limy, limy) * P.z;
-
-    float3x3 J = float3x3(
-        (2 / TanFoV.x) / P.z, 0.0f, - (2 / TanFoV.x) * P.x / (P.z * P.z),
-        0.0f, (2 / TanFoV.y) / P.z, - (2 / TanFoV.y) * P.y / (P.z * P.z),
-        0.0f, 0.0f, 0.0f);
-    return J;
-}
-
-struct SymmetricMatrix {
-    float3 Diagonal;
-    float3 OffDiagonal;
-};
-
-float3x3 ExpandSymmetricMatrix (SymmetricMatrix C) {
-    float3x3 MC = float3x3(
-        C.Diagonal.x, C.OffDiagonal.x, C.OffDiagonal.y,
-        C.OffDiagonal.x, C.Diagonal.y, C.OffDiagonal.z,
-        C.OffDiagonal.y, C.OffDiagonal.z, C.Diagonal.z
-    );
-    return MC;
-}
-
-float3 ProjectCovarianceMatrixToNDC(float3x3 J, SymmetricMatrix Covariance3D, float4x4 View)
-{
-    float3x3 W = float3x3(
-        View[0][0], View[0][1], View[0][2],
-        View[1][0], View[1][1], View[1][2],
-        View[2][0], View[2][1], View[2][2]);
-
-    float3x3 Mk = mul(J, W);
-    
-    float3x3 C = ExpandSymmetricMatrix(Covariance3D);
-    float3x3 C_2D = mul(mul(Mk, C), transpose(Mk));
-
-    return float3(C_2D[0][0], C_2D[0][1], C_2D[1][1]);
-}
-
-float3x3 GetRotationScaleTransform (float4 Rotation, float3 Scale) {
-    // Rotation matrix
-    float3x3 R = BuildRotationMatrix(Rotation);
-    // Scaling matrix
-    float3x3 S = {
-        Scale.x, 0, 0,
-        0, Scale.y, 0,
-        0, 0, Scale.z
-    };
-    return mul(R, S);
-}
-
-SymmetricMatrix ComputeCovarianceMatrix (float3 Scale, float4 Rotation, float3x3 InstanceRotationScale) {
-    float3x3 M = mul(InstanceRotationScale, GetRotationScaleTransform(Rotation, Scale));
-    // Covariance matrixs
-    float3x3 Covariance = mul(M, transpose(M));
-
-    float3 Diagonal = float3(
-        Covariance[0][0],
-        Covariance[1][1],
-        Covariance[2][2]
-    );
-    float3 OffDiagonal = float3(
-        Covariance[0][1],
-        Covariance[0][2],
-        Covariance[1][2]
-    );
-    SymmetricMatrix Ret = (SymmetricMatrix)0;
-    Ret.Diagonal = Diagonal;
-    Ret.OffDiagonal = OffDiagonal;
-    return Ret;
-}
-
-
 [numthreads(WAVE_SIZE, 1, 1)]
 void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	if(DispatchID >= RWActiveGaussianCount[0]) return;
@@ -196,7 +115,7 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
                            2.0f * TanHalfFovY);
     float3x3 J = EWAJacobian2(GaussianWorldPosition, TanFoV, C.WorldToView);
 
-    SymmetricMatrix WorldCov3D = ComputeCovarianceMatrix(G.Scales, G.Rotation, To3x3(InstanceTransform));
+    SymmetricMatrix3D WorldCov3D = ComputeCovarianceMatrix(G.Scales, G.Rotation, To3x3(InstanceTransform));
 
     // float4x4 LocalToView = mul(C.View, ExpandMatrixWithIdentities(InstanceTransform));
 	float4 HomogeneousW = mul(C.WorldToNDC, float4(GaussianWorldPosition, 1));
@@ -322,16 +241,6 @@ float EvaluateGaussianResponseRayT (float3 Origin, float3 Direction, Gaussian3D 
     float  Numerator  = dot(G.Position - Origin, Temp);
     float  Denominator = dot(Direction, Temp);
     return Numerator / max(Denominator, 1e-7f);
-}
-
-float Evaluate2DUnnormalizedGaussian (float2 P) {
-    // float NormalizationFactor = 1 / (2 * PI);
-    return exp(-dot(P, P) / 2);
-}
-
-float Evaluate2DGaussian (float2 P) {
-    float NormalizationFactor = 1 / (2 * PI);
-    return NormalizationFactor * exp(-dot(P, P) / 2);
 }
 
 [maxvertexcount(6)]

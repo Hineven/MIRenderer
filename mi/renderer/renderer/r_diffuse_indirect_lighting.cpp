@@ -364,13 +364,13 @@ namespace DiffuseIndirectLightingShaders {
 
     // Trace update rayus...
 
-    class ResolveHitLightingFromScreenHistoryShader : public DiffuseIndirectLightingShader {
+    class ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader : public DiffuseIndirectLightingShader {
     public:
         RDG_SHADER_USE_PARAMETERS(DiffuseIndirectLightingParams)
         DECLARE_SHADER(DiffuseIndirectLightingShader)
     };
 
-    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader, "mi/renderer/shaders/DiffuseIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistoryAndSpecialEmitter");
 
     class SampleLightRaysForUpdateRayHitsShader : public DiffuseIndirectLightingShader {
     public:
@@ -1005,11 +1005,11 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
     );
 
     {
-        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryShader>(ini);
+        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(ini);
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
             builder, screen_probe_update_ray_allocator.Raw(), wave_size
         );
-        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryShader>(
+        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(
             builder, shader, params, cmd.Raw()
         );
     }

@@ -325,13 +325,13 @@ namespace VolumeIndirectLightingShaders {
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClipUpdateRayCount");
 
-    class ResolveHitLightingFromScreenHistoryShader final : public VolumeIndirectLightingShader {
+    class ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader final : public VolumeIndirectLightingShader {
     public:
         RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
         DECLARE_SHADER(VolumeIndirectLightingShader)
     };
 
-    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistoryAndSpecialEmitter");
 
     class SampleLightRaysForUpdateRayHitsShader final : public VolumeIndirectLightingShader {
     public:
@@ -886,11 +886,11 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     );
 
     {
-        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryShader>(ini);
+        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(ini);
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
             builder, volume_probe_update_ray_allocator.Raw(), wave_size
         );
-        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryShader>(
+        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(
             builder, shader, params, cmd.Raw()
         );
     }

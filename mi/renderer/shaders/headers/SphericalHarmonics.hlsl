@@ -165,7 +165,7 @@ struct SH3Coefficents {
 };
 
 
-float3 SH3Evaluate(float3 ViewDirection, SH3Coefficents SH3, int Degree)
+float3 SH3Evaluate(float3 ViewDirection, SH3Coefficents SH3, int Degree = 3)
 {
 	const float SH_C0 = 0.28209479177387814f;
 	const float SH_C1 = 0.4886025119029199f;

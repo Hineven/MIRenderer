@@ -11,6 +11,9 @@
 #include "headers/VolumePrimitivesLib.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/Material.hlsl"
+#include "headers/RayTracingHelpers.hlsl"
+#include "headers/GaussianSplatting.hlsl"
+#include "resources/RenderableResources.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
@@ -33,7 +36,6 @@ ConstantBuffer<TraceVisibilityRaysUB> UB;
 
 RaytracingAccelerationStructure TLAS;
 
-StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
@@ -147,15 +149,6 @@ void TraceVisibilityRaysMiss(inout RayPayload Payload: SV_RayPayload) {
     Payload.PackedMaterial = MakePackedInvalidCachedHitMaterial();
 }
 
-
-RayDesc GetRayDesc () {
-    RayDesc Ray;
-    Ray.Origin = WorldRayOrigin();
-    Ray.Direction = WorldRayDirection();
-    Ray.TMin = RayTMin();
-    Ray.TMax = RayTCurrent();
-    return Ray;
-}
 
 [shader("anyhit")]
 void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
@@ -280,7 +273,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         RayDesc Ray = GetRayDesc();
         float RayScaler = 1, RayT = 0;
         float3x4 WorldToObject = WorldToObject3x4();
-        float3x3 WorldToObjectNormal = RenderableNormalTransformBuffer[Instance];
+        float3x3 WorldToObjectNormal = transpose(To3x3(WorldToObject3x4()));
         float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
         float3 RayTangent, RayBitangent;
         GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);
@@ -301,7 +294,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         } else { // Hit
             // Still, we have to roll out a new seed for the next possible anyhit
             Payload.U = Payload.U / Alpha;
-            Payload.HitDist = RayT / max(1e-6, RayScaler); // Use the max response T as reply
+            Payload.HitDistance = RayT / max(1e-6, RayScaler); // Use the max response T as reply
         }
 #endif
     } else {
@@ -366,8 +359,11 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
         uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
-        sadfasdfdasfasdfasdfas (evaluate gaussian)
-        Payload.y = PackCachedHitMaterial(MakeCachedHitMaterialForGaussianRF(Instance));
+        SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
+        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
+        float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
+        float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
     } else {
         // Unknown instance type, do nothing
     }
@@ -421,8 +417,11 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
         uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
-        sdfasfasdfasfasd (evaluate gaussian radiance)
-        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterialForGaussianRF(Instance));
+        SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
+        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
+        float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
+        float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
     } else {
         // Unknown instance type, do nothing
     }

@@ -8,14 +8,16 @@
 #include "headers/HybridTracing.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 #include "headers/VolumePrimitivesLib.hlsl"
+#include "headers/RayTracingHelpers.hlsl"
+#include "headers/GaussianSplatting.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
+#include "resources/RenderableResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
 
 RaytracingAccelerationStructure TLAS;
 
-StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
@@ -187,7 +189,7 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         RayDesc Ray = GetRayDesc();
         float RayScaler = 1, RayT = 0;
         float3x4 WorldToObject = WorldToObject3x4();
-        float3x3 WorldToObjectNormal = RenderableNormalTransformBuffer[Instance];
+        float3x3 WorldToObjectNormal = transpose(To3x3(WorldToObject3x4()));
         float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
         float3 RayTangent, RayBitangent;
         GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);

@@ -556,7 +556,7 @@ float3 UnpackUpdateRayRadianceFlag (uint2 Packed, out bool bBypass) {
 // Try to resolve hit lighting from screen space history directly (that spares the effort for further light ray tracing & shading)
 // Dispatched per probe update ray, spawn candidate shading points
 [numthreads(WAVE_SIZE, 1, 1)]
-void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID) {
+void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_DispatchThreadID) {
 	int RayIndex = DispatchID;
     if(RayIndex >= RWVolumeProbeUpdateRayAllocator[0]) return ;
     float3 RayOrigin = RWVolumeProbeUpdateRayOriginBuffer[RayIndex];
@@ -568,80 +568,93 @@ void ResolveHitLightingFromScreenHistory (uint DispatchID : SV_DispatchThreadID)
 	// Whether we should bypass the second level radiance cache. 
 	bool bBypass = false;
 	if(bHit) {
-		float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
-        CameraParameters PrevC = GetPreviousCamera();
-		float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
-		float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
-		if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
-		&& PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
-			float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
-			int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
-			float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
-			uint2  PackedMaterial = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
-            CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedMaterial);
-            if(MCached.IsSurface()) {
-                // Surface hit, resolve from screen space history
-			    float3 HitNormal      = MCached.Normal;
-                bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
-                float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
-                if(HistoryReversedZDepth > 0) {
-                    float  HistoryDepth  = ReversedZDepthToLinearDepth(PrevC, HistoryReversedZDepth);
-                    float  PreviousDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
-                    bool   bDepthVisible  = 
-                                abs(HistoryDepth - PreviousDepth) 
-                                / max(PreviousDepth, HistoryDepth) < 5e-2f;
-                    if(bNormalVisible && bDepthVisible) {
-                        // The irradiance is directly attained from reprojected history radiance
-                        // The radiance has been multiplied by BRDF. So no need to do shading again.
-                        float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
+        uint2  PackedHitResult = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
+        CachedHitMaterial CM = UnpackCachedHitMaterial(PackedHitResult);
+        // Specially, for GRF hits, simply decode color from hit albedo
+        if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN) {
+            // Use a simple non-linear mapping to approximate radiance
+            float3 Radiance = ColorToRadiance(CM.Albedo);
+            uint2 Packed = PackUpdateRayRadianceFlag(Radiance, true);
+            bBypass = true;
+            RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+        } else {
+            float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
+            CameraParameters PrevC = GetPreviousCamera();
+            float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
+            float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
+            if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
+            && PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
+                float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
+                int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
+                float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
+                uint2  PackedMaterial = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
+                CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedMaterial);
+                if(MCached.IsSurface()) {
+                    // Surface hit, resolve from screen space history
+                    float3 HitNormal      = MCached.Normal;
+                    bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
+                    float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
+                    if(HistoryReversedZDepth > 0) {
+                        float  HistoryDepth  = ReversedZDepthToLinearDepth(PrevC, HistoryReversedZDepth);
+                        float  PreviousDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
+                        bool   bDepthVisible  = 
+                                    abs(HistoryDepth - PreviousDepth) 
+                                    / max(PreviousDepth, HistoryDepth) < 5e-2f;
+                        if(bNormalVisible && bDepthVisible) {
+                            // The irradiance is directly attained from reprojected history radiance
+                            // The radiance has been multiplied by BRDF. So no need to do shading again.
+                            float3 HistoryRadiance = PreviousShadedDiffuseRadianceWithoutEmission.Load(int3(HistoryScreenCoords, 0)).xyz;
+                            bBypass = true;
+                            uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
+                            RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+                        }
+                    }
+                } else if(MCached.IsVolume()) {
+                    // Volume hit, resolve from volume history texture
+                    float2 HistoryMinMax = PreviousVolumeMinMaxTexture.Load(int3(HistoryScreenCoords, 0)).xy;
+                    // Relax min-max ranges a bit to avoid precision issues (fp16)
+                    HistoryMinMax.x = max(0, HistoryMinMax.x * 0.999f);
+                    HistoryMinMax.y = HistoryMinMax.y * 1.001f;
+                    CameraParameters PrevC = GetPreviousCamera();
+                    float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
+                    float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
+                    float  PreviousDepth    = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
+                    float  PreviousDistance = PreviousDepth * PrevCosineFactor;
+                    // FIXME this introduced very prominent artifacts!!!!
+                    bool bDepthVisible = 
+                        PreviousDistance >= HistoryMinMax.x &&
+                        PreviousDistance <= HistoryMinMax.y;
+                    if(UB.ScreenReuseNoDepthTesting || bDepthVisible) {
+                        // Approximate the volume radiance from the volume history texture
+                        // Assume that the volume radiance decreases exponentially with the depth
+                        // and the overall integral equals to volume radiance
+                        float4 HistoryVolumeRadiance = PreviousVolumeRadianceTexture.SampleLevel(PointEdgeSampler,
+                                                    HistoryScreenPosition * C.InvFilmDimensions, 0);
+                        float  HistoryVolumeDensity  = PreviousVolumeDensityTexture.Load(int3(HistoryScreenCoords, 0)).x;
+                        float  MediaTraverseDistance = abs(PreviousDistance - HistoryMinMax.x);
+                        float  MediaLength = (HistoryMinMax.y - HistoryMinMax.x);
+                        // TODO better approximation
+                        float  HistoryTransparency = PreviousTransmittanceTexture.SampleLevel(PointEdgeSampler,
+                                                        HistoryScreenPosition * C.InvFilmDimensions, 0).x;
+                        float  NormalizationFactor = 1.f / (1.f + 0.05f - HistoryTransparency);
+                        float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
+                                                        HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
+                        float  EnergyDecay = max(saturate(1.f + 0.02f - dot(HistoryVolumeColor, 0.3333f)), 0.02f);
+                        float  DepthEnergyDecayFactor = 1;//exp(-HistoryVolumeDensity * MediaTraverseDistance / EnergyDecay);
+                        float  L = MediaTraverseDistance;
+                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor * DepthEnergyDecayFactor * L;
+
                         bBypass = true;
-                        uint2 Packed = PackUpdateRayRadianceFlag(HistoryRadiance, true);
+                        uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
                     }
-                }
-            } else if(MCached.IsVolume()) {
-                // Volume hit, resolve from volume history texture
-                float2 HistoryMinMax = PreviousVolumeMinMaxTexture.Load(int3(HistoryScreenCoords, 0)).xy;
-                // Relax min-max ranges a bit to avoid precision issues (fp16)
-                HistoryMinMax.x = max(0, HistoryMinMax.x * 0.999f);
-                HistoryMinMax.y = HistoryMinMax.y * 1.001f;
-                CameraParameters PrevC = GetPreviousCamera();
-                float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
-                float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
-                float  PreviousDepth    = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
-                float  PreviousDistance = PreviousDepth * PrevCosineFactor;
-                // FIXME this introduced very prominent artifacts!!!!
-                bool bDepthVisible = 
-                    PreviousDistance >= HistoryMinMax.x &&
-                    PreviousDistance <= HistoryMinMax.y;
-                if(UB.ScreenReuseNoDepthTesting || bDepthVisible) {
-                    // Approximate the volume radiance from the volume history texture
-                    // Assume that the volume radiance decreases exponentially with the depth
-                    // and the overall integral equals to volume radiance
-                    float4 HistoryVolumeRadiance = PreviousVolumeRadianceTexture.SampleLevel(PointEdgeSampler,
-                                                HistoryScreenPosition * C.InvFilmDimensions, 0);
-                    float  HistoryVolumeDensity  = PreviousVolumeDensityTexture.Load(int3(HistoryScreenCoords, 0)).x;
-                    float  MediaTraverseDistance = abs(PreviousDistance - HistoryMinMax.x);
-                    float  MediaLength = (HistoryMinMax.y - HistoryMinMax.x);
-                    // TODO better approximation
-                    float  HistoryTransparency = PreviousTransmittanceTexture.SampleLevel(PointEdgeSampler,
-                                                    HistoryScreenPosition * C.InvFilmDimensions, 0).x;
-                    float  NormalizationFactor = 1.f / (1.f + 0.05f - HistoryTransparency);
-                    float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
-                                                    HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
-                    float  EnergyDecay = max(saturate(1.f + 0.02f - dot(HistoryVolumeColor, 0.3333f)), 0.02f);
-                    float  DepthEnergyDecayFactor = 1;//exp(-HistoryVolumeDensity * MediaTraverseDistance / EnergyDecay);
-                    float  L = MediaTraverseDistance;
-                    float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor * DepthEnergyDecayFactor * L;
-
+                } else {
+                    // Unknown material type, bypass (black)
                     bBypass = true;
-                    uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
-                    RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+                    RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(0.f.xxx, true);
                 }
-            } else {
-                // Unknown material type, do not bypass
             }
-		}
+        }
 	}
 	if(!bBypass) {
 		if(bHit) {
