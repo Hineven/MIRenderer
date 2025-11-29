@@ -140,7 +140,7 @@ RWTexture2D<float4> RWVolumeIndirectLightingTexture;
 
 struct VolumeDiffuseIndirectLightingUB {
     uint  MaxNumUpdateRays; // Must be a multiple of WAVE_SIZE
-    uint  Unused;
+    float GRF_EmitterIntensityScale;
     uint2 TileDimensions;
 
     float2 InvTileDimensions;
@@ -573,7 +573,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
         // Specially, for GRF hits, simply decode color from hit albedo
         if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN) {
             // Use a simple non-linear mapping to approximate radiance
-            float3 Radiance = ColorToRadiance(CM.Albedo);
+            float3 Radiance = ColorToRadiance(CM.Albedo) * UB.GRF_EmitterIntensityScale;
             uint2 Packed = PackUpdateRayRadianceFlag(Radiance, true);
             bBypass = true;
             RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;

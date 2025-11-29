@@ -16,6 +16,7 @@
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
 
+#include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_world_radiance_cache.h"
@@ -93,7 +94,8 @@ struct DiffuseIndirectLightingUB {
     uint32_t EnableSpatialProbeFiltering;
 
     uint32_t NoEnvironmentLight;
-    glm::uvec3 Padding;
+    float GRF_EmitterIntensityScale;
+    glm::uvec2 Padding;
 };
 
 BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
@@ -859,6 +861,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
             UB->EnableSpatialProbeFiltering = CVar_EnableSpatialProbeFiltering.Get() ? 1 : 0;
 
             UB->NoEnvironmentLight = CVar_NoEnvironmentLight.Get() ? 1 : 0;
+            UB->GRF_EmitterIntensityScale = CVar_GRF_EmitterIntensityScale.Get();
             UB->Padding = glm::uvec3{0};
         }
         params->UB = UB;

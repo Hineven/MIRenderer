@@ -66,10 +66,11 @@ protected:
     std::vector<PackedGaussian3D> points_;
     AABB aabb_ {};
     bool dirty_ {true};
-    bool ray_traced_ {false}; // Usually not participating in lighting; raster only by default
+    bool ray_traced_ {true}; // Default: enable ray tracing for 3D Gaussian radiance fields
     bool dynamic_ {false};
     DirtyTracker<GaussianRadianceField> * tracker_ {};
-    std::vector<glm::vec3> sh_coeffs_; // 16 * NumPoints (RGB) fourth-order SH coefficients (bands l=0..3)
+    // 4th-order SH (l=0..3): 16 coefficients per point, RGB each
+    std::vector<glm::vec3> sh_coeffs_;
 };
 
 class GaussianRadianceFieldInstance : public Renderable {

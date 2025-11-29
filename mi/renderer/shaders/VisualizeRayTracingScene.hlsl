@@ -115,7 +115,7 @@ void VisualizeRayTracingSceneAnyHit(inout RayPayload Payload: SV_RayPayload,
         if(ColorOpacity.a < 0.01f) {
             IgnoreHit();
 	    }
-    } else {
+    } else { // Just hit!
         
     }
 }

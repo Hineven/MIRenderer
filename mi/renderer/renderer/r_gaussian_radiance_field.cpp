@@ -15,7 +15,14 @@
 #include "renderer/util/radix_sort.h"
 #include "rhi/rhi_buffer.h"
 MI_NAMESPACE_BEGIN
-    struct GaussianRadianceFieldUB {
+
+CVar<float> CVar_GRF_EmitterIntensityScale(
+    "r.grf.emitter_intensity_scale",
+    "Scale factor for emitter intensity in Gaussian Radiance Fields.",
+    0.5f
+);
+
+struct GaussianRadianceFieldUB {
     float GaussianClampingScale;
     float GaussianExpandFactor;
     glm::uvec2 Padding;

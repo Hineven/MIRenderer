@@ -13,6 +13,8 @@
 #include <renderer/mi_resource_allocator.h>
 #include "r_view_common.h"
 #include "r_volume_indirect_lighting.h"
+
+#include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_volume_primitives.h"
@@ -63,7 +65,7 @@ static CVar CVar_VolumeScreenReuseNoDepthTesting(
 
 struct VolumeIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
-    uint32_t HeaderTileDimension;
+    float    GRF_EmitterIntensityScale;
     glm::uvec2 TileDimensions;
 
     glm::vec2 InvTileDimensions;
@@ -730,7 +732,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         auto UB = builder.Allocate<VolumeIndirectLightingUB>();
         {
             UB->MaxNumUpdateRays = max_num_update_rays;
-            UB->HeaderTileDimension = header_tile_dimension;
+            UB->GRF_EmitterIntensityScale = CVar_GRF_EmitterIntensityScale.Get();
             UB->TileDimensions = tile_dimensions;
             UB->InvTileDimensions = 1.0f / glm::vec2(tile_dimensions);
 

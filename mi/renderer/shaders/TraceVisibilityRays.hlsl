@@ -363,6 +363,7 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
         float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+        Color = saturate(Color + 0.5f);
         Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
     } else {
         // Unknown instance type, do nothing
@@ -421,6 +422,7 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
         float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+        Color = saturate(Color + 0.5f);
         Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
     } else {
         // Unknown instance type, do nothing
