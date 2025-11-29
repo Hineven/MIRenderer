@@ -62,8 +62,9 @@ public:
             auto last_segment = std::prev(free_segments_.end());
             if (last_segment->end_index == max_num_elements_) {
                 // Extend the last free segment
+                auto start = last_segment->start_index;
                 free_segments_.erase(last_segment);
-                free_segments_.emplace(last_segment->start_index, size);
+                free_segments_.emplace(start, size);
             } else {
                 // Add a new free segment
                 free_segments_.emplace(max_num_elements_, size);
