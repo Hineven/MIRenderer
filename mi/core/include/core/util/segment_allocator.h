@@ -73,6 +73,7 @@ public:
             // No free segments available, just add a new one
             free_segments_.emplace(max_num_elements_, size);
         }
+        max_num_elements_ = size;
     }
     FORCEINLINE void Free(size_t start_index, size_t num_elements) {
         num_elements = (num_elements + alignment - 1) / alignment * alignment; // Align the number of elements to the alignment
