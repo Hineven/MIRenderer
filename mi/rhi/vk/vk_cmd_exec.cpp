@@ -261,6 +261,10 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_
             depth_stencil_info.clearValue = {state.draw_state_.depth_stencil_clear_value};
         }
     }
+    // Sometimes, the render area can be 0-sized (e.g. rasterizationDiscard is enabled)
+    // We clamp to 1x1 to avoid validation errors in such cases.
+    render_area.extent.width = std::max(render_area.extent.width, 1u);
+    render_area.extent.height = std::max(render_area.extent.height, 1u);
     auto rendering_info = vk::RenderingInfo {
             {}, render_area, 1, {}, state.draw_state_.num_framebuffer_attachments_, attachments_info,
             state.draw_state_.depth_stencil_attachment ? &depth_stencil_info : nullptr
@@ -700,7 +704,10 @@ vk::Viewport VulkanCommandExecutor::CommandQueueState::GetViewport() {
 void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffer cmdb) {
     // TODO lazy install
     auto rect = GetScissorRect();
-    vk::Viewport viewport = GetViewport();
+    auto viewport = GetViewport();
+    // Bypass validation errors. (no viewport usually means no rasterization, so it does not matter)
+    if (viewport.width == 0) viewport.width = 1.0f;
+    if (viewport.height == 0) viewport.height = 1.0f;
     cmdb.setViewportWithCount(viewport);
     cmdb.setScissorWithCount(rect);
     cmdb.setCullMode(GetVulkanCullMode(draw_state_.cull_mode));

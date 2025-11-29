@@ -318,6 +318,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 #endif
                 vk::PhysicalDeviceDynamicRenderingFeatures,
                 vk::PhysicalDeviceMaintenance4Features,
+                vk::PhysicalDeviceMaintenance5Features,
                 vk::PhysicalDeviceSynchronization2Features,
                 vk::PhysicalDeviceShaderDrawParametersFeatures,
                 vk::PhysicalDeviceMultiviewFeatures,
@@ -421,6 +422,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 
         auto & maint4 = std::get<vk::PhysicalDeviceMaintenance4Features>(extended_features);
         maint4.maintenance4 = VK_TRUE;
+
+        auto & maint5 = std::get<vk::PhysicalDeviceMaintenance5Features>(extended_features);
+        maint5.maintenance5 = VK_TRUE;
 
         auto & sync2 = std::get<vk::PhysicalDeviceSynchronization2Features>(extended_features);
         sync2.synchronization2 = VK_TRUE;

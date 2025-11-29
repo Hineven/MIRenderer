@@ -58,7 +58,7 @@ RDGShaderHash &RDGShaderHash::AddUnordered(const char *marker, uint64_t v) {
 
 
 RDGShader::RDGShader (const RDGShaderClassRegistry * class_registry) : class_registry_(class_registry) {
-
+    pipeline_config_ = class_registry_->GetShaderPipelineConfig();
 }
 
 RDGShader::~RDGShader () {

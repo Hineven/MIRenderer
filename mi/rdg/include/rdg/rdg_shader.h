@@ -234,6 +234,8 @@ protected:
         };
         Section raygen, hit, miss;
     } sbt_sections_;
+
+    RDGShaderPipelineConfig pipeline_config_ {};
 };
 
 template<typename T, typename = void>

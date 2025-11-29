@@ -210,7 +210,7 @@ RDGShaderContext RDGCommandHelper::BindGraphicsShader (
         }
     }
     RHIDrawStateDesc ds {};
-    if (!info->render_targets_.empty()) {
+    if (!graphics_shader->pipeline_config_.rasterization_discard && !info->render_targets_.empty()) {
         auto reflected_frag_outputs = graphics_shader->graphics_pipeline_->GetFragmentOutputDesc();
         for (const auto& [i, e] : std::views::enumerate(info->render_targets_)) {
             auto param = *(RDGShaderRenderTargetParameter*)((uint8_t*)params + e.cpp_offset);

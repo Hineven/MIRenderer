@@ -325,7 +325,7 @@ public:
         SHADER_VERTEX_ATTRIBUTE(0, offsetof(DefaultStaticMeshVertex, UV), RHIVertexAttributeFormatType::k2xFp32, uv)
 
         SHADER_RENDER_TARGET(PixelFormatType::kR32G32B32A32_UINT, Visibility, {})
-        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, Color, RDGShaderRenderTargetBlendingSettings{
+        SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, RDGShaderRenderTargetBlendingSettings{
             .blend_op = RHIBlendOpType::kBlendAdd,
             .src_blend = RHIBlendFactorType::kSrcAlpha,
             .dst_blend = RHIBlendFactorType::kOneMinusSrcAlpha
