@@ -141,6 +141,13 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
             bool updated = false;
             // Try to update
             if (dynamic_ && sizes.acceleration_structure_size <= device_static_mesh_->BLAS_->GetSize()) {
+                queue.AccelerationStructureBarrier(
+                    device_static_mesh_->BLAS_.Raw(),
+                    RHIPipelineStageFlagBits::kRayTracing | RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                    RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                    RHIGPUAccessFlagBits::kAccelerationStructureRW,
+                    RHIGPUAccessFlagBits::kAccelerationStructureRW
+                );
                 auto scratch_buffer = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
                 queue.BuildAccelerationStructure(build_info, scratch_buffer->GetSpan());
                 updated = true;
@@ -160,9 +167,9 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
             queue.AccelerationStructureBarrier(
                 device_static_mesh_->BLAS_.Raw(),
                 RHIPipelineStageFlagBits::kAccelerationStructureBuild,
-                RHIPipelineStageFlagBits::kRayTracing,
+                RHIPipelineStageFlagBits::kRayTracing | RHIPipelineStageFlagBits::kAccelerationStructureBuild,
                 RHIGPUAccessFlagBits::kAccelerationStructureWrite,
-                RHIGPUAccessFlagBits::kAccelerationStructureRead
+                RHIGPUAccessFlagBits::kAccelerationStructureRW
             );
         }
     }

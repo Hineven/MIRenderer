@@ -124,8 +124,11 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
     params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
     params->RenderableIndexAndDescriptorIndexBuffer = ctx.deferred_static_meshes.d_static_mesh_draw_command_renderable_descriptor_indices.Raw();
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->material_header_buffer_.Raw());
+
+    // params->GeometryHeaderBuffer = builder.Import(device_allocator_->geometry_header_buffer_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->static_mesh_description_uber_buffer_->GetRHI());
     params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->static_mesh_header_buffer_.Raw());
+
     auto shadow_depth_buffer = RDGTexture::Create2D(
         kDefaultShadowMapResolution, kDefaultShadowMapResolution, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kDepthStencil);
@@ -140,24 +143,24 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
     // Rasterize static meshes with batched drawing
     auto raster_pass = builder.AddPass<DrawShadowMapShader>({}, shader, params,
         [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
-        ([[maybe_unused]] RDGPass* pass, RHICommandQueueGraphics& queue) {
+        ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawShadowMapShader>(
                 queue, pass, shader, params, true
             )) {
                 queue.BeginRendering();
                 queue.SetCullMode(RHICullModeType::kBack);
-                RHIBuffer* last_vertex_buffer{};
-                RHIBuffer* last_index_buffer{};
+                RHIBuffer * last_vertex_buffer {};
+                RHIBuffer * last_index_buffer {};
                 RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
                 for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
-                    auto& hdr = data.draw_invocation_sorting_headers[i];
+                    auto & hdr = data.draw_invocation_sorting_headers[i];
                     if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
                         if (i > 0) {
                             // Batch submit previous commands sharing the same vertex & index buffer settings.
                             auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
                             queue.DrawIndexedIndirect(
-                                data.draw_invocation_sorting_headers[i - 1].index_buffer->GetSpan(),
-                                cmd_span, i - first_cmd
+                                data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                                cmd_span,  i - first_cmd
                             );
                             cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                         }
@@ -172,8 +175,8 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
                     // Batch submit previous commands sharing the same vertex & index buffer settings.
                     auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
                     queue.DrawIndexedIndirect(
-                        data.draw_invocation_sorting_headers[i - 1].index_buffer->GetSpan(),
-                        cmd_span, i - first_cmd);
+                        data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                        cmd_span,  i - first_cmd);
                 }
                 queue.EndRendering();
             }

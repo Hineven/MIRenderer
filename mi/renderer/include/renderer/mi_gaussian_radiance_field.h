@@ -32,6 +32,8 @@ protected:
     TRef<DeviceUberBufferAllocation> point_buffer_;
     TRef<DeviceUberBufferAllocation> sh_coeff_buffer_;
     TRef<RHIAccelerationStructure> BLAS_;
+    uint32_t last_vertex_count_ {0};
+    uint32_t last_index_count_ {0};
     friend class GaussianRadianceField;
 };
 

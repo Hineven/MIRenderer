@@ -112,7 +112,7 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
 
     GaussianRadianceFieldHeader header {
         static_cast<uint32_t>(points_.size()),
-        static_cast<uint32_t>(device_field_->point_buffer_->GetRHI().offset / sizeof(PackedGaussian3D)),
+        static_cast<uint32_t>(device_field_->point_buffer_->GetRHI().offset / sizeof(PackedGaussian3D)), // element offset
         srgb_space_ ? 1u : 0u,
         0
     };
@@ -137,7 +137,7 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
             // Similar to volume primitives: use icosahedron proxies for each gaussian
             RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
             build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : RHIAccelerationStructureBuildFlagBits::kNone);
-            RHIASGeometryFlags geometry_flags = RHIASGeometryFlagBits::kNoDuplicateAnyHitInvocation;
+            RHIASGeometryFlags geometry_flags = RHIASGeometryFlagBits::kNoDuplicateAnyHitInvocation; // no opaque flag per spec
 
             std::vector<uint32_t> indices;
             std::vector<glm::vec3> vertices;
@@ -179,6 +179,11 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
             auto device_index_buffer = RHI::Get().CreateBuffer(static_cast<uint32_t>(indices.size() * sizeof(uint32_t)), RHIBufferUsageFlagBits::kAccelerationStructureBuildInput);
             Helpers::Upload_Async(queue, device_vertex_buffer->GetSpan(), vertices.data(), vertices.size() * sizeof(glm::vec3));
             Helpers::Upload_Async(queue, device_index_buffer->GetSpan(), indices.data(), indices.size() * sizeof(uint32_t));
+            // Barrier uploads -> build input read
+            queue.BufferBarrier(device_vertex_buffer->GetSpan(), RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kAccelerationStructureRead);
+            queue.BufferBarrier(device_index_buffer->GetSpan(), RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kAccelerationStructureRead);
 
             auto as_geom = queue.Allocate<RHIASGeometry>();
             *as_geom = RHIASGeometry{
@@ -197,8 +202,13 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
                 device_field_->BLAS_.Raw(), device_field_->BLAS_.Raw(), {as_geom, 1}, {}, {}
             };
             auto sizes = device_field_->BLAS_->GetBuildSizes(build_info);
+            bool topology_changed = (device_field_->last_vertex_count_ != (uint32_t)vertices.size()) || (device_field_->last_index_count_ != (uint32_t)indices.size());
             bool updated = false;
-            if (dynamic_ && sizes.acceleration_structure_size <= device_field_->BLAS_->GetSize()) {
+            if (!topology_changed && dynamic_ && sizes.acceleration_structure_size <= device_field_->BLAS_->GetSize()) {
+                queue.AccelerationStructureBarrier(device_field_->BLAS_.Raw(),
+                    RHIPipelineStageFlagBits::kRayTracing | RHIPipelineStageFlagBits::kAccelerationStructureBuild, RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                    RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIGPUAccessFlagBits::kAccelerationStructureRW
+                );
                 auto scratch = RHI::Get().CreateBuffer(sizes.update_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
                 queue.BuildAccelerationStructure(build_info, scratch->GetSpan());
                 updated = true;
@@ -211,12 +221,11 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
                 auto scratch = RHI::Get().CreateBuffer(sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
                 queue.BuildAccelerationStructure(build_info, scratch->GetSpan());
             }
-            queue.AccelerationStructureBarrier(
-                device_field_->BLAS_.Raw(),
-                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
-                RHIPipelineStageFlagBits::kRayTracing,
-                RHIGPUAccessFlagBits::kAccelerationStructureWrite,
-                RHIGPUAccessFlagBits::kAccelerationStructureRead
+            device_field_->last_vertex_count_ = (uint32_t)vertices.size();
+            device_field_->last_index_count_ = (uint32_t)indices.size();
+            queue.AccelerationStructureBarrier(device_field_->BLAS_.Raw(),
+                RHIPipelineStageFlagBits::kAccelerationStructureBuild, RHIPipelineStageFlagBits::kRayTracing | RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIGPUAccessFlagBits::kAccelerationStructureRW
             );
         }
     }

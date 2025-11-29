@@ -53,11 +53,11 @@ Shadow_PS_Out Shadow_PS_Main(Shadow_VS_Out Input)
 {
     
     MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
-    float opacity = 1.0f;
+    float Opacity = 1.0f;
     if (IsValid(Material.AlbedoMap)){
-        opacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV).w;
+        Opacity = GetBindlessSRV(Material.AlbedoMap).Sample(LinearWrapSampler, Input.UV).w;
     }
-    if (opacity < 0.5f){
+    if (Opacity < 0.5f){
         discard;
     }
     
