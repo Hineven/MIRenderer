@@ -68,7 +68,7 @@ static std::array<glm::vec3, 8> GetCorners(const glm::vec3& min, const glm::vec3
     };
 }
 
-static glm::mat4 ComputeDirectionalLightViewProjection(
+static glm::mat4 ComputeDirectionalLightWorldToNDC(
     const glm::vec3& lightDirWS,
     const glm::vec3& AABBmin,
     const glm::vec3& AABBmax)
@@ -103,13 +103,17 @@ static glm::mat4 ComputeDirectionalLightViewProjection(
 
 
 void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& builder) {
-
+    if (view->shadow_mapping_.use_world_bounds_) {
+        view->shadow_mapping_.mapping_world_bounds_ = view->scene_->GetAABB();
+    }
     auto directional_light_for_shadowMap = builder.Allocate<DirectionalLightForShadowMap>();
-    directional_light_for_shadowMap->LightWorldToNDC = ComputeDirectionalLightViewProjection(
+    auto world_to_ndc = ComputeDirectionalLightWorldToNDC(
         view->scene_->directional_light_.direction,
-	    view->scene_->GetAABB().min,
-	    view->scene_->GetAABB().max
+	    view->shadow_mapping_.mapping_world_bounds_.min,
+	    view->shadow_mapping_.mapping_world_bounds_.max
     );
+    view->shadow_mapping_.light_world_to_ndc_ = world_to_ndc;
+    directional_light_for_shadowMap->LightWorldToNDC = world_to_ndc;
     directional_light_for_shadowMap->LightDirWS = view->scene_->directional_light_.direction;
 
     auto params = builder.Allocate<DrawShadowMapShader::Params>();

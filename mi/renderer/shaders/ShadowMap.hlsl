@@ -62,7 +62,6 @@ Shadow_PS_Out Shadow_PS_Main(Shadow_VS_Out Input)
     }
     
     Shadow_PS_Out Output = (Shadow_PS_Out) 0;
-    //Output.Moments = Input.Position.z * float4(1, 1, 1, 1);
     Output.Moments = float4(Input.Position.z, Input.Position.z * Input.Position.z, 0, 1);
     
     return Output;

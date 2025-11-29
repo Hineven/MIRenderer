@@ -14,9 +14,10 @@
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_camera.h>
 #include <renderer/mi_cvar.h>
-MI_NAMESPACE_BEGIN
 
-class BatchedUploadContext : public NonCopyable, public NonMovable {
+#include "mi_aabb.h"
+MI_NAMESPACE_BEGIN
+    class BatchedUploadContext : public NonCopyable, public NonMovable {
 protected:
     BatchedUploadContext() = default;
     // Current manual staging buffer. Allocate sub-buffers for staging purposes from it within the frame.
@@ -163,6 +164,14 @@ struct RendererView {
 
         void CreateTracedRayBuffers (RenderGraphBuilder & builder, uint32_t max_num_rays);
     } debug_buffers_;
+
+    struct ShadowMappingData {
+        // If true, use the whole scene bounds as mapping_world_bounds_.
+        // Otherwise, use the existing mapping_world_bounds_.
+        bool use_world_bounds_ {true};
+        AABB mapping_world_bounds_ {};
+        glm::mat4x4 light_world_to_ndc_ {};
+    } shadow_mapping_;
 
     // Used for uploading data to the device on this frame. Batching small uploading calls for performance.
     BatchedUploadContext upload_context_;
