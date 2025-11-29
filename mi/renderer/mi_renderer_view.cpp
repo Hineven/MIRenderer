@@ -293,12 +293,18 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
 
     prev_scene_ = view->scene_;
 
-    volume_primitives_view_persistent_data_->FinalUpdate(view);
-    denoiser_persistent_data_->FinalUpdate(view);
-    diffuse_indirect_lighting_persistent_data_->FinalUpdate(view);
-    volume_indirect_lighting_persistent_data_->FinalUpdate(view);
-    light_structure_persistent_data_->FinalUpdate(view);
-    hash_grid_persistent_data_->FinalUpdate(view);
+    if (volume_indirect_lighting_persistent_data_)
+        volume_primitives_view_persistent_data_->FinalUpdate(view);
+    if (denoiser_persistent_data_)
+        denoiser_persistent_data_->FinalUpdate(view);
+    if (diffuse_indirect_lighting_persistent_data_)
+        diffuse_indirect_lighting_persistent_data_->FinalUpdate(view);
+    if (volume_indirect_lighting_persistent_data_)
+        volume_indirect_lighting_persistent_data_->FinalUpdate(view);
+    if (light_structure_persistent_data_)
+        light_structure_persistent_data_->FinalUpdate(view);
+    if (hash_grid_persistent_data_)
+        hash_grid_persistent_data_->FinalUpdate(view);
 
     frame_index_ ++;
 }

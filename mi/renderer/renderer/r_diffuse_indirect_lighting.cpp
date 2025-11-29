@@ -573,12 +573,14 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
 
 void DiffuseIndirectLightingPersistentData::FinalUpdate(RendererView *view) {
     // Update persistent data
-    ScreenProbeRadianceDepthTexture = view->diffuse_indirect_lighting_->screen_probe_radiance_depth;
-    ScreenProbeRadianceDepthTexture->SetExport();
-    ScreenProbeCacheMRUQueueBuffer = view->diffuse_indirect_lighting_->screen_probe_cache_updated_mru_queue_buffer;
-    ScreenProbeCacheMRUQueueBuffer->SetExport();
-    TileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_->tile_screen_probe_header_texture;
-    TileScreenProbeHeaderTexture->SetExport();
+    if (view->diffuse_direct_lighting_) {
+        ScreenProbeRadianceDepthTexture = view->diffuse_indirect_lighting_->screen_probe_radiance_depth;
+        ScreenProbeRadianceDepthTexture->SetExport();
+        ScreenProbeCacheMRUQueueBuffer = view->diffuse_indirect_lighting_->screen_probe_cache_updated_mru_queue_buffer;
+        ScreenProbeCacheMRUQueueBuffer->SetExport();
+        TileScreenProbeHeaderTexture = view->diffuse_indirect_lighting_->tile_screen_probe_header_texture;
+        TileScreenProbeHeaderTexture->SetExport();
+    }
 }
 
 static RDGShaderInitializationInfo GetDiffuseIndirectLightingShaderInitializationInfo() {

@@ -57,6 +57,7 @@ public:
     }
     // Expand the heap to at least size elements.
     FORCEINLINE void ExpandTo (size_t size) {
+        size = (size + alignment - 1) / alignment * alignment; // Align the size to the alignment
         if (size <= max_num_elements_) return;
         if (!free_segments_.empty()) {
             auto last_segment = std::prev(free_segments_.end());
