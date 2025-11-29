@@ -111,10 +111,10 @@ public:
     }
 
     template<CAOUB T>
-    FORCEINLINE std::remove_extent_t<T> * Allocate (uint32_t num_elements) {
+    FORCEINLINE std::remove_extent_t<T> * Allocate (size_t num_elements) {
         using elem_type = std::remove_extent_t<T>;
         auto ptr = static_cast<elem_type*>(Allocate(sizeof(elem_type) * num_elements));
-        for (uint32_t i = 0; i < num_elements; i++) new (ptr + i) elem_type();
+        for (size_t i = 0; i < num_elements; i++) new (ptr + i) elem_type();
         return ptr;
     }
 

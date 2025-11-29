@@ -25,7 +25,8 @@ StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutput;
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     float4 Color;
     float Transmittance; // For volume primitives
     float THit;
@@ -114,7 +115,7 @@ void VisualizeRayTracingSceneAnyHit(inout RayPayload Payload: SV_RayPayload,
         if(ColorOpacity.a < 0.01f) {
             IgnoreHit();
 	    }
-    } else {
+    } else { // Just hit!
         
     }
 }

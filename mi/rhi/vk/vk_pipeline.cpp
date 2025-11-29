@@ -276,7 +276,7 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
     // The viewport and rasterization states are partially dynamic
     vk::PipelineRasterizationStateCreateInfo rast_vk {};
     {
-        rast_vk.rasterizerDiscardEnable = false;
+        rast_vk.rasterizerDiscardEnable = pipeline_info.rasterization_discard;
         pipeline_info_vk.setPRasterizationState(&rast_vk);
     }
 

@@ -62,5 +62,10 @@ enum class VisibilityTraceType {
     kFull = 2
 };
 
+struct GaussianRadianceFieldViewData;
+struct GaussianRadianceFieldPersistentData;
+class GaussianRadianceField;
+class GaussianRadianceFieldInstance;
+
 MI_NAMESPACE_END
 #endif //MI_RENDERER_FWD_H

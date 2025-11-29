@@ -62,16 +62,20 @@ float SampleBDSF (ShadingMaterial M, float3 ViewDirection, float2 U, out float3 
 // Evaluate cached material brdf
 // Simple lambertian
 float3 EvaluateCachedMaterialBRDF (
-    CachedHitMaterial M, float3 Normal, float3 ViewDirection, float3 LightDirection,
+    CachedHitMaterial M, float3 ViewDirection, float3 LightDirection,
     float PhaseG
 ) {
-    if(M.bIsSurface) {
+    float3 Normal = M.Normal;
+    if(M.IsSurface()) {
         if(dot(Normal, ViewDirection) * dot(Normal, LightDirection) <= 0) return 0;
         float Cosine = dot(Normal, LightDirection);
         return EvaluateLambert(M.Albedo) * Cosine;
-    } else {
+    } else if(M.IsVolume()) {
         float Cosine = dot(LightDirection, ViewDirection);
         return HenyeyGreensteinPhaseFunction(Cosine, PhaseG) * M.Albedo;
+    } else {
+        // Gaussain RF and others. They should never be shaded.
+        return 0;
     }
 }
 

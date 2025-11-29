@@ -5,7 +5,7 @@ RWTexture2D<float4> OutputTexture;
 RaytracingAccelerationStructure TLAS;
 
 
-struct RayPayload {
+struct [raypayload] RayPayload {
     float2 Barycentrics;
     uint CustomIndex;
 };

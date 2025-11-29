@@ -8,6 +8,7 @@
 #include <renderer/mi_noise.h>
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_volume_primitives.h>
+#include <renderer/mi_gaussian_radiance_field.h>
 #include "sobol_samples.h"
 #include "rhi/rhi_buffer.h"
 
@@ -17,6 +18,7 @@ void Renderer::Init(DeviceBindlessResourceAllocator * allocator, RDGResourcePool
     pool_ = pool;
     // Do some initialization related to special data structures.
     VolumePrimitives::SetupAllocatorUberBuffer(device_allocator_.Raw());
+    GaussianRadianceField::SetupAllocatorUberBuffer(device_allocator_.Raw());
     // Initialize blue noise texture
     {
         blue_noise_128x128_ = RHI::Get().CreateTexture(RHITextureType::k2D, {128, 128, 1}, PixelFormatType::kR32_FLOAT,

@@ -20,7 +20,7 @@ MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & fi
     infra_ = infra;
     file_.open(file_path, std::ios::in | std::ios::out | std::ios::binary);
     if(!file_.good()) {
-        infra_->LogMessage(MIInfraLogType::kWarning, "Failed to open file: " + file_path.string()
+        infra_->LogMessage(MIInfraLogType::kInfo, "Failed to open file: " + file_path.string()
             + ", err: " + std::strerror(errno));
     } else {
         file_.seekg(0, std::ios::end);

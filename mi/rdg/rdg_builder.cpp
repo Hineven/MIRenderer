@@ -169,31 +169,35 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
     for(auto & pass : passes_) {
         // Debug validation: reading-before-writing within this RDG execution is illegal (unless imported/exported)
 #ifndef NDEBUG
-        // Collect resources written by this pass (to allow same-pass RW without warnings)
-        std::unordered_set<void*> current_written_textures;
-        std::unordered_set<void*> current_written_buffers;
-        for (auto * tex_out : pass->compiled_.out_textures) current_written_textures.insert(tex_out);
-        for (auto * buf_out : pass->compiled_.out_buffers) current_written_buffers.insert(buf_out);
-         for (auto * tex : pass->compiled_.in_textures) {
-             if (!(tex->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
-                 if (!has_prior_writer_texture[tex] && !current_written_textures.count(tex)) {
-                     if (warned_reading_before_writing.insert(pass->GetName() + "|" + tex->GetName()).second) {
-                         MI_WARN("RDG Warning (once): Pass '{}' reads texture '{}' before any prior pass writes it (illegal per RDG ordering contract).",
-                             pass->GetName(), tex->GetName());
-                     }
-                 }
-             }
-         }
-         for (auto * buf : pass->compiled_.in_buffers) {
-             if (!(buf->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
-                 if (!has_prior_writer_buffer[buf] && !current_written_buffers.count(buf)) {
-                     if (warned_reading_before_writing.insert(pass->GetName() + "|" + buf->GetName()).second) {
-                         MI_WARN("RDG Warning (once): Pass '{}' reads buffer '{}' before any prior pass writes it (illegal per RDG ordering contract).",
-                             pass->GetName(), buf->GetName());
-                     }
-                 }
-             }
-         }
+        // This can produce false positives for static access validation. Disabled by default.
+        // If you're really needing this, enable it here.
+        if (false) {
+            // Collect resources written by this pass (to allow same-pass RW without warnings)
+            std::unordered_set<void*> current_written_textures;
+            std::unordered_set<void*> current_written_buffers;
+            for (auto * tex_out : pass->compiled_.out_textures) current_written_textures.insert(tex_out);
+            for (auto * buf_out : pass->compiled_.out_buffers) current_written_buffers.insert(buf_out);
+            for (auto * tex : pass->compiled_.in_textures) {
+                if (!(tex->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
+                    if (!has_prior_writer_texture[tex] && !current_written_textures.count(tex)) {
+                        if (warned_reading_before_writing.insert(pass->GetName() + "|" + tex->GetName()).second) {
+                            MI_WARN("RDG Warning (once): Pass '{}' reads texture '{}' before any prior pass writes it (illegal per RDG ordering contract).",
+                                pass->GetName(), tex->GetName());
+                        }
+                    }
+                }
+            }
+            for (auto * buf : pass->compiled_.in_buffers) {
+                if (!(buf->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))) {
+                    if (!has_prior_writer_buffer[buf] && !current_written_buffers.count(buf)) {
+                        if (warned_reading_before_writing.insert(pass->GetName() + "|" + buf->GetName()).second) {
+                            MI_WARN("RDG Warning (once): Pass '{}' reads buffer '{}' before any prior pass writes it (illegal per RDG ordering contract).",
+                                pass->GetName(), buf->GetName());
+                        }
+                    }
+                }
+            }
+        }
 #endif
          // Find execution dependencies (to prior passes)
          std::vector<RDGPass*> dependencies;

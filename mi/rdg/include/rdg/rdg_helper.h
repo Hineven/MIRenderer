@@ -25,7 +25,7 @@ public:
                          uint32_t dst_mip_level = 0, uint32_t dst_base_layer = 0, uint32_t dst_layer_count = 1);
     static void CopyBuffer(RenderGraphBuilder & builder, RDGBuffer * src, RDGBuffer * dst, size_t size = SIZE_MAX, size_t src_offset = 0, size_t dst_offset = 0);
 
-    static TRef<RDGBuffer> SpawnDrawIndirectCommand (RenderGraphBuilder & builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count = nullptr, uint32_t first_vertex = 0, uint32_t first_instance = 0) ;
+    static TRef<RDGBuffer> SpawnDrawIndirectCommand (RenderGraphBuilder & builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) ;
 
     // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);
@@ -55,6 +55,22 @@ public:
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
+
+    template<CShaderType T>
+    FORCEINLINE static RDGPass * AddDrawIndirectPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, RDGBuffer * indirect_buffer, uint32_t count = 1) {
+        if (!shader || !indirect_buffer) return nullptr;
+        mi_assert(shader->GetPipelineType() == RHIPipelineType::kGraphics, "Only graphics shaders are supported in DrawIndirectPass.");
+        return builder.AddPass<T>({}, shader, params,
+            [shader, params, indirect_buffer, draw_count=count](RDGPass* pass, RHICommandQueueGraphics &q){
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<T>(q, pass, shader, params, false)) {
+                    q.BeginRendering();
+                    q.DrawIndirect(indirect_buffer->GetRHI());
+                    q.EndRendering();
+                }
+            }
+        )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
+
 
     template<CShaderType T>
     FORCEINLINE static RDGPass * AddTraceRaysPass(RenderGraphBuilder & builder, T * shader, typename T::ShaderParameters * params, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {

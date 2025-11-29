@@ -43,6 +43,16 @@ void GetOrthoVectors (float3 Normal, out float3 Tangent, out float3 Bitangent) {
     Bitangent = cross(Normal, Tangent);
 }
 
-
+float3x3 BuildRotationScaleMatrix (float4 Rotation, float3 Scale) {
+    // Rotation matrix
+    float3x3 R = BuildRotationMatrix(Rotation);
+    // Scaling matrix
+    float3x3 S = {
+        Scale.x, 0, 0,
+        0, Scale.y, 0,
+        0, 0, Scale.z
+    };
+    return mul(R, S);
+}
 
 #endif

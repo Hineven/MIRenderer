@@ -154,6 +154,7 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-fvk-use-dx-layout"); // Use struct memory layouts specified in DirectX
         add_option(L"-fspv-use-vulkan-memory-model"); // Use Vulkan memory model (see that in Vulkan spec)
         add_option(L"-Ges"); // Strict mode
+        add_option(L"-disable-payload-qualifiers"); // Disable DXR 1.1 ray payload qualifiers
         // For storage images, SPIR-V enforces format matching between declaration and usage. This flag relaxes this requirement.
         // However, in conventional HLSL coding, a Texture2D<float4> can be rgba8 / rgba16f / rgba32f
         // A way to avoid matching problems is to explicitly specify the format in HLSL, e.g. [[vk::image_format("rgba8")]] RWTexture2D<float4> myImage;

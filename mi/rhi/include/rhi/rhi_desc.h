@@ -136,6 +136,8 @@ struct RHIGraphicsPipelineDesc {
         // Depth comparison function
         RHIDepthCompareOpType depth_compare_op {RHIDepthCompareOpType::kLess};
     } depth_stencil;
+    // Enable this flag to specify no rasterization. Running only the vertex processing stages.
+    bool rasterization_discard {false};
     std::span<RHIColorAttachmentDesc> color_attachments;
     RHIDepthStencilAttachmentDesc depth_stencil_attachment;
 };

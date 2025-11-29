@@ -20,10 +20,11 @@ class RHIComputePipeline;
 
 // Some configuration that can be used to configure the shader pipeline
 struct RDGShaderPipelineConfig {
-    RHIPrimitiveTopologyType topology {};
+    RHIPrimitiveTopologyType topology {RHIPrimitiveTopologyType::kTriangleList};
     RHIDepthCompareOpType depth_compare_op {RHIDepthCompareOpType::kLess}; // Depth compare operation
     bool depth_write_enabled {true}; // Whether depth write is enabled
     bool depth_test_enabled {true}; // Whether depth test is enabled
+    bool rasterization_discard {false}; // Whether to discard all rasterization. Running vertex processing only.
     // std::vector<RHIColorAttachmentDesc> color_attachments;
     struct {
         uint32_t max_recursion_depth {1}; // Maximum ray recursion depth
@@ -48,6 +49,7 @@ struct RDGShaderClassRegistry {
     std::string source_location;
     std::string compute_entry_;
     std::string vertex_entry_;
+    std::string geometry_entry_;
     std::string fragment_entry_;
     std::string raygen_entry_;
     std::string closest_hit_entry_;
@@ -137,9 +139,7 @@ public:
     }
     // Modify the shader pipeline configuration, e.g. topology type.
     FORCEINLINE static RDGShaderPipelineConfig  GetShaderPipelineConfig () {
-        return RDGShaderPipelineConfig {
-            RHIPrimitiveTopologyType::kTriangleList
-        };
+        return {};
     }
 
     FORCEINLINE const RDGShaderHash & GetShaderHash () const {
@@ -215,6 +215,7 @@ protected:
     struct {
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};
+        TRef<RHIShader> geometry {};
         TRef<RHIShader> fragment {};
         TRef<RHIShader> raygen {};
         TRef<RHIShader> miss {};
@@ -293,7 +294,7 @@ static const char * GetShaderTypeName ();
 #define DECLARE_SHADER(...) DECLARE_SHADER_SELECT(MI_PP_HAS_ARGS(__VA_ARGS__))(__VA_ARGS__)
 
 // Generic
-#define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_PS, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+#define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
     static RDGShaderClassRegistrator<ClassName> ClassName##Registrator( \
         #ClassName, \
         Type,\
@@ -301,6 +302,7 @@ static const char * GetShaderTypeName ();
         SourcePath, \
         EntryPoint_CS, \
         EntryPoint_VS, \
+        EntryPoint_GS, \
         EntryPoint_PS, \
         EntryPoint_Raygen, \
         EntryPoint_ClosestHit, \
@@ -312,30 +314,38 @@ static const char * GetShaderTypeName ();
 
 // Compute
 #define IMPLEMENT_RDG_COMPUTE_SHADER(ClassName, SourcePath, EntryPoint_CS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "") \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "", "") \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // Graphics
 #define IMPLEMENT_RDG_GRAPHICS_SHADER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS, "", "", "", "") \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, "", EntryPoint_PS, "", "", "", "") \
+    IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
+
+// Added: Graphics shader variant with geometry stage (non-shared parameter struct)
+#define IMPLEMENT_RDG_GRAPHICS_SHADER_GS(ClassName, SourcePath, EntryPoint_VS, EntryPoint_GS, EntryPoint_PS) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, "", "", "", "") \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // Ray tracing
 #define IMPLEMENT_RDG_RAY_TRACING_SHADER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
 #define IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_CS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "") \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kCompute, EntryPoint_CS, "", "", "", "", "", "", "") \
 
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
 #define IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_VS, EntryPoint_PS) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_PS, "", "", "", "") \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, "", EntryPoint_PS, "", "", "", "") \
+
+#define IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(ClassName, SourcePath, EntryPoint_VS, EntryPoint_GS, EntryPoint_PS) \
+INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, "", "", "", "") \
 
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
 #define IMPLEMENT_RDG_RAY_TRACING_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
 
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
@@ -401,6 +411,7 @@ public:
         const std::string & source_location,
         const std::string & compute_entry,
         const std::string & vertex_entry,
+        const std::string & geometry_entry,
         const std::string & fragment_entry,
         const std::string & raygen_entry,
         const std::string & closest_hit_entry,
@@ -415,6 +426,7 @@ public:
             source_location,
             compute_entry,
             vertex_entry,
+            geometry_entry,
             fragment_entry,
             raygen_entry,
             closest_hit_entry,

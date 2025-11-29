@@ -68,7 +68,7 @@ RDGShader::~RDGShader () {
 static std::string LoadFile(const std::string & path) {
     auto reader = GetInfra().RIO_Open(path, MIInfraResourceHintType::kShaderSource);
     if (!reader) {
-        MI_LOG(MIInfraLogType::kWarning, "Failed to open resource: {}", path);
+        MI_LOG(MIInfraLogType::kInfo, "Failed to open resource: {}", path);
         MI_LOG(MIInfraLogType::kInfo, "This may be due to temporary file system issue. Retrying...");
         // 25.11.13: try again after a short delay, in case of temporary file system issue.
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -564,6 +564,14 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
             if (is_valid) shader_hash.AddUnordered("VertexShader", result);
             else MI_WARN("Failed to compute vertex shader hash.");
         }
+        if (!class_registry_->geometry_entry_.empty()) {
+            bool is_valid {false};
+            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                class_registry_->source_location, extra_options, is_valid
+            );
+            if (is_valid) shader_hash.AddUnordered("GeometryShader", result);
+            else MI_WARN("Failed to compute geometry shader hash.");
+        }
         if (!class_registry_->fragment_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
@@ -619,6 +627,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
 void RDGShader::UpdateOwnerForRHIResources() {
     if (shaders_.compute) shaders_.compute->UpdateOwner();
     if (shaders_.vertex) shaders_.vertex->UpdateOwner();
+    if (shaders_.geometry) shaders_.geometry->UpdateOwner();
     if (shaders_.fragment) shaders_.fragment->UpdateOwner();
 
     if (shaders_.raygen) shaders_.raygen->UpdateOwner();
@@ -670,7 +679,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         uint64_t cs_hash = 0;
         std::wstring out_command;
         auto result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
@@ -697,14 +706,14 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         shaders_.compute->SetSourceFilePath(class_registry_->source_location);
     }
     if(class_registry_->type == RHIPipelineType::kGraphics) {
-        std::vector<uint32_t> vs_result, fs_result;
+        std::vector<uint32_t> vs_result, gs_result, fs_result;
         // For graphics pipeline, we need to compile vertex and fragment shaders
         // First compile vertex shader
         {
             uint64_t vs_hash = 0;
             std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_6",
+                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_8",
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
@@ -714,21 +723,39 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             }
             shader_hash_.AddUnordered("VertexShader", vs_hash);
         }
-
         {
-            uint64_t fs_hash = 0;
-            std::wstring out_command;
-            // Then compile fragment shader
-            fs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_6",
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
-            );
-            if (fs_result.empty()) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile fragment shader: {}", class_registry_->name, errmsg);
-                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
-                return false;
+            // Then compile geometry shader if any
+            if (!class_registry_->geometry_entry_.empty()) {
+                uint64_t gs_hash = 0;
+                std::wstring out_command;
+                gs_result = GetInfra().CompileHLSLToSPIRV(
+                        source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs_6_8",
+                        std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &gs_hash
+                );
+                if (gs_result.empty()) {
+                    MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile geometry shader: {}", class_registry_->name, errmsg);
+                    MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
+                    return false;
+                }
+                shader_hash_.AddUnordered("GeometryShader", gs_hash);
             }
-            shader_hash_.AddUnordered("FragmentShader", fs_hash);
+        }
+        {
+            // Then compile fragment shader if any (fix: require non-empty entry)
+            if (!class_registry_->fragment_entry_.empty()) {
+                uint64_t fs_hash = 0;
+                std::wstring out_command;
+                fs_result = GetInfra().CompileHLSLToSPIRV(
+                        source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_8",
+                        std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
+                );
+                if (fs_result.empty()) {
+                    MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile fragment shader: {}", class_registry_->name, errmsg);
+                    MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
+                    return false;
+                }
+                shader_hash_.AddUnordered("FragmentShader", fs_hash);
+            }
         }
 
         // Create the vertex shader
@@ -748,22 +775,43 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         shaders_.vertex = vertex_shader;
         shaders_.vertex->SetSourceFilePath(class_registry_->source_location);
 
-        // Create the fragment shader
-        auto fs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(fs_result.data()), fs_result.size() * sizeof(uint32_t));
-        auto fragment_shader = RHI::Get().CreateShader(
-                RHIShaderFrequencyFlagBits::kFragment, class_registry_->fragment_entry_,
-                RHIShaderIRType::kSPIRV, fs_bytecode_span
-        );
-        if (!fragment_shader) {
-            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create fragment shader", class_registry_->source_location);
-            return false;
+        // Create the geometry shader (if any) using previously compiled gs_result
+        if (!class_registry_->geometry_entry_.empty()) {
+            auto gs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(gs_result.data()), gs_result.size() * sizeof(uint32_t));
+            auto geometry_shader = RHI::Get().CreateShader(
+                    RHIShaderFrequencyFlagBits::kGeometry, class_registry_->geometry_entry_,
+                    RHIShaderIRType::kSPIRV, gs_bytecode_span
+            );
+            if (!geometry_shader) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create geometry shader", class_registry_->source_location);
+                return false;
+            }
+            if (!CheckShaderReflection(geometry_shader.Raw(), param_info)) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Geometry shader reflection check failed", class_registry_->source_location);
+                return false;
+            }
+            shaders_.geometry = geometry_shader;
+            shaders_.geometry->SetSourceFilePath(class_registry_->source_location);
         }
-        if (!CheckShaderReflection(fragment_shader.Raw(), param_info)) {
-            MI_LOG(MIInfraLogType::kError, "RDGShader {}: Fragment shader reflection check failed", class_registry_->source_location);
-            return false;
+
+        // Create the fragment shader (if any)
+        if (!fs_result.empty()) {
+            auto fs_bytecode_span = std::span(reinterpret_cast<const std::byte*>(fs_result.data()), fs_result.size() * sizeof(uint32_t));
+            auto fragment_shader = RHI::Get().CreateShader(
+                    RHIShaderFrequencyFlagBits::kFragment, class_registry_->fragment_entry_,
+                    RHIShaderIRType::kSPIRV, fs_bytecode_span
+            );
+            if (!fragment_shader) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to create fragment shader", class_registry_->source_location);
+                return false;
+            }
+            if (!CheckShaderReflection(fragment_shader.Raw(), param_info)) {
+                MI_LOG(MIInfraLogType::kError, "RDGShader {}: Fragment shader reflection check failed", class_registry_->source_location);
+                return false;
+            }
+            shaders_.fragment = fragment_shader;
+            shaders_.fragment->SetSourceFilePath(class_registry_->source_location);
         }
-        shaders_.fragment = fragment_shader;
-        shaders_.vertex->SetSourceFilePath(class_registry_->source_location);
     }
 
     if(class_registry_->type == RHIPipelineType::kRayTracing) {
@@ -774,7 +822,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t raygen_hash = 0;
             std::wstring out_command;
             raygen_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib_6_6",
+                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib_6_8",
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &raygen_hash
             );
             if (raygen_result.empty()) {
@@ -788,7 +836,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t chit_hash = 0;
             std::wstring out_command;
             chit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &chit_hash
             );
             if (chit_result.empty()) {
@@ -806,7 +854,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t ahit_hash = 0;
             std::wstring out_command;
             ahit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &ahit_hash
             );
             if (ahit_result.empty()) {
@@ -820,7 +868,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t miss_hash = 0;
             std::wstring out_command;
             miss_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib_6_6",
+                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib_6_8",
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &miss_hash
             );
             if (miss_result.empty()) {
@@ -986,7 +1034,8 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     }
     if (class_registry_->type == RHIPipelineType::kGraphics) {
         RHIGraphicsPipelineDesc desc {};
-        desc.stages.vertex_shader = shaders_.vertex.Raw();
+        desc.stages.vertex_shader   = shaders_.vertex.Raw();
+        desc.stages.geometry_shader = shaders_.geometry.Raw();
         desc.stages.fragment_shader = shaders_.fragment.Raw();
         auto vertex_inputs = shaders_.vertex->GetVertexInputDesc();
         std::vector<RHIVertexInputBindingDesc> rhi_bindings;
@@ -1008,40 +1057,49 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         desc.vertex_input.vertex_attributes = rhi_attributes;
         desc.topology = pipeline_config.topology;
 
-
-        auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
         std::vector<RHIColorAttachmentDesc> color_attachments;
         RHIDepthStencilAttachmentDesc depth_stencil {};
-        // Gather color attachment configurations from shader param struct info
-        if (!params->render_targets_.empty()) {
-            for (auto & e : params->render_targets_) {
-                if (e.info->cpp_extra.render_targets_info->target_index != UINT32_MAX) {
-                    RHIColorAttachmentBlendDesc blend {};
-                    if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
-                        // TODO support more blending operations
-                        blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
-                        blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
-                        blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
-                        blend.alpha_blend_op = RHIBlendOpType::kBlendAdd;
-                        blend.src_alpha_blend_factor = RHIBlendFactorType::kOne;
-                        blend.dst_alpha_blend_factor = RHIBlendFactorType::kOneMinusSrcAlpha;
+        if (shaders_.fragment) {
+            auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
+            // Gather color attachment configurations from shader param struct info
+            if (!params->render_targets_.empty()) {
+                for (auto & e : params->render_targets_) {
+                    auto cpp_target_index = e.info->cpp_extra.render_targets_info->target_index;
+                    if (cpp_target_index != UINT32_MAX) {
+                        if (fragment_outputs.size() <= cpp_target_index) {
+                            MI_LOG(MIInfraLogType::kWarning, "Fragment output {} specified in shader parameters"
+                                " is not present in fragment shader reflection", cpp_target_index);
+                            continue ;
+                        }
+                        RHIColorAttachmentBlendDesc blend {};
+                        if (e.info->cpp_extra.render_targets_info->blending.blend_op != RHIBlendOpType::kMax) {
+                            // TODO support more blending operations
+                            blend.blend_enable = true;
+                            blend.color_blend_op = e.info->cpp_extra.render_targets_info->blending.blend_op;
+                            blend.src_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.src_blend;
+                            blend.dst_color_blend_factor = e.info->cpp_extra.render_targets_info->blending.dst_blend;
+                            blend.alpha_blend_op = RHIBlendOpType::kBlendAdd;
+                            blend.src_alpha_blend_factor = RHIBlendFactorType::kOne;
+                            blend.dst_alpha_blend_factor = RHIBlendFactorType::kOneMinusSrcAlpha;
+                        }
+                        color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
+                    } else {
+                        // Enable depth testing
+                        depth_stencil = {
+                            e.info->cpp_extra.render_targets_info->format
+                        };
                     }
-                    color_attachments.push_back({blend, e.info->cpp_extra.render_targets_info->format});
-                } else {
-                    // Enable depth testing
-                    depth_stencil = {
-                        e.info->cpp_extra.render_targets_info->format
-                    };
                 }
             }
+            desc.color_attachments = color_attachments;
+            desc.depth_stencil_attachment = depth_stencil;
+            if (depth_stencil.format != PixelFormatType::kUnknown) {
+                desc.depth_stencil.depth_compare_op = pipeline_config.depth_compare_op;
+                desc.depth_stencil.depth_test_enable = pipeline_config.depth_test_enabled;
+                desc.depth_stencil.depth_write_enable = pipeline_config.depth_write_enabled;
+            }
         }
-        desc.color_attachments = color_attachments;
-        desc.depth_stencil_attachment = depth_stencil;
-        if (depth_stencil.format != PixelFormatType::kUnknown) {
-            desc.depth_stencil.depth_compare_op = pipeline_config.depth_compare_op;
-            desc.depth_stencil.depth_test_enable = pipeline_config.depth_test_enabled;
-            desc.depth_stencil.depth_write_enable = pipeline_config.depth_write_enabled;
-        }
+        desc.rasterization_discard = pipeline_config.rasterization_discard;
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, class_registry_->name.c_str()
         );

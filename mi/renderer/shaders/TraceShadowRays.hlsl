@@ -37,7 +37,8 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 // Optional (when the ray tmax is passed as a parameter, otherwise defaults to far plane)
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     float HitDistance;
 };
 
@@ -75,7 +76,7 @@ void TraceShadowRaysRaygen() {
     Payload.HitDistance = Ray.TMax; // Default to TMax, will be updated in closest hit
     TraceRay(
         TLAS,
-        RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+        RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
         0xFF, // Ray mask
         0,    // SBT offset
         0,    // SBT stride

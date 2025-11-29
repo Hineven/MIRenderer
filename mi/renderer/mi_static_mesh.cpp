@@ -242,7 +242,6 @@ TRef<StaticMeshInstance> StaticMeshInstance::Create(Scene *scene, StaticMesh * s
         mesh->SetTransform(transform);
         mesh->scene_ = scene;
         mesh->static_mesh_ = static_mesh;;
-
         return std::move(mesh);
     }
     return {};

@@ -13,6 +13,8 @@
 #include <renderer/mi_resource_allocator.h>
 #include "r_view_common.h"
 #include "r_volume_indirect_lighting.h"
+
+#include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_volume_primitives.h"
@@ -63,7 +65,7 @@ static CVar CVar_VolumeScreenReuseNoDepthTesting(
 
 struct VolumeIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
-    uint32_t HeaderTileDimension;
+    float    GRF_EmitterIntensityScale;
     glm::uvec2 TileDimensions;
 
     glm::vec2 InvTileDimensions;
@@ -325,13 +327,13 @@ namespace VolumeIndirectLightingShaders {
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipUpdateRayCountShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClipUpdateRayCount");
 
-    class ResolveHitLightingFromScreenHistoryShader final : public VolumeIndirectLightingShader {
+    class ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader final : public VolumeIndirectLightingShader {
     public:
         RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
         DECLARE_SHADER(VolumeIndirectLightingShader)
     };
 
-    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistory");
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ResolveHitLightingFromScreenHistoryAndSpecialEmitter");
 
     class SampleLightRaysForUpdateRayHitsShader final : public VolumeIndirectLightingShader {
     public:
@@ -730,7 +732,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         auto UB = builder.Allocate<VolumeIndirectLightingUB>();
         {
             UB->MaxNumUpdateRays = max_num_update_rays;
-            UB->HeaderTileDimension = header_tile_dimension;
+            UB->GRF_EmitterIntensityScale = CVar_GRF_EmitterIntensityScale.Get();
             UB->TileDimensions = tile_dimensions;
             UB->InvTileDimensions = 1.0f / glm::vec2(tile_dimensions);
 
@@ -886,11 +888,11 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     );
 
     {
-        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryShader>(ini);
+        auto shader = lib.GetShader<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(ini);
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
             builder, volume_probe_update_ray_allocator.Raw(), wave_size
         );
-        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryShader>(
+        Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(
             builder, shader, params, cmd.Raw()
         );
     }

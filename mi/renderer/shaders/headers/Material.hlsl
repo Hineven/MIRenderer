@@ -13,39 +13,63 @@ struct ShadingMaterial {
     bool bDoubleSided;
 };
 
+#define CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE 0
+#define CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME 1
+#define CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN 2
+#define CACHED_HIT_MATERIAL_HIT_TYPE_INVALID 0xF
+
+uint GetCachedHitMaterialHitFlags (uint2 CM) {
+    return CM.x >> 24;
+}
+
+// 4 bits for hit type
+uint GetCachedHitMaterialHitType (uint2 CM) {
+    return GetCachedHitMaterialHitFlags(CM) & 0xF;
+}
+
 // A tiny representation of a material that can be cached in a few bytes.
-// Used for coarse shading on surfaces require reduced shading precision.
+// Used for coarse shading on shading points require reduced shading precision.
 struct CachedHitMaterial {
-    float3 Albedo;
-    // False: volume primitive hit.
-    bool bIsSurface;
-    bool bValid; // Whether the material is valid
+    uint   HitType;
+    float3 Albedo; // Valid for all hit types
+    float3 Normal; // Valid for surface hits
+    bool   bValid; // Whether the hit is valid
+    bool IsSurface () {
+        return HitType == CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE;
+    }
+    bool IsVolume () {
+        return HitType == CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME;
+    }
 };
 
-CachedHitMaterial UnpackCachedHitMaterial (uint Packed) {
+CachedHitMaterial UnpackCachedHitMaterial (uint2 Packed) {
     CachedHitMaterial M;
-    M.Albedo = UnpackUnorm4x8(Packed).rgb;
-    uint Flags = (Packed >> 24);
-    M.bIsSurface = (Flags & 0x1) != 0;
+    M.Albedo = UnpackUnorm4x8(Packed.x).rgb;
+    uint Flags = (Packed.x >> 24);
+    M.HitType = Flags & 0xFF;
     M.bValid = (Flags != 0xFF);
+    M.Normal = UnpackNormal(Packed.y);
     return M;
 }
 
-uint PackCachedHitMaterial (CachedHitMaterial M) {
+uint2 PackCachedHitMaterial (CachedHitMaterial M) {
     uint HighByte = M.bValid ? 0 : 0xFF;
-    HighByte |= (M.bIsSurface ? 1 : 0);
-    return PackUnorm4x8(float4(M.Albedo, 0)) | (HighByte << 24);
+    HighByte |= (M.HitType & 0xFF);
+    uint X = PackUnorm4x8(float4(M.Albedo, 0)) | (HighByte << 24);
+    uint Y = PackNormal(M.Normal);
+    return uint2(X, Y);
 }
 
-uint MakePackedInvalidCachedHitMaterial () {
-    return 0xFFFFFFFF;
+uint2 MakePackedInvalidCachedHitMaterial () {
+    return uint2(0xFFFFFFFF, 0xFFFFFFFF);
 }
 
-CachedHitMaterial MakeCachedHitMaterial(float3 Albedo, bool bIsSurface) {
+CachedHitMaterial MakeCachedHitMaterial(float3 Albedo, uint HitType, float3 Normal = 0) {
     CachedHitMaterial M;
     M.Albedo = Albedo;
-    M.bIsSurface = bIsSurface;
+    M.HitType = HitType;
     M.bValid = true;
+    M.Normal = Normal;
     return M;
 }
 

@@ -13,6 +13,7 @@
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
 #include "resources/EnvironmentLightResource.hlsl"
+#include "resources/GaussianRadianceFieldResources.hlsl"
 
 struct TraceRadianceRaysUB {
     uint Seed;
@@ -50,7 +51,8 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 // Optional (when the ray tmax is passed as a parameter, otherwise defaults to far plane)
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     float HitDistance; // Hit on meshes, TMax for no hits
     float3 Radiance; // Radiance value for the ray
     float U; // Random number
@@ -161,7 +163,7 @@ void TraceRadianceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
 	    } else {
             Payload.U = Payload.U / max(ColorOpacity.a, 1e-5f);
         }
-    } else {
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         float3 RayOrigin = WorldRayOrigin();
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
@@ -189,6 +191,8 @@ void TraceRadianceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                 IgnoreHit();
             }
         }
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
+        // TODO
     }
 }
 

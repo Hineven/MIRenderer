@@ -4,15 +4,20 @@
 #include "shared/SharedMaterial.hlsl"
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedStaticMesh.hlsl"
+#include "shared/SharedGaussianRadianceField.hlsl"
 #include "shared/SharedVertex.hlsl"
 #include "headers/HybridTracing.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 #include "headers/VolumePrimitivesLib.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/Material.hlsl"
+#include "headers/RayTracingHelpers.hlsl"
+#include "headers/GaussianSplatting.hlsl"
+#include "resources/RenderableResources.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
+#include "resources/GaussianRadianceFieldResources.hlsl"
 
 #ifndef VISIBILITY_TRACE_TYPE
 #define VISIBILITY_TRACE_TYPE 1
@@ -31,7 +36,6 @@ ConstantBuffer<TraceVisibilityRaysUB> UB;
 
 RaytracingAccelerationStructure TLAS;
 
-StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
@@ -62,7 +66,8 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 // Optional (when the ray tmax is passed as a parameter, otherwise defaults to far plane)
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
-struct RayPayload {
+
+struct [raypayload] RayPayload {
     // Hit on meshes / proxy meshes, TMax for no hits
     // For coarse visibility with exact volume scattering sampling, this is the hit distance for 
     // volume hits / surface hits.
@@ -71,7 +76,7 @@ struct RayPayload {
 #if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
     #error "not implemented yet"
 #else
-    // Packed normal (x) and CachedHitMaterial (y) on the hit for coarse shading.
+    // Packed CachedHitMaterial on the hit for coarse shading.
     uint2 PackedMaterial;
 #endif
 };
@@ -112,7 +117,7 @@ void TraceVisibilityRaysRaygen() {
 #if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
     #error "not implemented yet"
 #else
-    Payload.PackedMaterial = uint2(INVALID_UINT, MakePackedInvalidCachedHitMaterial());
+    Payload.PackedMaterial = MakePackedInvalidCachedHitMaterial();
 #endif
     Random rng = MakeRandom(RayIndex + 0x8f71a213u, UB.Seed);
     Payload.U = rng.rand();
@@ -141,8 +146,9 @@ void TraceVisibilityRaysRaygen() {
 
 [shader("miss")]
 void TraceVisibilityRaysMiss(inout RayPayload Payload: SV_RayPayload) {
-    Payload.PackedMaterial = uint2(INVALID_UINT, MakePackedInvalidCachedHitMaterial());
+    Payload.PackedMaterial = MakePackedInvalidCachedHitMaterial();
 }
+
 
 [shader("anyhit")]
 void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
@@ -152,7 +158,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    if(InstanceFlags == 0) {
+    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Static mesh instance
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -189,7 +195,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             // with this tracing method. We just let that happen.
             Payload.U = Payload.U / max(ColorOpacity.a, 1e-5f);
         }
-    } else {
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         float3 RayOrigin = WorldRayOrigin();
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
@@ -221,7 +227,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                 if(Payload.HitDistance > lr.x + FlyDist) {
                     // Closer than previous hit, update the hit info
                     Payload.HitDistance = lr.x + FlyDist;
-                    Payload.PackedMaterial.y = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, false)); 
+                    Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME)); 
                 }
             } else {
                 // The ray passed through the volume
@@ -251,6 +257,49 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             }
 #endif
         }
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
+// Full visibility
+            #error "not implemented yet"
+#else
+        // 3D gaussian radiance field instance
+        float3 RayOrigin = WorldRayOrigin();
+        float3 RayDirection = WorldRayDirection();
+        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
+        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
+        Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
+        RayDesc Ray = GetRayDesc();
+        float RayScaler = 1, RayT = 0;
+        float3x4 WorldToObject = WorldToObject3x4();
+        float3x3 WorldToObjectNormal = transpose(To3x3(WorldToObject3x4()));
+        float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
+        float3 RayTangent, RayBitangent;
+        GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);
+        float3 LocalRayDirection = TransformVector(WorldToObject, Ray.Direction);
+        float3 LocalRayTangent   = TransformVector(WorldToObjectNormal, RayTangent);
+        float3 LocalRayBitangent = TransformVector(WorldToObjectNormal, RayBitangent);
+        float3x3 RaySpace = float3x3(
+            LocalRayTangent / dot(LocalRayTangent, LocalRayTangent),
+            LocalRayBitangent / dot(LocalRayBitangent, LocalRayBitangent),
+            LocalRayDirection / dot(LocalRayDirection, LocalRayDirection)
+        );
+        float Alpha = 
+            EvaluateGaussianResponseRast(LocalRayOrigin, RaySpace, G, RayT);
+        // Stochastically ignore the hit according to the gaussian response (opacity along the ray)
+        bool bShouldIgnoreHit = Alpha < Payload.U;
+        if(bShouldIgnoreHit) {
+            Payload.U = (Payload.U - Alpha) / (1 - Alpha);
+        } else { // Hit
+            // Still, we have to roll out a new seed for the next possible anyhit
+            Payload.U = Payload.U / Alpha;
+            Payload.HitDistance = RayT / max(1e-6, RayScaler); // Use the max response T as reply
+        }
+#endif
+    } else {
+        // Unknown instance type, just continue tracing
+        IgnoreHit();
     }
 }
 
@@ -268,7 +317,7 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
 #error "not implemented yet"
 #elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
 // Coarse output, but precise intersection sampling is applied in volume primitives
-    if(InstanceFlags == 0) {
+    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Mesh surface hit
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -298,15 +347,30 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 Normal = InterpolatedVertex.Normal;
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
         Normal = normalize(mul(NormalTransform, Normal));
-        Payload.PackedMaterial.x = PackNormal(Normal);
-        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(ColorOpacity.rgb, true);
-        Payload.PackedMaterial.y = PackCachedHitMaterial(CachedHitMat);
-    } else {
+        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(ColorOpacity.rgb, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, Normal);
+        Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         // Leaving the data coming from the any-hit shader unchanged is ok. 
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
+        // 3D gaussian radiance field instance
+        float3 RayOrigin = WorldRayOrigin();
+        float3 RayDirection = WorldRayDirection();
+        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
+        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
+        SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
+        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
+        float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
+        float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+        Color = saturate(Color + 0.5f);
+        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
+    } else {
+        // Unknown instance type, do nothing
     }
 #else // VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE
 // Coarse visibility
-    if(InstanceFlags == 0) {
+    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Mesh surface hit
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -336,18 +400,32 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 Normal = InterpolatedVertex.Normal;
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
         Normal = normalize(mul(NormalTransform, Normal));
-        Payload.PackedMaterial.x = PackNormal(Normal);
-        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(ColorOpacity.rgb, true);
-        Payload.PackedMaterial.y = PackCachedHitMaterial(CachedHitMat);
-    } else {
+        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(ColorOpacity.rgb, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, Normal);
+        Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
         uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
 
-        Payload.PackedMaterial.x = INVALID_UINT;
-        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Primitive.Color, false);
-        Payload.PackedMaterial.y = PackCachedHitMaterial(CachedHitMat);
+        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME);
+        Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
+    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
+        // 3D gaussian radiance field instance
+        float3 RayOrigin = WorldRayOrigin();
+        float3 RayDirection = WorldRayDirection();
+        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
+        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
+        SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
+        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
+        float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
+        float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+        Color = saturate(Color + 0.5f);
+        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
+    } else {
+        // Unknown instance type, do nothing
     }
 #endif
 }

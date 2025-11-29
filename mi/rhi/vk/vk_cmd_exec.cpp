@@ -365,7 +365,6 @@ void VulkanCommandExecutor::RHIDrawIndexedIndirect(RHICommandQueueBase *cmd,
     );
 }
 
-
 void VulkanCommandExecutor::RHIDispatch(RHICommandQueueBase *cmd, RHICommandDispatch *dispatch) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
@@ -381,7 +380,6 @@ void VulkanCommandExecutor::RHIDispatchIndirect(RHICommandQueueBase *cmd, RHICom
     assert(vk_buffer && vk_buffer->GetBuffer() != nullptr);
     state.cmd.dispatchIndirect(vk_buffer->GetBuffer(), dispatch_indirect->offset_);
 }
-
 
 void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
                                                     RHICommandBindGraphicsPipeline *bind_graphics_pipeline) {
@@ -408,7 +406,6 @@ void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHIComm
     CHECK_RHI_THREAD();
     state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current().draw_state_.cull_mode = set_cull_mode->cull_mode_;
 }
-
 
 void VulkanCommandExecutor::RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetViewport *set_viewport) {
     CHECK_RHI_THREAD();
@@ -641,7 +638,20 @@ vk::Rect2D VulkanCommandExecutor::CommandQueueState::GetScissorRect() {
             rect.extent.width = draw_state_.attachments[0]->GetWidth();
             rect.extent.height = draw_state_.attachments[0]->GetHeight();
         } else {
-            MI_LOG(MIInfraLogType::kWarning, "Scissor not set and no framebuffer bound");
+            auto pipeline = points[(uint32_t)RHIBindPointType::kGraphics].bound_pipeline;
+            if (pipeline) {
+                auto graphics_pipeline = (RHIGraphicsPipeline*)pipeline;
+                if (graphics_pipeline->GetFragmentOutputDesc().size() == 0) {
+                    // No outputs, scissor does not matter
+                    rect = vk::Rect2D{
+                        vk::Offset2D{0,0},
+                        vk::Extent2D{0u,0u}
+                };
+                } else {
+                    MI_LOG(MIInfraLogType::kWarning, "Scissor not set and no framebuffer bound,"
+                                                     "while the bound graphics pipeline has outputs.");
+                }
+            }
         }
     }
     return rect;
@@ -661,7 +671,21 @@ vk::Viewport VulkanCommandExecutor::CommandQueueState::GetViewport() {
             viewport.width = (float)draw_state_.attachments[0]->GetWidth();
             viewport.height = (float)draw_state_.attachments[0]->GetHeight();
         } else {
-            MI_LOG(MIInfraLogType::kWarning, "Viewport not set and no framebuffer bound");
+            auto pipeline = points[(uint32_t)RHIBindPointType::kGraphics].bound_pipeline;
+            if (pipeline) {
+                auto graphics_pipeline = (RHIGraphicsPipeline*)pipeline;
+                if (graphics_pipeline->GetFragmentOutputDesc().size() == 0) {
+                    // No outputs, viewport does not matter
+                    viewport = vk::Viewport{
+                        0.0f, 0.0f,
+                        0.0f, 0.0f,
+                        0.0f, 1.0f
+                    };
+                } else {
+                    MI_LOG(MIInfraLogType::kWarning, "Viewport not set and no framebuffer bound,"
+                                                     "while the bound graphics pipeline has outputs.");
+                }
+            }
         }
     }
     // Invert y-axis to match D3D12 and OpenGL conventions of the NDC

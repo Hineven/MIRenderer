@@ -29,6 +29,7 @@
 #include "renderer/mi_texture.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_cvar.h"
+#include "util/gaussian_radiance_field_loader.h"
 #include "util/texture_loader.h"
 #include "util/gltf_loader.h"
 #include "util/volprims_loader.h"
@@ -185,7 +186,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     TRef<Texture> sky_cube;
 
     // Upload sky texture
-    {
+    if (false) {
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
             GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
         // Get ready for device rendering
@@ -291,8 +292,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-
-    if (true) {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
@@ -306,6 +306,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
         } else {
         }
+
         auto & r = Renderer::Get();
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
@@ -324,6 +325,45 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
             volprims_instance->EditTransform().Translate({0, 0.5, 0});
             // volprims_instance->EditTransform().Scale({0.1f, 0.1f, 0.1f});
+        }
+    }
+
+    if (true) {
+
+        std::vector<TRef<Geometry>> geometries;
+        std::vector<TRef<Material>> materials;
+        // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/car/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene, default_mat.Raw(),
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+        }
+        auto & r = Renderer::Get();
+        for (auto e : meshes) {
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+            e->EditTransform().Scale({0.002f, 0.002f, 0.002f});
+        }
+
+        auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
+        TRef<GaussianRadianceField> field;
+        if (!GaussianRadianceFieldLoader::LoadPLY(
+            gaussian_field_model_path,
+            *resource_allocator,
+            field
+        )) {
+            MI_WARN("Failed to load Gaussian Radiance Field GLTF model {}.", gaussian_field_model_path.string());
+        } else {
+        }
+        if (field) {
+            field->UpdateOnDevice(resource_allocator.Raw());
+            auto field_instance = GaussianRadianceFieldInstance::Create(scene.get(), field.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
+            // field_instance->EditTransform().Translate({0, 0, 0});
+            // field_instance->EditTransform().Scale({1.0f, 1.0f, 1.0f});
         }
     }
 
@@ -729,7 +769,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // Left mouse Drag
             static glm::vec2 drag_mouse_start_pos = {};
             static glm::vec3 drag_start_obj_pos = {};
-            if (io.MouseDown[GLFW_MOUSE_BUTTON_LEFT]) {
+            if (io.MouseDown[GLFW_MOUSE_BUTTON_LEFT] && !io.WantCaptureMouse) {
                 int axis = -1;
                 if (selected_renderable_index == arrow_mesh_x_instance->GetIndex()) axis = 0;
                 else if (selected_renderable_index == arrow_mesh_y_instance->GetIndex()) axis = 1;
