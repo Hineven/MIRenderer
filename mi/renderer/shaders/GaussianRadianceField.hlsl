@@ -418,7 +418,7 @@ GBufferOutput DrawActiveGaussians_PS (DrawActiveGaussians_PSInput Input) {
 
     // Per-fragment shadow: derive light-space UV and compare depth
     float2 LightUV = NDC2ToUV(Input.LightNDC.xy);
-    bool Outside = any(LightUV < 0.0f) || any(LightUV > 1.0f) || (Input.LightNDC.z < 0.0f) || (Input.LightNDC.z > 1.0f);
+    bool Outside = any(LightUV < 0.0f) || any(LightUV > 1.0f) || (Input.LightNDC.z < 0.0f);
     float ShadowFactor = 1.0f;
     if(!Outside) {
         float2 StoredMoments = ShadowMapTexture.SampleLevel(PointEdgeSampler, LightUV, 0);

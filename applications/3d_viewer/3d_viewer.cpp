@@ -345,6 +345,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
             e->EditTransform().Scale({0.01f, 0.01f, 0.01f});
+            e->EditTransform().Translate({-0.22, -2.18, -15.4});
         }
 
         // auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
@@ -413,7 +414,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             // Camera control
             {
-                const float move_speed = 0.02f;
+                const float move_speed = 0.1f;
                 const float mouse_sensitivity = 0.002f;
                 glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
                 if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -456,6 +457,31 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
                 last_mouse_x = mouse_x;
                 last_mouse_y = mouse_y;
+            }
+            // Car control (moving all meshes together)
+            {
+                auto MoveAllMeshes = [&](const glm::vec3 & delta) {
+                    for (auto m : meshes) {
+                        auto & t = m->EditTransform();
+                        t.Translate(delta);
+                    }
+                };
+                auto move_speed = 0.1f;
+                glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
+                // UHJK
+                if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
+                    MoveAllMeshes(glm::vec3(1, 0, 0) * move_speed);
+                if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+                    MoveAllMeshes(-glm::vec3(1, 0, 0) * move_speed);
+                if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
+                    MoveAllMeshes(glm::vec3(0, 0, 1) * move_speed);
+                if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+                    MoveAllMeshes(-glm::vec3(0, 0, 1) * move_speed);
+                // YN
+                if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS)
+                    MoveAllMeshes(glm::vec3(0, 1, 0) * move_speed);
+                if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS)
+                    MoveAllMeshes(-glm::vec3(0, 1, 0) * move_speed);
             }
             // Hotkeys
             {
