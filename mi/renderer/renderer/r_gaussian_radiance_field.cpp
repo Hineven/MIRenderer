@@ -243,8 +243,8 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->RWActiveGaussianQuadNDCVector1Buffer = active_gaussian_quad_vec1_buffer.Raw();
     params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_buffer.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
-    // Draw to back buffer directly.
-    params->Color = builder.Import(RHI::Get().GetBackBuffer());
+    // Draw to linear color overlay
+    params->Color = view->overlay_.Raw();
     // Test against the depth buffer.
     params->Depth = view->G_depth_.Raw();
 

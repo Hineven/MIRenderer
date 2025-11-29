@@ -135,6 +135,8 @@ struct RendererView {
 
     // Final radiance (after composition)
     TRef<RDGTexture> radiance_;
+    // Linear color overlay for gaussian RDF / forward passes
+    TRef<RDGTexture> overlay_;
     // Shaded radiance without emission, created & written by final composition, used for lighting reuse
     TRef<RDGTexture> shaded_radiance_no_emission_;
     // Shaded volume radiance, created & written by final composition, used for lighting reuse

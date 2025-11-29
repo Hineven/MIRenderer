@@ -368,7 +368,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
         params->Visibility = view->G_visibility_.Raw();
-        params->Color = builder.Import(RHI::Get().GetBackBuffer());
+        params->Color = view->overlay_.Raw();
         params->Color.load_op = RHILoadOpType::kLoad;
         params->Depth = view->forward_depth_.Raw();
         auto shader = RDGShaderLibrary::Get().GetShader<DrawForwardStaticMeshesShader>();

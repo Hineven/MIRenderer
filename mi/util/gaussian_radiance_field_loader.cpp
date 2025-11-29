@@ -9,7 +9,11 @@
 
 #include <numeric>
 MI_NAMESPACE_BEGIN
-bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, DeviceBindlessResourceAllocator & alloc, TRef<GaussianRadianceField> & out_field, float percentage) {
+
+bool GaussianRadianceFieldLoader::LoadPLY(
+    const std::filesystem::path & path, DeviceBindlessResourceAllocator & alloc,
+    TRef<GaussianRadianceField> & out_field, float percentage
+) {
     if (path.extension() != ".ply") {
         MI_WARN("GaussianRadianceFieldLoader: Not a PLY file: {}", path.string());
         return false;
@@ -119,7 +123,9 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
         auto b = element.getProperty<float>("f_dc_2");
         for (int i=0;i<num_pts;i++) {
             auto src = shuffle[i];
-            sh_coeffs[i * 16 + 0] = glm::vec3(r[src], g[src], b[src]);
+            auto val = glm::vec3(r[src], g[src], b[src]);
+
+            sh_coeffs[i * 16 + 0] = val;
         }
         for (int c = 0;c < 15; c++) {
             auto rr = element.getProperty<float>("f_rest_" + std::to_string(0 + c));
@@ -127,7 +133,8 @@ bool GaussianRadianceFieldLoader::LoadPLY(const std::filesystem::path & path, De
             auto bb = element.getProperty<float>("f_rest_" + std::to_string(30 + c));
             for (int i=0;i<num_pts;i++) {
                 auto src = shuffle[i];
-                sh_coeffs[i * 16 + c + 1] = glm::vec3(rr[src], gg[src], bb[src]);
+                auto val = glm::vec3(rr[src], gg[src], bb[src]);
+                sh_coeffs[i * 16 + c + 1] = val;
             }
         }
     } else if (has_color) {

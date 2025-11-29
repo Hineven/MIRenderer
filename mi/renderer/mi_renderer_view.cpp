@@ -377,6 +377,12 @@ void RendererView::InitFrame () {
         | RHITextureUsageFlagBits::kTransfer);
     radiance_->SetName("Radiance");
 
+    overlay_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
+    overlay_->SetName("Overlay");
+
     shaded_radiance_no_emission_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT
     );

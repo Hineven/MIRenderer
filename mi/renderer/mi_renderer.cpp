@@ -425,11 +425,17 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
     } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());
 
-    // Draw gaussian radiance fields directly to back buffer (color does not participate in lighting composition)
+    // Clear overlay
+    Helpers::Clear(builder, view->overlay_.Raw(), glm::vec4(0,0,0,0));
+
+    // Draw gaussian radiance fields directly to overlay (color does not participate in lighting composition)
     Render_DrawGaussianRadianceFields(view, builder);
 
-    // Extra pass for forward rendering
+    // Extra pass for forward rendering (drawn to overlay)
     Render_DrawForwardStaticMeshes(view, builder);
+
+    // Composite overlay to backbuffer (sRGB conversion)
+    Render_DrawToOutput(view, builder, view->overlay_.Raw(), DrawToOutputMappingType::eLinearToSRGB);
 
     // Update persistent data using current frame for next frame use
     view->persistent_data_->FinalUpdate(view);

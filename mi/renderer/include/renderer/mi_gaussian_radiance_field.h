@@ -55,12 +55,17 @@ public:
     FORCEINLINE bool IsRayTraced() const { return ray_traced_; }
     void SetRayTraced(bool rt);
 
+    FORCEINLINE void SetSRGBSpace(bool srgb) { srgb_space_ = srgb; SetDirty(); }
+    FORCEINLINE bool IsSRGBSpace() const { return srgb_space_; }
+
     void SetSHCoefficients(const std::vector<glm::vec3> & coeffs) { sh_coeffs_ = coeffs; SetDirty(); }
     const std::vector<glm::vec3> & GetSHCoefficients() const { return sh_coeffs_; }
 
     constexpr static uint32_t kGaussianRadianceAllocatorUberBufferIndex = 1; // Distinct from volume primitives
     constexpr static uint32_t kGaussianRadianceSHAllocatorUberBufferIndex = 2; // SH coefficients uber buffer
 protected:
+    bool srgb_space_ {false}; // Whether the SH coefficients are in sRGB space
+
     static void SetupAllocatorUberBuffer(DeviceBindlessResourceAllocator * alloc);
     TRef<DeviceGaussianRadianceField> device_field_;
     std::vector<PackedGaussian3D> points_;
@@ -68,6 +73,7 @@ protected:
     bool dirty_ {true};
     bool ray_traced_ {true}; // Default: enable ray tracing for 3D Gaussian radiance fields
     bool dynamic_ {false};
+
     DirtyTracker<GaussianRadianceField> * tracker_ {};
     // 4th-order SH (l=0..3): 16 coefficients per point, RGB each
     std::vector<glm::vec3> sh_coeffs_;

@@ -1063,7 +1063,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
         // Specially, for GRF hits, simply decode color from hit albedo
         if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN) {
             // Use a simple non-linear mapping to approximate radiance
-            float3 Radiance = ColorToRadiance(CM.Albedo) * UB.GRF_EmitterIntensityScale;
+            float3 Radiance = LinearColorToRadiance(CM.Albedo) * UB.GRF_EmitterIntensityScale;
             uint2 Packed = PackUpdateRayRadianceFlag(Radiance, true);
             bBypass = true;
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = Packed;

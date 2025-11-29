@@ -5,6 +5,7 @@
 #include "headers/Camera.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/GaussianSplatting.hlsl"
+#include "headers/Radiometry.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
 
@@ -149,6 +150,14 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	float3 ViewDirection = normalize(C.Position - GaussianWorldPosition);
 	float3 Color = SH3Evaluate(ViewDirection, SH3, 2);
     Color = max(Color + 0.5f, 0.f); // Gaussian color biasing. Coherent with training process.
+    // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
+    RenderableHeader RH = RenderableHeaderBuffer[RenderableIndex];
+    // Unpack the gaussian radiance field index
+    uint RadianceFieldIndex = asuint(RH.Metadata.x);
+    GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
+    if(FieldHeader.SRGBColorSpace != 0) {
+        Color = SRGBColorToLinearColor(Color);
+    }
 	RWActiveGaussianColorBuffer[ActiveIndex] = PackUnorm4x8(float4(Color, 0.f));
 
     // Compute extent in screen space (by finding eigenvalues of

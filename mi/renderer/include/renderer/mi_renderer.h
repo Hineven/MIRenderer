@@ -25,9 +25,16 @@ class RHITexture;
 
 struct Render_StaticMeshesData;
 
+
 // Integrated with scene resource management... Maybe I'll separate it later
 class Renderer : public NonCopyable, public NonMovable {
 public:
+
+    enum class DrawToOutputMappingType : unsigned {
+        eRadianceToSRGB = 0,
+        eLinearToSRGB
+    };
+
     friend class BindlessRendererTexture;
     friend class Material;
 
@@ -128,7 +135,7 @@ protected:
     ) ;
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
-        RDGTexture * texture
+        RDGTexture * texture, DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB
     ) ;
 
     void Render_DrawForwardStaticMeshes (

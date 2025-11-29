@@ -9,7 +9,10 @@
 MI_NAMESPACE_BEGIN
 class GaussianRadianceFieldLoader {
 public:
-    static bool LoadPLY(const std::filesystem::path & path, DeviceBindlessResourceAllocator & alloc, TRef<GaussianRadianceField> & out_field, float percentage = 1.0f);
+    static bool LoadPLY(
+        const std::filesystem::path & path, DeviceBindlessResourceAllocator & alloc,
+        TRef<GaussianRadianceField> & out_field, float percentage = 1.0f
+    );
 };
 MI_NAMESPACE_END
 #endif // MI_GAUSSIAN_RADIANCE_FIELD_LOADER_H

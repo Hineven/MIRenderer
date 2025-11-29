@@ -161,13 +161,13 @@ public:
     struct DrawToOutputUB {
         glm::vec2 InTextureDimensions;
         float Exposure;
-        float Padding;
+        uint  MappingType;
     };
     BEGIN_SHADER_PARAMETERS(Parameters)
         SHADER_UNIFORM_BUFFER(DrawToOutputUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, InTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
-        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, Output)
+        SHADER_RENDER_TARGET(PixelFormatType::kB8G8R8A8_SRGB, Output, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Parameters)
     DECLARE_SHADER()
@@ -177,7 +177,7 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "mi/renderer/shaders/DrawToOut
 
 void Renderer::Render_DrawToOutput(
     [[maybe_unused]] RendererView * view, RenderGraphBuilder & builder,
-    RDGTexture *texture
+    RDGTexture *texture, DrawToOutputMappingType mapping_type
 ) {
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<DrawToOutputShader>();
@@ -187,6 +187,7 @@ void Renderer::Render_DrawToOutput(
         auto dims = texture->GetDesc().dimensions;
         params->UB->InTextureDimensions = glm::vec2(dims.width, dims.height);
         params->UB->Exposure = CVar_Exposure.Get();
+        params->UB->MappingType = static_cast<uint>(mapping_type);
         params->Output = builder.Import(RHI::Get().GetBackBuffer());
         params->InTexture = texture;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;

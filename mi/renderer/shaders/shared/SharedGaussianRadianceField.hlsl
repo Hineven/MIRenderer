@@ -16,8 +16,11 @@ struct Gaussian3D {
 };
 struct GaussianRadianceFieldHeader {
     uint  NumPoints;
-    uint  PointOffset;
-    uint2 Padding;
+    uint  PointOffset; // Offset to the start of the gaussian points array (in bytes)
+    // Whether the gaussian colors are stored in sRGB color space (default false)
+    // Set to true if the source gaussian point cloud is optimized with sRGB colors.
+    uint  SRGBColorSpace; 
+    uint  Padding;
 };
 MI_SHARED_HLSL_END
 #endif // SHARED_GAUSSIAN_RADIANCE_FIELD_HLSL

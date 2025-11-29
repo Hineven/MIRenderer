@@ -13,6 +13,7 @@
 #include "headers/Material.hlsl"
 #include "headers/RayTracingHelpers.hlsl"
 #include "headers/GaussianSplatting.hlsl"
+#include "headers/Radiometry.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
@@ -364,6 +365,14 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
         Color = saturate(Color + 0.5f);
+        // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
+        RenderableHeader RH = RenderableHeaderBuffer[Instance];
+        // Unpack the gaussian radiance field index
+        uint RadianceFieldIndex = asuint(RH.Metadata.x);
+        GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
+        if(FieldHeader.SRGBColorSpace != 0) {
+            Color = SRGBColorToLinearColor(Color);
+        }
         Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
     } else {
         // Unknown instance type, do nothing
@@ -423,6 +432,14 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
         Color = saturate(Color + 0.5f);
+        // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
+        RenderableHeader RH = RenderableHeaderBuffer[Instance];
+        // Unpack the gaussian radiance field index
+        uint RadianceFieldIndex = asuint(RH.Metadata.x);
+        GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
+        if(FieldHeader.SRGBColorSpace != 0) {
+            Color = SRGBColorToLinearColor(Color);
+        }
         Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
     } else {
         // Unknown instance type, do nothing

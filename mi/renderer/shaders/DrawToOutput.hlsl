@@ -1,9 +1,10 @@
+#include "headers/Radiometry.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 
 struct DrawToOutputUB {
     float2 InTextureDimensions;
     float  Exposure;
-    float  Padding;
+    uint   MappingType;
 };
 ConstantBuffer<DrawToOutputUB> UB;
 
@@ -30,6 +31,8 @@ float4 VS_Main (uint VertexIndex : SV_VERTEXID) : SV_POSITION {
 float4 PS_Main (float4 Position : SV_POSITION) : SV_TARGET {
     float2 UV = Position.xy / UB.InTextureDimensions;
     float4 InValue = InTexture.SampleLevel(LinearWrapSampler, UV, 0);
-    return float4(ACEStonemap(InValue.rgb * exp(UB.Exposure)), InValue.a);
+    float3 Mapped = 0;
+    if(UB.MappingType == 0) Mapped = ACEStonemap(InValue.rgb * exp(UB.Exposure));
+    else if(UB.MappingType == 1) Mapped = InValue.rgb; // Mapped automatically by specifying SRGB format on the output target
+    return float4(Mapped, saturate(InValue.a));
 }
-

@@ -112,7 +112,9 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
 
     GaussianRadianceFieldHeader header {
         static_cast<uint32_t>(points_.size()),
-        static_cast<uint32_t>(device_field_->point_buffer_->GetRHI().offset / sizeof(PackedGaussian3D))
+        static_cast<uint32_t>(device_field_->point_buffer_->GetRHI().offset / sizeof(PackedGaussian3D)),
+        srgb_space_ ? 1u : 0u,
+        0
     };
     Helpers::Upload_Async(queue, alloc->GetGaussianRadianceFieldHeaderBuffer(), sizeof(GaussianRadianceFieldHeader) * device_field_->index_, header);
 
