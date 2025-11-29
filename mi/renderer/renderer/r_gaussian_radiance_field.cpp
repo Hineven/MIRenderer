@@ -26,6 +26,7 @@ struct GaussianRadianceFieldUB {
     float GaussianClampingScale;
     float GaussianExpandFactor;
     glm::uvec2 Padding;
+    glm::mat4x4 LightWorldToNDC;
 };
 
 // Shared parameter block
@@ -50,6 +51,7 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector0Buffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector1Buffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
+    SHADER_RESOURCE_PARAMETER(Texture2D, ShadowMapTexture)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
     SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
@@ -220,8 +222,9 @@ void Renderer::Render_DrawGaussianRadianceFields(
         UB->GaussianClampingScale = 1e-3f;
         UB->GaussianExpandFactor  = 2.25f;
         UB->Padding[0] = UB->Padding[1] = 0;
+        UB->LightWorldToNDC = view->shadow_mapping_.light_world_to_ndc_;
     }
-    params->UB=UB;
+    params->UB = UB;
     params->View=view->view_common_params_;
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
@@ -242,6 +245,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->RWActiveGaussianQuadNDCVector0Buffer = active_gaussian_quad_vec0_buffer.Raw();
     params->RWActiveGaussianQuadNDCVector1Buffer = active_gaussian_quad_vec1_buffer.Raw();
     params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_buffer.Raw();
+    params->ShadowMapTexture = view->shadow_map_moments_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     // Draw to linear color overlay
     params->Color = view->overlay_.Raw();
