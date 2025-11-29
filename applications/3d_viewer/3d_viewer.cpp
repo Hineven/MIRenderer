@@ -291,34 +291,34 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (true) {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
-        // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
-        // if (!GLTFLoader::LoadGLTF(
-        //     model_path,
-        //     *resource_allocator,
-        //     *scene, default_mat.Raw(),
-        //     geometries, materials, meshes
-        // )) {
-        //     MI_WARN("Failed to load GLTF model {}.", model_path.string());
-        // } else {
-        // }
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene, default_mat.Raw(),
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+        }
 
         auto & r = Renderer::Get();
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
         TRef<VolumePrimitives> volprims;
-        // VolumePrimitivesLoader::LoadPLY(
-        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
-        //     *resource_allocator, volprims//, 0.1f
-        // );
+        VolumePrimitivesLoader::LoadPLY(
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
+            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
+            *resource_allocator, volprims//, 0.1f
+        );
         if (volprims) {
             volprims->UpdateOnDevice(resource_allocator.Raw());
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
@@ -327,8 +327,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (false) {
-
+    if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
@@ -348,8 +347,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             e->EditTransform().Scale({0.01f, 0.01f, 0.01f});
         }
 
-        auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
-        // auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/street.ply");
+        // auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
+        auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/street.ply");
         TRef<GaussianRadianceField> field;
         if (!GaussianRadianceFieldLoader::LoadPLY(
             gaussian_field_model_path,

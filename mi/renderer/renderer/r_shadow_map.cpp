@@ -11,6 +11,7 @@
 #include <rdg/rdg_shader.h>
 
 #include "r_view_common.h"
+#include "rdg/rdg_helper.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_resource_allocator.h"
@@ -74,35 +75,47 @@ static glm::mat4 ComputeDirectionalLightWorldToNDC(
     const glm::vec3& AABBmax)
 {
     glm::vec3 forward = glm::normalize(lightDirWS);
-	glm::vec3 up = { 0.0f, 1.0f, 0.0f };
+    // Choose a robust up vector not parallel to forward
+    glm::vec3 up = { 0.0f, 1.0f, 0.0f };
+    if (std::abs(glm::dot(forward, up)) > 0.99f) {
+        up = { 0.0f, 0.0f, 1.0f };
+    }
     glm::vec3 center = (AABBmin + AABBmax) * 0.5f;
-    glm::vec3 eye = center - forward;
+    // Place the eye at a distance proportional to the bounds size to avoid clipping
+    glm::vec3 extents = (AABBmax - AABBmin) * 0.5f;
+    float radius = glm::length(extents);
+    float eyeDist = std::max(radius + 1e-4f, 0.f);
+    glm::vec3 eye = center - forward * eyeDist;
     glm::mat4 lightView = glm::lookAt(eye, center, up);
 
-	auto CornersWS = GetCorners(AABBmin, AABBmax);
+    auto CornersWS = GetCorners(AABBmin, AABBmax);
 
     glm::vec3 minExtents(FLT_MAX);
     glm::vec3 maxExtents(-FLT_MAX);
     for (auto& c : CornersWS) {
         glm::vec4 ptLS = lightView * glm::vec4(c, 1.0);
+        ptLS.z = -ptLS.z; // Right hand side view matrix map -z axis to forward
         minExtents = glm::min(minExtents, glm::vec3(ptLS));
         maxExtents = glm::max(maxExtents, glm::vec3(ptLS));
     }
 
-	// construct an orthographic projection matrix for the light
-    float _left = minExtents.x;
-    float _right = maxExtents.x;
+    // Construct an orthographic projection matrix for the light
+    float _left   = minExtents.x;
+    float _right  = maxExtents.x;
     float _bottom = minExtents.y;
-    float _top = maxExtents.y;
-    float _nearZ = glm::max(glm::min(glm::abs(minExtents.z), glm::abs(maxExtents.z))-0.001f, 0.1f);
-    float _farZ =  glm::min(glm::max(glm::abs(minExtents.z), glm::abs(maxExtents.z))+0.001f ,1000.0f);
+    float _top    = maxExtents.y;
+    // Near/Far in light space z; RH_ZO expects near<far, z in [0,1]
+    const float margin = 0.001f;
+    float _nearZ = minExtents.z - margin;
+    float _farZ  = maxExtents.z + margin;
 
-	glm::mat4 lightProj = glm::orthoRH_ZO(_left, _right, _bottom, _top, _nearZ, _farZ);
+    glm::mat4 lightProj = glm::orthoRH_ZO(_left, _right, _bottom, _top, _nearZ, _farZ);
     return lightProj * lightView;
 }
 
 
 void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& builder) {
+
     if (view->shadow_mapping_.use_world_bounds_) {
         view->shadow_mapping_.mapping_world_bounds_ = view->scene_->GetAABB();
     }

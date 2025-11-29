@@ -238,7 +238,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     view->upload_context_.Fire(builder);
 
     // Update TLAS
-    if (false) {
+    {
         if (!view->scene_->GetDeviceScene()->TLAS_) {
             // Create one if not exists
             view->scene_->GetDeviceScene()->TLAS_ = RHI::Get().CreateAccelerationStructure(
@@ -334,7 +334,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Ready for rendering
 
     // Try reset light structure history if needed
-    // Render_PrepareLightStructureHistory(view, builder);
+    Render_PrepareLightStructureHistory(view, builder);
 
     // Draw the sky first.
     Render_DrawSky(view, builder);
@@ -359,24 +359,25 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     ->AddTextureH(view->shadow_map_moments_.Raw(), RDGTextureUsageType::kTransferWrite);
 
 	// Shadow map
-    // Render_DrawShadowMap(view, builder);
+    Render_DrawShadowMap(view, builder);
 
     // Static meshes
-    // Render_DrawDeferredStaticMeshes(view, builder);
+    Render_DrawDeferredStaticMeshes(view, builder);
 
     // Volume primitives
-    // Render_DrawVolumePrimitives(view, builder);
+    Render_DrawVolumePrimitives(view, builder);
 
     // HiZ
-    // Render_ComputeHiZBuffer(view, builder);
+    Render_ComputeHiZBuffer(view, builder);
 
     // Diffuse direct
-    // Render_ComputeDiffuseDirectLighting(view, builder);
+    Render_ComputeDiffuseDirectLighting(view, builder);
 
     // Volume direct (must run before denoiser prefilter which reads VolumeDirectLightingTexture)
-    // Render_ComputeVolumeDirectLighting(view, builder);
+    Render_ComputeVolumeDirectLighting(view, builder);
 
-    if (false) {
+    // Indirect lighting
+    {
         RDGSectionGuard section(builder, "IndirectLighting");
 
         // Initialize & reuse the hash grid cache from the previous frame before updating.
@@ -393,15 +394,15 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Stage light structure history
-    // Render_UpdateLightStructureHistory(view, builder);
+    Render_UpdateLightStructureHistory(view, builder);
 
     // Denoising
-    // Render_DenoiseLighting(view, builder);
+    Render_DenoiseLighting(view, builder);
 
     // Final composition
     Render_LightingComposition(view, builder);
 
-    // Render_DebugView(view, builder);
+    Render_DebugView(view, builder);
 
     auto type = CVar_FinalOutputType.Get();
     if (type == 0)
@@ -413,7 +414,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     else if (type == 3)
         Render_DrawToOutput(view, builder, view->G_normal_.Raw());
     else if (type == 4)
-        Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
+        Render_DrawToOutput(view, builder, view->shadow_map_moments_.Raw());
     else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)
@@ -429,10 +430,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     Helpers::Clear(builder, view->overlay_.Raw(), glm::vec4(0,0,0,0));
 
     // Draw gaussian radiance fields directly to overlay (color does not participate in lighting composition)
-    // Render_DrawGaussianRadianceFields(view, builder);
+    Render_DrawGaussianRadianceFields(view, builder);
 
     // Extra pass for forward rendering (drawn to overlay)
-    // Render_DrawForwardStaticMeshes(view, builder);
+    Render_DrawForwardStaticMeshes(view, builder);
 
     // Composite overlay to backbuffer (sRGB conversion)
     Render_DrawToOutput(view, builder, view->overlay_.Raw(), DrawToOutputMappingType::eLinearToSRGB);

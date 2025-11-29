@@ -307,7 +307,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     {
         float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25));
         float3 CamOrigin = NDC2ToCameraOrigin(C, Left1);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Left1));
+        float3 CamDir    = NDC2ToCameraDirectionUnnormalized(C, Left1);
         float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
         float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
         float3 LightNDC = LightH.xyz / LightH.w;
@@ -322,7 +322,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     {
         float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75));
         float3 CamOrigin = NDC2ToCameraOrigin(C, Left2);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Left2));
+        float3 CamDir    = NDC2ToCameraDirectionUnnormalized(C, Left2);
         float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
         float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
         float3 LightNDC = LightH.xyz / LightH.w;
@@ -337,7 +337,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     {
         float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0.0));
         float3 CamOrigin = NDC2ToCameraOrigin(C, Top);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Top));
+        float3 CamDir    = NDC2ToCameraDirectionUnnormalized(C, Top);
         float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
         float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
         float3 LightNDC = LightH.xyz / LightH.w;
@@ -352,7 +352,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     {
         float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1.0));
         float3 CamOrigin = NDC2ToCameraOrigin(C, Bottom);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Bottom));
+        float3 CamDir    = NDC2ToCameraDirectionUnnormalized(C, Bottom);
         float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
         float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
         float3 LightNDC = LightH.xyz / LightH.w;
@@ -367,7 +367,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     {
         float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1.0, 0.25));
         float3 CamOrigin = NDC2ToCameraOrigin(C, Right1);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Right1));
+        float3 CamDir    = NDC2ToCameraDirectionUnnormalized(C, Right1);
         float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
         float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
         float3 LightNDC = LightH.xyz / LightH.w;
@@ -382,7 +382,7 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     {
         float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1.0, 0.75));
         float3 CamOrigin = NDC2ToCameraOrigin(C, Right2);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Right2));
+        float3 CamDir    = NDC2ToCameraDirectionUnnormalized(C, Right2);
         float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
         float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
         float3 LightNDC = LightH.xyz / LightH.w;
@@ -417,22 +417,19 @@ GBufferOutput DrawActiveGaussians_PS (DrawActiveGaussians_PSInput Input) {
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
 
     // Per-fragment shadow: derive light-space UV and compare depth
-    float2 LightUV = Input.LightNDC.xy * 0.5f + 0.5f;
-    bool Outside = any(LightUV < 0.0f) || any(LightUV > 1.0f) || (Input.LightNDC.z < -1.0f) || (Input.LightNDC.z > 0.0f);
+    float2 LightUV = NDC2ToUV(Input.LightNDC.xy);
+    bool Outside = any(LightUV < 0.0f) || any(LightUV > 1.0f) || (Input.LightNDC.z < 0.0f) || (Input.LightNDC.z > 1.0f);
     float ShadowFactor = 1.0f;
     if(!Outside) {
         float2 StoredMoments = ShadowMapTexture.SampleLevel(PointEdgeSampler, LightUV, 0);
-        float StoredDepth = StoredMoments.x;
-        // Light depths: 0 near, -1 far. Convert to positive range for comparison
-        float CurrD   = -Input.LightNDC.z;
-        float StoredD = -StoredDepth;
-        const float Bias = 0.001f;
-        ShadowFactor = (CurrD > StoredD + Bias) ? 0.5f : 1.0f;
+        float StoredDepth = StoredMoments.x == 0 ? Infinity : StoredMoments.x;
+        float CurrDepth   = Input.LightNDC.z;
+        const float Bias  = 1e-4f;
+        ShadowFactor = (CurrDepth > StoredDepth + Bias) ? 0.2f : 1.0f;
     }
 
     float3 Color = saturate(RGBA.xyz) * ShadowFactor;
     CameraParameters C = GetActiveCamera();
-    // (Linear depth not used further here)
     GBufferOutput Result = (GBufferOutput)0;
     Result.ColorAlpha    = float4(Color, Alpha);
     return Result;

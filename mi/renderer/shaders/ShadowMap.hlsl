@@ -51,7 +51,7 @@ struct Shadow_PS_Out
 
 Shadow_PS_Out Shadow_PS_Main(Shadow_VS_Out Input)
 {
-    
+
     MaterialHeader Material = MaterialHeaderBuffer[Input.MaterialIndex];
     float Opacity = 1.0f;
     if (IsValid(Material.AlbedoMap)){
@@ -60,10 +60,10 @@ Shadow_PS_Out Shadow_PS_Main(Shadow_VS_Out Input)
     if (Opacity < 0.5f){
         discard;
     }
-    
+
     Shadow_PS_Out Output = (Shadow_PS_Out) 0;
     Output.Moments = float4(Input.Position.z, Input.Position.z * Input.Position.z, 0, 1);
-    
+
     return Output;
 }
 
