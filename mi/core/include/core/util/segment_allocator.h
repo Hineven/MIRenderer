@@ -55,6 +55,24 @@ public:
         }
         return start_index;
     }
+    // Expand the heap to at least size elements.
+    FORCEINLINE void ExpandTo (size_t size) {
+        if (size <= max_num_elements_) return;
+        if (!free_segments_.empty()) {
+            auto last_segment = std::prev(free_segments_.end());
+            if (last_segment->end_index == max_num_elements_) {
+                // Extend the last free segment
+                free_segments_.erase(last_segment);
+                free_segments_.emplace(last_segment->start_index, size);
+            } else {
+                // Add a new free segment
+                free_segments_.emplace(max_num_elements_, size);
+            }
+        } else {
+            // No free segments available, just add a new one
+            free_segments_.emplace(max_num_elements_, size);
+        }
+    }
     FORCEINLINE void Free(size_t start_index, size_t num_elements) {
         num_elements = (num_elements + alignment - 1) / alignment * alignment; // Align the number of elements to the alignment
         size_t end_index = start_index + num_elements;

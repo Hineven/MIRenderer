@@ -204,6 +204,8 @@ std::pair<size_t, bool> SimpleDeviceUberBuffer::Allocate(uint32_t size, bool all
             );
             // Replace the old buffer with the new one
             uber_buffer_ = new_uber_buffer;
+            // Update the segment manager
+            segments_.ExpandTo(new_uber_buffer->GetBufferSize());
             // Allocate the segment again
             offset = segments_.Allocate(size);
             if (offset != SIZE_MAX) [[likely]] {
