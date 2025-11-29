@@ -6,7 +6,6 @@
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/GaussianSplatting.hlsl"
 #include "headers/Radiometry.hlsl"
-#include "resources/CommonSamplerResources.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
 
@@ -29,7 +28,6 @@ struct GaussianRadianceFieldUB {
     float GaussianClampingScale;
     float GaussianExpandFactor;
     uint2 Padding;
-    float4x4 LightWorldToNDC;
 };
 ConstantBuffer<GaussianRadianceFieldUB> UB;
 
@@ -218,7 +216,6 @@ struct DrawActiveGaussians_GSOutput
     float4 Position : SV_POSITION;
     float3 UVW  : TEXCOORD0;
     float3 RGB  : TEXCOORD1;
-    float3 LightNDC : TEXCOORD2; // Per-vertex light space position (xy [-1,1], z [0,-1])
 };
 
 // bool CullActiveListGaussian(uint ActiveListIndex, out float2 NDCPosition, out float LinearDepth) {
@@ -226,8 +223,8 @@ struct DrawActiveGaussians_GSOutput
 //     NDCPosition = UnpackUnorm16x2(RWActiveGaussianNDCPositionBuffer[ActiveListIndex]) * 4 - 2;
 //     LinearDepth = RWActiveGaussianLinearDepthSrcBuffer[ActiveListIndex];
 //     float2 UV = NDCPosition * 0.5 + 0.5;
-//     float4 DepthValues = g_HiZTexture.GatherRed(PointEdgeSampler, UV, Level);
-//     float4 AlphaValues = g_HiATexture.GatherRed(PointEdgeSampler, UV, Level);
+//     float4 DepthValues = g_HiZTexture.GatherRed(g_PointClampSampler, UV, Level);
+//     float4 AlphaValues = g_HiATexture.GatherRed(g_PointClampSampler, UV, Level);
 //     bool4  AlphaMask = AlphaValues > 0.95f;
 //     bool4  DepthMask = DepthValues < LinearDepth;
 //     return all(AlphaMask & DepthMask);
@@ -259,10 +256,16 @@ float EvaluateGaussianResponseRayT (float3 Origin, float3 Direction, Gaussian3D 
 void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout TriangleStream<DrawActiveGaussians_GSOutput> TriStream)
 {
     uint ActiveListIndex = ActiveGaussianIndirectionBuffer[Input[0].PrimitiveIndex];
+    // if(ActiveListIndex % 4 != UB.FrameIndex % 4) return ;
+    // if(CullActiveListGaussian(ActiveListIndex)) return ;
+    
     CameraParameters C = GetActiveCamera();
+    
+    // Output a quad to bound the Gaussian in screen space
     float2 Center  = UnpackUnorm2x16(RWActiveGaussianNDCPositionBuffer[ActiveListIndex]) * 4 - 2;
     float2 Vec1    = -(UnpackUnorm2x16(RWActiveGaussianQuadNDCVector0Buffer[ActiveListIndex]) * 2 - 1);
     float2 Vec2    = -(UnpackUnorm2x16(RWActiveGaussianQuadNDCVector1Buffer[ActiveListIndex]) * 2 - 1);
+    // Expand the quad to be conservative
     float  Expand  = UB.GaussianExpandFactor;
     float2 Top    = Center + Expand * -Vec1;
     float2 Bottom = Center + Expand *  Vec1;
@@ -271,15 +274,17 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
     float2 Left2  = Center + Expand * (-Vec2 +Vec1H);
     float2 Right1 = Center + Expand * ( Vec2 -Vec1H);
     float2 Right2 = Center + Expand * ( Vec2 +Vec1H);
-    float  DepthCenter = RWActiveGaussianLinearDepthSrcBuffer[ActiveListIndex];
+    
+    float  Depth   =  RWActiveGaussianLinearDepthSrcBuffer[ActiveListIndex];
+    
+    // float2 Depth01 = g_RWActiveGaussianQuadLinearDepthSrcBuffer[ActiveListIndex];
+    // Magnify according to the expand parameter
+    // Depth01 = Depth + (Depth - Depth01) * Expand;
     uint GaussianIndex, ActiveRenderableListIndex;
     UnpackActiveGaussianIndex(RWActiveGaussianListBuffer[ActiveListIndex], ActiveRenderableListIndex, GaussianIndex);
     uint RenderableIndex = ActiveGaussianRenderableListBuffer[ActiveRenderableListIndex];
-    Gaussian3D G = FetchGaussian(GaussianIndex);
-    float3 Color = saturate(UnpackUnorm4x8(RWActiveGaussianColorBuffer[ActiveListIndex]).rgb);
-    float4 ColorAlpha = float4(Color, G.Opacity);
-    float  Alpha = ColorAlpha.w;
     float3x4 RenderableToWorld = RenderableTransformBuffer[RenderableIndex];
+    Gaussian3D G = FetchGaussian(GaussianIndex);
     float3x3 InvCov;
     float3 Direction0 = NDC2ToCameraDirectionUnnormalized(C, Top);
     float3 Direction1 = NDC2ToCameraDirectionUnnormalized(C, 0.5 * (Left1 + Left2));
@@ -294,106 +299,52 @@ void DrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout Tr
         EvaluateGaussianResponseRayT(InstanceLocalOrigin1, InstanceLocalDirection1, G, InvCov)
     );
 #ifdef CONSTANT_GAUSSIAN_DEPTH
-    Depth01.xy = DepthCenter.xx;
+    Depth01.xy = Depth.xx;
 #endif
-    float  D_TL = Depth01.x + Depth01.y - DepthCenter;
-    float  D_TR = Depth01.x - Depth01.y + DepthCenter;
-    float  D_BL = Depth01.y - Depth01.x + DepthCenter;
+    float  D_TL    =  Depth01.x +Depth01.y - Depth;
+    float  D_TR    =  Depth01.x -Depth01.y + Depth;
+    float  D_BL    =  Depth01.y -Depth01.x + Depth;
 
-    // Emit six vertices explicitly (removed lambda for DXC compatibility)
+    float3 Color = saturate(UnpackUnorm4x8(RWActiveGaussianColorBuffer[ActiveListIndex]).rgb);
+    float4 ColorAlpha = float4(Color, G.Opacity);
+    
+    // Is the quantilization affecting render quality?
+    // int Seed = UB.FrameIndex + InstanceIndex * 77183 + GaussianIndex * 81937121;
+    // float Q_Noise = 0.2 * (frac(sin(Seed) * 43758.5453) - 0.5f);
+    // ColorAlpha.rgb = saturate(ColorAlpha.rgb + Q_Noise);
+
+    float  Alpha = ColorAlpha.w;
+    float InvFarPlane = 1 / C.FarPlane;
+
     DrawActiveGaussians_GSOutput Output;
 
-    // Vertex 1: Left1 (bary (0,0.25))
-    {
-        float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25));
-        float3 CamOrigin = NDC2ToCameraOrigin(C, Left1);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Left1));
-        float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
-        float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
-        float3 LightNDC = LightH.xyz / LightH.w;
-        Output.LightNDC = LightNDC;
-        Output.UVW.z = Alpha;
-        Output.RGB = Color.rgb;
-        Output.UVW.xy = Expand * float2(-1.0f, -0.5f);
-        Output.Position = float4(Left1, LinearDepthToReversedZDepth(C, LinearDepth), 1);
-        TriStream.Append(Output);
-    }
-    // Vertex 2: Left2 (bary (0,0.75))
-    {
-        float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75));
-        float3 CamOrigin = NDC2ToCameraOrigin(C, Left2);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Left2));
-        float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
-        float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
-        float3 LightNDC = LightH.xyz / LightH.w;
-        Output.LightNDC = LightNDC;
-        Output.UVW.z = Alpha;
-        Output.RGB = Color.rgb;
-        Output.UVW.xy = Expand * float2(-1.0f, 0.5f);
-        Output.Position = float4(Left2, LinearDepthToReversedZDepth(C, LinearDepth), 1);
-        TriStream.Append(Output);
-    }
-    // Vertex 3: Top (bary (0.5,0.0))
-    {
-        float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0.0));
-        float3 CamOrigin = NDC2ToCameraOrigin(C, Top);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Top));
-        float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
-        float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
-        float3 LightNDC = LightH.xyz / LightH.w;
-        Output.LightNDC = LightNDC;
-        Output.UVW.z = Alpha;
-        Output.RGB = Color.rgb;
-        Output.UVW.xy = Expand * float2(0.0f, 1.0f);
-        Output.Position = float4(Top, LinearDepthToReversedZDepth(C, LinearDepth), 1);
-        TriStream.Append(Output);
-    }
-    // Vertex 4: Bottom (bary (0.5,1.0))
-    {
-        float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1.0));
-        float3 CamOrigin = NDC2ToCameraOrigin(C, Bottom);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Bottom));
-        float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
-        float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
-        float3 LightNDC = LightH.xyz / LightH.w;
-        Output.LightNDC = LightNDC;
-        Output.UVW.z = Alpha;
-        Output.RGB = Color.rgb;
-        Output.UVW.xy = Expand * float2(0.0f, -1.0f);
-        Output.Position = float4(Bottom, LinearDepthToReversedZDepth(C, LinearDepth), 1);
-        TriStream.Append(Output);
-    }
-    // Vertex 5: Right1 (bary (1.0,0.25))
-    {
-        float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1.0, 0.25));
-        float3 CamOrigin = NDC2ToCameraOrigin(C, Right1);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Right1));
-        float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
-        float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
-        float3 LightNDC = LightH.xyz / LightH.w;
-        Output.LightNDC = LightNDC;
-        Output.UVW.z = Alpha;
-        Output.RGB = Color.rgb;
-        Output.UVW.xy = Expand * float2(1.0f, 0.5f);
-        Output.Position = float4(Right1, LinearDepthToReversedZDepth(C, LinearDepth), 1);
-        TriStream.Append(Output);
-    }
-    // Vertex 6: Right2 (bary (1.0,0.75))
-    {
-        float LinearDepth = InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1.0, 0.75));
-        float3 CamOrigin = NDC2ToCameraOrigin(C, Right2);
-        float3 CamDir    = normalize(NDC2ToCameraDirectionUnnormalized(C, Right2));
-        float3 WorldPos  = CamOrigin + CamDir * LinearDepth;
-        float4 LightH = mul(UB.LightWorldToNDC, float4(WorldPos, 1));
-        float3 LightNDC = LightH.xyz / LightH.w;
-        Output.LightNDC = LightNDC;
-        Output.UVW.z = Alpha;
-        Output.RGB = Color.rgb;
-        Output.UVW.xy = Expand * float2(1.0f, -0.5f);
-        Output.Position = float4(Right2, LinearDepthToReversedZDepth(C, LinearDepth), 1);
-        TriStream.Append(Output);
-    }
+    Output.UVW.z = Alpha;
+    Output.RGB = Color.rgb;
 
+    Output.UVW.xy = Expand * float2(-1, -0.5);
+    Output.Position = float4(Left1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
+    TriStream.Append(Output);
+
+    Output.UVW.xy = Expand * float2(-1,  0.5);
+    Output.Position = float4(Left2, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75))), 1);
+    TriStream.Append(Output);
+
+    Output.UVW.xy = Expand * float2(0, -1);
+    Output.Position = float4(Top, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0))), 1);
+    TriStream.Append(Output);
+
+    Output.UVW.xy = Expand * float2(0, 1);
+    Output.Position = float4(Bottom, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1))), 1);
+    TriStream.Append(Output);
+
+    Output.UVW.xy = Expand * float2(1, -0.5);
+    Output.Position = float4(Right1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.25))), 1);
+    TriStream.Append(Output);
+
+    Output.UVW.xy = Expand * float2(1,  0.5);
+    Output.Position = float4(Right2, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.75))), 1);
+    TriStream.Append(Output);
+    
     TriStream.RestartStrip();
 }
 
@@ -402,37 +353,20 @@ struct DrawActiveGaussians_PSInput
     float4 Position : SV_Position;
     float3 UVW : TEXCOORD0;
     float3 RGB : TEXCOORD1;
-    float3 LightNDC : TEXCOORD2;
 };
 
 struct GBufferOutput {
     float4 ColorAlpha    : SV_Target0;
 };
 
-Texture2D<float2> ShadowMapTexture;
-
 GBufferOutput DrawActiveGaussians_PS (DrawActiveGaussians_PSInput Input) {
     float2 UV     = Input.UVW.xy;
     float4 RGBA   = float4(Input.RGB.rgb, Input.UVW.z);
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
-
-    // Per-fragment shadow: derive light-space UV and compare depth
-    float2 LightUV = Input.LightNDC.xy * 0.5f + 0.5f;
-    bool Outside = any(LightUV < 0.0f) || any(LightUV > 1.0f) || (Input.LightNDC.z < -1.0f) || (Input.LightNDC.z > 0.0f);
-    float ShadowFactor = 1.0f;
-    if(!Outside) {
-        float2 StoredMoments = ShadowMapTexture.SampleLevel(PointEdgeSampler, LightUV, 0);
-        float StoredDepth = StoredMoments.x;
-        // Light depths: 0 near, -1 far. Convert to positive range for comparison
-        float CurrD   = -Input.LightNDC.z;
-        float StoredD = -StoredDepth;
-        const float Bias = 0.001f;
-        ShadowFactor = (CurrD > StoredD + Bias) ? 0.5f : 1.0f;
-    }
-
-    float3 Color = saturate(RGBA.xyz) * ShadowFactor;
+    
+    float3 Color = saturate(RGBA.xyz);
     CameraParameters C = GetActiveCamera();
-    // (Linear depth not used further here)
+    float  LinearDepth  = ZDepthToLinearDepth(C, Input.Position.z);
     GBufferOutput Result = (GBufferOutput)0;
     Result.ColorAlpha    = float4(Color, Alpha);
     return Result;

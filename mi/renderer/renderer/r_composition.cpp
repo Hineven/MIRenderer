@@ -123,28 +123,28 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     }
     params->UB = UB;
     if (!CVar_UseDenoisedDirectLighting.Get()) {
-        params->DiffuseDirectLightingTexture = nullptr;view->diffuse_direct_lighting_->radiance.Raw();
-        params->VolumeDirectLightingTexture = nullptr;view->volume_direct_lighting_->radiance.Raw();
+        params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_->radiance.Raw();
+        params->VolumeDirectLightingTexture = view->volume_direct_lighting_->radiance.Raw();
     } else {
-        params->DiffuseDirectLightingTexture = nullptr;view->denoiser_->denoised_diffuse_direct_lighting.Raw();
-        params->VolumeDirectLightingTexture = nullptr;view->denoiser_->denoised_volume_direct_lighting.Raw();
+        params->DiffuseDirectLightingTexture = view->denoiser_->denoised_diffuse_direct_lighting.Raw();
+        params->VolumeDirectLightingTexture = view->denoiser_->denoised_volume_direct_lighting.Raw();
     }
     if (CVar_UseDenoisedIndirectLighting.Get()) {
-        params->DiffuseIndirectLightingTexture = nullptr;view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
-        params->VolumeIndirectLightingTexture = nullptr;view->denoiser_->denoised_volume_indirect_lighting.Raw();
+        params->DiffuseIndirectLightingTexture = view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
+        params->VolumeIndirectLightingTexture = view->denoiser_->denoised_volume_indirect_lighting.Raw();
     } else {
-        params->DiffuseIndirectLightingTexture = nullptr;view->diffuse_indirect_lighting_->radiance.Raw();
-        params->VolumeIndirectLightingTexture = nullptr;view->volume_indirect_lighting_->radiance.Raw();
+        params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_->radiance.Raw();
+        params->VolumeIndirectLightingTexture = view->volume_indirect_lighting_->radiance.Raw();
     }
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {
         params->EnvironmentMap = nullptr;
     }
-    params->G_Albedo = nullptr;view->G_albedo_.Raw();
-    params->G_Emission = nullptr;view->G_emission_.Raw();
-    params->G_Transmittance = nullptr;view->G_transmittance_.Raw();
-    params->HistoryRadiance = nullptr;view->persistent_data_->prev_radiance_.Raw();
+    params->G_Albedo = view->G_albedo_.Raw();
+    params->G_Emission = view->G_emission_.Raw();
+    params->G_Transmittance = view->G_transmittance_.Raw();
+    params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
     params->RWShadedRadianceWithoutEmission = view->shaded_radiance_no_emission_.Raw();
     params->RWShadedVolumeRadiance = view->shaded_volume_radiance_.Raw();

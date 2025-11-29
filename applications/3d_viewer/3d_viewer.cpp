@@ -116,11 +116,14 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     TaskGraph::InitializeSingleton(0, task_graph_hpt_count);
 
+    // Initialize the task graph singleton and its workers.
+    // TaskGraph::InitializeSingleton(limits.max_low_performance_thread_count, task_graph_hpt_count);
+
     // Initialize shader library
     auto & shader_lib = RDGShaderLibrary::Get();
     shader_lib.Init();
 
-    MI_LOG(MIInfraLogType::kInfo, "Main loop initialization complete. Window starting...");
+    MI_LOG(MIInfraLogType::kInfo, "Main loop initialization complete.");
 
     // Set up window
     auto window = StartWindow(cfg);
@@ -183,11 +186,9 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     TRef<Texture> sky_cube;
 
     // Upload sky texture
-    if (true) {
-        // sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
-        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
+    if (false) {
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
-            GetInfra().TranslateResPathToFilePath("F:/qwantani_noon_puresky_4k.exr"));
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
         // Get ready for device rendering
         sky_cube->UpdateOnDevice();
         sky_cube->ConvertToBindless();
@@ -291,34 +292,34 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (true) {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
-        // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
-        // if (!GLTFLoader::LoadGLTF(
-        //     model_path,
-        //     *resource_allocator,
-        //     *scene, default_mat.Raw(),
-        //     geometries, materials, meshes
-        // )) {
-        //     MI_WARN("Failed to load GLTF model {}.", model_path.string());
-        // } else {
-        // }
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene, default_mat.Raw(),
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+        }
 
         auto & r = Renderer::Get();
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
         TRef<VolumePrimitives> volprims;
-        // VolumePrimitivesLoader::LoadPLY(
-        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
-        //     // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
-        //     *resource_allocator, volprims//, 0.1f
-        // );
+        VolumePrimitivesLoader::LoadPLY(
+            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
+            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
+            *resource_allocator, volprims//, 0.1f
+        );
         if (volprims) {
             volprims->UpdateOnDevice(resource_allocator.Raw());
             auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
@@ -327,7 +328,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (false) {
+    if (true) {
 
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
@@ -345,28 +346,24 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         auto & r = Renderer::Get();
         for (auto e : meshes) {
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
-            e->EditTransform().Scale({0.01f, 0.01f, 0.01f});
+            e->EditTransform().Scale({0.002f, 0.002f, 0.002f});
         }
 
         auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply");
-        // auto gaussian_field_model_path = GetInfra().TranslateResPathToFilePath("F:/street.ply");
         TRef<GaussianRadianceField> field;
         if (!GaussianRadianceFieldLoader::LoadPLY(
             gaussian_field_model_path,
             *resource_allocator,
-            field, 1.f
+            field
         )) {
             MI_WARN("Failed to load Gaussian Radiance Field GLTF model {}.", gaussian_field_model_path.string());
         } else {
         }
         if (field) {
-            // Some gaussian data are optimized in sRGB space...
-            field->SetSRGBSpace(true);
             field->UpdateOnDevice(resource_allocator.Raw());
             auto field_instance = GaussianRadianceFieldInstance::Create(scene.get(), field.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
             // field_instance->EditTransform().Translate({0, 0, 0});
             // field_instance->EditTransform().Scale({1.0f, 1.0f, 1.0f});
-            field_instance->EditTransform().RotateAbout(glm::radians(180.0f), {1, 0, 0});
         }
     }
 
@@ -827,16 +824,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 }
             } else {
                 dragging = false;
-            }
-
-            // Update shadow mapping bounds for car mesh
-            {
-                view->shadow_mapping_.use_world_bounds_ = false;
-                AABB bounds = AABB::Empty();
-                for (auto m : meshes) {
-                    bounds.Encapsulate(m->GetAABB().Transformed(m->GetTransform()));
-                }
-                view->shadow_mapping_.mapping_world_bounds_ = bounds;
             }
 
             if (rhi.GetFrameIndex() % 1000 == 0) {
