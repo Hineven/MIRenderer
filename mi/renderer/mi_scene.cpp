@@ -84,14 +84,7 @@ void Scene::UpdateAABB() {
             auto aabb = renderable->GetAABB();
             if (aabb.IsValid()) {
                 auto transform = renderable->GetTransform().GetToWorldTransformMatrix();
-                update(aabb.min, transform);
-                update(aabb.max, transform);
-                update(glm::vec3(aabb.min.x, aabb.min.y, aabb.max.z), transform);
-                update(glm::vec3(aabb.min.x, aabb.max.y, aabb.min.z), transform);
-                update(glm::vec3(aabb.min.x, aabb.max.y, aabb.max.z), transform);
-                update(glm::vec3(aabb.max.x, aabb.min.y, aabb.min.z), transform);
-                update(glm::vec3(aabb.max.x, aabb.min.y, aabb.max.z), transform);
-                update(glm::vec3(aabb.max.x, aabb.max.y, aabb.min.z), transform);
+                aabb_.Encapsulate(aabb.Transformed(transform));
             }
 #ifndef NDEBUG
             if (glm::any(glm::isnan(aabb_.min)) || glm::any(glm::isnan(aabb_.max))) {

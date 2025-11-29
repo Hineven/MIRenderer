@@ -91,6 +91,12 @@ struct Transform {
         return Transform();
     }
 
+    FORCEINLINE glm::vec3 TransformPoint (const glm::vec3 & point) const {
+        glm::mat4x3 mat = GetToWorldTransformMatrix();
+        glm::vec4 homogenous_point = glm::vec4(point, 1.0f);
+        glm::vec3 transformed_point = mat * homogenous_point;
+        return transformed_point;
+    }
 
     static Transform FromMatrix (glm::mat4) ;
 };
