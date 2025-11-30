@@ -28,7 +28,7 @@
 MI_NAMESPACE_BEGIN
 size_t RDGShaderInitializationInfo::GetHash() const {
     size_t final_hash = 0;
-    // Order inreleavnt hashing.
+    // Order irrelevant hashing.
 #ifndef NDEBUG
     std::vector<uint64_t> hashes;
 #endif
