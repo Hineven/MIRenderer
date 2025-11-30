@@ -7,6 +7,7 @@
 #include "headers/GaussianSplatting.hlsl"
 #include "headers/Radiometry.hlsl"
 #include "resources/RenderableResources.hlsl"
+#include "headers/VertexShaderInstanceIndex.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
 
 RWStructuredBuffer<uint> RWActiveGaussianColorBuffer;
@@ -47,10 +48,10 @@ void UnpackActiveGaussianIndex(uint PackedIndex, out uint ActiveRenderableListIn
 
 // Filter the active gaussians that are visible in the view frustrum
 void FilterActiveGaussiansVS (
-    uint BaseInstance : SV_StartInstanceLocation,
-    uint InstanceID   : SV_InstanceID,
+    VERTEX_SHADER_INSTANCE_INDEX_SV_PARAMS,
     uint InstanceGaussianRank : SV_VertexID
 ) {
+    uint InstanceID = VS_INSTANCE_INDEX;
     uint ActiveGaussianRenderableListIndex = InstanceID; // + BaseInstance;
 
 	// OPTIMIZE: also filter out the gaussians that failed the visibility test

@@ -19,6 +19,12 @@
 #include "core/task.h"
 #include "rhi/rhi_buffer.h"
 
+// Shader model 6.8
+#define SHADER_MODEL_SUFFIX "_6_8"
+
+// Shader model 6.3
+// #define SHADER_MODEL_SUFFIX "_6_3"
+
 MI_NAMESPACE_BEGIN
 size_t RDGShaderInitializationInfo::GetHash() const {
     size_t final_hash = 0;
@@ -679,7 +685,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         uint64_t cs_hash = 0;
         std::wstring out_command;
         auto result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs_6_8",
+                source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs" SHADER_MODEL_SUFFIX,
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
@@ -713,7 +719,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t vs_hash = 0;
             std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs_6_8",
+                    source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs" SHADER_MODEL_SUFFIX,
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
@@ -729,7 +735,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 uint64_t gs_hash = 0;
                 std::wstring out_command;
                 gs_result = GetInfra().CompileHLSLToSPIRV(
-                        source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs_6_8",
+                        source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs" SHADER_MODEL_SUFFIX,
                         std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &gs_hash
                 );
                 if (gs_result.empty()) {
@@ -746,7 +752,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 uint64_t fs_hash = 0;
                 std::wstring out_command;
                 fs_result = GetInfra().CompileHLSLToSPIRV(
-                        source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps_6_8",
+                        source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps" SHADER_MODEL_SUFFIX,
                         std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
                 );
                 if (fs_result.empty()) {
@@ -822,7 +828,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t raygen_hash = 0;
             std::wstring out_command;
             raygen_result = GetInfra().CompileHLSLToSPIRV(
-                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib_6_8",
+                    source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib" SHADER_MODEL_SUFFIX,
                     std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &raygen_hash
             );
             if (raygen_result.empty()) {
@@ -836,7 +842,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t chit_hash = 0;
             std::wstring out_command;
             chit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib_6_8",
+                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib" SHADER_MODEL_SUFFIX,
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &chit_hash
             );
             if (chit_result.empty()) {
@@ -854,7 +860,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t ahit_hash = 0;
             std::wstring out_command;
             ahit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib_6_8",
+                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib" SHADER_MODEL_SUFFIX,
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &ahit_hash
             );
             if (ahit_result.empty()) {
@@ -868,7 +874,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             uint64_t miss_hash = 0;
             std::wstring out_command;
             miss_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib_6_8",
+                source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib" SHADER_MODEL_SUFFIX,
                 std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &miss_hash
             );
             if (miss_result.empty()) {
