@@ -11,6 +11,7 @@
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_shader.h>
 
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_view_common.h"
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_material.h"
@@ -100,7 +101,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->RayToTraceOriginBuffer = ray_to_trace_origin;
     params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
 
-    params->G_Depth = view->G_depth_.Raw();
+    params->G_Depth = view->g_buffer_->G_depth_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
@@ -197,7 +198,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
     params->RWRayToTraceTransmittanceBuffer = ray_to_trace_transmittance;
 
-    params->G_Depth = view->G_depth_.Raw();
+    params->G_Depth = view->g_buffer_->G_depth_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
@@ -310,7 +311,7 @@ void Renderer::Render_HardwareRadianceRayTracing(
     params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
     params->RWRayToTraceResultBuffer = ray_to_trace_result;
 
-    params->G_Depth = view->G_depth_.Raw();
+    params->G_Depth = view->g_buffer_->G_depth_.Raw();
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {
@@ -441,7 +442,7 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->RayToTraceTMaxBuffer = ray_to_trace_tmax;
     params->RWRayToTraceResultBuffer = ray_to_trace_result;
 
-    params->G_Depth = view->G_depth_.Raw();
+    params->G_Depth = view->g_buffer_->G_depth_.Raw();
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {

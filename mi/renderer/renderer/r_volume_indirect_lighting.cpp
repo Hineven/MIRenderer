@@ -17,6 +17,7 @@
 #include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
 
@@ -494,8 +495,6 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     auto tile_dimensions = GetTileDimensions(view);
     auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
 
-    uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
-
     if (!view->persistent_data_->volume_indirect_lighting_persistent_data_
         ->MakeSureExists(builder, tile_dimensions))
         need_reset = true;
@@ -706,8 +705,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->RWShadePointToTransmittanceRayIndexBuffer =
             shade_point_to_transmittance_ray_index.Raw();
 
-        params->PreviousNormalTexture = view->persistent_data_->prev_G_normal.Raw();
-        params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
+        params->PreviousNormalTexture = view->persistent_data_->g_buffer_data_->prev_G_normal_.Raw();
+        params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
         params->PreviousShadedDiffuseRadianceWithoutEmission =
             view->persistent_data_->prev_shaded_radiance_no_emission_.Raw();
 
@@ -715,11 +714,14 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->G_VolumeSampleColor = view->volume_primitives_->volume_sample_color_.Raw();
         params->VolumeMinMaxTexture = view->volume_primitives_->G_volume_min_max_.Raw();
         params->VolumeDensityTexture = view->volume_primitives_->G_volume_density_.Raw();
-        params->PreviousVolumeMinMaxTexture = view->persistent_data_->prev_volume_min_max_.Raw();
+        params->PreviousVolumeMinMaxTexture = view->persistent_data_->
+            volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeRadianceTexture = view->persistent_data_->prev_shaded_volume_radiance_.Raw();
-        params->PreviousVolumeDensityTexture = view->persistent_data_->prev_volume_density_.Raw();
-        params->PreviousTransmittanceTexture = view->persistent_data_->prev_transmittance_.Raw();
-        params->PreviousVolumeColorTexture   = view->persistent_data_->prev_volume_color_.Raw();
+        params->PreviousVolumeDensityTexture = view->persistent_data_->
+            volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
+        params->PreviousTransmittanceTexture = view->persistent_data_->g_buffer_data_->prev_G_transmittance_.Raw();
+        params->PreviousVolumeColorTexture   = view->persistent_data_->
+            volume_primitives_view_persistent_data_->prev_volume_color_.Raw();
 
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

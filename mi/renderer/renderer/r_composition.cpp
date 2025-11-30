@@ -6,6 +6,7 @@
 #include "r_denoiser.h"
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_direct_lighting.h"
 #include "r_volume_indirect_lighting.h"
 #include "rdg/rdg_shader.h"
@@ -141,9 +142,9 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     } else {
         params->EnvironmentMap = nullptr;
     }
-    params->G_Albedo = view->G_albedo_.Raw();
-    params->G_Emission = view->G_emission_.Raw();
-    params->G_Transmittance = view->G_transmittance_.Raw();
+    params->G_Albedo = view->g_buffer_->G_albedo_.Raw();
+    params->G_Emission = view->g_buffer_->G_emission_.Raw();
+    params->G_Transmittance = view->g_buffer_->G_transmittance_.Raw();
     params->HistoryRadiance = view->persistent_data_->prev_radiance_.Raw();
     params->RWRadiance = view->radiance_.Raw();
     params->RWShadedRadianceWithoutEmission = view->shaded_radiance_no_emission_.Raw();

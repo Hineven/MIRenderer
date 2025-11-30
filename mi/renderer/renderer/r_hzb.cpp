@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include "../include/renderer/r_geometry_buffer.h"
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
@@ -71,8 +72,8 @@ void Renderer::Render_ComputeHiZBuffer(
         auto params = builder.Allocate<ComputeHiZBufferShader::ShaderParameters>();
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
         params->View = view->view_common_params_;
-        params->InDepthBuffer = view->G_depth_.Raw();
-        params->InFlagsBuffer = view->G_flags_.Raw();
+        params->InDepthBuffer = view->g_buffer_->G_depth_.Raw();
+        params->InFlagsBuffer = view->g_buffer_->G_flags_.Raw();
         params->RWInHiZBuffer = level == 0 ? nullptr : view->hzb_.Raw();
         params->RWInHiZBuffer.mip_level = level == 0 ? 0 : (level - 1);
         params->RWInOrFlagsBuffer = level == 0 ? nullptr : view->or_flags_.Raw();

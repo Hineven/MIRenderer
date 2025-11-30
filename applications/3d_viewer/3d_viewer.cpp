@@ -29,6 +29,7 @@
 #include "renderer/mi_texture.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_cvar.h"
+#include "renderer/r_geometry_buffer.h"
 #include "util/gaussian_radiance_field_loader.h"
 #include "util/texture_loader.h"
 #include "util/gltf_loader.h"
@@ -292,7 +293,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (false) {
+    if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
@@ -328,7 +329,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         }
     }
 
-    if (true) {
+    if (false) {
 
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
@@ -665,7 +666,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 if (io.MouseClicked[0] && !io.WantCaptureMouse) {
                     // Export forward depth and visibility for later use
                     view->forward_depth_->SetExport();
-                    view->G_visibility_->SetExport();
+                    view->g_buffer_->G_visibility_->SetExport();
                 }
 
                 std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
@@ -680,7 +681,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 float mouse_x = io.MousePos.x;
                 float mouse_y = io.MousePos.y;
                 // 手动拷回Visibility和Depth
-                auto rhi_visibility = view->G_visibility_->GetRHI();
+                auto rhi_visibility = view->g_buffer_->G_visibility_->GetRHI();
                 auto rhi_fwd_depth = view->forward_depth_->GetRHI();
                 auto readback_buffer_visibility = rhi.CreateBuffer(
                     rhi_visibility->GetWidth() * rhi_visibility->GetHeight() * sizeof(uint32_t) * 4,
@@ -704,7 +705,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 queue.CopyTextureToBuffer(rhi_visibility, readback_buffer_visibility.Raw());
                 queue.CopyTextureToBuffer(rhi_fwd_depth, readback_buffer_depth.Raw());
                 // 因为这个纹理是RDG里面搞到的，RDG外手操之后得更新资源追踪
-                view->G_visibility_->Use(
+                view->g_buffer_->G_visibility_->Use(
                     RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
                     RHITextureLayoutType::kTransferSrcOptimal
                 );

@@ -14,6 +14,7 @@
 
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_direct_lighting.h"
 #include "r_volume_primitives.h"
 MI_NAMESPACE_BEGIN
@@ -278,10 +279,10 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         auto params = builder.Allocate<PreFilterDiffuseLightingAndTemporalAccumulateShader::Params>();
         params->View = view->view_common_params_;
         params->UB = UB;
-        params->G_Normal = view->G_normal_.Raw();
-        params->G_Depth = view->G_depth_.Raw();
+        params->G_Normal = view->g_buffer_->G_normal_.Raw();
+        params->G_Depth = view->g_buffer_->G_depth_.Raw();
         params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
-        params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
+        params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
         params->PreviousVolumeRepresentativeDepthAndVariation = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_representative_depth_and_variation_.Raw();
         params->InputDiffuseDirectRadianceTexture = view->diffuse_direct_lighting_->radiance.Raw();
         params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_->radiance.Raw();
@@ -332,10 +333,10 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             auto shader = lib.GetShader<DilatedFilterDiffuseDirectLightingShader>(ini);
             params->View = view->view_common_params_;
             params->UB = UB;
-            params->G_Normal = view->G_normal_.Raw();
-            params->G_Depth = view->G_depth_.Raw();
+            params->G_Normal = view->g_buffer_->G_normal_.Raw();
+            params->G_Depth = view->g_buffer_->G_depth_.Raw();
             params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
-            params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
+            params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
             params->PreviousVolumeRepresentativeDepthAndVariation = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_representative_depth_and_variation_.Raw();
             params->HistoryLengthTexture = denoiser_data->history_length.Raw();
             params->VolumeHistoryLengthTexture = denoiser_data->volume_history_length.Raw();

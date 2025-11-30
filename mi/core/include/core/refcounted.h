@@ -365,6 +365,16 @@ public:
         return IsValid();
     }
 
+    template<typename... Args>
+    FORCEINLINE TRef<ReferencedType> & CreateIfNull(Args...args)
+    {
+        if (!this->operator bool())
+        {
+            *this = new ReferencedType(args...);
+        }
+        return *this;
+    }
+
 private:
 
     ReferencedType* ptr_;

@@ -18,8 +18,10 @@
 #include "r_light_structure.h"
 #include "r_direct_lighting.h"
 #include "r_diffuse_direct_lighting.h"
+
+#include "../include/renderer/r_geometry_buffer.h"
 MI_NAMESPACE_BEGIN
-// Some CVars are exposed through r_diffuse_direct_lighting.h
+    // Some CVars are exposed through r_diffuse_direct_lighting.h
 static CVar<bool> CVar_DebugOutputTransmittanceRaysForMesh(
     "r.direct_lighting.debug.output_transmittance_rays_for_mesh",
     "Write the transmittance of shadow rays to the output for the specified mesh index. 0 to disable.",
@@ -285,11 +287,11 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         params->ShadowRayToTraceTransmittanceBuffer = shadow_ray_to_trace_transmittance.Raw();
         params->RWShadowRayToTraceSampledLightIndexBuffer = shadow_ray_to_trace_sampled_light_index.Raw();
 
-        params->G_DepthTexture = view->G_depth_.Raw();
-        params->G_NormalTexture = view->G_normal_.Raw();
+        params->G_DepthTexture = view->g_buffer_->G_depth_.Raw();
+        params->G_NormalTexture = view->g_buffer_->G_normal_.Raw();
         params->G_HiZBuffer = view->hzb_.Raw();
-        params->G_HistoryDepthTexture = view->persistent_data_->prev_G_depth.Raw();
-        params->G_FlagsTexture = view->G_flags_.Raw();
+        params->G_HistoryDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
+        params->G_FlagsTexture = view->g_buffer_->G_flags_.Raw();
         params->OrFlagsTexture = view->or_flags_.Raw();
         params->RWDiffuseDirectLightingTexture = view->diffuse_direct_lighting_->radiance.Raw();
         params->RWDirectLightingRayIndexTexture = direct_lighting_ray_index_texture.Raw();
