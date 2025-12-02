@@ -427,6 +427,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 				uint ShareCount = RWPreviousFrameShareCountTexture[HistoryPixelCoords];
 				uint CurrentPixelMark = GetPixelMark(CenterPixelCoords);
 				bool bTransmittanceTestFailed = DepthTransmittances[i] < TransmittanceThreshold;
+				bool bStricterTransmittanceTestFailed = DepthTransmittances[i] < 0.25f * TransmittanceThreshold;
 				if(MinPixelMark != CurrentPixelMark && bTransmittanceTestFailed) {
 					// Reduce weight from pixels that are shared by other current frame pixels closer to the camera
 					float Weight = 1.f / float(max(ShareCount, 1u));
@@ -439,11 +440,11 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 				// 		i, MinPixelMark, CurrentPixelMark, ShareCount, DepthTransmittances[i], bTransmittanceTestFailed ? 1 : 0, OcclusionWeights[i]);	
 				// }
 				// Count as invalid sample only when the transmittance test fails and is not the closest current pixel to previous pixel
-				if(MinPixelMark == CurrentPixelMark || !bTransmittanceTestFailed) ValidHistorySamples ++;
+				if(MinPixelMark == CurrentPixelMark || !bStricterTransmittanceTestFailed) ValidHistorySamples ++;
 			}
 		}
 		// Drop all history if no valid history sample exists
-		const float4 HistoryDecayTable = float4(0.f, 1.f, 1.f, 1.f);
+		const float4 HistoryDecayTable = float4(0.f, 0.5f, 1.f, 1.f);
 		VolumeHistoryLengthClamping = VolumeHistoryLengthClamping * HistoryDecayTable[clamp(ValidHistorySamples, 0u, 3u)];
 
 		float4 ValidSelectWeights  = HistoryVolumeLinearDepthsMax > 0.f.xxxx;
