@@ -2,7 +2,10 @@
 #define VERTEX_SHADER_INSTANCE_INDEX_HLSL
 
 #if __SHADER_TARGET_MAJOR != 6
+#ifndef MI_PREPROCESSING
+// Ignore checks when preprocessing with MI_PREPROCESSING
 #error "This header is only intended for Shader Model 6.x"
+#endif
 #endif
 
 #if __SHADER_TARGET_MINOR < 8
@@ -16,4 +19,5 @@
 // For vulkan backend, SV_InstanceID already includes BaseInstance. So no need to add it again.
 #define VS_INSTANCE_INDEX (__internal_InstanceIndex)
 #endif
+
 #endif // VERTEX_SHADER_INSTANCE_INDEX_HLSL

@@ -396,31 +396,36 @@ bool RDGShader::HasResourceSlot(uint32_t name_crc) const {
     return false;
 }
 
-std::vector<std::string> RDGShader::GetExtraCompilerOptions(const RDGShaderInitializationInfo & ini) const {
+std::vector<std::string> RDGShader::GetExtraCompilerOptions([[maybe_unused]] const RDGShaderInitializationInfo & ini) const {
     std::vector<std::string> extra_options;
+    return extra_options;
+}
+
+std::vector<std::string> RDGShader::GetExtraDefines (const RDGShaderInitializationInfo & ini) const {
+    std::vector<std::string> extra_defines;
     for (const auto & extra_macro : ini.optional_macros) {
-        extra_options.emplace_back("-D" + extra_macro);
+        extra_defines.emplace_back(extra_macro);
     }
     // And some system macros based on shader type and other stuffs
     // Renderer environment
-    extra_options.emplace_back("-DMI_RENDERER");
+    extra_defines.emplace_back("MI_RENDERER");
     // Shader class name
-    extra_options.emplace_back(std::string("-D") + "MI_SHADER_" + class_registry_->name);
+    extra_defines.emplace_back("MI_SHADER_" + class_registry_->name);
     // Shader type
     switch (class_registry_->type) {
         case RHIPipelineType::kGraphics:
-            extra_options.emplace_back("-DMI_GRAPHICS_SHADER");
+            extra_defines.emplace_back("MI_GRAPHICS_SHADER");
             break;
         case RHIPipelineType::kCompute:
-            extra_options.emplace_back("-DMI_COMPUTE_SHADER");
+            extra_defines.emplace_back("MI_COMPUTE_SHADER");
             break;
         case RHIPipelineType::kRayTracing:
-            extra_options.emplace_back("-DMI_RAY_TRACING_SHADER");
+            extra_defines.emplace_back("MI_RAY_TRACING_SHADER");
             break;
         default:
             assert(false);
     };
-    return extra_options;
+    return extra_defines;
 }
 
 void RDGShader::RemapResourceIndexToRHIResourceSlots() {
@@ -543,11 +548,11 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", class_registry_->source_location);
         return {};
     }
-    std::vector<std::string> extra_options = GetExtraCompilerOptions(ini_);
-    // Insert default macros
-    auto default_macros = class_registry_->GetShaderDefaultMacros();
-    for (const auto & macro : default_macros) {
-        extra_options.emplace_back("-D" + macro);
+    auto options = GetExtraCompilerOptions(ini_);
+    auto extra_defines = GetExtraDefines(ini_);
+    auto defines = class_registry_->GetShaderDefaultMacros();
+    for (auto & def : extra_defines) {
+        defines.emplace_back(def);
     }
 
     RDGShaderHash shader_hash {};
@@ -555,7 +560,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
     if (class_registry_->type == RHIPipelineType::kCompute) {
         bool is_valid {false};
         auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-            class_registry_->source_location, extra_options, is_valid
+            class_registry_->source_location, defines, options, is_valid
         );
         if (is_valid) shader_hash.AddUnordered("ComputeShader", result);
         else MI_WARN("Failed to compute compute shader hash.");
@@ -565,7 +570,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->vertex_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("VertexShader", result);
             else MI_WARN("Failed to compute vertex shader hash.");
@@ -573,7 +578,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->geometry_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("GeometryShader", result);
             else MI_WARN("Failed to compute geometry shader hash.");
@@ -581,7 +586,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->fragment_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("FragmentShader", result);
             else MI_WARN("Failed to compute fragment shader hash.");
@@ -592,7 +597,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->raygen_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("RaygenShader", result);
             else MI_WARN("Failed to compute raygen shader hash.");
@@ -600,7 +605,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->closest_hit_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("ClosestHitShader", result);
             else MI_WARN("Failed to compute closest hit shader hash.");
@@ -608,7 +613,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->any_hit_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("AnyHitShader", result);
             else MI_WARN("Failed to compute any hit shader hash.");
@@ -616,7 +621,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->miss_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, extra_options, is_valid
+                class_registry_->source_location, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("MissShader", result);
             else MI_WARN("Failed to compute miss shader hash.");
@@ -673,12 +678,13 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
     auto absolute_path_string = absolute_path.string();
     std::wstring source_location_wstr(absolute_path_string.begin(), absolute_path_string.end());
 
-    // Stack macros
-    std::vector<std::string> extra_options = GetExtraCompilerOptions(ini);
-    // Insert default macros
-    auto default_macros = class_registry_->GetShaderDefaultMacros();
-    for (const auto & macro : default_macros) {
-        extra_options.emplace_back("-D" + macro);
+    // Stack options
+    auto options = GetExtraCompilerOptions(ini);
+    // Stack defines
+    auto defines = class_registry_->GetShaderDefaultMacros();
+    auto extra_defines = GetExtraDefines(ini);
+    for (const auto & macro : extra_defines) {
+        defines.emplace_back(macro);
     }
 
     if(class_registry_->type == RHIPipelineType::kCompute) {
@@ -686,7 +692,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
         std::wstring out_command;
         auto result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->compute_entry_), "cs" SHADER_MODEL_SUFFIX,
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &cs_hash
+                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
             MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile compute shader for entry {}: {}", class_registry_->name, class_registry_->compute_entry_, errmsg);
@@ -720,7 +726,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             std::wstring out_command;
             vs_result = GetInfra().CompileHLSLToSPIRV(
                     source_location_wstr.c_str(), std::string(class_registry_->vertex_entry_), "vs" SHADER_MODEL_SUFFIX,
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &vs_hash
+                    std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile vertex shader: {}", class_registry_->name, errmsg);
@@ -736,7 +742,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::wstring out_command;
                 gs_result = GetInfra().CompileHLSLToSPIRV(
                         source_location_wstr.c_str(), std::string(class_registry_->geometry_entry_), "gs" SHADER_MODEL_SUFFIX,
-                        std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &gs_hash
+                        std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &gs_hash
                 );
                 if (gs_result.empty()) {
                     MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile geometry shader: {}", class_registry_->name, errmsg);
@@ -753,7 +759,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::wstring out_command;
                 fs_result = GetInfra().CompileHLSLToSPIRV(
                         source_location_wstr.c_str(), std::string(class_registry_->fragment_entry_), "ps" SHADER_MODEL_SUFFIX,
-                        std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &fs_hash
+                        std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &fs_hash
                 );
                 if (fs_result.empty()) {
                     MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile fragment shader: {}", class_registry_->name, errmsg);
@@ -829,7 +835,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             std::wstring out_command;
             raygen_result = GetInfra().CompileHLSLToSPIRV(
                     source_location_wstr.c_str(), std::string(class_registry_->raygen_entry_), "lib" SHADER_MODEL_SUFFIX,
-                    std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &raygen_hash
+                    std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &raygen_hash
             );
             if (raygen_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile raygen shader: {}", errmsg);
@@ -843,7 +849,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             std::wstring out_command;
             chit_result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib" SHADER_MODEL_SUFFIX,
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &chit_hash
+                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &chit_hash
             );
             if (chit_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile closest hit shader: {}", errmsg);
@@ -861,7 +867,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             std::wstring out_command;
             ahit_result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib" SHADER_MODEL_SUFFIX,
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &ahit_hash
+                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &ahit_hash
             );
             if (ahit_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile any hit shader: {}", errmsg);
@@ -875,7 +881,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             std::wstring out_command;
             miss_result = GetInfra().CompileHLSLToSPIRV(
                 source_location_wstr.c_str(), std::string(class_registry_->miss_entry_), "lib" SHADER_MODEL_SUFFIX,
-                std::span(source_code.data(), source_code.size()), extra_options, errmsg, &out_command, &miss_hash
+                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &miss_hash
             );
             if (miss_result.empty()) {
                 MI_LOG(MIInfraLogType::kError, "Failed to compile miss shader: {}", errmsg);

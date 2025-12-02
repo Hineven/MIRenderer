@@ -17,7 +17,7 @@ GeometryBufferData::~GeometryBufferData() {
 }
 
 
-void GeometryBufferData::Allocate(RenderGraphBuilder &builder, RendererView * view) {
+void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, RendererView * view) {
     auto width = view->film_width_;
     auto height = view->film_height_;
     G_depth_ = RDGTexture::Create2D(
@@ -70,7 +70,7 @@ GeometryBufferPersistentData::~GeometryBufferPersistentData() {
 
 }
 
-bool GeometryBufferPersistentData::MakeSureExists(RendererView *view, RenderGraphBuilder &builder) {
+bool GeometryBufferPersistentData::MakeSureExists([[maybe_unused]] RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
     bool flag = false;
     // Not necessary to create prev buffers if they do not exist.
     // Noticing that passing null resources to shader fallbacks to a default and safe behavior.

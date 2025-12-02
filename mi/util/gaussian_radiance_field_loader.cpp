@@ -11,7 +11,7 @@
 MI_NAMESPACE_BEGIN
 
 bool GaussianRadianceFieldLoader::LoadPLY(
-    const std::filesystem::path & path, DeviceBindlessResourceAllocator & alloc,
+    const std::filesystem::path & path, [[maybe_unused]] DeviceBindlessResourceAllocator & alloc,
     TRef<GaussianRadianceField> & out_field, float percentage
 ) {
     if (path.extension() != ".ply") {

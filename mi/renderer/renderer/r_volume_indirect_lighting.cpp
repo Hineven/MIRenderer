@@ -493,7 +493,6 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     mi_check(view->film_width_ % VolumeIndirectLightingShader::kTileSize == 0, "View width not a multiple of tile size");
     mi_check(view->film_height_ % VolumeIndirectLightingShader::kTileSize == 0, "View height not a multiple of tile size");
     auto tile_dimensions = GetTileDimensions(view);
-    auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
 
     if (!view->persistent_data_->volume_indirect_lighting_persistent_data_
         ->MakeSureExists(builder, tile_dimensions))

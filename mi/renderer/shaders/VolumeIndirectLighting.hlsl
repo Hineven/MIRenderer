@@ -618,8 +618,8 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                     CameraParameters PrevC = GetPreviousCamera();
                     float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
                     float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
-                    float  PreviousDepth    = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
-                    float  PreviousDistance = PreviousDepth * PrevCosineFactor;
+                    float  PreviousLinearDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
+                    float  PreviousDistance = PreviousLinearDepth * PrevCosineFactor;
                     // FIXME this introduced very prominent artifacts!!!!
                     bool bDepthVisible = 
                         PreviousDistance >= HistoryMinMax.x &&

@@ -117,7 +117,7 @@ IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(GRF_DrawShader,
     "DrawActiveGaussians_PS"
 );
 
-void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGraphBuilder &builder) {
+void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
     // Build per-instance draw indirect commands for FilterActiveGaussians pass
     ctx.gaussian_radiance_fields.draw_indirect_commands.clear();
     // Also build renderable list mapping for instances participating this frame
@@ -129,7 +129,6 @@ void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, RenderGr
         if (auto inst = r->As<GaussianRadianceFieldInstance>()) {
             auto field = inst->GetField();
             if (!field || field->IsEmpty()) continue;
-            auto dev = field->GetDeviceField();
             RHIDrawIndirectCommand cmd {};
             cmd.vertex_count = field->GetNumPoints();
             cmd.instance_count = 1;

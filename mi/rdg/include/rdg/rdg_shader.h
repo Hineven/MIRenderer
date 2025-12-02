@@ -194,6 +194,9 @@ protected:
     // Get the extra compiler options for the shader with the given initialization info
     std::vector<std::string> GetExtraCompilerOptions (const RDGShaderInitializationInfo & ini) const;
 
+    // Get the extra defines for the shader with the given initialization info
+    std::vector<std::string> GetExtraDefines (const RDGShaderInitializationInfo & ini) const;
+
     // Clear and rebuild the mapping between cpp resource indices and pipeline slots
     void RemapResourceIndexToRHIResourceSlots ();
 

@@ -89,7 +89,8 @@ Texture2D<float2> G_VolumeRepresentativeDepthAndVariation;
 // Texture2D<float4> G_VolumeNormal;
 
 Texture2D<float>  PreviousDepthTexture;
-Texture2D<float2> PreviousVolumeRepresentativeDepthAndVariation;
+Texture2D<float2> PreviousVolumeMinMaxTexture;
+Texture2D<float2> PreviousVolumeDensityTexture;
 
 SamplerState PointBorder0Sampler;
 
@@ -131,6 +132,78 @@ RWTexture2D<float4> RWDenoisedVolumeIndirectRadianceTexture;
 #define TILE_SIZE 16
 #endif
 
+// Keep how many current frame pixels reprojected to the same previous frame pixel
+RWTexture2D<uint> RWPreviousFrameShareCountTexture;
+// Keep the minimum depth among the current frame pixels reprojected to the same previous frame pixel
+// That pixel with minimum depth is most likely to be the reasonable predecessor for the previous frame pixel
+RWTexture2D<uint> RWPreviousFrameShareMinDepthTexture;
+
+uint PackShareMinDepthRecord (float Depth, uint PixelMark) {
+	uint DepthAsUint = asuint(Depth);
+	return (DepthAsUint & 0xffffffc0u) | ((PixelMark & 0x3fu));
+}
+uint UnpackPixelMarkFromShareMinDepthRecord (uint Record) {
+	return Record & 0x3fu;
+}
+
+uint GetPixelMark (uint2 Pixel) {
+	return (Pixel.x & 0xfu) ^ ((Pixel.y & 0xfu) << 2);
+}
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void ClearPreviousFrameShareTextures (uint2 DispatchID : SV_DispatchThreadID) {
+	CameraParameters C = GetActiveCamera();
+	if(IsOutOfFilm(DispatchID)) return; // Out of film
+	RWPreviousFrameShareCountTexture[DispatchID] = 0;
+	RWPreviousFrameShareMinDepthTexture[DispatchID] = PackShareMinDepthRecord(FLT_MAX, 0);
+}
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void ScatterVolumeSamplesToPreviousFrame (uint2 DispatchID : SV_DispatchThreadID) {
+	
+	CameraParameters C = GetActiveCamera();
+	CameraParameters PrevC = GetPreviousCamera();
+	if(IsOutOfFilm(DispatchID)) return; // Out of film
+
+	uint2  CenterPixelCoords = uint2(DispatchID);
+	float2 CenterFilmPosition = float2(CenterPixelCoords) + 0.5f;
+	float2 CenterUV = CenterFilmPosition * C.InvFilmDimensions;
+	float  ToLinear = 1.f / length(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(CenterUV)));
+	float2 CenterLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy * ToLinear;
+	if(CenterLinearVolumeDepthAndVariation.x == 0) {
+		// No volume lighting in this pixel
+		return ;
+	}
+
+	// Reproject to previous frame
+	float CenterLinearDepth = CenterLinearVolumeDepthAndVariation.x;
+	float CenterZDepth = LinearDepthToZDepth(C, CenterLinearDepth);
+	float3 CenterNDC = float3(UVToNDC2(CenterUV), CenterZDepth);
+	float3 PreviousNDC  = ReprojectToPreviousNDCFromNDC(C, CenterNDC);
+	
+	// Accumulate to shared buffers
+	if(all(PreviousNDC.xy >= -1) && all(PreviousNDC.xy <= 1)) {
+		float2 PreviousScreenPosition = NDC2ToScreenPosition(PrevC, PreviousNDC.xy);
+		int2 PreviousPixelCoords = int2(floor(PreviousScreenPosition));
+		if(!IsOutOfFilm(PreviousPixelCoords)) {
+			float2 PreviousUV = (float2(PreviousPixelCoords) + 0.5f) * PrevC.InvFilmDimensions;
+			float2 HistoryMinMax = PreviousVolumeMinMaxTexture.SampleLevel(PointBorder0Sampler, PreviousUV, 0).xy;
+			bool bProjectionValid = (HistoryMinMax.x > 0) && (HistoryMinMax.y > 0);
+			float  PrevToLinear = 1.f / length(NDC2ToCameraDirectionUnnormalized(PrevC, PreviousNDC.xy));
+			float  PrevCenterLinearDepth = ZDepthToLinearDepth(PrevC, PreviousNDC.z);
+			float2 HistoryMinMaxLinear = HistoryMinMax * PrevToLinear;
+			bProjectionValid = bProjectionValid && (PrevCenterLinearDepth >= HistoryMinMaxLinear.x) && (PrevCenterLinearDepth <= HistoryMinMaxLinear.y);
+			if(bProjectionValid) {
+				InterlockedAdd(RWPreviousFrameShareCountTexture[PreviousPixelCoords], 1);
+				uint OutPrevMin;
+				uint PixelMark = GetPixelMark(CenterPixelCoords);
+				uint CenterDepthRecord = PackShareMinDepthRecord(CenterLinearDepth, PixelMark);
+				InterlockedMin(RWPreviousFrameShareMinDepthTexture[PreviousPixelCoords], CenterDepthRecord, OutPrevMin);
+			}
+		}
+	}
+}
+
 float GetGaussianDistributionSimilarityWeight (float mu1, float sigma1, float mu2, float sigma2) {
 	// Bhattacharyya distance
 	float s2 = max(sigma1 * sigma1 + sigma2 * sigma2, 1e-6f);
@@ -142,11 +215,12 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 	CameraParameters C = GetActiveCamera();
 	CameraParameters PrevC = GetPreviousCamera();
 	if(IsOutOfFilm(DispatchID)) return; // Out of film
-	int2 CenterPixelCoords = int2(DispatchID);
+	uint2 CenterPixelCoords = int2(DispatchID);
 	float2 CenterFilmPosition = float2(CenterPixelCoords) + 0.5f;
 	float2 CenterUV = CenterFilmPosition * C.InvFilmDimensions;
-	float CenterReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, CenterUV, 0).r;
-	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
+	float  CenterReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, CenterUV, 0).r;
+	float  ToLinear = 1.f / length(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(CenterUV)));
+	float2 CenterLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy * ToLinear;
 	bool bSurface = true, bVolume = true;
 	if(CenterReversedZDepth == 0) {
 		bSurface = false;
@@ -154,7 +228,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		RWDenoisedDiffuseIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWHistoryLengthTexture[CenterPixelCoords] = 0;
 	}
-	if(CenterVolumeDepthAndVariation.x == 0) {
+	if(CenterLinearVolumeDepthAndVariation.x == 0) {
 		bVolume = false;
 		RWPreFilteredVolumeDirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
@@ -197,13 +271,13 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		}
 		// Volume Diffuse (using G_VolumeRepresentativeDepth)
 		if(bVolume) {
-			float2 SampleVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).rg;
-			float SampleLinearDepth = SampleVolumeDepthAndVariation.x;
-			float SampleDepthVariation = SampleVolumeDepthAndVariation.y;
+			float2 SampleLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).rg * ToLinear;
+			float SampleLinearDepth = SampleLinearVolumeDepthAndVariation.x;
+			float SampleDepthVariation = SampleLinearVolumeDepthAndVariation.y;
 			float3 SampleVolumeDirectRadiance = InputVolumeDirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0).rgb;
 			float3 SampleVolumeIndirectRadiance = InputVolumeIndirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0).rgb;
 			// TODO better weight calculation
-			float Weight = 1; // GetGaussianDistributionSimilarityWeight(SampleLinearDepth, SampleDepthVariation, CenterVolumeDepthAndVariation.x, CenterVolumeDepthAndVariation.y);
+			float Weight = 1; // GetGaussianDistributionSimilarityWeight(SampleLinearDepth, SampleDepthVariation, CenterLinearVolumeDepthAndVariation.x, CenterLinearVolumeDepthAndVariation.y);
 			Weight *= GaussianWeight(PoissionSample.z);
 			if(IsOutOfFilm(SampleFilmPosition) || SampleLinearDepth == 0) { // Empty pixel
 				Weight *= 0;
@@ -241,7 +315,8 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 			float2 HistoryBillinearPos = PreviousScreenPosition - 0.5f;
 			float2 HistoryBillinearSubPixel = frac(HistoryBillinearPos);
 			float2 HistoryBillinearPixel = floor(HistoryBillinearPos);
-			float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * C.InvFilmDimensions;
+			// Use previous camera film dimensions for previous frame gather
+			float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * PrevC.InvFilmDimensions;
 			float4 HistoryZDepths = 1 - PreviousDepthTexture.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
 			float  PrevLinearDepth = ZDepthToLinearDepth(PrevC, PreviousNDC.z);
 			float4 HistoryLinearDepths = float4(
@@ -307,8 +382,9 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		}
 	}
 
+	uint VolumeHistoryLengthClamping = UB.MaxHistoryLength;
 	if(bVolume) {
-		float  CenterVolumeZDepth = LinearDepthToZDepth(C, CenterVolumeDepthAndVariation.x);
+		float  CenterVolumeZDepth = LinearDepthToZDepth(C, CenterLinearVolumeDepthAndVariation.x);
 		float3 CenterVolumeNDC = float3(UVToNDC2(CenterUV), CenterVolumeZDepth);
 		float3 PreviousNDC  = ReprojectToPreviousNDCFromNDC(C, CenterVolumeNDC);
 		float3 ViewDirection = -NDC2ToCameraDirection(C, CenterVolumeNDC.xy);
@@ -317,26 +393,67 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float2 HistoryBillinearPos = PreviousScreenPosition - 0.5f;
 		float2 HistoryBillinearSubPixel = frac(HistoryBillinearPos);
 		float2 HistoryBillinearPixel = floor(HistoryBillinearPos);
-		float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * C.InvFilmDimensions;
-		float4 HistoryVolumeLinearDepths = PreviousVolumeRepresentativeDepthAndVariation.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
-		float4 HistoryVolumeVariations   = PreviousVolumeRepresentativeDepthAndVariation.GatherGreen(PointBorder0Sampler, HistoryGatherUV).wzxy;
+		float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * PrevC.InvFilmDimensions;
+		//float4 HistoryVolumeLinearDepths = PreviousVolumeRepresentativeDepthAndVariation.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
+		//float4 HistoryVolumeVariations   = PreviousVolumeRepresentativeDepthAndVariation.GatherGreen(PointBorder0Sampler, HistoryGatherUV).wzxy;
+        float3 PrevPixelDirection = NDC2ToCameraDirection(PrevC, PreviousNDC.xy);
+        float  PrevToLinearFactor = dot(PrevPixelDirection, PrevC.Direction);
+        float4 HistoryVolumeLinearDepthsMin = PreviousVolumeMinMaxTexture.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy * PrevToLinearFactor;
+        float4 HistoryVolumeLinearDepthsMax = PreviousVolumeMinMaxTexture.GatherGreen(PointBorder0Sampler, HistoryGatherUV).wzxy * PrevToLinearFactor;
 		float  PrevLinearDepth = ZDepthToLinearDepth(PrevC, PreviousNDC.z);
-		float4 DepthDistances = abs(HistoryVolumeLinearDepths - PrevLinearDepth);
+		float4 HistoryVolumeDensities = PreviousVolumeDensityTexture.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
+		float4 DepthDifferencesMin = PrevLinearDepth - HistoryVolumeLinearDepthsMin;
+        float4 DepthDifferencesMax = HistoryVolumeLinearDepthsMax - PrevLinearDepth;
 		float  Noise = InterleavedGradientNoise(CenterFilmPosition, UB.FrameIndex);
-		float4 DepthThresholds = UB.VolumeDepthHistoryThreshold * lerp(0.5, 1.5, Noise);
+		float  DepthThresholdFactor = UB.VolumeDepthHistoryThreshold * lerp(0.5, 1.5, Noise);
+		float4 TraverseDistances = clamp(DepthDifferencesMin, 0.xxxx, HistoryVolumeLinearDepthsMax - HistoryVolumeLinearDepthsMin) / PrevToLinearFactor;
+		float4 DepthTransmittances  = exp(-TraverseDistances * HistoryVolumeDensities);
 		// float3 VolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, CenterUV, 0).xyz - 0.5);
 		// UE's solution to disocclusion misses on geometry edges
-		// DepthThresholds /= clamp(saturate(dot(ViewDirection, VolumeNormal)), .1f, 1.0f); 
+		// DepthThresholdFactors /= clamp(saturate(dot(ViewDirection, VolumeNormal)), .1f, 1.0f);
 		// Normalize by variation
-		DepthThresholds *= max(HistoryVolumeVariations, 1e-2f);
-		float4 OcclusionWeights   = select(DepthDistances < PrevLinearDepth * DepthThresholds, 1, 0);
+		//DepthThresholdFactors *= max(HistoryVolumeVariations, 1e-2f);
+        float  DepthErrorThreshold = PrevLinearDepth * DepthThresholdFactor;
+		float4 OcclusionWeights   = select(and((DepthDifferencesMin >= -DepthErrorThreshold), (DepthDifferencesMax >= -DepthErrorThreshold)) , 1, 0);
+		// Adjust by transmittance through participating media, reject history samples that are too far in media
+		float  TransmittanceThreshold = InterleavedGradientNoise(CenterFilmPosition + 1748.37f.xx, UB.FrameIndex);
+		uint ValidHistorySamples = 0;
+		for(uint i = 0; i < 4; i++) {
+			int2 Offset = int2((i == 1) || (i == 3), (i >= 2));
+			int2 HistoryPixelCoords = int2(HistoryBillinearPixel) + Offset;
+			if(!IsOutOfFilm(HistoryPixelCoords)) {
+				uint Record = RWPreviousFrameShareMinDepthTexture[HistoryPixelCoords];
+				uint MinPixelMark = UnpackPixelMarkFromShareMinDepthRecord(Record);
+				uint ShareCount = RWPreviousFrameShareCountTexture[HistoryPixelCoords];
+				uint CurrentPixelMark = GetPixelMark(CenterPixelCoords);
+				bool bTransmittanceTestFailed = DepthTransmittances[i] < TransmittanceThreshold;
+				if(MinPixelMark != CurrentPixelMark && bTransmittanceTestFailed) {
+					// Reduce weight from pixels that are shared by other current frame pixels closer to the camera
+					float Weight = 1.f / float(max(ShareCount, 1u));
+					Weight = Weight * Weight; // Square the attenuation
+					OcclusionWeights[i] *= Weight;
+				}
+				// if(DispatchID.x == 960 && DispatchID.y == 540) {
+				// 	// Debug pixel
+				// 	printf("i: %d\n MinPixelMark: %u, CurrentPixelMark: %u, ShareCount: %u, Transmittance: %f, TestFailed: %u, Weight: %f\n", 
+				// 		i, MinPixelMark, CurrentPixelMark, ShareCount, DepthTransmittances[i], bTransmittanceTestFailed ? 1 : 0, OcclusionWeights[i]);	
+				// }
+				// Count as invalid sample only when the transmittance test fails and is not the closest current pixel to previous pixel
+				if(MinPixelMark == CurrentPixelMark || !bTransmittanceTestFailed) ValidHistorySamples ++;
+			}
+		}
+		// Drop all history if no valid history sample exists
+		const float4 HistoryDecayTable = float4(0.f, 1.f, 1.f, 1.f);
+		VolumeHistoryLengthClamping = VolumeHistoryLengthClamping * HistoryDecayTable[clamp(ValidHistorySamples, 0u, 3u)];
+
+		float4 ValidSelectWeights  = HistoryVolumeLinearDepthsMax > 0.f.xxxx;
 		float4 BillinearWeights = float4(
 			(1.f - HistoryBillinearSubPixel.x) * (1.f - HistoryBillinearSubPixel.y),
 			HistoryBillinearSubPixel.x * (1.f - HistoryBillinearSubPixel.y),
 			(1.f - HistoryBillinearSubPixel.x) * HistoryBillinearSubPixel.y,
 			HistoryBillinearSubPixel.x * HistoryBillinearSubPixel.y
 		);
-		float4 Weights = OcclusionWeights * BillinearWeights;
+		float4 Weights = ValidSelectWeights * OcclusionWeights * BillinearWeights;
 		Weights = Weights / max(dot(Weights, 1), 1e-6f);
 
 		Texture2D<float4> HistoryVolumeDD = PreviousPreFilteredVolumeDirectRadianceTexture;
@@ -381,6 +498,9 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 	}
 
 	float NewHistoryLength = min(OldHistoryLength + 1, UB.MaxHistoryLength);
+	// Clamp the history length for volume lighting based on reprojection trust level
+	// Drop those less reliable history faster
+	OldVolumeHistoryLength = min(OldVolumeHistoryLength, VolumeHistoryLengthClamping);
 	float NewVolumeHistoryLength = min(OldVolumeHistoryLength + 1, UB.MaxHistoryLength);
 	float NewFastHistoryLength = min(OldHistoryLength, UB.MaxFastHistoryLength);
 	float NewFastVolumeHistoryLength = min(OldVolumeHistoryLength, UB.MaxFastHistoryLength);
@@ -483,8 +603,9 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 	float2 CenterFilmPosition = float2(CenterPixelCoords) + 0.5f;
 	float2 CenterUV = CenterFilmPosition * C.InvFilmDimensions;
 	float CenterReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, CenterUV, 0).r;
-	float2 CenterVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy;
-	bool bSurface = CenterReversedZDepth != 0, bVolume = CenterVolumeDepthAndVariation.x != 0;
+	float ToLinear = 1.f / length(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(CenterUV)));
+	float2 CenterLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, CenterUV, 0).xy * ToLinear;
+	bool bSurface = CenterReversedZDepth != 0, bVolume = CenterLinearVolumeDepthAndVariation.x != 0;
 	if(!bSurface) {
 		// Empty pixel
 		RWDilatedFilterOutputFilteredDiffuseDirectRadiance[CenterPixelCoords] = float4(0, 0, 0, 0);
@@ -590,11 +711,12 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 			// Volume direct
 			if(bVolume) {
 				// float3 SampleVolumeNormal = normalize(G_VolumeNormal.SampleLevel(PointEdgeSampler, SampleUV, 0).xyz - 0.5);
-				float2 SampleVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).xy;
-				float SampleLinearDepth = SampleVolumeDepthAndVariation.x;
+				float  SampleToLinear = 1.f / length(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(SampleUV)));
+				float2 SampleLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).xy * SampleToLinear;
+				float SampleLinearDepth = SampleLinearVolumeDepthAndVariation.x;
 
 				float SampleWeight = KernelWeight;
-				SampleWeight *= GetDepthWeight(CenterVolumeDepthAndVariation.x, SampleLinearDepth);
+				SampleWeight *= GetDepthWeight(CenterLinearVolumeDepthAndVariation.x, SampleLinearDepth);
 				if(SampleWeight > 1e-4)
 				{
 					float4 SampledRadianceVariance = DilatedFilterInputVolumeDirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0);

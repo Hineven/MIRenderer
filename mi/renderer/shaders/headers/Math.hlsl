@@ -64,4 +64,15 @@ float hmin (float4 Value) {
     return min(min(min(Value.x, Value.y), Value.z), Value.w);
 }
 
+float hmax (float2 Value) {
+    return max(Value.x, Value.y);
+}
+
+float hmax (float3 Value) {
+    return max(max(Value.x, Value.y), Value.z);
+}
+
+float hmax (float4 Value) {
+    return max(max(max(Value.x, Value.y), Value.z), Value.w);
+}
 #endif
