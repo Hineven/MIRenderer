@@ -160,6 +160,9 @@ struct VolumeDiffuseIndirectLightingUB {
     uint ProbeSpawnSubTileJitterSeed;
     uint TileProbeSpawnSeed;
     uint NoEnvironmentLight; // For debugging
+
+    uint NoIndirectLighting;
+    uint3 Padding0;
 };
 
 ConstantBuffer<VolumeDiffuseIndirectLightingUB> UB;
@@ -208,9 +211,9 @@ void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
     VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[PreviousProbeIndex]);
     CameraParameters C = GetActiveCamera();
     if(Header.bActive) {
-        uint CurrentProbeIndex;
-        InterlockedAdd(RWActiveVolumeProbeCount[0], 1, CurrentProbeIndex);
-        RWActiveVolumeProbeListBuffer[CurrentProbeIndex] = PreviousProbeIndex1;
+        uint CurrentProbeActiveListIndex;
+        InterlockedAdd(RWActiveVolumeProbeCount[0], 1, CurrentProbeActiveListIndex);
+        RWActiveVolumeProbeListBuffer[CurrentProbeActiveListIndex] = PreviousProbeIndex1;
 
         // Inject to the tile's volume probe index list
         float3 NDC = TransformPoint(C.WorldToNDC, Header.WorldPosition);
@@ -224,7 +227,8 @@ void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
 
             uint GlobalEntryIndex;
             InterlockedAdd(RWTileVolumeProbeReprojectionEntryAllocator[0], 1, GlobalEntryIndex);
-            RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex] = uint3(TileIndex1, TileEntryIndex, CurrentProbeIndex);
+            // Store atlas index (PreviousProbeIndex1), not compact active-list index, in the tile list entry
+            RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex] = uint3(TileIndex1, TileEntryIndex, PreviousProbeIndex1);
         }
     }
 }
@@ -318,6 +322,14 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
             }
         }
     }
+}
+
+[numthreads(1, 1, 1)]
+void ClipVolumeProbeSpawnAllocator () {
+    RWVolumeProbeSpawnAllocator[0] = min(
+        RWVolumeProbeSpawnAllocator[0],
+        UB.MaxProbesToSpawnPerFrame
+    );
 }
 
 float RadianceToSampleWeight (float3 Radiance) {
@@ -416,7 +428,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     GroupMemoryBarrierWithGroupSync();
     SumWeightedRadiance = WaveActiveSum(SumWeightedRadiance);
     SumReusedWeight = WaveActiveSum(SumReusedWeight);
-    float3 BackupRadiance = SumWeightedRadiance / max(1e-3f, SumReusedWeight);
+    float3 BackupRadiance = SumWeightedRadiance / max(1e-5f, SumReusedWeight);
 
     // Sample rays
     // We assume that ray count is always a multiple of WAVE_SIZE
@@ -567,7 +579,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
 	CameraParameters C = GetActiveCamera();
 	// Whether we should bypass the second level radiance cache. 
 	bool bBypass = false;
-	if(bHit) {
+	if(bHit && !UB.NoIndirectLighting) {
         uint2  PackedHitResult = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
         CachedHitMaterial CM = UnpackCachedHitMaterial(PackedHitResult);
         // Specially, for GRF hits, simply decode color from hit albedo
@@ -620,7 +632,6 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                     float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
                     float  PreviousLinearDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
                     float  PreviousDistance = PreviousLinearDepth * PrevCosineFactor;
-                    // FIXME this introduced very prominent artifacts!!!!
                     bool bDepthVisible = 
                         PreviousDistance >= HistoryMinMax.x &&
                         PreviousDistance <= HistoryMinMax.y;
@@ -656,6 +667,11 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
             }
         }
 	}
+    if(bHit && UB.NoIndirectLighting) {
+        // Bypass indirect lighting.
+        bBypass = true;
+        RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(0.f.xxx, true);
+    }
 	if(!bBypass) {
 		if(bHit) {
             // Queue up all hits that failed in reprojection for world-space direct lighting
