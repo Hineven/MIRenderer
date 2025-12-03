@@ -19,7 +19,9 @@
 * `happly`
 * `nlohmann-json`
 * `glfw3`
-* `tinyexr`
+* `tinyexr` <- 似乎最近此包可能因为CmakeBug无法安装，你可以回退到较早版本，或者切换CMake版本（3.30.1可用）。
+* `vulkan-memory-allocator`
+* `directx-dxc`
 # 使用
 请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表
