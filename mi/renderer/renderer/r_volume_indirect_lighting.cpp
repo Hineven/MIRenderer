@@ -888,7 +888,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(ini);
         Helpers::AddComputeIndirectPass<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(
             builder, shader, params,
-            view->volume_indirect_lighting_->spawn_list_command .Raw()
+            view->volume_indirect_lighting_->spawn_list_command.Raw()
         );
     }
     {

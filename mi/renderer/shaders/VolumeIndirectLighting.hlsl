@@ -628,7 +628,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                     HistoryMinMax.x = max(0, HistoryMinMax.x * 0.999f);
                     HistoryMinMax.y = HistoryMinMax.y * 1.001f;
                     CameraParameters PrevC = GetPreviousCamera();
-                    float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
+                    float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy);
                     float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
                     float  PreviousLinearDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
                     float  PreviousDistance = PreviousLinearDepth * PrevCosineFactor;
