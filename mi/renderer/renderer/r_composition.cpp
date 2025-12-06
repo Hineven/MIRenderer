@@ -180,6 +180,9 @@ void Renderer::Render_DrawToOutput(
     [[maybe_unused]] RendererView * view, RenderGraphBuilder & builder,
     RDGTexture *texture, DrawToOutputMappingType mapping_type
 ) {
+    if (!texture) {
+        return;
+    }
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<DrawToOutputShader>();
     auto params = builder.Allocate<DrawToOutputShader::ShaderParameters>();
