@@ -154,7 +154,9 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
         float3x4 ToObject = WorldToObject3x4();
@@ -183,7 +185,9 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
         RayDesc Ray = GetRayDesc();

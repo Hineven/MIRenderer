@@ -147,7 +147,8 @@ void TraceVisibilityRaysRaygen() {
 
 [shader("miss")]
 void TraceVisibilityRaysMiss(inout RayPayload Payload: SV_RayPayload) {
-    Payload.PackedMaterial = MakePackedInvalidCachedHitMaterial();
+    // Leave unchanged is okay.
+    // Payload.PackedMaterial = MakePackedInvalidCachedHitMaterial();
 }
 
 
@@ -201,7 +202,9 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
         float3x4 ToObject = WorldToObject3x4();
@@ -268,7 +271,9 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
         RayDesc Ray = GetRayDesc();
@@ -358,7 +363,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
@@ -366,9 +373,6 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
         Color = saturate(Color + 0.5f);
         // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
-        RenderableHeader RH = RenderableHeaderBuffer[Instance];
-        // Unpack the gaussian radiance field index
-        uint RadianceFieldIndex = asuint(RH.Metadata.x);
         GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
         if(FieldHeader.SRGBColorSpace != 0) {
             Color = SRGBColorToLinearColor(Color);
@@ -413,7 +417,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
     } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
 
@@ -425,7 +431,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
@@ -433,9 +441,6 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
         Color = saturate(Color + 0.5f);
         // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
-        RenderableHeader RH = RenderableHeaderBuffer[Instance];
-        // Unpack the gaussian radiance field index
-        uint RadianceFieldIndex = asuint(RH.Metadata.x);
         GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
         if(FieldHeader.SRGBColorSpace != 0) {
             Color = SRGBColorToLinearColor(Color);

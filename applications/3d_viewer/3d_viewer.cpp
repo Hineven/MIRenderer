@@ -297,16 +297,16 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
-        if (!GLTFLoader::LoadGLTF(
-            model_path,
-            *resource_allocator,
-            *scene, default_mat.Raw(),
-            geometries, materials, meshes
-        )) {
-            MI_WARN("Failed to load GLTF model {}.", model_path.string());
-        } else {
-        }
+        // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        // if (!GLTFLoader::LoadGLTF(
+        //     model_path,
+        //     *resource_allocator,
+        //     *scene, default_mat.Raw(),
+        //     geometries, materials, meshes
+        // )) {
+        //     MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        // } else {
+        // }
 
         auto & r = Renderer::Get();
         for (auto e : meshes) {
@@ -330,7 +330,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     }
 
     if (false) {
-
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");

@@ -599,11 +599,9 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                 float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
                 int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
                 float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
-                uint2  PackedMaterial = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
-                CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedMaterial);
-                if(MCached.IsSurface()) {
+                if(CM.IsSurface()) {
                     // Surface hit, resolve from screen space history
-                    float3 HitNormal      = MCached.Normal;
+                    float3 HitNormal      = CM.Normal;
                     bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
                     float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
                     if(HistoryReversedZDepth > 0) {
@@ -621,7 +619,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                             RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
                         }
                     }
-                } else if(MCached.IsVolume()) {
+                } else if(CM.IsVolume()) {
                     // Volume hit, resolve from volume history texture
                     float2 HistoryMinMax = PreviousVolumeMinMaxTexture.Load(int3(HistoryScreenCoords, 0)).xy;
                     // Relax min-max ranges a bit to avoid precision issues (fp16)
@@ -647,14 +645,13 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                         // TODO better approximation
                         float  HistoryTransparency = PreviousTransmittanceTexture.SampleLevel(PointEdgeSampler,
                                                         HistoryScreenPosition * C.InvFilmDimensions, 0).x;
-                        float  NormalizationFactor = 1.f / (1.f + 0.05f - HistoryTransparency);
+                        float  NormalizationFactor = 1.f / (1.f + 0.02f - HistoryTransparency);
                         float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
                                                         HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
                         float  EnergyDecay = max(saturate(1.f + 0.02f - dot(HistoryVolumeColor, 0.3333f)), 0.02f);
                         float  DepthEnergyDecayFactor = 1;//exp(-HistoryVolumeDensity * MediaTraverseDistance / EnergyDecay);
                         float  L = MediaTraverseDistance;
-                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor * DepthEnergyDecayFactor * L;
-
+                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor;// * DepthEnergyDecayFactor / HistoryVolumeDensity;
                         bBypass = true;
                         uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
