@@ -22,10 +22,12 @@
 #include "r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
+
+// TODO this is temporary, need a better way to take care of probe searching
 static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
-    24.f
+    16.f
 );
 
 static CVar CVar_VolumeProbesRayImportanceSampling(

@@ -581,8 +581,9 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         //     }, {}, {});
         // 3. end and submit command buffer.
         state.CloseCmd();
+        // Use the render-finished semaphore associated with the acquired swapchain image index
         vk::Semaphore present_ready_sem = vk_rhi->vk_swapchain_render_finished_semaphores_[
-            GetCurrentFrameIndex_RHIThread() % vk_rhi->swapchain_images.size()
+            swapchain_image_index
         ];
         vk::PipelineStageFlags submit_wait_stages = vk::PipelineStageFlagBits::eTransfer;
         if (!prefix.empty()) {
