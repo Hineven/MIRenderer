@@ -540,7 +540,7 @@ RayUniformVolumeDistribution UpdateRayUniformVolumeDistributionExponentialScatte
     float u,
     inout float Cdf,
     inout float Attenuation,
-    bool bSelected
+    inout bool bSelected
 ) {
     // For selected pixels, we simply keep the old one
     if(bSelected) return old_distr;

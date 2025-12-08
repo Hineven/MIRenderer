@@ -55,6 +55,7 @@ void VisualizeRayTracingSceneRaygen() {
     RayPayload Payload = (RayPayload)0;
     Payload.Transmittance = 1.0f;
     for(int i = 0; i < 100; i++) {
+        Payload.THit = Ray.TMax;
         TraceRay(
             TLAS,
             RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
@@ -66,7 +67,7 @@ void VisualizeRayTracingSceneRaygen() {
             Payload
         );
         Ray.TMin = Payload.THit + 1e-4f;
-        if(Payload.bSurfaceHit) break;
+        if(Payload.bSurfaceHit || Payload.THit == Ray.TMax) break;
     }
     RWDebugOutput[RayIndex] = Payload.Color * Payload.Transmittance;
 }
@@ -157,27 +158,9 @@ void VisualizeRayTracingSceneClosestHit(inout RayPayload Payload: SV_RayPayload,
         Payload.Color = ColorOpacity;
         Payload.bSurfaceHit = true;
     } else {
-        RenderableHeader InstanceHeader = RenderableHeaderBuffer[Instance];
-        float3 RayOrigin = WorldRayOrigin();
-        float3 RayDirection = WorldRayDirection();
-        // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry)
-        uint InstanceVolPrimitiveIndex = Triangle / 20;
-        uint VolPrimitiveOffset = VolumePrimitivesHeaderBuffer[asuint(InstanceHeader.Metadata.x)].PrimitiveOffset;
-        uint PrimitiveIndex = VolPrimitiveOffset + InstanceVolPrimitiveIndex;
-        VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
-        float3x4 ToObject = WorldToObject3x4();
-        float2 lr = 0;
-        float Dist = 0;
-        bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
-        if(bIntersected) {
-            float TMin = RayTMin();
-            lr.x = max(lr.x, TMin);
-            lr.y = max(lr.y, TMin);
-            float Length = max(lr.y - lr.x, 0);
-            // Multiply to transmittance
-            float Transmittance = exp(-Length * Primitive.Opacity);
-            Payload.Transmittance *= Transmittance;
-        }
+        
+        // Simply reduce transmittance for shell geometry visualization
+        Payload.Transmittance *= 0.5f;
     }
     Payload.THit = RayTCurrent();
 }

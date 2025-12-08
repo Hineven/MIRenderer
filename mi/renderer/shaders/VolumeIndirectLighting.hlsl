@@ -664,7 +664,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
             }
         }
 	}
-    if(bHit && UB.NoIndirectLighting) {
+    if(bHit && UB.NoIndirectLighting != 0) {
         // Bypass indirect lighting.
         bBypass = true;
         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(0.f.xxx, true);
@@ -988,7 +988,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         }
     }
 #endif
-    // Assume UpdateRayCount is a multiple of WAVE_SIZE, which is guaranteed by the previous shaders
+    // Assume UpdateRayCount is a multiple of WAVE_SIZE, which is guaranteed by the previous shaders    
     for(uint BaseRayRank = 0; BaseRayRank < UpdateRayCount; BaseRayRank += WAVE_SIZE) {
         uint RayRank = BaseRayRank + LocalID;
         uint RayIndex = ProbeUpdateRayBase + RayRank;
@@ -1005,6 +1005,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         if(bValid) {
             float3 RayDirection = RWVolumeProbeUpdateRayDirectionBuffer[RayIndex];
             float3 RayRadiance = RayResult.xyz;
+            // RayRadiance = 0.1f;
             float2 RayOctahedronUV = UnitVectorToOctahedron01(RayDirection);
             uint2  RayTexelCoords = uint2(RayOctahedronUV * TILE_SIZE);
             uint   RayTexelIndex  = RayTexelCoords.x + RayTexelCoords.y * TILE_SIZE;
@@ -1017,7 +1018,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             // Use RayTexelWeight here instead of simply using RayInvPdf for better quantilization quality
             InterlockedAdd(SharedProbeSampleWeightSums[RayTexelIndex], QuantilizeWeight(RayTexelWeight));
             SumRayWeight += RayInvPdf; // Here we need to use RayInvPdf to reweight bias introduced by importance sampling
-            SumRayResult += RayResult * RayInvPdf;
+            SumRayResult += float4(RayRadiance, RayResult.w) * RayInvPdf;
         }
     }
 
@@ -1244,7 +1245,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                     float3 ProbeWorldPosition = SpawnedProbeHeader.WorldPosition;
                     float  Distance = length(ProbeWorldPosition - WorldPosition);
                     if(Distance < SearchSize) {
-                        float ProbeWeight = saturate(1.0f - Distance / SearchSize);
+                        float ProbeWeight = Squared(saturate(1.0f - Distance / SearchSize));
                         SumProbeWeights += ProbeWeight;
                         float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, SpawnedProbeIndex);
                         SumIrradiance += ProbeWeight * Irradiance * SampleColor;
@@ -1266,7 +1267,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                     float3 ProbeWorldPosition = CurrentProbeHeader.WorldPosition;
                     float  Distance = length(ProbeWorldPosition - WorldPosition);
                     if(Distance < SearchSize) {
-                        float ProbeWeight = saturate(1.0f - Distance / SearchSize);
+                        float ProbeWeight = Squared(saturate(1.0f - Distance / SearchSize));
                         SumProbeWeights += ProbeWeight;
                         float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, CurrentProbeIndex);
                         SumIrradiance += ProbeWeight * Irradiance * SampleColor;
