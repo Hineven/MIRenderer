@@ -3,6 +3,7 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include "../include/renderer/r_geometry_buffer.h"
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_helper.h"
@@ -186,7 +187,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->TracedRaysStateBuffer = view->debug_buffers_.traced_ray_states.Raw();
         params->TracedRaysColorBuffer = view->debug_buffers_.traced_ray_colors.Raw();
         params->DebugOutput = view->debug_views_.visualize_traced_rays_output_.Raw();
-        params->Depth = view->G_depth_.Raw();
+        params->Depth = view->g_buffer_->G_depth_.Raw();
         auto cmd = Helpers::SpawnDrawIndirectCommand(builder, 2, view->debug_buffers_.traced_ray_count.Raw());
         builder.AddPass<VisualizeTracedRaysShader>({}, shader, params,
             [shader, params, dcmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
@@ -206,7 +207,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         auto shader = RDGShaderLibrary::Get().GetShader<VisualizeWorldCacheShader>();
         auto params = builder.Allocate<VisualizeWorldCacheShader::Params>();
         params->View = view->view_common_params_;
-        params->G_Depth = view->G_depth_.Raw();
+        params->G_Depth = view->g_buffer_->G_depth_.Raw();
         params->PreviousShadedDiffuseRadianceWithoutEmission = view->persistent_data_->prev_shaded_radiance_no_emission_.Raw();
         params->RWDebugOutputTexture = view->debug_views_.visualize_world_cache_output_.Raw();
         FillParametersForHashGridCache(view, params);

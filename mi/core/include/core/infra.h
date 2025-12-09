@@ -133,6 +133,7 @@ public:
             std::string entry_point,
             std::string target_profile,
             std::span<const char> hlsl_code,
+            std::vector<std::string> defines,
             std::vector<std::string> options,
             std::string & error,
             std::wstring * out_compile_command = nullptr,
@@ -143,6 +144,7 @@ public:
     // Helper function for check shader changes.
     virtual uint64_t GetShaderXXHashFromShaderResourcePath (
         const MIResourcePath & shader_resource_path,
+        std::vector<std::string> defines,
         std::vector<std::string> options,
         bool & is_shader_valid
     ) = 0;

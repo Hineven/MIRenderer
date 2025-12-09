@@ -39,6 +39,9 @@ struct VolumePrimitivesViewData : RefCounted<> {
 struct VolumePrimitivesViewPersistentData : RefCounted<> {
     // Denoiser history for volume primitives lighting
     TRef<RDGTexture> prev_volume_representative_depth_and_variation_;
+    TRef<RDGTexture> prev_volume_min_max_;
+    TRef<RDGTexture> prev_volume_density_;
+    TRef<RDGTexture> prev_volume_color_;
 
     bool MakeSureExists(RendererView * view, RenderGraphBuilder & builder) ;
 

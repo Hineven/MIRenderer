@@ -10,6 +10,9 @@
 
 Texture2D<float> G_Depth;
 Texture2D<float4> PreviousShadedDiffuseRadianceWithoutEmission;
+
+
+[[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutputTexture;
 
 [numthreads(8, 8, 1)]

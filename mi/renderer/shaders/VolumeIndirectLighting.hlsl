@@ -160,6 +160,9 @@ struct VolumeDiffuseIndirectLightingUB {
     uint ProbeSpawnSubTileJitterSeed;
     uint TileProbeSpawnSeed;
     uint NoEnvironmentLight; // For debugging
+
+    uint NoIndirectLighting;
+    uint3 Padding0;
 };
 
 ConstantBuffer<VolumeDiffuseIndirectLightingUB> UB;
@@ -208,9 +211,9 @@ void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
     VolumeProbeHeader Header = UnpackVolumeProbeHeader(RWVolumeProbeHeaderTexture[PreviousProbeIndex]);
     CameraParameters C = GetActiveCamera();
     if(Header.bActive) {
-        uint CurrentProbeIndex;
-        InterlockedAdd(RWActiveVolumeProbeCount[0], 1, CurrentProbeIndex);
-        RWActiveVolumeProbeListBuffer[CurrentProbeIndex] = PreviousProbeIndex1;
+        uint CurrentProbeActiveListIndex;
+        InterlockedAdd(RWActiveVolumeProbeCount[0], 1, CurrentProbeActiveListIndex);
+        RWActiveVolumeProbeListBuffer[CurrentProbeActiveListIndex] = PreviousProbeIndex1;
 
         // Inject to the tile's volume probe index list
         float3 NDC = TransformPoint(C.WorldToNDC, Header.WorldPosition);
@@ -224,7 +227,8 @@ void InjectVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
 
             uint GlobalEntryIndex;
             InterlockedAdd(RWTileVolumeProbeReprojectionEntryAllocator[0], 1, GlobalEntryIndex);
-            RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex] = uint3(TileIndex1, TileEntryIndex, CurrentProbeIndex);
+            // Store atlas index (PreviousProbeIndex1), not compact active-list index, in the tile list entry
+            RWTileVolumeProbeReprojectionEntryBuffer[GlobalEntryIndex] = uint3(TileIndex1, TileEntryIndex, PreviousProbeIndex1);
         }
     }
 }
@@ -318,6 +322,14 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
             }
         }
     }
+}
+
+[numthreads(1, 1, 1)]
+void ClipVolumeProbeSpawnAllocator () {
+    RWVolumeProbeSpawnAllocator[0] = min(
+        RWVolumeProbeSpawnAllocator[0],
+        UB.MaxProbesToSpawnPerFrame
+    );
 }
 
 float RadianceToSampleWeight (float3 Radiance) {
@@ -416,7 +428,7 @@ void ReconstructRadiance_SampleSpawnVolumeProbeUpdateRays (uint GroupID : SV_Gro
     GroupMemoryBarrierWithGroupSync();
     SumWeightedRadiance = WaveActiveSum(SumWeightedRadiance);
     SumReusedWeight = WaveActiveSum(SumReusedWeight);
-    float3 BackupRadiance = SumWeightedRadiance / max(1e-3f, SumReusedWeight);
+    float3 BackupRadiance = SumWeightedRadiance / max(1e-5f, SumReusedWeight);
 
     // Sample rays
     // We assume that ray count is always a multiple of WAVE_SIZE
@@ -567,7 +579,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
 	CameraParameters C = GetActiveCamera();
 	// Whether we should bypass the second level radiance cache. 
 	bool bBypass = false;
-	if(bHit) {
+	if(bHit && !UB.NoIndirectLighting) {
         uint2  PackedHitResult = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
         CachedHitMaterial CM = UnpackCachedHitMaterial(PackedHitResult);
         // Specially, for GRF hits, simply decode color from hit albedo
@@ -587,11 +599,9 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                 float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
                 int2 HistoryScreenCoords = int2(HistoryScreenPosition + 0.5f);
                 float3 HistoryNormal = normalize(PreviousNormalTexture.Load(int3(HistoryScreenCoords, 0)).xyz * 2.f - 1.f);
-                uint2  PackedMaterial = RWVolumeProbeUpdateRayResultBuffer[RayIndex];
-                CachedHitMaterial MCached = UnpackCachedHitMaterial(PackedMaterial);
-                if(MCached.IsSurface()) {
+                if(CM.IsSurface()) {
                     // Surface hit, resolve from screen space history
-                    float3 HitNormal      = MCached.Normal;
+                    float3 HitNormal      = CM.Normal;
                     bool   bNormalVisible = dot(HistoryNormal, HitNormal) > 0.5f;
                     float  HistoryReversedZDepth = PreviousDepthTexture.Load(int3(HistoryScreenCoords, 0)).x;
                     if(HistoryReversedZDepth > 0) {
@@ -609,18 +619,17 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                             RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
                         }
                     }
-                } else if(MCached.IsVolume()) {
+                } else if(CM.IsVolume()) {
                     // Volume hit, resolve from volume history texture
                     float2 HistoryMinMax = PreviousVolumeMinMaxTexture.Load(int3(HistoryScreenCoords, 0)).xy;
                     // Relax min-max ranges a bit to avoid precision issues (fp16)
                     HistoryMinMax.x = max(0, HistoryMinMax.x * 0.999f);
                     HistoryMinMax.y = HistoryMinMax.y * 1.001f;
                     CameraParameters PrevC = GetPreviousCamera();
-                    float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy).z;
+                    float3 PrevCamearDirection = NDC2ToCameraDirection(PrevC, PreviousHomogeneous.xy);
                     float  PrevCosineFactor = 1 / dot(PrevCamearDirection, PrevC.Direction);
-                    float  PreviousDepth    = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
-                    float  PreviousDistance = PreviousDepth * PrevCosineFactor;
-                    // FIXME this introduced very prominent artifacts!!!!
+                    float  PreviousLinearDepth = ZDepthToLinearDepth(PrevC, PreviousHomogeneous.z);
+                    float  PreviousDistance = PreviousLinearDepth * PrevCosineFactor;
                     bool bDepthVisible = 
                         PreviousDistance >= HistoryMinMax.x &&
                         PreviousDistance <= HistoryMinMax.y;
@@ -636,14 +645,13 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                         // TODO better approximation
                         float  HistoryTransparency = PreviousTransmittanceTexture.SampleLevel(PointEdgeSampler,
                                                         HistoryScreenPosition * C.InvFilmDimensions, 0).x;
-                        float  NormalizationFactor = 1.f / (1.f + 0.05f - HistoryTransparency);
+                        float  NormalizationFactor = 1.f / (1.f + 0.02f - HistoryTransparency);
                         float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
                                                         HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
-                        float  EnergyDecay = max(saturate(1.f + 0.02f - dot(HistoryVolumeColor, 0.3333f)), 0.02f);
-                        float  DepthEnergyDecayFactor = 1;//exp(-HistoryVolumeDensity * MediaTraverseDistance / EnergyDecay);
+                        float3 EnergyDecay = max(saturate(1.f + 0.02f - HistoryVolumeColor), 0.02f);
+                        float3 DepthEnergyDecayFactor = exp(-HistoryVolumeDensity * MediaTraverseDistance * EnergyDecay);
                         float  L = MediaTraverseDistance;
-                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor * DepthEnergyDecayFactor * L;
-
+                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor;// * DepthEnergyDecayFactor;// / HistoryVolumeDensity;
                         bBypass = true;
                         uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
@@ -656,6 +664,11 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
             }
         }
 	}
+    if(bHit && UB.NoIndirectLighting != 0) {
+        // Bypass indirect lighting.
+        bBypass = true;
+        RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(0.f.xxx, true);
+    }
 	if(!bBypass) {
 		if(bHit) {
             // Queue up all hits that failed in reprojection for world-space direct lighting
@@ -975,7 +988,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         }
     }
 #endif
-    // Assume UpdateRayCount is a multiple of WAVE_SIZE, which is guaranteed by the previous shaders
+    // Assume UpdateRayCount is a multiple of WAVE_SIZE, which is guaranteed by the previous shaders    
     for(uint BaseRayRank = 0; BaseRayRank < UpdateRayCount; BaseRayRank += WAVE_SIZE) {
         uint RayRank = BaseRayRank + LocalID;
         uint RayIndex = ProbeUpdateRayBase + RayRank;
@@ -992,6 +1005,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         if(bValid) {
             float3 RayDirection = RWVolumeProbeUpdateRayDirectionBuffer[RayIndex];
             float3 RayRadiance = RayResult.xyz;
+            // RayRadiance = 0.1f; // FIXME
             float2 RayOctahedronUV = UnitVectorToOctahedron01(RayDirection);
             uint2  RayTexelCoords = uint2(RayOctahedronUV * TILE_SIZE);
             uint   RayTexelIndex  = RayTexelCoords.x + RayTexelCoords.y * TILE_SIZE;
@@ -1004,7 +1018,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             // Use RayTexelWeight here instead of simply using RayInvPdf for better quantilization quality
             InterlockedAdd(SharedProbeSampleWeightSums[RayTexelIndex], QuantilizeWeight(RayTexelWeight));
             SumRayWeight += RayInvPdf; // Here we need to use RayInvPdf to reweight bias introduced by importance sampling
-            SumRayResult += RayResult * RayInvPdf;
+            SumRayResult += float4(RayRadiance, RayResult.w) * RayInvPdf;
         }
     }
 
@@ -1231,7 +1245,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                     float3 ProbeWorldPosition = SpawnedProbeHeader.WorldPosition;
                     float  Distance = length(ProbeWorldPosition - WorldPosition);
                     if(Distance < SearchSize) {
-                        float ProbeWeight = saturate(1.0f - Distance / SearchSize);
+                        float ProbeWeight = Squared(saturate(1.0f - Distance / SearchSize));
                         SumProbeWeights += ProbeWeight;
                         float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, SpawnedProbeIndex);
                         SumIrradiance += ProbeWeight * Irradiance * SampleColor;
@@ -1253,7 +1267,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                     float3 ProbeWorldPosition = CurrentProbeHeader.WorldPosition;
                     float  Distance = length(ProbeWorldPosition - WorldPosition);
                     if(Distance < SearchSize) {
-                        float ProbeWeight = saturate(1.0f - Distance / SearchSize);
+                        float ProbeWeight = Squared(saturate(1.0f - Distance / SearchSize));
                         SumProbeWeights += ProbeWeight;
                         float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, CurrentProbeIndex);
                         SumIrradiance += ProbeWeight * Irradiance * SampleColor;

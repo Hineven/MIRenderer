@@ -24,6 +24,7 @@
 #include "renderer/r_light_structure.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
+#include "include/renderer/r_geometry_buffer.h"
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
 
@@ -270,10 +271,6 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_camera = view->camera_;
     prev_camera_parameters_ = view->view_common_params_->Camera;
 
-    prev_G_depth = view->G_depth_;
-    prev_G_depth->SetExport();
-    prev_G_normal = view->G_normal_;
-    prev_G_normal->SetExport();
 
     prev_radiance_ = view->radiance_;
     prev_radiance_->SetExport();
@@ -282,18 +279,11 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_shaded_volume_radiance_ = view->shaded_volume_radiance_;
     prev_shaded_volume_radiance_->SetExport();
 
-    prev_volume_min_max_ = view->volume_primitives_->G_volume_min_max_;
-    prev_volume_min_max_->SetExport();
-    prev_volume_density_ = view->volume_primitives_->G_volume_density_;
-    prev_volume_density_->SetExport();
-    prev_transmittance_ = view->G_transmittance_;
-    prev_transmittance_->SetExport();
-    prev_volume_color_ = view->volume_primitives_->G_volume_color_;
-    prev_volume_color_->SetExport();
-
     prev_scene_ = view->scene_;
 
-    if (volume_indirect_lighting_persistent_data_)
+    if (g_buffer_data_)
+        g_buffer_data_->FinalUpdate(view);
+    if (volume_primitives_view_persistent_data_)
         volume_primitives_view_persistent_data_->FinalUpdate(view);
     if (denoiser_persistent_data_)
         denoiser_persistent_data_->FinalUpdate(view);
@@ -322,52 +312,11 @@ void RendererView::InitFrame () {
     view_common_params_ = {};
     debug_common_params_ = {};
 
-    G_depth_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kD32_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
-    G_depth_->SetName("GBuffer Depth");
-
     forward_depth_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst | RHITextureUsageFlagBits::kTransferSrc);
     forward_depth_->SetName("Forward Depth");
-
-    G_visibility_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR32G32B32A32_UINT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferSrc);
-    G_visibility_->SetName("GBuffer Visibility");
-
-    G_albedo_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
-    G_albedo_->SetName("GBuffer Albedo");
-
-    G_normal_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
-    G_normal_->SetName("GBuffer Normal");
-
-    G_emission_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
-    G_emission_->SetName("GBuffer Emission");
-
-    G_metallic_roughness_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8G8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
-    G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
-
-    G_flags_ = RDGTexture::Create2D(film_width_, film_height_, PixelFormatType::kR8_UINT,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
-
-    G_transmittance_ = RDGTexture::Create2D(
-        film_width_, film_height_, PixelFormatType::kR8_UNORM,
-        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransferDst);
-    G_transmittance_->SetName("GBuffer Transmittance");
 
     shadow_map_moments_ = RDGTexture::Create2D(
         Renderer::kDefaultShadowMapResolution, Renderer::kDefaultShadowMapResolution,

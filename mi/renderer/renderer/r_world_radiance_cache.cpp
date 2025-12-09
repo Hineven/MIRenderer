@@ -12,6 +12,7 @@
 #include "r_world_radiance_cache.h"
 
 #include "r_denoiser.h"
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_volume_primitives.h"
@@ -84,26 +85,11 @@ void HashGridPersistentData::FinalUpdate(RendererView *view) {
 }
 
 void RendererView::MakeSurePersistentDataExists(RenderGraphBuilder &builder) {
-    if (!persistent_data_->volume_primitives_view_persistent_data_) {
-        auto volume_primitives_persistent = new VolumePrimitivesViewPersistentData();
-        persistent_data_->volume_primitives_view_persistent_data_ = volume_primitives_persistent;
-    }
-    persistent_data_->volume_primitives_view_persistent_data_->MakeSureExists(this, builder);
-    if (!persistent_data_->denoiser_persistent_data_) {
-        auto denoiser_persistent = new DenoiserPersistentData();
-        persistent_data_->denoiser_persistent_data_ = denoiser_persistent;
-    }
-    persistent_data_->denoiser_persistent_data_->MakeSureExists(this, builder);
-    if (!persistent_data_->light_structure_persistent_data_) {
-        persistent_data_->light_structure_persistent_data_ = new LightStructurePersistentData();
-    }
-    persistent_data_->light_structure_persistent_data_->MakeSureExists(this, builder);
-    if (!persistent_data_->hash_grid_persistent_data_) {
-        persistent_data_->hash_grid_persistent_data_ = new HashGridPersistentData();
-    }
-    persistent_data_->hash_grid_persistent_data_->MakeSureExists(
-        this, builder
-    );
+    persistent_data_->g_buffer_data_.CreateIfNull()->MakeSureExists(this, builder);
+    persistent_data_->volume_primitives_view_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
+    persistent_data_->denoiser_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
+    persistent_data_->light_structure_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
+    persistent_data_->hash_grid_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
 }
 
 void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {

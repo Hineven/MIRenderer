@@ -59,10 +59,18 @@ StaticMeshInstanceHeader GetStaticMeshInstanceHeader(RenderableHeader Header) {
     return Result;
 }
 
-
 VolumePrimitivesInstanceHeader GetVolumePrimitivesInstanceHeader(RenderableHeader Header) {
     VolumePrimitivesInstanceHeader Result;
     Result.VolumePrimitivesIndex = asuint(Header.Metadata.x);
+    Result.Padding0 = asuint(Header.Metadata.y);
+    Result.Padding1 = asuint(Header.Metadata.z);
+    Result.Flags = asuint(Header.Metadata.w);
+    return Result;
+}
+
+GaussianRadianceFieldInstanceHeader GetGaussianRadianceFieldInstanceHeader(RenderableHeader Header) {
+    GaussianRadianceFieldInstanceHeader Result;
+    Result.FieldIndex = asuint(Header.Metadata.x);
     Result.Padding0 = asuint(Header.Metadata.y);
     Result.Padding1 = asuint(Header.Metadata.z);
     Result.Flags = asuint(Header.Metadata.w);

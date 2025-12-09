@@ -122,6 +122,7 @@ public:
             // dxc style profile
             std::string target_profile,
             std::span<const char> hlsl_code,
+            std::vector<std::string> defines,
             std::vector<std::string> options,
             std::string & error,
             std::wstring * out_compile_command = nullptr,
@@ -130,6 +131,7 @@ public:
 
     uint64_t GetShaderXXHashFromShaderResourcePath (
         const MIResourcePath & res_path,
+        std::vector<std::string> defines,
         std::vector<std::string> options,
         bool & is_shader_valid
     ) override;
@@ -181,6 +183,7 @@ protected:
 
     // Compiler
     std::map<std::thread::id, HLSLCompilerContext *> hlsl_compiler_contexts_;
+    std::mutex hlsl_compiler_contexts_mutex_; // Protect compiler contexts map (shader hot-reload multi-thread safety)
 };
 
 MI_NAMESPACE_END

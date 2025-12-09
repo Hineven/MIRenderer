@@ -17,14 +17,17 @@
 #include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
+
+// TODO this is temporary, need a better way to take care of probe searching
 static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
-    24.f
+    16.f
 );
 
 static CVar CVar_VolumeProbesRayImportanceSampling(
@@ -57,6 +60,12 @@ static CVar CVar_NoEnvironmentLight(
     false
 );
 
+static CVar CVar_NoIndirectLighting(
+    "r.volume_indirect_lighting.no_indirect_lighting",
+    "Disable indirect lighting rendering (environment lighting is still active).",
+    false
+);
+
 static CVar CVar_VolumeScreenReuseNoDepthTesting(
     "r.volume_indirect_lighting.screen_reuse_no_depth_testing",
     "Whether to skip screen space depth testing when reusing history radiance. (always reuse)",
@@ -85,6 +94,9 @@ struct VolumeIndirectLightingUB {
     uint32_t ProbeSpawnSubTileJitterSeed;
     uint32_t TileProbeSpawnSeed;
     uint32_t NoEnvironmentLight;
+
+    uint32_t NoIndirectLighting;
+    glm::uvec3 Padding0;
 };
 
 BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
@@ -311,6 +323,14 @@ namespace VolumeIndirectLightingShaders {
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(SpawnVolumeProbesShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "SpawnVolumeProbes");
 
+    class ClipVolumeProbeSpawnAllocatorShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClipVolumeProbeSpawnAllocatorShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ClipVolumeProbeSpawnAllocator");
+
     class ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader final : public VolumeIndirectLightingShader {
     public:
         RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
@@ -492,9 +512,6 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     mi_check(view->film_width_ % VolumeIndirectLightingShader::kTileSize == 0, "View width not a multiple of tile size");
     mi_check(view->film_height_ % VolumeIndirectLightingShader::kTileSize == 0, "View height not a multiple of tile size");
     auto tile_dimensions = GetTileDimensions(view);
-    auto tile_index_mip_levels = GetTileIndexMipLevels(tile_dimensions);
-
-    uint32_t header_tile_dimension = 1 << tile_index_mip_levels;
 
     if (!view->persistent_data_->volume_indirect_lighting_persistent_data_
         ->MakeSureExists(builder, tile_dimensions))
@@ -706,8 +723,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->RWShadePointToTransmittanceRayIndexBuffer =
             shade_point_to_transmittance_ray_index.Raw();
 
-        params->PreviousNormalTexture = view->persistent_data_->prev_G_normal.Raw();
-        params->PreviousDepthTexture = view->persistent_data_->prev_G_depth.Raw();
+        params->PreviousNormalTexture = view->persistent_data_->g_buffer_data_->prev_G_normal_.Raw();
+        params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
         params->PreviousShadedDiffuseRadianceWithoutEmission =
             view->persistent_data_->prev_shaded_radiance_no_emission_.Raw();
 
@@ -715,11 +732,14 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->G_VolumeSampleColor = view->volume_primitives_->volume_sample_color_.Raw();
         params->VolumeMinMaxTexture = view->volume_primitives_->G_volume_min_max_.Raw();
         params->VolumeDensityTexture = view->volume_primitives_->G_volume_density_.Raw();
-        params->PreviousVolumeMinMaxTexture = view->persistent_data_->prev_volume_min_max_.Raw();
+        params->PreviousVolumeMinMaxTexture = view->persistent_data_->
+            volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeRadianceTexture = view->persistent_data_->prev_shaded_volume_radiance_.Raw();
-        params->PreviousVolumeDensityTexture = view->persistent_data_->prev_volume_density_.Raw();
-        params->PreviousTransmittanceTexture = view->persistent_data_->prev_transmittance_.Raw();
-        params->PreviousVolumeColorTexture   = view->persistent_data_->prev_volume_color_.Raw();
+        params->PreviousVolumeDensityTexture = view->persistent_data_->
+            volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
+        params->PreviousTransmittanceTexture = view->persistent_data_->g_buffer_data_->prev_G_transmittance_.Raw();
+        params->PreviousVolumeColorTexture   = view->persistent_data_->
+            volume_primitives_view_persistent_data_->prev_volume_color_.Raw();
 
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
@@ -756,6 +776,8 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             UB->TileProbeSpawnSeed =
                 CVar_VolumeProbesRayFreezeSeed.Get() ? 0 : view->persistent_data_->frame_index_;
             UB->NoEnvironmentLight = CVar_NoEnvironmentLight.Get() ? 1 : 0;
+
+            UB->NoIndirectLighting = CVar_NoIndirectLighting.Get() ? 1 : 0;
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;
@@ -856,6 +878,11 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             DivideAndRoundUp(num_tiles, wave_size)
         );
     }
+    {
+        auto shader = lib.GetShader<ClipVolumeProbeSpawnAllocatorShader>(ini);
+        Helpers::AddComputePass<ClipVolumeProbeSpawnAllocatorShader>(builder, shader, params);
+    }
+
     view->volume_indirect_lighting_->spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
         builder, volume_probe_spawn_allocator.Raw(), 1
     );
@@ -863,7 +890,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(ini);
         Helpers::AddComputeIndirectPass<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(
             builder, shader, params,
-            view->volume_indirect_lighting_->spawn_list_command .Raw()
+            view->volume_indirect_lighting_->spawn_list_command.Raw()
         );
     }
     {

@@ -19,6 +19,9 @@ struct DenoiserViewData : public RefCounted<> {
     TRef<RDGTexture> denoised_diffuse_direct_lighting;
     TRef<RDGTexture> denoised_volume_direct_lighting;
     TRef<RDGTexture> denoised_volume_indirect_lighting;
+    // New: previous-frame share count & min depth for volume history reprojection
+    TRef<RDGTexture> previous_frame_share_count;
+    TRef<RDGTexture> previous_frame_share_min_depth;
 
     void Allocate(RenderGraphBuilder & builder, RendererView * view);
 };

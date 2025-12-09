@@ -147,7 +147,7 @@ void TraceVisibilityRaysRaygen() {
 
 [shader("miss")]
 void TraceVisibilityRaysMiss(inout RayPayload Payload: SV_RayPayload) {
-    Payload.PackedMaterial = MakePackedInvalidCachedHitMaterial();
+    // Leave unchanged is okay.
 }
 
 
@@ -201,7 +201,9 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
         float3x4 ToObject = WorldToObject3x4();
@@ -220,19 +222,21 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
             #error "not implemented yet"
 #elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
 // Coarse visibility with precise intersection sampling
-            float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
             float Transmittance = IntegrateExponentialScatteringMedium(Opacity, Length);
-            if(FlyDist < Length) {
-                // The ray spawned a scattering event in the volume
-                Payload.U = saturate(Payload.U / max(1e-6f, 1 - Transmittance));
-                if(Payload.HitDistance > lr.x + FlyDist) {
-                    // Closer than previous hit, update the hit info
-                    Payload.HitDistance = lr.x + FlyDist;
-                    Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME)); 
+            if(Payload.U < 1.f - Transmittance) {
+                // Scatter: use the original U for free-path sampling
+                float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
+                if(FlyDist < Length) {
+                    if(Payload.HitDistance > lr.x + FlyDist) {
+                        Payload.HitDistance = lr.x + FlyDist;
+                        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME)); 
+                    }
                 }
+                // Generate a new random number from the scatter interval remainder
+                Payload.U = saturate(Payload.U / max(1e-6f, 1.f - Transmittance));
             } else {
                 // The ray passed through the volume
-                Payload.U = saturate(Payload.U / max(1e-6f, Transmittance));
+                Payload.U = saturate((Payload.U - (1 - Transmittance)) / max(1e-6f, Transmittance));
             }
             bool bShouldIgnoreHit = true;
             // Report a hit event if the closer-volume boundary is further than the current hit distance
@@ -268,7 +272,9 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
         RayDesc Ray = GetRayDesc();
@@ -312,7 +318,6 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
     uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    Payload.HitDistance = RayTCurrent();
 #if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
 // Full visibility
 #error "not implemented yet"
@@ -320,6 +325,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
 // Coarse output, but precise intersection sampling is applied in volume primitives
     if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Mesh surface hit
+        // For mesh hits, we have the exact hit distance.
+        // (Otherwise, hit distance is computed in anyhit for volume primitives and 3d gaussians)
+        Payload.HitDistance = RayTCurrent();
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
         uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
@@ -358,7 +366,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
@@ -366,9 +376,6 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
         Color = saturate(Color + 0.5f);
         // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
-        RenderableHeader RH = RenderableHeaderBuffer[Instance];
-        // Unpack the gaussian radiance field index
-        uint RadianceFieldIndex = asuint(RH.Metadata.x);
         GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
         if(FieldHeader.SRGBColorSpace != 0) {
             Color = SRGBColorToLinearColor(Color);
@@ -381,6 +388,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
 // Coarse visibility
     if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Mesh surface hit
+        // For mesh hits, we have the exact hit distance.
+        // (Otherwise, hit distance is computed in anyhit for volume primitives and 3d gaussians)
+        Payload.HitDistance = RayTCurrent();
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
         uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
@@ -413,7 +423,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
     } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
 
@@ -425,7 +437,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
         uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[Instance].PointOffset;
+        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
         uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
         SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
         float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
@@ -433,9 +447,6 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
         float3 Color = SH3Evaluate(LocalRayDirection, SH3);
         Color = saturate(Color + 0.5f);
         // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
-        RenderableHeader RH = RenderableHeaderBuffer[Instance];
-        // Unpack the gaussian radiance field index
-        uint RadianceFieldIndex = asuint(RH.Metadata.x);
         GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
         if(FieldHeader.SRGBColorSpace != 0) {
             Color = SRGBColorToLinearColor(Color);

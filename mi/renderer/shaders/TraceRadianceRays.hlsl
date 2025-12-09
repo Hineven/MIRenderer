@@ -168,7 +168,9 @@ void TraceRadianceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3 RayDirection = WorldRayDirection();
         // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
         uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[Instance].PrimitiveOffset;
+        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
         uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
         VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
         float3x4 ToObject = WorldToObject3x4();

@@ -2,6 +2,7 @@
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedVertex.hlsl"
 #include "shared/SharedMaterial.hlsl"
+#include "headers/VertexShaderInstanceIndex.hlsl"
 #include "headers/Camera.hlsl"
 #include "headers/Conventions.hlsl"
 #include "headers/Packing.hlsl"
@@ -27,10 +28,9 @@ StructuredBuffer<float3> TracedRaysColorBuffer;
 
 VisualizeTracedRaysVSOut VisualizeTracedRaysVS (
     uint VertexIndex : SV_VertexID,
-    uint InstanceIndex : SV_InstanceID,
-    uint BaseInstance : SV_StartInstanceLocation
+    VERTEX_SHADER_INSTANCE_INDEX_SV_PARAMS
 ) {
-    // InstanceIndex += BaseInstance;
+    uint InstanceIndex = VS_INSTANCE_INDEX;
     VisualizeTracedRaysVSOut Output = (VisualizeTracedRaysVSOut)0;
     float3 RayOrigin = TracedRaysOriginBuffer[InstanceIndex];
     float3 RayDirection = TracedRaysDirectionBuffer[InstanceIndex];

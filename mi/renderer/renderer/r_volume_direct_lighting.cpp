@@ -22,9 +22,10 @@
 #include "r_volume_primitives.h"
 #include "r_volume_direct_lighting.h"
 
-MI_NAMESPACE_BEGIN
+#include "../include/renderer/r_geometry_buffer.h"
 
-void VolumeDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
+MI_NAMESPACE_BEGIN
+    void VolumeDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
     radiance = builder.CreateTexture2D(
         view->film_width_, view->film_height_,
         PixelFormatType::kR16G16B16A16_FLOAT
@@ -201,7 +202,7 @@ void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGrap
     volprims_params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     volprims_params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
 
-    volprims_params->G_DepthTexture = view->G_depth_.Raw();
+    volprims_params->G_DepthTexture = view->g_buffer_->G_depth_.Raw();
 
     volprims_params->RWVolumeRayToTraceCount = volume_ray_to_trace_count.Raw();
     volprims_params->RWVolumeRayToTraceDirectionBuffer = volume_ray_to_trace_direction.Raw();

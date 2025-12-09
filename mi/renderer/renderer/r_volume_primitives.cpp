@@ -18,9 +18,10 @@
 #include "r_persistent.h"
 #include "r_volume_primitives.h"
 
-MI_NAMESPACE_BEGIN
+#include "../include/renderer/r_geometry_buffer.h"
 
-static CVar<float> CVar_VolumeDistributionMergingEpsilon(
+MI_NAMESPACE_BEGIN
+    static CVar<float> CVar_VolumeDistributionMergingEpsilon(
     "r.volume_primitives.distribution_merging_epsilon",
     "Epsilon value for merging volume distributions when rendering volume primitives. "
     "Smaller values preserve more details but may increase noise.",
@@ -78,6 +79,15 @@ bool VolumePrimitivesViewPersistentData::MakeSureExists([[maybe_unused]] Rendere
     if (!prev_volume_representative_depth_and_variation_) {
         flag = true;
     }
+    if (!prev_volume_min_max_) {
+        flag = true;
+    }
+    if (!prev_volume_density_) {
+        flag = true;
+    }
+    if (!prev_volume_color_) {
+        flag = true;
+    }
     return flag;
 }
 
@@ -86,6 +96,18 @@ void VolumePrimitivesViewPersistentData::FinalUpdate(RendererView *view) {
         view->volume_primitives_->volume_representative_depth_and_variation_;
     prev_volume_representative_depth_and_variation_->SetName("PrevVolumeRepresentativeDepthAndVariation");
     prev_volume_representative_depth_and_variation_->SetExport();
+
+    prev_volume_min_max_ = view->volume_primitives_->G_volume_min_max_;
+    prev_volume_min_max_->SetName("PrevVolumeMinMax");
+    prev_volume_min_max_->SetExport();
+
+    prev_volume_density_ = view->volume_primitives_->G_volume_density_;
+    prev_volume_density_->SetName("PrevVolumeDensity");
+    prev_volume_density_->SetExport();
+
+    prev_volume_color_ = view->volume_primitives_->G_volume_color_;
+    prev_volume_color_->SetName("PrevVolumeColor");
+    prev_volume_color_->SetExport();
 }
 
 
@@ -342,10 +364,10 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->RWVolumeSampleLinearDepth = vol->volume_sample_linear_depth_.Raw();
         params->RWVolumeSampleTransmittanceAndPdf = vol->volume_sample_transmittance_and_pdf_.Raw();
         params->RWVolumeRepresentativeDepthAndVariation = vol->volume_representative_depth_and_variation_.Raw();
-        params->RWTransmittance = view->G_transmittance_.Raw();
+        params->RWTransmittance = view->g_buffer_->G_transmittance_.Raw();
 
-        params->G_Depth = view->G_depth_.Raw();
-        params->RWFlags = view->G_flags_.Raw();
+        params->G_Depth = view->g_buffer_->G_depth_.Raw();
+        params->RWFlags = view->g_buffer_->G_flags_.Raw();
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     }
     auto & lib = RDGShaderLibrary::Get();

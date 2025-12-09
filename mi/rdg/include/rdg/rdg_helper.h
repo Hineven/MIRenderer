@@ -27,7 +27,7 @@ public:
 
     static TRef<RDGBuffer> SpawnDrawIndirectCommand (RenderGraphBuilder & builder, BufferPtrOrUint vertex_count, BufferPtrOrUint instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) ;
 
-    // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups.
+    // Spawn a pass that creates a dispatch indirect command with the specified number of thread groups (up divided by up_divisor).
     static TRef<RDGBuffer> SpawnDispatchIndirectCommand1D (RenderGraphBuilder & builder, RDGBuffer * count_buffer, uint32_t up_divisor = 1);
 
     // Spawn a pass that creates a trace rays indirect command for 1D ray tracing.

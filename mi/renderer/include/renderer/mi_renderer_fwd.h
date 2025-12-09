@@ -26,6 +26,7 @@ class Scene;
 
 class BatchedUploadContext;
 
+struct GeometryBufferData;
 struct VolumePrimitivesViewData;
 struct WorldRadianceCacheData;
 struct LightStructureData;
@@ -36,6 +37,7 @@ struct DiffuseDirectLightingData;
 struct VolumeIndirectLightingData;
 struct DebugCommonShaderParameters;
 
+struct GeometryBufferPersistentData;
 struct DiffuseIndirectLightingPersistentData;
 struct DenoiserPersistentData;
 struct LightStructurePersistentData;

@@ -40,7 +40,6 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(ImGuiRenderShader, "applications/3d_viewer/shaders
 
 
 void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
-    ImGui::Render();
     ImDrawData * draw_data = ImGui::GetDrawData();
     if (draw_data->TotalVtxCount == 0 || draw_data->TotalIdxCount == 0) {
         return;
@@ -149,6 +148,7 @@ void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state) {
     auto & renderer = Renderer::Get();
     renderer.Render(view_state, builder);
 
+    ImGui::Render();
     RenderImGui(builder, backbuffer);
 
 }

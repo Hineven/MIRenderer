@@ -89,28 +89,13 @@ struct RendererView {
 
     Scene * scene_ {};
 
-    // TODO move geometry buffers to a separate structure
-    // Visibility buffer
-    // 0: Renderable index, 1: Descriptor Index (8bits) + Primitive Index (24bits)
-    // 2, 3: Barycentrics (yz)
-    TRef<RDGTexture> G_visibility_;
-    TRef<RDGTexture> G_depth_;
-
-    // Decoded G-buffers
-    TRef<RDGTexture> G_albedo_;
-    TRef<RDGTexture> G_normal_;
-    TRef<RDGTexture> G_emission_;
-    TRef<RDGTexture> G_metallic_roughness_;
+    // Geometry buffers, rendered by deferred passes & some special passes
+    TRef<GeometryBufferData> g_buffer_;
 
     // Depth for forward rendering pass
     TRef<RDGTexture> forward_depth_;
     // Shadow map (d, blurred d2) for the main directional light
 	TRef<RDGTexture> shadow_map_moments_;
-
-    // Flags (R8Uint)
-    TRef<RDGTexture> G_flags_;
-    // Transmittance for visible volume primitives in front of solid meshes
-    TRef<RDGTexture> G_transmittance_;
 
     // HiZ buffer
     TRef<RDGTexture> hzb_;

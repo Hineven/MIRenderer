@@ -21,28 +21,23 @@ struct RendererViewPersistentData {
     void Init ();
     void FinalUpdate (RendererView * view);
 
-    TRef<RDGTexture> prev_G_depth;
-    TRef<RDGTexture> prev_G_normal;
-
     // Denoised results from last frame
     TRef<RDGTexture> prev_radiance_;
     // Denoised results from last frame (shaded radiance without emission)
     TRef<RDGTexture> prev_shaded_radiance_no_emission_;
     // Denoised volume radiance from last frame
     TRef<RDGTexture> prev_shaded_volume_radiance_;
-    TRef<RDGTexture> prev_volume_min_max_;
-    TRef<RDGTexture> prev_volume_density_;
-    TRef<RDGTexture> prev_transmittance_;
-    TRef<RDGTexture> prev_volume_color_;
 
     TRef<RDGTexture> path_tracing_film_;
 
+    // Keep track of camera parameters from the previous frame
     Camera prev_camera {};
     CameraParameters prev_camera_parameters_ {};
 
-    uint32_t view_index {};
+    uint32_t view_index_ {};
     uint32_t frame_index_ {};
 
+    TRef<GeometryBufferPersistentData> g_buffer_data_;
     TRef<VolumePrimitivesViewPersistentData> volume_primitives_view_persistent_data_;
     TRef<DenoiserPersistentData> denoiser_persistent_data_;
     TRef<DiffuseIndirectLightingPersistentData> diffuse_indirect_lighting_persistent_data_;

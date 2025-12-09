@@ -5,6 +5,7 @@
  */
 #include <renderer/mi_scene.h>
 
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_internal_common.h"
 #include "r_view_common.h"
 #include "renderer/mi_texture.h"
@@ -28,7 +29,7 @@ void Renderer::Render_DrawSky(RendererView *view, RenderGraphBuilder &builder) {
     auto shader = lib.GetShader<SkyShader>();
     auto params = builder.Allocate<SkyShader::SkyShaderParameters>();
     {
-        params->Output = view->G_albedo_.Raw();
+        params->Output = view->g_buffer_->G_albedo_.Raw();
         params->Output.load_op = RHILoadOpType::kDontCare;
         params->Output.store_op = RHIStoreOpType::kStore;
         params->View = view->view_common_params_;

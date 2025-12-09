@@ -17,6 +17,7 @@
 #include "r_diffuse_indirect_lighting.h"
 
 #include "r_gaussian_radiance_field.h"
+#include "../include/renderer/r_geometry_buffer.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_world_radiance_cache.h"
@@ -816,17 +817,17 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
         params->RWShadePointToTransmittanceRayIndexBuffer =
             shade_point_to_transmittance_ray_index.Raw();
 
-        params->G_Depth = view->G_depth_.Raw();
-        params->G_Normal = view->G_normal_.Raw();
+        params->G_Depth = view->g_buffer_->G_depth_.Raw();
+        params->G_Normal = view->g_buffer_->G_normal_.Raw();
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
         } else {
             params->EnvironmentMap = nullptr;
         }
         params->PreviousDepthTexture =
-            view->persistent_data_->prev_G_depth.Raw();
+            view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
         params->PreviousNormalTexture =
-            view->persistent_data_->prev_G_normal.Raw();
+            view->persistent_data_->g_buffer_data_->prev_G_normal_.Raw();
 
         params->RWDiffuseIndirectLightingTexture =
             view->diffuse_indirect_lighting_->radiance.Raw();
@@ -1006,7 +1007,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
         nullptr,
         screen_probe_update_ray_result_buffer.Raw(),
         view->persistent_data_->frame_index_ * 718 + 21,
-        VisibilityTraceType::kCoarse // Coarse visibility will be okay
+        VisibilityTraceType::kCoarseWithExactVolumeScattering // Coarse visibility will be okay
     );
 
     {

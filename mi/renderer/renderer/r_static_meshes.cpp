@@ -6,17 +6,19 @@
 
 #include <ranges>
 #include <renderer/mi_renderer.h>
+#include <rhi/rhi_buffer.h>
 #include <rdg/rdg_cmd.h>
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_shader.h>
+#include <rdg/rdg_helper.h>
 
-#include "r_view_common.h"
-#include "rdg/rdg_helper.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_static_mesh.h"
-#include "rhi/rhi_buffer.h"
+
+#include "r_view_common.h"
+#include "../include/renderer/r_geometry_buffer.h"
 
 MI_NAMESPACE_BEGIN
 class DrawDeferredStaticMeshesShader : public RDGShader {
@@ -195,10 +197,10 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
         params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
-        params->Visibility = view->G_visibility_.Raw();
+        params->Visibility = view->g_buffer_->G_visibility_.Raw();
         params->Visibility.load_op = RHILoadOpType::kClear;
         params->Visibility.clear_value = {std::bit_cast<float>(0xffffffffu), std::bit_cast<float>(0xffffffffu), 0, 0};
-        params->Depth = view->G_depth_.Raw();
+        params->Depth = view->g_buffer_->G_depth_.Raw();
         params->Depth.load_op = RHILoadOpType::kClear;
         params->Depth.clear_value = {0.0f, 0};
         auto shader = RDGShaderLibrary::Get().GetShader<DrawDeferredStaticMeshesShader>();
@@ -293,12 +295,12 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
             params->VertexBuffer = builder.Import(device_allocator_->vertex_uber_buffer_->GetRHI());
             params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
             params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
-            params->RWAlbedo = view->G_albedo_.Raw();
-            params->RWNormal = view->G_normal_.Raw();
-            params->RWEmission = view->G_emission_.Raw();
-            params->RWMetallicRoughness = view->G_metallic_roughness_.Raw();
-            params->VisibilityTexture = view->G_visibility_.Raw();
-            params->DepthTexture = view->G_depth_.Raw();
+            params->RWAlbedo = view->g_buffer_->G_albedo_.Raw();
+            params->RWNormal = view->g_buffer_->G_normal_.Raw();
+            params->RWEmission = view->g_buffer_->G_emission_.Raw();
+            params->RWMetallicRoughness = view->g_buffer_->G_metallic_roughness_.Raw();
+            params->VisibilityTexture = view->g_buffer_->G_visibility_.Raw();
+            params->DepthTexture = view->g_buffer_->G_depth_.Raw();
         }
         Helpers::AddComputePass(builder, shader, params, tiles_x, tiles_y);
     }
@@ -367,7 +369,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
         params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
-        params->Visibility = view->G_visibility_.Raw();
+        params->Visibility = view->g_buffer_->G_visibility_.Raw();
         params->Color = view->overlay_.Raw();
         params->Color.load_op = RHILoadOpType::kLoad;
         params->Depth = view->forward_depth_.Raw();

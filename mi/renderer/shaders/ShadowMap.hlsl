@@ -6,6 +6,7 @@
 #include "headers/Conventions.hlsl"
 #include "headers/Transform.hlsl"
 #include "headers/Math.hlsl"
+#include "headers/VertexShaderInstanceIndex.hlsl"
 #include "resources/IntersectionEvaluationResources.hlsl"
 
 StructuredBuffer<uint2> RenderableIndexAndDescriptorIndexBuffer;
@@ -21,10 +22,9 @@ struct Shadow_VS_Out
 
 Shadow_VS_Out Shadow_VS_Main(
     DefaultStaticMeshVertex Vertex,
-    uint InstanceIndex : SV_InstanceID,
-    uint BaseInstance : SV_StartInstanceLocation
+    VERTEX_SHADER_INSTANCE_INDEX_SV_PARAMS
 ) {
-    // InstanceIndex += BaseInstance;
+    uint InstanceIndex = VS_INSTANCE_INDEX;
     uint2 RenderableIndex_DescriptorIndex = RenderableIndexAndDescriptorIndexBuffer[InstanceIndex];
     uint RenderableIndex = RenderableIndex_DescriptorIndex.x;
     uint DescriptorIndex = RenderableIndex_DescriptorIndex.y;

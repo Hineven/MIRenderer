@@ -27,6 +27,7 @@
 #include "renderer/r_denoiser.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
+#include "include/renderer/r_geometry_buffer.h"
 #include "renderer/r_internal_common.h"
 #include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
@@ -108,7 +109,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Allocate and set view->debug_common_params_
     view->SetupDebugCommonShaderParameters(builder);
 
-    mi_assert(view->persistent_data_->view_index == 0, "Only one view is supported for now");
+    mi_assert(view->persistent_data_->view_index_ == 0, "Only one view is supported for now");
     auto all_renderables = view->scene_->GetRenderables();
 
     // Update dirty renderables with custom logic
@@ -310,23 +311,17 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Pre-allocate buffers that may be used among multiple lighting stages
-    if (!view->volume_primitives_) view->volume_primitives_ = new VolumePrimitivesViewData();
-    view->volume_primitives_->Allocate(builder, view);
-    if (!view->world_cache_) view->world_cache_ = new WorldRadianceCacheData();
-    view->world_cache_->Allocate(builder);
-    if (!view->light_structure_) view->light_structure_ = new LightStructureData();
-    view->light_structure_->Allocate(builder);
-    if (!view->diffuse_direct_lighting_) view->diffuse_direct_lighting_ = new DiffuseDirectLightingData();
-    view->diffuse_direct_lighting_->Allocate(builder, view);
-    if (!view->volume_direct_lighting_) view->volume_direct_lighting_ = new VolumeDirectLightingData();
-    view->volume_direct_lighting_->Allocate(builder, view);
-    if (!view->volume_indirect_lighting_) view->volume_indirect_lighting_ = new VolumeIndirectLightingData();
-    view->volume_indirect_lighting_->Allocate(builder, view);
-    if (!view->diffuse_indirect_lighting_) view->diffuse_indirect_lighting_ = new DiffuseIndirectLightingData();
-    view->diffuse_indirect_lighting_->Allocate(builder, view);
-    if (!view->denoiser_) view->denoiser_ = new DenoiserViewData();
-    view->denoiser_->Allocate(builder, view);
-
+    {
+        view->g_buffer_.CreateIfNull()->Allocate(builder, view);
+        view->volume_primitives_.CreateIfNull()->Allocate(builder, view);
+        view->world_cache_.CreateIfNull()->Allocate(builder);
+        view->light_structure_.CreateIfNull()->Allocate(builder);
+        view->diffuse_direct_lighting_.CreateIfNull()->Allocate(builder, view);
+        view->volume_direct_lighting_.CreateIfNull()->Allocate(builder, view);
+        view->volume_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
+        view->diffuse_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
+        view->denoiser_.CreateIfNull()->Allocate(builder, view);
+    }
 
     // Pre-allocate shared view persistent data among multiple lighting stages
     view->MakeSurePersistentDataExists(builder);
@@ -342,20 +337,20 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Clear G buffers
     builder.AddPass("ClearBuffers", {},
         [view]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-        queue.ClearTexture(view->G_normal_->GetRHI(), {});
-        queue.ClearTexture(view->G_albedo_->GetRHI(), {});
-        queue.ClearTexture(view->G_metallic_roughness_->GetRHI(), {});
-        queue.ClearTexture(view->G_emission_->GetRHI(), {});
-        queue.ClearTexture(view->G_flags_->GetRHI(), {});
-        queue.ClearTexture(view->G_transmittance_->GetRHI(), {});
+        queue.ClearTexture(view->g_buffer_->G_normal_->GetRHI(), {});
+        queue.ClearTexture(view->g_buffer_->G_albedo_->GetRHI(), {});
+        queue.ClearTexture(view->g_buffer_->G_metallic_roughness_->GetRHI(), {});
+        queue.ClearTexture(view->g_buffer_->G_emission_->GetRHI(), {});
+        queue.ClearTexture(view->g_buffer_->G_flags_->GetRHI(), {});
+        queue.ClearTexture(view->g_buffer_->G_transmittance_->GetRHI(), {});
         queue.ClearTexture(view->shadow_map_moments_->GetRHI(), {});
     })
-    ->AddTextureH(view->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_emission_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_flags_.Raw(), RDGTextureUsageType::kTransferWrite)
-    ->AddTextureH(view->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->g_buffer_->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->g_buffer_->G_albedo_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->g_buffer_->G_metallic_roughness_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->g_buffer_->G_emission_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->g_buffer_->G_flags_.Raw(), RDGTextureUsageType::kTransferWrite)
+    ->AddTextureH(view->g_buffer_->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->shadow_map_moments_.Raw(), RDGTextureUsageType::kTransferWrite);
 
 	// Shadow map
@@ -407,13 +402,13 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     if (type == 0)
         Render_DrawToOutput(view, builder, view->radiance_.Raw());
     else if (type == 1)
-        Render_DrawToOutput(view, builder, view->G_albedo_.Raw());
+        Render_DrawToOutput(view, builder, view->g_buffer_->G_albedo_.Raw());
     else if (type == 2)
-        Render_DrawToOutput(view, builder, view->G_depth_.Raw());
+        Render_DrawToOutput(view, builder, view->g_buffer_->G_depth_.Raw());
     else if (type == 3)
-        Render_DrawToOutput(view, builder, view->G_normal_.Raw());
+        Render_DrawToOutput(view, builder, view->g_buffer_->G_normal_.Raw());
     else if (type == 4)
-        Render_DrawToOutput(view, builder, view->G_transmittance_.Raw());
+        Render_DrawToOutput(view, builder, view->g_buffer_->G_transmittance_.Raw());
     else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)

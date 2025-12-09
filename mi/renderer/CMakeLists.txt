@@ -17,6 +17,7 @@ set(SOURCES
         mi_dirty_tracker.cpp
         mi_cvar.cpp
         # Implementing the renderer
+        renderer/r_geometry_buffer.cpp
         renderer/r_composition.cpp
         renderer/r_sky.cpp
         renderer/r_static_meshes.cpp

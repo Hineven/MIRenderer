@@ -61,7 +61,7 @@ struct [raypayload] RayPayload {
     float2 HitBarycentrics;
 };
 
-[[vk::image_format("rgba16f")]]
+[[vk::image_format("rgba32f")]]
 RWTexture2D<float4> RWRadiance; // Output radiance (1spp)
 
 #define MAX_OVERLAPPING_VOLUME_PRIMITIVES 16
