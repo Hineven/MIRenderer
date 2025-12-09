@@ -648,10 +648,10 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                         float  NormalizationFactor = 1.f / (1.f + 0.02f - HistoryTransparency);
                         float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
                                                         HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
-                        float  EnergyDecay = max(saturate(1.f + 0.02f - dot(HistoryVolumeColor, 0.3333f)), 0.02f);
-                        float  DepthEnergyDecayFactor = 1;//exp(-HistoryVolumeDensity * MediaTraverseDistance / EnergyDecay);
+                        float3 EnergyDecay = max(saturate(1.f + 0.02f - HistoryVolumeColor), 0.02f);
+                        float3 DepthEnergyDecayFactor = exp(-HistoryVolumeDensity * MediaTraverseDistance * EnergyDecay);
                         float  L = MediaTraverseDistance;
-                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor;// * DepthEnergyDecayFactor / HistoryVolumeDensity;
+                        float3 ApproximatedVolumeRadiance = HistoryVolumeRadiance.xyz * NormalizationFactor;// * DepthEnergyDecayFactor;// / HistoryVolumeDensity;
                         bBypass = true;
                         uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
@@ -1005,7 +1005,7 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         if(bValid) {
             float3 RayDirection = RWVolumeProbeUpdateRayDirectionBuffer[RayIndex];
             float3 RayRadiance = RayResult.xyz;
-            // RayRadiance = 0.1f;
+            // RayRadiance = 0.1f; // FIXME
             float2 RayOctahedronUV = UnitVectorToOctahedron01(RayDirection);
             uint2  RayTexelCoords = uint2(RayOctahedronUV * TILE_SIZE);
             uint   RayTexelIndex  = RayTexelCoords.x + RayTexelCoords.y * TILE_SIZE;

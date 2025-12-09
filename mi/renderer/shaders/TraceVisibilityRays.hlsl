@@ -388,6 +388,9 @@ void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
 // Coarse visibility
     if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
         // Mesh surface hit
+        // For mesh hits, we have the exact hit distance.
+        // (Otherwise, hit distance is computed in anyhit for volume primitives and 3d gaussians)
+        Payload.HitDistance = RayTCurrent();
         StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
         uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
         uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;

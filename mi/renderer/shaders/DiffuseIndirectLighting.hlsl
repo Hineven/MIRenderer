@@ -1096,9 +1096,11 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                     }
                 }
             }
-        } else if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE) {
-            // Volume hit, resort to radiance cache
-            // TODO resolve from screen history
+        } else if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME) {
+            // Volume hit, bypass (black)
+            // TODO resolve from screen history & world cache
+            bBypass = true;
+            RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(float3(0.f, 0.f, 0.f), true);
         } else {
             // Unknown material type, bypass (black)
             bBypass = true;
