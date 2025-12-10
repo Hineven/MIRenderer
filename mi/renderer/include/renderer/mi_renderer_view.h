@@ -137,6 +137,7 @@ struct RendererView {
         TRef<RDGTexture> visualize_ray_tracing_scene_output_;
         TRef<RDGTexture> visualize_traced_rays_output_;
         TRef<RDGTexture> visualize_world_cache_output_;
+        TRef<RDGTexture> visualize_spatial_positions_output_;
     } debug_views_;
 
     struct DebugBuffers {
@@ -147,7 +148,12 @@ struct RendererView {
         TRef<RDGBuffer> traced_ray_states;
         TRef<RDGBuffer> traced_ray_colors;
 
+        // Visualizing a series of spatial positions in the scene
+        TRef<RDGBuffer> visualize_spatial_positions_count;
+        TRef<RDGBuffer> visualize_spatial_positions;
+
         void CreateTracedRayBuffers (RenderGraphBuilder & builder, uint32_t max_num_rays);
+        void CreateVisualizeSpatialPositionsBuffers (RenderGraphBuilder & builder, uint32_t max_num_positions);
     } debug_buffers_;
 
     struct ShadowMappingData {

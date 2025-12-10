@@ -1098,7 +1098,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
             }
         } else if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME) {
             // Volume hit, bypass (black)
-            // TODO resolve from screen history & world cache
+            // TODO resolve from screen history & world cache (same as volumetric indirect lighting part)
             bBypass = true;
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = PackUpdateRayRadianceFlag(float3(0.f, 0.f, 0.f), true);
         } else {

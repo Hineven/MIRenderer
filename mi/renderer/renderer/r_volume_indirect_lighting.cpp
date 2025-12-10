@@ -23,11 +23,16 @@
 
 MI_NAMESPACE_BEGIN
 
-// TODO this is temporary, need a better way to take care of probe searching
 static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
-    16.f
+    6.f
+);
+
+static CVar CVar_VolumeProbeDepthSearchTransmittanceThreshold(
+    "r.volume_indirect_lighting.probe_depth_search_transmittance_threshold",
+    "Transmittance threshold when searching for probe depth during reprojection. ",
+    0.4f
 );
 
 static CVar CVar_VolumeProbesRayImportanceSampling(
@@ -51,6 +56,12 @@ static CVar CVar_ResetVolumeIndirectLighting(
 static CVar CVar_Debug_OutputProbeUpdateRays(
     "r.volume_indirect_lighting.debug.output_probe_update_rays",
     "Output the probe update rays for debugging purposes.",
+    false
+);
+
+static CVar CVar_Debug_OutputProbePositions(
+    "r.volume_indirect_lighting.debug.output_probe_positions",
+    "Output the probe positions for debugging purposes.",
     false
 );
 
@@ -96,7 +107,8 @@ struct VolumeIndirectLightingUB {
     uint32_t NoEnvironmentLight;
 
     uint32_t NoIndirectLighting;
-    glm::uvec3 Padding0;
+    float LnProbeDepthSearchTransmittanceThresh;
+    glm::uvec2 Padding0;
 };
 
 BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
@@ -244,6 +256,9 @@ BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayOrigins)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayDirections)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayStates)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugVolumeProbePositionsBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugVolumeProbePositionsCount)
 
 END_SHADER_PARAMETERS()
 
@@ -416,6 +431,15 @@ namespace VolumeIndirectLightingShaders {
     };
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ComputeVolumeIndirectLightingShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "ComputeVolumeIndirectLighting");
+
+    class DebugOutputVolumeProbePositionsShader final : public VolumeIndirectLightingShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(VolumeIndirectLightingParams)
+        DECLARE_SHADER(VolumeIndirectLightingShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DebugOutputVolumeProbePositionsShader, "mi/renderer/shaders/VolumeIndirectLighting.hlsl", "DebugOutputVolumeProbePositions");
+
 }
 
 using namespace VolumeIndirectLightingShaders;
@@ -778,6 +802,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             UB->NoEnvironmentLight = CVar_NoEnvironmentLight.Get() ? 1 : 0;
 
             UB->NoIndirectLighting = CVar_NoIndirectLighting.Get() ? 1 : 0;
+            UB->LnProbeDepthSearchTransmittanceThresh = log(CVar_VolumeProbeDepthSearchTransmittanceThreshold.Get());
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;
@@ -826,6 +851,15 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         params->RWDebugTracedRayOrigins = nullptr;
         params->RWDebugTracedRayDirections = nullptr;
         params->RWDebugTracedRayStates = nullptr;
+    }
+
+    if (CVar_Debug_OutputProbePositions.Get()) {
+        view->debug_buffers_.CreateVisualizeSpatialPositionsBuffers(builder, num_tiles);
+        params->RWDebugVolumeProbePositionsBuffer = view->debug_buffers_.visualize_spatial_positions.Raw();
+        params->RWDebugVolumeProbePositionsCount = view->debug_buffers_.visualize_spatial_positions_count.Raw();
+    } else {
+        params->RWDebugVolumeProbePositionsBuffer = nullptr;
+        params->RWDebugVolumeProbePositionsCount = nullptr;
     }
 
     view->volume_indirect_lighting_->shader_params = params; // Save for further use
@@ -1003,6 +1037,17 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
             builder, shader, params,
             tile_dimensions.x,
             tile_dimensions.y
+        );
+    }
+
+    if (CVar_Debug_OutputProbePositions.Get()) {
+        auto shader = lib.GetShader<DebugOutputVolumeProbePositionsShader>(ini);
+        auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
+        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(
+            builder, view->volume_indirect_lighting_->active_volume_probe_count.Raw(), wave_size
+        );
+        Helpers::AddComputeIndirectPass<DebugOutputVolumeProbePositionsShader>(
+            builder, shader, params, cmd.Raw()
         );
     }
 }

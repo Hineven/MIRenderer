@@ -129,6 +129,29 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(VisualizeWorldCacheShader, "mi/renderer/shaders/VisualizeWorldCache.hlsl", "VisualizeWorldCache")
 
+class VisualizeSpatialPositionsShader : public RDGShader {
+public:
+    BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutputTexture)
+
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, SpatialPositionsBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, SpatialPositionsCount)
+
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(Params)
+    DECLARE_SHADER()
+
+    constexpr static uint32_t kThreadGroupSize = 128; // 128 threads per group
+    static std::vector<std::string> GetShaderDefaultMacros () {
+        return {"THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)};
+    }
+};
+
+IMPLEMENT_RDG_COMPUTE_SHADER(VisualizeSpatialPositionsShader, "mi/renderer/shaders/VisualizeSpatialPositions.hlsl", "VisualizeSpatialPositions")
+
 void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder) {
     // Visualize the scene used for ray tracing
     {
@@ -216,6 +239,27 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->HashGrids_UB = HashGrids_UB;
         Helpers::AddComputePass(builder, shader, params, DivideAndRoundUp(view->film_width_, 8), DivideAndRoundUp(view->film_height_, 8));
     }
+    // Visualize spatial positions
+    {
+        view->debug_views_.visualize_spatial_positions_output_ = builder.CreateTexture2D(view->film_width_, view->film_height_,
+            PixelFormatType::kR16G16B16A16_FLOAT,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kShaderResource
+            | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
+        // Copy radiance to debug output first
+        Helpers::CopyTexture(builder, view->radiance_.Raw(), view->debug_views_.visualize_spatial_positions_output_.Raw());
+        auto shader = RDGShaderLibrary::Get().GetShader<VisualizeSpatialPositionsShader>();
+        auto params = builder.Allocate<VisualizeSpatialPositionsShader::Params>();
+        params->View = view->view_common_params_;
+        params->G_Depth = view->g_buffer_->G_depth_.Raw();
+        params->SpatialPositionsCount = view->debug_buffers_.visualize_spatial_positions_count.Raw();
+        params->SpatialPositionsBuffer = view->debug_buffers_.visualize_spatial_positions.Raw();
+        params->RWDebugOutputTexture = view->debug_views_.visualize_spatial_positions_output_.Raw();
+        params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+        auto indirect_cmd = Helpers::SpawnDispatchIndirectCommand1D(
+            builder, view->debug_buffers_.visualize_spatial_positions_count.Raw(), VisualizeSpatialPositionsShader::kThreadGroupSize);
+        Helpers::AddComputeIndirectPass<VisualizeSpatialPositionsShader>(
+            builder, shader, params, indirect_cmd.Raw());
+    }
     if (CVar_DebugViewMode.Get() == 0) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_ray_tracing_scene_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 1) {
@@ -224,6 +268,8 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         Helpers::CopyTexture(builder, view->debug_views_.visualize_world_cache_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 3) {
         Helpers::CopyTexture(builder, view->volume_primitives_->volume_representative_depth_and_variation_.Raw(), view->debug_output_.Raw());
+    } else if (CVar_DebugViewMode.Get() == 4) {
+        Helpers::CopyTexture(builder, view->debug_views_.visualize_spatial_positions_output_.Raw(), view->debug_output_.Raw());
     }
 }
 

@@ -224,8 +224,9 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
 // Coarse visibility with precise intersection sampling
             float Transmittance = IntegrateExponentialScatteringMedium(Opacity, Length);
             if(Payload.U < 1.f - Transmittance) {
-                // Scatter: use the original U for free-path sampling
+                // Scatter: use the original U for free-path sampling (U < 1.f - Transmittance is required for correct sampling)
                 float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
+                // Check again, just in case
                 if(FlyDist < Length) {
                     if(Payload.HitDistance > lr.x + FlyDist) {
                         Payload.HitDistance = lr.x + FlyDist;

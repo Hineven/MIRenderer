@@ -481,5 +481,11 @@ void RendererView::DebugBuffers::CreateTracedRayBuffers(RenderGraphBuilder &buil
     traced_ray_states->SetName("Debug_TracedRayStates");
 }
 
+void RendererView::DebugBuffers::CreateVisualizeSpatialPositionsBuffers(RenderGraphBuilder &builder, uint32_t max_num_positions) {
+    visualize_spatial_positions_count = builder.CreateBuffer<uint32_t>();
+    visualize_spatial_positions_count->SetName("VisualizeSpatialPositionsCount");
+    visualize_spatial_positions = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage, max_num_positions);
+    visualize_spatial_positions->SetName("VisualizeSpatialPositions");
+}
 
 MI_NAMESPACE_END

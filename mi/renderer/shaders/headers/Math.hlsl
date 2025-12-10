@@ -75,4 +75,18 @@ float hmax (float3 Value) {
 float hmax (float4 Value) {
     return max(max(max(Value.x, Value.y), Value.z), Value.w);
 }
+
+/*
+ Based on John D. Vedder, "Simple approximations for the error function and its
+ inverse." American Journal of Physics, Vol. 55, No. 8, Aug. 1987, pp. 762-763.
+
+ maximum ulp error: 5735.81, maximum relative error: 3.8735e-4
+*/
+float erf_approax (float x)
+{
+    float x2 = x * x;
+    x = ((0.100646973f * x2 + 0.128759325f) * x + x); // 0x1.9c4000p-4, 0x1.07b2f8p-3
+    return tanh(x);
+}
+
 #endif
