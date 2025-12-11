@@ -209,6 +209,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         float3x4 ToObject = WorldToObject3x4();
         float2 lr = 0;
         float Dist = 0;
+        bool bShouldIgnoreHit = true;
         bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
         if(bIntersected) {
             float TMin = RayTMin();
@@ -228,6 +229,7 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                 float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
                 // Check again, just in case
                 if(FlyDist < Length) {
+                    // Update the closest scattering event if needed
                     if(Payload.HitDistance > lr.x + FlyDist) {
                         Payload.HitDistance = lr.x + FlyDist;
                         Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME)); 
@@ -239,16 +241,12 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                 // The ray passed through the volume
                 Payload.U = saturate((Payload.U - (1 - Transmittance)) / max(1e-6f, Transmittance));
             }
-            bool bShouldIgnoreHit = true;
             // Report a hit event if the closer-volume boundary is further than the current hit distance
             // with an adaptive bias. Thus we can cull volume primitives that are not likely to generate
             // a scattering event before the current hit distance.
             float Bias = UB.VolumeScatteringEventShellHitCullingBias;
             if(Payload.HitDistance + Bias < lr.x) {
                 bShouldIgnoreHit = false;
-            }
-            if(bShouldIgnoreHit) {
-                IgnoreHit();
             }
 #else
 // Coarse visibility
@@ -257,11 +255,14 @@ void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
                 // The ray is absorbed in the volume
                 // ...assume the hit is on the primitive's proxy backface
                 Payload.U = (Payload.U - Transmittance) / (1.f - Transmittance);
+                bShouldIgnoreHit = false;
             } else {
                 Payload.U = Payload.U / max(Transmittance, 1e-5f);
-                IgnoreHit();
             }
 #endif
+        }
+        if(bShouldIgnoreHit) {
+            IgnoreHit();
         }
     } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
 #if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
