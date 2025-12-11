@@ -76,7 +76,7 @@ RWTexture2D<float2> RWVolumeCdfAttenuation;
 [[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWVolumeSampleColor;
 [[vk::image_format("r32f")]]
-RWTexture2D<float4> RWVolumeSampleLinearDepth;
+RWTexture2D<float> RWVolumeSampleLinearDepth;
 [[vk::image_format("rg16f")]]
 RWTexture2D<float2> RWVolumeSampleTransmittanceAndPdf;
 [[vk::image_format("rg32f")]]
@@ -870,7 +870,7 @@ void DrawVolumePrimitives (
                 RWVolumeSampleColor[PixelIndex] = float4(SampleColor, 1);
                 RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth / CorrectionFactor;
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
-                RWTransmittance[PixelIndex] = TotalTransmittance;
+                RWTransmittance[PixelIndex] = saturate(TotalTransmittance);
                 // Mark the pixel as invalid for SSRT if it overlaps with a volume
                 uint OldFlags = RWFlags[PixelIndex];
                 int Density_valid = 0;
@@ -900,7 +900,7 @@ void DrawVolumePrimitives (
                 RWVolumeSampleLinearDepth[PixelIndex] = SampleDepth / CorrectionFactor;
                 RWVolumeSampleTransmittanceAndPdf[PixelIndex] = float2(SampleTransmittance, SamplePdf);
                 RWVolumeRepresentativeDepthAndVariation[PixelIndex] = float2(RepresentativeDepth, Rendered.r - Rendered.l);
-                RWTransmittance[PixelIndex] = TotalTransmittance;
+                RWTransmittance[PixelIndex] = saturate(TotalTransmittance);
                 // Mark the pixel as invalid for SSRT if it overlaps with a volume
                 uint OldFlags = RWFlags[PixelIndex];
                 if(Rendered.Density > 0.f) OldFlags |= FLAG_BITS_TEXTURE_INVALID_FOR_SSRT;

@@ -26,13 +26,13 @@ MI_NAMESPACE_BEGIN
 static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
-    6.f
+    5.5f
 );
 
 static CVar CVar_VolumeProbeDepthSearchTransmittanceThreshold(
     "r.volume_indirect_lighting.probe_depth_search_transmittance_threshold",
     "Transmittance threshold when searching for probe depth during reprojection. ",
-    0.4f
+    0.7f
 );
 
 static CVar CVar_VolumeProbesRayImportanceSampling(
@@ -83,6 +83,12 @@ static CVar CVar_VolumeScreenReuseNoDepthTesting(
     false
 );
 
+static CVar CVar_NoScreenReuseEnergyDecay(
+    "r.volume_indirect_lighting.no_screen_reuse_energy_decay",
+    "Disable energy decay when reusing screen space history radiance.",
+    true
+);
+
 struct VolumeIndirectLightingUB {
     uint32_t MaxNumUpdateRays;
     float    GRF_EmitterIntensityScale;
@@ -108,7 +114,8 @@ struct VolumeIndirectLightingUB {
 
     uint32_t NoIndirectLighting;
     float LnProbeDepthSearchTransmittanceThresh;
-    glm::uvec2 Padding0;
+    uint32_t NoScreenReuseEnergyDecay;
+    uint32_t Padding0;
 };
 
 BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
@@ -803,6 +810,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
 
             UB->NoIndirectLighting = CVar_NoIndirectLighting.Get() ? 1 : 0;
             UB->LnProbeDepthSearchTransmittanceThresh = log(CVar_VolumeProbeDepthSearchTransmittanceThreshold.Get());
+            UB->NoScreenReuseEnergyDecay = CVar_NoScreenReuseEnergyDecay.Get() ? 1 : 0;
         }
         params->UB = UB;
         params->Debug = view->debug_common_params_;

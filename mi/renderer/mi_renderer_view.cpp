@@ -22,9 +22,10 @@
 #include "renderer/r_denoiser.h"
 #include "renderer/r_world_radiance_cache.h"
 #include "renderer/r_light_structure.h"
+#include "renderer/r_geometry_buffer.h"
+#include "renderer/r_debug.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
-#include "include/renderer/r_geometry_buffer.h"
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
 

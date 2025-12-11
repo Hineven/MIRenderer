@@ -16,6 +16,7 @@
 #include "r_diffuse_indirect_lighting.h"
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_direct_lighting.h"
+#include "r_volume_indirect_lighting.h"
 #include "r_volume_primitives.h"
 MI_NAMESPACE_BEGIN
 static CVar<bool> CVar_UseDilatedConvolution("r.denoiser.diffuse_direct_lighting.use_dilated_convolution",

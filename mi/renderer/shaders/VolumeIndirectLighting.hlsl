@@ -163,7 +163,8 @@ struct VolumeDiffuseIndirectLightingUB {
 
     uint NoIndirectLighting;
     float LnProbeDepthSearchTransmittanceThresh;
-    uint2 Padding0;
+    uint NoScreenReuseEnergyDecay;
+    uint Padding0;
 };
 
 ConstantBuffer<VolumeDiffuseIndirectLightingUB> UB;
@@ -282,10 +283,8 @@ void SpawnVolumeProbes (uint DispatchID : SV_DispatchThreadID) {
         uint2  SpawnScreenCoords  = min(TileIndex * TILE_SIZE + SpawnSubTileJitter, C.FilmDimensions - 1);
         float2 SpawnUV = SpawnScreenCoords * C.InvFilmDimensions;
         float  SpawnLinearDepth   = G_VolumeSampleDepth.SampleLevel(PointEdgeSampler, SpawnUV, 0).x;
-        
-
-// FIXME
-        if (false && SpawnLinearDepth == 0) {
+    
+        if (SpawnLinearDepth == 0) {
             // Failed, fallback to spawnning via ray volume statistics
             float2 VolumeMinMax  = VolumeMinMaxTexture.SampleLevel(PointEdgeSampler, SpawnUV, 0).xy;
             if(VolumeMinMax.y > VolumeMinMax.x) {
@@ -335,7 +334,7 @@ void ClipVolumeProbeSpawnAllocator () {
 }
 
 float GetProbeDepthSearchSizeForDensity (float Density) {
-    return -UB.LnProbeDepthSearchTransmittanceThresh / Density; 
+    return -UB.LnProbeDepthSearchTransmittanceThresh / max(Density, 0.2f); 
 }
 
 float RadianceToSampleWeight (float3 Radiance) {
@@ -697,7 +696,9 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                         float3 EnergyDecay = max(saturate(1.f + 0.02f - HistoryVolumeColor), 0.02f);
                         float3 DepthEnergyDecayFactor = exp(-HistoryVolumeDensity * MediaTraverseDistance * EnergyDecay);
                         float3 DepthEnergyDecayFactor_SimpleApproax = exp(-HistoryVolumeDensity * MediaTraverseDistance * (1 - HistoryVolumeColor));
-                        float3 ApproximatedVolumeRadiance = LiVirt * NormalizationFactor * DepthEnergyDecayFactor_SimpleApproax;
+                        float3 FinalDecay = DepthEnergyDecayFactor_SimpleApproax;
+                        if(UB.NoScreenReuseEnergyDecay != 0) FinalDecay = 1.f.xxx;
+                        float3 ApproximatedVolumeRadiance = LiVirt * NormalizationFactor* FinalDecay;
                         bBypass = true;
                         uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
@@ -1051,7 +1052,6 @@ void UpdateVolumeProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
         if(bValid) {
             float3 RayDirection = RWVolumeProbeUpdateRayDirectionBuffer[RayIndex];
             float3 RayRadiance = RayResult.xyz;
-            // RayRadiance = 0.1f; // FIXME
             float2 RayOctahedronUV = UnitVectorToOctahedron01(RayDirection);
             uint2  RayTexelCoords = uint2(RayOctahedronUV * TILE_SIZE);
             uint   RayTexelIndex  = RayTexelCoords.x + RayTexelCoords.y * TILE_SIZE;
@@ -1307,7 +1307,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
                         ProbeScreenPos, ProbeLinearDepth, ProbeSurfaceLinearDepth,
                         PixelSearchSize, VolumeDepthSearchSize, SurfaceDepthSearchSize
                     )) {
-                        float PixelDistance = dot(abs(ProbeScreenPos - ScreenPos), 1.f.xx) * 0.5f;
+                        float PixelDistance = length(ProbeScreenPos - ScreenPos);
                         float ProbeWeight = saturate(1 - PixelDistance / PixelSearchSize);
                         SumProbeWeights += ProbeWeight;
                         float3 Irradiance = ProbeIntegrateHenyeyGreenstein(ViewDirection, g, SpawnedProbeIndex);
@@ -1320,8 +1320,7 @@ void ComputeVolumeIndirectLighting (uint2 GroupID : SV_GroupID, uint2 LocalID : 
 
     bool bShadingIncomplete = SumProbeWeights < 1.f;
 
-// FIXME
-    if(false && bShadingIncomplete) {
+    if(bShadingIncomplete) {
         for(int dX = 0; dX < 2; dX ++) {
             for(int dY = 0; dY < 2; dY ++) {
                 int2 SearchTileIndex = int2(TileIndex) + int2(Corner.x + dX, Corner.y + dY);

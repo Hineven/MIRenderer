@@ -17,7 +17,7 @@
 
 #include "mi_aabb.h"
 MI_NAMESPACE_BEGIN
-    class BatchedUploadContext : public NonCopyable, public NonMovable {
+class BatchedUploadContext : public NonCopyable, public NonMovable {
 protected:
     BatchedUploadContext() = default;
     // Current manual staging buffer. Allocate sub-buffers for staging purposes from it within the frame.

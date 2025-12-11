@@ -117,9 +117,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
     TaskGraph::InitializeSingleton(0, task_graph_hpt_count);
 
-    // Initialize the task graph singleton and its workers.
-    // TaskGraph::InitializeSingleton(limits.max_low_performance_thread_count, task_graph_hpt_count);
-
     // Initialize shader library
     auto & shader_lib = RDGShaderLibrary::Get();
     shader_lib.Init();
@@ -190,6 +187,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
     if (true) {
         sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
             GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
+        // sky_cube = TextureLoader::LoadEnvironmentMap("SkyTexture",
+        //     GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/blue_light.png"));
         // Get ready for device rendering
         sky_cube->UpdateOnDevice();
         sky_cube->ConvertToBindless();
@@ -297,16 +296,16 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
-        // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
-        // if (!GLTFLoader::LoadGLTF(
-        //     model_path,
-        //     *resource_allocator,
-        //     *scene, default_mat.Raw(),
-        //     geometries, materials, meshes
-        // )) {
-        //     MI_WARN("Failed to load GLTF model {}.", model_path.string());
-        // } else {
-        // }
+        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator,
+            *scene, default_mat.Raw(),
+            geometries, materials, meshes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        } else {
+        }
 
         auto & r = Renderer::Get();
         for (auto e : meshes) {
@@ -318,8 +317,8 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
             // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud_overlapping_2.ply"),
             // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
-            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
-            // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
+            // GetInfra().TranslateResPathToFilePath("F:/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
             *resource_allocator, volprims//, 0.1f
         );
         if (volprims) {

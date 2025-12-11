@@ -32,12 +32,16 @@ void VisualizeSpatialPositions (uint DispatchID : SV_DispatchThreadID) {
         // Occluded
         return ;
     }
+    float3 CloseColor = float3(1.f, 0.f, 0.f);
+    float3 FarColor = float3(0.f, 1.f, 0.f);
+    float3 Color = lerp(CloseColor, FarColor, NDC.z);
     int2 PixelCoords = int2(UV * C.FilmDimensions);
-    for(int dX = -1; dX <= 1; dX++) {
-        for(int dY = -1; dY <= 1; dY++) {
+    int MaxRadius = 1;
+    for(int dX = -MaxRadius; dX <= MaxRadius; dX++) {
+        for(int dY = -MaxRadius; dY <= MaxRadius; dY++) {
             int2 WritingCoords = PixelCoords + int2(dX, dY);
             if(all(WritingCoords >= 0) && all(WritingCoords < C.FilmDimensions)) {
-                RWDebugOutputTexture[WritingCoords] = float4(1.f, 0.f, 0.f, 1.f);
+                RWDebugOutputTexture[WritingCoords] = float4(Color, 1.f);
             }
         }
     }
