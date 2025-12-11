@@ -9,7 +9,6 @@
 
 #include <renderer/mi_renderer.h>
 #include "r_view_common.h"
-#include "r_volume_indirect_lighting.h"
 
 MI_NAMESPACE_BEGIN
     // The data kept across frames for a view.
@@ -27,8 +26,11 @@ struct RendererViewPersistentData {
     TRef<RDGTexture> prev_shaded_radiance_no_emission_;
     // Denoised volume radiance from last frame
     TRef<RDGTexture> prev_shaded_volume_radiance_;
+    // Per view persistent data
+    TRef<DebugPersistentData> debug_persistent_data_;
 
     TRef<RDGTexture> path_tracing_film_;
+
 
     // Keep track of camera parameters from the previous frame
     Camera prev_camera {};

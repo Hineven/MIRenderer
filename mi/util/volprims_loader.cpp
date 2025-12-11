@@ -122,7 +122,7 @@ bool VolumePrimitivesLoader::LoadPLY(
                 }
             }
             in_color = glm::clamp(in_color, 0.f, 1.f);
-            if (should_solidify) in_color = sqrt(in_color); // Empirically making albedo lighter for volume scattering
+            if (should_solidify) in_color = glm::pow(in_color, glm::vec3{0.33f}); // Empirically making albedo lighter for volume scattering
             auto opacity = glm::packHalf2x16({in_opacity, 0});
             data[i].PackedColor_OpacityLo = (glm::packUnorm4x8(
             {in_color.x, in_color.y, in_color.z, 0}
@@ -173,7 +173,7 @@ bool VolumePrimitivesLoader::LoadPLY(
             if (with_activation) in_scale = exp(in_scale);
             if (should_solidify) in_scale *= 2.0f * sqrt(1.f / percentage);
             // Too small scales will cause precision issues in primitive ray intersecting
-            in_scale = glm::max(in_scale, glm::vec3(0.002f));
+            in_scale = glm::max(in_scale, glm::vec3(0.005f));
             data[i].Scales = in_scale;
         }
     }

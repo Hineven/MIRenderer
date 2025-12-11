@@ -16,6 +16,7 @@
 #include "r_diffuse_indirect_lighting.h"
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_direct_lighting.h"
+#include "r_volume_indirect_lighting.h"
 #include "r_volume_primitives.h"
 MI_NAMESPACE_BEGIN
 static CVar<bool> CVar_UseDilatedConvolution("r.denoiser.diffuse_direct_lighting.use_dilated_convolution",
@@ -45,7 +46,7 @@ static CVar<bool> CVar_DenoiseVolumeIndirect("r.denoiser.volume_indirect.enable"
 static CVar<float> CVar_DenoiseVolumeLightingDepthOcclusionThreshold(
     "r.denoiser.volume_lighting_depth_occlusion_threshold",
     "Depth occlusion threshold for volume lighting denoising. Larger values allow more history reuse across depth changes.",
-    0.5f // This seems to work well in practice (though it is very large)
+    0.1f
 );
 
 void DenoiserViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {

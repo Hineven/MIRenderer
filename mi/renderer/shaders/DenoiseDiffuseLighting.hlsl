@@ -251,6 +251,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float2 FilmOffset = PoissionSample.xy * KernelRadius;
 		float2 SampleFilmPosition = CenterFilmPosition + FilmOffset;
 		float2 SampleUV = SampleFilmPosition * C.InvFilmDimensions;
+		float SampleToLinear = 1.f / length(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(SampleUV)));
 		// Mesh Diffuse
 		if(bSurface) {
 			float SampleReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, SampleUV, 0).r;
@@ -271,7 +272,7 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		}
 		// Volume Diffuse (using G_VolumeRepresentativeDepth)
 		if(bVolume) {
-			float2 SampleLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).rg * ToLinear;
+			float2 SampleLinearVolumeDepthAndVariation = G_VolumeRepresentativeDepthAndVariation.SampleLevel(PointEdgeSampler, SampleUV, 0).rg * SampleToLinear;
 			float SampleLinearDepth = SampleLinearVolumeDepthAndVariation.x;
 			float SampleDepthVariation = SampleLinearVolumeDepthAndVariation.y;
 			float3 SampleVolumeDirectRadiance = InputVolumeDirectRadianceTexture.SampleLevel(PointEdgeSampler, SampleUV, 0).rgb;
@@ -394,8 +395,6 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		float2 HistoryBillinearSubPixel = frac(HistoryBillinearPos);
 		float2 HistoryBillinearPixel = floor(HistoryBillinearPos);
 		float2 HistoryGatherUV = (HistoryBillinearPixel + 1.f) * PrevC.InvFilmDimensions;
-		//float4 HistoryVolumeLinearDepths = PreviousVolumeRepresentativeDepthAndVariation.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy;
-		//float4 HistoryVolumeVariations   = PreviousVolumeRepresentativeDepthAndVariation.GatherGreen(PointBorder0Sampler, HistoryGatherUV).wzxy;
         float3 PrevPixelDirection = NDC2ToCameraDirection(PrevC, PreviousNDC.xy);
         float  PrevToLinearFactor = dot(PrevPixelDirection, PrevC.Direction);
         float4 HistoryVolumeLinearDepthsMin = PreviousVolumeMinMaxTexture.GatherRed(PointBorder0Sampler, HistoryGatherUV).wzxy * PrevToLinearFactor;

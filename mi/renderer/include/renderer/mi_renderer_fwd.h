@@ -43,6 +43,8 @@ struct DenoiserPersistentData;
 struct LightStructurePersistentData;
 struct HashGridPersistentData;
 struct VolumePrimitivesViewPersistentData;
+struct VolumeIndirectLightingPersistentData;
+struct DebugPersistentData;
 
 struct RendererViewPersistentData;
 struct RendererView;

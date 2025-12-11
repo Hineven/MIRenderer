@@ -22,9 +22,10 @@
 #include "renderer/r_denoiser.h"
 #include "renderer/r_world_radiance_cache.h"
 #include "renderer/r_light_structure.h"
+#include "renderer/r_geometry_buffer.h"
+#include "renderer/r_debug.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
-#include "include/renderer/r_geometry_buffer.h"
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
 
@@ -481,5 +482,11 @@ void RendererView::DebugBuffers::CreateTracedRayBuffers(RenderGraphBuilder &buil
     traced_ray_states->SetName("Debug_TracedRayStates");
 }
 
+void RendererView::DebugBuffers::CreateVisualizeSpatialPositionsBuffers(RenderGraphBuilder &builder, uint32_t max_num_positions) {
+    visualize_spatial_positions_count = builder.CreateBuffer<uint32_t>();
+    visualize_spatial_positions_count->SetName("VisualizeSpatialPositionsCount");
+    visualize_spatial_positions = builder.CreateBuffer<glm::vec3>(RHIBufferUsageFlagBits::kStorage, max_num_positions);
+    visualize_spatial_positions->SetName("VisualizeSpatialPositions");
+}
 
 MI_NAMESPACE_END

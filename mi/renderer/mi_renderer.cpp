@@ -32,6 +32,7 @@
 #include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
 #include "renderer/r_volume_direct_lighting.h"
+#include "renderer/r_volume_indirect_lighting.h"
 #include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 

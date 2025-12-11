@@ -11,6 +11,7 @@
 #include "r_view_common.h"
 #include "r_world_radiance_cache.h"
 
+#include "r_debug.h"
 #include "r_denoiser.h"
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_light_structure.h"
@@ -90,6 +91,7 @@ void RendererView::MakeSurePersistentDataExists(RenderGraphBuilder &builder) {
     persistent_data_->denoiser_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
     persistent_data_->light_structure_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
     persistent_data_->hash_grid_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
+    persistent_data_->debug_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
 }
 
 void WorldRadianceCacheData::Allocate(RenderGraphBuilder & builder) {
