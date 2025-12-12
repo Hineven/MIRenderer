@@ -411,21 +411,23 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             // Camera control
             {
-                const float move_speed = 0.02f;
+                const float move_speed = 1.f;
                 const float mouse_sensitivity = 0.002f;
+                float dt = cpu_duration;
+                float move_interval = move_speed * dt;
                 glm::vec3 camera_right = glm::normalize(glm::cross(view->camera_.direction, glm::vec3(0.0f, 1.0f, 0.0f)));
                 if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-                    view->camera_.position += view->camera_.direction * move_speed;
+                    view->camera_.position += view->camera_.direction * move_interval;
                 if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-                    view->camera_.position -= view->camera_.direction * move_speed;
+                    view->camera_.position -= view->camera_.direction * move_interval;
                 if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-                    view->camera_.position -= camera_right * move_speed;
+                    view->camera_.position -= camera_right * move_interval;
                 if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-                    view->camera_.position += camera_right * move_speed;
+                    view->camera_.position += camera_right * move_interval;
                 if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-                    view->camera_.position += view->camera_.up * move_speed;
+                    view->camera_.position += view->camera_.up * move_interval;
                 if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-                    view->camera_.position -= view->camera_.up * move_speed;
+                    view->camera_.position -= view->camera_.up * move_interval;
 
                 static double last_mouse_x = 0.0, last_mouse_y = 0.0;
                 static bool first_mouse = true;
@@ -662,7 +664,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 RenderGraphBuilder builder;
                 RenderFrame(builder, view.get());
 
-                if (io.MouseClicked[0] && !io.WantCaptureMouse) {
+                if (io.MouseReleased[0] && io.MouseClickedCount[0] == 1 && !io.WantCaptureMouse) {
                     // Export forward depth and visibility for later use
                     view->forward_depth_->SetExport();
                     view->g_buffer_->G_visibility_->SetExport();
@@ -676,7 +678,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
 
             // Click select
             static float last_click_forward_depth = 0;
-            if (io.MouseClicked[0] && !io.WantCaptureMouse) {
+            if (io.MouseReleased[0] && io.MouseClickedCount[0] == 1 && !io.WantCaptureMouse) {
                 float mouse_x = io.MousePos.x;
                 float mouse_y = io.MousePos.y;
                 // 手动拷回Visibility和Depth

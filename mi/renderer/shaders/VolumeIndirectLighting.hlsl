@@ -6,6 +6,7 @@
 #include "headers/Packing.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/OctahedronMapping.hlsl"
+#include "headers/Math.hlsl"
 #include "headers/Radiometry.hlsl"
 #include "headers/Sampling.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
@@ -689,19 +690,41 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                         float3 LiVirt = HistoryVolumeRadiance.rgb * saturate((1 - MediaTransmittance) / (1 - HistoryTransmittance));
                         // LiVirt = A / (tau - sigma) * (exp((tao-sigma) * m) - 1)
                         // where m = MediaLength, and LiVirt is reduced by approximating the medium contribution of the closest segment
-                        // Solve the above equation to get A. (tao is approximated by a LUT query using albedo and density)
                         float  NormalizationFactor = 1.f / (1.f + 0.02f - HistoryTransmittance);
                         float3 HistoryVolumeColor = PreviousVolumeColorTexture.SampleLevel(PointEdgeSampler,
                                                         HistoryScreenPosition * C.InvFilmDimensions, 0).xyz;
+                        // Simple approximation
                         float3 EnergyDecay = max(saturate(1.f + 0.02f - HistoryVolumeColor), 0.02f);
-                        float3 DepthEnergyDecayFactor = exp(-HistoryVolumeDensity * MediaTraverseDistance * EnergyDecay);
                         float3 DepthEnergyDecayFactor_SimpleApproax = exp(-HistoryVolumeDensity * MediaTraverseDistance * (1 - HistoryVolumeColor));
-                        float3 FinalDecay = DepthEnergyDecayFactor_SimpleApproax;
-                        if(UB.NoScreenReuseEnergyDecay != 0) FinalDecay = 1.f.xxx;
-                        float3 ApproximatedVolumeRadiance = LiVirt * NormalizationFactor* FinalDecay;
+                        float3 ApproximatedVolumeRadiance_SimpleApproax = LiVirt * NormalizationFactor * DepthEnergyDecayFactor_SimpleApproax;
+                        // Modeled complex approximation (Gaussian energy decay model)
+                        // L(z) = A * exp(-(z/sigma)^2), integrated with exponential transmittance exp(-Ext * z)
+                        // Ratio of integrals cancels A and common factors, so we scale history radiance by I(d)/I(m)
+                        float3 ApproximatedVolumeRadiance_ModeledApproax;
+                        {
+                            float  Ext = HistoryVolumeDensity;
+                            float3 Albedo = HistoryVolumeColor;
+                            float3 Sigma  = EstimateMultiScatteringRadianceDecayCurve_GaussianModel_Sigma(Ext, Albedo);
+                            // Helper to compute erf arguments per-channel
+                            float3 t0 = 0.5f * Ext * Sigma;                       // Ext * sigma / 2
+                            float3 td = MediaTraverseDistance / Sigma + t0;       // d/sigma + Ext*sigma/2
+                            float3 tm = MediaLength           / Sigma + t0;       // m/sigma + Ext*sigma/2
+                            // Ratio = (erf(td) - erf(t0)) / (erf(tm) - erf(t0))
+                            float3 num = erf_approx(td) - erf_approx(t0);
+                            float3 den = erf_approx(tm) - erf_approx(t0);
+                            float3 ratio = num / max(den, 1e-4f.xxx);
+                            ratio = saturate(ratio);
+                            ApproximatedVolumeRadiance_ModeledApproax = LiVirt * ratio * NormalizationFactor;
+                        }
+                        // Keep both approximations; choose simple as default, can swap if desired
+                        // float3 FinalApproximatedVolumeRadiance = ApproximatedVolumeRadiance_SimpleApproax;
+                        // Optionally prefer modeled approach when density is moderate and history is reliable
+                        float3 FinalApproximatedVolumeRadiance = ApproximatedVolumeRadiance_ModeledApproax;
+                        if(UB.NoScreenReuseEnergyDecay != 0) FinalApproximatedVolumeRadiance = LiVirt * NormalizationFactor;
                         bBypass = true;
-                        uint2 Packed = PackUpdateRayRadianceFlag(ApproximatedVolumeRadiance, true);
+                        uint2 Packed = PackUpdateRayRadianceFlag(FinalApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
+                        
                     }
                 } else {
                     // Unknown material type, bypass (black)
