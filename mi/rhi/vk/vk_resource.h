@@ -1,0 +1,66 @@
+/*
+ * Created: 2024/7/8
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef MIRENDERER_VK_RESOURCE_H
+#define MIRENDERER_VK_RESOURCE_H
+
+#include <semaphore>
+#include "vk_rhi.h"
+#include "rhi/rhi_resource.h"
+
+MI_NAMESPACE_BEGIN
+
+class VulkanSampler : public RHISampler {
+public:
+    VulkanSampler(RHISamplerDesc desc);
+    ~VulkanSampler() override;
+
+    FORCEINLINE vk::Sampler GetSampler() const { return vk_sampler_; }
+
+    void *GetAPIHandle() const override;
+    void SetName(const std::string& name) override;
+protected:
+    vk::Sampler vk_sampler_;
+};
+
+class VulkanSyncPoint : public RHISyncPoint {
+protected:
+    VulkanSyncPoint () ;
+    ~VulkanSyncPoint () override;
+public:
+    void Wait () override;
+    void Reset () override;
+    void NotifySubmission () override;
+    FORCEINLINE vk::Fence GetFence () const {
+        return vk_fence_;
+    }
+    void *GetAPIHandle() const override;
+
+    void SetName(const std::string &name) override;
+
+    friend class VulkanRHI;
+protected:
+    std::binary_semaphore submission_sem_ {0};
+    vk::Fence vk_fence_ {};
+    bool can_be_waited_ {true};
+};
+
+class VulkanTimestamp : public RHITimestamp {
+public:
+    FORCEINLINE VulkanTimestamp(uint32_t allocated_query_index) : query_index_(allocated_query_index) {};
+    ~VulkanTimestamp() override;
+
+    FORCEINLINE void * GetAPIHandle () const override { return (void*)(uintptr_t)query_index_; }
+    uint64_t QueryTimestamp() const override;
+
+    FORCEINLINE uint32_t GetQueryIndex() const { return query_index_; }
+private:
+    uint32_t query_index_ {UINT32_MAX};
+};
+
+MI_NAMESPACE_END
+
+#endif //MIRENDERER_VK_RESOURCE_H

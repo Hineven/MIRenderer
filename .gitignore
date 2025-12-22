@@ -1,0 +1,26 @@
+# ---> CMake
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+CmakeSettngs.json
+vcpkg.json
+
+# JetBrains
+.idea/
+# CMake
+cmake-build-*/
+# vscode
+.idea/
+build/
+.vscode/
+# visual stdio
+.vs/
+
+# vcpkg
+vcpkg.json

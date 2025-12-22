@@ -1,0 +1,87 @@
+/*
+ * Created: 2025/2/28
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef RDG_H
+#define RDG_H
+
+#include <map>
+#include "rdg_base.h"
+#include "rdg_resource.h"
+#include "rhi/rhi.h"
+
+MI_NAMESPACE_BEGIN
+
+struct RDGShaderParamInfo;
+struct RDGShaderParamStructAndSizeInfo;
+class RDGShader;
+class RDGPass;
+
+struct RDGTimePeriod {
+    std::vector<std::string> class_names;
+    std::string pass_name;
+    float duration {};
+};
+
+class RenderGraph : public RefCounted<> {
+public:
+    ~RenderGraph();
+    void Execute (RDGResourcePool * pool, RHISyncPoint * sync_point = nullptr) ;
+    friend class RenderGraphBuilder;
+
+    struct RDGUniformBufferPtr {
+        RDGBuffer * buffer {};
+        size_t offset;
+    };
+    // Used for running passes to query underlying uniform buffers with parameter struct pointers
+    FORCEINLINE RDGUniformBufferPtr GetUniformBufferForParameterStruct (const void * ptr) const {
+        auto it = param_ptr_to_uniform_buffer_segment_.find(ptr);
+        if (it == param_ptr_to_uniform_buffer_segment_.end()) {
+            return {};
+        }
+        return {uniform_buffer_.Raw(), it->second.offset};
+    }
+    FORCEINLINE const std::string & GetName () {return name_;}
+
+    // This only works in debug builds. Otherwise it returns an empty vector.
+    const std::vector<RDGTimePeriod> & GetTimestampPeriods () const {return timestamp_periods_;}
+
+protected:
+    RenderGraph(const std::string & name) ;
+
+    std::vector<std::unique_ptr<RDGPass>> passes_;
+    struct Edge {
+        int src_pass_index;
+        int dst_pass_index;
+        int next_edge;
+    };
+    std::vector<int>  pass_node_heads_;
+    std::vector<Edge> edges_;
+    std::vector<int>  num_pass_predecessors_;
+
+    struct UniformBufferSegment {
+        size_t offset;
+        const RDGShaderParamInfo * param_info;
+    };
+    // Used to query uniform buffer offsets according to parameter structs when running the graph.
+    std::map<const void*, UniformBufferSegment> param_ptr_to_uniform_buffer_segment_;
+    // The uniform buffer that holds all the uniform data for all the passes.
+    TRef<RDGBuffer> uniform_buffer_;
+
+    // Temporary memory allocator (transferred from the RDG builder)
+    std::unique_ptr<TOneTimeLinearAllocator<>> allocator_;
+
+    // Graph name. For debugging purposes.
+    std::string name_;
+
+    // Timestamps. For profiling.
+    std::vector<RDGTimePeriod> timestamp_periods_;
+};
+
+typedef TRef<RenderGraph> RenderGraphRef;
+
+MI_NAMESPACE_END
+
+#endif //RDG_H
