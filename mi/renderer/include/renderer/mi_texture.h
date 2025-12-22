@@ -22,7 +22,7 @@
 
 MI_NAMESPACE_BEGIN
 
-// An ususally static 2D(array) texture resource.
+// An ususally static 2D (array) texture resource.
 class Texture : public RefCounted<>, public NonMovable {
 public:
     void InitializeFromBinary (std::span<uint8_t> data);

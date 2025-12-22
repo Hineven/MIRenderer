@@ -82,11 +82,33 @@ float hmax (float4 Value) {
 
  maximum ulp error: 5735.81, maximum relative error: 3.8735e-4
 */
-float erf_approax (float x)
+float erf_approax_fast (float x)
 {
     float x2 = x * x;
     x = ((0.100646973f * x2 + 0.128759325f) * x + x); // 0x1.9c4000p-4, 0x1.07b2f8p-3
     return tanh(x);
+}
+
+// Fast approximate error function (Abramowitz & Stegun 7.1.26)
+// Max abs error ~1.5e-7 for float;
+float erf_approx(float x)
+{
+    const float a1 = 0.254829592f;
+    const float a2 = -0.284496736f;
+    const float a3 = 1.421413741f;
+    const float a4 = -1.453152027f;
+    const float a5 = 1.061405429f;
+    const float p  = 0.3275911f;
+    float sgn = x < 0 ? -1.0f : 1.0f;
+    x = abs(x);
+    float t = 1.0f / (1.0f + p * x);
+    float y = 1.0f - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp(-x * x);
+    return sgn * y;
+}
+
+float3 erf_approx(float3 v)
+{
+    return float3(erf_approx(v.x), erf_approx(v.y), erf_approx(v.z));
 }
 
 #endif

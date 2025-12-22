@@ -53,10 +53,10 @@ struct GaussianRadianceFieldInstanceHeader {
 #define INSTANCE_CUSTOM_INDEX_FLAG_NONE 0x00000000u
 // The flag indicates that the instance is a volume primitives instance.
 #define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES 0x00100000u
-// The flag indicates that the instance is a volume grid
-#define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID 0x00400000u
 // The flag indicates that the instance is a 3D gaussian radiance field.
 #define INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD 0x00200000u
+// The flag indicates that the instance is a volume grid
+#define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID 0x00400000u
 
 #ifdef MI_SHADER
 
