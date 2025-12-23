@@ -691,26 +691,25 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     // Initialize the output texture
     RWVolumeGridRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
-    RWVolumeGridSumTransmittanceTexture[PixelIndex] = 0.f;
     RWVolumeGridDirectLightingTexture[PixelIndex] = 0.f.xxxx;
 
     CameraParameters C = GetActiveCamera();
 
-    // 1. 生成相机射线
+    // 1. Generate camera rays
     float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
     float3 RayOrigin = C.Position;
     float3 RayDirection = normalize(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(PixelUV)));
-    // 获取深度用于裁剪
+    // Obtain depth for cropping
     float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).x;
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float TMax = LinearDepth / dot(RayDirection, C.Direction);
 
-    // 2. 遍历VolumeGrid（此处简化为只处理Index = 0）
-    // TODO: 遍历所有VolumeGrid
+    // 2. Traverse VolumeGrid
+    // TODO: Traverse all VolumeGrid
     uint VolumeGridIndex = 0;
     VolumeGridHeader Grid = VolumeGridHeaderBuffer[VolumeGridIndex];
 
-    // 3. AABB求交
+    // 3. AABB
     float t0, t1;
     if(!IntersectAABB(RayOrigin, RayDirection, Grid.LocalMin, Grid.LocalMax, t0, t1)) {
         return;
@@ -729,10 +728,10 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
     float3 boxSize = Grid.LocalMax - Grid.LocalMin;
     float3 invBoxSize = 1.0f / boxSize;
     float3 uvwOrigin = (RayOrigin - Grid.LocalMin) * invBoxSize;
-    float3 uvwDir = RayDirection * invBoxSize; // 注意：这是非归一化的，包含了 Box 缩放
+    float3 uvwDir = RayDirection * invBoxSize; // Non normalized
 
-    // 使用 DDA 计算局部 Majorant (或者简单的全局估计)
-    float densityScale = 1.0f; // 假设从 Grid 或 Instance 获取
+    // Using DDA to calculate majorant
+    float densityScale = 1.0f;
     float majorant = CalculateMaxDensityDDA(densityTex, uvwOrigin, uvwDir, t0, t1, densityScale);
     majorant = max(majorant, 1e-4f);
 
@@ -745,9 +744,9 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     // Delta Tracking Loop
     int loopLimit = 256;
-    while (loopLimit-- > 0) {
+    for(int i = 0; i < loopLimit; i++) {
         t -= log(1.0f - rng.rand()) / majorant;
-        if (t >= t1) break; // 飞出了体积
+        if (t >= t1) break;
 
         float3 pos = RayOrigin + RayDirection * t;
         float3 uvw = (pos - Grid.LocalMin) * invBoxSize;
@@ -755,10 +754,10 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
         float4 sampleVal = densityTex.SampleLevel(LinearWrapSampler, uvw, 0);
         float density = sampleVal.a * densityScale;
 
-        float nullProb = 1.0f - min(density, majorant) / majorant; // saturate 防止数值误差导致负数
+        float nullProb = 1.0f - min(density, majorant) / majorant;
         accumulatedTransmittance *= nullProb;
 
-        // 接受/拒绝
+        // Accept/Refuse
         if ((!scattered) && (rng.rand() < (density / majorant))) {
             scattered = true;
             scatterPos = pos;
@@ -772,20 +771,19 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
         }
     }
 
-    // 写入总透明度
+    // Write Transmittance back
     RWVolumeGridSumTransmittanceTexture[PixelIndex] = accumulatedTransmittance;
 
-    // 5. 如果散射，进行光照计算 (NEE)
+    // 5. NEE
     if (scattered) {
         float SumResampleWeights = 0.f;
         uint NumValidSamples = 0;
-        float LightGridLightListCdf = 0; // 暂时不用 Grid 加速，或者传入 0
+        float LightGridLightListCdf = 0;
         float3 RadianceEstimation = 0;
 
-        // 使用 RIS 采样一个光源
         LightSample ReservedSample = SampleOneLightSample_RIS(
-            scatterPos, 0.f.xxx, -RayDirection, // Normal 对体积无意义，ViewDir
-            false, true, false,         // isSurface=false
+            scatterPos, 0.f.xxx, -RayDirection,
+            false, true, false,
             rng,
             RadianceEstimation,
             SumResampleWeights, NumValidSamples, LightGridLightListCdf
@@ -799,14 +797,11 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
             // Phase Function (Isotropic)
             float Phase = 1.0f / (4.0f * PI);
 
-            // 计算最终贡献 (Estimator * Phase * Albedo)
-            // 注意：RadianceEstimation 已经包含了 (Li / Pdf)
             float3 FinalThroughput = RadianceEstimation * Phase * volumeColor;
 
-            // 写入中间纹理
             RWVolumeGridRadianceEstimateTexture[PixelIndex] = float4(FinalThroughput, 1.0f);
 
-            // 申请 Shadow Ray
+            // Transmittance Ray
             bool bPrimaryThread = WaveIsFirstLane();
             uint WaveRayCount = WaveActiveCountBits(true);
             uint WaveRayOffset = 0;
@@ -817,14 +812,12 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
             uint WaveLocalRayOffset = WavePrefixCountBits(true);
             uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
 
-            // 写入光线数据
             RWVolumeGridTransmittanceRayToTraceOriginBuffer[RayIndex] = scatterPos;
             RWVolumeGridTransmittanceRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
             RWVolumeGridTransmittanceRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
             RWVolumeGridTransmittanceRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
             RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
 
-            // 关键：记录这个光线属于哪个像素
             RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
         }
     }
@@ -832,7 +825,6 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
 // HWRT Calculating Transmittance Rays……
 
-// 辅助函数：获取光线数据
 RayToTrace FetchVolumeGridRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
     RayToTrace Ray = (RayToTrace)0;
     Ray.Origin = RWVolumeGridTransmittanceRayToTraceOriginBuffer[RayIndex];
@@ -849,17 +841,13 @@ void RenderVolumeGridDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
     uint RayIndex = DispatchThreadID;
     if(RayIndex >= RWVolumeGridTransmittanceRayToTraceCount[0]) return;
 
-    // 1. 获取光线和像素索引
     RayToTrace RayToTrace = FetchVolumeGridRayToTraceWithWorldOrigin(RayIndex, 0);
     uint2 PixelIndex = UnpackUint2x16(RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex]);
 
-    // 2. 获取 TraceTransmittanceRays 计算出的透射率
     float RayTransmittance = RWVolumeGridTransmittanceRayToTraceTransmittanceBuffer[RayIndex];
 
-    // 3. 计算最终颜色
     float3 Estimate = RWVolumeGridRadianceEstimateTexture[PixelIndex].rgb;
     float3 FinalRadiance = Estimate * RayTransmittance;
 
-    // 4. 写入输出
     RWVolumeGridDirectLightingTexture[PixelIndex] = float4(FinalRadiance, 1.f);
 }

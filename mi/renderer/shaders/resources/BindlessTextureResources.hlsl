@@ -8,11 +8,11 @@ Texture2D GetBindlessSRV(uint index)
     return __internal__BindlessIndicesBuffer_Texture[index];
 }
 
-Texture3D __internal_BindlessIndicesBuffer_VolumeTexture[];
+Texture3D __internal__BindlessIndicesBuffer_VolumeTexture[];
 
 Texture3D GetBindlessVolumeSRV(uint index)
 {
-    return __internal_BindlessIndicesBuffer_VolumeTexture[index];
+    return __internal__BindlessIndicesBuffer_VolumeTexture[index];
 }
 
 #endif

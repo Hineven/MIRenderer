@@ -33,6 +33,7 @@
 #include "renderer/r_persistent.h"
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
+#include "renderer/r_volume_grid_direct_lighting.h"
 #include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 
@@ -319,8 +320,10 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         view->light_structure_.CreateIfNull()->Allocate(builder);
         view->diffuse_direct_lighting_.CreateIfNull()->Allocate(builder, view);
         view->volume_direct_lighting_.CreateIfNull()->Allocate(builder, view);
+        view->volume_grid_direct_lighting_.CreateIfNull()->Allocate(builder, view);
         view->volume_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
         view->diffuse_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
+        // view->volume_gird_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
         view->denoiser_.CreateIfNull()->Allocate(builder, view);
     }
 

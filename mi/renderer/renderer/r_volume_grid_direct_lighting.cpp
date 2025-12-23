@@ -21,12 +21,6 @@
 MI_NAMESPACE_BEGIN
 
 void VolumeGridDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
-    sum_transmittance = builder.CreateTexture2D(
-        view->film_width_, view->film_height_,
-        PixelFormatType::kR32_FLOAT
-    );
-    sum_transmittance->SetName("VolumeGridSumTransmittanceTexture");
-
     radiance = builder.CreateTexture2D(
         view->film_width_, view->film_height_,
         PixelFormatType::kR16G16B16A16_FLOAT
@@ -133,7 +127,7 @@ namespace VolumeGridDirectLightingShaders {
     };
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
         VolumeGridDirectLightingSpawnLightSamplesShader,
-        "mi/renderer/shaders/DirectLighting.hlsl", "VolumeDirectLightingSpawnLightSamples"
+        "mi/renderer/shaders/DirectLighting.hlsl", "VolumeGridDirectLightingSpawnLightSamples"
     );
 
     class RenderVolumeGridDirectLightingShader : public VolumeGridDirectLightingShader {
@@ -144,7 +138,7 @@ namespace VolumeGridDirectLightingShaders {
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
         RenderVolumeGridDirectLightingShader,
-        "mi/renderer/shaders/DirectLighting.hlsl", "RenderVolumeDirectLighting"
+        "mi/renderer/shaders/DirectLighting.hlsl", "RenderVolumeGridDirectLighting"
     );
 }
 
@@ -227,7 +221,7 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     );
     volume_grid_params->RWVolumeGridRadianceEstimateTexture = volume_grid_radiance_estimate_texture.Raw();
 
-    volume_grid_params->RWVolumeGridSumTransmittanceTexture = view->g_buffer_->G_depth_.Raw();
+    volume_grid_params->RWVolumeGridSumTransmittanceTexture = view->g_buffer_->G_transmittance_.Raw();
     volume_grid_params->RWVolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
 
     // Volume Grid Direct Lighting

@@ -6,13 +6,13 @@
 MI_SHARED_HLSL_BEGIN
 
 /**
- * 体积网格头数据
+ * Volume Grid Header Structure
  */
 struct VolumeGridHeader {
-    uint TextureBindlessIndex; // 对应 3D 纹理的 Bindless 句柄
-    uint3 LocalMin;            // 局部空间包围盒 Min (用于 UV 归一化计算)
+    uint TextureBindlessIndex;
+    uint3 LocalMin;
 
-    uint3 LocalMax;            // 局部空间包围盒 Max
+    uint3 LocalMax;
     uint _Padding0;
 };
 

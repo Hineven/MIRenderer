@@ -355,9 +355,10 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             TRef<VolumeGrid> volume_grid;
             volume_grid = OpenVDBLoader::LoadVDB(
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny.vdb"),
-                GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_cloud.vdb"),
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_points.vdb"),
+                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density.vdb"),
+                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density_color.vdb"),
+                // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density.vdb"),
+                GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density_color.vdb"),
                 *resource_allocator, {1024, "density", "color"}
             );
             if(volume_grid) {
