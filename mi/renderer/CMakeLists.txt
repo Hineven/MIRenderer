@@ -1,10 +1,12 @@
 set(SOURCES
         mi_resource_allocator.cpp
         mi_texture.cpp
+        mi_volume_texture.cpp
         mi_material.cpp
         mi_transform.cpp
         mi_geometry.cpp
         mi_static_mesh.cpp
+        mi_volume_grid.cpp
         mi_volume_primitives.cpp
         mi_gaussian_radiance_field.cpp
         mi_renderable.cpp
@@ -28,6 +30,7 @@ set(SOURCES
         renderer/r_direct_lighting.cpp
         renderer/r_diffuse_direct_lighting.cpp
         renderer/r_volume_direct_lighting.cpp
+        renderer/r_volume_grid_direct_lighting.cpp
         renderer/r_diffuse_indirect_lighting.cpp
         renderer/r_volume_indirect_lighting.cpp
         renderer/r_path_tracing.cpp

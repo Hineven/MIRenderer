@@ -131,6 +131,17 @@ public:
             mip_levels, array_layers, format, usage
         });
     }
+    FORCEINLINE TRef<RDGTexture> CreateTexture2D (
+        glm::uvec2 dimensions, PixelFormatType format,
+        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+        uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        return CreateTexture(RHITextureDesc{
+            RHITextureType::k2D,
+            {dimensions.x, dimensions.y, 1},
+            mip_levels, array_layers, format, usage
+        });
+    }
+
     // Creat a 2D RDG texture array with the given description.
     FORCEINLINE TRef<RDGTexture> CreateTexture2DArray (
         uint32_t width, uint32_t height, uint32_t layers, PixelFormatType format,
@@ -142,13 +153,24 @@ public:
         });
     }
 
-    FORCEINLINE TRef<RDGTexture> CreateTexture2D (
-    glm::uvec2 dimensions, PixelFormatType format,
-    RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
-    uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+    // Create a 3D RDG texture with the given description.
+    FORCEINLINE TRef<RDGTexture> CreateTexture3D (
+        uint32_t width, uint32_t height, uint32_t depth, PixelFormatType format,
+        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+        uint32_t mip_levels = 1, uint32_t array_layers = 1) {
         return CreateTexture(RHITextureDesc{
-            RHITextureType::k2D,
-            {dimensions.x, dimensions.y, 1},
+            RHITextureType::k3D,
+            {width, height, depth},
+            mip_levels, array_layers, format, usage
+        });
+    }
+    FORCEINLINE TRef<RDGTexture> CreateTexture3D (
+        glm::uvec3 dimensions, PixelFormatType format,
+        RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+        uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        return CreateTexture(RHITextureDesc{
+            RHITextureType::k3D,
+            {dimensions.x, dimensions.y, dimensions.z},
             mip_levels, array_layers, format, usage
         });
     }

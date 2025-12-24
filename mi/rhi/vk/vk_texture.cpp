@@ -17,8 +17,12 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
         assert(desc.dimensions.depth == 1);
         assert(desc.array_layers == 1);
     }
-    if (desc.type == RHITextureType::k2DArray) assert(desc.dimensions.depth == 1);
-    if (desc.type == RHITextureType::k3D || desc.type == RHITextureType::k3DArray) assert(false && "Unimplemented");
+    if (desc.type == RHITextureType::k2DArray) {
+        assert(desc.dimensions.depth == 1);
+    }
+    if (desc.type == RHITextureType::k3D) {
+        assert(desc.array_layers == 1);
+    }
 
     vk_aspect_ = GetVulkanImageAspectFlags(desc.usage);
     if(imported) {

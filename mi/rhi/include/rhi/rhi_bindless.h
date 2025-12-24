@@ -39,7 +39,11 @@ FORCEINLINE RHIBindlessResourceDesc RHISRVBindlessSlotDesc () {
     desc.type = RHIBindlessResourceType::kSRV;
     return desc;
 }
-
+FORCEINLINE RHIBindlessResourceDesc RHIVolumeSRVBindlessSlotDesc () {
+    RHIBindlessResourceDesc desc {};
+    desc.type = RHIBindlessResourceType::kVolumeSRV;
+    return desc;
+}
 FORCEINLINE RHIBindlessResourceDesc RHIAccelerationStructureBindlessSlotDesc () {
     RHIBindlessResourceDesc desc {};
     desc.type = RHIBindlessResourceType::kAccelerationStructure;
@@ -92,6 +96,18 @@ public:
         constexpr auto type = TGetBindlessResourceType<T>::value;
         static_assert(type != RHIBindlessResourceType::kMax, "Invalid bindless resource type");
         AllocateResourceSlot(RHIBindlessResourceDesc{type}, slot);
+        auto ptr = (RHIBindlessSlotKeeper<T>*)slot;
+        return RHIBindlessSlotRef<T>(ptr);
+    }
+
+    // 根据override_type进行bindless channel的重载
+    // 用于同一类型需要分配到不同channel的情况，如RHITexture->kSRV或kVolumeSRV
+    template<typename T>
+    RHIBindlessSlotRef<T> AllocateResourceSlot(RHIBindlessResourceType override_type) {
+        auto slot = (RHIBindlessSlotKeeperBase*)new RHIBindlessSlotKeeper<T>();
+        mi_assert(override_type != RHIBindlessResourceType::kMax, "Invalid explicit bindless resource type");
+        // 使用传入的 type 进行分配，而不是使用 traits 推导的
+        AllocateResourceSlot(RHIBindlessResourceDesc{override_type}, slot);
         auto ptr = (RHIBindlessSlotKeeper<T>*)slot;
         return RHIBindlessSlotRef<T>(ptr);
     }

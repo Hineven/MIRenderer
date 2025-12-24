@@ -13,9 +13,9 @@ struct LightingCompositionUB {
     uint EnableDiffuseIndirect;
     uint EnableVolumeDirect;
     uint EnableVolumeIndirect;
+    uint EnableVolumeGridDirect;
     uint Padding0;
     uint Padding1;
-    uint Padding2;
 };
 
 ConstantBuffer<LightingCompositionUB> UB;
@@ -24,6 +24,7 @@ Texture2D<float4> DiffuseDirectLightingTexture;
 Texture2D<float4> DiffuseIndirectLightingTexture;
 Texture2D<float4> VolumeDirectLightingTexture;
 Texture2D<float4> VolumeIndirectLightingTexture;
+Texture2D<float4> VolumeGridDirectLightingTexture;
 
 Texture2D<float4> G_Albedo;
 Texture2D<float4> G_Emission;
@@ -79,10 +80,17 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     float3 VisualizeVolumeLighting = VisualizeVolumeDirectLighting + VisualizeVolumeIndirectLighting;
     float3 VolumeRadiance = VolumeDirectLighting + VolumeIndirectLighting;
 
+    // Volume grid direct
+    float3 VisualizeVolumeGridDirectLighting = UB.EnableVolumeGridDirect != 0 ? VolumeGridDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb : 0;
+    float3 VolumeGridDirectLighting = VolumeDirectLightingTexture.SampleLevel(PointEdgeSampler, UV, 0).rgb;
+
+    float3 VisualizeVolumeGridLighting = VisualizeVolumeGridDirectLighting;
+    float3 VolumeGridRadiance = VolumeGridDirectLighting;
+
     float Transmittance = G_Transmittance.SampleLevel(PointEdgeSampler, UV, 0);
 
-    float3 VisualizeRadiance = (Emission + VisualizeSurfaceRadiance) * Transmittance + VisualizeVolumeLighting;
-    float3 Radiance = (Emission + SurfaceRadiance) * Transmittance + VolumeRadiance;
+    float3 VisualizeRadiance = (Emission + VisualizeSurfaceRadiance) * Transmittance + VisualizeVolumeLighting + VisualizeVolumeGridLighting;
+    float3 Radiance = (Emission + SurfaceRadiance) * Transmittance + VolumeRadiance + VolumeGridRadiance;
 
     float3 OldVisualizeRadiance = HistoryRadiance.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     float LerpFactor = 0.01f;

@@ -96,6 +96,7 @@ protected:
     struct BindlessArrayDescs {
         StorageBufferDesc storage_buffer;
         SRVDesc srv;
+        SRVDesc volume_srv;
         AccelerationStructureDesc acceleration_structure;
     } bindless_;
     // Only makes sense for vertex shaders

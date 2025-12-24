@@ -85,6 +85,17 @@ public:
         });
     }
 
+    FORCEINLINE static TRef<RDGTexture> Create3D (
+    uint32_t width, uint32_t height, uint32_t depth, PixelFormatType format,
+    RHITextureUsageFlags usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess,
+    uint32_t mip_levels = 1) {
+        return Create(RHITextureDesc{
+            RHITextureType::k3D,
+            {width, height, depth},
+            mip_levels, 1, format, usage // 3D Textures usually have 1 array layer
+        });
+    }
+
 protected:
 
     RHITextureDesc desc_ {};

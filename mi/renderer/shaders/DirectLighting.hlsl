@@ -4,6 +4,7 @@
 #include "shared/SharedVertex.hlsl"
 #include "shared/SharedMaterial.hlsl"
 #include "shared/SharedLight.hlsl"
+#include "shared/SharedVolumeGrid.hlsl"
 #include "headers/Conventions.hlsl"
 #include "headers/Transform.hlsl"
 #include "headers/Packing.hlsl"
@@ -14,6 +15,7 @@
 #include "headers/Light.hlsl"
 #include "headers/ScreenSpaceRayTracing.hlsl"
 #include "headers/HybridTracing.hlsl"
+#include "headers/VolumeGridLib.hlsl"
 
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/LightGrid.hlsl"
@@ -648,4 +650,204 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
         }
     }
+}
+
+/********************************************
+ * Volume Grid Direct Lighting
+ ********************************************/
+
+// Volume Grid Header
+StructuredBuffer<VolumeGridHeader> VolumeGridHeaderBuffer;
+
+// Volume Grid Rays
+RWStructuredBuffer<uint>   RWVolumeGridTransmittanceRayToTraceCount;
+RWStructuredBuffer<float3> RWVolumeGridTransmittanceRayToTraceDirectionBuffer;
+RWStructuredBuffer<uint>   RWVolumeGridTransmittanceRayToTraceStateBuffer;
+RWStructuredBuffer<float3> RWVolumeGridTransmittanceRayToTraceOriginBuffer;
+RWStructuredBuffer<float>  RWVolumeGridTransmittanceRayToTraceTMaxBuffer;
+RWStructuredBuffer<uint>   RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer;
+RWStructuredBuffer<uint>   RWVolumeGridTransmittanceRayToTracePixelIndexBuffer;
+RWStructuredBuffer<float>  RWVolumeGridTransmittanceRayToTraceTransmittanceBuffer;
+
+[[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWVolumeGridRadianceEstimateTexture;
+
+// Volume Grid Output Sum Transmittance
+[[vk::image_format("r32f")]]
+RWTexture2D<float> RWVolumeGridSumTransmittanceTexture;
+// Volume Grid Output Lighting
+[[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWVolumeGridDirectLightingTexture;
+
+[numthreads(1, 1, 1)]
+void VolumeGridDirectLightingClearCounters() {
+    RWVolumeGridTransmittanceRayToTraceCount[0] = 0;
+}
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 LocalID : SV_GroupThreadID) {
+    uint2 PixelIndex = GroupID * TILE_SIZE + LocalID;
+    if (any(PixelIndex >= View.Camera.FilmDimensions)) return;
+
+    // Initialize the output texture
+    RWVolumeGridRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+    RWVolumeGridDirectLightingTexture[PixelIndex] = 0.f.xxxx;
+
+    CameraParameters C = GetActiveCamera();
+
+    // 1. Generate camera rays
+    float2 PixelUV = ScreenCoordsToUV(C, PixelIndex);
+    float3 RayOrigin = C.Position;
+    float3 RayDirection = normalize(NDC2ToCameraDirectionUnnormalized(C, UVToNDC2(PixelUV)));
+    // Obtain depth for cropping
+    float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).x;
+    float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+    float TMax = LinearDepth / dot(RayDirection, C.Direction);
+
+    // 2. Traverse VolumeGrid
+    // TODO: Traverse all VolumeGrid
+    uint VolumeGridIndex = 0;
+    VolumeGridHeader Grid = VolumeGridHeaderBuffer[VolumeGridIndex];
+
+    // 3. AABB
+    float t0, t1;
+    if(!IntersectAABB(RayOrigin, RayDirection, Grid.LocalMin, Grid.LocalMax, t0, t1)) {
+        return;
+    }
+
+    t0 = max(t0, 0.f);
+    t1 = min(t1, TMax);
+    if(t0 >= t1) return;
+
+    // 4. Delta Tracking
+    Random rng = MakeRandom(PixelIndex.x + PixelIndex.y * C.FilmDimensions.x, 17491741 + DirectLighting_UB.FrameIndex);
+
+    uint bindlessIndex = Grid.TextureBindlessIndex;
+    Texture3D<float4> densityTex = GetBindlessVolumeSRV(bindlessIndex);
+
+    float3 boxSize = Grid.LocalMax - Grid.LocalMin;
+    float3 invBoxSize = 1.0f / boxSize;
+    float3 uvwOrigin = (RayOrigin - Grid.LocalMin) * invBoxSize;
+    float3 uvwDir = RayDirection * invBoxSize; // Non normalized
+
+    // Using DDA to calculate majorant
+    float densityScale = 1.0f;
+    float majorant = CalculateMaxDensityDDA(densityTex, uvwOrigin, uvwDir, t0, t1, densityScale);
+    majorant = max(majorant, 1e-4f);
+
+    float t = t0;
+    bool scattered = false;
+    float3 scatterPos = 0;
+    float3 volumeColor = 1.0f; // Albedo
+
+    float accumulatedTransmittance = RWVolumeGridSumTransmittanceTexture[PixelIndex];
+
+    // Delta Tracking Loop
+    int loopLimit = 256;
+    for(int i = 0; i < loopLimit; i++) {
+        t -= log(1.0f - rng.rand()) / majorant;
+        if (t >= t1) break;
+
+        float3 pos = RayOrigin + RayDirection * t;
+        float3 uvw = (pos - Grid.LocalMin) * invBoxSize;
+
+        float4 sampleVal = densityTex.SampleLevel(LinearWrapSampler, uvw, 0);
+        float density = sampleVal.a * densityScale;
+
+        float nullProb = 1.0f - min(density, majorant) / majorant;
+        accumulatedTransmittance *= nullProb;
+
+        // Accept/Refuse
+        if ((!scattered) && (rng.rand() < (density / majorant))) {
+            scattered = true;
+            scatterPos = pos;
+            volumeColor = sampleVal.rgb;
+        }
+
+        // If transmittance is close to 0, break.
+        if (accumulatedTransmittance < 0.001f) {
+            accumulatedTransmittance = 0.0f;
+            break;
+        }
+    }
+
+    // Write Transmittance back
+    RWVolumeGridSumTransmittanceTexture[PixelIndex] = accumulatedTransmittance;
+
+    // 5. NEE
+    if (scattered) {
+        float SumResampleWeights = 0.f;
+        uint NumValidSamples = 0;
+        float LightGridLightListCdf = 0;
+        float3 RadianceEstimation = 0;
+
+        LightSample ReservedSample = SampleOneLightSample_RIS(
+            scatterPos, 0.f.xxx, -RayDirection,
+            false, true, false,
+            rng,
+            RadianceEstimation,
+            SumResampleWeights, NumValidSamples, LightGridLightListCdf
+        );
+
+        if (ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0) {
+            float3 TraceDirection = ReservedSample.Position - scatterPos;
+            float TraceDistance = length(TraceDirection);
+            TraceDirection /= TraceDistance;
+
+            // Phase Function (Isotropic)
+            float Phase = 1.0f / (4.0f * PI);
+
+            float3 FinalThroughput = RadianceEstimation * Phase * volumeColor;
+
+            RWVolumeGridRadianceEstimateTexture[PixelIndex] = float4(FinalThroughput, 1.0f);
+
+            // Transmittance Ray
+            bool bPrimaryThread = WaveIsFirstLane();
+            uint WaveRayCount = WaveActiveCountBits(true);
+            uint WaveRayOffset = 0;
+            if (bPrimaryThread) {
+                InterlockedAdd(RWVolumeGridTransmittanceRayToTraceCount[0], WaveRayCount, WaveRayOffset);
+            }
+            WaveRayOffset = WaveReadLaneFirst(WaveRayOffset);
+            uint WaveLocalRayOffset = WavePrefixCountBits(true);
+            uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
+
+            RWVolumeGridTransmittanceRayToTraceOriginBuffer[RayIndex] = scatterPos;
+            RWVolumeGridTransmittanceRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
+            RWVolumeGridTransmittanceRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
+            RWVolumeGridTransmittanceRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
+            RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
+
+            RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
+        }
+    }
+}
+
+// HWRT Calculating Transmittance Rays……
+
+RayToTrace FetchVolumeGridRayToTraceWithWorldOrigin(uint RayIndex, float TMax) {
+    RayToTrace Ray = (RayToTrace)0;
+    Ray.Origin = RWVolumeGridTransmittanceRayToTraceOriginBuffer[RayIndex];
+    Ray.Direction = RWVolumeGridTransmittanceRayToTraceDirectionBuffer[RayIndex];
+    uint RayToTraceState = RWVolumeGridTransmittanceRayToTraceStateBuffer[RayIndex];
+    Ray.TMax = TMax;
+    Ray.TCurrent = UnpackRayToTraceState(RayToTraceState, Ray.bHit);
+    return Ray;
+}
+
+[numthreads(WAVE_SIZE, 1, 1)]
+void RenderVolumeGridDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
+{
+    uint RayIndex = DispatchThreadID;
+    if(RayIndex >= RWVolumeGridTransmittanceRayToTraceCount[0]) return;
+
+    RayToTrace RayToTrace = FetchVolumeGridRayToTraceWithWorldOrigin(RayIndex, 0);
+    uint2 PixelIndex = UnpackUint2x16(RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex]);
+
+    float RayTransmittance = RWVolumeGridTransmittanceRayToTraceTransmittanceBuffer[RayIndex];
+
+    float3 Estimate = RWVolumeGridRadianceEstimateTexture[PixelIndex].rgb;
+    float3 FinalRadiance = Estimate * RayTransmittance;
+
+    RWVolumeGridDirectLightingTexture[PixelIndex] = float4(FinalRadiance, 1.f);
 }

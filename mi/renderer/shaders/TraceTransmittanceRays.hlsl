@@ -5,16 +5,25 @@
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedStaticMesh.hlsl"
 #include "shared/SharedVertex.hlsl"
+#include "shared/SharedVolumeGrid.hlsl"
 #include "headers/HybridTracing.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 #include "headers/VolumePrimitivesLib.hlsl"
+#include "headers/Random.hlsl"
 #include "headers/RayTracingHelpers.hlsl"
 #include "headers/GaussianSplatting.hlsl"
+#include "headers/VolumeGridLib.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
+
+struct TraceTransmittanceRaysUB {
+    uint Seed;
+    uint3 Padding;
+};
+ConstantBuffer<TraceTransmittanceRaysUB> UB;
 
 RaytracingAccelerationStructure TLAS;
 
@@ -25,6 +34,7 @@ StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
 StructuredBuffer<uint> IndexBuffer;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
+StructuredBuffer<VolumeGridHeader> VolumeGridHeaderBuffer;
 
 
 Texture2D<float> G_Depth;
@@ -214,6 +224,94 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
         }
         // Always ignore hits on gaussian RF
         IgnoreHit();
+    } else if (InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID) {
+        // 1. 获取 Header 和 Instance 数据
+        VolumeGridInstanceHeader InstanceHeader = GetVolumeGridInstanceHeader(RenderableHeaderBuffer[Instance]);
+        uint GridIndex = InstanceHeader.VolumeGridIndex;
+        VolumeGridHeader Grid = VolumeGridHeaderBuffer[GridIndex];
+
+        // 2. 准备光线和空间变换
+        float3 RayOrigin = WorldRayOrigin();
+        float3 RayDirection = WorldRayDirection();
+        float TMin = RayTMin();
+        float TMax = RayTCurrent(); // 对于 AnyHit，TCurrent 是当前交点距离
+
+        // 3. 计算进出点 (AABB Intersection)
+        // BLAS 是一个 Unit Cube 或 Local AABB，已经被 Transform 到世界空间了。
+        // 但由于我们是在 AnyHit 里，光线已经在 Object Space 做了相交测试。
+        // 这里我们可以重新在世界空间算，或者利用 Object Space 的特性。
+        // 为了简便和准确，我们直接在世界空间通过 AABB 算进出点（因为 3D Texture 是轴对齐的）
+
+        // 获取 Instance 的 Transform
+        float3x4 WorldToObject = WorldToObject3x4();
+        float3 localRayOrigin = mul(WorldToObject, float4(RayOrigin, 1.0));
+        float3 localRayDir = mul((float3x3)WorldToObject, RayDirection);
+
+        // AABB求交
+        float t0, t1;
+        if (IntersectAABB(localRayOrigin, localRayDir, Grid.LocalMin, Grid.LocalMax, t0, t1)) {
+            // 裁剪光线范围
+            t0 = max(t0, TMin);
+            t1 = min(t1, TMax);
+
+            if (t0 < t1) {
+                // 加载体网格纹理
+                uint bindlessIndex = Grid.TextureBindlessIndex;
+                Texture3D<float4> densityTex = GetBindlessVolumeSRV(bindlessIndex);
+
+                // 准备将光线转换到[0,1]的纹理UVW空间
+                float3 boxSize = Grid.LocalMax - Grid.LocalMin;
+                float3 invBoxSize = 1.0f / boxSize;
+
+                float3 uvwOrigin = (RayOrigin - Grid.LocalMin) * invBoxSize;
+                float3 uvwDirection = RayDirection * invBoxSize;
+
+                float densityScale = 1.0f; // May be added in the future.
+                float majorant = CalculateMaxDensityDDA(densityTex, uvwOrigin, uvwDirection, t0, t1, densityScale);
+
+                // Ratio Tracking
+                float t = t0;
+                float transmittance = 1.0f;
+#ifdef USE_RAY_LIST
+                uint RayListIndex = DispatchRaysIndex().x;
+                uint RayIndex = RayToTraceListBuffer[RayListIndex];
+#else
+                uint RayIndex = DispatchRaysIndex().x;
+#endif
+                Random rng = MakeRandom(RayIndex + 0x8f71a213u, UB.Seed);
+
+                // Ratio Tracking Loop
+                while (true) {
+                    t -= log(1.0f - rng.rand()) / majorant;
+                    if (t >= t1) break;
+
+                    float3 pos = localRayOrigin + localRayDir * t;
+                    float3 uvw = (pos - Grid.LocalMin) / boxSize;
+
+                    // 采样密度
+                    float density = densityTex.SampleLevel(LinearWrapSampler, uvw, 0).a * densityScale;
+
+                    // Null-collision 概率
+                    float nullProb = 1.0f - (density / majorant);
+                    transmittance *= nullProb;
+
+                    // 如果透射率太低，提前终止
+                    if (transmittance < 0.001f) {
+                        transmittance = 0.0f;
+                        break;
+                    }
+                }
+
+                Payload.Transmittance *= transmittance;
+                if (Payload.Transmittance < 0.001f) {
+                    AcceptHitAndEndSearch();
+                }
+            }
+        }
+
+        // Volume 总是透光的 (除非 Ratio Tracking 归零)，所以忽略这个几何 Hit，让光线继续
+        IgnoreHit();
+
     } else {
         // Always ignore hits on unknown instance types
         IgnoreHit();

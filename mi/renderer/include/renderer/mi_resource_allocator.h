@@ -44,6 +44,7 @@ public:
     // static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
     static constexpr uint32_t kMaxNumVolumePrimitiveGroups = 1024; // 1K volume primitive groups (assume that there are not many)
     static constexpr uint32_t kMaxNumGaussianRadianceFields = 256; // Assume fewer GRF datasets
+    static constexpr uint32_t kMaxNumVolumeGrids = 256;
 
     FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
         return vertex_uber_buffer_.Raw();
@@ -115,6 +116,14 @@ public:
         volume_primitives_slots_.FreeSlot(idx);
     }
 
+    FORCEINLINE uint32_t AllocateVolumeGridSlot () {
+        return volume_grid_slots_.AllocateSlot();
+    }
+    FORCEINLINE void FreeVolumeGridSlot (uint32_t idx) {
+        assert(idx < kMaxNumMaterials);
+        volume_grid_slots_.FreeSlot(idx);
+    }
+
     FORCEINLINE uint32_t AllocateGaussianRadianceFieldSlot () {
         return gaussian_radiance_field_slots_.AllocateSlot();
     }
@@ -145,14 +154,14 @@ public:
         return volume_primitives_header_buffer_.Raw();
     }
 
+    FORCEINLINE RHIBuffer * GetVolumeGridHeaderBuffer() const {
+        return volume_grid_header_buffer_.Raw();
+    }
     FORCEINLINE RHIBuffer * GetGaussianRadianceFieldHeaderBuffer() const {
         return gaussian_radiance_field_header_buffer_.Raw();
     }
 
 protected:
-
-
-
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
     TRef<RHIBuffer> material_header_buffer_;
@@ -171,6 +180,8 @@ protected:
     TRef<RHIBuffer> volume_primitives_header_buffer_;
     // A buffer holding the Gaussian Radiance Field headers.
     TRef<RHIBuffer> gaussian_radiance_field_header_buffer_;
+    // A buffer holding the volume grid headers. (VolumeGridHeader)
+    TRef<RHIBuffer> volume_grid_header_buffer_;
 
     // A buffer holding all area lights (RawLight structs).
     TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;
@@ -181,7 +192,7 @@ protected:
     std::map<uint32_t, TRef<DeviceUberBufferInterface>> custom_uber_buffers_;
 
     // Slot allocators for bindless resources
-    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_, gaussian_radiance_field_slots_;
+    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_, volume_grid_slots_, gaussian_radiance_field_slots_;
 
 };
 

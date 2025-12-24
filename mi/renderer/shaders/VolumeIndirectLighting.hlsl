@@ -724,7 +724,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
                         bBypass = true;
                         uint2 Packed = PackUpdateRayRadianceFlag(FinalApproximatedVolumeRadiance, true);
                         RWVolumeProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
-                        
+
                     }
                 } else {
                     // Unknown material type, bypass (black)

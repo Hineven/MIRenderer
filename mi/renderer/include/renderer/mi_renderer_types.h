@@ -13,6 +13,8 @@ MI_NAMESPACE_BEGIN
 enum class RenderableType {
     // Static mesh + transform
     kStaticMeshInstance = 0,
+    // Volume Grid (with Super Volume Grid)
+    kVolumeGridInstance,
     // Volume primitives + transform
     kVolumePrimitivesInstance,
     // Gaussian radiance field + transform (3D Gaussian Radiance Field)

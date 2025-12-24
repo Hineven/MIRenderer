@@ -51,6 +51,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
@@ -115,6 +116,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
     params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
+    params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
     Helpers::AddTraceRaysIndirectPass(builder, shader, params, cmd.Raw());
@@ -122,7 +124,12 @@ void Renderer::Render_HardwareShadowRayTracing(
 
 class TraceTransmittanceRaysShader : public RDGShader {
 public:
+    struct TraceTransmittanceRaysUB {
+        uint32_t Seed;
+        glm::uvec3 Padding;
+    };
     BEGIN_SHADER_PARAMETERS(Params)
+        SHADER_UNIFORM_BUFFER(TraceTransmittanceRaysUB, UB)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceListLengthBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceListBuffer)
@@ -146,6 +153,7 @@ public:
 
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
@@ -175,7 +183,8 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     RDGBuffer *ray_to_trace_direction, RDGBuffer *ray_to_trace_state,
     RDGBuffer *ray_to_trace_origin_screen_coords, RDGBuffer *ray_to_trace_origin,
     RDGBuffer *ray_to_trace_tmax,
-    RDGBuffer *ray_to_trace_transmittance) {
+    RDGBuffer *ray_to_trace_transmittance,
+    uint32_t seed) {
     mi_assert(ray_to_trace_list_length && ray_to_trace_direction && ray_to_trace_state, "Essential tracing buffers must be provided.");
     auto & lib = RDGShaderLibrary::Get();
     auto ini = RDGShaderInitializationInfo {};
@@ -189,6 +198,11 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     auto shader = lib.GetShader<TraceTransmittanceRaysShader>(ini);
     auto params = builder.Allocate<TraceTransmittanceRaysShader::Params>();
     params->View = view->view_common_params_;
+    auto UB = builder.Allocate<TraceTransmittanceRaysShader::TraceTransmittanceRaysUB>();
+    {
+        UB->Seed = seed;
+    }
+    params->UB = UB;
     params->RayToTraceListLengthBuffer = ray_to_trace_list_length;
     params->RayToTraceListBuffer = ray_to_trace_list;
     params->RayToTraceDirectionBuffer = ray_to_trace_direction;
@@ -216,6 +230,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     );
     params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
+    params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
@@ -253,6 +268,7 @@ public:
 
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
@@ -334,6 +350,7 @@ void Renderer::Render_HardwareRadianceRayTracing(
     );
     params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
+    params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
@@ -373,6 +390,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
@@ -466,6 +484,7 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
     params->GaussianSHBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceSHAllocatorUberBufferIndex)->GetRHI());
+    params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 

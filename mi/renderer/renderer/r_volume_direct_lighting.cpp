@@ -175,7 +175,7 @@ void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGrap
     auto volume_ray_to_trace_count = builder.CreateBuffer<uint32_t>();
     volume_ray_to_trace_count->SetName("VolumeRayToTraceCount");
     auto volume_ray_to_trace_direction = builder.CreateBuffer<glm::vec3>(num_screen_pixels);
-    auto volume_ray_to_trace_origins = builder.CreateBuffer<glm::vec3>(num_screen_pixels);
+    auto volume_ray_to_trace_origin = builder.CreateBuffer<glm::vec3>(num_screen_pixels);
     auto volume_ray_to_trace_state = builder.CreateBuffer<uint32_t>(num_screen_pixels);
     auto volume_ray_to_trace_tmax = builder.CreateBuffer<float>(num_screen_pixels);
     auto volume_ray_to_trace_sampled_light_index = builder.CreateBuffer<uint32_t>(num_screen_pixels);
@@ -207,7 +207,7 @@ void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGrap
     volprims_params->RWVolumeRayToTraceCount = volume_ray_to_trace_count.Raw();
     volprims_params->RWVolumeRayToTraceDirectionBuffer = volume_ray_to_trace_direction.Raw();
     volprims_params->RWVolumeRayToTraceStateBuffer = volume_ray_to_trace_state.Raw();
-    volprims_params->RWVolumeRayToTraceOriginBuffer = volume_ray_to_trace_origins.Raw();
+    volprims_params->RWVolumeRayToTraceOriginBuffer = volume_ray_to_trace_origin.Raw();
     volprims_params->RWVolumeRayToTraceTMaxBuffer = volume_ray_to_trace_tmax.Raw();
     volprims_params->RWVolumeRayToTraceSampledLightIndexBuffer = volume_ray_to_trace_sampled_light_index.Raw();
 
@@ -246,7 +246,7 @@ void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGrap
             volume_ray_to_trace_direction.Raw(),
             volume_ray_to_trace_state.Raw(),
             nullptr,
-            volume_ray_to_trace_origins.Raw(),
+            volume_ray_to_trace_origin.Raw(),
             volume_ray_to_trace_tmax.Raw(),
             volume_ray_to_trace_transmittance.Raw()
         );
