@@ -3,14 +3,17 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
+#include <fstream>
 #include "vulkan/vulkan.hpp"
 #include <glfw/glfw3.h>
 #include <imgui.h>
+#include <nlohmann/json.hpp>
 
 #include <rhi/vk/vk_export.h>
 #include <rdg/rdg_pool.h>
 #include <rhi/rhi_buffer.h>
 #include <rhi/rhi_texture.h>
+#include <stb_image_write.h>
 
 #include "3d_viewer.h"
 #include "infra_impl/infra.h"
@@ -20,6 +23,10 @@
 #include "rdg/rdg_shader.h"
 #include "core/util/debug_prof.h"
 #include "imgui_impl_glfw.h"
+#include "../../mi/renderer/renderer/r_persistent.h"
+#include "../../mi/renderer/renderer/r_volume_direct_lighting.h"
+#include "../../mi/renderer/renderer/r_volume_indirect_lighting.h"
+#include "../../mi/renderer/renderer/r_volume_primitives.h"
 #include "core/task.h"
 #include "rdg/rdg.h"
 #include "rdg/rdg_resource.h"
@@ -42,6 +49,26 @@ struct MainLoopStartConfig {
     uint32_t window_width;
     uint32_t window_height;
 };
+
+static std::string GetCurrentDateTimeString() {
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+    char buffer[32];
+    std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", &tm);
+    return std::string(buffer);
+}
+static std::string GenerateRandomString(uint32_t len = 4) {
+    const char charset[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    const size_t max_index = (sizeof(charset) - 1);
+    std::string str(len, 0);
+    for (uint32_t i = 0; i < len; i++) {
+        str[i] = charset[rand() % max_index];
+    }
+    return str;
+}
 
 // Start a GLFW window with given configuration
 GLFWwindow* StartWindow (const MainLoopStartConfig & cfg) {
@@ -460,8 +487,56 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             // Hotkeys
             {
                 // F5: Reload shaders
-                if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS) {
+                if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
                     should_reload_shaders = true;
+                }
+                // F: Save camera properties to json file
+                if (ImGui::IsKeyPressed(ImGuiKey_F)) {
+                    auto dir = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/camera_configs/");
+                    if (!std::filesystem::exists(dir)) {
+                        std::filesystem::create_directories(dir);
+                    }
+                    auto date_time = GetCurrentDateTimeString();
+                    auto random_str = GenerateRandomString(6);
+                    auto file_path = dir / (date_time + random_str + ".json");
+                    nlohmann::json j;
+                    j["camera_position"] = {view->camera_.position.x, view->camera_.position.y, view->camera_.position.z};
+                    j["camera_direction"] = {view->camera_.direction.x, view->camera_.direction.y, view->camera_.direction.z};
+                    j["camera_fov_Y"] = view->camera_.fov_Y;
+                    j["camera_near_plane"] = view->camera_.near_plane;
+                    j["camera_far_plane"] = view->camera_.far_plane;
+                    j["camera_up"] = {view->camera_.up.x, view->camera_.up.y, view->camera_.up.z};
+                    std::ofstream o(file_path);
+                    o << std::setw(4) << j << std::endl;
+                    MI_LOG(MIInfraLogType::kInfo, "Saved camera config to {}.", file_path.string());
+                }
+            }
+
+            // Baking mode processsing
+            static bool is_baking_mode = false;
+            static std::vector<Camera> baking_camera_positions;
+            static uint32_t baking_frame_index = 0;
+            static uint32_t baking_camera_index = 0;
+            static bool should_export_baking_result = false;
+            constexpr uint32_t baking_max_num_frames = 4 * 1024;
+            if (is_baking_mode) {
+                baking_frame_index ++;
+                if (baking_frame_index == baking_max_num_frames) {
+                    // March to next frame
+                    baking_camera_index ++;
+                    baking_frame_index = 0;
+                    // Export result
+                    should_export_baking_result = true;
+                }
+                if (baking_camera_index >= baking_camera_positions.size()) {
+                    baking_camera_positions.clear();
+                    baking_camera_index = 0;
+                    baking_frame_index = 0;
+                    is_baking_mode = false;
+                    should_export_baking_result = false;
+                    MI_LOG(MIInfraLogType::kInfo, "Baking complete.");
+                } else {
+                    // Pass.
                 }
             }
 
@@ -498,11 +573,63 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     } else {
                         ImGui::Text("None");
                         if (ImGui::Button("Reveal All Hidden")) {
-                            for (auto r : scene->GetRenderables()) {
+                            for (const auto& r : scene->GetRenderables()) {
                                 if (r) r->SetVisible(true);
                             }
                         }
                     }
+                }
+                if (ImGui::Button("Start Baking")) {
+                    is_baking_mode = true;
+                    baking_frame_index = 0;
+                    baking_camera_index = 0;
+                    // Read baking camera positions from file
+                    auto dir = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/camera_configs");
+                    baking_camera_positions.clear();
+                    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+                        if (entry.path().extension() == ".json") {
+                            std::ifstream i(entry.path());
+                            nlohmann::json j;
+                            i >> j;
+                            Camera cam;
+                            cam.position = glm::vec3(j["camera_position"][0], j["camera_position"][1], j["camera_position"][2]);
+                            cam.direction = glm::vec3(j["camera_direction"][0], j["camera_direction"][1], j["camera_direction"][2]);
+                            cam.fov_Y = j["camera_fov_Y"];
+                            cam.near_plane = j["camera_near_plane"];
+                            cam.far_plane = j["camera_far_plane"];
+                            cam.up = glm::vec3(j["camera_up"][0], j["camera_up"][1], j["camera_up"][2]);
+                            baking_camera_positions.push_back(cam);
+                        }
+                    }
+                    MI_LOG(MIInfraLogType::kInfo, "Loaded {} baking camera positions.", baking_camera_positions.size());
+                    // Set camera to first position
+                    if (!baking_camera_positions.empty()) {
+                        view->camera_ = baking_camera_positions[0];
+                    }
+                    // Okay.
+                }
+                if (is_baking_mode) {
+                    float fraction = (float)baking_frame_index / (float)baking_max_num_frames;
+                    ImGui::Text("Baking Mode: Camera %d / %d, Frame %d / %d",
+                        baking_camera_index + 1, (uint32_t)baking_camera_positions.size(),
+                        baking_frame_index + 1, baking_max_num_frames
+                    );
+                    float remaining_frames = (baking_camera_positions.size() - baking_camera_index - 1) * baking_max_num_frames
+                        + (baking_max_num_frames - baking_frame_index);
+                    float avg_frame_time = cpu_duration;
+                    float raw_remaining_time_sec = remaining_frames * avg_frame_time;
+                    static float remaining_time_sec = 0;
+                    remaining_time_sec = remaining_time_sec * 0.99f + raw_remaining_time_sec * 0.01f;
+                    float remaining_time_min = remaining_time_sec / 60.0f;
+                    float remaining_time_hr = remaining_time_min / 60.0f;
+                    float rest_remaining_time_min = fmod(remaining_time_min, 60.0f);
+                    float rest_remaining_time_sec = fmod(remaining_time_sec, 60.0f);
+                    uint show_hr = (float)floor(remaining_time_hr);
+                    uint show_min = (float)floor(rest_remaining_time_min);
+                    uint show_sec = (float)floor(rest_remaining_time_sec);
+                    ImGui::Text("ETA: %02d:%02d:%02d", show_hr, show_min, show_sec);
+                    ImGui::SameLine();
+                    ImGui::ProgressBar(fraction, ImVec2(0.0f, 0.0f));
                 }
                 if (ImGui::CollapsingHeader("CVars")) {
                     // CVars
@@ -659,6 +786,12 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 }
                 ImGui::End();
             }
+
+            static bool should_export_result = false;
+            if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+                should_export_result = true;
+            }
+
             // Render
             {
                 RenderGraphBuilder builder;
@@ -668,6 +801,21 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                     // Export forward depth and visibility for later use
                     view->forward_depth_->SetExport();
                     view->g_buffer_->G_visibility_->SetExport();
+                }
+
+                if (should_export_result) {
+                    view->g_buffer_->G_depth_->SetExport();
+                    view->g_buffer_->G_transmittance_->SetExport();
+                    view->volume_primitives_->volume_sample_color_->SetExport();
+                    view->volume_primitives_->volume_sample_linear_depth_->SetExport();
+                    view->volume_primitives_->G_volume_density_->SetExport();
+                    view->volume_primitives_->G_volume_color_->SetExport();
+                    view->volume_direct_lighting_->radiance->SetExport();
+                    view->volume_indirect_lighting_->radiance->SetExport();
+                }
+
+                if (should_export_baking_result) {
+                    view->radiance_->SetExport();
                 }
 
                 std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
@@ -766,6 +914,106 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
                     selected_renderable_index, selected_primitive_index, selected_descriptor_rank, selected_uv.x, selected_uv.y
                 );
+            }
+
+            auto &queue = RHI::Get().GetGraphicsCommandQueue();
+            auto ExportTexRaw = [&](std::filesystem::path dir, auto rdgTex, const char* name, size_t bpp, std::string fmt) {
+                if (!rdgTex) return;
+                auto tex = rdgTex->GetRHI();
+                if (!tex) return;
+                const size_t w = tex->GetWidth();
+                const size_t h = tex->GetHeight();
+                const size_t byte_size = w * h * bpp;
+
+                auto readback = rhi.CreateBuffer(byte_size, RHIBufferUsageFlagBits::kReadback);
+
+                queue.MemoryBarrier();
+                queue.TextureBarrier(tex, RHITextureLayoutType::kTransferSrcOptimal,
+                    RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                    RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+                queue.CopyTextureToBuffer(tex, readback.Raw());
+
+                // RDG 资源追踪同步
+                rdgTex->Use(RHIPipelineStageFlagBits::kTransfer,
+                    RHIGPUAccessFlagBits::kTransferRead, RHITextureLayoutType::kTransferSrcOptimal);
+
+                queue.MemoryBarrier();
+                queue.WaitForIdle("Export Frame");
+
+                void* ptr = readback->Map();
+                auto bin_path = dir / std::format("{}_{}x{}_{}bpp.bin", name, w, h, bpp);
+                std::ofstream ofs(bin_path, std::ios::binary);
+                if (ofs) ofs.write(reinterpret_cast<const char*>(ptr), byte_size);
+                readback->Unmap();
+
+                auto meta_path = dir / std::format("{}_meta.txt", name);
+                std::ofstream meta(meta_path, std::ios::out);
+                if (meta) {
+                    meta << std::format("name={}, width={}, height={}, bytes_per_pixel={}, fmt={}\n",
+                        name, w, h, bpp, fmt);
+                }
+            };
+
+            // Export results
+            if (should_export_result) {
+                should_export_result = false;
+
+                auto now = std::chrono::system_clock::now();
+                auto t_c = std::chrono::system_clock::to_time_t(now);
+                std::tm tm_local{};
+                localtime_s(&tm_local, &t_c);
+                std::string stamp = std::format("{:04d}{:02d}{:02d}_{:02d}{:02d}{:02d}",
+                    tm_local.tm_year + 1900, tm_local.tm_mon + 1, tm_local.tm_mday,
+                    tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
+
+                auto data_dir = std::filesystem::path(R"(F:\CLionProjects\naf_pre\data\volprims)");
+
+                std::filesystem::path out_dir = data_dir / std::format("f{}_{}", rhi.GetFrameIndex(), stamp);
+                std::error_code ec;
+                std::filesystem::create_directories(out_dir, ec);
+
+                // 导出当前帧深度（float，1 通道）
+                ExportTexRaw(out_dir, view->g_buffer_->G_depth_.Raw(), "depth", sizeof(float), "r32f");
+                // Transmittacne (r8unorm)
+                ExportTexRaw(out_dir, view->g_buffer_->G_transmittance_.Raw(), "transmittance", sizeof(uint8_t), "r8");
+                // Sample Color (rgba8)
+                ExportTexRaw(out_dir, view->volume_primitives_->volume_sample_color_.Raw(), "vol_sample_color", sizeof(uint8_t) * 4, "rgba8");
+                // Sample linear depth (float)
+                ExportTexRaw(out_dir, view->volume_primitives_->volume_sample_linear_depth_.Raw(), "vol_sample_linear_depth", sizeof(float), "r32f");
+                // Density (float)
+                ExportTexRaw(out_dir, view->volume_primitives_->G_volume_density_.Raw(), "vol_density", sizeof(float), "r32f");
+                // Color (rgba8)
+                ExportTexRaw(out_dir, view->volume_primitives_->G_volume_color_.Raw(), "vol_color", sizeof(uint8_t) * 4, "rgba8");
+                // Volume direct lighting (rgba16f)
+                ExportTexRaw(out_dir, view->volume_direct_lighting_->radiance.Raw(), "vol_direct_lighting", sizeof(uint16_t) * 4, "rgba16f");
+                // Volume indirect lighting (rgba16f)
+                ExportTexRaw(out_dir, view->volume_indirect_lighting_->radiance.Raw(), "vol_indirect_lighting", sizeof(uint16_t) * 4, "rgba16f");
+
+                MI_LOG(MIInfraLogType::kInfo, "Frame data exported to {}", out_dir.string());
+                should_export_result = false; // 只导出一次
+            }
+
+            // Export baking result
+            if (should_export_baking_result) {
+                should_export_baking_result = false;
+                auto dir = GetInfra().TranslateResPathToFilePath("baking_results/");
+                if (!std::filesystem::exists(dir)) {
+                    std::filesystem::create_directories(dir);
+                }
+                auto date_time = GetCurrentDateTimeString();
+                auto random_str = GenerateRandomString(6);
+                auto out_dir = dir / (date_time + random_str);
+                std::filesystem::create_directories(out_dir);
+
+                // 导出当前帧的最终pt光照结果（rgba32f, pt film）
+                ExportTexRaw(out_dir, view->persistent_data_->path_tracing_film_.Raw(), "baked_radiance", sizeof(uint16_t) * 4, "rgba32f");
+
+                // 切换到下一机位（如果有！）
+                if (baking_camera_index <= baking_camera_positions.size()) {
+                    auto & cam = baking_camera_positions[baking_camera_index];
+                    view->camera_ = cam;
+                    MI_LOG(MIInfraLogType::kInfo, "Switched to baking camera index {}.", baking_camera_index);
+                }
             }
 
             // Left mouse Drag
