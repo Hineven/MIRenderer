@@ -234,6 +234,10 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWVolumeHistoryLengthTexture[CenterPixelCoords] = 0;
 	}
+	if(!bVolume && !bSurface) {
+		// No surface or volume lighting in this pixel. Stop processing.
+		return ;
+	}
 
 	// Prefilter input diffuse lighting
 	float KernelRadius = 2.8;

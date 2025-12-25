@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <limits>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
@@ -60,6 +62,11 @@ public:
         bool should_export_baking_result {};
     };
 
+    struct PerfStat {
+        float min_ms = std::numeric_limits<float>::infinity();
+        float max_ms = 0.0f;
+    };
+
 
     void Initialize(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
     void Destroy();
@@ -102,6 +109,8 @@ public:
     InputState input_state_ {};
 
     ViewerImGuiConsle console_;
+
+    std::unordered_map<std::string, PerfStat> perf_stats_;
 };
 
 // Entry point for running the 3d viewer main loop.

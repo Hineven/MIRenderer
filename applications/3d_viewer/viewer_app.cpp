@@ -606,7 +606,12 @@ void ViewerApp::HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimeP
                         }
                         if (time_periods[i].class_names.size() <= depth) {
                             std::string node_name = time_periods[i].pass_name;
-                            ImGui::Text("%s: %.2f ms", node_name.c_str(), time_periods[i].duration * 1000);
+                            // Update stats per pass name from start of program.
+                            auto & stat = perf_stats_[node_name];
+                            float ms = time_periods[i].duration * 1000.0f;
+                            stat.min_ms = std::min(stat.min_ms, ms);
+                            stat.max_ms = std::max(stat.max_ms, ms);
+                            ImGui::Text("%s: %.2f ms (min %.2f / max %.2f)", node_name.c_str(), ms, stat.min_ms, stat.max_ms);
                         }
                         last = i + 1;
                     }
