@@ -138,6 +138,8 @@ public:
 
     void LogMessage(MIInfraLogType level, const std::string &message) override;
 
+    void SetLogCallback(std::function<void(MIInfraLogType, const std::string &)> callback) override;
+
     void OnFrameBegin() override;
 
     void OnFrameRHISubmit() override;
@@ -184,6 +186,10 @@ protected:
     // Compiler
     std::map<std::thread::id, HLSLCompilerContext *> hlsl_compiler_contexts_;
     std::mutex hlsl_compiler_contexts_mutex_; // Protect compiler contexts map (shader hot-reload multi-thread safety)
+
+    // Log mutex and callback
+    std::mutex log_mutex_;
+    std::function<void(MIInfraLogType, const std::string &)> log_callback_ {};
 };
 
 MI_NAMESPACE_END

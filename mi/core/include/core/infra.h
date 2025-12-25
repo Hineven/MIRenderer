@@ -151,6 +151,8 @@ public:
 
     // Logging interface
     virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;
+    typedef std::function<void(MIInfraLogType, const std::string &)> MIInfraLogCallback;
+    virtual void               SetLogCallback (MIInfraLogCallback callback) = 0;
 
     // Hooks
     // Called from the render thread when a new frame begins.

@@ -120,6 +120,7 @@ void MyInfra::AddProfileTime([[maybe_unused]] const std::string &name, [[maybe_u
 }
 
 void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
+    std::lock_guard guard(log_mutex_);
     // Just print to console
     std::string level_str;
     std::string color_start; // Color code at start
@@ -153,7 +154,15 @@ void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
     }
 #endif
 
+    if (log_callback_) {
+        log_callback_(level, message);
+    }
+
     std::cout << color_start << "[" << level_str << "] " << message << color_reset << std::endl;
+}
+
+void MyInfra::SetLogCallback(MIInfraLogCallback callback) {
+    log_callback_ = callback;
 }
 
 void MyInfra::OnFrameBegin() {

@@ -1,6 +1,7 @@
 set(SOURCES
     3d_viewer.cpp
     viewer_app.cpp
+    viewer_console.cpp
     render_frame.cpp
 )
 
