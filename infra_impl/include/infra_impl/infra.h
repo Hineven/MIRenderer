@@ -136,9 +136,9 @@ public:
         bool & is_shader_valid
     ) override;
 
-    void LogMessage(MIInfraLogType level, const std::string &message) override;
+    void LogMessage(MIInfraLogType level, const std::string &message, const std::string & location = "") override;
 
-    void SetLogCallback(std::function<void(MIInfraLogType, const std::string &)> callback) override;
+    void SetLogCallback(MIInfraLogCallback callback) override;
 
     void OnFrameBegin() override;
 
@@ -189,7 +189,7 @@ protected:
 
     // Log mutex and callback
     std::mutex log_mutex_;
-    std::function<void(MIInfraLogType, const std::string &)> log_callback_ {};
+    MIInfraLogCallback log_callback_ {};
 };
 
 MI_NAMESPACE_END

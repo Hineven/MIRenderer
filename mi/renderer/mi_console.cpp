@@ -94,7 +94,7 @@ void Console::ExecuteCommand(const std::string& cmd) {
             }
             default: break;
         }
-        MI_LOG(MIInfraLogType::kInfo, "CVar '{}' (type={}), value={}\n{}", name.c_str(), type_str, val_str.c_str(), base->GetDescription());
+        MI_LOG(MIInfraLogType::kInfo, "{}\n{}", val_str.c_str(), base->GetDescription());
         return;
     }
 

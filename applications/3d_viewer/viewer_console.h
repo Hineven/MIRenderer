@@ -8,6 +8,7 @@
 #define MI_VIEWER_CONSOLE_H
 
 #include <array>
+#include <chrono>
 #include <renderer/mi_cvar.h>
 #include <core/infra.h>
 
@@ -40,7 +41,7 @@ public:
     static uint32_t GetConsoleTextColor(ConsoleLogType type);
 
     void PrintRaw(char const *fmt, ...);
-    void Print(ConsoleLogType, const char *fmt, ...);
+    void Print(ConsoleLogType, const std::string & location, const char *fmt, ...);
 
     int  UpdateAutoCompletion(ImGuiInputTextCallbackData* data);
     int BrowseHistoryCommand(ImGuiInputTextCallbackData* data);
@@ -52,7 +53,10 @@ public:
     bool opened_ {};
     struct ConsoleLogEntry {
         std::string text;
+        std::string location;
         ConsoleLogType type;
+        bool expanded {false};
+        std::chrono::system_clock::time_point timestamp {std::chrono::system_clock::now()};
     };
 
     static ConsoleLogType GetConsoleLogType (MIInfraLogType type) {
@@ -80,6 +84,7 @@ public:
 
 
     InputBuffer input_buffer_ {};
+    std::string last_suggestion_input_;
 };
 
 MI_NAMESPACE_END

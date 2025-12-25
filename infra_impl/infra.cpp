@@ -119,9 +119,8 @@ void MyInfra::AddProfileTime([[maybe_unused]] const std::string &name, [[maybe_u
     // Do nothing
 }
 
-void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
+void MyInfra::LogMessage(MIInfraLogType level, const std::string &message, const std::string &location) {
     std::lock_guard guard(log_mutex_);
-    // Just print to console
     std::string level_str;
     std::string color_start; // Color code at start
     std::string color_reset = "\033[0m"; // Reset color
@@ -155,14 +154,18 @@ void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
 #endif
 
     if (log_callback_) {
-        log_callback_(level, message);
+        log_callback_(level, message, location);
     }
 
-    std::cout << color_start << "[" << level_str << "] " << message << color_reset << std::endl;
+    std::cout << color_start << "[" << level_str << "] " << message;
+    if (!location.empty()) {
+        std::cout << " (" << location << ")";
+    }
+    std::cout << color_reset << std::endl;
 }
 
 void MyInfra::SetLogCallback(MIInfraLogCallback callback) {
-    log_callback_ = callback;
+    log_callback_ = std::move(callback);
 }
 
 void MyInfra::OnFrameBegin() {

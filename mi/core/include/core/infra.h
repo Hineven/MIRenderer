@@ -150,8 +150,9 @@ public:
     ) = 0;
 
     // Logging interface
-    virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;
-    typedef std::function<void(MIInfraLogType, const std::string &)> MIInfraLogCallback;
+    virtual void               LogMessage (MIInfraLogType level, const std::string & message, const std::string & location = "") = 0;
+    // Callback: type, message, location (can be empty)
+    typedef std::function<void(MIInfraLogType, const std::string &, const std::string &)> MIInfraLogCallback;
     virtual void               SetLogCallback (MIInfraLogCallback callback) = 0;
 
     // Hooks
@@ -173,7 +174,8 @@ void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
 // GetInfra().Shutdown() is called prior to this function.
 void DestroyInfra () ;
 
-#define MI_LOG(level, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
+#define MI_LOG_LOCATION(level, location, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format(fmt, ##__VA_ARGS__), location)
+#define MI_LOG(level, fmt, ...) MI_LOG_LOCATION(level, std::format("{0}:{1}", __FILE__, __LINE__), fmt, ##__VA_ARGS__)
 
 // Logging shortcuts
 #define MI_INFO(fmt, ...) MI_LOG(MIInfraLogType::kInfo, fmt, ##__VA_ARGS__)
