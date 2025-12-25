@@ -298,7 +298,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         arrow_mesh_z_instance_->SetVisible(false);
     }
 
-    if (true) {
+    if (false) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
@@ -309,6 +309,17 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             geometries, materials, meshes_
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
+        }
+    }
+    if (true) {
+        TRef<GaussianRadianceField> field;
+        if (!GaussianRadianceFieldLoader::LoadPLY("F:/CLionProjects/3DGS_GI/data/counter/point_cloud/iteration_30000/point_cloud.ply",
+            *resource_allocator_, field)) {
+            MI_WARN("Failed to load Gaussian Radiance Field PLY.");
+        }
+        if (field) {
+            field->UpdateOnDevice(resource_allocator_.Raw());
+            auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw());
         }
     }
 
@@ -374,6 +385,9 @@ void ViewerApp::HandleNavigationInput(float delta_time) {
 }
 
 void ViewerApp::HandleKeyboardShortcuts(FrameInternalDelayedOps& ops) {
+    if (ImGui::GetIO().WantCaptureKeyboard) {
+        return;
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
         ops.should_reload_shaders = true;
     }

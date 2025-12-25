@@ -811,10 +811,33 @@ RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
     return TRef<RHISampler>(sampler);
 }
 
+void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
+#ifndef NDEBUG
+    // Waited frame fences before calling this.
+    uint32_t base = (frame_index % kNumFramesInFlight) * kQueriesPerFrame;
+    timestamp_frame_base_.store(base, std::memory_order_relaxed);
+    timestamp_query_allocator_.store(0, std::memory_order_relaxed);
+    // Reset only the segment for this frame to avoid clobbering in-flight frames (conservative reset entire pool).
+    device_.resetQueryPool(timestamp_query_pool_, 0, kMaxNumTimestampQueries);
+#else
+    (void)frame_index;
+#endif
+}
+
 RHITimestampRef VulkanRHI::CreateTimestamp() {
-    auto index = timestamp_query_allocator_.fetch_add(1);
-    auto timestamp = new VulkanTimestamp(index % kMaxNumTimestampQueries);
+#ifndef NDEBUG
+    auto local = timestamp_query_allocator_.fetch_add(1, std::memory_order_relaxed);
+    if (local >= kQueriesPerFrame) {
+        mi_warning(true, "Timestamp allocator exhausted ({} >= per-frame cap {}). Dropping timestamp.", local, kQueriesPerFrame);
+        return {};
+    }
+    auto query_index = timestamp_frame_base_.load(std::memory_order_relaxed) + local;
+    mi_assert(query_index < kMaxNumTimestampQueries, "Timestamp query index out of pool range");
+    auto timestamp = new VulkanTimestamp(query_index);
     return TRef<RHITimestamp>(timestamp);
+#else
+    return {};
+#endif
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -855,7 +878,6 @@ RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracing
     if(pipeline->IsValid()) return TRef<RHIRayTracingPipeline>(pipeline);
     pipeline->~VulkanRayTracingPipeline();
     delete pipeline;
-    return nullptr;
 }
 
 

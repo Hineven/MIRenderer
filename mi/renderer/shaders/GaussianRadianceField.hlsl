@@ -9,6 +9,9 @@
 #include "resources/RenderableResources.hlsl"
 #include "headers/VertexShaderInstanceIndex.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"
+#include "headers/Random.hlsl"
+
+#define CONSTANT_GAUSSIAN_DEPTH
 
 RWStructuredBuffer<uint> RWActiveGaussianColorBuffer;
 RWStructuredBuffer<uint> RWActiveGaussianCount;
@@ -370,5 +373,146 @@ GBufferOutput DrawActiveGaussians_PS (DrawActiveGaussians_PSInput Input) {
     float  LinearDepth  = ZDepthToLinearDepth(C, Input.Position.z);
     GBufferOutput Result = (GBufferOutput)0;
     Result.ColorAlpha    = float4(Color, Alpha);
+    return Result;
+}
+
+
+DrawActiveGaussians_GSInput StochasticDrawActiveGaussians_VS (
+    uint VertexIndex : SV_VertexID
+) {
+    DrawActiveGaussians_GSInput Input;
+    // In reverse order (farthest to nearest)
+    Input.PrimitiveIndex = RWActiveGaussianCount[0] - VertexIndex - 1;
+    return Input;
+}
+
+struct StochasticDrawActiveGaussians_GSOutput
+{
+    float4 Position : SV_POSITION;
+    float4 UVWS : TEXCOORD0;
+    float3 RGB  : TEXCOORD1;
+};
+
+struct StochasticDrawActiveGaussians_PSInput
+{
+    float4 Position : SV_Position;
+    float4 UVWS : TEXCOORD0;
+    float3 RGB : TEXCOORD1;
+};
+
+[maxvertexcount(6)]
+void StochasticDrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1], inout TriangleStream<StochasticDrawActiveGaussians_GSOutput> TriStream)
+{
+    uint ActiveListIndex = ActiveGaussianIndirectionBuffer[Input[0].PrimitiveIndex];
+    // if(ActiveListIndex % 4 != UB.FrameIndex % 4) return ;
+    // if(CullActiveListGaussian(ActiveListIndex)) return ;
+    
+    CameraParameters C = GetActiveCamera();
+    
+    // Output a quad to bound the Gaussian in screen space
+    float2 Center  = UnpackUnorm2x16(RWActiveGaussianNDCPositionBuffer[ActiveListIndex]) * 4 - 2;
+    float2 Vec1    = -(UnpackUnorm2x16(RWActiveGaussianQuadNDCVector0Buffer[ActiveListIndex]) * 2 - 1);
+    float2 Vec2    = -(UnpackUnorm2x16(RWActiveGaussianQuadNDCVector1Buffer[ActiveListIndex]) * 2 - 1);
+    // Expand the quad to be conservative
+    float  Expand  = UB.GaussianExpandFactor;
+    float2 Top    = Center + Expand * -Vec1;
+    float2 Bottom = Center + Expand *  Vec1;
+    float2 Vec1H  = Vec1 * 0.5;
+    float2 Left1  = Center + Expand * (-Vec2 -Vec1H);
+    float2 Left2  = Center + Expand * (-Vec2 +Vec1H);
+    float2 Right1 = Center + Expand * ( Vec2 -Vec1H);
+    float2 Right2 = Center + Expand * ( Vec2 +Vec1H);
+    
+    float  Depth   =  RWActiveGaussianLinearDepthSrcBuffer[ActiveListIndex];
+    
+    // float2 Depth01 = g_RWActiveGaussianQuadLinearDepthSrcBuffer[ActiveListIndex];
+    // Magnify according to the expand parameter
+    // Depth01 = Depth + (Depth - Depth01) * Expand;
+    uint GaussianIndex, ActiveRenderableListIndex;
+    UnpackActiveGaussianIndex(RWActiveGaussianListBuffer[ActiveListIndex], ActiveRenderableListIndex, GaussianIndex);
+    uint RenderableIndex = ActiveGaussianRenderableListBuffer[ActiveRenderableListIndex];
+    float3x4 RenderableToWorld = RenderableTransformBuffer[RenderableIndex];
+    Gaussian3D G = FetchGaussian(GaussianIndex);
+    float3x3 InvCov;
+    float3 Direction0 = NDC2ToCameraDirectionUnnormalized(C, Top);
+    float3 Direction1 = NDC2ToCameraDirectionUnnormalized(C, 0.5 * (Left1 + Left2));
+    float3 RayOrigin0 = NDC2ToCameraOrigin(C, Top);
+    float3 RayOrigin1 = NDC2ToCameraOrigin(C, 0.5 * (Left1 + Left2));
+    float3 InstanceLocalOrigin0    = TransformPoint(RenderableToWorld, RayOrigin0);
+    float3 InstanceLocalOrigin1    = TransformPoint(RenderableToWorld, RayOrigin1);
+    float3 InstanceLocalDirection0 = TransformVector(RenderableToWorld, Direction0);
+    float3 InstanceLocalDirection1 = TransformVector(RenderableToWorld, Direction1);
+    float2 Depth01 = float2(
+        EvaluateGaussianResponseRayT(InstanceLocalOrigin0, InstanceLocalDirection0, G, InvCov),
+        EvaluateGaussianResponseRayT(InstanceLocalOrigin1, InstanceLocalDirection1, G, InvCov)
+    );
+#ifdef CONSTANT_GAUSSIAN_DEPTH
+    Depth01.xy = Depth.xx;
+#endif
+    float  D_TL    =  Depth01.x +Depth01.y - Depth;
+    float  D_TR    =  Depth01.x -Depth01.y + Depth;
+    float  D_BL    =  Depth01.y -Depth01.x + Depth;
+
+    float3 Color = saturate(UnpackUnorm4x8(RWActiveGaussianColorBuffer[ActiveListIndex]).rgb);
+    float4 ColorAlpha = float4(Color, G.Opacity);
+    
+    // Is the quantilization affecting render quality?
+    // int Seed = UB.FrameIndex + InstanceIndex * 77183 + GaussianIndex * 81937121;
+    // float Q_Noise = 0.2 * (frac(sin(Seed) * 43758.5453) - 0.5f);
+    // ColorAlpha.rgb = saturate(ColorAlpha.rgb + Q_Noise);
+
+    float  Alpha = ColorAlpha.w;
+    float InvFarPlane = 1 / C.FarPlane;
+
+    StochasticDrawActiveGaussians_GSOutput Output;
+
+    Output.UVWS.zw = float2(Alpha, float(0x3FFFF & (ActiveListIndex ^ 0x48f4c)));
+    Output.RGB = Color.rgb;
+
+    Output.UVWS.xy = Expand * float2(-1, -0.5);
+    Output.Position = float4(Left1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
+    TriStream.Append(Output);
+
+    Output.UVWS.xy = Expand * float2(-1,  0.5);
+    Output.Position = float4(Left2, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.75))), 1);
+    TriStream.Append(Output);
+
+    Output.UVWS.xy = Expand * float2(0, -1);
+    Output.Position = float4(Top, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 0))), 1);
+    TriStream.Append(Output);
+
+    Output.UVWS.xy = Expand * float2(0, 1);
+    Output.Position = float4(Bottom, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0.5, 1))), 1);
+    TriStream.Append(Output);
+
+    Output.UVWS.xy = Expand * float2(1, -0.5);
+    Output.Position = float4(Right1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.25))), 1);
+    TriStream.Append(Output);
+
+    Output.UVWS.xy = Expand * float2(1,  0.5);
+    Output.Position = float4(Right2, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(1, 0.75))), 1);
+    TriStream.Append(Output);
+    
+    TriStream.RestartStrip();
+}
+
+GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PSInput Input) {
+    float2 UV     = Input.UVWS.xy;
+    uint Seed     = uint(max(0, int(Input.UVWS.w)));
+    float4 RGBA   = float4(Input.RGB.rgb, Input.UVWS.z);    
+    float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
+    CameraParameters C = GetActiveCamera();
+
+    int2 PixelCoords = int2(floor(Input.Position.xy * float2(C.FilmDimensions)));
+    uint PixelIndex = asuint(PixelCoords.y) * C.FilmDimensions.x + asuint(PixelCoords.x);
+    Random rng = MakeRandom(PixelIndex, Seed + View.FrameIndex);
+    float Noise = rng.rand();
+    // float Noise = InterleavedGradientNoise(Input.Position.xy, Seed + View.FrameIndex);
+    
+    if(Alpha < Noise) discard;
+
+    float3 Color = saturate(RGBA.xyz);
+    GBufferOutput Result = (GBufferOutput)0;
+    Result.ColorAlpha    = float4(Color, 1);//Alpha);
     return Result;
 }

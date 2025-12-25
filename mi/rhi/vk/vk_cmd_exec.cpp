@@ -626,6 +626,11 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         chain.state_index = (chain.state_index + 1) % (int) std::size(chain.states);
     }
     if (sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
+
+    // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
+    if (cmd->GetCommandQueueType() == RHICommandQueueType::kGraphics) {
+        vk_rhi->ResetTimestampAllocatorForFrame((uint32_t)GetCurrentFrameIndex_RHIThread());
+    }
 }
 
 // Helpers

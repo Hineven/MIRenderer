@@ -143,7 +143,8 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
         sizeof(uint64_t),
         vk::QueryResultFlagBits::eWait | vk::QueryResultFlagBits::e64
     );
-    mi_assert(res == vk::Result::eSuccess, "Failed to get timestamp query result.");
+    mi_warning(res == vk::Result::eSuccess, "Failed to get timestamp query result ({}).", vk::to_string(res));
+    if (res != vk::Result::eSuccess) return UINT64_MAX;
     // Mask to the hardware-supported valid bits
     auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
     if (valid_bits < 64) {
