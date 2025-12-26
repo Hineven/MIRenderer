@@ -18,6 +18,7 @@
 
 #include "core/task.h"
 #include "rhi/rhi_buffer.h"
+#include "rdg/rdg_global_memory_collector.h"
 
 // Shader model 6.8
 #define SHADER_MODEL_SUFFIX "_6_8"
@@ -1205,7 +1206,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 static RDGShaderLibrary * shader_library_instance_ptr;
 RDGShaderLibrary &RDGShaderLibrary::Get() {
     if (shader_library_instance_ptr == nullptr) {
-        shader_library_instance_ptr = new RDGShaderLibrary();
+        shader_library_instance_ptr = RDGGlobalMemoryCollector::Get().New<RDGShaderLibrary>();
     }
     return *shader_library_instance_ptr;
 }
@@ -1394,7 +1395,7 @@ void RDGShaderLibrary::Init() {
 }
 
 void RDGShaderLibrary::Deinit() {
-    cached_shaders_.clear();
+    ReleaseCompiledShaders();
 }
 
 

@@ -365,6 +365,7 @@ protected:
     RDGShaderLibrary() = default;
     ~RDGShaderLibrary() ;
 public:
+    friend class RDGGlobalMemoryCollector;
     void Init ();
     void Deinit ();
 

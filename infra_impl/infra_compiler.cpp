@@ -219,9 +219,9 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
         ctx->include_handler = new InfraIncludeHandler(this, ctx->dxc_lib);
 #endif
         // Manual ref management for COM-like interfaces
-        ctx->include_handler->AddRef();
-        ctx->dxc_lib->AddRef();
-        ctx->dxc_compiler->AddRef();
+        // DxcCreateInstance returns objects with refcount = 1, and InfraIncludeHandler starts with refcount = 1.
+        // We store the owning references directly and release them once in DestroyHLSLCompilerContexts.
+        // Calling AddRef here leaves refcount at 2 and leaks when releasing only once later.
         hlsl_compiler_contexts_[thread_id] = ctx;
         return ctx;
     } else {

@@ -37,10 +37,12 @@
   * 开启`Vulkan Validation Layer`后性能下降是正常的。
 * 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。
 * 你可以在Shader中使用`printf`函数进行调试输出，此时，请开启`Vulkan Validation Layer`，并开启`Debug Printf`选项，输出会显示在控制台中。
+* 使用`heob`可以在Windows下对此程序进行内存泄漏与非法访问监测，你也可以使用Visual Studio自带的工具（如果你正在使用VS的话！）。
 ### 线程关系备注
-* 线程分四类别：RHI线程、渲染线程、工作线程、主线程
+* 线程分五类别：RHI线程、渲染线程、工作线程、主线程、FIO线程
 * **只有**RHI线程负责与图形API交互，RHI线程只有一个
 * **只有**渲染线程负责与RHI线程交互。一般而言，**只有**渲染线程能访问/**间接或直接持有**/使用RHI资源引用，渲染线程只有一个
+* 渲染器核心中（`mi`中），**只有**FIO线程负责文件读写。文件读写请求都通过Infra委托FIO线程完成。
 * 在一些调试模式下，RHI线程和渲染线程合并成一个线程。
 * 工作线程和主线程不能持有，也不能直接使用任何Device相关方法。它们应当仅限于在Host端进行计算和数据处理。
   * 创建、持有Geometry/StaticMesh等没有问题，但不能在线程内使用UpdateOnDevice等方法，也不应该持有DeviceXXXX的引用。

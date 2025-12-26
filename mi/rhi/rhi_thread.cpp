@@ -45,7 +45,7 @@ static TLockFreeQueue<RHIThreadTask, LockFreeQueueUserType::kMultiple, LockFreeQ
 static std::counting_semaphore<> task_queue_sem_ {0};
 
 // The thread
-static RHIWorkerThread * rhi_worker_thread_ = nullptr;
+static std::unique_ptr<RHIWorkerThread> rhi_worker_thread_;
 
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) {
     if (BYPASS_RHI_THREAD) {
@@ -116,9 +116,8 @@ void EnqueueRHIThreadIdleTask () {
 }
 
 void StartAndRunRHIWorkerThread() {
-    RHIWorkerThread * rhi_thread = new RHIWorkerThread();
-    rhi_worker_thread_ = rhi_thread;
-    rhi_thread->Run();
+    rhi_worker_thread_.reset(new RHIWorkerThread());
+    rhi_worker_thread_->Run();
 }
 
 void SignalStopRHIWorkerThreads() {
