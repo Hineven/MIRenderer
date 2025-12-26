@@ -10,10 +10,25 @@
 
 MI_NAMESPACE_BEGIN
 
+#define RU "(Are you forgetting to release all BlobRes references before Infra destruction?) "
+
 MyBlobResource::~MyBlobResource() noexcept {
-    // Wait until all io tasks are finished
-    WriteTaskWaitAndAcquire(true);
-    file_.close();
+    // Schedule close on FIO thread and wait
+    std::packaged_task<void()> task([this]() {
+        DoClose();
+    });
+    auto fut = task.get_future();
+    {
+        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
+        if (infra_->fio_stop_) {
+            // If FIO thread is stopping, do not enqueue new tasks.
+            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to close blob resource while FIO thread is stopping.");
+            return;
+        }
+        infra_->fio_tasks_.emplace(std::move(task));
+    }
+    infra_->fio_task_semaphore_.release();
+    fut.wait();
 }
 
 MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & file_path, [[maybe_unused]] MIInfraResourceHintType hint) {
@@ -37,57 +52,30 @@ std::future<const void *> MyBlobResource::Async_ReadBlobZeroCopy([[maybe_unused]
     return {};
 }
 
-void MyBlobResource::ReadBlob(size_t pos, size_t size, void *data) {
-    ReadTaskWaitAndAcquire();
-    file_.seekg(pos);
-    file_.read(reinterpret_cast<char *>(data), size);
+void MyBlobResource::DoClose() {
+    file_closing_ = true;
+    rw_mutex_.lock();
+    file_.close();
+    rw_mutex_.unlock();
+}
+
+void MyBlobResource::DoReadBlob(size_t pos, size_t size, void *data) {
+    if(!ReadTaskWaitAndAcquire()) return;
+    file_.seekg(static_cast<std::streamoff>(pos));
+    file_.read(reinterpret_cast<char *>(data), static_cast<std::streamsize>(size));
     ReadTaskRelease();
 }
 
-std::future<void> MyBlobResource::Async_ReadBlob(size_t pos, size_t size, void *data) {
-    std::packaged_task<void()> task([this, pos, size, data]() {
-        ReadBlob(pos, size, data);
-    });
-    // Create future (before the task can be executed and destructed)
-    auto future = task.get_future();
-    // Append to fio queue
-    {
-        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
-        infra_->fio_tasks_.emplace(std::move(task));
-    }
-    // Notify fio threads
-    infra_->fio_task_semaphore_.release();
-    // Return future
-    return future;
-}
-
-void MyBlobResource::WriteBlob(size_t pos, size_t size, const void *data) {
-    WriteTaskWaitAndAcquire(false);
-    file_.seekp(pos);
-    file_.write(reinterpret_cast<const char *>(data), size);
+void MyBlobResource::DoWriteBlob(size_t pos, size_t size, const void *data) {
+    if(!WriteTaskWaitAndAcquire(false)) return;
+    file_.seekp(static_cast<std::streamoff>(pos));
+    file_.write(reinterpret_cast<const char *>(data), static_cast<std::streamsize>(size));
     file_size_dirty_ = true;
     WriteTaskRelease();
 }
 
-std::future<void> MyBlobResource::Async_WriteBlob(size_t pos, size_t size, const void *data) {
-    std::packaged_task<void()> task([this, pos, size, data]() {
-        WriteBlob(pos, size, data);
-    });
-    // Create future (before the task can be executed and destructed)
-    auto future = task.get_future();
-    // Append to fio queue
-    {
-        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
-        infra_->fio_tasks_.emplace(std::move(task));
-    }
-    // Notify fio threads
-    infra_->fio_task_semaphore_.release();
-    // Return future
-    return future;
-}
-
-size_t MyBlobResource::GetSize() {
-    ReadTaskWaitAndAcquire();
+size_t MyBlobResource::DoGetSize() {
+    if(!ReadTaskWaitAndAcquire()) return 0;
     if(file_size_dirty_) {
         file_.seekg(0, std::ios::end);
         file_size_ = file_.tellg();
@@ -96,6 +84,101 @@ size_t MyBlobResource::GetSize() {
     auto size = file_size_;
     ReadTaskRelease();
     return size;
+}
+
+void MyBlobResource::ReadBlob(size_t pos, size_t size, void *data) {
+    std::packaged_task<void()> task([this, pos, size, data]() {
+        DoReadBlob(pos, size, data);
+    });
+    auto fut = task.get_future();
+    {
+        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
+        if (infra_->fio_stop_) {
+            // If FIO thread is stopping, do not enqueue new tasks.
+            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to read from blob resource while FIO thread is stopping.");
+            return;
+        }
+        infra_->fio_tasks_.emplace(std::move(task));
+    }
+    infra_->fio_task_semaphore_.release();
+    fut.wait();
+}
+
+std::future<void> MyBlobResource::Async_ReadBlob(size_t pos, size_t size, void *data) {
+    TRef self(this); // keep alive during async
+    std::packaged_task<void()> task([self, pos, size, data]() {
+        self->DoReadBlob(pos, size, data);
+    });
+    auto future = task.get_future();
+    {
+        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
+        if (!infra_->fio_stop_) {
+            infra_->fio_tasks_.emplace(std::move(task));
+        } else {
+            // If FIO thread is stopping, do not enqueue new tasks.
+            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to read from blob resource while FIO thread is stopping.");
+            return future;
+        }
+    }
+    infra_->fio_task_semaphore_.release();
+    return future;
+}
+
+void MyBlobResource::WriteBlob(size_t pos, size_t size, const void *data) {
+    std::packaged_task<void()> task([this, pos, size, data]() {
+        DoWriteBlob(pos, size, data);
+    });
+    auto fut = task.get_future();
+    {
+        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
+        if (!infra_->fio_stop_) {
+            infra_->fio_tasks_.emplace(std::move(task));
+        } else {
+            // If FIO thread is stopping, do not enqueue new tasks.
+            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to write to blob resource while FIO thread is stopping.");
+            return;
+        }
+    }
+    infra_->fio_task_semaphore_.release();
+    fut.wait();
+}
+
+std::future<void> MyBlobResource::Async_WriteBlob(size_t pos, size_t size, const void *data) {
+    TRef self(this); // keep alive during async
+    std::packaged_task<void()> task([self, pos, size, data]() {
+        self->DoWriteBlob(pos, size, data);
+    });
+    auto future = task.get_future();
+    {
+        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
+        if (infra_->fio_stop_) {
+            // If FIO thread is stopping, do not enqueue new tasks.
+            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to write to blob resource while FIO thread is stopping.");
+            return future;
+        }
+        infra_->fio_tasks_.emplace(std::move(task));
+    }
+    infra_->fio_task_semaphore_.release();
+    return future;
+}
+
+size_t MyBlobResource::GetSize() {
+    auto prom = std::make_shared<std::promise<size_t>>();
+    auto fut = prom->get_future();
+    std::packaged_task<void()> task([this, prom]() {
+        prom->set_value(DoGetSize());
+    });
+    {
+        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
+        if (infra_->fio_stop_) {
+            // If FIO thread is stopping, do not enqueue new tasks.
+            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to get size of blob resource while FIO thread is stopping.");
+            return 0;
+        }
+        infra_->fio_tasks_.emplace(std::move(task));
+    }
+    infra_->fio_task_semaphore_.release();
+    return fut.get();
 }
 
 bool MyBlobResource::ReadTaskWaitAndAcquire() {
@@ -127,14 +210,9 @@ void MyBlobResource::WriteTaskRelease() {
     rw_mutex_.unlock();
 }
 
-//�ļ�IO�߳��������������첽�����ļ���д������
 void MyInfra::FIO_ThreadMain () {
-    while(!fio_stop_) {
+    while(true) {
         fio_task_semaphore_.acquire();
-        // Incoming task or stop signal
-        if(fio_stop_) {
-            break;
-        }
         std::packaged_task<void()> task;
         {
             // Pop task from queue
@@ -142,28 +220,30 @@ void MyInfra::FIO_ThreadMain () {
             if(!fio_tasks_.empty()) {
                 task = std::move(fio_tasks_.front());
                 fio_tasks_.pop();
+            } else {
+                // Check for stop signal
+                if(fio_stop_) break;
             }
         }
         // Process task
-        task();
+        if (task.valid()) task();
         // Task destruction.
     }
 }
 
 void MyInfra::KickOffFIOThreads() {
     fio_stop_ = false;
-    for(auto & fio_thread : fio_threads_) {
-        fio_thread = std::make_unique<std::thread>(&MyInfra::FIO_ThreadMain, this);
-    }
+    fio_thread_ = std::make_unique<std::thread>(&MyInfra::FIO_ThreadMain, this);
 }
 
 void MyInfra::StopAndBlockWaitFIOThreads() {
-    fio_stop_ = true;
-    // Notify all threads to check for stop signal
-    fio_task_semaphore_.release(std::size(fio_threads_));
-    for(auto & fio_thread : fio_threads_) {
-        fio_thread->join();
+    {
+        std::lock_guard<std::mutex> lock(fio_queue_mutex_);
+        fio_stop_ = true;
+        // Wake the FIO thread to let it drain remaining tasks and exit
+        fio_task_semaphore_.release(1);
     }
+    fio_thread_->join();
 }
 
 std::filesystem::path MyInfra::TranslateResPathToFilePath(const MIResourcePath &res_path) {
@@ -173,6 +253,16 @@ std::filesystem::path MyInfra::TranslateResPathToFilePath(const MIResourcePath &
 TRef<BlobResourceInterface>
 MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access) {
     auto file_path = TranslateResPathToFilePath(res_path);
+
+    // Ensure single instance per resource path.
+    std::lock_guard<std::mutex> lock(resource_cache_mutex_);
+    {
+        auto it = resource_cache_.find(res_path);
+        if (it != resource_cache_.end()) {
+            return it->second;
+        }
+    }
+
     if(access & BlobResourceAccessFlagBits::kWrite) {
         if(!std::filesystem::exists(file_path)) {
             // Create directory if not exists
@@ -182,7 +272,7 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
             if(!file.good()) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Failed to create file: {}, err: {}",
-                       file_path.string().c_str(), errno);
+                       file_path.string(), errno);
                 return nullptr;
             }
         }
@@ -192,7 +282,11 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
         delete res;
         return nullptr;
     }
-    return TRef<BlobResourceInterface>(res);
+
+    auto [it, inserted] = resource_cache_.emplace(res_path, TRef<BlobResourceInterface>(res));
+
+    return it->second;
+
 }
 
 bool MyInfra::RIO_Exists(const MIResourcePath &res_path) {
@@ -200,12 +294,16 @@ bool MyInfra::RIO_Exists(const MIResourcePath &res_path) {
 }
 
 bool MyInfra::RIO_Delete(const MIResourcePath &res_path) {
+    {
+        std::lock_guard<std::mutex> lock(resource_cache_mutex_);
+        resource_cache_.erase(res_path);
+    }
     return std::filesystem::remove(TranslateResPathToFilePath(res_path));
 }
 
 MIInfraLimits MyInfra::GetResourceLimits() {
     MIInfraLimits limits;
-    limits.max_high_performance_thread_count = std::thread::hardware_concurrency();
+    limits.max_high_performance_thread_count = static_cast<int>(std::thread::hardware_concurrency());
     limits.max_low_performance_thread_count = 0;
     return limits;
 }

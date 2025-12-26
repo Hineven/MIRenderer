@@ -8,6 +8,7 @@
 #include "rhi/rhi_buffer.h"
 #include "rdg/rdg_pool.h"
 #include <rdg/rdg_resource.h>
+#include "core/infra.h"
 MI_NAMESPACE_BEGIN
 
 
@@ -159,6 +160,5 @@ void RDGResourcePool::RecycleResource(RDGTexture *texture) {
     num_active_textures_ --;
 }
 
-
-
 MI_NAMESPACE_END
+

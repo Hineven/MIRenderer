@@ -20,6 +20,7 @@
 #include "rhi/rhi_param.h"
 #include "rhi/rhi_fwd.h"
 #include "rdg/rdg_base.h"
+#include "rdg/rdg_global_memory_collector.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -277,7 +278,11 @@ private: \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
         auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
-        param_info.cpp_extra.render_targets_info = new RDGShaderRenderTargetInfo {0xffffffffu, Format __VA_OPT__(,) __VA_ARGS__}; \
+        auto __p = RDGGlobalMemoryCollector::Get().New<RDGShaderRenderTargetInfo>(); \
+        __p->target_index = 0xffffffffu; \
+        __p->format = Format; \
+        __VA_OPT__( __p->blending = __VA_ARGS__ ; ) \
+        param_info.cpp_extra.render_targets_info = __p; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
@@ -299,7 +304,10 @@ private: \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, Name); \
         auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
-        param_info.cpp_extra.vertex_buffer_info = new RDGShaderVertexBufferInfo {0xffffffffu, Stride}; \
+        auto __p = RDGGlobalMemoryCollector::Get().New<RDGShaderVertexBufferInfo>(); \
+        __p->index = 0xffffffffu; \
+        __p->stride = Stride; \
+        param_info.cpp_extra.vertex_buffer_info = __p; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
@@ -321,7 +329,12 @@ private: \
         zzFuncPtr (*PrevFunc)(zz##Name##_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
         uint32_t cpp_offset = offsetof(ThisClass, zzVertexAttributePlaceHolder_##Name); \
         auto param_info = RDGMakeShaderParamInfo(zz##Name##_TypeID::type_name, #Name, 0, cpp_offset); \
-        param_info.cpp_extra.vertex_attribute_info = new RDGShaderVertexAttributeInfo {BufferIndex, Offset, 0xffffffffu, Format}; \
+        auto __p = RDGGlobalMemoryCollector::Get().New<RDGShaderVertexAttributeInfo>(); \
+        __p->buffer_index = BufferIndex; \
+        __p->offset = Offset; \
+        __p->attribute_index = 0xffffffffu; \
+        __p->format = Format; \
+        param_info.cpp_extra.vertex_attribute_info = __p; \
         params->emplace_back(param_info); \
         PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
         return (zzFuncPtr)PrevFunc; \
@@ -366,10 +379,10 @@ public: \
         bool success = details::zzFinalizeParams(params); \
         if(!success) { \
             MI_LOG(MIInfraLogType::kError, "Failed to finalize shader parameters"); \
-            params_struct_info_ = new RDGShaderParamStructAndSizeInfo {}; \
+            params_struct_info_ = RDGGlobalMemoryCollector::Get().New<RDGShaderParamStructAndSizeInfo>(); \
             return ; \
         } \
-        auto params_mem = new RDGShaderParamInfo[params.size()]; \
+        auto params_mem = RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParamInfo>(params.size()); \
         std::copy(params.begin(), params.end(), params_mem); \
         std::map<uint32_t, int> cpp_member_index_map; \
         for (int i = 0; i < params.size(); i++) { \
@@ -377,7 +390,7 @@ public: \
         } \
         auto params_span = byte_strided_span((RHIParamInfo*)params_mem, params.size(), sizeof(RDGShaderParamInfo)); \
         auto cpp_params_span = std::span(params_mem, params.size()); \
-        params_struct_info_ = new RDGShaderParamStructAndSizeInfo {}; \
+        params_struct_info_ = RDGGlobalMemoryCollector::Get().New<RDGShaderParamStructAndSizeInfo>(); \
         params_struct_info_->members = params_span; \
         params_struct_info_->cpp_members = cpp_params_span; \
         params_struct_info_->cpp_member_index_map = cpp_member_index_map; \

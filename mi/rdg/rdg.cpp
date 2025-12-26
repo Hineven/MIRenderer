@@ -22,6 +22,8 @@
 // This is useful for debugging, but hurts performance alot.
 // #define INSTANT_SUBMIT_FOR_EACH_PASS
 #endif
+
+
 MI_NAMESPACE_BEGIN
 
 static bool is_rdg_executing = false;
@@ -140,6 +142,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
                 WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
             }
+            staging_buffer->Unmap();
             // Barrier the uniform buffer
             cmd.BufferBarrier(
                 uniform_buffer_->GetRHI(), uniform_buffer_->GetReadStages() | uniform_buffer_->GetWriteStages(),
@@ -169,24 +172,26 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     [[maybe_unused]] auto& rhi = RHI::Get();
 
     auto insert_timestamp = [&] () {
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
         auto timestamp = rhi.CreateTimestamp();
-        marker_timestamps.push_back(timestamp);
-        marker_periods.push_back(active_period);
-        cmd.InsertTimestamp(timestamp.Raw());
+        if (timestamp) {
+            marker_timestamps.push_back(timestamp);
+            marker_periods.push_back(active_period);
+            cmd.InsertTimestamp(timestamp.Raw());
+        }
+#else
+        (void)active_period;
 #endif
     };
 
     auto sync_active_period = [&] ([[maybe_unused]] RDGPass * pass, [[maybe_unused]] RHICommandQueueGraphics & queue) {
         insert_timestamp();
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
         auto curr_class_path = pass ? pass->class_path_ : std::vector<std::string>{};
         auto curr_pass_name = pass ? pass->GetName() : "";
         if (curr_class_path == active_period.class_names && curr_pass_name == active_period.pass_name) {
-            // Continue the current period
             return ;
         }
-        // Pop the previous period to a longest common ancestor
         size_t common_length = 0;
         while (common_length < std::min(active_period.class_names.size(), curr_class_path.size())) {
             if (active_period.class_names[common_length] != curr_class_path[common_length]) {
@@ -194,12 +199,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             }
             common_length ++;
         }
-        // Commit pop operations to RHI queue
         if (!active_period.pass_name.empty()) queue.EndDebugMarker();
         for (size_t i = active_period.class_names.size(); i > common_length; i--) {
             queue.EndDebugMarker();
         }
-        // Push new periods
         for (size_t i = common_length; i < curr_class_path.size(); i++) {
             queue.BeginDebugMarker(curr_class_path[i].c_str());
         }
@@ -207,6 +210,9 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
         active_period.class_names = curr_class_path;
         active_period.pass_name = curr_pass_name;
+#else
+        (void)pass;
+        (void)queue;
 #endif
     };
 
@@ -356,13 +362,13 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
 
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
     // Extract timestamp results
     if (!marker_timestamps.empty()) {
         timestamp_periods_.clear();
         uint64_t prev_time_ticks = 0;
         if (!marker_timestamps.empty())
-            prev_time_ticks = marker_timestamps[0]->QueryTimestamp(); // This function implicitly waits for the GPU to finish.
+            prev_time_ticks = marker_timestamps[0]->QueryTimestamp();
         auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
         const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
         for (size_t i = 0; i < marker_timestamps.size() - 1; i++) {
@@ -370,7 +376,6 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
             uint64_t delta;
             if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
-                // Counter wrapped around within the valid bit width
                 delta = (wrap_mod - prev_time_ticks) + time_ticks;
             } else {
                 delta = time_ticks - prev_time_ticks;
@@ -393,3 +398,4 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 }
 
 MI_NAMESPACE_END
+

@@ -29,7 +29,7 @@ enum class CVarType : unsigned {
 };
 
 // Base class for all CVars
-class CVarBase : public RefCounted<true> {
+class CVarBase {
 public:
     CVarBase(const std::string& id, const std::string& description, CVarType type);
     virtual ~CVarBase() = default;
@@ -97,7 +97,7 @@ public:
 
 private:
     CVarRegistry() = default;
-    std::map<std::string, TRef<CVarBase>> cvars_;
+    std::map<std::string, CVarBase*> cvars_;
     std::mutex mutex_;
 };
 

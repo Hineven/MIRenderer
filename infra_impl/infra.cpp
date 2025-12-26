@@ -83,11 +83,18 @@ void MyInfra::Init() {
 }
 
 void MyInfra::Shutdown() {
+    // Clear resource cache
+    {
+        std::lock_guard lock(resource_cache_mutex_);
+        resource_cache_.clear();
+    }
+
     // Stop and block wait file io thread
     StopAndBlockWaitFIOThreads();
 
     // Free compiler contexts
     DestroyHLSLCompilerContexts();
+
 }
 
 // Misc
@@ -119,8 +126,8 @@ void MyInfra::AddProfileTime([[maybe_unused]] const std::string &name, [[maybe_u
     // Do nothing
 }
 
-void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
-    // Just print to console
+void MyInfra::LogMessage(MIInfraLogType level, const std::string &message, const std::string &location) {
+    std::lock_guard guard(log_mutex_);
     std::string level_str;
     std::string color_start; // Color code at start
     std::string color_reset = "\033[0m"; // Reset color
@@ -153,7 +160,19 @@ void MyInfra::LogMessage(MIInfraLogType level, const std::string &message) {
     }
 #endif
 
-    std::cout << color_start << "[" << level_str << "] " << message << color_reset << std::endl;
+    if (log_callback_) {
+        log_callback_(level, message, location);
+    }
+
+    std::cout << color_start << "[" << level_str << "] " << message;
+    if (!location.empty()) {
+        std::cout << " (" << location << ")";
+    }
+    std::cout << color_reset << std::endl;
+}
+
+void MyInfra::SetLogCallback(MIInfraLogCallback callback) {
+    log_callback_ = std::move(callback);
 }
 
 void MyInfra::OnFrameBegin() {

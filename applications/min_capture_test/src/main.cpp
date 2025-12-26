@@ -1,3 +1,11 @@
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+
+// 这一行会让 new 包含文件名和行号信息
+#ifdef _DEBUG
+    #define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
+#endif
+
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
@@ -16,7 +24,13 @@ static const uint32_t HEIGHT = 600;
 
 #define VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT
 
+
 int main() {
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    char * ptr = new char[1024 * 1024 * 12]; // Allocate 12 MB to test memory leaking detection
+    ptr[0] = '1'; // Use the memory to avoid optimization
+    ptr[1] = '\0';
+    printf("%s", ptr);
     if (!glfwInit()) {
         std::cerr << "GLFW init failed\n";
         return 1;
@@ -211,5 +225,8 @@ int main() {
 
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    _CrtDumpMemoryLeaks();
+
     return 0;
 }

@@ -34,9 +34,8 @@ public:
     // Thread safe.
     virtual std::future<void> Async_WriteBlob(size_t pos, size_t size, const void * data) = 0;
 
-    virtual ~BlobResourceInterface () = default;
-    friend class MIInfraInterface;
 protected:
+    virtual ~BlobResourceInterface () = default; // prevent user deletion; allow base RefCounted to delete
     BlobResourceInterface () = default;
 };
 

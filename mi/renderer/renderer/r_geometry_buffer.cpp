@@ -20,10 +20,16 @@ GeometryBufferData::~GeometryBufferData() {
 void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, RendererView * view) {
     auto width = view->film_width_;
     auto height = view->film_height_;
+    // Guard against zero-sized views to avoid creating invalid textures.
+    if (width == 0 || height == 0) {
+        mi_warning(true, "GeometryBufferData::Allocate received zero-sized view ({}x{}). Skipping allocation.", width, height);
+        return;
+    }
+
     G_depth_ = RDGTexture::Create2D(
         width, height, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransfer);
     G_depth_->SetName("GBuffer Depth");
 
     G_visibility_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32G32B32A32_UINT,
@@ -54,6 +60,7 @@ void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, 
     G_flags_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+    G_flags_->SetName("GBuffer Flags");
 
     G_transmittance_ = RDGTexture::Create2D(
         width, height, PixelFormatType::kR8_UNORM,
