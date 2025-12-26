@@ -630,7 +630,6 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
     // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
 #if ENABLE_TIMESTAMP
     if (cmd->GetCommandQueueType() == RHICommandQueueType::kGraphics) {
-        auto vk_rhi = GetVulkanRHI();
         vk_rhi->ResetTimestampAllocatorForFrame((uint32_t)GetCurrentFrameIndex_RHIThread());
     }
 #else

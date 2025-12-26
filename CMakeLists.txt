@@ -57,8 +57,22 @@ if(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
     add_definitions(-DMI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
 endif()
 
-# Global profiling toggle: enable timestamp queries in all builds
-add_definitions(-DENABLE_TIMESTAMP)
+# Global profiling toggle: enable GPU timestamp queries in all builds for easier profiling.
+# Note: this can introduce performance overhead, so only enable when needed.
+option(MI_ENABLE_TIMESTAMP "Enable timestamp queries globally" ON)
+if(MI_ENABLE_TIMESTAMP)
+    message(STATUS "Timestamp queries enabled globally.")
+    add_definitions(-DENABLE_TIMESTAMP)
+endif()
+
+option(MI_ENABLE_COMPLIER_ADDRESS_SANITIZER "Enable address sanitizer in debug builds" OFF)
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    # Address sanitizer support. Enabled only on debug builds.
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND MI_ENABLE_COMPLIER_ADDRESS_SANITIZER)
+        message(STATUS "Address Sanitizer enabled.")
+        add_compile_options(/fsanitize=address /Zi)
+    endif()
+endif()
 
 ##################
 #  Dependencies  #

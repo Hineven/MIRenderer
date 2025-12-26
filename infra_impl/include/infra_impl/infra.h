@@ -10,6 +10,7 @@
 #include <queue>
 #include <semaphore>
 #include <fstream>
+#include <unordered_map>
 
 #include <core/infra.h>
 #include <shared_mutex>
@@ -18,7 +19,6 @@
 
 MI_NAMESPACE_BEGIN
 
-constexpr uint32_t kMaxFIOThreads = 4;
 
 // Simply uses OS FS as resource system
 class MyBlobResource : public BlobResourceInterface {
@@ -42,6 +42,12 @@ public:
     friend class MyInfra;
 protected:
     MyBlobResource(MyInfra * infra_, const std::filesystem::path &file_path, MIInfraResourceHintType hint) ;
+
+    // File operations must run on the dedicated FIO thread only.
+    void DoReadBlob(size_t pos, size_t size, void *data);
+    void DoWriteBlob(size_t pos, size_t size, const void *data);
+    size_t DoGetSize();
+    void DoClose();
 
     MyInfra * infra_ {nullptr};
 
@@ -85,6 +91,7 @@ struct HLSLCompilerContext;
 // Windows, Vulkan 1.3, NVIDIA
 class MyInfra : public MIInfraInterface {
 public:
+    friend class InfraIncludeHandler;
     MyInfra(bool find_resource_directory = false, std::string resource_directory = "") ;
 
     std::filesystem::path GetResourceDirectory() override;
@@ -173,7 +180,7 @@ protected:
     // The mutex is used to protect the queue
     std::mutex fio_queue_mutex_;
     // The thread that processes the file io tasks
-    std::unique_ptr<std::thread> fio_threads_[kMaxFIOThreads];
+    std::unique_ptr<std::thread> fio_thread_;
     // The queue of file io tasks
     std::queue<std::packaged_task<void()>> fio_tasks_;
 
@@ -190,6 +197,10 @@ protected:
     // Log mutex and callback
     std::mutex log_mutex_;
     MIInfraLogCallback log_callback_ {};
+
+    // Unique resource cache to ensure one BlobResource per path
+    std::unordered_map<MIResourcePath, TRef<BlobResourceInterface>> resource_cache_;
+    std::mutex resource_cache_mutex_;
 };
 
 MI_NAMESPACE_END

@@ -83,11 +83,18 @@ void MyInfra::Init() {
 }
 
 void MyInfra::Shutdown() {
+    // Clear resource cache
+    {
+        std::lock_guard lock(resource_cache_mutex_);
+        resource_cache_.clear();
+    }
+
     // Stop and block wait file io thread
     StopAndBlockWaitFIOThreads();
 
     // Free compiler contexts
     DestroyHLSLCompilerContexts();
+
 }
 
 // Misc
