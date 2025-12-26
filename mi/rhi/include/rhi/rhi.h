@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <future>
+#include <atomic>
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"
@@ -184,11 +185,16 @@ protected:
         resources_pending_for_deletion_ {};
     // The resource that is not ready to be deleted in the previous frame.
     RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
+    std::atomic<size_t> resources_pending_for_deletion_count_ {0};
 
     // The function can be called from BOTH render thread and RHI thread. frame_index_ counter is retrieved from
     // either sides.
     FORCEINLINE bool AddResourcePendingForDeletion (RHIResource * resource) {
-        return resources_pending_for_deletion_.Push({resource, GetFrameIndexForCurrentThread()});
+        bool pushed = resources_pending_for_deletion_.Push({resource, GetFrameIndexForCurrentThread()});
+        if (pushed) {
+            resources_pending_for_deletion_count_.fetch_add(1, std::memory_order_relaxed);
+        }
+        return pushed;
     }
 
     // @param force if true, all pending resources will be recycled even if they are

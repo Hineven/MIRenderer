@@ -57,6 +57,9 @@ if(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
     add_definitions(-DMI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
 endif()
 
+# Global profiling toggle: enable timestamp queries in all builds
+add_definitions(-DENABLE_TIMESTAMP)
+
 ##################
 #  Dependencies  #
 ##################

@@ -130,7 +130,7 @@ VulkanTimestamp::~VulkanTimestamp() {
 }
 
 uint64_t VulkanTimestamp::QueryTimestamp() const {
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
     auto rhi = GetVulkanRHI();
     uint64_t value = 0;
     // Wait for the timestamp to be available and read it as 64-bit
@@ -153,7 +153,7 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
     }
     return value;
 #else
-    mi_warning(true, "Querying timestamp in release build returns UINT64_MAX.");
+    mi_warning(true, "Querying timestamp returns UINT64_MAX when ENABLE_TIMESTAMP is disabled.");
     return UINT64_MAX;
 #endif
 }

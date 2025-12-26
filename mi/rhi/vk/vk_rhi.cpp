@@ -497,7 +497,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 #endif
         LoadPipelineCache();
 
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
         // Query pool
         timestamp_query_pool_ = device_.createQueryPool(vk::QueryPoolCreateInfo{
             {},
@@ -812,7 +812,7 @@ RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
 }
 
 void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
     // Waited frame fences before calling this.
     uint32_t base = (frame_index % kNumFramesInFlight) * kQueriesPerFrame;
     timestamp_frame_base_.store(base, std::memory_order_relaxed);
@@ -825,7 +825,7 @@ void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
 }
 
 RHITimestampRef VulkanRHI::CreateTimestamp() {
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
     auto local = timestamp_query_allocator_.fetch_add(1, std::memory_order_relaxed);
     if (local >= kQueriesPerFrame) {
         mi_warning(true, "Timestamp allocator exhausted ({} >= per-frame cap {}). Dropping timestamp.", local, kQueriesPerFrame);
@@ -878,6 +878,7 @@ RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracing
     if(pipeline->IsValid()) return TRef<RHIRayTracingPipeline>(pipeline);
     pipeline->~VulkanRayTracingPipeline();
     delete pipeline;
+    return nullptr;
 }
 
 

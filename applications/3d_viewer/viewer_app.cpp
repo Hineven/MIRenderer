@@ -987,6 +987,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         if (rhi.GetFrameIndex() % 1000 == 0) {
             printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool_->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
+#ifndef NDEBUG
+            printf("RefCounted object count: %u\n", GetRefCountedObjectCount());
+#endif
             fflush(stdout);
         }
 
