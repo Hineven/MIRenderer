@@ -37,7 +37,11 @@ Scene::Scene(): renderable_slots_(kMaxNumRenderables) {
 
 }
 Scene::~Scene() {
-
+    // Release renderable references first, because they may hold references to the scene &
+    // their de-allocations may create more allocations within the scene destruction process
+    // (such as inserting indices into the slot_allocator_).
+    // Which may lead to use-after-free bugs.
+    renderables_.clear();
 }
 
 

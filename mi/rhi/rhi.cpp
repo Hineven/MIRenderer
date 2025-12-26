@@ -82,6 +82,7 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
         removal = false;
         if(force || remaining_resource_record_pending_for_deletion_.frame_index < RHI::Get().GetFrameIndex()) {
             delete remaining_resource_record_pending_for_deletion_.resource;
+            resources_pending_for_deletion_count_.fetch_sub(1, std::memory_order_relaxed);
             remaining_resource_record_pending_for_deletion_ = {};
             removal = true;
         }
@@ -92,6 +93,7 @@ void RHI::RecycleRHIResourcesPendingForDeletion_RHIThread(bool force) {
         while(resources_pending_for_deletion_.Pop(resource)) {
             if(force || resource.frame_index < RHI::Get().GetFrameIndex() - 1) {
                 delete resource.resource;
+                resources_pending_for_deletion_count_.fetch_sub(1, std::memory_order_relaxed);
             } else {
                 // The resource is not ready to be deleted, delay it to the next frame;
                 remaining_resource_record_pending_for_deletion_ = resource;

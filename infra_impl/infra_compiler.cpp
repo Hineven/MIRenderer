@@ -18,14 +18,92 @@
 #include <string>
 #include <codecvt>
 #include <locale>
-#include <unordered_set>
 #include <filesystem>
+#include <atomic>
 
 #include "infra_impl/infra.h"
 // 不再需要包含ShaderIncludeCollector
 // #include "infra_impl/shader_include_collector.h"
 
 MI_NAMESPACE_BEGIN
+
+// Custom include handler that routes file reads through Infra RIO_Open only
+class InfraIncludeHandler : public IDxcIncludeHandler {
+public:
+    InfraIncludeHandler(MyInfra* infra, IDxcLibrary* dxc_lib)
+        : infra_(infra), dxc_lib_(dxc_lib) {}
+
+    // IUnknown
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) override {
+        if (!ppvObject) return E_POINTER;
+        if (riid == __uuidof(IDxcIncludeHandler) || riid == __uuidof(IUnknown)) {
+            *ppvObject = static_cast<IDxcIncludeHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppvObject = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return ++ref_count_;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG newCount = --ref_count_;
+        if (newCount == 0) delete this;
+        return newCount;
+    }
+
+    // IDxcIncludeHandler
+    HRESULT STDMETHODCALLTYPE LoadSource(LPCWSTR pFilename, IDxcBlob** ppIncludeSource) override {
+        if (!pFilename || !ppIncludeSource) return E_INVALIDARG;
+        *ppIncludeSource = nullptr;
+        try {
+            // Convert include path to resource path (relative to resource dir if absolute)
+            std::filesystem::path inc_path = std::filesystem::path(pFilename);
+            std::filesystem::path res_dir = infra_->GetResourceDirectory();
+            MIResourcePath res_path;
+            if (inc_path.is_absolute()) {
+                std::error_code ec;
+                auto rel = std::filesystem::relative(inc_path, res_dir, ec);
+                res_path = (!ec && !rel.empty()) ? rel.generic_string() : inc_path.generic_string();
+            } else {
+                res_path = inc_path.generic_string();
+            }
+
+            // Open via Infra only
+            TRef<BlobResourceInterface> blob = infra_->RIO_Open(res_path, MIInfraResourceHintType::kShaderSource, BlobResourceAccessFlagBits::kRead);
+            if (!blob.Raw()) {
+                return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+            }
+            size_t size = blob->GetSize();
+            std::vector<char> buf(size);
+            if (size) blob->ReadBlob(0, size, buf.data());
+
+            // Sanitize: strip UTF-8 BOM and trailing NULs
+            size_t start = 0;
+            if (buf.size() >= 3 && (unsigned char)buf[0] == 0xEF && (unsigned char)buf[1] == 0xBB && (unsigned char)buf[2] == 0xBF) start = 3;
+            size_t end = buf.size();
+            while (end > start && buf[end - 1] == '\0') --end;
+            const char* data_ptr = buf.data() + start;
+            size_t data_len = end - start;
+
+            IDxcBlobEncoding* out_blob = nullptr;
+            HRESULT hr = dxc_lib_->CreateBlobWithEncodingOnHeapCopy(data_ptr, (UINT32)data_len, CP_UTF8, &out_blob);
+            if (FAILED(hr)) return hr;
+            *ppIncludeSource = out_blob;
+            return S_OK;
+        } catch (...) {
+            return E_FAIL;
+        }
+    }
+
+private:
+    std::atomic<ULONG> ref_count_{1};
+    MyInfra* infra_ {nullptr};
+    IDxcLibrary* dxc_lib_ {nullptr};
+};
 
 struct HLSLCompilerContext {
     IDxcLibrary *dxc_lib {nullptr};
@@ -102,7 +180,8 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
         }
         DxcCreateInstance(CLSID_DxcLibrary, __uuidof(IDxcLibrary), (void **)&ctx->dxc_lib);
         DxcCreateInstance(CLSID_DxcCompiler, __uuidof(IDxcCompiler), (void **)&ctx->dxc_compiler);
-        ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
+        // Use our Infra-backed include handler
+        ctx->include_handler = new InfraIncludeHandler(this, ctx->dxc_lib);
 #else
         // Linux实现
         ctx->dxc_library_handle = dlopen("libdxcompiler.so", RTLD_LAZY);
@@ -112,7 +191,6 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             return nullptr;
         }
 
-        // 获取创建实例的函数指针
         auto DxcCreateInstance = (DxcCreateInstanceProc)dlsym(ctx->dxc_library_handle, "DxcCreateInstance");
         if (!DxcCreateInstance) {
             std::cerr << "Failed to get DxcCreateInstance function: " << dlerror() << std::endl;
@@ -121,7 +199,6 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             return nullptr;
         }
 
-        // 创建DXC实例
         HRESULT hr = DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&ctx->dxc_lib));
         if (FAILED(hr)) {
             std::cerr << "Failed to create DXC library instance" << std::endl;
@@ -138,12 +215,13 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             delete ctx;
             return nullptr;
         }
-        hr = ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
+        // Use our Infra-backed include handler
+        ctx->include_handler = new InfraIncludeHandler(this, ctx->dxc_lib);
 #endif
-        // 古法引用计数，匠心独运，传承配方 (主要是因为Unix上没有ComPtr，还得自己实现）
-        ctx->include_handler->AddRef();
-        ctx->dxc_lib->AddRef();
-        ctx->dxc_compiler->AddRef();
+        // Manual ref management for COM-like interfaces
+        // DxcCreateInstance returns objects with refcount = 1, and InfraIncludeHandler starts with refcount = 1.
+        // We store the owning references directly and release them once in DestroyHLSLCompilerContexts.
+        // Calling AddRef here leaves refcount at 2 and leaks when releasing only once later.
         hlsl_compiler_contexts_[thread_id] = ctx;
         return ctx;
     } else {
@@ -172,7 +250,7 @@ void MyInfra::DestroyHLSLCompilerContexts() {
     hlsl_compiler_contexts_.clear();
 }
 
-static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shader_path, std::vector<std::string> options, bool preprocess_only = false) {
+static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shader_path, std::vector<std::string> options, [[maybe_unused]] bool preprocess_only = false) {
     auto w_options = std::vector<std::wstring>(options.size());
     for (size_t i = 0; i < options.size(); i++) {
         w_options[i] = Utf8ToWide(options[i]);
@@ -209,7 +287,17 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         // add_option(L"-fspv-extension=SPV_KHR_non_semantic_info");
     }
     // Add a default include path (same as the shader parent directory)
-
+    try {
+        std::filesystem::path shader_fs_path = std::filesystem::absolute(std::wstring(shader_path));
+        auto parent_path = shader_fs_path.parent_path();
+        if (std::filesystem::exists(parent_path)) {
+            std::wstring parent_path_w = Utf8ToWide(parent_path.string());
+            add_option(L"-I");
+            add_option(parent_path_w);
+        }
+    } catch (...) {
+        // ignore
+    }
     // Always add the global renderer shader directory for shared includes
     try {
         std::filesystem::path global_shader_dir = std::filesystem::absolute("mi/renderer/shaders");

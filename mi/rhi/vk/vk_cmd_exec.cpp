@@ -626,6 +626,15 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         chain.state_index = (chain.state_index + 1) % (int) std::size(chain.states);
     }
     if (sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
+
+    // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
+#if ENABLE_TIMESTAMP
+    if (cmd->GetCommandQueueType() == RHICommandQueueType::kGraphics) {
+        vk_rhi->ResetTimestampAllocatorForFrame((uint32_t)GetCurrentFrameIndex_RHIThread());
+    }
+#else
+    (void)cmd;
+#endif
 }
 
 // Helpers
@@ -1157,6 +1166,7 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
 }
 
 void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHICommandInsertTimestamp *cmd) {
+#if ENABLE_TIMESTAMP
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     auto vk_rhi = GetVulkanRHI();
@@ -1170,10 +1180,12 @@ void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHI
         vk::PipelineStageFlagBits::eAllCommands,
         pool, query
     );
+#else
+    (void)buffer; (void)cmd;
+#endif
 }
 
-void
-VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
+void VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
 const std::string & submit_prefix,
 // TODO make this useful (or completely remove it)
 [[maybe_unused]] bool recycle_resources) {

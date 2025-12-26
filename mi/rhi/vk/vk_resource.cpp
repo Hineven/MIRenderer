@@ -130,7 +130,7 @@ VulkanTimestamp::~VulkanTimestamp() {
 }
 
 uint64_t VulkanTimestamp::QueryTimestamp() const {
-#ifndef NDEBUG
+#if ENABLE_TIMESTAMP
     auto rhi = GetVulkanRHI();
     uint64_t value = 0;
     // Wait for the timestamp to be available and read it as 64-bit
@@ -143,7 +143,8 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
         sizeof(uint64_t),
         vk::QueryResultFlagBits::eWait | vk::QueryResultFlagBits::e64
     );
-    mi_assert(res == vk::Result::eSuccess, "Failed to get timestamp query result.");
+    mi_warning(res == vk::Result::eSuccess, "Failed to get timestamp query result ({}).", vk::to_string(res));
+    if (res != vk::Result::eSuccess) return UINT64_MAX;
     // Mask to the hardware-supported valid bits
     auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
     if (valid_bits < 64) {
@@ -152,7 +153,7 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
     }
     return value;
 #else
-    mi_warning(true, "Querying timestamp in release build returns UINT64_MAX.");
+    mi_warning(true, "Querying timestamp returns UINT64_MAX when ENABLE_TIMESTAMP is disabled.");
     return UINT64_MAX;
 #endif
 }

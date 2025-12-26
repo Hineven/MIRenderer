@@ -5,6 +5,7 @@
  */
 #include <ranges>
 #include "rdg/rdg_param.h"
+#include "rdg/rdg_global_memory_collector.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -100,39 +101,39 @@ namespace details {
         }
         {
             if (!storage_buffers.empty()) {
-                info->storage_buffers_ = std::span(new RDGShaderParameterLocation[storage_buffers.size()], storage_buffers.size());
+                info->storage_buffers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(storage_buffers.size()), storage_buffers.size());
                 std::copy(storage_buffers.begin(), storage_buffers.end(), info->storage_buffers_.begin());
             } else info->storage_buffers_ = {};
             if (!uniform_buffers.empty()) {
-                info->uniform_buffers_ = std::span(new RDGShaderParameterLocation[uniform_buffers.size()], uniform_buffers.size());
+                info->uniform_buffers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(uniform_buffers.size()), uniform_buffers.size());
                 std::copy(uniform_buffers.begin(), uniform_buffers.end(), info->uniform_buffers_.begin());
             } else info->uniform_buffers_ = {};
             if (!uavs.empty()) {
-                info->uavs_ = std::span(new RDGShaderParameterLocation[uavs.size()], uavs.size());
+                info->uavs_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(uavs.size()), uavs.size());
                 std::copy(uavs.begin(), uavs.end(), info->uavs_.begin());
             } else info->uavs_ = {};
             if (!srvs.empty()) {
-                info->srvs_ = std::span(new RDGShaderParameterLocation[srvs.size()], srvs.size());
+                info->srvs_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(srvs.size()), srvs.size());
                 std::copy(srvs.begin(), srvs.end(), info->srvs_.begin());
             } else info->srvs_ = {};
             if (!samplers.empty()) {
-                info->samplers_ = std::span(new RDGShaderParameterLocation[samplers.size()], samplers.size());
+                info->samplers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(samplers.size()), samplers.size());
                 std::copy(samplers.begin(), samplers.end(), info->samplers_.begin());
             } else info->samplers_ = {};
             if (!acceleration_structures.empty()) {
-                info->acceleration_structures_ = std::span(new RDGShaderParameterLocation[acceleration_structures.size()], acceleration_structures.size());
+                info->acceleration_structures_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(acceleration_structures.size()), acceleration_structures.size());
                 std::copy(acceleration_structures.begin(), acceleration_structures.end(), info->acceleration_structures_.begin());
             } else info->acceleration_structures_ = {};
             if (!vertex_buffers.empty()) {
-                info->vertex_buffers_ = std::span(new RDGShaderParameterLocation[vertex_buffers.size()], vertex_buffers.size());
+                info->vertex_buffers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_buffers.size()), vertex_buffers.size());
                 std::copy(vertex_buffers.begin(), vertex_buffers.end(), info->vertex_buffers_.begin());
             } else info->vertex_buffers_ = {};
             if (!vertex_attributes.empty()) {
-                info->vertex_attributes_ = std::span(new RDGShaderParameterLocation[vertex_attributes.size()], vertex_attributes.size());
+                info->vertex_attributes_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_attributes.size()), vertex_attributes.size());
                 std::copy(vertex_attributes.begin(), vertex_attributes.end(), info->vertex_attributes_.begin());
             } else info->vertex_attributes_ = {};
             if (!render_targets.empty()) {
-                info->render_targets_ = std::span(new RDGShaderParameterLocation[render_targets.size()], render_targets.size());
+                info->render_targets_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(render_targets.size()), render_targets.size());
                 std::copy(render_targets.begin(), render_targets.end(), info->render_targets_.begin());
             } else info->render_targets_ = {};
             if (index_buffer.info) {

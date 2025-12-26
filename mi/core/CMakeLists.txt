@@ -17,10 +17,11 @@ set(HEADER_FILES
 )
 
 set(SOURCE_FILES
+    refcounted.cpp
     blobres.cpp
     task.cpp
     thr.cpp
-        include/core/fwd.h
+    include/core/fwd.h
 )
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})

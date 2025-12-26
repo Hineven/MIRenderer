@@ -712,42 +712,46 @@ RayUniformVolumeDistribution RenderRay(
 
     bool bSelected = false;
 
-    for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
-        uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
-        uint PrimitiveIndex, RenderableIndex;
-        UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
-        VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
+    if(WaveActiveAllTrue(NumTilePrimitiveInstances == 0)) {
+        // No primitives in this tile. Pass
+    } else {
+        for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
+            uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
+            uint PrimitiveIndex, RenderableIndex;
+            UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
+            VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
-        float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
+            float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
 
-        // Calculate intersection with the primitive
-        float2 lr; float Dist;
-        bool bIntersected = RayIntersect(
-            RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
-            lr, Dist
-        );
-        float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
-        // Clamp volumes to the nearest seen surface
-        lr.y = min(lr.y, MaxLinearDepth);
-        // Transform linear depth to actual ray length
-        lr *= RayLenghtCorrection;
-        float u = rng.rand();
-        if(bIntersected && lr.y > max(0.f, lr.x)) {
-            TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Opacity);
-            RayVolumePrimitiveIntersection Intersection;
-            Intersection.Color = Primitive.Color;
-            Intersection.Density = Opacity;
-            Intersection.l = max(lr.x, 0);
-            Intersection.r = max(lr.y, 0);
-            // Sample with decomposition tracking
-            float CurrentSampledDepth = SampleRayVolumePrimitiveIntersection(Intersection, u);
-            if(CurrentSampledDepth < ClosestSampleDepth) {
-                // Update the sample depth
-                ClosestSampleDepth = CurrentSampledDepth;
+            // Calculate intersection with the primitive
+            float2 lr; float Dist;
+            bool bIntersected = RayIntersect(
+                RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
+                lr, Dist
+            );
+            float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+            // Clamp volumes to the nearest seen surface
+            lr.y = min(lr.y, MaxLinearDepth);
+            // Transform linear depth to actual ray length
+            lr *= RayLenghtCorrection;
+            float u = rng.rand();
+            if(bIntersected && lr.y > max(0.f, lr.x)) {
+                TotalTransmittance *= ComputeTransmittance(lr.y - lr.x, Opacity);
+                RayVolumePrimitiveIntersection Intersection;
+                Intersection.Color = Primitive.Color;
+                Intersection.Density = Opacity;
+                Intersection.l = max(lr.x, 0);
+                Intersection.r = max(lr.y, 0);
+                // Sample with decomposition tracking
+                float CurrentSampledDepth = SampleRayVolumePrimitiveIntersection(Intersection, u);
+                if(CurrentSampledDepth < ClosestSampleDepth) {
+                    // Update the sample depth
+                    ClosestSampleDepth = CurrentSampledDepth;
+                }
+                float v = rng.rand();
+                // Update the result distribution
+                Result = UpdateRayUniformVolumeDistributionExponentialScatteringApproax(Result, Intersection, v, Cdf, Attenuation, bSelected);
             }
-            float v = rng.rand();
-            // Update the result distribution
-            Result = UpdateRayUniformVolumeDistributionExponentialScatteringApproax(Result, Intersection, v, Cdf, Attenuation, bSelected);
         }
     }
 
@@ -757,60 +761,64 @@ RayUniformVolumeDistribution RenderRay(
     }
 
     bool bValidSample = ClosestSampleDepth < 1e9f;
-    if(bValidSample) {
-        SampleDepth = ClosestSampleDepth;
-        SamplePdf = 1.f;
-        SampleTransmittance = 1.f;
-        // Used to compute the pdf
-        float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
-        float SumDensity = 0.f;
-        // Iterate again and calculate sample pdf
-        for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
-            uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
-            uint PrimitiveIndex, RenderableIndex;
-            UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
-            VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
+    if(!WaveActiveAllTrue(bValidSample)) {
+        // No valid sample found
+    } else {
+        if(bValidSample) {
+            SampleDepth = ClosestSampleDepth;
+            SamplePdf = 1.f;
+            SampleTransmittance = 1.f;
+            // Used to compute the pdf
+            float Pdf_C = 1.f, Pdf_Prod = 1.f, Pdf_Sigma = 0.f;
+            float SumDensity = 0.f;
+            // Iterate again and calculate sample pdf
+            for (uint i = 0; i < NumTilePrimitiveInstances; i++) {
+                uint RenderablePrimitiveIndex = PrimitiveInstanceListSortedBuffer[TileInstanceOffset + i];
+                uint PrimitiveIndex, RenderableIndex;
+                UnpackRenderablePrimitiveIndex(RenderablePrimitiveIndex, RenderableIndex, PrimitiveIndex);
+                VolumePrimitive Primitive = LoadVolumePrimitive(PrimitiveIndex);
 
-            // Transform the primitive to world space
-            float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
+                // Transform the primitive to world space
+                float3x4 ToObjectTransform = RenderableInverseTransformBuffer[RenderableIndex];
 
-            // Calculate intersection with the primitive
-            float2 lr; float Dist;
-            bool bIntersected = RayIntersect(
-                RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
-                lr, Dist
-            );
-            // Clamp volumes to the nearest seen surface
-            lr.y = min(lr.y, MaxLinearDepth);
-            // Transform depth to actual ray length
-            lr *= RayLenghtCorrection;
-            if(bIntersected && lr.y > max(0.f, lr.x)) {
-                float TMax = min(SampleDepth, lr.y);
-                float TMin = max(lr.x, 0.f);
-                float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
-                float Transmittance = exp(-Opacity * max(TMax - TMin, 0));
-                // Calculate the sample pdf (derived by differentating 1 - transmittance)
-                if(lr.y <= SampleDepth) {
-                    // The intersection is before the sampled depth.
-                    Pdf_C *= Transmittance;
-                } else if(lr.x <= SampleDepth) {
-                    // Sample falls into the primitive.
-                    Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Opacity * Transmittance;
-                    Pdf_Prod *= Transmittance;
-                    // Calculate the sample color
-                    SampleColor += Opacity * Primitive.Color;
-                    SumDensity += Opacity;
+                // Calculate intersection with the primitive
+                float2 lr; float Dist;
+                bool bIntersected = RayIntersect(
+                    RayOrigin, UnnormalizedRayDirection, Primitive, ToObjectTransform,
+                    lr, Dist
+                );
+                // Clamp volumes to the nearest seen surface
+                lr.y = min(lr.y, MaxLinearDepth);
+                // Transform depth to actual ray length
+                lr *= RayLenghtCorrection;
+                if(bIntersected && lr.y > max(0.f, lr.x)) {
+                    float TMax = min(SampleDepth, lr.y);
+                    float TMin = max(lr.x, 0.f);
+                    float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+                    float Transmittance = exp(-Opacity * max(TMax - TMin, 0));
+                    // Calculate the sample pdf (derived by differentating 1 - transmittance)
+                    if(lr.y <= SampleDepth) {
+                        // The intersection is before the sampled depth.
+                        Pdf_C *= Transmittance;
+                    } else if(lr.x <= SampleDepth) {
+                        // Sample falls into the primitive.
+                        Pdf_Sigma = Pdf_Sigma * Transmittance + Pdf_Prod * -Opacity * Transmittance;
+                        Pdf_Prod *= Transmittance;
+                        // Calculate the sample color
+                        SampleColor += Opacity * Primitive.Color;
+                        SumDensity += Opacity;
+                    }
+                    SampleTransmittance *= Transmittance;
                 }
-                SampleTransmittance *= Transmittance;
             }
-        }
-        if(SumDensity > 0) {
-            SampleColor /= max(SumDensity, 1e-6f);
-            SamplePdf = Pdf_C * Pdf_Sigma;
-        } else {
-            // This should never occur. But anyway the sample have not falled into any primitive.
-            // Mark as an invalid sample.
-            SamplePdf = 0.f;
+            if(SumDensity > 0) {
+                SampleColor /= max(SumDensity, 1e-6f);
+                SamplePdf = Pdf_C * Pdf_Sigma;
+            } else {
+                // This should never occur. But anyway the sample have not falled into any primitive.
+                // Mark as an invalid sample.
+                SamplePdf = 0.f;
+            }
         }
     }
     return Result;
@@ -832,6 +840,7 @@ void DrawVolumePrimitives (
     uint TileIndex = GroupID.x + GroupID.y * UB.TileDimensions.x;
     uint TileInstanceOffset = TileInstanceOffsetBuffer[TileIndex];
     uint NumTilePrimitiveInstances = TileInstanceCountBuffer[TileIndex];
+    
     {
         CameraParameters C = GetActiveCamera();
         uint2 PixelOffsetInTile = LocalID;
