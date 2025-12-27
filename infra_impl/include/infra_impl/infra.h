@@ -18,7 +18,7 @@
 
 MI_NAMESPACE_BEGIN
 
-constexpr uint32_t kMaxFIOThreads = 4;
+constexpr uint32_t kMaxFIOThreads = 1;
 
 // Simply uses OS FS as resource system
 class MyBlobResource : public BlobResourceInterface {

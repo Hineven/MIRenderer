@@ -1377,8 +1377,8 @@ void RDGShaderLibrary::Init() {
                 std::lock_guard<std::mutex> lock(cache_mutex);
                 cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
                 num_shaders_compiled ++;
-                for (int i = 0; i < 256; i++) putchar('\b');
-                printf("ShaderLibrary: Compiled %u / %u shaders.", num_shaders_compiled.load(), (uint32_t)num_all_shaders);
+                //for (int i = 0; i < 256; i++) putchar('\b');
+                printf("ShaderLibrary: Compiled %u / %u shaders.\n", num_shaders_compiled.load(), (uint32_t)num_all_shaders);
                 fflush(stdout);
             }
         });

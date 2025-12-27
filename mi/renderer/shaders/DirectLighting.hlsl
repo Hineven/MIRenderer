@@ -733,12 +733,12 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
     // Using DDA to calculate majorant
     float densityScale = 1.0f;
     float majorant = CalculateMaxDensityDDA(densityTex, uvwOrigin, uvwDir, t0, t1, densityScale);
-    majorant = max(majorant, 1e-4f);
+    majorant = max(majorant, 1e-6f);
 
     float t = t0;
     bool scattered = false;
-    float3 scatterPos = 0;
-    float3 volumeColor = 1.0f; // Albedo
+    float3 scatterPos = 0.f.xxx;
+    float3 volumeColor = 1.0f.xxx; // Albedo
 
     float accumulatedTransmittance = RWVolumeGridSumTransmittanceTexture[PixelIndex];
 
@@ -775,51 +775,51 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
     RWVolumeGridSumTransmittanceTexture[PixelIndex] = accumulatedTransmittance;
 
     // 5. NEE
-    if (scattered) {
-        float SumResampleWeights = 0.f;
-        uint NumValidSamples = 0;
-        float LightGridLightListCdf = 0;
-        float3 RadianceEstimation = 0;
+    float SumResampleWeights = 0.f;
+    uint NumValidSamples = 0;
+    float LightGridLightListCdf = 0;
+    float3 RadianceEstimation = 0;
 
-        LightSample ReservedSample = SampleOneLightSample_RIS(
-            scatterPos, 0.f.xxx, -RayDirection,
-            false, true, false,
-            rng,
-            RadianceEstimation,
-            SumResampleWeights, NumValidSamples, LightGridLightListCdf
-        );
+    LightSample ReservedSample = SampleOneLightSample_RIS(
+        scatterPos, 0.f.xxx, -RayDirection,
+        false, true, false,
+        rng,
+        RadianceEstimation,
+        SumResampleWeights, NumValidSamples, LightGridLightListCdf
+    );
 
-        if (ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0) {
-            float3 TraceDirection = ReservedSample.Position - scatterPos;
-            float TraceDistance = length(TraceDirection);
-            TraceDirection /= TraceDistance;
+    bool scatterValid = scattered && ReservedSample.IsValid() && (dot(RadianceEstimation, 1.f.xxx) > 0);
 
-            // Phase Function (Isotropic)
-            float Phase = 1.0f / (4.0f * PI);
+    float3 TraceDirection = ReservedSample.Position - scatterPos;
+    float TraceDistance = length(TraceDirection);
+    TraceDirection /= max(TraceDistance, 1e-9);
 
-            float3 FinalThroughput = RadianceEstimation * Phase * volumeColor;
+    // Phase Function (Isotropic)
+    float Phase = 1.0f / (4.0f * PI);
 
-            RWVolumeGridRadianceEstimateTexture[PixelIndex] = float4(FinalThroughput, 1.0f);
+    float3 FinalThroughput = RadianceEstimation * Phase * volumeColor;
 
-            // Transmittance Ray
-            bool bPrimaryThread = WaveIsFirstLane();
-            uint WaveRayCount = WaveActiveCountBits(true);
-            uint WaveRayOffset = 0;
-            if (bPrimaryThread) {
-                InterlockedAdd(RWVolumeGridTransmittanceRayToTraceCount[0], WaveRayCount, WaveRayOffset);
-            }
-            WaveRayOffset = WaveReadLaneFirst(WaveRayOffset);
-            uint WaveLocalRayOffset = WavePrefixCountBits(true);
-            uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
+    RWVolumeGridRadianceEstimateTexture[PixelIndex] = float4(FinalThroughput, 1.0f);
 
-            RWVolumeGridTransmittanceRayToTraceOriginBuffer[RayIndex] = scatterPos;
-            RWVolumeGridTransmittanceRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
-            RWVolumeGridTransmittanceRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
-            RWVolumeGridTransmittanceRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
-            RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
+    // Transmittance Ray
+    bool bPrimaryThread = WaveIsFirstLane();
+    uint WaveRayCount = WaveActiveCountBits(scatterValid);
+    uint WaveRayOffset = 0;
+    if (bPrimaryThread) {
+        InterlockedAdd(RWVolumeGridTransmittanceRayToTraceCount[0], WaveRayCount, WaveRayOffset);
+    }
+    WaveRayOffset = WaveReadLaneFirst(WaveRayOffset);
+    uint WaveLocalRayOffset = WavePrefixCountBits(scatterValid);
+    uint RayIndex = WaveRayOffset + WaveLocalRayOffset;
 
-            RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
-        }
+    if(scatterValid) {
+        RWVolumeGridTransmittanceRayToTraceOriginBuffer[RayIndex] = scatterPos;
+        RWVolumeGridTransmittanceRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
+        RWVolumeGridTransmittanceRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
+        RWVolumeGridTransmittanceRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
+        RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
+
+        RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
     }
 }
 
