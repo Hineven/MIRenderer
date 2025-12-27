@@ -23,6 +23,7 @@ public:
         new_block->next = nullptr;
         head_ = new_block;
         current_ = head_;
+        capacity_ = BlockSize;
     }
     ~TOneTimeLinearAllocator() {
         Release();
@@ -33,10 +34,14 @@ public:
         size = RoundUp(size, Alignment);
         mi_assert(size <= BlockSize, "Allocation size exceeds block size");
         if(current_offset_ + size > BlockSize) {
-            auto new_block = reinterpret_cast<Block*>(operator new (sizeof(Block), std::align_val_t(Alignment)));
-            new_block->next = nullptr;
-            current_->next = new_block;
-            current_ = new_block;
+            if (!current_->next) {
+                capacity_ += BlockSize;
+                printf("Extending to new block, curr capacity: %d\n", (int)capacity_);
+                auto new_block = reinterpret_cast<Block*>(operator new (sizeof(Block), std::align_val_t(Alignment)));
+                new_block->next = nullptr;
+                current_->next = new_block;
+            }
+            current_ = current_->next;
             current_offset_ = 0;
         }
         auto last_offset = current_offset_;
@@ -59,17 +64,19 @@ public:
         head_ = nullptr;
         current_ = nullptr;
         current_offset_ = 0;
+        capacity_ = {};
     }
 
 protected:
     struct Block {
         std::byte data[BlockSize];
-        Block* next;
+        Block* next {};
     };
 
     Block* head_ {};
     Block* current_ {};
     size_t current_offset_ {};
+    size_t capacity_ {};
 };
 
 // Fixed-size element allocator for a fixed number of elements of type T.
