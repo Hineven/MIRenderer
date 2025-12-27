@@ -21,7 +21,7 @@
 
 // False for recreating the command pool every frame.
 // True for using vkResetCommandPool
-#define RESET_COMMAND_POOL false
+#define RESET_COMMAND_POOL true
 
 MI_NAMESPACE_BEGIN
 

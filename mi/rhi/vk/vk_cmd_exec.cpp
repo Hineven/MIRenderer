@@ -773,7 +773,6 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
     return dirty;
 }
 
-// TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrites(
     CommandQueueState & state, [[maybe_unused]] vk::Device device,
@@ -896,7 +895,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
                     .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eSampledImage) // TODO This may not work with Texture.Load
+                    .setDescriptorType(vk::DescriptorType::eSampledImage)
                     .setPImageInfo(&image_info);
             writes[write_index++] = write;
         } else {
@@ -1201,21 +1200,24 @@ const std::string & submit_prefix,
         );
     }
     auto & cmd = state.cmd;
-    if (!submit_prefix.empty()) {
-        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
-            vk::DebugUtilsObjectNameInfoEXT {
-            vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)cmd),
-            submit_prefix.c_str()
-        });
+    if (cmd) {
+        if (!submit_prefix.empty()) {
+            GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+                vk::DebugUtilsObjectNameInfoEXT {
+                vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)cmd),
+                submit_prefix.c_str()
+            });
+        }
+        bool dirty = state.CloseCmd();
+        auto vk_rhi = GetVulkanRHI();
+        auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
+        auto submit_info = vk::SubmitInfo()
+                .setCommandBufferCount(1)
+                .setPCommandBuffers(&cmd);
+        if (dirty) queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
+    } else {
+        // No command buffer to submit
     }
-    bool dirty = state.CloseCmd();
-    auto vk_rhi = GetVulkanRHI();
-    auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
-    auto submit_info = vk::SubmitInfo()
-            .setCommandBufferCount(1)
-            .setPCommandBuffers(&cmd);
-    if (dirty) queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
-
     // Reset the handle to the command buffer after submission
     state.cmd = nullptr;
     // Reset states

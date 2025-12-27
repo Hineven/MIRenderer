@@ -298,7 +298,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         arrow_mesh_z_instance_->SetVisible(false);
     }
 
-    if (false) {
+    if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
@@ -311,7 +311,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
         }
     }
-    if (true) {
+    if (false) {
         TRef<GaussianRadianceField> field;
         if (!GaussianRadianceFieldLoader::LoadPLY("F:/CLionProjects/3DGS_GI/data/counter/point_cloud/iteration_30000/point_cloud.ply",
             *resource_allocator_, field)) {
@@ -976,7 +976,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
             std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
             auto graph = builder.Compile(frame_name);
-            graph->Execute(pool_.Raw());
+            {
+                graph->Execute(pool_.Raw());
+            }
 
             rdg_time_periods = graph->GetTimestampPeriods();
         }
@@ -986,8 +988,8 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
 
         if (rhi.GetFrameIndex() % 1000 == 0) {
-            printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool_->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
 #ifndef NDEBUG
+            printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool_->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
             printf("RefCounted object count: %u\n", GetRefCountedObjectCount());
 #endif
             fflush(stdout);
