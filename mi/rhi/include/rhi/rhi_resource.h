@@ -22,6 +22,9 @@ class RHIBindlessSlotKeeperBase;
 
 class RHIResource : public NonMovable, public NonCopyable {
 public:
+
+    static uint64_t GetLivingRHIResourceCount();
+
     virtual ~RHIResource() ;
 
     FORCEINLINE uint32_t IncRef() {

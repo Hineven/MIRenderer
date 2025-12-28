@@ -11,15 +11,29 @@
 
 MI_NAMESPACE_BEGIN
 
+static std::atomic<uint64_t> g_living_rhi_resource_counter {0};
+
+uint64_t RHIResource::GetLivingRHIResourceCount() {
+#ifndef NDEBUG
+    return g_living_rhi_resource_counter.load();
+#else
+    return 0;
+#endif
+}
+
 RHIResource::RHIResource() {
 #ifndef NDEBUG
     assert(GetCurrentThreadType() != ThreadType::kUnknown);
     owner_thread_ = GetCurrentThreadType();
+    g_living_rhi_resource_counter.fetch_add(1);
 #endif
 }
 
 RHIResource::~RHIResource () {
     // Make TRef compile
+#ifndef NDEBUG
+    g_living_rhi_resource_counter.fetch_sub(1);
+#endif
 }
 
 void RHIResource::QueueForDeletion() {
