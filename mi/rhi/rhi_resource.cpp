@@ -42,7 +42,8 @@ void RHIResource::QueueForDeletion() {
     mi_assert(RHI::HasSingleton(), "Potentially deleting a resource after RHI shutdown.");
     // This function lives in the render thread, so we use the frame index of the render thread.
     // It is always bigger than the frame index of the RHI thread.
-    mi_assert(RHI::Get().AddResourcePendingForDeletion(this), "Resource deletion queue overflow.");
+    [[maybe_unused]] auto deleted = RHI::Get().AddResourcePendingForDeletion(this);
+    mi_assert(deleted, "Resource deletion queue overflow.");
 }
 
 void RHIResource::SetName([[maybe_unused]] const std::string & name) {
