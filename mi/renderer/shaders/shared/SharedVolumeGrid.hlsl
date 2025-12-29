@@ -10,9 +10,9 @@ MI_SHARED_HLSL_BEGIN
  */
 struct VolumeGridHeader {
     uint TextureBindlessIndex;
-    uint3 LocalMin;
+    float3 LocalMin;
 
-    uint3 LocalMax;
+    float3 LocalMax;
     uint _Padding0;
 };
 

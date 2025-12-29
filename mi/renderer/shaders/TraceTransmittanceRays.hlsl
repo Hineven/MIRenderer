@@ -249,63 +249,61 @@ void TraceTransmittanceRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
 
         // AABB求交
         float t0, t1;
-        if (IntersectAABB(localRayOrigin, localRayDir, Grid.LocalMin, Grid.LocalMax, t0, t1)) {
-            // 裁剪光线范围
-            t0 = max(t0, TMin);
-            t1 = min(t1, TMax);
+        IntersectAABB(localRayOrigin, localRayDir, Grid.LocalMin, Grid.LocalMax, t0, t1);
+        t0 = max(t0, TMin);
+        t1 = min(t1, TMax);
 
-            if (t0 < t1) {
-                // 加载体网格纹理
-                uint bindlessIndex = Grid.TextureBindlessIndex;
-                Texture3D<float4> densityTex = GetBindlessVolumeSRV(bindlessIndex);
+        if (t0 < t1) {
+            // 加载体网格纹理
+            uint bindlessIndex = Grid.TextureBindlessIndex;
+            Texture3D<float4> densityTex = GetBindlessVolumeSRV(bindlessIndex);
 
-                // 准备将光线转换到[0,1]的纹理UVW空间
-                float3 boxSize = Grid.LocalMax - Grid.LocalMin;
-                float3 invBoxSize = 1.0f / boxSize;
+            // 准备将光线转换到[0,1]的纹理UVW空间
+            float3 boxSize = Grid.LocalMax - Grid.LocalMin;
+            float3 invBoxSize = 1.0f / boxSize;
 
-                float3 uvwOrigin = (RayOrigin - Grid.LocalMin) * invBoxSize;
-                float3 uvwDirection = RayDirection * invBoxSize;
+            float3 uvwOrigin = (RayOrigin - Grid.LocalMin) * invBoxSize;
+            float3 uvwDirection = RayDirection * invBoxSize;
 
-                float densityScale = 1.0f; // May be added in the future.
-                float majorant = CalculateMaxDensityDDA(densityTex, uvwOrigin, uvwDirection, t0, t1, densityScale);
+            float densityScale = 1.0f; // May be added in the future.
+            float majorant = CalculateMaxDensityDDA(densityTex, uvwOrigin, uvwDirection, t0, t1, densityScale);
 
-                // Ratio Tracking
-                float t = t0;
-                float transmittance = 1.0f;
+            // Ratio Tracking
+            float t = t0;
+            float transmittance = 1.0f;
 #ifdef USE_RAY_LIST
-                uint RayListIndex = DispatchRaysIndex().x;
-                uint RayIndex = RayToTraceListBuffer[RayListIndex];
+            uint RayListIndex = DispatchRaysIndex().x;
+            uint RayIndex = RayToTraceListBuffer[RayListIndex];
 #else
-                uint RayIndex = DispatchRaysIndex().x;
+            uint RayIndex = DispatchRaysIndex().x;
 #endif
-                Random rng = MakeRandom(RayIndex + 0x8f71a213u, UB.Seed);
+            Random rng = MakeRandom(RayIndex + 0x8f71a213u, UB.Seed);
 
-                // Ratio Tracking Loop
-                while (true) {
-                    t -= log(1.0f - rng.rand()) / majorant;
-                    if (t >= t1) break;
+            // Ratio Tracking Loop
+            while (true) {
+                t -= log(1.0f - rng.rand()) / majorant;
+                if (t >= t1) break;
 
-                    float3 pos = localRayOrigin + localRayDir * t;
-                    float3 uvw = (pos - Grid.LocalMin) / boxSize;
+                float3 pos = localRayOrigin + localRayDir * t;
+                float3 uvw = (pos - Grid.LocalMin) / boxSize;
 
-                    // 采样密度
-                    float density = densityTex.SampleLevel(LinearWrapSampler, uvw, 0).a * densityScale;
+                // 采样密度
+                float density = densityTex.SampleLevel(LinearWrapSampler, uvw, 0).a * densityScale;
 
-                    // Null-collision 概率
-                    float nullProb = 1.0f - (density / majorant);
-                    transmittance *= nullProb;
+                // Null-collision 概率
+                float nullProb = 1.0f - (density / majorant);
+                transmittance *= nullProb;
 
-                    // 如果透射率太低，提前终止
-                    if (transmittance < 0.001f) {
-                        transmittance = 0.0f;
-                        break;
-                    }
+                // 如果透射率太低，提前终止
+                if (transmittance < 0.001f) {
+                    transmittance = 0.0f;
+                    break;
                 }
+            }
 
-                Payload.Transmittance *= transmittance;
-                if (Payload.Transmittance < 0.001f) {
-                    AcceptHitAndEndSearch();
-                }
+            Payload.Transmittance *= transmittance;
+            if (Payload.Transmittance < 0.001f) {
+                AcceptHitAndEndSearch();
             }
         }
 

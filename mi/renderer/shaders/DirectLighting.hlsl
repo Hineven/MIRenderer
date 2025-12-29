@@ -711,10 +711,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     // 3. AABB
     float t0, t1;
-    if(!IntersectAABB(RayOrigin, RayDirection, Grid.LocalMin, Grid.LocalMax, t0, t1)) {
-        return;
-    }
-
+    IntersectAABB(RayOrigin, RayDirection, Grid.LocalMin, Grid.LocalMax, t0, t1);
     t0 = max(t0, 0.f);
     t1 = min(t1, TMax);
     if(t0 >= t1) return;

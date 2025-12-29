@@ -1,22 +1,28 @@
 #ifndef VOLUME_GRID_LIB_HLSL
 #define VOLUME_GRID_LIB_HLSL
 
+#include "MathConstants.hlsl"
+
 #include "../shared/SharedVolumeGrid.hlsl"
 
 // AABB Intersect Test
-bool IntersectAABB(float3 rayOrigin, float3 rayDir, float3 boxMin, float3 boxMax, out float tNear, out float tFar) {
-    float3 invDir = 1.0f / rayDir;
-    float3 tbot = invDir * (boxMin - rayOrigin);
-    float3 ttop = invDir * (boxMax - rayOrigin);
+void IntersectAABB(float3 rayOrigin, float3 rayDir, float3 boxMin, float3 boxMax, out float tNear, out float tFar) {
+    const float epslion = 1e-8f;
+    float3 safeInvDir;
+
+    // Avoid being divided by zero
+    safeInvDir.x = abs(rayDir.x) < epslion ? (rayDir.x >= 0.0f ? FLT_MAX : -FLT_MAX) : 1.0f / rayDir.x;
+    safeInvDir.y = abs(rayDir.y) < epslion ? (rayDir.y >= 0.0f ? FLT_MAX : -FLT_MAX) : 1.0f / rayDir.y;
+    safeInvDir.z = abs(rayDir.z) < epslion ? (rayDir.z >= 0.0f ? FLT_MAX : -FLT_MAX) : 1.0f / rayDir.z;
+
+    float3 tbot = safeInvDir * (boxMin - rayOrigin);
+    float3 ttop = safeInvDir * (boxMax - rayOrigin);
+
     float3 tmin = min(ttop, tbot);
     float3 tmax = max(ttop, tbot);
-    float2 t = max(tmin.xx, tmin.yz);
-    float t0 = max(t.x, t.y);
-    t = min(tmax.xx, tmax.yz);
-    float t1 = min(t.x, t.y);
-    tNear = t0;
-    tFar = t1;
-    return t1 > max(t0, 0.0f);
+
+    tNear = max(max(tmin.x, tmin.y), tmin.z);
+    tFar = min(min(tmax.x, tmax.y), tmax.z);
 }
 
 // DDA
@@ -26,6 +32,7 @@ float CalculateMaxDensityDDA(Texture3D<float4> tex, float3 localRayOrigin, float
     tex.GetDimensions(dim.x, dim.y, dim.z);
     float3 fDim = float3(dim);
 
+    // localOrigin + rayDir * t = position in [0, 1]
     float3 startPos = (localRayOrigin + localRayDir * tEntry) * fDim;
     float3 endPos   = (localRayOrigin + localRayDir * tExit)  * fDim;
     float3 rayDirVox = endPos - startPos;
@@ -49,6 +56,10 @@ float CalculateMaxDensityDDA(Texture3D<float4> tex, float3 localRayOrigin, float
 
     // DDA
     for (int i = 0; i < 1024; ++i) {
+        if (tCurrent >= tEnd || any(voxelPos < 0) || any(voxelPos >= int3(dim))) {
+            break;
+        }
+
         float d = tex.Load(int4(voxelPos, 0)).a;
         maxDensity = max(maxDensity, d);
 
@@ -65,10 +76,6 @@ float CalculateMaxDensityDDA(Texture3D<float4> tex, float3 localRayOrigin, float
             tCurrent = distToNext.z;
             distToNext.z += deltaT.z;
             voxelPos.z += step.z;
-        }
-
-        if (tCurrent >= tEnd || any(voxelPos < 0) || any(voxelPos >= int3(dim))) {
-            break;
         }
     }
 

@@ -78,7 +78,7 @@ volume_grid_slots_(kMaxNumVolumeGrids){
     volume_grid_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(VolumeGridHeader) * kMaxNumVolumeGrids, RHIBufferUsageFlagBits::kStorage}
     );
-    volume_grid_header_buffer_->SetName("VolumeGridFieldHeaderBuffer");
+    volume_grid_header_buffer_->SetName("VolumeGridHeaderBuffer");
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {

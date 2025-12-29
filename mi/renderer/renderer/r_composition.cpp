@@ -70,7 +70,7 @@ static CVar<bool> CVar_EnableVolumeIndirect(
 static CVar<bool> CVar_EnableVolumeGridDirect(
     "r.composition.enable_volume_grid_direct",
     "Enable volume grid direct contribution in composition",
-    false
+    true
 );
 
 class LightingCompositionShader : public RDGShader {
