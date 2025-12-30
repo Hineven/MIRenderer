@@ -149,6 +149,8 @@ public:
         return gaussian_radiance_field_header_buffer_.Raw();
     }
 
+    size_t GetTotalAllocatedDeviceSize () const ;
+
 protected:
 
 

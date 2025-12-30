@@ -65,4 +65,18 @@ DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {
 
 }
 
+size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
+    size_t sum = 0;
+    sum += vertex_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += index_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += static_mesh_description_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += area_lights_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += material_header_buffer_->GetBufferSize();
+    sum += geometry_header_buffer_->GetBufferSize();
+    sum += static_mesh_header_buffer_->GetBufferSize();
+    sum += volume_primitives_header_buffer_->GetBufferSize();
+    sum += gaussian_radiance_field_header_buffer_->GetBufferSize();
+    return sum;
+}
+
 MI_NAMESPACE_END
