@@ -952,6 +952,7 @@ void VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Clear(
     srvs.clear();
     samplers.clear();
     acceleration_structures.clear();
+    push_constants = {};
 }
 
 // Bind pipeline, descriptor set and flush descriptor writes.
@@ -1007,6 +1008,7 @@ void VulkanCommandExecutor::FlushBindPointState(
                         .setDescriptorSetCount(1)
                         .setSetLayouts(vk_set_layout)
         );
+        state.allocated_descriptor_sets.emplace_back(descriptor_set[0]);
         mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
         point.bound_private_descriptor_set = descriptor_set[0];
     }
