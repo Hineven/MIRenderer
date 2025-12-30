@@ -160,6 +160,7 @@ protected:
 
 
         vk::DescriptorPool descriptor_pool {};
+        std::vector<vk::DescriptorSet> allocated_descriptor_sets {};
 
         // RHI thread only allocator for temporaries.
         TOneTimeLinearAllocator<> allocator {};
