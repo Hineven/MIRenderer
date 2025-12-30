@@ -172,7 +172,7 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
     assert(GetCurrentThreadType() == ThreadType::kRenderThread);
     auto & queue = GetVulkanRHI()->GetGraphicsCommandQueue();
     auto descriptor_write = vk::WriteDescriptorSet {
-        // Memory read is deferred to RHI thread
+        // Memory read from bindless_descriptor_sets_[set_index_] is deferred to RHI thread
         {},//bindless_descriptor_sets_[set_index_],
         static_cast<uint32_t>(type),
         slot,
