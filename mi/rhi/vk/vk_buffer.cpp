@@ -32,6 +32,10 @@ VulkanBuffer::VulkanBuffer(RHIBufferDesc desc)
     vk_buffer_ = result.first;
     allocation_ = result.second;
     mi_assert(vk_buffer_ && allocation_, "Failed to allocate buffer!");
+
+    if (desc.usage & RHIBufferUsageFlagBits::kShaderDeviceAddress) {
+        cached_device_address_ = GetVulkanRHI()->GetDevice().getBufferAddress(vk_buffer_);
+    }
 }
 
 void *VulkanBuffer::Map() {
@@ -83,7 +87,7 @@ void VulkanBuffer::SetName(const std::string & name) {
 }
 
 uint64_t VulkanBuffer::GetDeviceAddress() const {
-    return GetVulkanRHI()->GetDevice().getBufferAddress(vk_buffer_);
+    return cached_device_address_;
 }
 
 

@@ -33,6 +33,9 @@ protected:
     vma::Allocation allocation_;
 
     void * mapped_ptr_;
+
+private:
+    uint64_t cached_device_address_ {UINT64_MAX};
 };
 
 MI_NAMESPACE_END

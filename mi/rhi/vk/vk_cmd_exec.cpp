@@ -989,14 +989,13 @@ void VulkanCommandExecutor::FlushBindPointState(
     }
 
     // Rebind pipeline if dirty
+    bool should_bind_bindless_set = false;
     if (point.bound_pipeline_dirty) {
         point.bound_descriptor_dirty = true;
         state.cmd.bindPipeline(vk_point, vk_pipeline);
-        // Bind the bindless descriptor set upon pipeline binding (at binding 1)
+        // Bind the bindless descriptor set upon pipeline binding (at set = 1)
         if (point.bound_pipeline->HasBindlessResources()) {
-            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
-            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 1,
-                                         bindless_set, {});
+            should_bind_bindless_set = true; // Batch this binding command after private descriptor set allocation
         }
     }
 
@@ -1032,8 +1031,23 @@ void VulkanCommandExecutor::FlushBindPointState(
     // Bind descriptor set
     // Non-bindless descriptor sets doesn't support update-after-bind. So we bind them at last.
     if(point.bound_descriptor_dirty && point.bound_private_descriptor_set) {
-        state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                     {point.bound_private_descriptor_set}, {});
+        if (should_bind_bindless_set) {
+            // Bind private set at set = 0, bindless set at set = 1
+            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                         {point.bound_private_descriptor_set, bindless_set}, {});
+        } else {
+            // Only bind private set at set = 0
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                         {point.bound_private_descriptor_set}, {});
+        }
+    } else {
+        // Still need to bind the bindless set if needed
+        if (should_bind_bindless_set) {
+            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 1,
+                                         bindless_set, {});
+        }
     }
     point.bound_pipeline_dirty = false;
     point.bound_descriptor_dirty = false;
