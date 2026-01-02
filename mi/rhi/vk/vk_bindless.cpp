@@ -115,6 +115,15 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
                 }
         );
         mi_assert(sets.size() == std::size(bindless_descriptor_sets_), "Failed to allocate descriptor sets");
+        for (auto [i, set] : std::views::enumerate(sets)) {
+            GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+                vk::DebugUtilsObjectNameInfoEXT {
+                    vk::ObjectType::eDescriptorSet,
+                    std::bit_cast<uint64_t>(set),
+                    "Bindless Descriptor Set"
+                }
+            );
+        }
         std::copy(sets.begin(), sets.end(), bindless_descriptor_sets_);
     }
 }

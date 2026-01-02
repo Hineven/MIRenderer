@@ -681,19 +681,25 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
         int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
 
-        auto AddBindings = [&](const auto& desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
-            for (int i = 0; i < (int)desc.size(); ++i) {
-                auto& res = desc[i];
-                bindfull_bindings.emplace_back()
-                        .setBinding(current_binding_index + i)
+        auto AddBindings = [&](const auto& resources, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
+            if (!resources.empty()) {
+                int i = 0;
+                for (auto const& res : resources) {
+                    // Keep behavior consistent with graphics/compute: bindfull doesn't support arrayed resources.
+                    mi_check(GetResourceArraySize(res) == 0,
+                             "Shaders must not contain any arrayed resources in bindfull mode (we do not support that).");
+
+                    bindfull_bindings.emplace_back()
+                        .setBinding(current_binding_index)
                         .setDescriptorType(type)
-                        .setDescriptorCount(1)
+                        .setDescriptorCount(std::max(GetResourceArraySize(res), 1u))
                         .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
+
+                    remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index);
+                    ++i;
+                    ++current_binding_index;
+                }
             }
-            for(int i = 0; i < (int)desc.size(); ++i) {
-                remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
-            }
-            current_binding_index += (int)desc.size();
         };
 
         AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
@@ -709,9 +715,9 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
 
         if(!bindfull_bindings.empty()) {
             auto descriptor_set_layout = device.createDescriptorSetLayout(
-                    vk::DescriptorSetLayoutCreateInfo()
-                            .setBindingCount((int)bindfull_bindings.size())
-                            .setPBindings(bindfull_bindings.data())
+                vk::DescriptorSetLayoutCreateInfo()
+                    .setBindingCount((int)bindfull_bindings.size())
+                    .setPBindings(bindfull_bindings.data())
             );
             descriptor_set_layouts.push_back(descriptor_set_layout);
             vk_private_descriptor_set_layout_ = descriptor_set_layout;

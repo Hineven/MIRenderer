@@ -8,6 +8,7 @@
 #include "rhi/rhi_cmd.h"
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi.h"
+#include "rhi/rhi_cmd_stats.h"
 
 #include "core/util/debug_prof.h"
 
@@ -217,6 +218,8 @@ void RHIWorkerThread::Run() {
                         task.queue,
                         task.param.frame_end.sync_point
                 );
+                // Advance command stats for the frame that just ended.
+                RHICmdStats::Get().AdvanceFrame(GetFrameIndexForCurrentThread());
                 // Notify the task is finished
                 task.promise.set_value();
             } else {
@@ -243,3 +246,4 @@ size_t GetCurrentFrameIndex_RHIThread() {
 
 
 MI_NAMESPACE_END
+

@@ -50,6 +50,7 @@ set(SOURCE_FILES
     rhi_bindless.cpp
     rhi_resource.cpp
     rhi_cmd.cpp
+    rhi_cmd_stats.cpp
     rhi_texture.cpp
     rhi_buffer.cpp
     rhi_param.cpp

@@ -153,7 +153,8 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
             rhi->GetDevice().resetCommandPool(cmd_pool,
                           return_resources_to_system
                           ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
-        } else { rhi->GetDevice().destroy(cmd_pool);
+        } else {
+            rhi->GetDevice().destroy(cmd_pool);
             cmd_pool = rhi->GetDevice().createCommandPool(
                     vk::CommandPoolCreateInfo{
                             vk::CommandPoolCreateFlagBits::eTransient,

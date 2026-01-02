@@ -272,8 +272,8 @@ void VulkanCommandExecutor::RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RH
                                                             vk::ShaderStageFlagBits::eMissKHR |
                                                             vk::ShaderStageFlagBits::eClosestHitKHR |
                                                             vk::ShaderStageFlagBits::eAnyHitKHR |
-                                                            vk::ShaderStageFlagBits::eIntersectionKHR |
-                                                            vk::ShaderStageFlagBits::eCallableKHR);
+                                                            vk::ShaderStageFlagBits::eIntersectionKHR);
+                                                            // | vk::ShaderStageFlagBits::eCallableKHR);
 
     auto indirect_buffer = static_cast<VulkanBuffer*>(dispatch_rays_indirect->indirect_buffer_.buffer);
     vk::DeviceAddress indirect_device_address = indirect_buffer->GetDeviceAddress() + dispatch_rays_indirect->indirect_buffer_.offset;

@@ -19,6 +19,7 @@
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_thread.h"
+#include "rhi/rhi_cmd_stats.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -44,6 +45,7 @@ class TRHILambdaCommand : public RHICommandBase {
 public:
     TRHILambdaCommand(T func) : func_(std::move(func)) {}
     void ExecuteAndDestruct (RHICommandQueueBase & cmd) override {
+        MI_RHI_CMD_STAT_INC(RHICmdStatId::kLambda);
         func_(cmd);
         this->~TRHILambdaCommand();
     }
