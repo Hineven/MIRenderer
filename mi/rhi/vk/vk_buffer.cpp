@@ -87,6 +87,10 @@ void VulkanBuffer::SetName(const std::string & name) {
 }
 
 uint64_t VulkanBuffer::GetDeviceAddress() const {
+    if (!(this->desc_.usage & RHIBufferUsageFlagBits::kShaderDeviceAddress)) {
+        mi_assert(false, "Buffer was not created with kShaderDeviceAddress usage flag!");
+        return UINT64_MAX;
+    }
     return cached_device_address_;
 }
 

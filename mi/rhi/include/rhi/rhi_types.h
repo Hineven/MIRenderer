@@ -93,13 +93,13 @@ enum class RHIBufferUsageFlagBits : uint32_t {
     // This buffer can be a source of copy command
     // (Default enabled with kStorage, and disabled for the rest)
     kTransferSrc = 1u<<7,
-    // Ray tracing related buffer usages
-    kAccelerationStructureStorage = 1u<<8,
-    kAccelerationStructureBuildInput = 1u<<9,
-    kShaderBindingTable = 1u<<10,
-    kAccelerationStructureScratch = 1u<<11,
     // The buffer can have an address in shaders
     kShaderDeviceAddress = 1u<<12,
+    // Ray tracing related buffer usages
+    kAccelerationStructureStorage = (1u<<8) | kShaderDeviceAddress,
+    kAccelerationStructureBuildInput = (1u<<9) | kShaderDeviceAddress,
+    kShaderBindingTable = (1u<<10) | kShaderDeviceAddress,
+    kAccelerationStructureScratch = (1u<<11) | kShaderDeviceAddress,
     kAll = 0xffffffffu
 };
 MAKE_FLAGS(RHIBufferUsage)
