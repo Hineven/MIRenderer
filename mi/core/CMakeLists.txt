@@ -1,4 +1,5 @@
 set(HEADER_FILES
+    include/core/fwd.h
     include/core/base.h
     include/core/common.h
     include/core/infra.h
@@ -21,7 +22,7 @@ set(SOURCE_FILES
     blobres.cpp
     task.cpp
     thr.cpp
-    include/core/fwd.h
+    debug_prof.cpp
 )
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})

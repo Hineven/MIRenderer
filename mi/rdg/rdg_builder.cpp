@@ -5,10 +5,16 @@
  */
 #include <queue>
 #include <ranges>
+
 #ifndef NDEBUG
+#define RDG_DEBUG_VALIDATION
+#endif
+
+#ifdef RDG_DEBUG_VALIDATION
 #include <unordered_set>
 #endif
 
+#include <core/util/debug_prof.h>
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_builder.h"
 #include "rhi/rhi_buffer.h"
@@ -44,7 +50,7 @@ RDGPass * RenderGraphBuilder::AddPass(
     ptr->shader_param_struct_info_ = shader_param_struct_info;
     ptr->shader_param_data_ = parameter_struct;
     ptr->class_path_ = current_class_path_;
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
     if (shader_param_struct_info && parameter_struct) {
         for (auto e : shader_param_struct_info->uniform_buffers_) {
             auto struct_ptr = *(void**)((uint8_t*)parameter_struct + e.cpp_offset);
@@ -143,7 +149,7 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
     std::map<void*, std::vector<RDGPass*>> in_resource_pass_map;
     std::map<void*, std::vector<RDGPass*>> out_resource_pass_map;
     // Debug-only: track writers seen so far to validate ordering contract
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
     std::unordered_map<void*, bool> has_prior_writer_texture;
     std::unordered_map<void*, bool> has_prior_writer_buffer;
     std::unordered_map<void*, bool> has_prior_writer_as;
@@ -163,12 +169,12 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
         edges_rev.emplace_back(from, to, pass_heads_rev[from]);
         pass_heads_rev[from] = edge_index_rev;
     };
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
     static std::set<std::string> warned_reading_before_writing;
 #endif
     for(auto & pass : passes_) {
         // Debug validation: reading-before-writing within this RDG execution is illegal (unless imported/exported)
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
         // This can produce false positives for static access validation. Disabled by default.
         // If you're really needing this, enable it here.
         if (false) {
@@ -264,19 +270,19 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
         }
         for(auto & out_texture : pass->compiled_.out_textures) {
             out_resource_pass_map[out_texture].emplace_back(pass.get());
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
             has_prior_writer_texture[out_texture] = true;
 #endif
         }
         for(auto & out_buffer : pass->compiled_.out_buffers) {
             out_resource_pass_map[out_buffer].emplace_back(pass.get());
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
             has_prior_writer_buffer[out_buffer] = true;
 #endif
         }
         for (auto & out_as : pass->compiled_.out_acceleration_structures) {
             out_resource_pass_map[out_as].emplace_back(pass.get());
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
             has_prior_writer_as[out_as] = true;
 #endif
         }
@@ -356,7 +362,7 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
             graph->num_pass_predecessors_[dst] ++;
         }
     }
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
     param_struct_ptr_to_data_crc.clear();
     // Check resource aliasing. Aliased resources should have been dealt with when compiling the passes.
     for (auto & pass : graph->passes_) {

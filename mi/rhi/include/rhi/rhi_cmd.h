@@ -19,6 +19,7 @@
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_thread.h"
+#include "core/util/debug_prof.h"
 #include "rhi/rhi_cmd_stats.h"
 
 MI_NAMESPACE_BEGIN
@@ -176,6 +177,7 @@ protected:
 
     void AddCommand (RHICommandBase * cmd) {
         if constexpr (BYPASS_RHI_THREAD) {
+            DEBUG_PROFILE_SECTION(AddCommand);
             // If we are bypassing the RHI thread, execute the command immediately.
             cmd->ExecuteAndDestruct(*this);
         } else {

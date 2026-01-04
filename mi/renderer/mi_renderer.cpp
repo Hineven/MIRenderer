@@ -20,6 +20,7 @@
 #include <renderer/mi_material.h>
 #include <renderer/mi_gaussian_radiance_field.h>
 
+#include "core/util/debug_prof.h"
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
@@ -84,7 +85,6 @@ void Renderer::FrameContext::Deinit() {
 }
 
 void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
-
     struct RenderFunctionContext {
         Renderer * r_;
         RenderFunctionContext (Renderer * r): r_(r) {

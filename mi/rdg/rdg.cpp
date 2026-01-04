@@ -22,6 +22,8 @@
 // Instantly start a command buffer submit after the execution of each pass.
 // This is useful for debugging, but hurts performance alot.
 // #define INSTANT_SUBMIT_FOR_EACH_PASS
+
+// #define RDG_DEBUG_VALIDATION
 #endif
 
 
@@ -94,7 +96,7 @@ RenderGraph::RenderGraph(const std::string & name): name_(name) {}
 RenderGraph::~RenderGraph() {}
 
 void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
-
+    DEBUG_PROFILE_SECTION(GraphExecSection);
     if (passes_.empty()) {
         MI_WARN("All graph passes are culled, nothing to execute.");
     }
@@ -252,7 +254,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     };
 
     // RDG buffer corruption check for debugging
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
     auto IsRDGResourceCorrupted = [&] (RDGResource * resource) -> bool {
         if (!resource) return false;
         return !resource->IsCanaryAlive();
@@ -260,7 +262,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 #endif
 
     while (!ready_passes.empty()) {
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
         for (auto & validating_pass : passes_) {
             if (!validating_pass) continue ;
             for (auto & texture_use : validating_pass->compiled_.textures) {

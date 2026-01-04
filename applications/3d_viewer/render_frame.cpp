@@ -8,6 +8,7 @@
 #include "3d_viewer.h"
 #include "../../mi/renderer/include/renderer/mi_renderer.h"
 #include "../../mi/renderer/include/renderer/mi_renderer_view.h"
+#include "core/util/debug_prof.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
 #include "rdg/rdg_pool.h"
@@ -134,7 +135,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
 }
 
 void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state) {
-
+    DEBUG_PROFILE_SECTION(RenderFrameSection);
     auto backbuffer = builder.Import(RHI::Get().GetBackBuffer());
 
     // Clear backbuffer

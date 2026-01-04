@@ -589,6 +589,22 @@ void ViewerApp::HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimeP
                 device_duration += period.duration;
             }
             ImGui::Text("GPU: %.2f ms", device_duration * 1000.0);
+            ImGui::Separator();
+            uint32_t num_rhi_commands = 0;
+            {
+                auto counters = RHICmdStats::Get().GetLastFrameCounters();
+                for (auto& counter : counters) {
+                    num_rhi_commands += (uint32_t)counter;
+                }
+            }
+            ImGui::Text("RHI Command Throughput: %d", num_rhi_commands);
+            ImGui::Text("CPU Frame Timed Sections:");
+            auto prof_cpu_periods = DebugProfGetSectionStatistics();
+            for (auto& period : prof_cpu_periods) {
+                ImGui::Text("  %s: %3.2f ms (%5d)", period.second.name.c_str(), double(period.second.time_ns) / 1e6, period.second.call_count);
+            }
+            DebugProfResetSectionTimes();
+            ImGui::Separator();
             std::function<void(int, int, int)> DrawTree;
             DrawTree = [&](int start, int end, int depth) {
                 ImGui::Indent(20);
@@ -959,6 +975,7 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         RDGProfilingContextRef current_profiling_context;
         {
+
             RenderGraphBuilder builder;
             RenderFrame(builder, view_.get());
 

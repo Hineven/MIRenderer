@@ -248,6 +248,7 @@ void RDGPass::AddResourceReference(RDGResource *resource) {
 
 
 void RDGPass::PreCompile() {
+    DEBUG_PROFILE_SECTION(RDGPass_PreCompile);
 
     assert(!is_pre_compiled_ && "Each pass may only be pre compiled once.");
     // No need to compile as we have no shader parameters present
