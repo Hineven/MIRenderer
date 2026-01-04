@@ -1191,7 +1191,7 @@ void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHI
     mi_assert(cmd->stage_ == RHIPipelineStageFlagBits::kAll, "Not implemented");
     auto pool = vk_rhi->GetTimestampQueryPool();
     state.cmd.writeTimestamp(
-        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eBottomOfPipe,
         pool, query
     );
 #else
@@ -1200,9 +1200,9 @@ void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHI
 }
 
 void VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
-const std::string & submit_prefix,
-// TODO make this useful (or completely remove it)
-[[maybe_unused]] bool recycle_resources) {
+                                                   const std::string & submit_prefix,
+                                                   // TODO make this useful (or completely remove it)
+                                                   [[maybe_unused]] bool recycle_resources) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
     if (sync) {
