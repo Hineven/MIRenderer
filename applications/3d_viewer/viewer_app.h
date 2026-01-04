@@ -73,7 +73,7 @@ public:
     void LoadScene(const MainLoopStartConfig& cfg);
     void HandleNavigationInput(float delta_time);
     void HandleKeyboardShortcuts(FrameInternalDelayedOps& ops);
-    void HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration);
+    void HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration);
     void ExecConsoleCommand(std::string cmd);
 
     void ProcessClickSelect(FrameInternalDelayedOps& ops);
@@ -111,6 +111,8 @@ public:
     ViewerImGuiConsle console_;
 
     std::unordered_map<std::string, PerfStat> perf_stats_;
+
+    std::vector<CVarBase *> pinned_cvars_;
 };
 
 // Entry point for running the 3d viewer main loop.

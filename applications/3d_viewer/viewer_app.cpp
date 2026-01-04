@@ -416,14 +416,74 @@ void ViewerApp::HandleKeyboardShortcuts(FrameInternalDelayedOps& ops) {
     }
 }
 
-void ViewerApp::HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration) {
+void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration) {
 
     auto& io = ImGui::GetIO();
     CVar_DebugCursorScreenCoordsX.Set((int)round(io.MousePos.x));
     CVar_DebugCursorScreenCoordsY.Set((int)round(io.MousePos.y));
 
+    // This function is now expected to be called within an existing window/child.
+    // Make it look like a panel header.
+    ImGui::TextUnformatted("Rendering");
+    ImGui::Separator();
+
     {
-        ImGui::Begin("Rendering");
+        if (ImGui::TreeNode("Pinned CVars")) {
+            ImGui::Indent(20);
+            auto DrawImGuiControlForCVar = [&](CVarBase& e) {
+                auto cvar_name = e.GetId();
+                if (e.GetType() == CVarType::kBool) {
+                    auto cvar = static_cast<CVar<bool>*>(&e);
+                    bool value = cvar->Get();
+                    if (ImGui::Checkbox(cvar_name.c_str(), &value)) {
+                        cvar->Set(value);
+                    }
+                } else if (e.GetType() == CVarType::kFloat) {
+                    auto cvar = static_cast<CVar<float>*>(&e);
+                    float value = cvar->Get();
+                    if (ImGui::DragFloat(cvar_name.c_str(), &value, 0.01f)) {
+                        cvar->Set(value);
+                    }
+                } else if (e.GetType() == CVarType::kFloat2) {
+                    auto cvar = static_cast<CVar<glm::vec2>*>(e&e;
+                    glm::vec2 value = cvar->Get();
+                    if (ImGui::DragFloat2(cvar_name.c_str(), &value[0], 0.01f)) {
+                        cvar->Set(value);
+                    }
+                } else if (e.GetType() == CVarType::kFloat3) {
+                    auto cvar = static_cast<CVar<glm::vec3>*>(&e);
+                    glm::vec3 value = cvar->Get();
+                    if (ImGui::DragFloat3(cvar_name.c_str(), &value[0], 0.01f)) {
+                        cvar->Set(value);
+                    }
+                } else if (e.GetType() == CVarType::kFloat4) {
+                    auto cvar = static_cast<CVar<glm::vec4>*>(&e);
+                    glm::vec4 value = cvar->Get();
+                    if (ImGui::DragFloat4(cvar_name.c_str(), &value[0], 0.01f)) {
+                        cvar->Set(value);
+                    }
+                } else if (e.GetType() == CVarType::kInt) {
+                    auto cvar = static_cast<CVar<int>*>(&e);
+                    int value = cvar->Get();
+                    if (ImGui::DragInt(cvar_name.c_str(), &value)) {
+                        cvar->Set(value);
+                    }
+                } else if (e.GetType() == CVarType::kString) {
+                    auto cvar = static_cast<CVar<std::string>*>(&e);
+                    std::string value = cvar->Get();
+                    char buffer[256];
+                    strncpy_s(buffer, value.c_str(), sizeof(buffer));
+                    if (ImGui::InputText(cvar_name.c_str(), buffer, sizeof(buffer))) {
+                        cvar->Set(std::string(buffer));
+                    }
+                }
+            };
+            for (auto & cvar : pinned_cvars_) {
+                DrawImGuiControlForCVar(*cvar);
+            }
+            ImGui::Unindent(-20);
+            ImGui::TreePop();
+        }
         if (ImGui::Button("Reload Shaders")) {
             ops.should_reload_shaders = true;
         }
@@ -574,7 +634,6 @@ void ViewerApp::HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimeP
             }
             ImGui::Unindent(20);
         }
-        ImGui::End();
     }
 }
 
@@ -869,8 +928,34 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         HandleNavigationInput(cpu_duration);
         HandleKeyboardShortcuts(ops);
-        HandleUILogic(ops, rdg_time_periods, cpu_duration);
-        console_.DrawImGuiConsole();
+
+        // Combined UI: Console (left) + Rendering/Performance (right)
+        {
+            ImGui::SetNextWindowSize(ImVec2(1200, 700), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin("UI", nullptr, ImGuiWindowFlags_NoCollapse)) {
+                float full_w = ImGui::GetContentRegionAvail().x;
+                float full_h = ImGui::GetContentRegionAvail().y;
+                float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+                // Right column: max 550 by default.
+                float right_w = std::min(550.0f, full_w * 0.7f);
+                float left_w = std::max(350.0f, full_w - right_w - spacing);
+
+                ImGui::BeginChild("UI_Left", ImVec2(left_w, 0), true);
+                auto content_region = ImGui::GetContentRegionAvail();
+                console_.DrawImGuiConsoleEmbedded({content_region.x, content_region.y});
+                ImGui::EndChild();
+
+                ImGui::SameLine(0.0f, spacing);
+
+                ImGui::BeginChild("UI_Right", ImVec2(right_w, 0), true);
+                HandleControlUILogic(ops, rdg_time_periods, cpu_duration);
+                ImGui::EndChild();
+            }
+            ImGui::End();
+        }
+
+        // console_.DrawImGuiConsole(); // replaced by embedded console in combined UI window
 
         if (baking_state_.is_baking_mode) {
             baking_state_.baking_frame_index++;
@@ -892,10 +977,8 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
 
         auto & io = ImGui::GetIO();
-
         RDGProfilingContextRef current_profiling_context;
         {
-
             RenderGraphBuilder builder;
             RenderFrame(builder, view_.get());
 
@@ -925,7 +1008,6 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                 graph->Execute(pool_.Raw());
             }
 
-            // Take current frame profiling context (will be resolved next frame to avoid blocking).
             current_profiling_context = graph->GetProfilingContext();
         }
 

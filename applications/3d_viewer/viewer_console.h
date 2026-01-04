@@ -11,6 +11,7 @@
 #include <chrono>
 #include <renderer/mi_cvar.h>
 #include <core/infra.h>
+#include <glm/glm.hpp>
 
 struct ImGuiInputTextCallbackData;
 MI_NAMESPACE_BEGIN
@@ -30,6 +31,10 @@ public:
     int TextEditCallback(ImGuiInputTextCallbackData* data);
 
     void DrawImGuiConsole();
+
+    // Draw the console panel embedded into an existing window (uses child regions).
+    // This is the same UI as DrawImGuiConsole but without Begin/End("Console").
+    void DrawImGuiConsoleEmbedded(glm::vec2 size = {});
 
 
     enum class ConsoleLogType {

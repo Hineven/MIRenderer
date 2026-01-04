@@ -85,48 +85,63 @@ void ViewerImGuiConsle::ExecConsoleCommandAndReset (InputBuffer input) {
 }
 
 void ViewerImGuiConsle::DrawImGuiConsole() {
-	ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
-	if (!ImGui::Begin("Console", &opened_, ImGuiWindowFlags_MenuBar))
-	{
-		ImGui::End();
-		return;
-	}
+    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Console", &opened_, ImGuiWindowFlags_MenuBar))
+    {
+        ImGui::End();
+        return;
+    }
 
-	if (ImGui::BeginPopupContextItem())
-	{
-		if (ImGui::MenuItem("Close Console"))
-			opened_ = false;
-		ImGui::EndPopup();
-	}
+    auto content_avail = ImGui::GetContentRegionAvail();
+    DrawImGuiConsoleEmbedded({content_avail.x, content_avail.y});
 
-	if (ImGui::BeginMenuBar())
-	{
-		if (ImGui::BeginMenu("Edit"))
-		{
-			bool clearLog = ImGui::MenuItem("Clear Log");
-			bool clearHistory = ImGui::MenuItem("Clear History");
-			bool clearAll = ImGui::MenuItem("Clear All");
+    ImGui::End();
+}
 
-			if (clearLog || clearAll)
-				ClearLog();
-			if (clearHistory || clearAll)
-				ClearHistory();
-			ImGui::EndMenu();
-		}
-		ImGui::EndMenuBar();
-	}
+void ViewerImGuiConsle::DrawImGuiConsoleEmbedded(glm::vec2 size) {
+    // If caller passes (0,0), make it fill available region.
+    if (size.x <= 0) size.x = ImGui::GetContentRegionAvail().x;
+    if (size.y <= 0) size.y = ImGui::GetContentRegionAvail().y;
 
-	const float footer_height = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
-	ImGui::BeginChild("Log panel", ImVec2(0, -footer_height), false, ImGuiWindowFlags_HorizontalScrollbar);
+    // Render the original Console window body into a child region.
+    // (We intentionally keep the same IDs so behavior remains identical.)
+    ImGui::BeginChild("ConsoleEmbeddedRoot", ImVec2{size.x, size.y}, false);
 
-	if (ImGui::BeginPopupContextWindow())
-	{
-		if (ImGui::Selectable("Clear"))
-			ClearLog();
-		ImGui::EndPopup();
-	}
+    if (ImGui::BeginPopupContextItem())
+    {
+        if (ImGui::MenuItem("Close Console"))
+            opened_ = false;
+        ImGui::EndPopup();
+    }
 
-	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1));
+    if (ImGui::BeginMenuBar())
+    {
+        if (ImGui::BeginMenu("Edit"))
+        {
+            bool clearLog = ImGui::MenuItem("Clear Log");
+            bool clearHistory = ImGui::MenuItem("Clear History");
+            bool clearAll = ImGui::MenuItem("Clear All");
+
+            if (clearLog || clearAll)
+                ClearLog();
+            if (clearHistory || clearAll)
+                ClearHistory();
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+
+    const float footer_height = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
+    ImGui::BeginChild("Log panel", ImVec2(0, -footer_height), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+    if (ImGui::BeginPopupContextWindow())
+    {
+        if (ImGui::Selectable("Clear"))
+            ClearLog();
+        ImGui::EndPopup();
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1));
 
     auto format_time = [](std::chrono::system_clock::time_point tp) {
         using namespace std::chrono;
@@ -224,53 +239,53 @@ void ViewerImGuiConsle::DrawImGuiConsole() {
         }
     }
 
-	if (scroll_to_bottom_ || (auto_scroll_ && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))
-	{
-		ImGui::SetScrollHereY(1.f);
-	}
+    if (scroll_to_bottom_ || (auto_scroll_ && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))
+    {
+        ImGui::SetScrollHereY(1.f);
+    }
 
-	scroll_to_bottom_ = false;
-	ImGui::PopStyleVar();
-	ImGui::EndChild();
+    scroll_to_bottom_ = false;
+    ImGui::PopStyleVar();
+    ImGui::EndChild();
 
-	ImGui::Separator();
+    ImGui::Separator();
 
-	bool reclaim_focus = false;
-	auto flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
-	if (ImGui::InputText("##Command", input_buffer_.data(), input_buffer_.size(), flags,
-		[](ImGuiInputTextCallbackData* data)
-		{
-		    auto console = static_cast<ViewerImGuiConsle*>(data->UserData);
-			return console->TextEditCallback(data);
-		}, (void*)this))
-	{
-		if (input_buffer_[0] != '\0')
-		{
-			ExecConsoleCommandAndReset(input_buffer_);
-			input_buffer_[0] = '\0';
-		}
-		reclaim_focus = true;
-	}
+    bool reclaim_focus = false;
+    auto flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
+    if (ImGui::InputText("##Command", input_buffer_.data(), input_buffer_.size(), flags,
+        [](ImGuiInputTextCallbackData* data)
+        {
+            auto console = static_cast<ViewerImGuiConsle*>(data->UserData);
+            return console->TextEditCallback(data);
+        }, (void*)this))
+    {
+        if (input_buffer_[0] != '\0')
+        {
+            ExecConsoleCommandAndReset(input_buffer_);
+            input_buffer_[0] = '\0';
+        }
+        reclaim_focus = true;
+    }
 
-	ImGui::SetItemDefaultFocus();
-	if (reclaim_focus)
-		ImGui::SetKeyboardFocusHere(-1);
+    ImGui::SetItemDefaultFocus();
+    if (reclaim_focus)
+        ImGui::SetKeyboardFocusHere(-1);
 
-	ImGui::SameLine();
-	ImGui::AlignTextToFramePadding();
-	ImGui::Text("Filters : "); ImGui::SameLine();
-	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
-	auto filterButton = [](char const* label, bool* value, MIInfraLogType type) {
-		ImGui::PushStyleColor(ImGuiCol_Border, GetConsoleTextColor(GetConsoleLogType(type)));
-		ImGui::Checkbox(label, value);
-		ImGui::PopStyleColor();
-	};
-	filterButton("Error", &show_errors_, MIInfraLogType::kError); ImGui::SameLine();
-	filterButton("Warning", &show_warnings_, MIInfraLogType::kWarning); ImGui::SameLine();
-	filterButton("Info", &show_info_, MIInfraLogType::kInfo);
-	ImGui::PopStyleVar();
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Filters : "); ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
+    auto filterButton = [](char const* label, bool* value, MIInfraLogType type) {
+        ImGui::PushStyleColor(ImGuiCol_Border, GetConsoleTextColor(GetConsoleLogType(type)));
+        ImGui::Checkbox(label, value);
+        ImGui::PopStyleColor();
+    };
+    filterButton("Error", &show_errors_, MIInfraLogType::kError); ImGui::SameLine();
+    filterButton("Warning", &show_warnings_, MIInfraLogType::kWarning); ImGui::SameLine();
+    filterButton("Info", &show_info_, MIInfraLogType::kInfo);
+    ImGui::PopStyleVar();
 
-	ImGui::End();
+    ImGui::EndChild();
 }
 
 
