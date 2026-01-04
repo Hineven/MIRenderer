@@ -36,6 +36,8 @@ protected:
 public:
     friend class VulkanCommandExecutor;
 
+    std::future<void> AdvanceFrame(RHISyncPoint * sync_point) override;
+
     VulkanRHI(const VulkanRHICreateInfo * extra) ;
     ~VulkanRHI() override ;
 
@@ -59,7 +61,8 @@ public:
 
     RHITimestampRef CreateTimestamp() override;
 
-    std::vector<uint64_t> QueryTimestamps(std::span<RHITimestamp *> timestamps) override;
+    std::vector<uint64_t> QueryTimestamps(std::span<RHITimestamp *> timestamps,
+        RHITimestampQueryMode mode) override;
 
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;

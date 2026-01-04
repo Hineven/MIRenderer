@@ -661,7 +661,6 @@ public:
     RHIPipelineStageFlagBits stage_;
 };
 
-
 // Ray tracing commands
 class RHICommandBuildAccelerationStructure : public TRHICommand<RHICommandBuildAccelerationStructure> {
 public:

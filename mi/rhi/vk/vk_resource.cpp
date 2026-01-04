@@ -160,7 +160,8 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
 #endif
 }
 
-std::vector<uint64_t> VulkanRHI::QueryTimestamps(std::span<RHITimestamp *> timestamps) {
+std::vector<uint64_t> VulkanRHI::QueryTimestamps(std::span<RHITimestamp *> timestamps,
+    RHITimestampQueryMode mode) {
 #if ENABLE_TIMESTAMP
     auto rhi = GetVulkanRHI();
     // Check for continuous query indices
@@ -188,41 +189,69 @@ std::vector<uint64_t> VulkanRHI::QueryTimestamps(std::span<RHITimestamp *> times
             continuous_start = (uint32_t)i;
         }
     }
-    continuous_ranges.push_back({continuous_start, (uint32_t)(query_indices.size() - 1)});
-    std::vector<uint64_t> results(timestamps.size());
+    if (!query_indices.empty()) {
+        continuous_ranges.push_back({continuous_start, (uint32_t)(query_indices.size() - 1)});
+    }
+
+    std::vector<uint64_t> results(timestamps.size(), UINT64_MAX);
+
     // Query is performed in RHI thread.
     auto query_task = EnqueueRHIThreadTask([&]() {
         for (auto r : continuous_ranges) {
-            // Wait for the timestamp to be available and read it as 64-bit
             auto count = r.second - r.first + 1;
-            auto values = std::vector<uint64_t>(count);
+            if (count == 0) continue;
+
+            // In non-blocking mode we query availability and do NOT wait.
+            // Vulkan layout for eWithAvailability: (value, availability) for each query.
+            std::vector<uint64_t> values;
+            vk::QueryResultFlags flags = vk::QueryResultFlagBits::e64;
+            if (mode == RHITimestampQueryMode::kBlocking) {
+                values.resize(count);
+                flags |= vk::QueryResultFlagBits::eWait;
+            } else {
+                values.resize(count * 2);
+                flags |= vk::QueryResultFlagBits::eWithAvailability;
+            }
+
             auto res = rhi->GetDevice().getQueryPoolResults(
                 rhi->GetTimestampQueryPool(),
                 query_indices[query_rank_indirection[r.first]],
                 count,
-                sizeof(uint64_t) * count,
+                sizeof(uint64_t) * values.size(),
                 values.data(),
-                sizeof(uint64_t),
-                vk::QueryResultFlagBits::eWait | vk::QueryResultFlagBits::e64
+                sizeof(uint64_t) * ((mode == RHITimestampQueryMode::kBlocking) ? 1 : 2),
+                flags
             );
-            mi_warning(res == vk::Result::eSuccess, "Failed to get timestamp query result ({}).", vk::to_string(res));
-            if (res == vk::Result::eSuccess) {
-                // Scatter to results
-                for (size_t i = 0; i < count; i++) {
-                    auto original_rank = query_rank_indirection[r.first + i];
-                    results[original_rank] = values[i];
+
+            if (mode == RHITimestampQueryMode::kBlocking) {
+                mi_warning(res == vk::Result::eSuccess, "Failed to get timestamp query result ({}).", vk::to_string(res));
+                if (res == vk::Result::eSuccess) {
+                    for (size_t i = 0; i < count; i++) {
+                        auto original_rank = query_rank_indirection[r.first + i];
+                        results[original_rank] = values[i];
+                    }
+                } else {
+                    for (size_t i = 0; i < count; i++) {
+                        auto original_rank = query_rank_indirection[r.first + i];
+                        results[original_rank] = UINT64_MAX;
+                    }
                 }
             } else {
-                // Fill with UINT64_MAX on failure
+                // Non-blocking: ok if not ready. vk::Result may be eSuccess or eNotReady.
+                mi_warning(res == vk::Result::eSuccess || res == vk::Result::eNotReady,
+                    "Failed to get timestamp query result ({}).", vk::to_string(res));
                 for (size_t i = 0; i < count; i++) {
+                    const uint64_t value = values[i * 2 + 0];
+                    const uint64_t available = values[i * 2 + 1];
                     auto original_rank = query_rank_indirection[r.first + i];
-                    results[original_rank] = UINT64_MAX;
+                    results[original_rank] = (available != 0) ? value : UINT64_MAX;
                 }
             }
         }
     });
-    // Wait for completion
+
     query_task.wait();
+
     // Mask to the hardware-supported valid bits
     auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
     if (valid_bits < 64) {

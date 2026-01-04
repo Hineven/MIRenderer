@@ -87,10 +87,28 @@ public:
 
     RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) ;
 
-    // Create a GPU timestamp resource. Each resource owns a query slot in the global query pool.
+    // Create a GPU timestamp resource for the current frame. Each resource owns a query slot in the global query pool.
+    // The timestamp will stay valid until the next frame ends on the device. You should NEVER keep references to
+    // timestamps that are older than the previous frame.
+    // NOTE: This is fast. DO NOT CACHE TIMESTAMPS AND USE THEM ACROSS MULTIPLE FRAMES. Create them on demand instead.
+    // Simply drop them after use is preferred.
     virtual RHITimestampRef CreateTimestamp () = 0;
     // Batched query for multiple timestamps. This is faster than RHITimestamp::QueryResult
-    virtual std::vector<uint64_t> QueryTimestamps (std::span<RHITimestamp*> timestamps) = 0;
+    enum class RHITimestampQueryMode : uint8_t {
+        // Block the CPU until query results are ready (backend may use vk::QueryResultFlagBits::eWait).
+        kBlocking = 0,
+        // Non-blocking query (backend should use availability bits and return UINT64_MAX for unavailable timestamps).
+        kNonBlocking,
+    };
+
+    // Returns a value per timestamp. If kNonBlocking is used, any timestamp not yet available MUST be returned as UINT64_MAX.
+    virtual std::vector<uint64_t> QueryTimestamps (std::span<RHITimestamp*> timestamps,
+        RHITimestampQueryMode mode) = 0;
+
+    // Convenience overload: blocking query.
+    FORCEINLINE std::vector<uint64_t> QueryTimestamps(std::span<RHITimestamp*> timestamps) {
+        return QueryTimestamps(timestamps, RHITimestampQueryMode::kBlocking);
+    }
 
     // Create a shader, thread safe
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,

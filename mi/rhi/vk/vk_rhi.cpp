@@ -52,6 +52,13 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
 }
 #endif
 
+std::future<void> VulkanRHI::AdvanceFrame(RHISyncPoint * sync_point) {
+    // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
+#if ENABLE_TIMESTAMP
+    ResetTimestampAllocatorForFrame((uint32_t)(GetFrameIndex() + 1));
+#endif
+    return RHI::AdvanceFrame(sync_point);
+}
 VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init();
@@ -819,8 +826,7 @@ void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
     uint32_t base = (frame_index % kNumFramesInFlight) * kQueriesPerFrame;
     timestamp_frame_base_.store(base, std::memory_order_relaxed);
     timestamp_query_allocator_.store(0, std::memory_order_relaxed);
-    // Reset only the segment for this frame to avoid clobbering in-flight frames (conservative reset entire pool).
-    device_.resetQueryPool(timestamp_query_pool_, 0, kMaxNumTimestampQueries);
+    // The query pool is reset on the RHI thread as a command
 #else
     (void)frame_index;
 #endif

@@ -181,7 +181,6 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
 void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto & cmdb = state.cmd;
     auto & point = state.points[(uint32_t)RHIBindPointType::kRayTracing];
 
     assert(bind_ray_tracing_pipeline->pipeline_->GetType() == RHIPipelineType::kRayTracing);

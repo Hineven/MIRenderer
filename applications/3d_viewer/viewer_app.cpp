@@ -584,6 +584,11 @@ void ViewerApp::HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimeP
         }
         if (ImGui::CollapsingHeader("Performance")) {
             ImGui::Text("CPU: %.2f ms", cpu_duration * 1000.0);
+            float device_duration = 0.f;
+            for (auto & period : time_periods) {
+                device_duration += period.duration;
+            }
+            ImGui::Text("GPU: %.2f ms", device_duration * 1000.0);
             std::function<void(int, int, int)> DrawTree;
             DrawTree = [&](int start, int end, int depth) {
                 ImGui::Indent(20);
@@ -908,8 +913,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
     auto & rhi = RHI::Get();
 
-    float cpu_duration = 0;
+    float cpu_duration = 0.0f;
     std::vector<RDGTimePeriod> rdg_time_periods;
+    RDGProfilingContextRef pending_profiling_context;
 
     std::future<void> previous_frame_future;
     TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
@@ -950,6 +956,8 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
 
         auto & io = ImGui::GetIO();
+
+        RDGProfilingContextRef current_profiling_context;
         {
             RenderGraphBuilder builder;
             RenderFrame(builder, view_.get());
@@ -980,7 +988,8 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                 graph->Execute(pool_.Raw());
             }
 
-            rdg_time_periods = graph->GetTimestampPeriods();
+            // Take current frame profiling context (will be resolved next frame to avoid blocking).
+            current_profiling_context = graph->GetProfilingContext();
         }
 
 
@@ -1006,6 +1015,19 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             previous_frame_sync_point->Wait();
             previous_frame_sync_point->Reset();
         }
+
+        // Try resolve previous frame profiling results (non-blocking) after the previous frame has finished.
+        // In case if not ready yet, keep last results.
+        if (pending_profiling_context) {
+            std::vector<RDGTimePeriod> resolved;
+            if (pending_profiling_context->ResolveTimestampPeriods(resolved, rhi, RHI::RHITimestampQueryMode::kNonBlocking)) {
+                rdg_time_periods = std::move(resolved);
+            }
+            pending_profiling_context.SafeRelease();
+        }
+        // Set current profiling context as pending for next frame.
+        pending_profiling_context = current_profiling_context;
+
         previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
         fflush(stdout);
         auto cpu_tp_end = std::chrono::steady_clock::now();

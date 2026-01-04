@@ -12,6 +12,7 @@
 #include <rdg/rdg_param.h>
 #include <rhi/rhi_buffer.h>
 
+#include "core/util/debug_prof.h"
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_pool.h"
 #include "rdg/rdg_shader.h"
@@ -32,31 +33,65 @@ bool RDG_IsInRDGExecution () {
     return is_rdg_executing;
 }
 
+bool RDGProfilingContext::ResolveTimestampPeriods(std::vector<RDGTimePeriod> & out_periods,
+    RHI & rhi,
+    RHI::RHITimestampQueryMode mode) {
+#if ENABLE_TIMESTAMP
+    out_periods.clear();
+
+    if (marker_timestamps_.size() < 2) {
+        return true;
+    }
+
+    auto marker_timestamp_results = rhi.QueryTimestamps(
+        std::span<RHITimestamp*>(reinterpret_cast<RHITimestamp **>(marker_timestamps_.data()), marker_timestamps_.size()),
+        mode
+    );
+
+    if (mode == RHI::RHITimestampQueryMode::kNonBlocking) {
+        for (auto v : marker_timestamp_results) {
+            if (v == UINT64_MAX) {
+                // Not ready yet.
+                return false;
+            }
+        }
+    }
+
+    uint64_t prev_time_ticks = marker_timestamp_results[0];
+
+    auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
+    const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
+    const float device_timestamp_tick_period = rhi.GetDeviceProperties().timestamp_period;
+
+    const size_t n = marker_timestamps_.size();
+    out_periods.reserve(n - 1);
+    for (size_t i = 0; i < n - 1; i++) {
+        uint64_t time_ticks = marker_timestamp_results[i + 1];
+        uint64_t delta;
+        if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
+            delta = (wrap_mod - prev_time_ticks) + time_ticks;
+        } else {
+            delta = time_ticks - prev_time_ticks;
+        }
+        double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns -> seconds
+        prev_time_ticks = time_ticks;
+
+        auto period = marker_periods_[i];
+        period.duration = (float)duration;
+        out_periods.emplace_back(std::move(period));
+    }
+
+    return true;
+#else
+    (void)out_periods;
+    (void)rhi;
+    (void)mode;
+    return false;
+#endif
+}
+
 RenderGraph::RenderGraph(const std::string & name): name_(name) {}
 RenderGraph::~RenderGraph() {}
-
-FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
-    switch (size) {
-        case 4: *static_cast<uint32_t*>(dst) = *static_cast<const uint32_t*>(src); break;
-        case 8: *static_cast<uint64_t*>(dst) = *static_cast<const uint64_t*>(src); break;
-        case 12: {
-            const uint32_t* s = static_cast<const uint32_t*>(src);
-            uint32_t* d = static_cast<uint32_t*>(dst);
-            d[0] = s[0];
-            d[1] = s[1];
-            d[2] = s[2];
-            break;
-        }
-        case 16: {
-            const uint64_t* s = static_cast<const uint64_t*>(src);
-            uint64_t* d = static_cast<uint64_t*>(dst);
-            d[0] = s[0];
-            d[1] = s[1];
-            break;
-        }
-        default: std::memcpy(dst, src, size);
-    }
-}
 
 void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
@@ -363,33 +398,12 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
 
 #if ENABLE_TIMESTAMP
-    // Extract timestamp results
+    // Store profiling context for later resolution (typically next frame).
+    profiling_context_.SafeRelease();
     if (!marker_timestamps.empty()) {
-        timestamp_periods_.clear();
-        uint64_t prev_time_ticks = 0;
-        auto marker_timestamp_results = rhi.QueryTimestamps(
-            std::span<RHITimestamp*>(reinterpret_cast<RHITimestamp **>(marker_timestamps.data()), marker_timestamps.size())
-        );
-        if (!marker_timestamps.empty())
-            prev_time_ticks = marker_timestamp_results[0];
-        auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
-        const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
-        for (size_t i = 0; i < marker_timestamps.size() - 1; i++) {
-            uint64_t time_ticks = marker_timestamp_results[i + 1];
-            uint64_t delta;
-            if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
-                delta = (wrap_mod - prev_time_ticks) + time_ticks;
-            } else {
-                delta = time_ticks - prev_time_ticks;
-            }
-            float device_timestamp_tick_period = rhi.GetDeviceProperties().timestamp_period;
-            double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns
-            prev_time_ticks = time_ticks;
-            auto period = marker_periods[i];
-            period.duration = (float)duration;
-
-            timestamp_periods_.emplace_back(period);
-        }
+        profiling_context_.CreateIfNull();
+        profiling_context_->marker_timestamps_ = std::move(marker_timestamps);
+        profiling_context_->marker_periods_ = std::move(marker_periods);
     }
 #endif
 

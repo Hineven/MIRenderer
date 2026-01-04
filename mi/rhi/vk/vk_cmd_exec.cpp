@@ -568,17 +568,18 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         };
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eColorAttachmentOutput,
             {}, {}, {}, swapchain_barrier);
-        // 2.4 Execution barrier, make sure all previously submitted commands are finished before this one finishes
+        // 2.4 Clear the queries that may be used in the next frame
+#if ENABLE_TIMESTAMP
+        {
+            auto first_query  = (GetFrameIndexForCurrentThread() + 1) * VulkanRHI::kQueriesPerFrame;
+            first_query = first_query % VulkanRHI::kMaxNumTimestampQueries;
+            state.cmd.resetQueryPool(vk_rhi->timestamp_query_pool_, (uint32_t)first_query, VulkanRHI::kQueriesPerFrame);
+        }
+#endif
+        // 2.5 Execution barrier, make sure all previously submitted commands are finished before this one finishes
         // Thus the completion of this command buffer will mark the end of the whole frame.
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eNone,
             {}, {}, {}, {});
-        // 25.8.14: Vulkan validation layer synchronization false positive. Adding a mega barrier for now.
-        // 25.10.31: this seems to be a bug relating to my ClearBuffer command. Removing the mega barrier.
-        // state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
-        //     {}, vk::MemoryBarrier{
-        //         vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
-        //         vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
-        //     }, {}, {});
         // 3. end and submit command buffer.
         state.CloseCmd();
         // Use the render-finished semaphore associated with the acquired swapchain image index
@@ -627,14 +628,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
     }
     if (sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
 
-    // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
-#if ENABLE_TIMESTAMP
-    if (cmd->GetCommandQueueType() == RHICommandQueueType::kGraphics) {
-        vk_rhi->ResetTimestampAllocatorForFrame((uint32_t)GetCurrentFrameIndex_RHIThread());
-    }
-#else
-    (void)cmd;
-#endif
+
 }
 
 // Helpers

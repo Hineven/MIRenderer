@@ -313,22 +313,6 @@ void ViewerImGuiConsle::Print(ConsoleLogType type, const std::string & location,
 }
 
 // Copy-pasted from Donut ImGui console implementation
-
-static void printLines(ViewerImGuiConsle& console, std::string const& output)
-{
-    if (output.empty())
-        return;
-
-    std::string line;
-    for (int start = 0, curr = 0; curr < (int)output.size(); ++curr)
-    {
-        if ((output[curr] == '\r') || (output[curr] == '\n'))
-        {
-            console.PrintRaw("%s", std::string_view(&output[start], curr - start));
-            start = ++curr;
-        }
-    }
-}
 // XXXX mk: we should probably use the columns features instead ?
 static void printColumns(ViewerImGuiConsle& console, std::vector<std::string> const& items)
 {

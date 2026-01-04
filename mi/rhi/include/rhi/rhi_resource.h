@@ -136,8 +136,11 @@ protected:
 };
 
 // A GPU timestamp resource representing a slot in the global timestamp query pool.
+// The timestamp will stay valid until the next frame ends on the device. You should NEVER keep references to
+// timestamps that are older than the previous frame.
 // Use InsertTimestamp on a command queue to write the timestamp to this resource,
 // and call GetTimestamp() later (after GPU completion) to read it back.
+// NOTE: This can be allocated very fast. Do not cache and reuse it, allocate a new one when needed.
 class RHITimestamp : public RHIResource {
 public:
     virtual ~RHITimestamp() = default;
