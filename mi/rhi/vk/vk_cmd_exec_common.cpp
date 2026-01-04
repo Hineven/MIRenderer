@@ -154,8 +154,10 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
                           return_resources_to_system
                           ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
         } else {
-            rhi->GetDevice().freeCommandBuffers(cmd_pool, cmd_buffers_to_free);
-            cmd_buffers_to_free.clear();
+            if (!cmd_buffers_to_free.empty()) {
+                rhi->GetDevice().freeCommandBuffers(cmd_pool, cmd_buffers_to_free);
+                cmd_buffers_to_free.clear();
+            }
         }
     }
     {

@@ -34,7 +34,6 @@ class VulkanRHI : public RHI {
 protected:
     void PostInitialize() override;
 public:
-    // TODO remove this friend declaration.
     friend class VulkanCommandExecutor;
 
     VulkanRHI(const VulkanRHICreateInfo * extra) ;
@@ -59,6 +58,8 @@ public:
     RHISamplerRef CreateSampler(RHISamplerDesc desc) override;
 
     RHITimestampRef CreateTimestamp() override;
+
+    std::vector<uint64_t> QueryTimestamps(std::span<RHITimestamp *> timestamps) override;
 
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;

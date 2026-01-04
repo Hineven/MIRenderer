@@ -89,6 +89,8 @@ public:
 
     // Create a GPU timestamp resource. Each resource owns a query slot in the global query pool.
     virtual RHITimestampRef CreateTimestamp () = 0;
+    // Batched query for multiple timestamps. This is faster than RHITimestamp::QueryResult
+    virtual std::vector<uint64_t> QueryTimestamps (std::span<RHITimestamp*> timestamps) = 0;
 
     // Create a shader, thread safe
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,

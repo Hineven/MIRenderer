@@ -367,13 +367,15 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     if (!marker_timestamps.empty()) {
         timestamp_periods_.clear();
         uint64_t prev_time_ticks = 0;
+        auto marker_timestamp_results = rhi.QueryTimestamps(
+            std::span<RHITimestamp*>(reinterpret_cast<RHITimestamp **>(marker_timestamps.data()), marker_timestamps.size())
+        );
         if (!marker_timestamps.empty())
-            prev_time_ticks = marker_timestamps[0]->QueryTimestamp();
+            prev_time_ticks = marker_timestamp_results[0];
         auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
         const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
         for (size_t i = 0; i < marker_timestamps.size() - 1; i++) {
-            uint64_t time_ticks = marker_timestamps[i + 1]->QueryTimestamp();
-
+            uint64_t time_ticks = marker_timestamp_results[i + 1];
             uint64_t delta;
             if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
                 delta = (wrap_mod - prev_time_ticks) + time_ticks;

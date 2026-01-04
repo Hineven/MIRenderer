@@ -505,6 +505,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             kMaxNumTimestampQueries, // max 2048 timestamps for all flying frames
             {} // No pipeline statistics
         });
+        // Reset all queries for first use
+        device_.resetQueryPool(timestamp_query_pool_, 0, kMaxNumTimestampQueries);
 #endif
     }
     vma_ = vma::createAllocator(vma::AllocatorCreateInfo{

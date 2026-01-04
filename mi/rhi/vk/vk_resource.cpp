@@ -6,6 +6,8 @@
 
 #include "vk_resource.h"
 
+#include <ranges>
+
 #include "vk_as.h"
 #include "vk_conversion.h"
 
@@ -149,12 +151,92 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
     auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
     if (valid_bits < 64) {
         const uint64_t mask = (valid_bits == 0) ? 0ull : ((1ull << valid_bits) - 1ull);
-        value &= mask;
+        if (value != UINT64_MAX) value &= mask;
     }
     return value;
 #else
     mi_warning(true, "Querying timestamp returns UINT64_MAX when ENABLE_TIMESTAMP is disabled.");
     return UINT64_MAX;
+#endif
+}
+
+std::vector<uint64_t> VulkanRHI::QueryTimestamps(std::span<RHITimestamp *> timestamps) {
+#if ENABLE_TIMESTAMP
+    auto rhi = GetVulkanRHI();
+    // Check for continuous query indices
+    std::vector<uint32_t> query_indices, query_rank_indirection;
+    query_indices.reserve(timestamps.size());
+    query_rank_indirection.reserve(timestamps.size());
+    for (auto [i, ts] : std::views::enumerate(timestamps)) {
+        auto vk_ts = static_cast<VulkanTimestamp *>(ts);
+        query_indices.push_back(vk_ts->query_index_);
+        query_rank_indirection.push_back((uint32_t)i);
+    }
+    // Indirect sorting
+    std::sort(query_rank_indirection.begin(), query_rank_indirection.end(),
+        [&](uint32_t a, uint32_t b) {
+            return query_indices[a] < query_indices[b];
+        }
+    );
+    // Check for continuity
+    uint32_t continuous_start = 0;
+    std::vector<std::pair<uint32_t, uint32_t>> continuous_ranges;
+    for (size_t i = 1; i < query_indices.size(); i++) {
+        if (query_indices[query_rank_indirection[i]] != query_indices[query_rank_indirection[i - 1]] + 1) {
+            // Break in continuity
+            continuous_ranges.push_back({continuous_start, (uint32_t)(i - 1)});
+            continuous_start = (uint32_t)i;
+        }
+    }
+    continuous_ranges.push_back({continuous_start, (uint32_t)(query_indices.size() - 1)});
+    std::vector<uint64_t> results(timestamps.size());
+    // Query is performed in RHI thread.
+    auto query_task = EnqueueRHIThreadTask([&]() {
+        for (auto r : continuous_ranges) {
+            // Wait for the timestamp to be available and read it as 64-bit
+            auto count = r.second - r.first + 1;
+            auto values = std::vector<uint64_t>(count);
+            auto res = rhi->GetDevice().getQueryPoolResults(
+                rhi->GetTimestampQueryPool(),
+                query_indices[query_rank_indirection[r.first]],
+                count,
+                sizeof(uint64_t) * count,
+                values.data(),
+                sizeof(uint64_t),
+                vk::QueryResultFlagBits::eWait | vk::QueryResultFlagBits::e64
+            );
+            mi_warning(res == vk::Result::eSuccess, "Failed to get timestamp query result ({}).", vk::to_string(res));
+            if (res == vk::Result::eSuccess) {
+                // Scatter to results
+                for (size_t i = 0; i < count; i++) {
+                    auto original_rank = query_rank_indirection[r.first + i];
+                    results[original_rank] = values[i];
+                }
+            } else {
+                // Fill with UINT64_MAX on failure
+                for (size_t i = 0; i < count; i++) {
+                    auto original_rank = query_rank_indirection[r.first + i];
+                    results[original_rank] = UINT64_MAX;
+                }
+            }
+        }
+    });
+    // Wait for completion
+    query_task.wait();
+    // Mask to the hardware-supported valid bits
+    auto valid_bits = std::min(rhi->GetDeviceProperties().timestamp_valid_bits, 64u);
+    if (valid_bits < 64) {
+        const uint64_t mask = (valid_bits == 0) ? 0ull : ((1ull << valid_bits) - 1ull);
+        for (auto & value : results) {
+            if (value != UINT64_MAX) value &= mask;
+        }
+    }
+    return results;
+#else
+    mi_warning(true, "Querying timestamp returns UINT64_MAX when ENABLE_TIMESTAMP is disabled.");
+    auto result = std::vector<uint64_t>{};
+    result.resize(timestamps.size(), UINT64_MAX);
+    return result;
 #endif
 }
 

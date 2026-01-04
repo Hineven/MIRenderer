@@ -1190,7 +1190,6 @@ void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHI
     state.BeginCmd();
     mi_assert(cmd->stage_ == RHIPipelineStageFlagBits::kAll, "Not implemented");
     auto pool = vk_rhi->GetTimestampQueryPool();
-    state.cmd.resetQueryPool(pool, query, 1);
     state.cmd.writeTimestamp(
         vk::PipelineStageFlagBits::eAllCommands,
         pool, query
