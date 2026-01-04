@@ -302,7 +302,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             auto as_build_info = build_info;
             as_build_info.instance_data = tlas_instance_buffer ? tlas_instance_buffer->GetRHI() : RHIBufferSpan{};
             as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
-            puts("rebuild!");
             queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
             // Barrier the TLAS after building
             queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
