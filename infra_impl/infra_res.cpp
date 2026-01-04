@@ -4,8 +4,9 @@
  * See LICENSE for licensing.
  */
 
-#include <infra_impl/infra.h>
 #include <iostream>
+#include <string.h>
+#include <infra_impl/infra.h>
 
 
 MI_NAMESPACE_BEGIN
@@ -35,8 +36,10 @@ MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & fi
     infra_ = infra;
     file_.open(file_path, std::ios::in | std::ios::out | std::ios::binary);
     if(!file_.good()) {
+        char buffer[128];
+        strerror_s(buffer, 128, errno);
         infra_->LogMessage(MIInfraLogType::kInfo, "Failed to open file: " + file_path.string()
-            + ", err: " + std::strerror(errno));
+            + ", err: " + buffer);
     } else {
         file_.seekg(0, std::ios::end);
         file_size_ = file_.tellg();
