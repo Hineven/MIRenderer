@@ -19,7 +19,7 @@
 // down the entire program. So I just recreated the command pool every frame.
 // https://github.com/GPUOpen-Drivers/xgl/issues/63
 
-// False for recreating the command pool every frame.
+// False for vkFreeCommandBuffer
 // True for using vkResetCommandPool
 #define RESET_COMMAND_POOL false
 
@@ -154,13 +154,8 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
                           return_resources_to_system
                           ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
         } else {
-            rhi->GetDevice().destroy(cmd_pool);
-            cmd_pool = rhi->GetDevice().createCommandPool(
-                    vk::CommandPoolCreateInfo{
-                            vk::CommandPoolCreateFlagBits::eTransient,
-                            rhi->GetQueueFamilyIndex(RHICommandQueueType::kGraphics)
-                    }
-            );
+            rhi->GetDevice().freeCommandBuffers(cmd_pool, cmd_buffers_to_free);
+            cmd_buffers_to_free.clear();
         }
     }
     {
@@ -200,7 +195,6 @@ void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
         cmd_recording_started = true;
         auto device = GetVulkanRHI()->GetDevice();
         // Allocate a new command buffer
-        // TODO accelerate this?
         cmd = device.allocateCommandBuffers(
                 vk::CommandBufferAllocateInfo{
                         cmd_pool,
@@ -208,6 +202,9 @@ void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
                         1
                 }
         )[0];
+        // Add to the list of command buffers to free later
+        cmd_buffers_to_free.push_back(cmd);
+        // Begin recording
         cmd.begin(vk::CommandBufferBeginInfo{});
         // Setup default dynamic states.
         SetupDefaultDynamicStates();

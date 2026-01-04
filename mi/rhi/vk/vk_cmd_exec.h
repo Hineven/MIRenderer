@@ -86,6 +86,8 @@ protected:
         // Each command queue has its own command pool and 1 single command buffer recording
         vk::CommandPool cmd_pool {};
         vk::CommandBuffer cmd {};
+        // Keep track of allocated command buffers to free later. Used when RESET_COMMAND_POOL is false
+        std::vector<vk::CommandBuffer> cmd_buffers_to_free {};
         bool cmd_recording_started {};
 
         // Internal states

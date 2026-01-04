@@ -242,7 +242,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             // Use the KHR version for compatibility with Nsight
             // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
             // Draw lines
-            VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+            VK_KHR_LINE_RASTERIZATION_EXTENSION_NAME,
             // Mesh shader support
             VK_EXT_MESH_SHADER_EXTENSION_NAME,
             // Descriptor indexing (bindless supoort)
