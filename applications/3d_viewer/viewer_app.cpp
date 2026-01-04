@@ -583,76 +583,92 @@ void ViewerApp::HandleUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimeP
             DisplayCVars(0, (uint32_t)cvar_list.size(), "", 0);
         }
         if (ImGui::CollapsingHeader("Performance")) {
-            ImGui::Text("CPU: %.2f ms", cpu_duration * 1000.0);
+            ImGui::Text("CPU: %3.2f ms (FPS: %3.2f)", cpu_duration * 1000.0, 1.0f / cpu_duration);
             float device_duration = 0.f;
             for (auto & period : time_periods) {
                 device_duration += period.duration;
             }
-            ImGui::Text("GPU: %.2f ms", device_duration * 1000.0);
+            if (!time_periods.empty()) ImGui::Text("GPU: %.2f ms", device_duration * 1000.0);
+            else ImGui::Text("GPU : N/A (Available in Debug build)");
             ImGui::Separator();
-            uint32_t num_rhi_commands = 0;
-            {
-                auto counters = RHICmdStats::Get().GetLastFrameCounters();
-                for (auto& counter : counters) {
-                    num_rhi_commands += (uint32_t)counter;
+            if (RHICmdStats::IsEnabled()) {
+                uint32_t num_rhi_commands = 0;
+                {
+                    auto counters = RHICmdStats::Get().GetLastFrameCounters();
+                    for (auto& counter : counters) {
+                        num_rhi_commands += (uint32_t)counter;
+                    }
                 }
+                // TODO this is buggy (it always displays 0)
+                ImGui::Text("RHI Command Throughput: %d", num_rhi_commands);
+            } else {
+                ImGui::Text("RHI Command Throughput: N/A (Available in Debug build)");
             }
-            ImGui::Text("RHI Command Throughput: %d", num_rhi_commands);
-            ImGui::Text("CPU Frame Timed Sections:");
-            auto prof_cpu_periods = DebugProfGetSectionStatistics();
-            for (auto& period : prof_cpu_periods) {
-                ImGui::Text("  %s: %3.2f ms (%5d)", period.second.name.c_str(), double(period.second.time_ns) / 1e6, period.second.call_count);
+            if (DebugProfIsEnabled()) {
+                ImGui::Text("CPU Frame Timed Sections:");
+                auto prof_cpu_periods = DebugProfGetSectionStatistics();
+                for (auto& period : prof_cpu_periods) {
+                    ImGui::Text("  %s: %3.2f ms (%5d)", period.second.name.c_str(), double(period.second.time_ns) / 1e6, period.second.call_count);
+                }
+                DebugProfResetSectionTimes();
+            } else {
+                ImGui::Text("CPU Frame Timed Sections: N/A (Available in Debug build)");
             }
-            DebugProfResetSectionTimes();
             ImGui::Separator();
-            std::function<void(int, int, int)> DrawTree;
-            DrawTree = [&](int start, int end, int depth) {
-                ImGui::Indent(20);
-                int last = start;
-                for (int i = start; i < end; i++) {
-                    if (time_periods[i].class_names.size() <= depth
-                    ||  time_periods[i].class_names[depth] != time_periods[last].class_names[depth]) {
-                        if (last != i) {
-                            std::string node_name = time_periods[last].class_names[depth];
-                            float duration = 0.0f;
-                            for (int j = last; j < i; j++) {
-                                duration += time_periods[j].duration;
+            ImGui::Indent(20);
+            if (ImGui::TreeNode("Detailed GPU Profile")) {
+                std::function<void(int, int, int)> DrawTree;
+                DrawTree = [&](int start, int end, int depth) {
+                    ImGui::Indent(20);
+                    int last = start;
+                    for (int i = start; i < end; i++) {
+                        if (time_periods[i].class_names.size() <= depth
+                        ||  time_periods[i].class_names[depth] != time_periods[last].class_names[depth]) {
+                            if (last != i) {
+                                std::string node_name = time_periods[last].class_names[depth];
+                                float duration = 0.0f;
+                                for (int j = last; j < i; j++) {
+                                    duration += time_periods[j].duration;
+                                }
+                                std::string id = node_name;
+                                node_name += std::format(" ({:.2f} ms)", duration * 1000);
+                                if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
+                                    DrawTree(last, i, depth + 1);
+                                    ImGui::TreePop();
+                                }
                             }
-                            std::string id = node_name;
-                            node_name += std::format(" ({:.2f} ms)", duration * 1000);
-                            if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
-                                DrawTree(last, i, depth + 1);
-                                ImGui::TreePop();
+                            if (time_periods[i].class_names.size() <= depth) {
+                                std::string node_name = time_periods[i].pass_name;
+                                if (node_name.empty()) node_name = "<unnamed>";
+                                // Update stats per pass name from start of program.
+                                auto & stat = perf_stats_[node_name];
+                                float ms = time_periods[i].duration * 1000.0f;
+                                stat.min_ms = std::min(stat.min_ms, ms);
+                                stat.max_ms = std::max(stat.max_ms, ms);
+                                ImGui::Text("%s: %.2f ms (min %.2f / max %.2f)", node_name.c_str(), ms, stat.min_ms, stat.max_ms);
                             }
+                            last = i + 1;
                         }
-                        if (time_periods[i].class_names.size() <= depth) {
-                            std::string node_name = time_periods[i].pass_name;
-                            // Update stats per pass name from start of program.
-                            auto & stat = perf_stats_[node_name];
-                            float ms = time_periods[i].duration * 1000.0f;
-                            stat.min_ms = std::min(stat.min_ms, ms);
-                            stat.max_ms = std::max(stat.max_ms, ms);
-                            ImGui::Text("%s: %.2f ms (min %.2f / max %.2f)", node_name.c_str(), ms, stat.min_ms, stat.max_ms);
+                    }
+                    if (last < end) {
+                        std::string node_name = time_periods[last].class_names[depth];
+                        float duration = 0.0f;
+                        for (int j = last; j < end; j++) {
+                            duration += time_periods[j].duration;
                         }
-                        last = i + 1;
+                        std::string id = node_name;
+                        node_name += std::format(" ({:.2f} ms)", duration * 1000);
+                        if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
+                            DrawTree(last, end, depth + 1);
+                            ImGui::TreePop();
+                        }
                     }
-                }
-                if (last < end) {
-                    std::string node_name = time_periods[last].class_names[depth];
-                    float duration = 0.0f;
-                    for (int j = last; j < end; j++) {
-                        duration += time_periods[j].duration;
-                    }
-                    std::string id = node_name;
-                    node_name += std::format(" ({:.2f} ms)", duration * 1000);
-                    if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
-                        DrawTree(last, end, depth + 1);
-                        ImGui::TreePop();
-                    }
-                }
-                ImGui::Unindent(20);
-            };
-            DrawTree(0, (int)time_periods.size(), 0);
+                    ImGui::Unindent(20);
+                };
+                DrawTree(0, (int)time_periods.size(), 0);
+                ImGui::TreePop();
+            }
+            ImGui::Unindent(20);
         }
         ImGui::End();
     }

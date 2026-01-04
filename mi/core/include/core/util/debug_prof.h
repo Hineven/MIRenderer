@@ -27,6 +27,14 @@ struct DebugProfSectionStatistics {
 
 void DebugProfAccumulateSectionTime(const std::string & name, int64_t duration_ns);
 
+FORCEINLINE bool DebugProfIsEnabled() {
+#ifndef NDEBUG
+    return true;
+#else
+    return false;
+#endif
+}
+
 std::map<uint32_t, DebugProfSectionStatistics> DebugProfGetSectionStatistics();
 
 void DebugProfResetSectionTimes();

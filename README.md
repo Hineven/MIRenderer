@@ -32,12 +32,17 @@
 * `renderer`：渲染器实现。
 * `util`：一些实用工具，比如模型加载。
 * `micromc`：小玩具，用这个渲染器渲染几个mc区块。
-### 调试
+### 调试和性能
+* 鉴于性能问题，不推荐常用`Debug`模式调试程序。`Debug`模式会关闭大部分优化，CPU端性能会大幅下降。请使用`RelWithDebInfo`模式进行日常调试。
+  * 如果遇到难以定位的问题，可以此时再切换到`Debug`模式进行调试，程序中的大量调试检查或许会对你有帮助。
 * 在使用`Vulkan Configurator`时，可以开启`Vulkan Validation Layer`与`Break on Validation Error`选项，此时，出现问题时程序会自动中断，你可以用IDE查看栈帧。
   * 开启`Vulkan Validation Layer`后性能下降是正常的。
 * 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。
 * 你可以在Shader中使用`printf`函数进行调试输出，此时，请开启`Vulkan Validation Layer`，并开启`Debug Printf`选项，输出会显示在控制台中。
 * 使用`heob`可以在Windows下对此程序进行内存泄漏与非法访问监测，你也可以使用Visual Studio自带的工具（如果你正在使用VS的话！）。
+* 最终性能测试，请使用以下配置：
+  * 使用`Release`模式编译
+  * 如果你打开了`Vulkan Configurator`，请关闭它
 ### 线程关系备注
 * 线程分五类别：RHI线程、渲染线程、工作线程、主线程、FIO线程
 * **只有**RHI线程负责与图形API交互，RHI线程只有一个

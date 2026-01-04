@@ -102,6 +102,14 @@ public:
 #endif
     }
 
+    FORCEINLINE static bool IsEnabled() {
+#if MI_ENABLE_RHI_CMD_STATS
+        return true;
+#else
+        return false;
+#endif
+    }
+
     // Rotate counters for a new frame.
     // After this call, GetLastFrameCounters() will refer to the frame that just ended.
     void AdvanceFrame(uint64_t frame_index);
