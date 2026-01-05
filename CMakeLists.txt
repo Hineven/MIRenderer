@@ -58,7 +58,7 @@ endif()
 
 # Global profiling toggle: enable GPU timestamp queries in all builds for easier profiling.
 # Note: this can introduce performance overhead, so only enable when needed.
-option(MI_ENABLE_TIMESTAMP "Enable timestamp queries globally" ON)
+option(MI_ENABLE_TIMESTAMP "Enable timestamp queries globally (except Release build)" ON)
 if(MI_ENABLE_TIMESTAMP)
     message(STATUS "Timestamp queries enabled globally.")
     add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_TIMESTAMP> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_TIMESTAMP>)
@@ -66,10 +66,18 @@ endif()
 
 # Global shader debugging mode toggle: enable shader debugging features in all builds for easier debugging.
 # Note: this can introduce performance overhead, so only enable when needed.
-option(MI_ENABLE_SHADER_DEBUGGING "Enable shader debugging features globally" ON)
+option(MI_ENABLE_SHADER_DEBUGGING "Enable shader debugging features globally (except Release build)" ON)
 if(MI_ENABLE_SHADER_DEBUGGING)
     message(STATUS "Shader debugging features enabled globally.")
     add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_SHADER_DEBUGGING> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_SHADER_DEBUGGING>)
+endif()
+
+# Name RHI objects with human-readable names for easier debugging in graphics debuggers.
+# Note: this can introduce a little performance overhead, so only enable when needed.
+option(MI_ENABLE_RHI_OBJECT_NAMING "Enable RHI object naming for easier debugging (except Release build)" ON)
+if(MI_ENABLE_RHI_OBJECT_NAMING)
+    message(STATUS "RHI object naming enabled.")
+    add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_RHI_OBJECT_NAMING> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_RHI_OBJECT_NAMING>)
 endif()
 
 option(MI_ENABLE_COMPLIER_ADDRESS_SANITIZER "Enable address sanitizer in debug builds" OFF)

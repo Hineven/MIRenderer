@@ -1012,7 +1012,7 @@ public:
     FORCEINLINE void BeginDebugMarker(
         [[maybe_unused]] const char* marker_name,
         [[maybe_unused]] const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);
@@ -1021,7 +1021,7 @@ public:
     }
 
     FORCEINLINE void EndDebugMarker() {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         AddCommand(AllocateCommand<RHICommandDebugMarkerEnd>());
 #endif
     }
@@ -1029,7 +1029,7 @@ public:
     FORCEINLINE void InsertDebugMarker(
         [[maybe_unused]] const char* marker_name,
         [[maybe_unused]] const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);

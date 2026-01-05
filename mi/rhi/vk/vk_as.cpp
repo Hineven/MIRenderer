@@ -171,7 +171,7 @@ void VulkanAccelerationStructure::ResetRHI() {
 
 void VulkanAccelerationStructure::SetName(const std::string& name) {
     RHIResource::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     auto device = GetVulkanRHI()->GetDevice();
     vk::DebugUtilsObjectNameInfoEXT name_info{
         vk::ObjectType::eAccelerationStructureKHR,

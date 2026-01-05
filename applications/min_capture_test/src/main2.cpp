@@ -103,7 +103,7 @@ int main() {
     for (uint32_t i = 0; i < glfwExtCount; ++i) {
         instExts.push_back(glfwExts[i]);
     }
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     instExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
@@ -184,7 +184,7 @@ int main() {
     dci.ppEnabledExtensionNames = devExts.data();
     dci.pEnabledFeatures = &feats;
 
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     dci.enabledLayerCount = static_cast<uint32_t>(layers.size());
     dci.ppEnabledLayerNames = layers.data();
 #endif

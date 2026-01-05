@@ -100,7 +100,7 @@ int main() {
         // Plain runtime pointer copy; keep it simple to avoid clangd/libstdc++ constexpr diagnostics.
         instExts.push_back((const char*)glfwExts[i]);
     }
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     instExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
     vk::InstanceCreateInfo instInfo({}, &appInfo, 0, nullptr, (uint32_t)instExts.size(), instExts.data());

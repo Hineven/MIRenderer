@@ -191,17 +191,17 @@ protected:
         void SetupDefaultDynamicStates () const;
 
         // For debugging purposes only
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         std::stack<std::string> debug_marker_stack;
         std::string last_inserted_debug_marker;
 #endif
         FORCEINLINE void PushDebugMarker ([[maybe_unused]] const std::string & name) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             debug_marker_stack.push(name);
 #endif
         }
         FORCEINLINE void PopDebugMarker () {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             if (!debug_marker_stack.empty()) {
                 debug_marker_stack.pop();
             } else {
@@ -211,7 +211,7 @@ protected:
         }
 
         FORCEINLINE void CheckDebugMarkerStack () {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             if (!debug_marker_stack.empty()) {
                 mi_assert(false, "Potential mismatch between PushDebugMarker and PopDebugMarker.");
             }

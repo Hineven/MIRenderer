@@ -47,7 +47,7 @@ void RHIResource::QueueForDeletion() {
 }
 
 void RHIResource::SetName([[maybe_unused]] const std::string & name) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     name_ = name;
 #endif
 }

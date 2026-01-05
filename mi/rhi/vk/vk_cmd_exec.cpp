@@ -475,7 +475,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
 
     state.CheckDebugMarkerStack();
     std::string prefix;
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     prefix = "EndOfFrame (" + std::to_string(GetFrameIndexForCurrentThread()) + ")";
 #endif
 
@@ -588,7 +588,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         ];
         vk::PipelineStageFlags submit_wait_stages = vk::PipelineStageFlagBits::eTransfer;
         if (!prefix.empty()) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
                 vk::DebugUtilsObjectNameInfoEXT {
                 vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)state.cmd),
@@ -1142,7 +1142,7 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     state.debug_marker_stack.push(cmd->marker_name_);
 #endif
 }
@@ -1154,7 +1154,7 @@ void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[may
     state.BeginCmd();
     state.cmd.endDebugUtilsLabelEXT();
     mi_assert(!state.debug_marker_stack.empty(), "Potential mismatch between begin and end debug markers");
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     state.debug_marker_stack.pop();
 #endif
 }
@@ -1169,7 +1169,7 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     state.last_inserted_debug_marker = cmd->marker_name_;
 #endif
 }

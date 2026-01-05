@@ -115,7 +115,7 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
                 }
         );
         mi_assert(sets.size() == std::size(bindless_descriptor_sets_), "Failed to allocate descriptor sets");
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         for (auto [i, set] : std::views::enumerate(sets)) {
             GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
                 vk::DebugUtilsObjectNameInfoEXT {

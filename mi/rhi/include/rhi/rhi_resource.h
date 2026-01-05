@@ -55,7 +55,7 @@ public:
     virtual void SetName (const std::string & name) ;
 
     FORCEINLINE const char * GetName () const {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         return name_.c_str();
 #else
         return "";
@@ -98,7 +98,7 @@ protected:
     RHIResourceFlags flags_ {};
 
 private:
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     std::string name_ {};
 #endif
 };

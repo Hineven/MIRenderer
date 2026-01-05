@@ -32,7 +32,7 @@ struct RHIThreadTask {
             RHISyncPoint * sync_point;
         } frame_end;
     } param;
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     std::string name;
 #endif
     std::function<void()> lambda;
@@ -200,7 +200,7 @@ void RHIWorkerThread::Run() {
                 RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(
                         task.queue,
                         task.param.submit.sync_point,
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
                         task.name,
 #else
                         "",

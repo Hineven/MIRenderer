@@ -188,7 +188,7 @@ int main() {
     std::vector<const char*> instExts;
     instExts.reserve(glfwExtCount + 4);
     for (uint32_t i = 0; i < glfwExtCount; ++i) instExts.push_back(glfwExts[i]);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     instExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 

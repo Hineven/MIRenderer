@@ -81,7 +81,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         // Enable extensions
         std::vector enabled_extension_names = {
                 // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
             // VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
@@ -496,7 +496,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
 
         queue_ = device_.getQueue(graphics_queue_family_index_, 0);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         device_.setDebugUtilsObjectNameEXT(vk::DebugUtilsObjectNameInfoEXT{
             vk::ObjectType::eQueue, reinterpret_cast<uint64_t>((VkQueue)queue_),
             "Graphics Queue"
@@ -755,7 +755,7 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             vk::SemaphoreCreateInfo semaphore_info {};
             vk_swapchain_image_available_semaphores_[i] = device_.createSemaphore(semaphore_info);
             vk_swapchain_render_finished_semaphores_[i] = device_.createSemaphore(semaphore_info);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             // Set debug names of the semaphores
             std::string name = "Swapchain image available semaphore " + std::to_string(i);
             vk::DebugUtilsObjectNameInfoEXT name_info {};

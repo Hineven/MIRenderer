@@ -397,7 +397,7 @@ void VulkanGraphicsPipeline::ResetRHI() {
 
 void VulkanGraphicsPipeline::SetName(const std::string& name) {
     RHIGraphicsPipeline::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     if (vk_pipeline_) {
         GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
             vk::ObjectType::ePipeline,
@@ -554,7 +554,7 @@ void VulkanComputePipeline::ResetRHI() {
 
 void VulkanComputePipeline::SetName(const std::string& name) {
     RHIComputePipeline::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     if (vk_pipeline_) {
         GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
             vk::ObjectType::ePipeline,
