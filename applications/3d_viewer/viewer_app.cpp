@@ -33,10 +33,10 @@
 #include "util/gaussian_radiance_field_loader.h"
 
 #include "3d_viewer.h"
+#include "core/util/command_line.h"
 
 MI_NAMESPACE_BEGIN
-
-static std::string GetCurrentDateTimeString();
+    static std::string GetCurrentDateTimeString();
 static std::string GenerateRandomString(uint32_t len = 4);
 static GLFWwindow* StartWindow(const MainLoopStartConfig& cfg);
 
@@ -98,6 +98,141 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
     TransferInfra(std::move(infra));
     GetInfra().Init();
     console_.Initialize();
+
+    // Register viewer commands (app-owned state: pinned CVars and camera).
+    auto CompleteCVarId = [](std::string_view prefix) {
+        auto &reg = CVarRegistry::GetInstance();
+        auto list = reg.GetAllCVars();
+        std::vector<std::string> out;
+        out.reserve(list.size());
+        for (auto *e : list) {
+            const auto &id = e->GetId();
+            if (prefix.empty() || id.rfind(std::string(prefix), 0) == 0) out.push_back(id);
+        }
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+
+    CommandRegistry::Get().MakeAndRegister(
+        "pin_cvar",
+        {
+            CommandTokenSpec::KeywordSet({"pin"}),
+            CommandTokenSpec::Free({}, "cvar", CompleteCVarId),
+        },
+        [this](const CommandMatchResult &match) {
+            if (match.args.size() < 2) {
+                MI_WARN("ViewerApp: expected 'pin <cvar>'");
+                return;
+            }
+            const std::string &cvar_id = match.args[1];
+            auto &reg = CVarRegistry::GetInstance();
+            CVarBase *cvar = reg.GetCVar(cvar_id);
+            if (!cvar) {
+                MI_WARN("ViewerApp: unknown cvar '{}'", cvar_id);
+                return;
+            }
+
+            auto it = std::find(pinned_cvars_.begin(), pinned_cvars_.end(), cvar);
+            const bool already_pinned = (it != pinned_cvars_.end());
+            if (!already_pinned) {
+                pinned_cvars_.push_back(cvar);
+                MI_LOG(MIInfraLogType::kInfo, "Pinned cvar '{}'", cvar_id);
+            } else {
+                pinned_cvars_.erase(it);
+                MI_LOG(MIInfraLogType::kInfo, "Unpinned cvar '{}'", cvar_id);
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "camera_dir",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"dir"}),
+            CommandTokenSpec::Free({}, "x"),
+            CommandTokenSpec::Free({}, "y"),
+            CommandTokenSpec::Free({}, "z"),
+        },
+        [this](const CommandMatchResult &match) {
+            if (match.args.size() < 5) {
+                MI_WARN("ViewerApp: expected 'c dir <x> <y> <z>'");
+                return;
+            }
+            if (!view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                glm::vec3 dir;
+                dir.x = std::stof(match.args[2]);
+                dir.y = std::stof(match.args[3]);
+                dir.z = std::stof(match.args[4]);
+                const float len = glm::length(dir);
+                if (len <= 1e-6f) {
+                    MI_WARN("ViewerApp: direction length is too small");
+                    return;
+                }
+                view_->camera_.direction = dir / len;
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float(s) for 'c dir'");
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "camera_pos",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"pos"}),
+            CommandTokenSpec::Free({}, "x"),
+            CommandTokenSpec::Free({}, "y"),
+            CommandTokenSpec::Free({}, "z"),
+        },
+        [this](const CommandMatchResult &match) {
+            if (match.args.size() < 5) {
+                MI_WARN("ViewerApp: expected 'c pos <x> <y> <z>'");
+                return;
+            }
+            if (!view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                glm::vec3 pos;
+                pos.x = std::stof(match.args[2]);
+                pos.y = std::stof(match.args[3]);
+                pos.z = std::stof(match.args[4]);
+                view_->camera_.position = pos;
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float(s) for 'c pos'");
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "camera_fovy",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"fovy"}),
+            CommandTokenSpec::Free({}, "fovy"),
+        },
+        [this](const CommandMatchResult &match) {
+            if (match.args.size() < 3) {
+                MI_WARN("ViewerApp: expected 'c fovy <fovy>'");
+                return;
+            }
+            if (!view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                float fovy = std::stof(match.args[2]);
+                view_->camera_.fov_Y = fovy;
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float for 'c fovy'");
+            }
+        }
+    );
 
     if (GetCurrentThreadType() != ThreadType::kUnknown) {
         mi_assert(false, "MainLoop: somehow the thread calling Start() is known.");
@@ -429,7 +564,6 @@ void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<R
 
     {
         if (ImGui::TreeNode("Pinned CVars")) {
-            ImGui::Indent(20);
             auto DrawImGuiControlForCVar = [&](CVarBase& e) {
                 auto cvar_name = e.GetId();
                 if (e.GetType() == CVarType::kBool) {
@@ -445,7 +579,7 @@ void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<R
                         cvar->Set(value);
                     }
                 } else if (e.GetType() == CVarType::kFloat2) {
-                    auto cvar = static_cast<CVar<glm::vec2>*>(e&e;
+                    auto cvar = static_cast<CVar<glm::vec2>*>(&e);
                     glm::vec2 value = cvar->Get();
                     if (ImGui::DragFloat2(cvar_name.c_str(), &value[0], 0.01f)) {
                         cvar->Set(value);
@@ -478,10 +612,11 @@ void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<R
                     }
                 }
             };
+            ImGui::Indent(20);
             for (auto & cvar : pinned_cvars_) {
                 DrawImGuiControlForCVar(*cvar);
             }
-            ImGui::Unindent(-20);
+            ImGui::Unindent(20);
             ImGui::TreePop();
         }
         if (ImGui::Button("Reload Shaders")) {
@@ -635,10 +770,6 @@ void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<R
             ImGui::Unindent(20);
         }
     }
-}
-
-void ViewerApp::ExecConsoleCommand(std::string cmd) {
-    // TODO: implement command execution
 }
 
 void ViewerApp::ProcessClickSelect(FrameInternalDelayedOps& ops) {

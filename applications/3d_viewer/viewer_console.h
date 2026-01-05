@@ -9,13 +9,15 @@
 
 #include <array>
 #include <chrono>
+#include <functional>
+#include <utility>
 #include <renderer/mi_cvar.h>
 #include <core/infra.h>
 #include <glm/glm.hpp>
 
 struct ImGuiInputTextCallbackData;
 MI_NAMESPACE_BEGIN
-class ViewerImGuiConsle {
+class ViewerImGuiConsole {
 public:
 
     void Initialize ();
@@ -90,6 +92,8 @@ public:
 
     InputBuffer input_buffer_ {};
     std::string last_suggestion_input_;
+
+private:
 };
 
 MI_NAMESPACE_END

@@ -20,12 +20,14 @@ MI_NAMESPACE_BEGIN
 DeviceBindlessResourceAllocator::DeviceBindlessResourceAllocator():
 material_slots_(kMaxNumMaterials), geometry_slots_(kMaxNumGeometries), static_mesh_slots_(kMaxNumStaticMeshes), volume_primitives_slots_(kMaxNumVolumePrimitiveGroups), gaussian_radiance_field_slots_(kMaxNumGaussianRadianceFields) {
     vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
-        RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
+        RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
         128
     );
     vertex_uber_buffer_->SetName("VertexUberBuffer");
     index_uber_buffer_ = DefaultDeviceUberBuffer::Create(
-        RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
+        RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
         128
     );
     index_uber_buffer_->SetName("IndexUberBuffer");

@@ -15,6 +15,11 @@ add_executable(core_task_test core/test_task_system.cpp)
 target_link_libraries(core_task_test core infra ${GTEST_LIBRARIES})
 add_test(NAME core_task COMMAND core_task_test)
 
+# Core - Command Line Test
+add_executable(core_command_line_test core/test_command_line.cpp)
+target_link_libraries(core_command_line_test core infra ${GTEST_LIBRARIES})
+add_test(NAME core_command_line COMMAND core_command_line_test)
+
 # Infra
 add_executable(infra_test infra/infra_test.cpp)
 target_link_libraries(infra_test infra core ${GTEST_LIBRARIES})

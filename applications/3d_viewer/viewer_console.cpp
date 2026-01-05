@@ -8,21 +8,24 @@
 #include <cstdarg>
 #include "viewer_console.h"
 
+#include "core/util/command_line.h"
 #include "renderer/mi_renderer.h"
 MI_NAMESPACE_BEGIN
-void ViewerImGuiConsle::Initialize() {
+void ViewerImGuiConsole::Initialize() {
     auto & infra = GetInfra();
     infra.SetLogCallback([this](MIInfraLogType type, const std::string & msg, const std::string & location) {
         this->Print(GetConsoleLogType(type), location, "%s", msg.c_str());
     });
+
+    // Commands are registered by ViewerApp (owner of app state like pinned cvars and camera).
 }
 
-void ViewerImGuiConsle::Destroy() {
+void ViewerImGuiConsole::Destroy() {
     auto & infra = GetInfra();
     infra.SetLogCallback({});
 }
 
-uint32_t ViewerImGuiConsle::GetConsoleTextColor(ConsoleLogType type) {
+uint32_t ViewerImGuiConsole::GetConsoleTextColor(ConsoleLogType type) {
     switch (type) {
         case ConsoleLogType::kInfo:
             return IM_COL32(255, 255, 255, 255);
@@ -37,14 +40,14 @@ uint32_t ViewerImGuiConsle::GetConsoleTextColor(ConsoleLogType type) {
     }
 }
 
-void ViewerImGuiConsle::ClearLog() {
+void ViewerImGuiConsole::ClearLog() {
     logs_.clear();
 }
 
-void ViewerImGuiConsle::ClearHistory() {
+void ViewerImGuiConsole::ClearHistory() {
 }
 
-int ViewerImGuiConsle::TextEditCallback(ImGuiInputTextCallbackData *data) {
+int ViewerImGuiConsole::TextEditCallback(ImGuiInputTextCallbackData *data) {
     switch (data->EventFlag)
     {
         case ImGuiInputTextFlags_CallbackCompletion: // Tab key
@@ -66,7 +69,7 @@ int ViewerImGuiConsle::TextEditCallback(ImGuiInputTextCallbackData *data) {
     }
 }
 
-void ViewerImGuiConsle::ExecConsoleCommandAndReset (InputBuffer input) {
+void ViewerImGuiConsole::ExecConsoleCommandAndReset (InputBuffer input) {
     PrintRaw("> %s", input.data());
 
     // Store to history
@@ -79,12 +82,29 @@ void ViewerImGuiConsle::ExecConsoleCommandAndReset (InputBuffer input) {
     saved_current_input_.clear();
 
     // Execute command
-    Renderer::Get().GetConsole().ExecuteCommand(command_str);
+    auto match = CommandRegistry::Get().Match(command_str);
+    if (match.has_value()) {
+        if (match->kind == CommandMatchKind::kFull) {
+            match->command->Execute(match.value());
+        } else if (match->kind == CommandMatchKind::kPartial) {
+            PrintRaw("Ambiguous command: %s", command_str.c_str());
+            PrintRaw("Did you mean:");
+            PrintRaw(" %s", match->command->ToString().c_str());
+        } else if (match->kind == CommandMatchKind::kBadMatch) {
+            PrintRaw("Bad arguments: %s", command_str.c_str());
+            PrintRaw("Usage:");
+            PrintRaw(" %s", match->command->ToString().c_str());
+        } else {
+            Print(ConsoleLogType::kError, "", "Unknown command: %s", command_str.c_str());
+        }
+    } else {
+        Print(ConsoleLogType::kError, "", "Unknown command: %s", command_str.c_str());
+    }
 
     scroll_to_bottom_ = true;
 }
 
-void ViewerImGuiConsle::DrawImGuiConsole() {
+void ViewerImGuiConsole::DrawImGuiConsole() {
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Console", &opened_, ImGuiWindowFlags_MenuBar))
     {
@@ -98,7 +118,7 @@ void ViewerImGuiConsle::DrawImGuiConsole() {
     ImGui::End();
 }
 
-void ViewerImGuiConsle::DrawImGuiConsoleEmbedded(glm::vec2 size) {
+void ViewerImGuiConsole::DrawImGuiConsoleEmbedded(glm::vec2 size) {
     // If caller passes (0,0), make it fill available region.
     if (size.x <= 0) size.x = ImGui::GetContentRegionAvail().x;
     if (size.y <= 0) size.y = ImGui::GetContentRegionAvail().y;
@@ -255,7 +275,7 @@ void ViewerImGuiConsle::DrawImGuiConsoleEmbedded(glm::vec2 size) {
     if (ImGui::InputText("##Command", input_buffer_.data(), input_buffer_.size(), flags,
         [](ImGuiInputTextCallbackData* data)
         {
-            auto console = static_cast<ViewerImGuiConsle*>(data->UserData);
+            auto console = static_cast<ViewerImGuiConsole*>(data->UserData);
             return console->TextEditCallback(data);
         }, (void*)this))
     {
@@ -289,7 +309,7 @@ void ViewerImGuiConsle::DrawImGuiConsoleEmbedded(glm::vec2 size) {
 }
 
 
-void ViewerImGuiConsle::PrintRaw(char const* fmt, ...)
+void ViewerImGuiConsole::PrintRaw(char const* fmt, ...)
 {
     InputBuffer buf;
     std::va_list args;
@@ -308,7 +328,7 @@ void ViewerImGuiConsle::PrintRaw(char const* fmt, ...)
     logs_.push_back(item);
 }
 
-void ViewerImGuiConsle::Print(ConsoleLogType type, const std::string & location, char const* fmt, ...)
+void ViewerImGuiConsole::Print(ConsoleLogType type, const std::string & location, char const* fmt, ...)
 {
     InputBuffer buf;
     std::va_list args;
@@ -329,7 +349,7 @@ void ViewerImGuiConsle::Print(ConsoleLogType type, const std::string & location,
 
 // Copy-pasted from Donut ImGui console implementation
 // XXXX mk: we should probably use the columns features instead ?
-static void printColumns(ViewerImGuiConsle& console, std::vector<std::string> const& items)
+static void printColumns(ViewerImGuiConsole& console, std::vector<std::string> const& items)
 {
     if (items.empty()) return;
     auto computeLineWidth = []() {
@@ -432,13 +452,17 @@ static std::vector<std::string> foldSuggestionsByCategory(const std::vector<std:
     return display;
 }
 
-int ViewerImGuiConsle::UpdateAutoCompletion(ImGuiInputTextCallbackData *data) {
+int ViewerImGuiConsole::UpdateAutoCompletion(ImGuiInputTextCallbackData *data) {
     // Called each tick. Browse the possible completions and update the current completion.
     auto cvars = CVarRegistry::GetInstance().GetAllCVars();
     // Find possible completions
     std::string current_input(data->Buf, data->BufTextLen);
     std::string prefix_to_cursor = std::string(data->Buf, data->CursorPos);
-    std::vector<std::string> possible_completions = Renderer::Get().GetConsole().GetCompletions(prefix_to_cursor);
+    auto completion_result = CommandRegistry::Get().Complete(prefix_to_cursor);
+    std::vector<std::string> possible_completions;
+    for (auto e : completion_result.items) {
+        possible_completions.push_back(e.text);
+    }
     if (possible_completions.empty()) return 0;
     // Avoid spamming suggestions if input unchanged since last print
     bool input_dirty = (prefix_to_cursor != last_suggestion_input_);
@@ -458,12 +482,13 @@ int ViewerImGuiConsle::UpdateAutoCompletion(ImGuiInputTextCallbackData *data) {
             break;
         }
     }
+
     // If common prefix is longer than current input, update the input
-    if (common_prefix.size() > current_input.size()) {
-        data->DeleteChars(0, data->BufTextLen);
-        data->InsertChars(0, common_prefix.c_str());
+    if (completion_result.replace_begin + common_prefix.size() > current_input.size()) {
+        data->DeleteChars(completion_result.replace_begin, (int)(data->BufTextLen) - (int)completion_result.replace_begin);
+        data->InsertChars((int)completion_result.replace_begin, common_prefix.c_str());
         // Move cursor to the end
-        data->CursorPos = (int)common_prefix.size();
+        data->CursorPos = (int)common_prefix.size() + (int)completion_result.replace_begin;
     } else {
         // Show possible completions only if input changed or first time
         if (input_dirty && possible_completions.size() > 1) {
@@ -489,7 +514,7 @@ int ViewerImGuiConsle::UpdateAutoCompletion(ImGuiInputTextCallbackData *data) {
     return 0;
 }
 
-int ViewerImGuiConsle::BrowseHistoryCommand(ImGuiInputTextCallbackData *data) {
+int ViewerImGuiConsole::BrowseHistoryCommand(ImGuiInputTextCallbackData *data) {
     if (data->EventKey == ImGuiKey_UpArrow) {
         if (history_current_index_ == -1) {
             // Enter history browsing mode

@@ -74,7 +74,6 @@ public:
     void HandleNavigationInput(float delta_time);
     void HandleKeyboardShortcuts(FrameInternalDelayedOps& ops);
     void HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration);
-    void ExecConsoleCommand(std::string cmd);
 
     void ProcessClickSelect(FrameInternalDelayedOps& ops);
     void ProcessDelayedOps(FrameInternalDelayedOps& ops);
@@ -108,7 +107,7 @@ public:
     BakingState baking_state_ {};
     InputState input_state_ {};
 
-    ViewerImGuiConsle console_;
+    ViewerImGuiConsole console_;
 
     std::unordered_map<std::string, PerfStat> perf_stats_;
 
