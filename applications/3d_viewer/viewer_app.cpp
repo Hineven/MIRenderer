@@ -850,8 +850,14 @@ void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<R
 
 void ViewerApp::ProcessClickSelect(FrameInternalDelayedOps& ops) {
     auto & io = ImGui::GetIO();
-    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !input_state_.dragging_) {
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && io.MouseDelta.x * io.MouseDelta.x + io.MouseDelta.y * io.MouseDelta.y > 0.3f) {
+        selection_state_.mouse_moved_since_pressed = true;
+    }
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !selection_state_.mouse_moved_since_pressed && !io.WantCaptureMouse) {
         ops.should_process_click_select = true;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        selection_state_.mouse_moved_since_pressed = false;
     }
 }
 
@@ -1068,7 +1074,8 @@ void ViewerApp::ProcessAxisDragging() {
             glm::vec2 mouse;
             mouse.x = io.MousePos.x;
             mouse.y = io.MousePos.y;
-            if (!input_state_.dragging_ && !io.WantCaptureMouse) {
+            if (!input_state_.dragging_ && !io.WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                // 在箭头上左键点下，此时开始拖拽
                 input_state_.drag_mouse_start_pos_ = mouse;
                 if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
                     auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
@@ -1180,8 +1187,6 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         ProcessClickSelect(ops);
 
-        ProcessAxisDragging();
-
 
         auto & io = ImGui::GetIO();
         RDGProfilingContextRef current_profiling_context;
@@ -1220,6 +1225,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
 
         ProcessDelayedOps(ops);
+
+        // 必须在 selection 更新后判定拖拽
+        ProcessAxisDragging();
 
 
         if (rhi.GetFrameIndex() % 1000 == 0) {

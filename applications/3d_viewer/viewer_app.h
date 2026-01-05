@@ -34,6 +34,8 @@ public:
         uint selected_descriptor_rank = UINT32_MAX;
         uint selected_deferred_renderable_index = UINT32_MAX;
         glm::vec2 selected_uv {0.0f, 0.0f};
+        // Used to identify if the user intention is dragging or clicking.
+        bool mouse_moved_since_pressed {false};
     };
 
     struct BakingState {
