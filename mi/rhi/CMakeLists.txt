@@ -89,7 +89,11 @@ set(HEADER_FILES
 add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})
 target_include_directories(rhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-
+option(MI_BYPASS_RHI_THREAD "Bypass RHI thread for debugging purposes" OFF)
+if(MI_BYPASS_RHI_THREAD)
+    message(STATUS "RHI thread bypass enabled.")
+    target_compile_definitions(rhi PUBLIC MI_BYPASS_RHI_THREAD)
+endif()
 
 list(
     APPEND

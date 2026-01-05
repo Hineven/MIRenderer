@@ -54,7 +54,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
 
 std::future<void> VulkanRHI::AdvanceFrame(RHISyncPoint * sync_point) {
     // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     ResetTimestampAllocatorForFrame((uint32_t)(GetFrameIndex() + 1));
 #endif
     return RHI::AdvanceFrame(sync_point);
@@ -504,7 +504,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 #endif
         LoadPipelineCache();
 
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
         // Query pool
         timestamp_query_pool_ = device_.createQueryPool(vk::QueryPoolCreateInfo{
             {},
@@ -821,7 +821,7 @@ RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
 }
 
 void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     // Waited frame fences before calling this.
     uint32_t base = (frame_index % kNumFramesInFlight) * kQueriesPerFrame;
     timestamp_frame_base_.store(base, std::memory_order_relaxed);
@@ -833,7 +833,7 @@ void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
 }
 
 RHITimestampRef VulkanRHI::CreateTimestamp() {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     auto local = timestamp_query_allocator_.fetch_add(1, std::memory_order_relaxed);
     if (local >= kQueriesPerFrame) {
         mi_warning(true, "Timestamp allocator exhausted ({} >= per-frame cap {}). Dropping timestamp.", local, kQueriesPerFrame);
@@ -980,7 +980,7 @@ void VulkanRHI::PostInitialize() {
     RHI::PostInitialize();
     // Create bindless manager and command executor
     {
-        mi_assert(IsRHIThreadActive() || BYPASS_RHI_THREAD, "RHI thread must be active when creating VulkanRHI.");
+        mi_assert(IsRHIThreadActive() || MI_BYPASS_RHI_THREAD, "RHI thread must be active when creating VulkanRHI.");
         // Initialization are automatically dispatched to the RHI thread
         // via the constructor functions
         bindless_manager_ = new VulkanBindlessManager();

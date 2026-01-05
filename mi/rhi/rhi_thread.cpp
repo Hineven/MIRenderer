@@ -49,7 +49,7 @@ static std::counting_semaphore<> task_queue_sem_ {0};
 static std::unique_ptr<RHIWorkerThread> rhi_worker_thread_;
 
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         assert(IsRenderThread());
         // Do nothing actually
         auto promise = std::promise<void>();
@@ -72,7 +72,7 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (
     RHICommandQueueBase * command_buffer, RHISyncPoint * sync,
     const std::string & submit_prefix, bool recyle_resources
 ) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         assert(IsRenderThread());
         RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(command_buffer, sync, submit_prefix, recyle_resources);
         auto promise = std::promise<void>();
@@ -93,7 +93,7 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (
 }
 
 std::future<void> EnqueueRHIFrameEndTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         assert(IsRenderThread());
         RHI::Get().GetCommandExecutor()->RHIFrameEnd(command_buffer, sync);
         auto promise = std::promise<void>();
@@ -133,7 +133,7 @@ bool IsRHIThreadActive() {
 }
 
 std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         task();
         auto promise = std::promise<void>();
         // Set the promise value to indicate the task is done
@@ -152,15 +152,15 @@ std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
 }
 
 void AdvanceFrame_RHIThread() {
-    mi_assert(IsRHIThread() || BYPASS_RHI_THREAD, "AdvanceFrame_RHIThread must be called in RHI thread.");
+    mi_assert(IsRHIThread() || MI_BYPASS_RHI_THREAD, "AdvanceFrame_RHIThread must be called in RHI thread.");
     rhi_worker_thread_->AdvanceFrame();
 }
 
 void RHIWorkerThread::Run() {
 
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         MI_LOG(MIInfraLogType::kWarning, "Bypassing RHI thread for debugging purposes. RHI thread exits upon its launch.");
-        MI_LOG(MIInfraLogType::kWarning, "Set BYPASS_RHI_THREAD to false to silent this warning.");
+        MI_LOG(MIInfraLogType::kWarning, "Set MI_BYPASS_RHI_THREAD to false to silent this warning.");
         return ;
     }
 

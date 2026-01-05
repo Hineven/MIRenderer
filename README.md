@@ -35,6 +35,9 @@
 ### 调试和性能
 * 鉴于性能问题，不推荐常用`Debug`模式调试程序。`Debug`模式会关闭大部分优化，CPU端性能会大幅下降。请使用`RelWithDebInfo`模式进行日常调试。
   * 如果遇到难以定位的问题，可以此时再切换到`Debug`模式进行调试，程序中的大量调试检查或许会对你有帮助。
+* `MI_SHADER_DEBUG_MODE`：shader调试模式
+  * 默认开启，可以通过CMake选项关闭，以进一步提升渲染速度。
+  * 关闭时，`shader`代码会被优化掉调试信息，无法进行抓帧。进行F5重编译时也仅会依赖拷贝到构建目录后的shader。
 * 在使用`Vulkan Configurator`时，可以开启`Vulkan Validation Layer`与`Break on Validation Error`选项，此时，出现问题时程序会自动中断，你可以用IDE查看栈帧。
   * 开启`Vulkan Validation Layer`后性能下降是正常的。
 * 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。

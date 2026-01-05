@@ -275,7 +275,7 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-fspv-use-vulkan-memory-model"); // Use Vulkan memory model (see that in Vulkan spec)
         add_option(L"-Ges"); // Strict mode
         add_option(L"-disable-payload-qualifiers"); // Disable DXR 1.1 ray payload qualifiers
-#ifndef NDEBUG
+#if MI_ENABLE_SHADER_DEBUGGING
         // Debugging flag
         add_option(L"-Zi"); // Generate debug information
 #endif
@@ -312,10 +312,6 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
     return w_options;
 }
 
-// TODO: 怪了，如果不使用此互斥锁，则可能在刷新Shader时崩溃（单线程多次大量调用PreprocessAndComputeHash）
-// 原因未探明，暂时先加个锁
-static std::mutex preprocess_mutex;
-
 // 添加预处理并计算哈希的辅助函数
 static uint64_t PreprocessAndComputeHash(
         IDxcCompiler* dxc_compiler,
@@ -325,7 +321,6 @@ static uint64_t PreprocessAndComputeHash(
         const std::vector<DxcDefine>& defines,
         const std::vector<const wchar_t*>& options_cstr,
         uint32_t options_count) {
-    std::lock_guard lock(preprocess_mutex);
     // 进行预处理操作
     IDxcOperationResult *preprocess_result;
     // Make a local copy if we ever want to append internal defines (currently none)

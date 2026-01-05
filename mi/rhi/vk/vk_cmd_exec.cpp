@@ -569,7 +569,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eColorAttachmentOutput,
             {}, {}, {}, swapchain_barrier);
         // 2.4 Clear the queries that may be used in the next frame
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
         {
             auto first_query  = (GetFrameIndexForCurrentThread() + 1) * VulkanRHI::kQueriesPerFrame;
             first_query = first_query % VulkanRHI::kMaxNumTimestampQueries;
@@ -1175,7 +1175,7 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
 }
 
 void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHICommandInsertTimestamp *cmd) {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     auto vk_rhi = GetVulkanRHI();

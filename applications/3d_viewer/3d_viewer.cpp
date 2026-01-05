@@ -12,7 +12,7 @@ int main () {
     cfg.window_width = 1920;
     cfg.window_height = 1080;
 
-#ifndef NDEBUG
+#if MI_ENABLE_SHADER_DEBUGGING
     auto infra = std::make_unique<MyInfra>(false, MI_PROJECT_ROOT);
 #else
     auto infra = std::make_unique<MyInfra>(true);

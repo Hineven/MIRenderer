@@ -46,9 +46,8 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 endif()
 
 # For code to access project root (in debug builds)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_definitions("-DMI_PROJECT_ROOT=\"${CMAKE_SOURCE_DIR}\"")
-endif()
+add_compile_definitions($<$<CONFIG:Debug>:MI_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"> $<$<CONFIG:RelWithDebInfo>:MI_PROJECT_ROOT="${CMAKE_SOURCE_DIR}">)
+
 
 # Options
 option(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT "Enable Fourier primitives by default" OFF)
@@ -62,7 +61,15 @@ endif()
 option(MI_ENABLE_TIMESTAMP "Enable timestamp queries globally" ON)
 if(MI_ENABLE_TIMESTAMP)
     message(STATUS "Timestamp queries enabled globally.")
-    add_definitions(-DENABLE_TIMESTAMP)
+    add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_TIMESTAMP> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_TIMESTAMP>)
+endif()
+
+# Global shader debugging mode toggle: enable shader debugging features in all builds for easier debugging.
+# Note: this can introduce performance overhead, so only enable when needed.
+option(MI_ENABLE_SHADER_DEBUGGING "Enable shader debugging features globally" ON)
+if(MI_ENABLE_SHADER_DEBUGGING)
+    message(STATUS "Shader debugging features enabled globally.")
+    add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_SHADER_DEBUGGING> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_SHADER_DEBUGGING>)
 endif()
 
 option(MI_ENABLE_COMPLIER_ADDRESS_SANITIZER "Enable address sanitizer in debug builds" OFF)

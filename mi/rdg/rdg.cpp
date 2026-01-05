@@ -23,7 +23,8 @@
 // This is useful for debugging, but hurts performance alot.
 // #define INSTANT_SUBMIT_FOR_EACH_PASS
 
-// #define RDG_DEBUG_VALIDATION
+// Enable extra validation checks during RDG execution.
+#define RDG_DEBUG_VALIDATION
 #endif
 
 
@@ -38,7 +39,7 @@ bool RDG_IsInRDGExecution () {
 bool RDGProfilingContext::ResolveTimestampPeriods(std::vector<RDGTimePeriod> & out_periods,
     RHI & rhi,
     RHI::RHITimestampQueryMode mode) {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     out_periods.clear();
 
     if (marker_timestamps_.size() < 2) {
@@ -209,7 +210,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     [[maybe_unused]] auto& rhi = RHI::Get();
 
     auto insert_timestamp = [&] () {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
         auto timestamp = rhi.CreateTimestamp();
         if (timestamp) {
             marker_timestamps.push_back(timestamp);
@@ -223,7 +224,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     auto sync_active_period = [&] ([[maybe_unused]] RDGPass * pass, [[maybe_unused]] RHICommandQueueGraphics & queue) {
         insert_timestamp();
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
         auto curr_class_path = pass ? pass->class_path_ : std::vector<std::string>{};
         auto curr_pass_name = pass ? pass->GetName() : "";
         if (curr_class_path == active_period.class_names && curr_pass_name == active_period.pass_name) {
@@ -399,7 +400,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
 
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     // Store profiling context for later resolution (typically next frame).
     profiling_context_.SafeRelease();
     if (!marker_timestamps.empty()) {

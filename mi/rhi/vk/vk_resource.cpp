@@ -132,7 +132,7 @@ VulkanTimestamp::~VulkanTimestamp() {
 }
 
 uint64_t VulkanTimestamp::QueryTimestamp() const {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     auto rhi = GetVulkanRHI();
     uint64_t value = 0;
     // Wait for the timestamp to be available and read it as 64-bit
@@ -155,14 +155,14 @@ uint64_t VulkanTimestamp::QueryTimestamp() const {
     }
     return value;
 #else
-    mi_warning(true, "Querying timestamp returns UINT64_MAX when ENABLE_TIMESTAMP is disabled.");
+    mi_warning(true, "Querying timestamp returns UINT64_MAX when MI_ENABLE_TIMESTAMP is disabled.");
     return UINT64_MAX;
 #endif
 }
 
 std::vector<uint64_t> VulkanRHI::QueryTimestamps(std::span<RHITimestamp *> timestamps,
     RHITimestampQueryMode mode) {
-#if ENABLE_TIMESTAMP
+#if MI_ENABLE_TIMESTAMP
     auto rhi = GetVulkanRHI();
     // Check for continuous query indices
     std::vector<uint32_t> query_indices, query_rank_indirection;
@@ -262,7 +262,7 @@ std::vector<uint64_t> VulkanRHI::QueryTimestamps(std::span<RHITimestamp *> times
     }
     return results;
 #else
-    mi_warning(true, "Querying timestamp returns UINT64_MAX when ENABLE_TIMESTAMP is disabled.");
+    mi_warning(true, "Querying timestamp returns UINT64_MAX when MI_ENABLE_TIMESTAMP is disabled.");
     auto result = std::vector<uint64_t>{};
     result.resize(timestamps.size(), UINT64_MAX);
     return result;

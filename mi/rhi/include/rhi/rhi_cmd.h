@@ -176,7 +176,7 @@ protected:
     }
 
     void AddCommand (RHICommandBase * cmd) {
-        if constexpr (BYPASS_RHI_THREAD) {
+        if constexpr (MI_BYPASS_RHI_THREAD) {
             DEBUG_PROFILE_SECTION(AddCommand);
             // If we are bypassing the RHI thread, execute the command immediately.
             cmd->ExecuteAndDestruct(*this);
