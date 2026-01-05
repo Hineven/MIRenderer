@@ -70,7 +70,12 @@ public:
     virtual bool IsEmpty () const ;
 
     FORCEINLINE bool IsTransformDirty () const { return transform_dirty_; }
-    FORCEINLINE void SetTransformDirty (bool dirty) { transform_dirty_ = dirty; }
+    FORCEINLINE void SetTransformDirty (bool dirty = true) { transform_dirty_ = dirty; }
+    FORCEINLINE bool ClearTransformDirty () {
+        bool was_dirty = transform_dirty_;
+        transform_dirty_ = false;
+        return was_dirty;
+    }
     FORCEINLINE RenderableType GetType() const { return type_; }
 
     // Called for dirty renderables before rendering each frame by the renderer.

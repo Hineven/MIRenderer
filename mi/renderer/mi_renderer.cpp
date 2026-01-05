@@ -143,8 +143,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 to_local = e->GetTransform().GetToLocalTransformMatrix();
                 normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
                 renderable_header = e->GetDeviceRenderableHeader();
-                // Clear dirty flag
-                e->SetTransformDirty(false);
                 if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
             }
             renderable_transforms.push_back(to_world);
@@ -190,11 +188,14 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 && renderable->GetBLAS()
                 ) {
                 visible_rt_renderable_indices.push_back(e);
-                if (renderable->IsTransformDirty()) {
+                if (renderable->ClearTransformDirty()) {
                     visible_rt_renderable_transform_dirty = true;
                 }
             }
         }
+    }
+    for (const auto& e : all_renderables) {
+        if (e) e->ClearTransformDirty();
     }
     // If instance count changes, we must rebuild TLAS instead of update.
     const bool visible_rt_renderable_instance_count_changed = (view->scene_->GetDeviceScene()->tlas_instance_count_ != visible_rt_renderable_indices.size());
