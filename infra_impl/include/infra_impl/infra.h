@@ -138,6 +138,8 @@ public:
 
     uint64_t GetShaderXXHashFromShaderResourcePath (
         const MIResourcePath & res_path,
+        std::string entry_point,
+        std::string target_profile,
         std::vector<std::string> defines,
         std::vector<std::string> options,
         bool & is_shader_valid

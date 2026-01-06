@@ -116,20 +116,20 @@ message(STATUS "Found Vulkan SDK version: ${Vulkan_VERSION}")
 # GLFW for cross platform window creation and input handling
 find_package(glfw3 CONFIG REQUIRED GLOBAL)
 
-if(NOT Vulkan_dxc_lib_FOUND OR NOT Vulkan_dxc_DEBUG_LIBRARY)
-    # Fallback to standalone DXC
-    message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")
-    if(NOT Vulkan_dxc_lib_FOUND)
-        message(STATUS "Reason: dxc library not found")
-    else()
-        message(STATUS "Reason: dxc library found, but no debug library found.")
-    endif()
-    # Standalone DXC
-    find_package(directx-dxc CONFIG REQUIRED GLOBAL)
-    set(dxc_library_target Microsoft::DirectXShaderCompiler)
-else()
+# Prefer integrated DXC from Vulkan SDK, then Windows Dev Kit DXC, finally standalone DXC
+if(Vulkan_dxc_lib_FOUND AND Vulkan_dxc_DEBUG_LIBRARY)
     message(STATUS "Using integrated dxc within Vulkan SDK")
     set(dxc_library_target Vulkan::dxc_lib)
+else()
+    find_package(DirectXShaderCompiler CONFIG QUIET)
+    if(DirectXShaderCompiler_FOUND)
+        message(STATUS "Using Windows Dev Kit dxc")
+        set(dxc_library_target Microsoft::DirectXShaderCompiler)
+    else()
+        message(STATUS "No Vulkan SDK or Windows Dev Kit dxc found, using standalone DXC")
+        find_package(directx-dxc CONFIG REQUIRED GLOBAL)
+        set(dxc_library_target Microsoft::DirectXShaderCompiler)
+    endif()
 endif()
 
 # Simple external packages

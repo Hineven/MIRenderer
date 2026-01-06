@@ -169,6 +169,7 @@ void RHIWorkerThread::Run() {
         return ;
     }
     SetCurrentThreadType(ThreadType::kRHIThread);
+    InitializePlatformBackgroundThreadContext_Worker();
 
 
     static std::atomic<bool> rhi_thread_started {false};
@@ -231,6 +232,8 @@ void RHIWorkerThread::Run() {
     is_running_ = false;
     // Reset the flag
     rhi_thread_started.store(false);
+    DestroyPlatformBackgroundThreadContext_Worker();
+    SetCurrentThreadType(ThreadType::kUnknown);
 }
 
 RHIWorkerThread::~RHIWorkerThread () {

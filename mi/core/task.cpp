@@ -35,6 +35,8 @@ void WorkerThreadRunnable::Run() {
 
     SetCurrentThreadType(ThreadType::kTaskGraphWorkerThread);
 
+    InitializePlatformBackgroundThreadContext_Worker();
+
     while (true) {
         Task *task = TaskGraph::Get().WaitAndGetNextTask(this);
         if (task != nullptr) {
@@ -45,6 +47,8 @@ void WorkerThreadRunnable::Run() {
         }
         if (stop_) break;
     }
+
+    DestroyPlatformBackgroundThreadContext_Worker();
 
     SetCurrentThreadType(ThreadType::kUnknown);
 }

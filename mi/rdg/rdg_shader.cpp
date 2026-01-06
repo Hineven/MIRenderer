@@ -561,7 +561,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
     if (class_registry_->type == RHIPipelineType::kCompute) {
         bool is_valid {false};
         auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-            class_registry_->source_location, defines, options, is_valid
+            class_registry_->source_location, class_registry_->compute_entry_, "cs" SHADER_MODEL_SUFFIX, defines, options, is_valid
         );
         if (is_valid) shader_hash.AddUnordered("ComputeShader", result);
         else MI_WARN("Failed to compute compute shader hash.");
@@ -571,7 +571,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->vertex_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->vertex_entry_, "vs" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("VertexShader", result);
             else MI_WARN("Failed to compute vertex shader hash.");
@@ -579,7 +579,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->geometry_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->geometry_entry_, "gs" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("GeometryShader", result);
             else MI_WARN("Failed to compute geometry shader hash.");
@@ -587,7 +587,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->fragment_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->fragment_entry_, "ps" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("FragmentShader", result);
             else MI_WARN("Failed to compute fragment shader hash.");
@@ -598,7 +598,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->raygen_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->raygen_entry_, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("RaygenShader", result);
             else MI_WARN("Failed to compute raygen shader hash.");
@@ -606,7 +606,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->closest_hit_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->closest_hit_entry_, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("ClosestHitShader", result);
             else MI_WARN("Failed to compute closest hit shader hash.");
@@ -614,7 +614,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->any_hit_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->any_hit_entry_, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("AnyHitShader", result);
             else MI_WARN("Failed to compute any hit shader hash.");
@@ -622,7 +622,7 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
         if (!class_registry_->miss_entry_.empty()) {
             bool is_valid {false};
             auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, defines, options, is_valid
+                class_registry_->source_location, class_registry_->miss_entry_, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
             );
             if (is_valid) shader_hash.AddUnordered("MissShader", result);
             else MI_WARN("Failed to compute miss shader hash.");

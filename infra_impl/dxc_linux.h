@@ -5,7 +5,7 @@
  */
 
 #pragma once
-
+#ifndef _WIN32
 #include <cstdint>
 #include <cstring>
 
@@ -120,3 +120,4 @@ typedef HRESULT (*DxcCreateInstanceProc)(
     const GUID& rclsid,
     const GUID& riid,
     void** ppv);
+#endif

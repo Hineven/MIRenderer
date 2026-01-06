@@ -8,9 +8,10 @@
 #include <string.h>
 #include <infra_impl/infra.h>
 
+#include "core/thr.h"
+
 
 MI_NAMESPACE_BEGIN
-
 #define RU "(Are you forgetting to release all BlobRes references before Infra destruction?) "
 
 MyBlobResource::~MyBlobResource() noexcept {
@@ -214,6 +215,12 @@ void MyBlobResource::WriteTaskRelease() {
 }
 
 void MyInfra::FIO_ThreadMain () {
+    if (GetCurrentThreadType() != ThreadType::kUnknown) {
+        MI_LOG(MIInfraLogType::kError, "FIO Thread started on a thread already registered as a different type.");
+        return ;
+    }
+    SetCurrentThreadType(ThreadType::kFIOThread);
+    InitializePlatformBackgroundThreadContext_Worker();
     while(true) {
         fio_task_semaphore_.acquire();
         std::packaged_task<void()> task;
@@ -232,6 +239,9 @@ void MyInfra::FIO_ThreadMain () {
         if (task.valid()) task();
         // Task destruction.
     }
+    DestroyPlatformBackgroundThreadContext_Worker();
+    SetCurrentThreadType(ThreadType::kUnknown);
+    MI_INFO("FIO Thread exited.");
 }
 
 void MyInfra::KickOffFIOThreads() {
@@ -250,7 +260,7 @@ void MyInfra::StopAndBlockWaitFIOThreads() {
 }
 
 std::filesystem::path MyInfra::TranslateResPathToFilePath(const MIResourcePath &res_path) {
-    return resource_directory_ / res_path;
+    return (resource_directory_ / res_path).generic_string();
 }
 
 TRef<BlobResourceInterface>
@@ -281,6 +291,7 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
         }
     }
     auto * res = new MyBlobResource(this, file_path, hint);
+    printf("Opening: %s\n", file_path.string().c_str());
     if (!res->file_.good()) {
         delete res;
         return nullptr;

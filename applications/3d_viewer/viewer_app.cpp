@@ -311,6 +311,7 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
         mi_assert(false, "MainLoop: somehow the thread calling Start() is known.");
     }
     SetCurrentThreadType(ThreadType::kRenderThread);
+    InitializePlatformMainThreadContext();
 
     glfwInit();
 
@@ -436,6 +437,9 @@ void ViewerApp::Destroy() {
     RHI::DestroySingleton();
 
     console_.Destroy();
+
+    DestroyPlatformMainThreadContext();
+    SetCurrentThreadType(ThreadType::kUnknown);
 
     GetInfra().Shutdown();
     DestroyInfra();
@@ -854,7 +858,9 @@ void ViewerApp::ProcessClickSelect(FrameInternalDelayedOps& ops) {
         selection_state_.mouse_moved_since_pressed = true;
     }
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !selection_state_.mouse_moved_since_pressed && !io.WantCaptureMouse) {
-        ops.should_process_click_select = true;
+        if (io.MousePos.x > 0 && io.MousePos.y > 0) {
+            ops.should_process_click_select = true;
+        }
     }
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         selection_state_.mouse_moved_since_pressed = false;

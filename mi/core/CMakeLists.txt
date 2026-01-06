@@ -25,6 +25,7 @@ set(SOURCE_FILES
     thr.cpp
     debug_prof.cpp
     command_line.cpp
+    platform.cpp
 )
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})
