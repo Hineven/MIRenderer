@@ -15,22 +15,7 @@ MI_NAMESPACE_BEGIN
 #define RU "(Are you forgetting to release all BlobRes references before Infra destruction?) "
 
 MyBlobResource::~MyBlobResource() noexcept {
-    // Schedule close on FIO thread and wait
-    std::packaged_task<void()> task([this]() {
-        DoClose();
-    });
-    auto fut = task.get_future();
-    {
-        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
-        if (infra_->fio_stop_) {
-            // If FIO thread is stopping, do not enqueue new tasks.
-            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to close blob resource while FIO thread is stopping.");
-            return;
-        }
-        infra_->fio_tasks_.emplace(std::move(task));
-    }
-    infra_->fio_task_semaphore_.release();
-    fut.wait();
+    DoClose();
 }
 
 MyBlobResource::MyBlobResource(MyInfra * infra, const std::filesystem::path & file_path, [[maybe_unused]] MIInfraResourceHintType hint) {
@@ -91,21 +76,7 @@ size_t MyBlobResource::DoGetSize() {
 }
 
 void MyBlobResource::ReadBlob(size_t pos, size_t size, void *data) {
-    std::packaged_task<void()> task([this, pos, size, data]() {
-        DoReadBlob(pos, size, data);
-    });
-    auto fut = task.get_future();
-    {
-        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
-        if (infra_->fio_stop_) {
-            // If FIO thread is stopping, do not enqueue new tasks.
-            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to read from blob resource while FIO thread is stopping.");
-            return;
-        }
-        infra_->fio_tasks_.emplace(std::move(task));
-    }
-    infra_->fio_task_semaphore_.release();
-    fut.wait();
+    DoReadBlob(pos, size, data);
 }
 
 std::future<void> MyBlobResource::Async_ReadBlob(size_t pos, size_t size, void *data) {
@@ -129,22 +100,7 @@ std::future<void> MyBlobResource::Async_ReadBlob(size_t pos, size_t size, void *
 }
 
 void MyBlobResource::WriteBlob(size_t pos, size_t size, const void *data) {
-    std::packaged_task<void()> task([this, pos, size, data]() {
-        DoWriteBlob(pos, size, data);
-    });
-    auto fut = task.get_future();
-    {
-        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
-        if (!infra_->fio_stop_) {
-            infra_->fio_tasks_.emplace(std::move(task));
-        } else {
-            // If FIO thread is stopping, do not enqueue new tasks.
-            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to write to blob resource while FIO thread is stopping.");
-            return;
-        }
-    }
-    infra_->fio_task_semaphore_.release();
-    fut.wait();
+    DoWriteBlob(pos, size, data);
 }
 
 std::future<void> MyBlobResource::Async_WriteBlob(size_t pos, size_t size, const void *data) {
@@ -167,34 +123,21 @@ std::future<void> MyBlobResource::Async_WriteBlob(size_t pos, size_t size, const
 }
 
 size_t MyBlobResource::GetSize() {
-    auto prom = std::make_shared<std::promise<size_t>>();
-    auto fut = prom->get_future();
-    std::packaged_task<void()> task([this, prom]() {
-        prom->set_value(DoGetSize());
-    });
-    {
-        std::lock_guard<std::mutex> lock(infra_->fio_queue_mutex_);
-        if (infra_->fio_stop_) {
-            // If FIO thread is stopping, do not enqueue new tasks.
-            MI_LOG(MIInfraLogType::kWarning, RU "Attempted to get size of blob resource while FIO thread is stopping.");
-            return 0;
-        }
-        infra_->fio_tasks_.emplace(std::move(task));
-    }
-    infra_->fio_task_semaphore_.release();
-    return fut.get();
+    return DoGetSize();
 }
 
 bool MyBlobResource::ReadTaskWaitAndAcquire() {
     if(file_closing_) return false;
-    rw_mutex_.lock_shared();
+    // Two threads can not read at the same time (because seekg() stuff)
+    rw_mutex_.lock();
     num_active_r_tasks_++;
     return true;
 }
 
 void MyBlobResource::ReadTaskRelease() {
     num_active_r_tasks_--;
-    rw_mutex_.unlock_shared();
+    // Two threads can not read at the same time (because seekg() stuff)
+    rw_mutex_.unlock();
 }
 
 bool MyBlobResource::WriteTaskWaitAndAcquire(bool close_request) {
