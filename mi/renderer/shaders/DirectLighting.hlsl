@@ -675,6 +675,9 @@ RWTexture2D<float4> RWVolumeGridRadianceEstimateTexture;
 // Volume Grid Output Sum Transmittance
 [[vk::image_format("r32f")]]
 RWTexture2D<float> RWVolumeGridSumTransmittanceTexture;
+// Volume Grid Direct Lighting Scatter Information(Color and Depth)
+[[vk::image_format("rgba16f")]]
+RWTexture2D<float4> RWVolumeGridSampledColorAndDepth;
 // Volume Grid Output Lighting
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWVolumeGridDirectLightingTexture;
@@ -691,6 +694,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     // Initialize the output texture
     RWVolumeGridRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
+    RWVolumeGridSampledColorAndDepth[PixelIndex] = 0.f.xxxx;
     RWVolumeGridDirectLightingTexture[PixelIndex] = 0.f.xxxx;
 
     CameraParameters C = GetActiveCamera();
@@ -759,6 +763,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
             scattered = true;
             scatterPos = pos;
             volumeColor = sampleVal.rgb;
+            RWVolumeGridSampledColorAndDepth[PixelIndex] = float4(volumeColor, t);
         }
 
         // If transmittance is close to 0, break.
@@ -791,10 +796,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
     float TraceDistance = length(TraceDirection);
     TraceDirection /= max(TraceDistance, 1e-9);
 
-    // Phase Function (Isotropic)
-    float Phase = 1.0f / (4.0f * PI);
-
-    float3 FinalThroughput = RadianceEstimation * Phase * volumeColor;
+    float3 FinalThroughput = RadianceEstimation * volumeColor;
 
     RWVolumeGridRadianceEstimateTexture[PixelIndex] = float4(FinalThroughput, 1.0f);
 

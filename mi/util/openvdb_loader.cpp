@@ -137,6 +137,10 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
     glm::vec3 vol_min(std::min(ws_min.x(), ws_max.x()), std::min(ws_min.y(), ws_max.y()), std::min(ws_min.z(), ws_max.z()));
     glm::vec3 vol_max(std::max(ws_min.x(), ws_max.x()), std::max(ws_min.y(), ws_max.y()), std::max(ws_min.z(), ws_max.z()));
 
+    // TODO:修改模型本身以调整至合适尺寸
+    // vol_min /= 50.f;
+    // vol_max /= 50.f;
+
     // --- 4. 准备 Accessor (直接访问器) ---
     // 使用 ConstAccessor 是线程安全的，且比 GridSampler 更快
     auto density_acc = density_grid->getConstAccessor();
