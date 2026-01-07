@@ -234,7 +234,6 @@ MyInfra::RIO_Open(const MIResourcePath &res_path, MIInfraResourceHintType hint, 
         }
     }
     auto * res = new MyBlobResource(this, file_path, hint);
-    printf("Opening: %s\n", file_path.string().c_str());
     if (!res->file_.good()) {
         delete res;
         return nullptr;
