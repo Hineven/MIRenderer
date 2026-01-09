@@ -452,11 +452,23 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
     scene_ = std::make_unique<Scene>();
 
     if (true) {
-        sky_cube_ = TextureLoader::LoadEnvironmentMap("SkyTexture",
-            GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr"));
-        sky_cube_->UpdateOnDevice();
-        sky_cube_->ConvertToBindless();
+        auto sky_file = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr");
+        sky_cube_ = TextureLoader::LoadEnvironmentMap("Sky", sky_file);
+        if (sky_cube_) {
+            sky_cube_->UpdateOnDevice();
+            sky_cube_->ConvertToBindless();
+            if (!sky_cube_->IsBindless() || !sky_cube_->GetDeviceTexture()) {
+                MI_WARN("Sky cubemap '{}' failed to become a valid bindless device texture (bindless={}, device_tex={}). Environment light sampling may be invalid.",
+                    sky_file.string(),
+                    sky_cube_->IsBindless() ? 1 : 0,
+                    sky_cube_->GetDeviceTexture() ? 1 : 0);
+            }
+        } else {
+            MI_WARN("Failed to load sky environment map from '{}'.", sky_file.string());
+        }
+        scene_->SetSkyCube(sky_cube_.Raw());
     }
+
     default_material_ = Material::Create("default_mat", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
 
     {
@@ -516,7 +528,9 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
     if (true) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
-        auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
+        // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
+        // auto model_path = std::filesystem::path("D:/TestScene/bistro-interior/BistroInterior.gltf");
+        auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator_,
@@ -525,6 +539,10 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
         }
+        for (auto e : meshes_) {
+            e->UpdateLights_Async(resource_allocator_.Raw(), RHI::Get().GetGraphicsCommandQueue());
+        }
+        RHI::Get().WaitForIdle();
     }
     if (false) {
         TRef<GaussianRadianceField> field;
