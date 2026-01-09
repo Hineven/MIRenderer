@@ -1,11 +1,10 @@
 # MIRenderer
-一个用于研究实时光照的渲染框架和一些功能实现。
-![cover](images/cover.png)
-## 宇宙免责声明
-* 框架还在持续性修修补补之中，可能有bug，不要太信任此框架！
+一个用于研究实时光照的RTGI和渲染框架，以及一些周边功能实现。
+![cover2](images/cover.png)
+* 还在持续修修补补之中，存在不少bug！
 ## 安装和编译
 ### 安装外部依赖
-* NVIDIA RTX显卡。AMD显卡理论上支持，但未经过测试。
+* 仅支持NVIDIA RTX显卡。
 * `Vulkan SDK`: https://vulkan.lunarg.com/ ，安装最新的Vulkan SDK，请使用1.4.300更高版本，较低版本会出现意外错误。
 ### 安装Vcpkg
 安装vcpkg包管理器，并使用包管理器与`CMake`集成，然后安装以下依赖：
@@ -19,7 +18,7 @@
 * `happly`
 * `nlohmann-json`
 * `glfw3`
-* `tinyexr` <- 似乎最近此包可能因为CmakeBug无法安装，你可以回退到较早版本，或者切换CMake版本（3.30.1可用）。
+* `tinyexr`
 * `vulkan-memory-allocator`
 * `directx-dxc`
 # 使用
@@ -49,7 +48,7 @@
 * 线程分五类别：RHI线程、渲染线程、工作线程、主线程、FIO线程
 * **只有**RHI线程负责与图形API交互，RHI线程只有一个
 * **只有**渲染线程负责与RHI线程交互。一般而言，**只有**渲染线程能访问/**间接或直接持有**/使用RHI资源引用，渲染线程只有一个
-* 渲染器核心中（`mi`中），**只有**FIO线程负责文件读写。文件读写请求都通过Infra委托FIO线程完成。
+* 渲染器核心中（`mi`中），FIO线程专门负责文件读写。异步文件读写请求都通过Infra委托FIO线程完成，同步读写则由各自线程完成，Infra的读写接口是线程安全的。
 * 在一些调试模式下，RHI线程和渲染线程合并成一个线程。
 * 工作线程和主线程不能持有，也不能直接使用任何Device相关方法。它们应当仅限于在Host端进行计算和数据处理。
   * 创建、持有Geometry/StaticMesh等没有问题，但不能在线程内使用UpdateOnDevice等方法，也不应该持有DeviceXXXX的引用。
