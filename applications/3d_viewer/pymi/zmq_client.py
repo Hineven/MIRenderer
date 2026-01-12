@@ -31,7 +31,7 @@ import zmq
 
 
 class ViewerClient:
-    def __init__(self, endpoint: str = "tcp://127.0.0.1:5557", socket_type: str = "REQ", context: Optional[zmq.Context] = None):
+    def __init__(self, endpoint: str = "tcp://127.0.0.1:25957", socket_type: str = "REQ", context: Optional[zmq.Context] = None):
         self.endpoint = endpoint
         self.ctx = context or zmq.Context.instance()
         if socket_type.upper() == "REQ":
@@ -85,6 +85,9 @@ class ViewerClient:
     def export_frame(self, timeout: float = 5.0) -> Tuple[Dict, bytes]:
         meta, data = self._send_recv({"cmd": "export_frame"}, expect_multipart=True, timeout=timeout)
         return meta, data
+
+    def get_cvar(self, name: str):
+        return self._send_recv({"cmd": "get_cvar", "args": {"name": name}})
 
 
 __all__ = ["ViewerClient"]
