@@ -86,6 +86,7 @@ void ViewerZmqServer::PollLoop() {
             // ROUTER receives: [identity][empty?][payload]
             zmq::message_t identity;
             zmq::message_t payload;
+            bool send_empty_frame = false;
 
             try {
                 (void)router.recv(identity, zmq::recv_flags::none);
@@ -100,6 +101,8 @@ void ViewerZmqServer::PollLoop() {
                     has_more = router.get(zmq::sockopt::rcvmore);
                     if (has_more) {
                         (void)router.recv(payload, zmq::recv_flags::none);
+                        // If maybe_empty is actually empty, we should echo it back for REQ sockets
+                        if (maybe_empty.size() == 0) send_empty_frame = true;
                     } else {
                         payload = std::move(maybe_empty);
                     }
@@ -180,6 +183,9 @@ void ViewerZmqServer::PollLoop() {
             try {
                 if (identity.size() > 0) {
                     router.send(identity, zmq::send_flags::sndmore);
+                    if (send_empty_frame) {
+                        router.send(zmq::message_t(), zmq::send_flags::sndmore);
+                    }
                     router.send(zmq::buffer(s), multipart ? zmq::send_flags::sndmore : zmq::send_flags::none);
                     if (multipart) {
                         router.send(zmq::buffer(binary_reply), zmq::send_flags::none);
