@@ -5,6 +5,8 @@
 #include <vector>
 #include <unordered_map>
 #include <limits>
+#include <future>
+#include <mutex>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
@@ -15,6 +17,7 @@
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_resource_allocator.h"
 #include "rdg/rdg.h"
+#include "viewer_zmq.h"
 
 struct GLFWwindow;
 
@@ -114,6 +117,19 @@ public:
     std::unordered_map<std::string, PerfStat> perf_stats_;
 
     std::vector<CVarBase *> pinned_cvars_;
+
+    // ZMQ server for Python integration
+    std::unique_ptr<ViewerZmqServer> zmq_server_;
+
+    // Suspended mode: when true, the render loop skips Renderer::Render.
+    // A single frame render can be triggered by setting request_one_render_ = true.
+    std::atomic<bool> suspended_{false};
+    std::atomic<bool> request_one_render_{false};
+
+    // Export frame handshake between ZMQ thread and render loop.
+    std::atomic<bool> export_frame_request_{false};
+    std::mutex export_mutex_;
+    std::shared_ptr<std::promise<ViewerZmqServer::ExportPayload>> export_promise_;
 };
 
 // Entry point for running the 3d viewer main loop.

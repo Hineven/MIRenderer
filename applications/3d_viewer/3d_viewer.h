@@ -12,6 +12,6 @@
 #include "rdg/rdg_builder.h"
 #include "renderer/mi_renderer_view.h"
 
-void RenderFrame (MI_NAMESPACE::RenderGraphBuilder & builder, MI_NAMESPACE::RendererView * view_state) ;
+void RenderFrame (MI_NAMESPACE::RenderGraphBuilder & builder, MI_NAMESPACE::RendererView * view_state, bool render_scene);
 
 #endif //INC_3D_VIEWER_H

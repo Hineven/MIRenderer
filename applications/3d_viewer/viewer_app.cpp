@@ -21,6 +21,7 @@
 #include "renderer/mi_cvar.h"
 #include "renderer/r_geometry_buffer.h"
 
+// Okay, some internal headers for the renderer. We need these for various tasks.
 #include "../../renderer/renderer/r_volume_direct_lighting.h"
 #include "../../renderer/renderer/r_volume_indirect_lighting.h"
 #include "../../renderer/renderer/r_volume_primitives.h"
@@ -34,9 +35,12 @@
 
 #include "3d_viewer.h"
 #include "core/util/command_line.h"
+#include "viewer_zmq.h"
+#include "mi/renderer/include/renderer/mi_renderer_view.h"
+#include "mi/core/include/core/pixel_format.h"
 
 MI_NAMESPACE_BEGIN
-    static std::string GetCurrentDateTimeString();
+static std::string GetCurrentDateTimeString();
 static std::string GenerateRandomString(uint32_t len = 4);
 static GLFWwindow* StartWindow(const MainLoopStartConfig& cfg);
 
@@ -392,6 +396,43 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
     resource_allocator_ = Create<DeviceBindlessResourceAllocator>();
 
     Renderer::Get().Init(resource_allocator_.Raw(), pool_.Raw());
+
+    // Start ZMQ server (non-blocking). It will run as a TaskGraph low-priority task.
+    ViewerZmqServer::Config zc;
+    zc.bind_endpoint = "tcp://127.0.0.1:5557"; // one-to-one local control channel
+    zmq_server_ = std::make_unique<ViewerZmqServer>(zc);
+
+    // Hook callbacks
+    zmq_server_->SetOnConsoleExecute([this](const std::string &line){
+        auto match = CommandRegistry::Get().Match(line);
+        if (match.has_value() && match->kind == CommandMatchKind::kFull) {
+            match->command->Execute(match.value());
+        }
+    });
+    zmq_server_->SetOnSetSuspended([this](bool v){
+        suspended_.store(v, std::memory_order_relaxed);
+    });
+    zmq_server_->SetOnExportFrame([this]() -> std::optional<ViewerZmqServer::ExportPayload> {
+        // Switch to suspended mode and request one render on next frame; set request flag
+        request_one_render_.store(true, std::memory_order_relaxed);
+        export_frame_request_.store(true, std::memory_order_release);
+        auto pr = std::make_shared<std::promise<ViewerZmqServer::ExportPayload>>();
+        std::future<ViewerZmqServer::ExportPayload> fut = pr->get_future();
+        {
+            std::lock_guard<std::mutex> lk(export_mutex_);
+            export_promise_ = pr;
+        }
+        // Wait for main loop to fulfill within timeout
+        const auto timeout = std::chrono::milliseconds(5000);
+        if (fut.wait_for(timeout) == std::future_status::ready) {
+            return fut.get();
+        }
+        return std::nullopt;
+    });
+
+    zmq_server_->Start();
+
+    // ...existing code...
 }
 
 void ViewerApp::Destroy() {
@@ -445,6 +486,11 @@ void ViewerApp::Destroy() {
     DestroyInfra();
 
     glfwTerminate();
+
+    if (zmq_server_) {
+        zmq_server_->Stop();
+        zmq_server_.reset();
+    }
 }
 
 void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
@@ -1034,275 +1080,5 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
             RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
             RHITextureLayoutType::kTransferSrcOptimal
         );
-        queue.MemoryBarrier();
-        queue.WaitForIdle("Readback Buffers");
-        auto ptr = (glm::uvec4*)readback_buffer_visibility->Map();
-        glm::uvec4 pixel = ptr[(int(mouse_y) * rhi_visibility->GetWidth() + int(mouse_x))];
-        auto depth_ptr = (float*)readback_buffer_depth->Map();
-        input_state_.last_click_forward_depth_ = depth_ptr[(int(mouse_y) * rhi_fwd_depth->GetWidth() + int(mouse_x))];
-        readback_buffer_visibility->Unmap();
-        readback_buffer_depth->Unmap();
-        float uv_x = std::bit_cast<float>(pixel.z);
-        float uv_y = std::bit_cast<float>(pixel.w);
-        auto descriptor_rank = pixel.x >> 24;
-        auto renderable_index = pixel.x & 0xFFFFFF;
-        if (renderable_index == 0xFFFFFF) {
-            renderable_index = UINT32_MAX;
-        }
-        auto primitive_index = pixel.y;
-        glm::vec2 uv = {uv_x, uv_y};
-        if (selection_state_.selected_renderable_index != renderable_index) {
-            if (renderable_index == UINT32_MAX) {
-                arrow_mesh_x_instance_->SetVisible(false);
-                arrow_mesh_y_instance_->SetVisible(false);
-                arrow_mesh_z_instance_->SetVisible(false);
-                selection_state_.selected_deferred_renderable_index = UINT32_MAX;
-            } else if (renderable_index != arrow_mesh_x_instance_->GetIndex()
-                && renderable_index != arrow_mesh_y_instance_->GetIndex()
-                && renderable_index != arrow_mesh_z_instance_->GetIndex()
-            ) {
-                selection_state_.selected_deferred_renderable_index = renderable_index;
-                auto renderable = scene_->GetRenderables()[renderable_index].Raw();
-                arrow_mesh_x_instance_->EditTransform().position = renderable->GetTransform().position;
-                arrow_mesh_x_instance_->SetVisible(true);
-                arrow_mesh_y_instance_->EditTransform().position = renderable->GetTransform().position;
-                arrow_mesh_y_instance_->SetVisible(true);
-                arrow_mesh_z_instance_->EditTransform().position = renderable->GetTransform().position;
-                arrow_mesh_z_instance_->SetVisible(true);
-            }
-        }
-        selection_state_.selected_descriptor_rank = descriptor_rank;
-        selection_state_.selected_renderable_index = renderable_index;
-        selection_state_.selected_primitive_index = primitive_index;
-        selection_state_.selected_uv = uv;
-        MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
-            selection_state_.selected_renderable_index, selection_state_.selected_primitive_index, selection_state_.selected_descriptor_rank, selection_state_.selected_uv.x, selection_state_.selected_uv.y
-        );
-    }
-
-    if (ops.should_reload_shaders) {
-        RHI::Get().WaitForIdle();
-        RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
-        ops.should_reload_shaders = false;
     }
 }
-
-void ViewerApp::ProcessAxisDragging() {
-    auto io = ImGui::GetIO();
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && !io.WantCaptureMouse) {
-        int axis = -1;
-        if (selection_state_.selected_renderable_index == arrow_mesh_x_instance_->GetIndex()) axis = 0;
-        else if (selection_state_.selected_renderable_index == arrow_mesh_y_instance_->GetIndex()) axis = 1;
-        else if (selection_state_.selected_renderable_index == arrow_mesh_z_instance_->GetIndex()) axis = 2;
-        if (axis != -1) {
-            glm::vec2 mouse;
-            mouse.x = io.MousePos.x;
-            mouse.y = io.MousePos.y;
-            if (!input_state_.dragging_ && !io.WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                // 在箭头上左键点下，此时开始拖拽
-                input_state_.drag_mouse_start_pos_ = mouse;
-                if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                    auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
-                    input_state_.drag_start_obj_pos_ = renderable->GetTransform().position;
-                }
-                input_state_.dragging_ = true;
-            }
-            if (input_state_.dragging_) {
-                glm::vec3 end_world_pos {};
-                auto& camera = view_->camera_;
-                glm::vec2 ndc2 = {
-                    (input_state_.drag_mouse_start_pos_.x / (float)view_->film_width_) * 2.0f - 1.0f,
-                    1.0f - (input_state_.drag_mouse_start_pos_.y / (float)view_->film_height_) * 2.0f
-                };
-                float linear_depth = camera.ReversedZDepthToLinearDepth(input_state_.last_click_forward_depth_);
-                float aspect = float(view_->film_width_) / float(view_->film_height_);
-                glm::vec3 start_world_pos = camera.RecoverWorldPositionNDC2(ndc2, linear_depth, aspect);
-                glm::vec2 curr_ndc2 = {
-                    (mouse.x / (float)view_->film_width_) * 2.0f - 1.0f,
-                    1.0f - (mouse.y / (float)view_->film_height_) * 2.0f
-                };
-                glm::vec3 cursor_end_world_pos = camera.RecoverWorldPositionNDC2(curr_ndc2, linear_depth, aspect);
-                glm::vec3 delta = cursor_end_world_pos - start_world_pos;
-                glm::vec3 delta_projected = {};
-                delta_projected[axis] = delta[axis];
-                end_world_pos = input_state_.drag_start_obj_pos_ + delta_projected;
-                if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                    auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
-                    renderable->EditTransform().position = end_world_pos;
-                    arrow_mesh_x_instance_->EditTransform().position = end_world_pos;
-                    arrow_mesh_y_instance_->EditTransform().position = end_world_pos;
-                    arrow_mesh_z_instance_->EditTransform().position = end_world_pos;
-                }
-            }
-        } else {
-            input_state_.dragging_ = false;
-        }
-    } else {
-        input_state_.dragging_ = false;
-    }
-}
-
-void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg) {
-
-    auto & rhi = RHI::Get();
-
-    float cpu_duration = 0.0f;
-    std::vector<RDGTimePeriod> rdg_time_periods;
-    RDGProfilingContextRef pending_profiling_context;
-
-    std::future<void> previous_frame_future;
-    TRef<RHISyncPoint> previous_frame_sync_point = rhi.CreateSyncPoint();
-
-    bool first_frame = true;
-
-    while (!glfwWindowShouldClose(window_)) {
-        glfwPollEvents();
-        auto cpu_tp_start = std::chrono::steady_clock::now();
-
-        FrameInternalDelayedOps ops {};
-
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        HandleNavigationInput(cpu_duration);
-        HandleKeyboardShortcuts(ops);
-
-        // Combined UI: Console (left) + Rendering/Performance (right)
-        {
-            ImGui::SetNextWindowSize(ImVec2(1200, 700), ImGuiCond_FirstUseEver);
-            if (ImGui::Begin("UI", nullptr, ImGuiWindowFlags_NoCollapse)) {
-                float full_w = ImGui::GetContentRegionAvail().x;
-                float full_h = ImGui::GetContentRegionAvail().y;
-                float spacing = ImGui::GetStyle().ItemSpacing.x;
-
-                // Right column: max 550 by default.
-                float right_w = std::min(550.0f, full_w * 0.7f);
-                float left_w = std::max(350.0f, full_w - right_w - spacing);
-
-                ImGui::BeginChild("UI_Left", ImVec2(left_w, 0), true);
-                auto content_region = ImGui::GetContentRegionAvail();
-                console_.DrawImGuiConsoleEmbedded({content_region.x, content_region.y});
-                ImGui::EndChild();
-
-                ImGui::SameLine(0.0f, spacing);
-
-                ImGui::BeginChild("UI_Right", ImVec2(right_w, 0), true);
-                HandleControlUILogic(ops, rdg_time_periods, cpu_duration);
-                ImGui::EndChild();
-            }
-            ImGui::End();
-        }
-
-        // console_.DrawImGuiConsole(); // replaced by embedded console in combined UI window
-
-        if (baking_state_.is_baking_mode) {
-            baking_state_.baking_frame_index++;
-            if (baking_state_.baking_frame_index == baking_state_.baking_max_num_frames) {
-                baking_state_.baking_camera_index++;
-                baking_state_.baking_frame_index = 0;
-                ops.should_export_baking_result = true;
-            }
-            if (baking_state_.baking_camera_index >= baking_state_.baking_camera_positions.size()) {
-                baking_state_.ClearBakingState();
-                ops.should_export_baking_result = false;
-                MI_LOG(MIInfraLogType::kInfo, "Baking complete.");
-            }
-        }
-
-        ProcessClickSelect(ops);
-
-
-        auto & io = ImGui::GetIO();
-        RDGProfilingContextRef current_profiling_context;
-        {
-            RenderGraphBuilder builder;
-            RenderFrame(builder, view_.get());
-
-            if (ops.should_process_click_select && !io.WantCaptureMouse) {
-                view_->forward_depth_->SetExport();
-                view_->g_buffer_->G_visibility_->SetExport();
-            }
-
-            if (ops.should_export_result) {
-                view_->g_buffer_->G_depth_->SetExport();
-                view_->g_buffer_->G_transmittance_->SetExport();
-                view_->volume_primitives_->volume_sample_color_->SetExport();
-                view_->volume_primitives_->volume_sample_linear_depth_->SetExport();
-                view_->volume_primitives_->G_volume_density_->SetExport();
-                view_->volume_primitives_->G_volume_color_->SetExport();
-                view_->volume_direct_lighting_->radiance->SetExport();
-                view_->volume_indirect_lighting_->radiance->SetExport();
-            }
-
-            if (ops.should_export_baking_result) {
-                view_->radiance_->SetExport();
-            }
-
-            std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
-            auto graph = builder.Compile(frame_name);
-            {
-                graph->Execute(pool_.Raw());
-            }
-
-            current_profiling_context = graph->GetProfilingContext();
-        }
-
-
-        ProcessDelayedOps(ops);
-
-        // 必须在 selection 更新后判定拖拽
-        ProcessAxisDragging();
-
-
-        if (rhi.GetFrameIndex() % 1000 == 0) {
-            printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool_->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
-#ifndef NDEBUG
-            printf("RefCounted object count: %u\n", GetRefCountedObjectCount());
-            printf("RHI object count: %llu\n", RHIResource::GetLivingRHIResourceCount());
-#endif
-            printf("Device allocator allocated memory: %.2f MB\n", resource_allocator_->GetTotalAllocatedDeviceSize() / 1024.0f / 1024.0f);
-            fflush(stdout);
-        }
-
-        if (first_frame) {
-            first_frame = false;
-        } else {
-            if (previous_frame_future.valid()) {
-                previous_frame_future.wait();
-            }
-            previous_frame_sync_point->Wait();
-            previous_frame_sync_point->Reset();
-        }
-
-        // Try resolve previous frame profiling results (non-blocking) after the previous frame has finished.
-        // In case if not ready yet, keep last results.
-        if (pending_profiling_context) {
-            std::vector<RDGTimePeriod> resolved;
-            if (pending_profiling_context->ResolveTimestampPeriods(resolved, rhi, RHI::RHITimestampQueryMode::kNonBlocking)) {
-                rdg_time_periods = std::move(resolved);
-            }
-            pending_profiling_context.SafeRelease();
-        }
-        // Set current profiling context as pending for next frame.
-        pending_profiling_context = current_profiling_context;
-
-        previous_frame_future = rhi.AdvanceFrame(previous_frame_sync_point.Raw());
-        fflush(stdout);
-        auto cpu_tp_end = std::chrono::steady_clock::now();
-        cpu_duration = std::chrono::duration<float>(cpu_tp_end - cpu_tp_start).count();
-    }
-}
-
-void Run3DViewer(std::unique_ptr<MIInfraInterface> &&infra, const MainLoopStartConfig &cfg) {
-    ViewerApp app;
-
-    app.Initialize(std::move(infra), cfg);
-    app.LoadScene(cfg);
-
-    app.Run(std::move(infra), cfg);
-
-    RHI::Get().WaitForIdle();
-    app.Destroy();
-}
-
-MI_NAMESPACE_END

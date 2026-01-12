@@ -11,7 +11,6 @@
 #include "core/util/debug_prof.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
-#include "rdg/rdg_pool.h"
 #include "rdg/rdg_shader.h"
 #include "rhi/rhi_buffer.h"
 
@@ -103,7 +102,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     builder.AddPass<ImGuiRenderShader>({}, shader, params, [
         index_raw = index_buffer.Raw(), draw_cmds, params, shader
     ](RDGPass * pass, RHICommandQueueGraphics & cmd) {
-        if (auto ctx = RDGCommandHelper::BindGraphicsShader(cmd, pass, shader, params)) {
+        if (auto ctx = RDGCommandHelper::BindGraphicsShader<ImGuiRenderShader>(cmd, pass, shader, params)) {
             cmd.BeginRendering();
             int vertex_offset = 0;
             int index_offset = 0;
@@ -134,7 +133,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     })->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }
 
-void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state) {
+void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state, bool render_scene) {
     DEBUG_PROFILE_SECTION(RenderFrameSection);
     auto backbuffer = builder.Import(RHI::Get().GetBackBuffer());
 
@@ -146,11 +145,12 @@ void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state) {
         })->AddTextureH(backbuffer, RDGTextureUsageType::kTransferWrite);
     }
 
-    auto & renderer = Renderer::Get();
-    renderer.Render(view_state, builder);
+    if (render_scene) {
+        auto & renderer = Renderer::Get();
+        renderer.Render(view_state, builder);
+    }
 
     ImGui::Render();
     RenderImGui(builder, backbuffer);
-
 }
 
