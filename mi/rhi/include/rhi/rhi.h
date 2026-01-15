@@ -137,7 +137,7 @@ public:
         return *bindless_manager_;
     }
 
-    // Wait for the underlying render hardware and RHI layer to finish all the commands
+    // Flush all queues. Wait for the underlying render hardware and RHI layer to finish all the commands
     // If host_only is true, only the operations pending on the host side will be waited.
     // Otherwise, all the operations including device (render hardware) queues will be waited.
     virtual void WaitForIdle (bool host_only = false) = 0;

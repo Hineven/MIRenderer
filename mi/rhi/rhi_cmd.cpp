@@ -24,17 +24,21 @@ void RHICommandQueueBase::PreDestruction() {
 }
 
 
-void RHICommandQueueBase::WaitForIdle (const std::string & submit_prefix) {
-    auto guard = std::lock_guard(sync_point_mutex_);
-    if (!sync_point_) {
-        sync_point_ = RHI::Get().CreateSyncPoint();
-        sync_point_->SetName(
-            std::format("SyncPoint for RHICommandQueueBase (Type: {})", ToString(GetCommandQueueType()))
-        );
-    }
-    EnqueueTranslateAndSubmit(sync_point_.Raw(), submit_prefix);
-    sync_point_->Wait();
-    sync_point_->Reset();
+void RHICommandQueueBase::WaitForIdle (const std::string & submit_prefix, bool host_only) {
+    if (host_only) {
+         EnqueueTranslateAndSubmit({}, submit_prefix).wait();
+    } else {
+         auto guard = std::lock_guard(sync_point_mutex_);
+         if (!sync_point_) {
+             sync_point_ = RHI::Get().CreateSyncPoint();
+             sync_point_->SetName(
+                 std::format("SyncPoint for RHICommandQueueBase (Type: {})", ToString(GetCommandQueueType()))
+             );
+         }
+         EnqueueTranslateAndSubmit(sync_point_.Raw(), submit_prefix);
+         sync_point_->Wait();
+         sync_point_->Reset();
+     }
 }
 
 

@@ -116,7 +116,7 @@ public:
 
     // Shortcut.
     // Flush the queue and wait for all commands to finish execution on the device.
-    void WaitForIdle (const std::string & submit_prefix = "") ;
+    void WaitForIdle (const std::string & submit_prefix = "", bool host_only = false) ;
 
     // End the frame, enqueue a present command, and return resources to the system if requested.
     // The command is special, it does not require submission to execute. Translation will be enough.
