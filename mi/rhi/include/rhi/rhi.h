@@ -201,7 +201,7 @@ protected:
 
     // Only the render thread is allowed to operate on RHI resource references
     // so there are only one producer and one consumer (RHI thread) for this queue.
-    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne>
+    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne, 16384>
         resources_pending_for_deletion_ {};
     // The resource that is not ready to be deleted in the previous frame.
     RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};

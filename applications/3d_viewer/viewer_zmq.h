@@ -9,8 +9,14 @@
 #include <functional>
 
 #include <nlohmann/json.hpp>
-#include <zmq.hpp>
-#include "core/task.h"
+#include <core/task.h>
+#include "fwd.h"
+
+namespace zmq {
+    class context_t;
+    class socket_t;
+    class message_t;
+};
 
 MI_NAMESPACE_BEGIN
 
@@ -28,47 +34,32 @@ public:
         bool enable = true; // allow disabling via cvar later
     };
 
-    // Export response payload: JSON metadata and raw bytes.
-    struct ExportPayload {
-        std::string meta_json;
-        std::vector<uint8_t> data;
-    };
-
-    explicit ViewerZmqServer(const Config& cfg);
+    explicit ViewerZmqServer(ViewerApp * viewer, const Config& cfg);
     ~ViewerZmqServer();
 
-    // Launch a persistent task in TaskGraph running the ZMQ poll loop.
-    void Start();
-    void Stop();
+    void Initialize();
+    void Destroy();
 
-    bool IsRunning() const { return running_; }
+    // Called by the viewer each frame. Returns list of requested export types to be processed by the viewer.
+    std::vector<std::string> PollEvents();
 
-    // Callbacks to integrate with the viewer app
-    void SetOnConsoleExecute(std::function<void(const std::string&)> cb) { on_console_execute_ = std::move(cb); }
-    void SetOnSetSuspended(std::function<void(bool)> cb) { on_set_suspended_ = std::move(cb); }
-    void SetOnExportFrame(std::function<std::optional<ExportPayload>()> cb) { on_export_frame_ = std::move(cb); }
-    void SetOnGetStatus(std::function<nlohmann::json()> cb) { on_get_status_ = std::move(cb); }
-    void SetOnGetCVar(std::function<nlohmann::json(const std::string&)> cb) { on_get_cvar_ = std::move(cb); }
+    // Called by the viewer to reply with exported frame data. Call this once per export request.
+    void ReplyExportedFrame();
 
     // Submit a one-shot notification to clients (best-effort). Optional.
     void BroadcastInfo(const std::string& info);
 
+
 private:
-    void PollLoop();
+
+    std::unique_ptr<::zmq::context_t> ctx_ {};
+    std::unique_ptr<::zmq::socket_t> router_ {};
+
+    std::unique_ptr<::zmq::message_t> last_message_identity_ {};
+
+    ViewerApp * viewer_ {};
 
     Config cfg_{};
-    std::atomic<bool> running_{false};
-
-
-    // TaskGraph integration
-    TaskRef poll_task_{}; // created as a long-running task
-
-    // App-provided callbacks
-    std::function<void(const std::string&)> on_console_execute_;
-    std::function<void(bool)> on_set_suspended_;
-    std::function<std::optional<ExportPayload>()> on_export_frame_;
-    std::function<nlohmann::json()> on_get_status_;
-    std::function<nlohmann::json(const std::string&)> on_get_cvar_;
 };
 
 MI_NAMESPACE_END

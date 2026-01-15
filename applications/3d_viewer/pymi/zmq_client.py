@@ -109,8 +109,14 @@ class ViewerClient:
     def set_suspended(self, value: bool):
         return self._send_recv({"cmd": "set_suspended", "args": {"value": bool(value)}})
 
-    def export_frame(self, timeout: float = 5.0) -> Tuple[Dict, bytes]:
-        meta, data = self._send_recv({"cmd": "export_frame"}, expect_multipart=True, timeout=timeout)
+    def next_frame(self):
+        return self._send_recv({"cmd": "next_frame"})
+
+    """
+    Export a frame with metadata.
+    """
+    def export_frame(self, timeout: float = 5.0, **kwargs) -> Tuple[Dict, bytes]:
+        meta, data = self._send_recv({"cmd": "export_frame", "args": kwargs}, expect_multipart=True, timeout=timeout)
         return meta, data
 
     def get_cvar(self, name: str):

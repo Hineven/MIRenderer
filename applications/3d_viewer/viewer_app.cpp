@@ -41,6 +41,57 @@
 
 MI_NAMESPACE_BEGIN
 
+// Generic helper: read back an RDG texture into CPU bytes.
+// Returns true on success and fills out parameters.
+static bool ReadbackRDGTextureToBytes(
+    RDGTexture* rdg_tex,
+    PixelFormatType fmt,
+    std::vector<std::byte>& out_bytes,
+    uint32_t& out_w,
+    uint32_t& out_h
+) {
+    if (!rdg_tex) return false;
+    auto tex = rdg_tex->GetRHI();
+    if (!tex) return false;
+
+    auto& rhi = RHI::Get();
+    auto& queue = rhi.GetGraphicsCommandQueue();
+
+    const uint32_t w = tex->GetWidth();
+    const uint32_t h = tex->GetHeight();
+    const size_t bpp = GetPixelFormatBytesPerPixel(fmt);
+    const size_t byte_size = size_t(w) * size_t(h) * bpp;
+
+    auto readback = rhi.CreateBuffer(byte_size, RHIBufferUsageFlagBits::kReadback);
+
+    queue.MemoryBarrier();
+    queue.TextureBarrier(tex, RHITextureLayoutType::kTransferSrcOptimal,
+        RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+        RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+    queue.CopyTextureToBuffer(tex, readback.Raw());
+
+    // Mark usage for RDG lifetime/alias tracking as in existing patterns
+    rdg_tex->Use(
+        RHIPipelineStageFlagBits::kTransfer,
+        RHIGPUAccessFlagBits::kTransferRead,
+        RHITextureLayoutType::kTransferSrcOptimal
+    );
+
+    queue.MemoryBarrier();
+    queue.WaitForIdle("Readback RDGTexture");
+
+    out_bytes.resize(byte_size);
+    void* ptr = readback->Map();
+    if (ptr && byte_size > 0) {
+        std::memcpy(out_bytes.data(), ptr, byte_size);
+    }
+    readback->Unmap();
+
+    out_w = w;
+    out_h = h;
+    return true;
+}
+
 static std::string GetCurrentDateTimeString();
 static std::string GenerateRandomString(uint32_t len = 4);
 static GLFWwindow* StartWindow(const MainLoopStartConfig& cfg);
@@ -66,7 +117,8 @@ static std::string GenerateRandomString(uint32_t len) {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz";
     const size_t max_index = (sizeof(charset) - 1);
-    std::string str(len, 0);
+    std::string str;
+    str.resize(len);
     for (uint32_t i = 0; i < len; i++) {
         str[i] = charset[rand() % max_index];
     }
@@ -398,80 +450,16 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
 
     Renderer::Get().Init(resource_allocator_.Raw(), pool_.Raw());
 
-    // Start ZMQ server (non-blocking). It will run as a TaskGraph low-priority task.
+    // Initialize ZMQ server.
     ViewerZmqServer::Config zc {};
-    zmq_server_ = std::make_unique<ViewerZmqServer>(zc);
-
-    // Hook callbacks
-    zmq_server_->SetOnConsoleExecute([this](const std::string &line){
-        auto match = CommandRegistry::Get().Match(line);
-        if (match.has_value() && match->kind == CommandMatchKind::kFull) {
-            match->command->Execute(match.value());
-        }
-    });
-    zmq_server_->SetOnSetSuspended([this](bool v){
-        suspended_.store(v, std::memory_order_relaxed);
-    });
-    zmq_server_->SetOnExportFrame([this]() -> std::optional<ViewerZmqServer::ExportPayload> {
-        // Switch to suspended mode and request one render on next frame; set request flag
-        request_one_render_.store(true, std::memory_order_relaxed);
-        export_frame_request_.store(true, std::memory_order_release);
-        auto pr = std::make_shared<std::promise<ViewerZmqServer::ExportPayload>>();
-        std::future<ViewerZmqServer::ExportPayload> fut = pr->get_future();
-        {
-            std::lock_guard<std::mutex> lk(export_mutex_);
-            export_promise_ = pr;
-        }
-        // Wait for main loop to fulfill within timeout
-        const auto timeout = std::chrono::milliseconds(5000);
-        if (fut.wait_for(timeout) == std::future_status::ready) {
-            return fut.get();
-        }
-        return std::nullopt;
-    });
-    zmq_server_->SetOnGetStatus([this]() {
-        nlohmann::json j;
-        j["ok"] = true;
-        j["status"] = "running";
-        if (view_) {
-            j["camera"] = {
-                {"pos", {view_->camera_.position.x, view_->camera_.position.y, view_->camera_.position.z}},
-                {"dir", {view_->camera_.direction.x, view_->camera_.direction.y, view_->camera_.direction.z}},
-                {"up",  {view_->camera_.up.x, view_->camera_.up.y, view_->camera_.up.z}},
-                {"fov_y", view_->camera_.fov_Y},
-                {"near", view_->camera_.near_plane},
-                {"far", view_->camera_.far_plane}
-            };
-        }
-        j["frame_index"] = RHI::Get().GetFrameIndex();
-        j["suspended"] = suspended_.load(std::memory_order_relaxed);
-        return j;
-    });
-    zmq_server_->SetOnGetCVar([this](const std::string &name) {
-        nlohmann::json j;
-        auto *cvar = CVarRegistry::GetInstance().GetCVar(name);
-        if (!cvar) {
-            j = { {"ok", false}, {"err", "cvar_not_found"} };
-            return j;
-        }
-        j["ok"] = true;
-        j["name"] = name;
-        j["type"] = cvar->GetTypeName();
-        j["value"] = cvar->ToString();
-        return j;
-    });
-
-    zmq_server_->Start();
+    zmq_server_ = std::make_unique<ViewerZmqServer>(this, zc);
+    zmq_server_->Initialize();
 
 }
 
 void ViewerApp::Destroy() {
 
-    // Stop ZMQ server first, as it relies on TaskGraph and other subsystems.
-    if (zmq_server_) {
-        zmq_server_->Stop();
-        zmq_server_.reset();
-    }
+    zmq_server_.reset();
 
     // Persist UI state before tearing subsystems down.
     SavePinnedCVarsToConfig(pinned_cvars_);
@@ -995,33 +983,34 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
     }
 
     auto& queue = RHI::Get().GetGraphicsCommandQueue();
-    auto ExportTexRaw = [&](std::filesystem::path dir, auto rdgTex, const char* name, size_t bpp, std::string fmt) {
+    auto ExportTexRaw = [&](const std::filesystem::path& dir, RDGTexture* rdgTex, const char* name, size_t bpp, std::string fmt) {
         if (!rdgTex) return;
-        auto tex = rdgTex->GetRHI();
-        if (!tex) return;
-        const size_t w = tex->GetWidth();
-        const size_t h = tex->GetHeight();
-        const size_t byte_size = w * h * bpp;
+        // Use the generic helper to read bytes
+        std::vector<std::byte> bytes;
+        uint32_t w = 0, h = 0;
+        // Try to deduce PixelFormatType from fmt string for bpp; if not recognized, fallback using bpp
+        PixelFormatType pf = PixelFormatType::kUnknown;
+        // Simple mapping for common cases used below
+        if (fmt == "r32f") pf = PixelFormatType::kR32_FLOAT;
+        else if (fmt == "r8") pf = PixelFormatType::kR8_UNORM;
+        else if (fmt == "rgba8") pf = PixelFormatType::kR8G8B8A8_UNORM;
+        else if (fmt == "rgba16f") pf = PixelFormatType::kR16G16B16A16_FLOAT;
+        else if (fmt == "r32u") pf = PixelFormatType::kR32_UINT;
+        // If still unknown, approximate by channel count from bpp (assume 4 channels of 1 byte when bpp==4, etc.)
+        if (pf == PixelFormatType::kUnknown) {
+            if (bpp == 4) pf = PixelFormatType::kR8G8B8A8_UNORM;
+            else if (bpp == 1) pf = PixelFormatType::kR8_UNORM;
+            else if (bpp == 2) pf = PixelFormatType::kR16G16_FLOAT;
+            else if (bpp == 8) pf = PixelFormatType::kR16G16B16A16_FLOAT;
+            else if (bpp == 16) pf = PixelFormatType::kR32G32B32A32_FLOAT;
+        }
+        if (!ReadbackRDGTextureToBytes(rdgTex, pf, bytes, w, h)) return;
 
-        auto readback = rhi.CreateBuffer(byte_size, RHIBufferUsageFlagBits::kReadback);
-
-        queue.MemoryBarrier();
-        queue.TextureBarrier(tex, RHITextureLayoutType::kTransferSrcOptimal,
-            RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
-            RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
-        queue.CopyTextureToBuffer(tex, readback.Raw());
-
-        rdgTex->Use(RHIPipelineStageFlagBits::kTransfer,
-            RHIGPUAccessFlagBits::kTransferRead, RHITextureLayoutType::kTransferSrcOptimal);
-
-        queue.MemoryBarrier();
-        queue.WaitForIdle("Export Frame");
-
-        void* ptr = readback->Map();
         auto bin_path = dir / std::format("{}_{}x{}_{}bpp.bin", name, w, h, bpp);
         std::ofstream ofs(bin_path, std::ios::binary);
-        if (ofs) ofs.write(reinterpret_cast<const char*>(ptr), byte_size);
-        readback->Unmap();
+        if (ofs && !bytes.empty()) {
+            ofs.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        }
 
         auto meta_path = dir / std::format("{}_meta.txt", name);
         std::ofstream meta(meta_path, std::ios::out);
@@ -1288,7 +1277,11 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         ProcessClickSelect(ops);
 
+        // Process pending ZMQ messages
+        auto frame_export_requests = zmq_server_->PollEvents();
+        bool any_export_requests_pending = false;
 
+        // RDG Execution!
         auto & io = ImGui::GetIO();
         RDGProfilingContextRef current_profiling_context;
         {
@@ -1296,6 +1289,7 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             bool should_render_scene = !suspended_ || request_one_render_;
             RenderFrame(builder, view_.get(), !suspended_ || request_one_render_);
 
+            // Mark export flags.
             if (ops.should_process_click_select && !io.WantCaptureMouse) {
                 view_->forward_depth_->SetExport();
                 view_->g_buffer_->G_visibility_->SetExport();
@@ -1316,6 +1310,14 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                 view_->radiance_->SetExport();
             }
 
+            for (auto e : frame_export_requests) {
+                if (e == "radiance") {
+                    any_export_requests_pending = true;
+                    view_->radiance_->SetExport();
+                }
+                // TODO more types
+            }
+
             std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
             auto graph = builder.Compile(frame_name);
             {
@@ -1325,12 +1327,56 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             current_profiling_context = graph->GetProfilingContext();
         }
 
+        if (any_export_requests_pending) {
+            // Just wait for this frame to finish and process requests.
+            RHI::Get().WaitForIdle();
+            // Export!
+            if (!exported_render_results_.empty()) {
+                MI_WARN("Seems that some exported render results are not consumed...");
+                exported_render_results_.clear();
+            }
+
+            auto PackOne = [&](const std::string& type, RDGTexture* tex, PixelFormatType fmt) {
+                if (!tex) return;
+                std::vector<std::byte> bytes;
+                uint32_t w = 0, h = 0;
+                if (ReadbackRDGTextureToBytes(tex, fmt, bytes, w, h)) {
+                    ExportedRenderResult res;
+                    res.bytes = std::move(bytes);
+                    res.width = w;
+                    res.height = h;
+                    res.format = fmt;
+                    res.name = type;
+                    exported_render_results_.push_back(std::move(res));
+                } else {
+                    MI_WARN("Failed to read back '{}' texture", type.c_str());
+                }
+            };
+
+            for (const auto &e : frame_export_requests) {
+                if (e == "radiance") {
+                    PackOne(e, view_->radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
+                } else if (e == "depth") {
+                    PackOne(e, view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
+                } else if (e == "transmittance") {
+                    PackOne(e, view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
+                } else if (e == "visibility") {
+                    PackOne(e, view_->g_buffer_->G_visibility_.Raw(), PixelFormatType::kR32G32B32A32_UINT);
+                } else {
+                    MI_WARN("Unknown export type '{}', skipping", e.c_str());
+                }
+            }
+            // Reply to the waiting ZMQ client with the exported results.
+            if (zmq_server_) {
+                zmq_server_->ReplyExportedFrame();
+            }
+        }
+
 
         ProcessDelayedOps(ops);
 
         // 必须在 selection 更新后判定拖拽
         ProcessAxisDragging();
-
 
         if (rhi.GetFrameIndex() % 1000 == 0) {
             printf("[%llu] Pool memory: %.2f MB\n", rhi.GetFrameIndex(), pool_->GetTotalDeviceMemoryUsage() / 1024.0f / 1024.0f);
@@ -1369,6 +1415,21 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         auto cpu_tp_end = std::chrono::steady_clock::now();
         cpu_duration = std::chrono::duration<float>(cpu_tp_end - cpu_tp_start).count();
     }
+}
+
+std::vector<ViewerApp::ExportedRenderResult> ViewerApp::GetAndClearExportedFrameResults() {
+    return std::move(exported_render_results_);
+}
+
+ViewerApp::ViewerStatus ViewerApp::GetStatus() {
+    ViewerStatus s{};
+    s.is_suspended = suspended_.load();
+    auto &rhi = RHI::Get();
+    s.frame_index = (uint32_t)rhi.GetFrameIndex();
+    if (view_) {
+        s.camera = view_->camera_;
+    }
+    return s;
 }
 
 void Run3DViewer(std::unique_ptr<MIInfraInterface> &&infra, const MainLoopStartConfig &cfg) {

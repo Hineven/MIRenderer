@@ -28,6 +28,19 @@ enum class CVarType : unsigned {
     kMax
 };
 
+FORCEINLINE std::string ToString(CVarType type) {
+    switch (type) {
+        case CVarType::kInt: return "int";
+        case CVarType::kFloat: return "float";
+        case CVarType::kFloat2: return "float2";
+        case CVarType::kFloat3: return "float3";
+        case CVarType::kFloat4: return "float4";
+        case CVarType::kBool: return "bool";
+        case CVarType::kString: return "string";
+        default: return "unknown";
+    }
+}
+
 // Base class for all CVars
 class CVarBase {
 public:

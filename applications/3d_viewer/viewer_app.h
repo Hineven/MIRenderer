@@ -10,6 +10,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include "co_wrapper.h"
 #include "viewer_console.h"
 #include "infra_impl/infra.h"
 #include "renderer/mi_renderer.h"
@@ -85,7 +86,24 @@ public:
     void ProcessAxisDragging();
     void Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
 
-    static uint32_t GetConsoleTextColor(MIInfraLogType type);
+    // ZMQ server ops
+
+    struct ViewerStatus {
+        Camera camera {};
+        uint32_t frame_index {};
+        bool is_suspended {};
+    };
+    ViewerStatus GetStatus () ;
+    struct ExportedRenderResult {
+        std::vector<std::byte> bytes;
+        uint32_t width, height;
+        PixelFormatType format;
+        std::string name;
+    };
+    std::vector<ExportedRenderResult> GetAndClearExportedFrameResults ();
+
+    inline bool IsSuspended() const { return suspended_; }
+    inline void SetSuspended(bool v) { suspended_ = v; }
 
     GLFWwindow * window_ {};
 
@@ -118,6 +136,9 @@ public:
 
     std::vector<CVarBase *> pinned_cvars_;
 
+    // Temporarily keep some of the exported results for ZMQ server to use.
+    std::vector<ExportedRenderResult> exported_render_results_;
+
     // ZMQ server for Python integration
     std::unique_ptr<ViewerZmqServer> zmq_server_;
 
@@ -128,8 +149,6 @@ public:
 
     // Export frame handshake between ZMQ thread and render loop.
     std::atomic<bool> export_frame_request_{false};
-    std::mutex export_mutex_;
-    std::shared_ptr<std::promise<ViewerZmqServer::ExportPayload>> export_promise_;
 };
 
 // Entry point for running the 3d viewer main loop.

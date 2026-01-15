@@ -925,10 +925,9 @@ RHICommandExecutorInterface * VulkanRHI::GetCommandExecutor() {
 
 void VulkanRHI::WaitForIdle(bool host_only) {
     assert(IsRenderThread());
-    // Simply wait the RHI thread to finish its work
-    auto fut = EnqueueRHIThreadTask([]() {});
-    fut.wait();
-
+    graphics_command_queue_.WaitForIdle("RHI::WaitForIdle", true /* queue_.waitIdle() is sufficient*/);
+    // Furthermore, wait the RHI thread to finish all its work
+    EnqueueRHIThreadTask([]() {}).wait();
     if(!host_only) {
         queue_.waitIdle();
     }

@@ -5,7 +5,7 @@ project(MI)
 option(MI_USE_VCPKG_VMA_HPP "Use VMA-HPP from vcpkg" OFF)
 
 enable_language(CXX)
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 
 # Extra CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

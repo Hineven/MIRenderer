@@ -56,7 +56,6 @@ public:
     typedef std::array<char, 4096> InputBuffer;
     void ExecConsoleCommandAndReset (InputBuffer);
 
-
     bool opened_ {};
     struct ConsoleLogEntry {
         std::string text;
