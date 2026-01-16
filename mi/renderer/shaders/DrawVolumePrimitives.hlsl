@@ -416,8 +416,8 @@ RayFourierVolumeDistribution UpdateRayFourierVolumeDistribution(
     // The sample length in fourier series
     float delta = (intersection.r - intersection.l) / float(num_integrate_samples);
     // Accumulate each part of fourier series
-    distr.Density.fourier_a[0] += 0.5f * half_period_inv * intersection.Density * (intersection.r - intersection.l);
-    distr.WeightedColor.fourier_a[0] += 0.5f * half_period_inv * intersection.Density * intersection.Color * (intersection.r - intersection.l);
+    distr.Density.fourier_a[0] += half_period_inv * intersection.Density * (intersection.r - intersection.l);
+    distr.WeightedColor.fourier_a[0] += half_period_inv * intersection.Density * intersection.Color * (intersection.r - intersection.l);
     for(int i = 1; i <= distr.Density.fourier_order; i++) {
         float fourier_density_a;
         float fourier_density_b;

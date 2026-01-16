@@ -33,8 +33,10 @@ struct LightStructureData;
 struct DiffuseIndirectLightingData;
 struct DenoiserViewData;
 struct VolumeDirectLightingData;
+struct VolumeGridDirectLightingData;
 struct DiffuseDirectLightingData;
 struct VolumeIndirectLightingData;
+// struct VolumeGridIndirectLightingData;
 struct DebugCommonShaderParameters;
 
 struct GeometryBufferPersistentData;

@@ -18,6 +18,7 @@
 * `happly`
 * `nlohmann-json`
 * `glfw3`
+* `openvdb`
 * `tinyexr`
 * `vulkan-memory-allocator`
 * `directx-dxc`

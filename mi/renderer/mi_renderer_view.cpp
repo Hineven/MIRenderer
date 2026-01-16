@@ -28,6 +28,7 @@
 #include "renderer/r_diffuse_indirect_lighting.h"
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
+#include "renderer/r_volume_grid_direct_lighting.h"
 
 MI_NAMESPACE_BEGIN
 RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {

@@ -258,6 +258,7 @@ enum class RHIPipelineResourceType {
 enum class RHIBindlessResourceType : unsigned {
     kReadOnlyStorageBuffer = 0,
     kSRV,
+    kVolumeSRV,
     kAccelerationStructure,
     kMax
 };

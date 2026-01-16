@@ -219,6 +219,7 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             bindless_.storage_buffer = storage_buffers_[index];
             storage_buffers_.erase(storage_buffers_.begin() + index);
         }
+
         index = -1;
         for (auto [i, srv] : std::views::enumerate(srvs_)) {
             if (srv.name == std::string(TO_STR(BINDLESS_RESOURCE_ARRAY_PREFIX)) + "Texture") {
@@ -236,6 +237,26 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
             bindless_.srv = srvs_[index];
             srvs_.erase(srvs_.begin() + index);
         }
+
+        index = -1;
+        for (auto [i, srv] : std::views::enumerate(srvs_)) {
+            // 匹配名称: __internal__BindlessIndicesBuffer_VolumeTexture
+            if (srv.name == std::string(TO_STR(BINDLESS_RESOURCE_ARRAY_PREFIX)) + "VolumeTexture") {
+                if (srv.array_size != UINT32_MAX) {
+                    MI_WARN("Shader {}: Bindless resource array {} should be 1D array with unspecified size.",
+                            GetEntryName(), srv.name);
+                    return false;
+                }
+                has_bindless_resources_ = true;
+                index = (int)i;
+                break;
+            }
+        }
+        if (index != -1) {
+            bindless_.volume_srv = srvs_[index]; // 保存到 volume_srv
+            srvs_.erase(srvs_.begin() + index);  // 从普通 SRV 列表中移除
+        }
+
         index = -1;
         for (auto [i, as] : std::views::enumerate(acceleration_structures_)) {
             if (as.name == std::string(TO_STR(BINDLESS_RESOURCE_ARRAY_PREFIX)) + "AccelerationStructure") {

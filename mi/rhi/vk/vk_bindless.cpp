@@ -71,6 +71,10 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
                     static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kSRV].total_count), stages
             },
             {
+                (uint32_t)RHIBindlessResourceType::kVolumeSRV, vk::DescriptorType::eSampledImage,
+                static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kVolumeSRV].total_count), stages
+            },
+            {
                     (uint32_t)RHIBindlessResourceType::kAccelerationStructure, vk::DescriptorType::eAccelerationStructureKHR,
                     static_cast<uint32_t>(bindless_channels_[(int)RHIBindlessResourceType::kAccelerationStructure].total_count), stages
             }
@@ -217,6 +221,19 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
             };
         }
         descriptor_write.setPImageInfo(updates);
+    } else if(type == RHIBindlessResourceType::kVolumeSRV) {
+        auto updates = queue.Allocate<vk::DescriptorImageInfo[]>(num_slots);
+        for(uint32_t i = 0; i < num_slots; i++) {
+            auto ref = bindless_channels_[static_cast<int>(type)].resource_refs[slot + i];
+            auto texture = (VulkanTexture*)(ref.Raw());
+            vk::ImageLayout ready_layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            updates[i] = vk::DescriptorImageInfo {
+                nullptr,
+                texture ? texture->GetImageView() : nullptr,
+                ready_layout
+            };
+        }
+        descriptor_write.setPImageInfo(updates);
     } else if(type == RHIBindlessResourceType::kAccelerationStructure) {
         auto updates = queue.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>(1);
         auto as_ptrs = queue.Allocate<vk::AccelerationStructureKHR[]>(num_slots);
@@ -265,7 +282,7 @@ void VulkanBindlessManager::AdvanceFrame_RHIThread (std::span<RHIPackedBindlessS
                 };
                 if (type == RHIBindlessResourceType::kReadOnlyStorageBuffer) {
                     num_null_buffers ++;
-                } else if (type == RHIBindlessResourceType::kSRV) {
+                } else if (type == RHIBindlessResourceType::kSRV || type == RHIBindlessResourceType::kVolumeSRV) {
                     num_null_images ++;
                 } else if (type == RHIBindlessResourceType::kAccelerationStructure) {
                     num_null_acceleration_structures ++;
@@ -286,7 +303,7 @@ void VulkanBindlessManager::AdvanceFrame_RHIThread (std::span<RHIPackedBindlessS
                 };
                 null_buffers.push_back(null_buffer);
                 desc.setPBufferInfo(null_buffers.data());
-            } else if (type == RHIBindlessResourceType::kSRV) {
+            } else if (type == RHIBindlessResourceType::kSRV || type == RHIBindlessResourceType::kVolumeSRV) {
                 auto null_image = vk::DescriptorImageInfo {
                     nullptr,
                     nullptr,

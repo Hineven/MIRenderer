@@ -721,6 +721,8 @@ FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIBindlessResourceType 
             return vk::DescriptorType::eStorageBuffer;
         case RHIBindlessResourceType::kSRV:
             return vk::DescriptorType::eSampledImage;
+        case RHIBindlessResourceType::kVolumeSRV:
+            return vk::DescriptorType::eSampledImage;
         case RHIBindlessResourceType::kAccelerationStructure:
             return vk::DescriptorType::eAccelerationStructureKHR;
         default:

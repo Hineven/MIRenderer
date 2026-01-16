@@ -30,6 +30,14 @@ struct VolumePrimitivesInstanceHeader {
     uint Flags;
 };
 
+struct VolumeGridInstanceHeader {
+    // Index of the volume primitives which the instance refers to.
+    uint VolumeGridIndex;
+    uint Padding0;
+    uint Padding1;
+    uint Flags;
+};
+
 struct GaussianRadianceFieldInstanceHeader {
     uint FieldIndex;
     uint Padding0;
@@ -47,6 +55,8 @@ struct GaussianRadianceFieldInstanceHeader {
 #define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES 0x00100000u
 // The flag indicates that the instance is a 3D gaussian radiance field.
 #define INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD 0x00200000u
+// The flag indicates that the instance is a volume grid
+#define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID 0x00400000u
 
 #ifdef MI_SHADER
 
@@ -62,6 +72,15 @@ StaticMeshInstanceHeader GetStaticMeshInstanceHeader(RenderableHeader Header) {
 VolumePrimitivesInstanceHeader GetVolumePrimitivesInstanceHeader(RenderableHeader Header) {
     VolumePrimitivesInstanceHeader Result;
     Result.VolumePrimitivesIndex = asuint(Header.Metadata.x);
+    Result.Padding0 = asuint(Header.Metadata.y);
+    Result.Padding1 = asuint(Header.Metadata.z);
+    Result.Flags = asuint(Header.Metadata.w);
+    return Result;
+}
+
+VolumeGridInstanceHeader GetVolumeGridInstanceHeader(RenderableHeader Header) {
+    VolumeGridInstanceHeader Result;
+    Result.VolumeGridIndex = asuint(Header.Metadata.x);
     Result.Padding0 = asuint(Header.Metadata.y);
     Result.Padding1 = asuint(Header.Metadata.z);
     Result.Flags = asuint(Header.Metadata.w);

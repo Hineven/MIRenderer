@@ -103,10 +103,14 @@ protected:
         RendererView * view, RenderGraphBuilder & builder
     );
 
+    // Compute direct lighting
     void Render_ComputeDiffuseDirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
     void Render_ComputeVolumeDirectLighting (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_ComputeVolumeGridDirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
@@ -177,7 +181,8 @@ protected:
         RDGBuffer * ray_to_trace_origin_screen_coords,
         RDGBuffer * ray_to_trace_origin,
         RDGBuffer * ray_to_trace_tmax,
-        RDGBuffer * ray_to_trace_transmittance
+        RDGBuffer * ray_to_trace_transmittance,
+        uint32_t seed = 0
     );
 
     void Render_HardwareRadianceRayTracing (

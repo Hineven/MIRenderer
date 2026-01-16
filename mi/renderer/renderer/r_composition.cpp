@@ -9,6 +9,7 @@
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_direct_lighting.h"
 #include "r_volume_indirect_lighting.h"
+#include "r_volume_grid_direct_lighting.h"
 #include "rdg/rdg_shader.h"
 #include "rdg/rdg_builder.h"
 #include "rdg/rdg_cmd.h"
@@ -66,6 +67,11 @@ static CVar<bool> CVar_EnableVolumeIndirect(
     "Enable volume indirect contribution in composition",
     true
 );
+static CVar<bool> CVar_EnableVolumeGridDirect(
+    "r.composition.enable_volume_grid_direct",
+    "Enable volume grid direct contribution in composition",
+    true
+);
 
 class LightingCompositionShader : public RDGShader {
 public:
@@ -75,7 +81,8 @@ public:
         uint32_t EnableDiffuseIndirect;
         uint32_t EnableVolumeDirect;
         uint32_t EnableVolumeIndirect;
-        uint32_t Padding[3]; // keep 16-byte alignment
+        uint32_t EnableVolumeGridDirect;
+        uint32_t Padding[2]; // keep 16-byte alignment
     };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -84,6 +91,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, DiffuseIndirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, VolumeDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, VolumeIndirectLightingTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, VolumeGridDirectLightingTexture)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Albedo)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Emission)
@@ -115,20 +123,23 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->View = view->view_common_params_;
     auto UB = builder.Allocate<LightingCompositionShader::LightingCompositionUB>();
     {
-        UB->EnableAccumulation   = CVar_EnableAccumulation.Get() ? 1 : 0;
-        UB->EnableDiffuseDirect  = CVar_EnableDiffuseDirect.Get() ? 1 : 0;
-        UB->EnableDiffuseIndirect= CVar_EnableDiffuseIndirect.Get() ? 1 : 0;
-        UB->EnableVolumeDirect   = CVar_EnableVolumeDirect.Get() ? 1 : 0;
-        UB->EnableVolumeIndirect = CVar_EnableVolumeIndirect.Get() ? 1 : 0;
-        UB->Padding[0] = UB->Padding[1] = UB->Padding[2] = 0;
+        UB->EnableAccumulation     = CVar_EnableAccumulation.Get()     ? 1 : 0;
+        UB->EnableDiffuseDirect    = CVar_EnableDiffuseDirect.Get()    ? 1 : 0;
+        UB->EnableDiffuseIndirect  = CVar_EnableDiffuseIndirect.Get()  ? 1 : 0;
+        UB->EnableVolumeDirect     = CVar_EnableVolumeDirect.Get()     ? 1 : 0;
+        UB->EnableVolumeIndirect   = CVar_EnableVolumeIndirect.Get()   ? 1 : 0;
+        UB->EnableVolumeGridDirect = CVar_EnableVolumeGridDirect.Get() ? 1 : 0;
+        UB->Padding[0] = UB->Padding[1] = 0;
     }
     params->UB = UB;
     if (!CVar_UseDenoisedDirectLighting.Get()) {
         params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_->radiance.Raw();
         params->VolumeDirectLightingTexture = view->volume_direct_lighting_->radiance.Raw();
+        params->VolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
     } else {
         params->DiffuseDirectLightingTexture = view->denoiser_->denoised_diffuse_direct_lighting.Raw();
         params->VolumeDirectLightingTexture = view->denoiser_->denoised_volume_direct_lighting.Raw();
+        params->VolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
     }
     if (CVar_UseDenoisedIndirectLighting.Get()) {
         params->DiffuseIndirectLightingTexture = view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
