@@ -75,6 +75,17 @@ void Scene::CreateOnDevice() {
     }
 }
 
+uint32_t Scene::AllocateRenderableIndexAndHash(Renderable *renderable) {
+    auto slot = renderable_slots_.AllocateSlot();
+    if (slot == UINT32_MAX) return UINT32_MAX;
+    if (renderables_.size() <= slot) {
+        renderables_.resize(slot + 1);
+    }
+    renderables_[slot] = renderable;
+    renderable->hash_ = renderable_hash_generator();
+    return slot;
+}
+
 void Scene::UpdateAABB() {
     aabb_ = {};
     auto update = [&](glm::vec3 p, glm::mat4 transform) {

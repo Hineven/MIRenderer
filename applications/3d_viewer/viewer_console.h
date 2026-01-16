@@ -11,6 +11,7 @@
 #include <chrono>
 #include <functional>
 #include <utility>
+#include <nlohmann/json.hpp>
 #include <renderer/mi_cvar.h>
 #include <core/infra.h>
 #include <glm/glm.hpp>
@@ -20,8 +21,9 @@ MI_NAMESPACE_BEGIN
 class ViewerImGuiConsole {
 public:
 
-    void Initialize ();
-    void Destroy ();
+    // Load history from config json (optional); saves history back into config on destroy.
+    void Initialize (const nlohmann::json &config);
+    void Destroy (nlohmann::json &config);
 
     bool is_tab_pressed_once_ {false}; // 用于监测用户是否连按了两下Tab键（光标不在末尾时需要连按两下进入强制补全）
 

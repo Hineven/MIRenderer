@@ -22,6 +22,7 @@
 #include <rhi/rhi_desc.h>
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_buffer_heap.h>
+#include <renderer/mi_scene.h>
 #include "../shaders/shared/SharedStaticMesh.hlsl"
 
 MI_NAMESPACE_BEGIN
@@ -161,12 +162,27 @@ public:
         return gaussian_radiance_field_header_buffer_.Raw();
     }
 
+    FORCEINLINE RHIBuffer * GetPrevRenderableTransformBuffer() const {
+        return prev_renderable_transform_buffer_.Raw();
+    }
+    FORCEINLINE RHIBuffer * GetRenderableHashBuffer() const {
+        return renderable_hash_buffer_.Raw();
+    }
+    FORCEINLINE RHIBuffer * GetPrevRenderableHashBuffer() const {
+        return prev_renderable_hash_buffer_.Raw();
+    }
+
     size_t GetTotalAllocatedDeviceSize () const ;
 
 protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
     TRef<RHIBuffer> material_header_buffer_;
+    // History buffer of renderable transforms (float3x4 per renderable)
+    TRef<RHIBuffer> prev_renderable_transform_buffer_;
+    // Hash buffers for renderables
+    TRef<RHIBuffer> renderable_hash_buffer_;
+    TRef<RHIBuffer> prev_renderable_hash_buffer_;
 
     // Uber buffers for consistent geometries
     TRef<DeviceUberBufferInterface> vertex_uber_buffer_;

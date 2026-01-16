@@ -60,14 +60,11 @@ protected:
     volatile bool file_size_dirty_ {};
 
     // Read/Write control.
-    // Multiple read tasks can be executed concurrently, while only one write task can be executed at a time.
-    std::atomic<uint32_t> num_active_r_tasks_ {0};
-    std::atomic<uint32_t> num_active_w_tasks_ {0};
+    std::mutex rw_mutex_;
 
     // True if the file is being closed, ie, WriteTaskWaitAndAcquire(true) is called.
     std::atomic<bool> file_closing_ {false};
 
-    std::shared_mutex rw_mutex_;
 
     // Try to acquire the read lock, if failed, wait until the write lock is released
     // Called by io tasks in fs threads

@@ -43,6 +43,7 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     
     // Transform to world space
     float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
+    Intersection.LocalPosition = InterpolatedVertex.Position;
     Intersection.WorldPosition = TransformPoint(ToWorldTransform, InterpolatedVertex.Position);
 
     MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];

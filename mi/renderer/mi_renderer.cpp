@@ -106,6 +106,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     view->InitFrame();
+
+    // Stage history buffers for motion vectors (GPU-side copy before the current frame)
+    {
+        auto curr_transform = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+        auto prev_transform = builder.Import(device_allocator_->GetPrevRenderableTransformBuffer());
+        auto curr_hash = builder.Import(device_allocator_->GetRenderableHashBuffer());
+        auto prev_hash = builder.Import(device_allocator_->GetPrevRenderableHashBuffer());
+        builder.AddPass("StageRenderableHistory", RDGPassFlagBits::kNeverCull,
+            [curr_transform, prev_transform, curr_hash, prev_hash]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+                queue.CopyBuffer(curr_transform->GetRHI(), prev_transform->GetRHI());
+                queue.CopyBuffer(curr_hash->GetRHI(), prev_hash->GetRHI());
+            })
+            ->AddBufferH(prev_transform, RHIGPUAccessFlagBits::kTransferWrite)
+            ->AddBufferH(curr_transform, RHIGPUAccessFlagBits::kTransferRead)
+            ->AddBufferH(prev_hash, RHIGPUAccessFlagBits::kTransferWrite)
+            ->AddBufferH(curr_hash, RHIGPUAccessFlagBits::kTransferRead);
+    }
+
     // Allocate and set view->view_common_params_
     view->SetupViewCommonShaderParameters(builder);
     // Allocate and set view->debug_common_params_
@@ -124,32 +142,38 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Update scene AABB
     view->scene_->UpdateAABB();
 
+
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
     std::vector<glm::mat4x3> renderable_inverse_transforms;
     std::vector<glm::mat3x3> renderable_normal_transforms;
     std::vector<RenderableHeader> renderable_headers;
     std::vector<uint32_t> visible_renderable_indices;
+    std::vector<uint32_t> renderable_hashes;
     {
         renderable_transforms.reserve(all_renderables.size());
         renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
+        renderable_hashes.reserve(all_renderables.size());
         for (const auto& [i, e] : all_renderables | std::views::enumerate) {
             glm::mat4x3 to_world {};
             glm::mat4x3 to_local {};
             glm::mat3x3 normal_transform {};
             RenderableHeader renderable_header {};
+            uint32_t renderable_hash = 0;
             if (e) {
                 to_world = e->GetTransform().GetToWorldTransformMatrix();
                 to_local = e->GetTransform().GetToLocalTransformMatrix();
                 normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
                 renderable_header = e->GetDeviceRenderableHeader();
+                renderable_hash = e->GetHash();
                 if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
             }
             renderable_transforms.push_back(to_world);
             renderable_inverse_transforms.push_back(to_local);
             renderable_normal_transforms.push_back(normal_transform);
             renderable_headers.push_back(renderable_header);
+            renderable_hashes.push_back(renderable_hash);
         }
     }
     // Upload renderable transforms and headers
@@ -174,6 +198,13 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
         renderable_headers.data(),
         renderable_headers.size() * sizeof(RenderableHeader)
+    );
+    // Upload renderable hashes
+    view->upload_context_.Add(
+        builder.Import(device_allocator_->GetRenderableHashBuffer(),
+            RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
+        renderable_hashes.data(),
+        renderable_hashes.size() * sizeof(uint32_t)
     );
 
     // Prepare instance data for rebuilding TLAS
@@ -422,7 +453,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     else if (type == 3)
         Render_DrawToOutput(view, builder, view->g_buffer_->G_normal_.Raw());
     else if (type == 4)
-        Render_DrawToOutput(view, builder, view->g_buffer_->G_transmittance_.Raw());
+        Render_DrawToOutput(view, builder, view->g_buffer_->G_motion_vector_.Raw());
     else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)

@@ -36,6 +36,9 @@ struct RendererViewPersistentData {
     Camera prev_camera {};
     CameraParameters prev_camera_parameters_ {};
 
+    // History renderable transforms for motion vectors
+    std::vector<glm::mat4x3> prev_renderable_transforms_;
+
     uint32_t view_index_ {};
     uint32_t frame_index_ {};
 

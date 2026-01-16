@@ -57,6 +57,11 @@ void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, 
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
+    G_motion_vector_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32G32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+    G_motion_vector_->SetName("GBuffer MotionVector");
+
     G_flags_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
@@ -84,6 +89,7 @@ bool GeometryBufferPersistentData::MakeSureExists([[maybe_unused]] RendererView 
     if (!prev_G_depth_) flag = true;
     if (!prev_G_normal_) flag = true;
     if (!prev_G_transmittance_) flag = true;
+    if (!prev_G_motion_vector_) flag = true;
     return flag;
 }
 
@@ -99,6 +105,10 @@ void GeometryBufferPersistentData::FinalUpdate(RendererView *view) {
     prev_G_transmittance_ = view->g_buffer_->G_transmittance_;
     prev_G_transmittance_->SetName("PrevGTransmittance");
     prev_G_transmittance_->SetExport();
+
+    prev_G_motion_vector_ = view->g_buffer_->G_motion_vector_;
+    prev_G_motion_vector_->SetName("PrevGMotionVector");
+    prev_G_motion_vector_->SetExport();
 }
 
 

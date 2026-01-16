@@ -10,6 +10,7 @@
 #include <set>
 #include <stack>
 #include <vector>
+#include <random>
 #include <core/base.h>
 #include <core/refcounted.h>
 #include <core/util/slot_allocator.h>
@@ -21,7 +22,7 @@
 #include <renderer/mi_aabb.h>
 
 MI_NAMESPACE_BEGIN
-    // Integrated class managing the rendering world. This class is not for general use and should only be used
+// Integrated class managing the rendering world. This class is not for general use and should only be used
 // for rendering. Scene management is not its responsibility.
 // It is responsible for holding renderables and rendering resources of a scene.
 class DeviceScene : public NonCopyable, public NonMovable, public RefCounted<true> {
@@ -109,16 +110,9 @@ protected:
     TRef<Texture> sky_cube_;
 
     std::vector<TRef<Renderable>> renderables_;
+    std::mt19937 renderable_hash_generator {12345};
 
-    FORCEINLINE uint32_t AllocateRenderableIndex (Renderable * renderable) {
-        auto slot = renderable_slots_.AllocateSlot();
-        if (slot == UINT32_MAX) return UINT32_MAX;
-        if (renderables_.size() <= slot) {
-            renderables_.resize(slot + 1);
-        }
-        renderables_[slot] = renderable;
-        return slot;
-    }
+    uint32_t AllocateRenderableIndexAndHash (Renderable * renderable) ;
     FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
         renderable_slots_.FreeSlot(index);
     }

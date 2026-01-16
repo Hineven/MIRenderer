@@ -23,6 +23,7 @@ struct GeometryBufferData : public RefCounted<> {
     TRef<RDGTexture> G_normal_;
     TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
+    TRef<RDGTexture> G_motion_vector_;
 
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
@@ -48,6 +49,7 @@ struct GeometryBufferPersistentData : public RefCounted<> {
     TRef<RDGTexture> prev_G_depth_;
     TRef<RDGTexture> prev_G_normal_;
     TRef<RDGTexture> prev_G_transmittance_;
+    TRef<RDGTexture> prev_G_motion_vector_;
 
     bool MakeSureExists(
         RendererView * view, RenderGraphBuilder & builder
