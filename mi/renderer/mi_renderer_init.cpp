@@ -41,6 +41,8 @@ void Renderer::Init(DeviceBindlessResourceAllocator * allocator, RDGResourcePool
         Helpers::Upload_Async(sobol_256x256_->GetSpan(), Sobol256x256, sizeof(Sobol256x256));
         Helpers::Upload_Async(sobol_scrambling_tile_256x256x8_->GetSpan(), ScramblingTiles, sizeof(ScramblingTiles));
     }
+    // Register console commands for the renderer
+    Console::RegisterCommands();
 }
 
 MI_NAMESPACE_END

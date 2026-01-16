@@ -52,6 +52,13 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessageCallback(
 }
 #endif
 
+std::future<void> VulkanRHI::AdvanceFrame(RHISyncPoint * sync_point) {
+    // Reset timestamp allocator for the next frame after we've submitted/presented this frame.
+#if MI_ENABLE_TIMESTAMP
+    ResetTimestampAllocatorForFrame((uint32_t)(GetFrameIndex() + 1));
+#endif
+    return RHI::AdvanceFrame(sync_point);
+}
 VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
         VULKAN_HPP_DEFAULT_DISPATCHER.init();
@@ -74,7 +81,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         // Enable extensions
         std::vector enabled_extension_names = {
                 // VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
             // VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
@@ -242,7 +249,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             // Use the KHR version for compatibility with Nsight
             // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
             // Draw lines
-            VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+            VK_KHR_LINE_RASTERIZATION_EXTENSION_NAME,
             // Mesh shader support
             VK_EXT_MESH_SHADER_EXTENSION_NAME,
             // Descriptor indexing (bindless supoort)
@@ -489,7 +496,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
 
         queue_ = device_.getQueue(graphics_queue_family_index_, 0);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         device_.setDebugUtilsObjectNameEXT(vk::DebugUtilsObjectNameInfoEXT{
             vk::ObjectType::eQueue, reinterpret_cast<uint64_t>((VkQueue)queue_),
             "Graphics Queue"
@@ -497,7 +504,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
 #endif
         LoadPipelineCache();
 
-#ifndef NDEBUG
+#if MI_ENABLE_TIMESTAMP
         // Query pool
         timestamp_query_pool_ = device_.createQueryPool(vk::QueryPoolCreateInfo{
             {},
@@ -505,6 +512,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             kMaxNumTimestampQueries, // max 2048 timestamps for all flying frames
             {} // No pipeline statistics
         });
+        // Reset all queries for first use
+        device_.resetQueryPool(timestamp_query_pool_, 0, kMaxNumTimestampQueries);
 #endif
     }
     vma_ = vma::createAllocator(vma::AllocatorCreateInfo{
@@ -746,7 +755,7 @@ bool VulkanRHI::InitializeSwapChain_RHI(const void *surface_handle_ptr, uint32_t
             vk::SemaphoreCreateInfo semaphore_info {};
             vk_swapchain_image_available_semaphores_[i] = device_.createSemaphore(semaphore_info);
             vk_swapchain_render_finished_semaphores_[i] = device_.createSemaphore(semaphore_info);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             // Set debug names of the semaphores
             std::string name = "Swapchain image available semaphore " + std::to_string(i);
             vk::DebugUtilsObjectNameInfoEXT name_info {};
@@ -811,10 +820,32 @@ RHISamplerRef VulkanRHI::CreateSampler(RHISamplerDesc desc) {
     return TRef<RHISampler>(sampler);
 }
 
+void VulkanRHI::ResetTimestampAllocatorForFrame(uint32_t frame_index) {
+#if MI_ENABLE_TIMESTAMP
+    // Waited frame fences before calling this.
+    uint32_t base = (frame_index % kNumFramesInFlight) * kQueriesPerFrame;
+    timestamp_frame_base_.store(base, std::memory_order_relaxed);
+    timestamp_query_allocator_.store(0, std::memory_order_relaxed);
+    // The query pool is reset on the RHI thread as a command
+#else
+    (void)frame_index;
+#endif
+}
+
 RHITimestampRef VulkanRHI::CreateTimestamp() {
-    auto index = timestamp_query_allocator_.fetch_add(1);
-    auto timestamp = new VulkanTimestamp(index % kMaxNumTimestampQueries);
+#if MI_ENABLE_TIMESTAMP
+    auto local = timestamp_query_allocator_.fetch_add(1, std::memory_order_relaxed);
+    if (local >= kQueriesPerFrame) {
+        mi_warning(true, "Timestamp allocator exhausted ({} >= per-frame cap {}). Dropping timestamp.", local, kQueriesPerFrame);
+        return {};
+    }
+    auto query_index = timestamp_frame_base_.load(std::memory_order_relaxed) + local;
+    mi_assert(query_index < kMaxNumTimestampQueries, "Timestamp query index out of pool range");
+    auto timestamp = new VulkanTimestamp(query_index);
     return TRef<RHITimestamp>(timestamp);
+#else
+    return {};
+#endif
 }
 
 RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -894,10 +925,9 @@ RHICommandExecutorInterface * VulkanRHI::GetCommandExecutor() {
 
 void VulkanRHI::WaitForIdle(bool host_only) {
     assert(IsRenderThread());
-    // Simply wait the RHI thread to finish its work
-    auto fut = EnqueueRHIThreadTask([]() {});
-    fut.wait();
-
+    graphics_command_queue_.WaitForIdle("RHI::WaitForIdle", true /* queue_.waitIdle() is sufficient*/);
+    // Furthermore, wait the RHI thread to finish all its work
+    EnqueueRHIThreadTask([]() {}).wait();
     if(!host_only) {
         queue_.waitIdle();
     }
@@ -949,7 +979,7 @@ void VulkanRHI::PostInitialize() {
     RHI::PostInitialize();
     // Create bindless manager and command executor
     {
-        mi_assert(IsRHIThreadActive() || BYPASS_RHI_THREAD, "RHI thread must be active when creating VulkanRHI.");
+        mi_assert(IsRHIThreadActive() || MI_BYPASS_RHI_THREAD, "RHI thread must be active when creating VulkanRHI.");
         // Initialization are automatically dispatched to the RHI thread
         // via the constructor functions
         bindless_manager_ = new VulkanBindlessManager();

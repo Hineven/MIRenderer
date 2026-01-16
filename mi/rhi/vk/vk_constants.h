@@ -12,9 +12,9 @@
 MI_NAMESPACE_BEGIN
 
 namespace C {
-    constexpr uint32_t kMaxNumDescriptorSetsPerFrame = 512;
+    constexpr uint32_t kMaxNumDescriptorSetsPerFrame = 1024;
     constexpr uint32_t kMaxNumUniformBufferDescriptorsPerFrame = 2048;
-    constexpr uint32_t kMaxNumStorageBufferDescriptorsPerFrame = 2048;
+    constexpr uint32_t kMaxNumStorageBufferDescriptorsPerFrame = 8192;
     constexpr uint32_t kMaxNumSampledTextureDescriptorsPerFrame = 8192;
     constexpr uint32_t kMaxNumStorageTextureDescriptorsPerFrame = 8192;
     constexpr uint32_t kMaxNumSamplerDescriptorsPerFrame = 32;

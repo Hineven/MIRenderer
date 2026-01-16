@@ -234,6 +234,10 @@ void PreFilterDiffuseLightingAndTemporalAccumulate (uint2 DispatchID : SV_Dispat
 		RWDenoisedVolumeIndirectRadianceTexture[CenterPixelCoords] = 0.f.xxxx;
 		RWVolumeHistoryLengthTexture[CenterPixelCoords] = 0;
 	}
+	if(!bVolume && !bSurface) {
+		// No surface or volume lighting in this pixel. Stop processing.
+		return ;
+	}
 
 	// Prefilter input diffuse lighting
 	float KernelRadius = 2.8;
@@ -599,7 +603,7 @@ RWTexture2D<float4> RWDilatedFilterOutputFilteredVolumeDirectRadiance;
 void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID) {
 	CameraParameters C = GetActiveCamera();
 	if(IsOutOfFilm(DispatchID)) return; // Out of film
-	int2 CenterPixelCoords = int2(DispatchID);
+	uint2 CenterPixelCoords = DispatchID;
 	float2 CenterFilmPosition = float2(CenterPixelCoords) + 0.5f;
 	float2 CenterUV = CenterFilmPosition * C.InvFilmDimensions;
 	float CenterReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, CenterUV, 0).r;
@@ -615,6 +619,7 @@ void DilatedFilterDiffuseDirectLighting (uint2 DispatchID : SV_DispatchThreadID)
 		RWDilatedFilterOutputFilteredVolumeDirectRadiance[CenterPixelCoords] = float4(0, 0, 0, 0);
 	}
 	// Early out if the pixel is empty
+	[branch]
 	if(!bSurface && !bVolume) {
 		return ;
 	}

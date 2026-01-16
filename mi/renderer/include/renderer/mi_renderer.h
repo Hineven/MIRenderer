@@ -18,6 +18,7 @@
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/mi_renderer_view.h"
 #include "renderer/mi_camera.h"
+#include "renderer/mi_console.h"
 MI_NAMESPACE_BEGIN
 class RHIBuffer;
 class RenderGraphBuilder;
@@ -50,6 +51,8 @@ public:
     FORCEINLINE DeviceBindlessResourceAllocator * GetDeviceAllocator () {
         return device_allocator_.Raw();
     }
+
+    Console& GetConsole() { return console_; }
 
     // at most 4M
     constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
@@ -252,6 +255,8 @@ protected:
     TRef<RHITexture> blue_noise_128x128_;
     TRef<RHIBuffer> sobol_256x256_;
     TRef<RHIBuffer> sobol_scrambling_tile_256x256x8_;
+
+    Console console_;
 
 };
 

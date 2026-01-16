@@ -8,6 +8,7 @@
 #include "rhi/rhi_cmd.h"
 #include "rhi_cmd_exec.h"
 #include "rhi/rhi.h"
+#include "rhi/rhi_cmd_stats.h"
 
 #include "core/util/debug_prof.h"
 
@@ -31,7 +32,7 @@ struct RHIThreadTask {
             RHISyncPoint * sync_point;
         } frame_end;
     } param;
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     std::string name;
 #endif
     std::function<void()> lambda;
@@ -45,10 +46,10 @@ static TLockFreeQueue<RHIThreadTask, LockFreeQueueUserType::kMultiple, LockFreeQ
 static std::counting_semaphore<> task_queue_sem_ {0};
 
 // The thread
-static RHIWorkerThread * rhi_worker_thread_ = nullptr;
+static std::unique_ptr<RHIWorkerThread> rhi_worker_thread_;
 
 std::future<void> EnqueueRHICommandTranslationTask (RHICommandQueueBase * command_buffer, RHICommandBase * command_chain_head) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         assert(IsRenderThread());
         // Do nothing actually
         auto promise = std::promise<void>();
@@ -71,7 +72,7 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (
     RHICommandQueueBase * command_buffer, RHISyncPoint * sync,
     const std::string & submit_prefix, bool recyle_resources
 ) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         assert(IsRenderThread());
         RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(command_buffer, sync, submit_prefix, recyle_resources);
         auto promise = std::promise<void>();
@@ -92,7 +93,7 @@ std::future<void> EnqueueRHICommandBufferSubmitTask (
 }
 
 std::future<void> EnqueueRHIFrameEndTask (RHICommandQueueBase * command_buffer, RHISyncPoint * sync) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         assert(IsRenderThread());
         RHI::Get().GetCommandExecutor()->RHIFrameEnd(command_buffer, sync);
         auto promise = std::promise<void>();
@@ -116,9 +117,8 @@ void EnqueueRHIThreadIdleTask () {
 }
 
 void StartAndRunRHIWorkerThread() {
-    RHIWorkerThread * rhi_thread = new RHIWorkerThread();
-    rhi_worker_thread_ = rhi_thread;
-    rhi_thread->Run();
+    rhi_worker_thread_.reset(new RHIWorkerThread());
+    rhi_worker_thread_->Run();
 }
 
 void SignalStopRHIWorkerThreads() {
@@ -133,7 +133,7 @@ bool IsRHIThreadActive() {
 }
 
 std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         task();
         auto promise = std::promise<void>();
         // Set the promise value to indicate the task is done
@@ -152,15 +152,15 @@ std::future<void> EnqueueRHIThreadTask(std::function<void()> && task) {
 }
 
 void AdvanceFrame_RHIThread() {
-    mi_assert(IsRHIThread() || BYPASS_RHI_THREAD, "AdvanceFrame_RHIThread must be called in RHI thread.");
+    mi_assert(IsRHIThread() || MI_BYPASS_RHI_THREAD, "AdvanceFrame_RHIThread must be called in RHI thread.");
     rhi_worker_thread_->AdvanceFrame();
 }
 
 void RHIWorkerThread::Run() {
 
-    if (BYPASS_RHI_THREAD) {
+    if (MI_BYPASS_RHI_THREAD) {
         MI_LOG(MIInfraLogType::kWarning, "Bypassing RHI thread for debugging purposes. RHI thread exits upon its launch.");
-        MI_LOG(MIInfraLogType::kWarning, "Set BYPASS_RHI_THREAD to false to silent this warning.");
+        MI_LOG(MIInfraLogType::kWarning, "Set MI_BYPASS_RHI_THREAD to false to silent this warning.");
         return ;
     }
 
@@ -169,6 +169,7 @@ void RHIWorkerThread::Run() {
         return ;
     }
     SetCurrentThreadType(ThreadType::kRHIThread);
+    InitializePlatformBackgroundThreadContext_Worker();
 
 
     static std::atomic<bool> rhi_thread_started {false};
@@ -200,7 +201,7 @@ void RHIWorkerThread::Run() {
                 RHI::Get().GetCommandExecutor()->RHISubmitCommandBuffer(
                         task.queue,
                         task.param.submit.sync_point,
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
                         task.name,
 #else
                         "",
@@ -218,6 +219,8 @@ void RHIWorkerThread::Run() {
                         task.queue,
                         task.param.frame_end.sync_point
                 );
+                // Advance command stats for the frame that just ended.
+                RHICmdStats::Get().AdvanceFrame(GetFrameIndexForCurrentThread());
                 // Notify the task is finished
                 task.promise.set_value();
             } else {
@@ -229,6 +232,8 @@ void RHIWorkerThread::Run() {
     is_running_ = false;
     // Reset the flag
     rhi_thread_started.store(false);
+    DestroyPlatformBackgroundThreadContext_Worker();
+    SetCurrentThreadType(ThreadType::kUnknown);
 }
 
 RHIWorkerThread::~RHIWorkerThread () {
@@ -244,3 +249,4 @@ size_t GetCurrentFrameIndex_RHIThread() {
 
 
 MI_NAMESPACE_END
+

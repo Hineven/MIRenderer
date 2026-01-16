@@ -165,7 +165,7 @@ void *VulkanTexture::GetAPIHandle() const {
 
 void VulkanTexture::SetName(const std::string &name) {
     RHITexture::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eImage,

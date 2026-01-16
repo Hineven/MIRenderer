@@ -80,7 +80,7 @@ TEST(RHITest, RHIShaderCompile) {
 #pragma warning (disable: 4602)
 TEST(RHITest, RHIThreadTasks) {
 
-    if constexpr (BYPASS_RHI_THREAD) {
+    if constexpr (MI_BYPASS_RHI_THREAD) {
         return ; // If we're bypassing the RHI thread, we don't need to run this test
     }
 

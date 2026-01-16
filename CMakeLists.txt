@@ -5,7 +5,7 @@ project(MI)
 option(MI_USE_VCPKG_VMA_HPP "Use VMA-HPP from vcpkg" OFF)
 
 enable_language(CXX)
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 
 # Extra CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -46,15 +46,47 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 endif()
 
 # For code to access project root (in debug builds)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_definitions("-DMI_PROJECT_ROOT=\"${CMAKE_SOURCE_DIR}\"")
-endif()
+add_compile_definitions($<$<CONFIG:Debug>:MI_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"> $<$<CONFIG:RelWithDebInfo>:MI_PROJECT_ROOT="${CMAKE_SOURCE_DIR}">)
+
 
 # Options
 option(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT "Enable Fourier primitives by default" OFF)
 # Macro to enable Fourier primitives by default
 if(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
     add_definitions(-DMI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
+endif()
+
+# Global profiling toggle: enable GPU timestamp queries in all builds for easier profiling.
+# Note: this can introduce performance overhead, so only enable when needed.
+option(MI_ENABLE_TIMESTAMP "Enable timestamp queries globally (except Release build)" ON)
+if(MI_ENABLE_TIMESTAMP)
+    message(STATUS "Timestamp queries enabled globally.")
+    add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_TIMESTAMP> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_TIMESTAMP>)
+endif()
+
+# Global shader debugging mode toggle: enable shader debugging features in all builds for easier debugging.
+# Note: this can introduce performance overhead, so only enable when needed.
+option(MI_ENABLE_SHADER_DEBUGGING "Enable shader debugging features globally (except Release build)" ON)
+if(MI_ENABLE_SHADER_DEBUGGING)
+    message(STATUS "Shader debugging features enabled globally.")
+    add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_SHADER_DEBUGGING> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_SHADER_DEBUGGING>)
+endif()
+
+# Name RHI objects with human-readable names for easier debugging in graphics debuggers.
+# Note: this can introduce a little performance overhead, so only enable when needed.
+option(MI_ENABLE_RHI_OBJECT_NAMING "Enable RHI object naming for easier debugging (except Release build)" ON)
+if(MI_ENABLE_RHI_OBJECT_NAMING)
+    message(STATUS "RHI object naming enabled.")
+    add_compile_definitions($<$<CONFIG:Debug>:MI_ENABLE_RHI_OBJECT_NAMING> $<$<CONFIG:RelWithDebInfo>:MI_ENABLE_RHI_OBJECT_NAMING>)
+endif()
+
+option(MI_ENABLE_COMPLIER_ADDRESS_SANITIZER "Enable address sanitizer in debug builds" OFF)
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    # Address sanitizer support. Enabled only on debug builds.
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND MI_ENABLE_COMPLIER_ADDRESS_SANITIZER)
+        message(STATUS "Address Sanitizer enabled.")
+        add_compile_options(/fsanitize=address /Zi)
+    endif()
 endif()
 
 ##################
@@ -84,20 +116,20 @@ message(STATUS "Found Vulkan SDK version: ${Vulkan_VERSION}")
 # GLFW for cross platform window creation and input handling
 find_package(glfw3 CONFIG REQUIRED GLOBAL)
 
-if(NOT Vulkan_dxc_lib_FOUND OR NOT Vulkan_dxc_DEBUG_LIBRARY)
-    # Fallback to standalone DXC
-    message(STATUS "No integrated dxc found within Vulkan SDK, using standalone DXC")
-    if(NOT Vulkan_dxc_lib_FOUND)
-        message(STATUS "Reason: dxc library not found")
-    else()
-        message(STATUS "Reason: dxc library found, but no debug library found.")
-    endif()
-    # Standalone DXC
-    find_package(directx-dxc CONFIG REQUIRED GLOBAL)
-    set(dxc_library_target Microsoft::DirectXShaderCompiler)
-else()
+# Prefer integrated DXC from Vulkan SDK, then Windows Dev Kit DXC, finally standalone DXC
+if(Vulkan_dxc_lib_FOUND AND Vulkan_dxc_DEBUG_LIBRARY)
     message(STATUS "Using integrated dxc within Vulkan SDK")
     set(dxc_library_target Vulkan::dxc_lib)
+else()
+    find_package(DirectXShaderCompiler CONFIG QUIET)
+    if(DirectXShaderCompiler_FOUND)
+        message(STATUS "Using Windows Dev Kit dxc")
+        set(dxc_library_target Microsoft::DirectXShaderCompiler)
+    else()
+        message(STATUS "No Vulkan SDK or Windows Dev Kit dxc found, using standalone DXC")
+        find_package(directx-dxc CONFIG REQUIRED GLOBAL)
+        set(dxc_library_target Microsoft::DirectXShaderCompiler)
+    endif()
 endif()
 
 # Simple external packages

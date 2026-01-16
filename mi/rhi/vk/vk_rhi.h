@@ -34,8 +34,9 @@ class VulkanRHI : public RHI {
 protected:
     void PostInitialize() override;
 public:
-    // TODO remove this friend declaration.
     friend class VulkanCommandExecutor;
+
+    std::future<void> AdvanceFrame(RHISyncPoint * sync_point) override;
 
     VulkanRHI(const VulkanRHICreateInfo * extra) ;
     ~VulkanRHI() override ;
@@ -60,6 +61,9 @@ public:
 
     RHITimestampRef CreateTimestamp() override;
 
+    std::vector<uint64_t> QueryTimestamps(std::span<RHITimestamp *> timestamps,
+        RHITimestampQueryMode mode) override;
+
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;
 
@@ -72,6 +76,9 @@ public:
     RHISyncPointRef CreateSyncPoint() override;
 
     RHICommandExecutorInterface * GetCommandExecutor() override;
+
+    // Reset per-frame timestamp allocation (debug only). Call after the previous frame fence is signaled.
+    void ResetTimestampAllocatorForFrame(uint32_t frame_index);
 
     // Reset the pipeline cache if the cache size exceeds the given limit (bytes).
     void ResetPipelineCache (uint32_t size_limit = 0) override;
@@ -171,9 +178,15 @@ protected:
 
     // Ring buffer allocator without recycling and overlapping checking
     // We assume that the allocations are short lived and will never exceed the total size of the buffer
+    // Timestamp queries
     constexpr static uint32_t kMaxNumTimestampQueries = 2048;
+    constexpr static uint32_t kNumFramesInFlight = 2; // renderer is double-buffered
+    // Divide the pool evenly per frame to avoid in-flight reuse
+    constexpr static uint32_t kQueriesPerFrame = kMaxNumTimestampQueries / kNumFramesInFlight;
     vk::QueryPool timestamp_query_pool_ {};
     std::atomic<uint32_t> timestamp_query_allocator_ {0};
+    // Frame-local offset, advanced at frame begin after fences are waited
+    std::atomic<uint32_t> timestamp_frame_base_ {0};
 
     int surface_offset_x_ {};
     int surface_offset_y_ {};

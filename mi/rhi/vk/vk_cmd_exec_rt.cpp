@@ -147,8 +147,9 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
 
         vk::AccelerationStructureGeometryInstancesDataKHR instance_data {};
         instance_data.setArrayOfPointers(false);
-        if (instance_buffer)
+        if (instance_buffer) {
             instance_data.setData(instance_buffer->GetDeviceAddress() + build_info.instance_data.offset);
+        }
 
         vk_geometry.geometry.setInstances(instance_data);
         geometries = state.Allocate<vk::AccelerationStructureGeometryKHR[]>(1);
@@ -172,22 +173,23 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
     vk_build_info.setScratchData(scratch_buffer->GetDeviceAddress() + build_acceleration_structure->scratch_buffer_.offset);
 
     // Build the acceleration structure
+    // TODO 25.12.30: this function make NVIDIA driver comsume about 260KB more memory per call, need to investigate later.
+    // current workaround is to reduce the number of calls by checking for dirty transforms.
     cmdb.buildAccelerationStructuresKHR(1, &vk_build_info, &range_infos);
 }
 
 void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
-    auto & cmdb = state.cmd;
-    auto & ray_tracing_bind_point = state.points[(uint32_t)RHIBindPointType::kRayTracing];
+    auto & point = state.points[(uint32_t)RHIBindPointType::kRayTracing];
 
     assert(bind_ray_tracing_pipeline->pipeline_->GetType() == RHIPipelineType::kRayTracing);
     auto pipeline = static_cast<VulkanRayTracingPipeline*>(bind_ray_tracing_pipeline->pipeline_);
-    cmdb.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline->GetPipeline());
-
-    // Update bind point state
-    ray_tracing_bind_point.bound_pipeline = bind_ray_tracing_pipeline->pipeline_;
-    ray_tracing_bind_point.bound_pipeline_dirty = true;
+    if(point.bound_pipeline != pipeline) {
+        point.bound_pipeline_dirty = true;
+        point.bound_private_descriptor_set = nullptr;
+        point.bound_pipeline = pipeline;
+    }
 }
 
 void VulkanCommandExecutor::RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) {
@@ -269,8 +271,8 @@ void VulkanCommandExecutor::RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RH
                                                             vk::ShaderStageFlagBits::eMissKHR |
                                                             vk::ShaderStageFlagBits::eClosestHitKHR |
                                                             vk::ShaderStageFlagBits::eAnyHitKHR |
-                                                            vk::ShaderStageFlagBits::eIntersectionKHR |
-                                                            vk::ShaderStageFlagBits::eCallableKHR);
+                                                            vk::ShaderStageFlagBits::eIntersectionKHR);
+                                                            // | vk::ShaderStageFlagBits::eCallableKHR);
 
     auto indirect_buffer = static_cast<VulkanBuffer*>(dispatch_rays_indirect->indirect_buffer_.buffer);
     vk::DeviceAddress indirect_device_address = indirect_buffer->GetDeviceAddress() + dispatch_rays_indirect->indirect_buffer_.offset;

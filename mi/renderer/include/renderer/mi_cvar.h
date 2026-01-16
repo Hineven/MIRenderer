@@ -28,8 +28,21 @@ enum class CVarType : unsigned {
     kMax
 };
 
+FORCEINLINE std::string ToString(CVarType type) {
+    switch (type) {
+        case CVarType::kInt: return "int";
+        case CVarType::kFloat: return "float";
+        case CVarType::kFloat2: return "float2";
+        case CVarType::kFloat3: return "float3";
+        case CVarType::kFloat4: return "float4";
+        case CVarType::kBool: return "bool";
+        case CVarType::kString: return "string";
+        default: return "unknown";
+    }
+}
+
 // Base class for all CVars
-class CVarBase : public RefCounted<true> {
+class CVarBase {
 public:
     CVarBase(const std::string& id, const std::string& description, CVarType type);
     virtual ~CVarBase() = default;
@@ -97,7 +110,7 @@ public:
 
 private:
     CVarRegistry() = default;
-    std::map<std::string, TRef<CVarBase>> cvars_;
+    std::map<std::string, CVarBase*> cvars_;
     std::mutex mutex_;
 };
 

@@ -161,6 +161,8 @@ public:
         return gaussian_radiance_field_header_buffer_.Raw();
     }
 
+    size_t GetTotalAllocatedDeviceSize () const ;
+
 protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.

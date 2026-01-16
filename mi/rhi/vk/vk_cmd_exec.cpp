@@ -475,7 +475,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
 
     state.CheckDebugMarkerStack();
     std::string prefix;
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     prefix = "EndOfFrame (" + std::to_string(GetFrameIndexForCurrentThread()) + ")";
 #endif
 
@@ -568,17 +568,18 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         };
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eColorAttachmentOutput,
             {}, {}, {}, swapchain_barrier);
-        // 2.4 Execution barrier, make sure all previously submitted commands are finished before this one finishes
+        // 2.4 Clear the queries that may be used in the next frame
+#if MI_ENABLE_TIMESTAMP
+        {
+            auto first_query  = (GetFrameIndexForCurrentThread() + 1) * VulkanRHI::kQueriesPerFrame;
+            first_query = first_query % VulkanRHI::kMaxNumTimestampQueries;
+            state.cmd.resetQueryPool(vk_rhi->timestamp_query_pool_, (uint32_t)first_query, VulkanRHI::kQueriesPerFrame);
+        }
+#endif
+        // 2.5 Execution barrier, make sure all previously submitted commands are finished before this one finishes
         // Thus the completion of this command buffer will mark the end of the whole frame.
         state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eNone,
             {}, {}, {}, {});
-        // 25.8.14: Vulkan validation layer synchronization false positive. Adding a mega barrier for now.
-        // 25.10.31: this seems to be a bug relating to my ClearBuffer command. Removing the mega barrier.
-        // state.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllGraphics, vk::PipelineStageFlagBits::eAllGraphics,
-        //     {}, vk::MemoryBarrier{
-        //         vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
-        //         vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
-        //     }, {}, {});
         // 3. end and submit command buffer.
         state.CloseCmd();
         // Use the render-finished semaphore associated with the acquired swapchain image index
@@ -587,7 +588,7 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         ];
         vk::PipelineStageFlags submit_wait_stages = vk::PipelineStageFlagBits::eTransfer;
         if (!prefix.empty()) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
                 vk::DebugUtilsObjectNameInfoEXT {
                 vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)state.cmd),
@@ -626,6 +627,8 @@ void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint *
         chain.state_index = (chain.state_index + 1) % (int) std::size(chain.states);
     }
     if (sync) ((VulkanSyncPoint*)sync)->NotifySubmission();
+
+
 }
 
 // Helpers
@@ -764,7 +767,6 @@ bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge 
     return dirty;
 }
 
-// TODO remove the [[maybe_unused]] stuff.
 VulkanCommandExecutor::DescriptorWrites
 VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrites(
     CommandQueueState & state, [[maybe_unused]] vk::Device device,
@@ -887,7 +889,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
                     .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eSampledImage) // TODO This may not work with Texture.Load
+                    .setDescriptorType(vk::DescriptorType::eSampledImage)
                     .setPImageInfo(&image_info);
             writes[write_index++] = write;
         } else {
@@ -944,6 +946,7 @@ void VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Clear(
     srvs.clear();
     samplers.clear();
     acceleration_structures.clear();
+    push_constants = {};
 }
 
 // Bind pipeline, descriptor set and flush descriptor writes.
@@ -980,14 +983,13 @@ void VulkanCommandExecutor::FlushBindPointState(
     }
 
     // Rebind pipeline if dirty
+    bool should_bind_bindless_set = false;
     if (point.bound_pipeline_dirty) {
         point.bound_descriptor_dirty = true;
         state.cmd.bindPipeline(vk_point, vk_pipeline);
-        // Bind the bindless descriptor set upon pipeline binding (at binding 1)
+        // Bind the bindless descriptor set upon pipeline binding (at set = 1)
         if (point.bound_pipeline->HasBindlessResources()) {
-            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
-            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 1,
-                                         bindless_set, {});
+            should_bind_bindless_set = true; // Batch this binding command after private descriptor set allocation
         }
     }
 
@@ -999,6 +1001,7 @@ void VulkanCommandExecutor::FlushBindPointState(
                         .setDescriptorSetCount(1)
                         .setSetLayouts(vk_set_layout)
         );
+        state.allocated_descriptor_sets.emplace_back(descriptor_set[0]);
         mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
         point.bound_private_descriptor_set = descriptor_set[0];
     }
@@ -1022,8 +1025,23 @@ void VulkanCommandExecutor::FlushBindPointState(
     // Bind descriptor set
     // Non-bindless descriptor sets doesn't support update-after-bind. So we bind them at last.
     if(point.bound_descriptor_dirty && point.bound_private_descriptor_set) {
-        state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                     {point.bound_private_descriptor_set}, {});
+        if (should_bind_bindless_set) {
+            // Bind private set at set = 0, bindless set at set = 1
+            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                         {point.bound_private_descriptor_set, bindless_set}, {});
+        } else {
+            // Only bind private set at set = 0
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                         {point.bound_private_descriptor_set}, {});
+        }
+    } else {
+        // Still need to bind the bindless set if needed
+        if (should_bind_bindless_set) {
+            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
+            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 1,
+                                         bindless_set, {});
+        }
     }
     point.bound_pipeline_dirty = false;
     point.bound_descriptor_dirty = false;
@@ -1124,7 +1142,7 @@ void VulkanCommandExecutor::RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHI
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     state.debug_marker_stack.push(cmd->marker_name_);
 #endif
 }
@@ -1136,7 +1154,7 @@ void VulkanCommandExecutor::RHIDebugMarkerEnd(RHICommandQueueBase *buffer, [[may
     state.BeginCmd();
     state.cmd.endDebugUtilsLabelEXT();
     mi_assert(!state.debug_marker_stack.empty(), "Potential mismatch between begin and end debug markers");
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     state.debug_marker_stack.pop();
 #endif
 }
@@ -1151,12 +1169,13 @@ void VulkanCommandExecutor::RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RH
             .setPLabelName(cmd->marker_name_)
             .setColor(cmd->color_)
     );
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     state.last_inserted_debug_marker = cmd->marker_name_;
 #endif
 }
 
 void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHICommandInsertTimestamp *cmd) {
+#if MI_ENABLE_TIMESTAMP
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current();
     auto vk_rhi = GetVulkanRHI();
@@ -1165,18 +1184,19 @@ void VulkanCommandExecutor::RHIInsertTimestamp(RHICommandQueueBase * buffer, RHI
     state.BeginCmd();
     mi_assert(cmd->stage_ == RHIPipelineStageFlagBits::kAll, "Not implemented");
     auto pool = vk_rhi->GetTimestampQueryPool();
-    state.cmd.resetQueryPool(pool, query, 1);
     state.cmd.writeTimestamp(
-        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eBottomOfPipe,
         pool, query
     );
+#else
+    (void)buffer; (void)cmd;
+#endif
 }
 
-void
-VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
-const std::string & submit_prefix,
-// TODO make this useful (or completely remove it)
-[[maybe_unused]] bool recycle_resources) {
+void VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, RHISyncPoint * sync,
+                                                   const std::string & submit_prefix,
+                                                   // TODO make this useful (or completely remove it)
+                                                   [[maybe_unused]] bool recycle_resources) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
     if (sync) {
@@ -1189,21 +1209,24 @@ const std::string & submit_prefix,
         );
     }
     auto & cmd = state.cmd;
-    if (!submit_prefix.empty()) {
-        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
-            vk::DebugUtilsObjectNameInfoEXT {
-            vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)cmd),
-            submit_prefix.c_str()
-        });
+    if (cmd) {
+        if (!submit_prefix.empty()) {
+            GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+                vk::DebugUtilsObjectNameInfoEXT {
+                vk::ObjectType::eCommandBuffer, reinterpret_cast<uint64_t>((VkCommandBuffer)cmd),
+                submit_prefix.c_str()
+            });
+        }
+        bool dirty = state.CloseCmd();
+        auto vk_rhi = GetVulkanRHI();
+        auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
+        auto submit_info = vk::SubmitInfo()
+                .setCommandBufferCount(1)
+                .setPCommandBuffers(&cmd);
+        if (dirty) queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
+    } else {
+        // No command buffer to submit
     }
-    bool dirty = state.CloseCmd();
-    auto vk_rhi = GetVulkanRHI();
-    auto queue = vk_rhi->GetQueue(buffer->GetCommandQueueType());
-    auto submit_info = vk::SubmitInfo()
-            .setCommandBufferCount(1)
-            .setPCommandBuffers(&cmd);
-    if (dirty) queue.submit(submit_info, sync ? ((VulkanSyncPoint*)sync)->GetFence() : nullptr);
-
     // Reset the handle to the command buffer after submission
     state.cmd = nullptr;
     // Reset states

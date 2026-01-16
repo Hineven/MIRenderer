@@ -27,13 +27,15 @@ gaussian_radiance_field_slots_(kMaxNumGaussianRadianceFields),
 volume_grid_slots_(kMaxNumVolumeGrids){
 
     vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
-        RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
+        RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
         128
     );
     vertex_uber_buffer_->SetName("VertexUberBuffer");
 
     index_uber_buffer_ = DefaultDeviceUberBuffer::Create(
-        RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
+        RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
         128
     );
     index_uber_buffer_->SetName("IndexUberBuffer");
@@ -83,6 +85,20 @@ volume_grid_slots_(kMaxNumVolumeGrids){
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {
 
+}
+
+size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
+    size_t sum = 0;
+    sum += vertex_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += index_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += static_mesh_description_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += area_lights_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += material_header_buffer_->GetBufferSize();
+    sum += geometry_header_buffer_->GetBufferSize();
+    sum += static_mesh_header_buffer_->GetBufferSize();
+    sum += volume_primitives_header_buffer_->GetBufferSize();
+    sum += gaussian_radiance_field_header_buffer_->GetBufferSize();
+    return sum;
 }
 
 MI_NAMESPACE_END

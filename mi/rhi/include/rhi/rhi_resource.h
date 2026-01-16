@@ -22,6 +22,9 @@ class RHIBindlessSlotKeeperBase;
 
 class RHIResource : public NonMovable, public NonCopyable {
 public:
+
+    static uint64_t GetLivingRHIResourceCount();
+
     virtual ~RHIResource() ;
 
     FORCEINLINE uint32_t IncRef() {
@@ -52,7 +55,7 @@ public:
     virtual void SetName (const std::string & name) ;
 
     FORCEINLINE const char * GetName () const {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         return name_.c_str();
 #else
         return "";
@@ -95,7 +98,7 @@ protected:
     RHIResourceFlags flags_ {};
 
 private:
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     std::string name_ {};
 #endif
 };
@@ -133,8 +136,11 @@ protected:
 };
 
 // A GPU timestamp resource representing a slot in the global timestamp query pool.
+// The timestamp will stay valid until the next frame ends on the device. You should NEVER keep references to
+// timestamps that are older than the previous frame.
 // Use InsertTimestamp on a command queue to write the timestamp to this resource,
 // and call GetTimestamp() later (after GPU completion) to read it back.
+// NOTE: This can be allocated very fast. Do not cache and reuse it, allocate a new one when needed.
 class RHITimestamp : public RHIResource {
 public:
     virtual ~RHITimestamp() = default;

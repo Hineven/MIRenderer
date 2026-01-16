@@ -8,6 +8,7 @@
 #include "rhi/rhi_buffer.h"
 #include "rdg/rdg_pool.h"
 #include <rdg/rdg_resource.h>
+#include "core/infra.h"
 MI_NAMESPACE_BEGIN
 
 
@@ -27,7 +28,7 @@ TRef<RDGResourcePool> RDGResourcePool::Create() {
 RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (RHIBufferDesc for_buffer_desc) {
     // Allocate a new buffer
     auto rhi_buffer = RHI::Get().CreateBuffer(for_buffer_desc);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     rhi_buffer->SetName("Unnamed RDG pool buffer #" + std::to_string(rhi_buffer_references_.size()));
 #endif
     RDGPoolFreeBufferRecord allocated = {
@@ -159,6 +160,5 @@ void RDGResourcePool::RecycleResource(RDGTexture *texture) {
     num_active_textures_ --;
 }
 
-
-
 MI_NAMESPACE_END
+

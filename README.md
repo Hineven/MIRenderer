@@ -1,11 +1,10 @@
 # MIRenderer
-一个用于研究实时光照的渲染框架和一些功能实现。
-![cover](images/cover.png)
-## 宇宙免责声明
-* 框架还在持续性修修补补之中，可能有bug，不要太信任此框架！
+一个用于研究实时光照的RTGI和渲染框架，以及一些周边功能实现。
+![cover2](images/cover.png)
+* 还在持续修修补补之中，存在不少bug！
 ## 安装和编译
 ### 安装外部依赖
-* NVIDIA RTX显卡。AMD显卡理论上支持，但未经过测试。
+* 仅支持NVIDIA RTX显卡。
 * `Vulkan SDK`: https://vulkan.lunarg.com/ ，安装最新的Vulkan SDK，请使用1.4.300更高版本，较低版本会出现意外错误。
 ### 安装Vcpkg
 安装vcpkg包管理器，并使用包管理器与`CMake`集成，然后安装以下依赖：
@@ -20,7 +19,7 @@
 * `nlohmann-json`
 * `glfw3`
 * `openvdb`
-* `tinyexr` <- 似乎最近此包可能因为CmakeBug无法安装，你可以回退到较早版本，或者切换CMake版本（3.30.1可用）。
+* `tinyexr`
 * `vulkan-memory-allocator`
 * `directx-dxc`
 # 使用
@@ -33,15 +32,24 @@
 * `renderer`：渲染器实现。
 * `util`：一些实用工具，比如模型加载。
 * `micromc`：小玩具，用这个渲染器渲染几个mc区块。
-### 调试
-* 在使用`Vulkan Configurator`时，可以开启`Vulkan Validation Layer`与`Break on Validation Error`选项，此时，出现问题时程序会自动中断，你可以用IDE查看栈帧。
-  * 开启`Vulkan Validation Layer`后性能下降是正常的。
+### 调试和性能
+* 鉴于性能问题，不推荐常用`Debug`模式调试程序。`Debug`模式会关闭大部分优化，CPU端性能会大幅下降。请使用`RelWithDebInfo`模式进行日常调试。
+  * 如果遇到问题，可以使用`Vulkan Configurator`（随Vulkan SDK一起安装）来调整运行时选项，开启`Vulkan Validation Layer`来检查API调用是否合法。
+  * 如果遇到难以定位的问题，可以此时再切换到`Debug`模式进行调试，以性能为代价，程序中的大量调试检查或许会对你有帮助。
+    * 此时，你可以使用`debug_prof.h`内的宏分析程序（CPU）内的运行热点。
+  * 如果遇到极难定位的问题，可以进一步开启`MI_BYPASS_RHI_THREAD`选项，让RHI线程和渲染线程合并成一个线程，方便使用调试器进行单步调试。
+    * 此时，可以进一步开启`Vulkan Configurator`中的`Break on Validation Error`选项，在出现问题时程序会自动中断，你可以用IDE查看栈帧。
 * 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。
-* 你可以在Shader中使用`printf`函数进行调试输出，此时，请开启`Vulkan Validation Layer`，并开启`Debug Printf`选项，输出会显示在控制台中。
+  * 你可以在Shader中使用`printf`函数进行调试输出，此时，请开启`Vulkan Validation Layer`，并开启`Debug Printf`选项，输出会显示在控制台中。
+* 使用`heob`可以在Windows下对此程序进行内存泄漏与非法访问监测，你也可以使用Visual Studio自带的工具（如果你正在使用VS的话！）。
+* 最终性能测试，请使用以下配置：
+  * 使用`Release`模式编译，并关闭`MI_BYPASS_RHI_THREAD`选项。
+  * 如果你打开了`Vulkan Configurator`，请关闭它。
 ### 线程关系备注
-* 线程分四类别：RHI线程、渲染线程、工作线程、主线程
+* 线程分五类别：RHI线程、渲染线程、工作线程、主线程、FIO线程
 * **只有**RHI线程负责与图形API交互，RHI线程只有一个
 * **只有**渲染线程负责与RHI线程交互。一般而言，**只有**渲染线程能访问/**间接或直接持有**/使用RHI资源引用，渲染线程只有一个
+* 渲染器核心中（`mi`中），FIO线程专门负责文件读写。异步文件读写请求都通过Infra委托FIO线程完成，同步读写则由各自线程完成，Infra的读写接口是线程安全的。
 * 在一些调试模式下，RHI线程和渲染线程合并成一个线程。
 * 工作线程和主线程不能持有，也不能直接使用任何Device相关方法。它们应当仅限于在Host端进行计算和数据处理。
   * 创建、持有Geometry/StaticMesh等没有问题，但不能在线程内使用UpdateOnDevice等方法，也不应该持有DeviceXXXX的引用。

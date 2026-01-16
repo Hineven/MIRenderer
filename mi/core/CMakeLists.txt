@@ -1,4 +1,5 @@
 set(HEADER_FILES
+    include/core/fwd.h
     include/core/base.h
     include/core/common.h
     include/core/infra.h
@@ -14,13 +15,17 @@ set(HEADER_FILES
     include/core/util/segment_allocator.h
     include/core/util/slot_allocator.h
     include/core/util/byte_strided_span.h
+    include/core/util/command_line.h
 )
 
 set(SOURCE_FILES
+    refcounted.cpp
     blobres.cpp
     task.cpp
     thr.cpp
-        include/core/fwd.h
+    debug_prof.cpp
+    command_line.cpp
+    platform.cpp
 )
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})
