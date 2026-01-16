@@ -140,7 +140,7 @@ protected:
 
     FORCEINLINE RHIGraphicsPipeline (): RHIPipeline(RHIPipelineType::kGraphics) {}
 
-    virtual bool CompileRHI (const RHIGraphicsPipelineDesc &) = 0;
+    virtual bool CompileRHI (const RHIGraphicsPipelineDesc &, const RHIPipelineRootSignature * root = nullptr) = 0;
 
     bool depth_test_enable_ {false};
 
@@ -154,7 +154,7 @@ public:
 protected:
     FORCEINLINE RHIComputePipeline() : RHIPipeline(RHIPipelineType::kCompute) {}
     virtual ~RHIComputePipeline() = default;
-    virtual bool CompileRHI (RHIShader * compute_shader) = 0;
+    virtual bool CompileRHI (RHIShader * compute_shader, const RHIPipelineRootSignature * root = nullptr) = 0;
 };
 
 class RHIRayTracingPipeline : public RHIPipeline {

@@ -117,12 +117,12 @@ static auto GetResourceArraySize(T& obj) {
     else { return 0u; }
 }
 
-bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info) {
+bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info, const RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
 
 
     // Gather pipeline layout, align descriptor bindings
-    {
+    if (!root_signature) {
         std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
         std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
         // Take the first descriptor set for bindfull resources
@@ -193,6 +193,9 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                         .setPPushConstantRanges(push_constant_range.size > 0
                             ? (&push_constant_range) : nullptr)
         );
+    } else {
+        // TODO
+        mi_check(false, "Not implemented");
     }
 
     // Specify creation configuration
@@ -439,7 +442,7 @@ void *VulkanGraphicsPipeline::GetAPIHandle() const {
 
 
 // Called from parent's constructor
-bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
+bool VulkanComputePipeline::CompileRHI (RHIShader *shader, const RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
     auto compute_shader = static_cast<VulkanShader *>(shader);
 
@@ -448,7 +451,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
     std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
     // Take the first descriptor set for bindfull resources
-    {
+    if (!root_signature) {
         int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
 
@@ -488,6 +491,8 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
         } else {
             vk_private_descriptor_set_layout_ = nullptr;
         }
+    } else {
+        mi_check(false, "Not implemented");
     }
     // If the pipeline contains bindless resources, take set 1 as bindless set.
     if(HasBindlessResources()) {

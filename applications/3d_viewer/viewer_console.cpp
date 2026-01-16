@@ -485,7 +485,7 @@ int ViewerImGuiConsole::UpdateAutoCompletion(ImGuiInputTextCallbackData *data) {
 
     // If common prefix is longer than current input, update the input
     if (completion_result.replace_begin + common_prefix.size() > current_input.size()) {
-        data->DeleteChars(completion_result.replace_begin, (int)(data->BufTextLen) - (int)completion_result.replace_begin);
+        data->DeleteChars((int)completion_result.replace_begin, (int)(data->BufTextLen) - (int)completion_result.replace_begin);
         data->InsertChars((int)completion_result.replace_begin, common_prefix.c_str());
         // Move cursor to the end
         data->CursorPos = (int)common_prefix.size() + (int)completion_result.replace_begin;

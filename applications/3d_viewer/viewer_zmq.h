@@ -20,13 +20,12 @@ namespace zmq {
 
 MI_NAMESPACE_BEGIN
 
-// Simple protocol:
-// - Python connects via REQ/DEALER to tcp://127.0.0.1:5557
-// - Messages are JSON (UTF-8). First frame is the payload.
-// - Examples: {"cmd":"ping"}, {"cmd":"render","params":{...}}, {"cmd":"get_frame"}
-// - Router replies with {"ok":true,...} or {"ok":false,"err":"..."}
-// Routing id frame is managed by ROUTER automatically.
-
+// Simple protocol (single client):
+// - Server: ZMQ REP at cfg.bind_endpoint
+// - Client: ZMQ REQ
+// - Request: single JSON frame {"cmd": string, "args": {}}
+// - Reply: JSON meta frame (ok/err) optionally followed by binary frames (for exports)
+// - One recv -> one send; render_and_export_current_frame defers reply until ReplyExportedFrame
 class ViewerZmqServer {
 public:
     struct Config {
@@ -43,19 +42,18 @@ public:
     // Called by the viewer each frame. Returns list of requested export types to be processed by the viewer.
     std::vector<std::string> PollEvents();
 
-    // Called by the viewer to reply with exported frame data. Call this once per export request.
+    // Called by the viewer to reply with exported frame data for the last export request.
     void ReplyExportedFrame();
 
     // Submit a one-shot notification to clients (best-effort). Optional.
     void BroadcastInfo(const std::string& info);
 
-
 private:
-
     std::unique_ptr<::zmq::context_t> ctx_ {};
-    std::unique_ptr<::zmq::socket_t> router_ {};
+    std::unique_ptr<::zmq::socket_t> rep_ {};
 
-    std::unique_ptr<::zmq::message_t> last_message_identity_ {};
+    bool has_pending_export_reply_ = false;
+    std::vector<std::string> pending_export_types_ {};
 
     ViewerApp * viewer_ {};
 

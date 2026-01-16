@@ -55,7 +55,7 @@ public:
 
 protected:
 
-    bool CompileRHI (const RHIGraphicsPipelineDesc &) override;
+    bool CompileRHI (const RHIGraphicsPipelineDesc &, const RHIPipelineRootSignature * root = nullptr) override;
     void ResetRHI () override;
 
     vk::Pipeline vk_pipeline_;
@@ -90,7 +90,7 @@ public:
 
 protected:
 
-    bool CompileRHI (RHIShader * ) override;
+    bool CompileRHI (RHIShader * , const RHIPipelineRootSignature * root = nullptr) override;
     void ResetRHI () override;
 
     struct BindingRemappingInfo {
