@@ -861,8 +861,8 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
 
 RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name) {
     auto pipeline = new VulkanGraphicsPipeline();
-    pipeline->Compile(desc);
     pipeline->SetName(name);
+    pipeline->Compile(desc);
     if(pipeline->IsValid()) return TRef<RHIGraphicsPipeline>(pipeline);
     pipeline->~VulkanGraphicsPipeline();
     delete pipeline;
@@ -871,8 +871,8 @@ RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipeli
 
 RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const char * name) {
     auto pipeline = new VulkanComputePipeline();
-    pipeline->Compile(shader);
     pipeline->SetName(name);
+    pipeline->Compile(shader);
     if(pipeline->IsValid()) return TRef<RHIComputePipeline>(pipeline);
     pipeline->~VulkanComputePipeline();
     delete pipeline;
@@ -881,8 +881,8 @@ RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const 
 
 RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name) {
     auto pipeline = new VulkanRayTracingPipeline();
-    pipeline->Compile(desc);
     pipeline->SetName(name);
+    pipeline->Compile(desc);
     if(pipeline->IsValid()) return TRef<RHIRayTracingPipeline>(pipeline);
     pipeline->~VulkanRayTracingPipeline();
     delete pipeline;
