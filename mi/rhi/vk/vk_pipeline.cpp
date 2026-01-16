@@ -67,17 +67,20 @@ static void RelocateShaderResourceBindings (
     RelocateResourcesInIR(RHIPipelineResourceType::kSampler, shader->GetSamplerDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kAccelerationStructure, shader->GetAccelerationStructureDesc());
 
-    // Relocate bindless resource arrays ni the shader IR
+    // Relocate bindless resource arrays in the shader IR
     if (shader->HasBindlessResources()) {
         auto desc = shader->GetBindlessArrayDescs();
         if (!desc.storage_buffer.name.empty()) {
-            Relocate(desc.storage_buffer.locations, 1, 0);
+            Relocate(desc.storage_buffer.locations, 1, (uint32_t)RHIBindlessResourceType::kReadOnlyStorageBuffer);
         }
         if (!desc.srv.name.empty()) {
-            Relocate(desc.srv.locations, 1, 1);
+            Relocate(desc.srv.locations, 1, (uint32_t)RHIBindlessResourceType::kSRV);
         }
         if (!desc.acceleration_structure.name.empty()) {
-            Relocate(desc.acceleration_structure.locations, 1, 2);
+            Relocate(desc.acceleration_structure.locations, 1, (uint32_t)RHIBindlessResourceType::kAccelerationStructure);
+        }
+        if (!desc.volume_srv.name.empty()) {
+            Relocate(desc.volume_srv.locations, 1, (uint32_t)RHIBindlessResourceType::kVolumeSRV);
         }
     }
 
