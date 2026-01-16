@@ -281,6 +281,28 @@ public:
         return std::move(tasks);
     }
 
+    // Shortcut for simple parallization with blocked ranges
+    // num_threads: number of threads to use. 0 means automatic. -x means use {maxNumUsableThreads - x} threads.
+    template<typename RangeType, typename F>
+    inline std::vector<TaskRef> ForEachBlockedRange(RangeType begin, RangeType end, F runnable, int num_threads = 0) {
+        bool direction = end > begin;
+        RangeType total_size = direction ? (end - begin) : (begin - end);
+        std::vector<TaskRef> tasks;
+        if (num_threads == 0) num_threads = MaxNumTaskThreads();
+        else if (num_threads < 0) num_threads = std::max(1, MaxNumTaskThreads() + num_threads);
+        RangeType block_size = (total_size + (RangeType)(num_threads - 1)) / (RangeType)num_threads;
+        for (int i = 0; i < num_threads; i++) {
+            RangeType block_begin = direction ? (begin + i * block_size) : (begin - i * block_size);
+            RangeType block_end = std::clamp(direction ? block_begin + block_size : block_begin - block_size, begin, end);
+            tasks.push_back(CreateSimpleTask([block_begin, block_end, runnable]() {runnable(block_begin, block_end);}));
+        }
+        return std::move(tasks);
+    }
+
+    inline int MaxNumTaskThreads() const {
+        return num_low_performance_threads_ + num_high_performance_threads_;
+    }
+
 protected:
     inline TaskGraph (int num_low_performance_threads, int num_high_performance_threads);
 
