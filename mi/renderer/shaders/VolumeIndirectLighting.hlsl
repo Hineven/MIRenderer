@@ -7,7 +7,7 @@
 #include "headers/Random.hlsl"
 #include "headers/OctahedronMapping.hlsl"
 #include "headers/Math.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "headers/Sampling.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/HybridTracing.hlsl"

@@ -218,12 +218,12 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
 
     TransferInfra(std::move(infra));
     GetInfra().Init();
-    console_.Initialize();
 
     // Load persisted UI state.
-    nlohmann::json config;
-    LoadConfig(config);
-    LoadPinnedCVarsFromConfig(config, pinned_cvars_);
+    nlohmann::json json_config;
+    LoadConfig(json_config);
+    LoadPinnedCVarsFromConfig(json_config, pinned_cvars_);
+    console_.Initialize(json_config);
 
     // Register viewer commands (app-owned state: pinned CVars and camera).
     auto CompleteCVarId = [](std::string_view prefix) {
@@ -458,13 +458,12 @@ void ViewerApp::Destroy() {
     zmq_server_.reset();
 
     // Persist UI state before tearing subsystems down.
-    nlohmann::json config;
-    config["pinned_cvars"] = nlohmann::json::array();
+    nlohmann::json json_config;
+    json_config["pinned_cvars"] = nlohmann::json::array();
     for (auto *cvar : pinned_cvars_) {
         if (!cvar) continue;
-        config["pinned_cvars"].push_back(cvar->GetId());
+        json_config["pinned_cvars"].push_back(cvar->GetId());
     }
-    SaveConfig(config);
 
     default_material_.SafeRelease();
     {
@@ -503,7 +502,8 @@ void ViewerApp::Destroy() {
 
     RHI::DestroySingleton();
 
-    console_.Destroy();
+    console_.Destroy(json_config);
+    SaveConfig(json_config);
 
     DestroyPlatformMainThreadContext();
     SetCurrentThreadType(ThreadType::kUnknown);
@@ -1169,7 +1169,7 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         {
             RenderGraphBuilder builder;
             bool should_render_scene = !suspended_ || request_one_render_;
-            RenderFrame(builder, view_.get(), !suspended_ || request_one_render_);
+            RenderFrame(builder, view_.get(), should_render_scene);
 
             // Mark export flags.
             if (ops.should_process_click_select && !io.WantCaptureMouse) {

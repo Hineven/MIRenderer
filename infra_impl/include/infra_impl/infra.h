@@ -41,6 +41,7 @@ public:
     ~MyBlobResource() override;
 
     friend class MyInfra;
+
 protected:
     MyBlobResource(MyInfra * infra_, const std::filesystem::path &file_path, MIInfraResourceHintType hint) ;
 
@@ -54,7 +55,7 @@ protected:
 
     // Real file stream
     std::fstream file_;
-    // Make sure this value is always consistent with the file size upon reading
+    // (Cached) file size
     volatile size_t file_size_ {};
     // Visible to all threads, used to indicate that the file size is dirty and needs to be updated
     volatile bool file_size_dirty_ {};
@@ -64,7 +65,6 @@ protected:
 
     // True if the file is being closed, ie, WriteTaskWaitAndAcquire(true) is called.
     std::atomic<bool> file_closing_ {false};
-
 
     // Try to acquire the read lock, if failed, wait until the write lock is released
     // Called by io tasks in fs threads
@@ -79,8 +79,6 @@ protected:
     // Release the write lock. Called by io tasks in fs threads
     // Called by io tasks in fs threads
     void WriteTaskRelease();
-
-
 };
 
 struct HLSLCompilerContext;

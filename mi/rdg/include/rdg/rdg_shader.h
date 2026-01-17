@@ -66,6 +66,8 @@ struct RDGShaderClassRegistry {
     void (*InitShaderParamStructInfo)();
     const RDGShaderParamStructAndSizeInfo * (*GetShaderParamStructInfo)();
     RDGShaderPipelineConfig (*GetShaderPipelineConfig)();
+    // The line info for the implementation macro (for error reporting)
+    std::string impl_macro_line_info;
 };
 
 struct RDGShaderHash {
@@ -312,7 +314,8 @@ static const char * GetShaderTypeName ();
         EntryPoint_Raygen, \
         EntryPoint_ClosestHit, \
         EntryPoint_AnyHit, \
-        EntryPoint_Miss \
+        EntryPoint_Miss, \
+        std::string(__FILE__ ":") + std::to_string(__LINE__) \
     ); \
     RDGPassType ClassName::GetRDGPassType () {return ::MI_NAMESPACE::GetRDGPassType(Type);} \
     const char * ClassName::GetShaderTypeName () {return #ClassName;} \
@@ -422,7 +425,8 @@ public:
         const std::string & raygen_entry,
         const std::string & closest_hit_entry,
         const std::string & any_hit_entry,
-        const std::string & miss_entry
+        const std::string & miss_entry,
+        const std::string & impl_macro_line_info
     ) {
         auto & lib = RDGShaderLibrary::Get();
         auto registry = RDGShaderClassRegistry {
@@ -443,7 +447,8 @@ public:
             TGetShaderOptionalMacros<T>::value,
             T::ShaderParameters::InitParamStructInfo,
             T::GetShaderParamStructInfo,
-            TGetShaderPipelineConfig<T>::value
+            TGetShaderPipelineConfig<T>::value,
+            impl_macro_line_info
         };
         lib.RegisterShaderClass(typeid(T).hash_code(), registry);
     }

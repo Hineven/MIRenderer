@@ -5,7 +5,7 @@
 #include "headers/Camera.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/GaussianSplatting.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "headers/VertexShaderInstanceIndex.hlsl"
 #include "resources/GaussianRadianceFieldResources.hlsl"

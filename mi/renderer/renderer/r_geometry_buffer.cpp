@@ -109,6 +109,7 @@ void GeometryBufferPersistentData::FinalUpdate(RendererView *view) {
     prev_G_motion_vector_ = view->g_buffer_->G_motion_vector_;
     prev_G_motion_vector_->SetName("PrevGMotionVector");
     prev_G_motion_vector_->SetExport();
+
 }
 
 

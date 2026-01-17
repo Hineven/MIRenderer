@@ -26,8 +26,10 @@ struct RendererViewPersistentData {
     TRef<RDGTexture> prev_shaded_radiance_no_emission_;
     // Denoised volume radiance from last frame
     TRef<RDGTexture> prev_shaded_volume_radiance_;
-    // Per view persistent data
-    TRef<DebugPersistentData> debug_persistent_data_;
+    // TAA-resolved radiance from last frame
+    TRef<RDGTexture> prev_taa_radiance_;
+     // Per view persistent data
+     TRef<DebugPersistentData> debug_persistent_data_;
 
     TRef<RDGTexture> path_tracing_film_;
 
@@ -35,6 +37,9 @@ struct RendererViewPersistentData {
     // Keep track of camera parameters from the previous frame
     Camera prev_camera {};
     CameraParameters prev_camera_parameters_ {};
+
+    // Jitter used in previous frame (in NDC space per-axis)
+    glm::vec2 prev_camera_jitter_ {};
 
     // History renderable transforms for motion vectors
     std::vector<glm::mat4x3> prev_renderable_transforms_;

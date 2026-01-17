@@ -187,12 +187,56 @@ public:
 
 IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "mi/renderer/shaders/DrawToOutput.hlsl", "VS_Main", "PS_Main");
 
+// TAA compute shader declared at file scope (cannot be inside a function)
+class TAAShader : public RDGShader {
+public:
+    struct TAAShaderUB { glm::vec2 FilmDimensions; float BlendFactor; float Padding0; };
+    BEGIN_SHADER_PARAMETERS(P)
+        SHADER_UNIFORM_BUFFER(TAAShaderUB, UB)
+        SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_RESOURCE_PARAMETER(Texture2D, CurrentRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_MotionVector)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
+        SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadianceTexture)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+    END_SHADER_PARAMETERS()
+    RDG_SHADER_USE_PARAMETERS(P)
+    DECLARE_SHADER()
+};
+IMPLEMENT_RDG_COMPUTE_SHADER(TAAShader, "mi/renderer/shaders/TAA.hlsl", "TAA_Main");
+
 void Renderer::Render_DrawToOutput(
     [[maybe_unused]] RendererView * view, RenderGraphBuilder & builder,
-    RDGTexture *texture, DrawToOutputMappingType mapping_type
+    RDGTexture *texture, DrawToOutputMappingType mapping_type,
+    PostProcessingFlags flags
 ) {
     if (!texture) {
         return;
+    }
+    // Optional TAA pre-pass before tonemapping/mapping
+    if ((flags & PostProcessingFlagBits::eEnableTAA)) {
+        auto taa = RDGShaderLibrary::Get().GetShader<TAAShader>();
+        auto params = builder.Allocate<TAAShader::ShaderParameters>();
+        auto UB = builder.Allocate<TAAShader::TAAShaderUB>();
+        UB->FilmDimensions = glm::vec2(view->film_width_, view->film_height_);
+        UB->BlendFactor = 0.9f;
+        UB->Padding0 = 0;
+        params->UB = UB;
+        params->View = view->view_common_params_;
+        params->CurrentRadianceTexture = texture;
+        params->PreviousRadianceTexture = view->persistent_data_->prev_taa_radiance_.Raw();
+        params->G_MotionVector = view->g_buffer_->G_motion_vector_.Raw();
+        params->G_Depth = view->g_buffer_->G_depth_.Raw();
+        params->G_Normal = view->g_buffer_->G_normal_.Raw();
+        params->RWRadianceTexture = view->taa_radiance_.Raw();
+        params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+        auto groups_x = DivideAndRoundUp(view->film_width_, 8u);
+        auto groups_y = DivideAndRoundUp(view->film_height_, 8u);
+        Helpers::AddComputePass(builder, taa, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);
+        // Redirect to TAA output for onscreen mapping
+        texture = view->taa_radiance_.Raw();
     }
     auto & lib = RDGShaderLibrary::Get();
     auto shader = lib.GetShader<DrawToOutputShader>();

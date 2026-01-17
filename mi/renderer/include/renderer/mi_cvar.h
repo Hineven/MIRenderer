@@ -11,6 +11,8 @@
 #include <map>
 #include <vector>
 #include <mutex>
+#include <glm/fwd.hpp>
+
 #include "core/common.h"
 #include "core/refcounted.h"
 
@@ -38,6 +40,27 @@ FORCEINLINE std::string ToString(CVarType type) {
         case CVarType::kBool: return "bool";
         case CVarType::kString: return "string";
         default: return "unknown";
+    }
+}
+
+template <typename T>
+constexpr CVarType GetCVarType() {
+    if constexpr (std::is_same_v<T, int>) {
+        return CVarType::kInt;
+    } else if constexpr (std::is_same_v<T, float>) {
+        return CVarType::kFloat;
+    } else if constexpr (std::is_same_v<T, glm::vec2>) {
+        return CVarType::kFloat2;
+    } else if constexpr (std::is_same_v<T, glm::vec3>) {
+        return CVarType::kFloat3;
+    } else if constexpr (std::is_same_v<T, glm::vec4>) {
+        return CVarType::kFloat4;
+    } else if constexpr (std::is_same_v<T, bool>) {
+        return CVarType::kBool;
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        return CVarType::kString;
+    } else {
+        return CVarType::kUnknown;
     }
 }
 
@@ -99,6 +122,15 @@ public:
 
     void RegisterCVar(CVarBase * cvar);
     CVarBase * GetCVar(const std::string& id);
+
+    template <typename T>
+    CVar<T> * GetCVar(const std::string& id) {
+        CVarBase* base = GetCVar(id);
+        if (base && base->GetType() == GetCVarType<T>()) {
+            return static_cast<CVar<T>*>(base);
+        }
+        return nullptr;
+    }
 
     std::vector<CVarBase*> GetAllCVars();
     std::vector<CVarBase*> GetDirtyCVars();

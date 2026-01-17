@@ -65,7 +65,7 @@ void MyBlobResource::DoWriteBlob(size_t pos, size_t size, const void *data) {
 
 size_t MyBlobResource::DoGetSize() {
     if(!ReadTaskWaitAndAcquire()) return 0;
-    if(file_size_dirty_) {
+    if(is_volatile_ || file_size_dirty_) {
         file_.seekg(0, std::ios::end);
         file_size_ = file_.tellg();
         file_size_dirty_ = false;

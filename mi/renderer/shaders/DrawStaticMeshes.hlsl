@@ -139,8 +139,13 @@ void DecodeVisibility (uint2 DispatchID : SV_DispatchThreadID) {
     float3 PrevWorldPos = mul(PrevToWorld, float4(Intersection.LocalPosition, 1));
     float4 PrevClip = mul(View.PreviousCamera.WorldToNDC, float4(PrevWorldPos, 1));
     float2 PrevNDC = PrevClip.xy / max(PrevClip.w, 1e-8f);
+    // Remove the jittering from previous NDC
+    CameraParameters C = GetActiveCamera();
+    PrevNDC.xy -= C.PrevJitter;
     float4 CurrClip = mul(View.Camera.WorldToNDC, float4(Intersection.WorldPosition, 1));
     float2 CurrNDC = CurrClip.xy / max(CurrClip.w, 1e-8f);
+    // Remove the jittering from current NDC
+    CurrNDC.xy -= C.Jitter;
     float2 Motion = ValidHistory ? (CurrNDC - PrevNDC) : 0;
 
     // Write to G-Buffers

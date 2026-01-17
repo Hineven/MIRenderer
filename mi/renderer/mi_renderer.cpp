@@ -49,6 +49,12 @@ static CVar<int> CVar_FinalOutputType(
     0
 );
 
+static CVar<bool> CVar_EnableTAA(
+    "r.postprocessing.enable_taa",
+    "Enable temporal anti-aliasing before tonemapping.",
+    true
+);
+
 Renderer::Renderer() {
 
 }
@@ -441,11 +447,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Final composition
     Render_LightingComposition(view, builder);
 
-    Render_DebugView(view, builder);
-
     auto type = CVar_FinalOutputType.Get();
-    if (type == 0)
-        Render_DrawToOutput(view, builder, view->radiance_.Raw());
+    if (type == 0) {
+        auto flags = CVar_EnableTAA.Get() ? PostProcessingFlagBits::eEnableTAA : PostProcessingFlagBits::eNone;
+        Render_DrawToOutput(view, builder, view->radiance_.Raw(), DrawToOutputMappingType::eRadianceToSRGB, flags);
+    }
     else if (type == 1)
         Render_DrawToOutput(view, builder, view->g_buffer_->G_albedo_.Raw());
     else if (type == 2)

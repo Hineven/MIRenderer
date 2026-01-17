@@ -125,6 +125,8 @@ struct RendererView {
 
     // Final radiance (after composition)
     TRef<RDGTexture> radiance_;
+    // TAA-resolved radiance (after temporal accumulation)
+    TRef<RDGTexture> taa_radiance_;
     // Linear color overlay for gaussian RDF / forward passes
     TRef<RDGTexture> overlay_;
     // Shaded radiance without emission, created & written by final composition, used for lighting reuse
@@ -183,6 +185,9 @@ struct RendererView {
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
     void MakeSurePersistentDataExists (RenderGraphBuilder & builder);
+
+    // Current frame jitter (NDC space per-axis)
+    glm::vec2 camera_jitter_ {};
 };
 
 // Used for setting cursor positions in debug uniform buffers

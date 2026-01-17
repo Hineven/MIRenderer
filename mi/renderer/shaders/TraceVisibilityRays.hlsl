@@ -13,7 +13,7 @@
 #include "headers/Material.hlsl"
 #include "headers/RayTracingHelpers.hlsl"
 #include "headers/GaussianSplatting.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
