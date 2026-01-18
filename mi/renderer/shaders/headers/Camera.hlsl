@@ -116,7 +116,7 @@ float ReversedZDepthToLinearDepth(CameraParameters C, float ReversedZDepth)
 
 float3 RecoverWorldPositionNDC2(CameraParameters C, float2 NDC2, float LinearDepth)
 {
-    return C.Position + NDC2ToCameraDirectionUnnormalized(C, NDC2) * LinearDepth;
+    return C.Position + NDC2ToCameraDirectionUnnormalized(C, NDC2 + C.Jitter) * LinearDepth;
 }
 
 float3 RecoverWorldPositionPixelCoords(CameraParameters C, uint2 PixelCoords, float LinearDepth)

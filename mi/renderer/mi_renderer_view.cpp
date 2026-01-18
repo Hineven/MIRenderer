@@ -471,6 +471,9 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
             persistent_data_->prev_camera.fov_Y, float(film_width_) / float(film_height_),
             persistent_data_->prev_camera.near_plane, persistent_data_->prev_camera.far_plane
         );
+        // Apply prev jitter to projection (shift the projection center).
+        prev_camera_proj_matrix[2][0] += - persistent_data_->prev_camera_jitter_.x;
+        prev_camera_proj_matrix[2][1] += - persistent_data_->prev_camera_jitter_.y;
         auto PrevWorldToNDC = prev_camera_proj_matrix * prev_camera_view_matrix;
         camera.Reprojection = glm::mat4(PrevWorldToNDC * glm::inverse(glm::dmat4(camera.WorldToNDC)));
     }
