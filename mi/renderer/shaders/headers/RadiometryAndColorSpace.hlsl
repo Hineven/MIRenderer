@@ -45,13 +45,14 @@ float3 RGBToYCoCg(float3 c) {
     float Cg = c.g - Y;
     return float3(Y, Co, Cg);
 }
+
 float3 YCoCgToRGB(float3 ycg) {
     float Y = ycg.x;
     float Co = ycg.y;
     float Cg = ycg.z;
-    float r = Y + 0.5f * Co - 0.25f * Cg;
+    float r = Y + 0.5f * Co - Cg;
     float g = Y + Cg;
-    float b = Y - 0.5f * Co - 0.25f * Cg;
+    float b = Y - 0.5f * Co - Cg;
     return float3(r, g, b);
 }
 
