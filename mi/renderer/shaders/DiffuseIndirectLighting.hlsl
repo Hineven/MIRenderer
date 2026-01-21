@@ -6,7 +6,7 @@
 #include "headers/Packing.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/OctahedronMapping.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "headers/Sampling.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/HybridTracing.hlsl"
@@ -308,6 +308,9 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
     uint2 TileIndex = GroupID.xy;
     CameraParameters C = GetActiveCamera();
     CameraParameters PrevC = GetPreviousCamera();
+
+    // TODO use motion vectors for better reprojection
+    ratatajktatjklajkl
 
     // Clear the reprojected radiance
     for(uint WaveBaseIndex = 0; WaveBaseIndex < TILE_TEXEL_COUNT; WaveBaseIndex += WAVE_SIZE) {
@@ -1072,6 +1075,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
             CameraParameters PrevC = GetPreviousCamera();
             float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
             float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
+            PreviousHomogeneous.xy -= PrevC.Jitter; // Remove TAA jitter
             if(PreviousHomogeneousW.w > 0 && all(PreviousHomogeneous.xy >= -1) && all(PreviousHomogeneous.xy <= 1)
             && PreviousHomogeneous.z >= 0 && PreviousHomogeneous.z <= 1) {
                 float2 HistoryScreenPosition = PrevC.FilmDimensions * NDC2ToUV(PreviousHomogeneous.xy);
@@ -1458,7 +1462,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             );
             float3 RayRadiance = RayResult.xyz;
             float2 RayOctahedronUV = UnitVectorToHemiOctahedron01A(RayLocalDirection);
-            uint2 RayTexelCoords = uint2(RayOctahedronUV * TILE_SIZE);
+            uint2 RayTexelCoords = clamp(uint2(RayOctahedronUV * TILE_SIZE), 0u.xx, (TILE_SIZE - 1).xx);
             uint RayTexelIndex = RayTexelCoords.x + RayTexelCoords.y * TILE_SIZE;
             InterlockedAdd(SharedProbeBlendedRadiance[RayTexelIndex].x, QuantilizeRadiance(RayRadiance.x));
             InterlockedAdd(SharedProbeBlendedRadiance[RayTexelIndex].y, QuantilizeRadiance(RayRadiance.y));
@@ -1472,7 +1476,11 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
 
     SumRayWeight = WaveActiveSum(SumRayWeight);
     SumRayResult = WaveActiveSum(SumRayResult);
-    float4 AverageRayResult = SumRayResult / max(SumRayWeight, 1e-5f);
+    float4 AverageRayResult = SumRayResult / max(SumRayWeight, 1e-8f);
+    
+    // if(WaveIsFirstLane() && AverageRayResult.w < 0.01f) printf("AvgRayResult: %.3f %.3f %.3f %.3f, cnt: %d, Alloc: %d\n", AverageRayResult.x, AverageRayResult.y, AverageRayResult.z, AverageRayResult.w, UpdateRayCount, RWScreenProbeUpdateRayAllocator[0]);
+
+    AverageRayResult.w = max(AverageRayResult.w, 0.01f); // Increase stability
 
     GroupMemoryBarrierWithGroupSync();
 
@@ -1525,7 +1533,7 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
             NewRadiance = BackupRayResult;
         }
         // Temporal blending with the reconstructed radiance from previous frames.
-        if (Header.bTemporalBlendable)
+        if (Header.bTemporalBlendable || UpdateRayCount == 0)
         {
             float4 ReconstructedRadiance = RWScreenProbeReconstructedRadianceDepthTexture[AtlasTexelCoords];
             float lumaA = RadianceToLuminance(NewRadiance.xyz);
@@ -1533,7 +1541,10 @@ void UpdateScreenProbesAndCache (uint GroupID : SV_GroupID, uint LocalID : SV_Gr
 
             // Shadow-preserving biased temporal hysteresis (inspired by: https://www.youtube.com/watch?v=WzpLWzGvFK4&t=630s)
             float temporal_blend = Squared(clamp(max(lumaA - lumaB - min(lumaA, lumaB), 0.0f) / max(max(lumaA, lumaB), 1e-4f), 0.0f, 0.95f));
-            
+            // If no any update rays are available this frame, simply copy the previous radiance
+            if(UpdateRayCount == 0) {
+                temporal_blend = 1.0f;
+            }
             NewRadiance = lerp(NewRadiance, ReconstructedRadiance, temporal_blend);
         }
 

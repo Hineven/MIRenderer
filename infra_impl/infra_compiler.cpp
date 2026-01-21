@@ -73,7 +73,7 @@ public:
             }
 
             // Open via Infra only
-            TRef<BlobResourceInterface> blob = infra_->RIO_Open(res_path, MIInfraResourceHintType::kShaderSource, BlobResourceAccessFlagBits::kRead);
+            TRef<BlobResourceInterface> blob = infra_->RIO_Open_Volatile(res_path, MIInfraResourceHintType::kShaderSource, BlobResourceAccessFlagBits::kRead);
             if (!blob.Raw()) {
                 return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
             }

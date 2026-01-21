@@ -55,6 +55,22 @@ volume_grid_slots_(kMaxNumVolumeGrids){
     );
     static_mesh_header_buffer_->SetName("StaticMeshHeaderBuffer");
 
+    // History transform buffer for motion vectors (float3x4 per renderable)
+    prev_renderable_transform_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(glm::mat4x3) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kTransferSrc}
+    );
+    prev_renderable_transform_buffer_->SetName("PrevRenderableTransforms");
+
+    renderable_hash_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(uint32_t) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kTransferSrc}
+    );
+    renderable_hash_buffer_->SetName("RenderableHashBuffer");
+
+    prev_renderable_hash_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(uint32_t) * Scene::kMaxNumRenderables, RHIBufferUsageFlagBits::kStorage | RHIBufferUsageFlagBits::kTransferSrc}
+    );
+    prev_renderable_hash_buffer_->SetName("PrevRenderableHashBuffer");
+
     static_mesh_description_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kStorage,
         1, 16 * 1024

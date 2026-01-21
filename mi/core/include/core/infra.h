@@ -91,6 +91,13 @@ public:
     // Thread safety: required
     virtual TRef<BlobResourceInterface> RIO_Open (const MIResourcePath & res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access = BlobResourceAccessFlagBits::kRead) = 0;
 
+    // Open a volatile blob resource (that may have external writers)
+    inline TRef<BlobResourceInterface> RIO_Open_Volatile (const MIResourcePath & res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access = BlobResourceAccessFlagBits::kRead) {
+        auto f = RIO_Open(res_path, hint, access);
+        f->SetVolatile();
+        return f;
+    }
+
     // Request the infrastructure to check if a resource exists.
     // @return true if the resource exists.
     // Thread safety: required

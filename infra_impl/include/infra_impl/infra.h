@@ -41,6 +41,7 @@ public:
     ~MyBlobResource() override;
 
     friend class MyInfra;
+
 protected:
     MyBlobResource(MyInfra * infra_, const std::filesystem::path &file_path, MIInfraResourceHintType hint) ;
 
@@ -54,20 +55,16 @@ protected:
 
     // Real file stream
     std::fstream file_;
-    // Make sure this value is always consistent with the file size upon reading
+    // (Cached) file size
     volatile size_t file_size_ {};
     // Visible to all threads, used to indicate that the file size is dirty and needs to be updated
     volatile bool file_size_dirty_ {};
 
     // Read/Write control.
-    // Multiple read tasks can be executed concurrently, while only one write task can be executed at a time.
-    std::atomic<uint32_t> num_active_r_tasks_ {0};
-    std::atomic<uint32_t> num_active_w_tasks_ {0};
+    std::mutex rw_mutex_;
 
     // True if the file is being closed, ie, WriteTaskWaitAndAcquire(true) is called.
     std::atomic<bool> file_closing_ {false};
-
-    std::shared_mutex rw_mutex_;
 
     // Try to acquire the read lock, if failed, wait until the write lock is released
     // Called by io tasks in fs threads
@@ -82,8 +79,6 @@ protected:
     // Release the write lock. Called by io tasks in fs threads
     // Called by io tasks in fs threads
     void WriteTaskRelease();
-
-
 };
 
 struct HLSLCompilerContext;

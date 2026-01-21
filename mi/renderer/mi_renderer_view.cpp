@@ -29,6 +29,7 @@
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
 #include "renderer/r_volume_grid_direct_lighting.h"
+#include "renderer/mi_noise.h"
 
 MI_NAMESPACE_BEGIN
 RHIBufferSpan BatchedUploadContext::AllocateManualStagingBuffer(size_t size) {
@@ -272,10 +273,12 @@ void RendererViewPersistentData::Init() {
 void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_camera = view->camera_;
     prev_camera_parameters_ = view->view_common_params_->Camera;
-
+    prev_camera_jitter_ = glm::vec2(view->view_common_params_->Camera.Jitter.x, view->view_common_params_->Camera.Jitter.y);
 
     prev_radiance_ = view->radiance_;
     prev_radiance_->SetExport();
+    prev_taa_radiance_ = view->taa_radiance_;
+    prev_taa_radiance_->SetExport();
     prev_shaded_radiance_no_emission_ = view->shaded_radiance_no_emission_;
     prev_shaded_radiance_no_emission_->SetExport();
     prev_shaded_volume_radiance_ = view->shaded_volume_radiance_;
@@ -333,6 +336,12 @@ void RendererView::InitFrame () {
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         | RHITextureUsageFlagBits::kTransfer);
     radiance_->SetName("Radiance");
+
+    taa_radiance_ = RDGTexture::Create2D(
+        film_width_, film_height_, PixelFormatType::kR16G16B16A16_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kTransfer);
+    taa_radiance_->SetName("TAARadiance");
 
     overlay_ = RDGTexture::Create2D(
         film_width_, film_height_, PixelFormatType::kR8G8B8A8_UNORM,
@@ -428,16 +437,30 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
         2 * (float)hzb_size / (float)film_width_, 2 * (float)hzb_size / (float)film_height_
     };
 
+    // Generate subpixel jitter using a small Halton sequence and wrap by film dimensions.
+    bool taa_enabled = CVarRegistry::GetInstance().GetCVar<bool>("r.postprocessing.enable_taa")->Get(); // <-- Very freestyle coding. Fix later. (I should gather all shared CVars in one header)
+    if (taa_enabled){
+        // Halton bases 2,3 with frame index offset to avoid 0.
+        auto halton = NoiseHelpers::GenerateHaltonSequence2D(8, 2, 3)[persistent_data_->frame_index_ % 8];
+        float jitter_x = 2 * (halton.x - 0.5f) / float(film_width_);
+        float jitter_y = (halton.y - 0.5f) / float(film_height_);
+        camera_jitter_ = 2.f * glm::vec2{jitter_x, jitter_y};
+    } else {
+        camera_jitter_ = {};
+    }
+
     glm::mat4 view_matrix = glm::lookAt(
         camera_.position, camera_.position + camera_.direction, camera_.up
     );
     glm::mat4 proj_matrix = glm::perspectiveRH_ZO(
         camera_.fov_Y, float(film_width_) / float(film_height_), camera_.near_plane, camera_.far_plane
     );
+    // Apply jitter to projection (shift the projection center).
+    proj_matrix[2][0] += - camera_jitter_.x;
+    proj_matrix[2][1] += - camera_jitter_.y;
     camera.WorldToNDC = proj_matrix * view_matrix;
     camera.WorldToView = view_matrix;
     camera.ViewToNDC = proj_matrix;
-
 
     {
         glm::dmat4 prev_camera_view_matrix = glm::lookAt(
@@ -448,6 +471,9 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
             persistent_data_->prev_camera.fov_Y, float(film_width_) / float(film_height_),
             persistent_data_->prev_camera.near_plane, persistent_data_->prev_camera.far_plane
         );
+        // Apply prev jitter to projection (shift the projection center).
+        prev_camera_proj_matrix[2][0] += - persistent_data_->prev_camera_jitter_.x;
+        prev_camera_proj_matrix[2][1] += - persistent_data_->prev_camera_jitter_.y;
         auto PrevWorldToNDC = prev_camera_proj_matrix * prev_camera_view_matrix;
         camera.Reprojection = glm::mat4(PrevWorldToNDC * glm::inverse(glm::dmat4(camera.WorldToNDC)));
     }
@@ -458,6 +484,10 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
 
     camera.WorldToNDC_ReversedZ = proj_matrix_reversed_z * view_matrix;
     camera.ViewToNDC_ReversedZ = proj_matrix_reversed_z;
+
+    // Store jitter values in camera params for shaders.
+    camera.Jitter = camera_jitter_;
+    camera.PrevJitter = persistent_data_->prev_camera_jitter_;
 
     view_common_params_->FrameIndex = persistent_data_->frame_index_;
 }

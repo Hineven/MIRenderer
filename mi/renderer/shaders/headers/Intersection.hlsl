@@ -4,7 +4,8 @@
 #include "Material.hlsl"
 
 struct IntersectionMaterial {
-    float3 WorldPosition;
+    float3 LocalPosition; // Renderable local space position
+    float3 WorldPosition; // World space position
     float3 Albedo;
     float Opacity;
     float3 Normal;

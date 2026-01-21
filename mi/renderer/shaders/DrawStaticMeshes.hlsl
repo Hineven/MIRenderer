@@ -92,6 +92,8 @@ RWTexture2D<float4> RWNormal;
 RWTexture2D<float4> RWEmission;
 [[vk::image_format("rg8")]]
 RWTexture2D<float2> RWMetallicRoughness;
+[[vk::image_format("rg32f")]]
+RWTexture2D<float2> RWMotionVector;
 Texture2D<uint4> VisibilityTexture;
 Texture2D<float> DepthTexture;
 
@@ -105,14 +107,15 @@ void Test() {
 #endif
 
 [numthreads(TILE_SIZE, TILE_SIZE, 1)]
-void DecodeVisibility (uint2 DispatchThreadID : SV_DispatchThreadID) {
-    if(any(DispatchThreadID >= GetActiveCamera().FilmDimensions)) return;
-    float Depth = DepthTexture.Load(uint3(DispatchThreadID, 0)).x;
+void DecodeVisibility (uint2 DispatchID : SV_DispatchThreadID) {
+    uint2 PixelCoords = DispatchID;
+    if(any(PixelCoords >= GetActiveCamera().FilmDimensions)) return;
+    float Depth = DepthTexture.Load(uint3(PixelCoords, 0)).x;
     if(Depth == 0) {
         // Empty pixel
         return;
     }
-    uint4 Visibility = VisibilityTexture.Load(uint3(DispatchThreadID, 0));
+    uint4 Visibility = VisibilityTexture.Load(uint3(PixelCoords, 0));
     // Decode visibility
     float2 Barycentrics = asfloat(Visibility.zw);
     uint PrimitiveIndex = Visibility.y;
@@ -128,16 +131,33 @@ void DecodeVisibility (uint2 DispatchThreadID : SV_DispatchThreadID) {
             // TODO: Get a proper LOD
             0
         );
-        
+    uint CurrHash = RenderableHashBuffer[RenderableIndex];
+    uint PrevHash = PrevRenderableHashBuffer[RenderableIndex];
+    bool ValidHistory = CurrHash == PrevHash;
+    // Motion vector: project current and previous position to NDC and take delta.
+    float3x4 PrevToWorld = PrevRenderableTransformBuffer[RenderableIndex];
+    float3 PrevWorldPos = mul(PrevToWorld, float4(Intersection.LocalPosition, 1));
+    float4 PrevClip = mul(View.PreviousCamera.WorldToNDC, float4(PrevWorldPos, 1));
+    float2 PrevNDC = PrevClip.xy / max(PrevClip.w, 1e-8f);
+    // Remove the jittering from previous NDC
+    CameraParameters C = GetActiveCamera();
+    PrevNDC.xy -= C.PrevJitter;
+    float4 CurrClip = mul(View.Camera.WorldToNDC, float4(Intersection.WorldPosition, 1));
+    float2 CurrNDC = CurrClip.xy / max(CurrClip.w, 1e-8f);
+    // Remove the jittering from current NDC
+    CurrNDC.xy -= C.Jitter;
+    float2 Motion = ValidHistory ? (CurrNDC - PrevNDC) : 0;
+
     // Write to G-Buffers
     {
         // 25.10.21: Alpha should always be 1.
-        RWAlbedo[DispatchThreadID] = float4(Intersection.Albedo, 1.f);//Intersection.Opacity);
+        RWAlbedo[PixelCoords] = float4(Intersection.Albedo, 1.f);//Intersection.Opacity);
         // Squash normal to [0,1]
         float3 GBufferNormal = (Intersection.Normal.xyz * 0.5f) + 0.5f;
-        RWNormal[DispatchThreadID] = float4(GBufferNormal, 1);
-        RWEmission[DispatchThreadID] = float4(Intersection.Emission, 1);
-        RWMetallicRoughness[DispatchThreadID] = Intersection.MetallicRoughness;
+        RWNormal[PixelCoords] = float4(GBufferNormal, 1);
+        RWEmission[PixelCoords] = float4(Intersection.Emission, 1);
+        RWMetallicRoughness[PixelCoords] = Intersection.MetallicRoughness;
+        RWMotionVector[PixelCoords] = Motion;
     }
 }
 

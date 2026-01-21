@@ -13,7 +13,7 @@
 #include "headers/Material.hlsl"
 #include "headers/RayTracingHelpers.hlsl"
 #include "headers/GaussianSplatting.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
@@ -101,6 +101,8 @@ void TraceVisibilityRaysRaygen() {
         float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
         float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
         float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+        float LinearDepthOffset = max(1e-7f, LinearDepth * 5e-5f); // Offset the origin a little to avoid self-intersection
+        LinearDepth = max(LinearDepth - LinearDepthOffset, LinearDepth * 0.95f);
         Ray.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
 #endif
         Ray.Direction = RayToTraceDirectionBuffer[RayIndex];

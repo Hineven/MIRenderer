@@ -159,60 +159,54 @@ static std::filesystem::path GetViewerAppConfigPath() {
     return dir / "viewer_app_config.json";
 }
 
-static void LoadPinnedCVarsFromConfig(std::vector<CVarBase *> &out_pinned) {
-    out_pinned.clear();
-
+static void LoadConfig(nlohmann::json &out_config) {
     const auto path = GetViewerAppConfigPath();
     std::ifstream ifs(path);
     if (!ifs) {
         MI_LOG(MIInfraLogType::kInfo, "ViewerApp config not found: {}", path.string());
+        out_config = {};
         return;
     }
-
     try {
-        nlohmann::json j;
-        ifs >> j;
-
-        if (!j.contains("pinned_cvars") || !j["pinned_cvars"].is_array()) {
-            MI_WARN("ViewerApp config malformed: missing pinned_cvars array");
-            return;
-        }
-
-        auto &reg = CVarRegistry::GetInstance();
-        for (const auto &idJson : j["pinned_cvars"]) {
-            if (!idJson.is_string()) continue;
-            const std::string id = idJson.get<std::string>();
-            if (id.empty()) continue;
-            if (auto *cvar = reg.GetCVar(id)) {
-                out_pinned.push_back(cvar);
-            } else {
-                MI_WARN("ViewerApp config: pinned cvar '{}' no longer exists", id);
-            }
-        }
-
-        MI_LOG(MIInfraLogType::kInfo, "Loaded {} pinned cvars from {}", out_pinned.size(), path.string());
+        ifs >> out_config;
     } catch (const std::exception &e) {
         MI_WARN("Failed to read ViewerApp config {}: {}", path.string(), e.what());
+        out_config = {};
     }
 }
 
-static void SavePinnedCVarsToConfig(const std::vector<CVarBase *> &pinned) {
-    const auto path = GetViewerAppConfigPath();
+static void LoadPinnedCVarsFromConfig(const nlohmann::json &config, std::vector<CVarBase *> &out_pinned) {
+    out_pinned.clear();
 
-    nlohmann::json j;
-    j["pinned_cvars"] = nlohmann::json::array();
-    for (auto *cvar : pinned) {
-        if (!cvar) continue;
-        j["pinned_cvars"].push_back(cvar->GetId());
+    if (!config.contains("pinned_cvars") || !config["pinned_cvars"].is_array()) {
+        MI_WARN("ViewerApp config malformed: missing pinned_cvars array");
+        return;
     }
 
+    auto &reg = CVarRegistry::GetInstance();
+    for (const auto &idJson : config["pinned_cvars"]) {
+        if (!idJson.is_string()) continue;
+        const std::string id = idJson.get<std::string>();
+        if (id.empty()) continue;
+        if (auto *cvar = reg.GetCVar(id)) {
+            out_pinned.push_back(cvar);
+        } else {
+            MI_WARN("ViewerApp config: pinned cvar '{}' no longer exists", id);
+        }
+    }
+
+    MI_LOG(MIInfraLogType::kInfo, "Loaded {} pinned cvars", out_pinned.size());
+}
+
+static void SaveConfig(const nlohmann::json &config) {
+    const auto path = GetViewerAppConfigPath();
     try {
         std::ofstream ofs(path, std::ios::out | std::ios::trunc);
         if (!ofs) {
             MI_WARN("Failed to write ViewerApp config: {}", path.string());
             return;
         }
-        ofs << std::setw(4) << j << std::endl;
+        ofs << std::setw(4) << config << std::endl;
         MI_LOG(MIInfraLogType::kInfo, "Saved ViewerApp config: {}", path.string());
     } catch (const std::exception &e) {
         MI_WARN("Failed to save ViewerApp config {}: {}", path.string(), e.what());
@@ -224,10 +218,12 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
 
     TransferInfra(std::move(infra));
     GetInfra().Init();
-    console_.Initialize();
 
     // Load persisted UI state.
-    LoadPinnedCVarsFromConfig(pinned_cvars_);
+    nlohmann::json json_config;
+    LoadConfig(json_config);
+    LoadPinnedCVarsFromConfig(json_config, pinned_cvars_);
+    console_.Initialize(json_config);
 
     // Register viewer commands (app-owned state: pinned CVars and camera).
     auto CompleteCVarId = [](std::string_view prefix) {
@@ -462,7 +458,12 @@ void ViewerApp::Destroy() {
     zmq_server_.reset();
 
     // Persist UI state before tearing subsystems down.
-    SavePinnedCVarsToConfig(pinned_cvars_);
+    nlohmann::json json_config;
+    json_config["pinned_cvars"] = nlohmann::json::array();
+    for (auto *cvar : pinned_cvars_) {
+        if (!cvar) continue;
+        json_config["pinned_cvars"].push_back(cvar->GetId());
+    }
 
     default_material_.SafeRelease();
     {
@@ -501,7 +502,8 @@ void ViewerApp::Destroy() {
 
     RHI::DestroySingleton();
 
-    console_.Destroy();
+    console_.Destroy(json_config);
+    SaveConfig(json_config);
 
     DestroyPlatformMainThreadContext();
     SetCurrentThreadType(ThreadType::kUnknown);
@@ -1167,7 +1169,7 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         {
             RenderGraphBuilder builder;
             bool should_render_scene = !suspended_ || request_one_render_;
-            RenderFrame(builder, view_.get(), !suspended_ || request_one_render_);
+            RenderFrame(builder, view_.get(), should_render_scene);
 
             // Mark export flags.
             if (ops.should_process_click_select && !io.WantCaptureMouse) {

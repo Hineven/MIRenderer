@@ -7,7 +7,7 @@
 #include "headers/Transform.hlsl"
 #include "headers/Packing.hlsl"
 #include "headers/Math.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 #include "headers/Light.hlsl"

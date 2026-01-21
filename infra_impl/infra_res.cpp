@@ -65,7 +65,7 @@ void MyBlobResource::DoWriteBlob(size_t pos, size_t size, const void *data) {
 
 size_t MyBlobResource::DoGetSize() {
     if(!ReadTaskWaitAndAcquire()) return 0;
-    if(file_size_dirty_) {
+    if(is_volatile_ || file_size_dirty_) {
         file_.seekg(0, std::ios::end);
         file_size_ = file_.tellg();
         file_size_dirty_ = false;
@@ -130,12 +130,10 @@ bool MyBlobResource::ReadTaskWaitAndAcquire() {
     if(file_closing_) return false;
     // Two threads can not read at the same time (because seekg() stuff)
     rw_mutex_.lock();
-    num_active_r_tasks_++;
     return true;
 }
 
 void MyBlobResource::ReadTaskRelease() {
-    num_active_r_tasks_--;
     // Two threads can not read at the same time (because seekg() stuff)
     rw_mutex_.unlock();
 }
@@ -148,12 +146,10 @@ bool MyBlobResource::WriteTaskWaitAndAcquire(bool close_request) {
     }
     if(file_closing_) return false;
     rw_mutex_.lock();
-    num_active_w_tasks_++;
     return true;
 }
 
 void MyBlobResource::WriteTaskRelease() {
-    num_active_w_tasks_--;
     rw_mutex_.unlock();
 }
 

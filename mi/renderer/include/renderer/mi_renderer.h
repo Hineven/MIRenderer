@@ -26,6 +26,12 @@ class RHITexture;
 
 struct Render_StaticMeshesData;
 
+enum class PostProcessingFlagBits : unsigned {
+    eNone = 0,
+    // Use TAA (using visibility buffer and motion vectors)
+    eEnableTAA = 1 << 0,
+};
+MAKE_FLAGS(PostProcessing);
 
 // Integrated with scene resource management... Maybe I'll separate it later
 class Renderer : public NonCopyable, public NonMovable {
@@ -142,7 +148,9 @@ protected:
     ) ;
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
-        RDGTexture * texture, DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB
+        RDGTexture * texture,
+        DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB,
+        PostProcessingFlags post_processing_flags = PostProcessingFlagBits::eNone
     ) ;
 
     void Render_DrawForwardStaticMeshes (

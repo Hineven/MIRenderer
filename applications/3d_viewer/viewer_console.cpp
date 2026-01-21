@@ -11,18 +11,37 @@
 #include "core/util/command_line.h"
 #include "renderer/mi_renderer.h"
 MI_NAMESPACE_BEGIN
-void ViewerImGuiConsole::Initialize() {
+void ViewerImGuiConsole::Initialize(const nlohmann::json &config) {
     auto & infra = GetInfra();
     infra.SetLogCallback([this](MIInfraLogType type, const std::string & msg, const std::string & location) {
         this->Print(GetConsoleLogType(type), location, "%s", msg.c_str());
     });
 
+    // Load persisted history
+    if (config.contains("console_history") && config["console_history"].is_array()) {
+        command_history_.clear();
+        for (const auto &entry : config["console_history"]) {
+            if (entry.is_string()) {
+                command_history_.push_back(entry.get<std::string>());
+                if (command_history_.size() >= 128) break;
+            }
+        }
+    }
+
     // Commands are registered by ViewerApp (owner of app state like pinned cvars and camera).
 }
 
-void ViewerImGuiConsole::Destroy() {
+void ViewerImGuiConsole::Destroy(nlohmann::json &config) {
     auto & infra = GetInfra();
     infra.SetLogCallback({});
+
+    // Persist last up-to-128 commands
+    nlohmann::json history = nlohmann::json::array();
+    const size_t start = command_history_.size() > 128 ? command_history_.size() - 128 : 0;
+    for (size_t i = start; i < command_history_.size(); ++i) {
+        history.push_back(command_history_[i]);
+    }
+    config["console_history"] = history;
 }
 
 uint32_t ViewerImGuiConsole::GetConsoleTextColor(ConsoleLogType type) {
@@ -270,8 +289,14 @@ void ViewerImGuiConsole::DrawImGuiConsoleEmbedded(glm::vec2 size) {
 
     ImGui::Separator();
 
+    // Focus command box when pressing the tilde key
+    bool focus_command = ImGui::IsKeyPressed(ImGuiKey_GraveAccent);
+
     bool reclaim_focus = false;
     auto flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
+    if (focus_command) {
+        ImGui::SetKeyboardFocusHere();
+    }
     if (ImGui::InputText("##Command", input_buffer_.data(), input_buffer_.size(), flags,
         [](ImGuiInputTextCallbackData* data)
         {
@@ -288,7 +313,7 @@ void ViewerImGuiConsole::DrawImGuiConsoleEmbedded(glm::vec2 size) {
     }
 
     ImGui::SetItemDefaultFocus();
-    if (reclaim_focus)
+    if (reclaim_focus || focus_command)
         ImGui::SetKeyboardFocusHere(-1);
 
     ImGui::SameLine();

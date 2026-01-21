@@ -8,7 +8,7 @@
 #include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
 Renderable::Renderable(RenderableType type, Scene * scene): type_(type), scene_(scene) {
-    index_ = scene->AllocateRenderableIndex(this);
+    index_ = scene->AllocateRenderableIndexAndHash(this);
     if (!IsValid()) {
         MI_LOG(MIInfraLogType::kError, "Failed to allocate renderable index from world."
                                        "Potentially too many renderables in the world.");
