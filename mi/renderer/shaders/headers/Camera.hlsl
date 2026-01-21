@@ -26,7 +26,7 @@ float3 NDC2ToCameraDirectionUnnormalized (CameraParameters C, float2 NDC2) {
     if(GetCameraType(C) == CAMERA_TYPE_ORTHOGRAPHIC) {
         return C.Direction;
     }
-    NDC2 += C.Jitter;
+    NDC2 -= C.Jitter;
     float3 UnnormalizedDirection = C.Right * NDC2.x + C.Up * NDC2.y + C.Direction;
     return UnnormalizedDirection;
 }
