@@ -310,7 +310,6 @@ void ReprojectScreenProbes (uint2 GroupID : SV_GroupID, uint LocalID : SV_GroupT
     CameraParameters PrevC = GetPreviousCamera();
 
     // TODO use motion vectors for better reprojection
-    ratatajktatjklajkl
 
     // Clear the reprojected radiance
     for(uint WaveBaseIndex = 0; WaveBaseIndex < TILE_TEXEL_COUNT; WaveBaseIndex += WAVE_SIZE) {
