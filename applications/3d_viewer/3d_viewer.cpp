@@ -332,7 +332,6 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
                 volprims->UpdateOnDevice(resource_allocator.Raw());
                 auto volprims_instance = VolumePrimitivesInstance::Create(scene.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
                 volprims_instance->EditTransform().Translate({0, 0.5, 0});
-                // volprims_instance->EditTransform().Scale({0.1f, 0.1f, 0.1f});
             }
             break;
         }
@@ -355,14 +354,7 @@ void Start (std::unique_ptr<MIInfraInterface> && infra, const MainLoopStartConfi
             }
             TRef<VolumeGrid> volume_grid;
             volume_grid = OpenVDBLoader::LoadVDB(
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density.vdb"),
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density_color.vdb"),
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_small_density.vdb"),
                 GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_small_density_color.vdb"),
-                // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density.vdb"),
-                // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density_color.vdb"),
-                // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_small_density.vdb"),
-                // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_small_density_color.vdb"),
                 *resource_allocator, {1024, "density", "color"}
             );
             if(volume_grid) {

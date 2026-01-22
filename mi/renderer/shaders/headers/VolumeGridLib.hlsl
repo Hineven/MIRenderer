@@ -6,23 +6,22 @@
 #include "../shared/SharedVolumeGrid.hlsl"
 
 // AABB Intersect Test
-void IntersectAABB(float3 rayOrigin, float3 rayDir, float3 boxMin, float3 boxMax, out float tNear, out float tFar) {
-    const float epslion = 1e-8f;
-    float3 safeInvDir;
-
-    // Avoid being divided by zero
-    safeInvDir.x = abs(rayDir.x) < epslion ? (rayDir.x >= 0.0f ? FLT_MAX : -FLT_MAX) : 1.0f / rayDir.x;
-    safeInvDir.y = abs(rayDir.y) < epslion ? (rayDir.y >= 0.0f ? FLT_MAX : -FLT_MAX) : 1.0f / rayDir.y;
-    safeInvDir.z = abs(rayDir.z) < epslion ? (rayDir.z >= 0.0f ? FLT_MAX : -FLT_MAX) : 1.0f / rayDir.z;
-
-    float3 tbot = safeInvDir * (boxMin - rayOrigin);
-    float3 ttop = safeInvDir * (boxMax - rayOrigin);
+bool IntersectAABB(float3 rayOrigin, float3 rayDir, float3 boxMin, float3 boxMax, out float tNear, out float tFar) {
+    float3 invDir;
+    invDir.x = 1.0f / (abs(rayDir.x) < 1e-6f ? (sign(rayDir.x) * 1e-6f) : rayDir.x);
+    invDir.y = 1.0f / (abs(rayDir.y) < 1e-6f ? (sign(rayDir.y) * 1e-6f) : rayDir.y);
+    invDir.z = 1.0f / (abs(rayDir.z) < 1e-6f ? (sign(rayDir.z) * 1e-6f) : rayDir.z);
+    
+    float3 tbot = invDir * (boxMin - rayOrigin);
+    float3 ttop = invDir * (boxMax - rayOrigin);
 
     float3 tmin = min(ttop, tbot);
     float3 tmax = max(ttop, tbot);
 
     tNear = max(max(tmin.x, tmin.y), tmin.z);
     tFar = min(min(tmax.x, tmax.y), tmax.z);
+    
+    return tFar >= tNear && tFar > 0.0f;
 }
 
 // DDA
@@ -46,6 +45,7 @@ float CalculateMaxDensityDDA(Texture3D<float4> tex, float3 localRayOrigin, float
     float3 deltaT = abs(1.0f / dirStep);
     float3 distToNext;
 
+    // Need "distToNext" dirSteps to reach next voxel.
     distToNext.x = (step.x > 0) ? (floor(startPos.x) + 1.0f - startPos.x) * deltaT.x : (startPos.x - floor(startPos.x)) * deltaT.x;
     distToNext.y = (step.y > 0) ? (floor(startPos.y) + 1.0f - startPos.y) * deltaT.y : (startPos.y - floor(startPos.y)) * deltaT.y;
     distToNext.z = (step.z > 0) ? (floor(startPos.z) + 1.0f - startPos.z) * deltaT.z : (startPos.z - floor(startPos.z)) * deltaT.z;
@@ -55,7 +55,8 @@ float CalculateMaxDensityDDA(Texture3D<float4> tex, float3 localRayOrigin, float
     float tEnd = lenVox;
 
     // DDA
-    for (int i = 0; i < 1024; ++i) {
+    int maxVoxelVisit = max(max(dim.x, dim.y), dim.z);
+    for (int i = 0; i < maxVoxelVisit; ++i) {
         if (tCurrent >= tEnd || any(voxelPos < 0) || any(voxelPos >= int3(dim))) {
             break;
         }
