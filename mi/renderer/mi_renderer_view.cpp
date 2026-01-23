@@ -242,8 +242,7 @@ void BatchedUploadContext::Fire(RenderGraphBuilder &builder) {
     std::sort(extra_barriers_.begin(), extra_barriers_.end());
     extra_barriers_.erase(std::unique(extra_barriers_.begin(), extra_barriers_.end()), extra_barriers_.end());
     for (auto e : extra_barriers_) {
-        // TODO more precise access flags?
-        pass->AddBufferH(e, RHIGPUAccessFlagBits::kWrite);
+        pass->AddBufferH(e, RHIGPUAccessFlagBits::kTransferWrite);
     }
 }
 
