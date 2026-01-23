@@ -222,7 +222,7 @@ void ReferencePathTracerRaygen() {
                     float Pdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
                     
                     // Update ray
-                    Ray.Origin = Intersection.WorldPosition + Intersection.Normal * 2e-5f;
+                    Ray.Origin = Intersection.WorldPosition + Intersection.GeometryNormal * 2e-5f;
                     Ray.Direction = SampledDirection;
                     Ray.TMin = 1e-4f;
 

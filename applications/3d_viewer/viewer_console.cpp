@@ -51,7 +51,7 @@ uint32_t ViewerImGuiConsole::GetConsoleTextColor(ConsoleLogType type) {
         case ConsoleLogType::kWarning:
             return IM_COL32(255, 255, 0, 255);
         case ConsoleLogType::kError:
-            return IM_COL32(255, 0, 0, 255);
+            return IM_COL32(255, 100, 100, 255);
         case ConsoleLogType::kRaw:
             return IM_COL32(200, 200, 200, 255);
         default:
