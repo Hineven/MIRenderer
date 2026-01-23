@@ -596,6 +596,10 @@ void VulkanRHI::LoadPipelineCache() {
 }
 
 VulkanRHI::~VulkanRHI() {
+    auto flush_fut = EnqueueRHIThreadTask([]() {
+        MI_INFO("VulkanRHI: Flushing RHI thread tasks before destruction.");
+    });
+    flush_fut.wait();
     queue_.waitIdle();
 
     // Release the resources held by upper layers first
