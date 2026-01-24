@@ -442,8 +442,8 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
         // Halton bases 2,3 with frame index offset to avoid 0.
         auto halton = NoiseHelpers::GenerateHaltonSequence2D(8, 2, 3)[persistent_data_->frame_index_ % 8];
         float jitter_x = 2 * (halton.x - 0.5f) / float(film_width_);
-        float jitter_y = (halton.y - 0.5f) / float(film_height_);
-        camera_jitter_ = 2.f * glm::vec2{jitter_x, jitter_y};
+        float jitter_y = 2 * (halton.y - 0.5f) / float(film_height_);
+        camera_jitter_ = glm::vec2{jitter_x, jitter_y};
     } else {
         camera_jitter_ = {};
     }

@@ -46,7 +46,7 @@ public:
     RefCounted& operator=(const RefCounted& Rhs) = delete;
 
     inline uint32_t IncRef() const
-    {she
+    {
         return (uint32_t)atomic_fetch_add(&ref_count_, 1) + 1;
     }
 
