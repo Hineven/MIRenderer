@@ -190,7 +190,7 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(DrawToOutputShader, "mi/renderer/shaders/DrawToOut
 // TAA compute shader declared at file scope (cannot be inside a function)
 class TAAShader : public RDGShader {
 public:
-    struct TAAShaderUB { glm::vec2 FilmDimensions; float BlendFactor; float Padding0; };
+    struct TAAShaderUB { glm::vec2 FilmDimensions; float Padding0; float Padding1; };
     BEGIN_SHADER_PARAMETERS(P)
         SHADER_UNIFORM_BUFFER(TAAShaderUB, UB)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -201,6 +201,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadianceTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, LinearEdgeSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(P)
     DECLARE_SHADER()
@@ -221,8 +222,8 @@ void Renderer::Render_DrawToOutput(
         auto params = builder.Allocate<TAAShader::ShaderParameters>();
         auto UB = builder.Allocate<TAAShader::TAAShaderUB>();
         UB->FilmDimensions = glm::vec2(view->film_width_, view->film_height_);
-        UB->BlendFactor = 0.9f;
         UB->Padding0 = 0;
+        UB->Padding1 = 0;
         params->UB = UB;
         params->View = view->view_common_params_;
         params->CurrentRadianceTexture = texture;
@@ -232,6 +233,7 @@ void Renderer::Render_DrawToOutput(
         params->G_Normal = view->g_buffer_->G_normal_.Raw();
         params->RWRadianceTexture = view->taa_radiance_.Raw();
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+        params->LinearEdgeSampler = RHI::Get().GetGlobalSamplers().linear_edge;
         auto groups_x = DivideAndRoundUp(view->film_width_, 8u);
         auto groups_y = DivideAndRoundUp(view->film_height_, 8u);
         Helpers::AddComputePass(builder, taa, params, groups_x, groups_y, 1, RDGPassFlagBits::kNeverCull);

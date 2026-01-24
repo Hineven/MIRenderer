@@ -48,8 +48,9 @@ static CVar<bool> CVar_ResetDiffuseIndirectLighting(
 );
 
 // TODO this can introduce large artifacts when overflowing the total ray budget per frame
-// It can cause some newly spawned probes to not be updated at all, ultimately leading to
-// black spots in the lighting. Consider a better strategy or disable this option permanently.
+// It can cause ray over-allocation on certain probes, overflowing the ray budget, making some newly spawned probes
+// to not being updated at all, ultimately leading to black spots in the lighting.
+// Consider a better strategy or disable this option permanently.
 static CVar<bool> CVar_AdaptiveProbeUpdateRayAllocation(
     "r.diffuse_indirect_lighting.adaptive_probe_update_ray_allocation",
     "Whether to adaptively allocate probe update rays based on the reprojection results. If disabled, a fixed number of rays will be used for all probes.",

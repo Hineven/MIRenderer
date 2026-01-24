@@ -153,8 +153,8 @@ void DecodeVisibility (uint2 DispatchID : SV_DispatchThreadID) {
         // 25.10.21: Alpha should always be 1.
         RWAlbedo[PixelCoords] = float4(Intersection.Albedo, 1.f);//Intersection.Opacity);
         // Squash normal to [0,1]
-        float3 GBufferNormal = (Intersection.Normal.xyz * 0.5f) + 0.5f;
-        RWNormal[PixelCoords] = float4(GBufferNormal, 1);
+        float3 GBufferShadingNormal = (Intersection.ShadingNormal.xyz * 0.5f) + 0.5f;
+        RWNormal[PixelCoords] = float4(GBufferShadingNormal, 1);
         RWEmission[PixelCoords] = float4(Intersection.Emission, 1);
         RWMetallicRoughness[PixelCoords] = Intersection.MetallicRoughness;
         RWMotionVector[PixelCoords] = Motion;
