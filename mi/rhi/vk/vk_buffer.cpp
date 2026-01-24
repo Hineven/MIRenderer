@@ -28,9 +28,9 @@ VulkanBuffer::VulkanBuffer(RHIBufferDesc desc)
     };
     auto & vma = GetVulkanRHI()->GetVmaAllocator();
     auto result = vma.createBuffer(buffer_info, alloc_info);
-    if (GetName() && result.second) vma.setAllocationName(result.second, GetName());
-    vk_buffer_ = result.first;
-    allocation_ = result.second;
+    if (GetName() && result.second) vma.setAllocationName(result.first, GetName());
+    vk_buffer_ = result.second;
+    allocation_ = result.first;
     mi_assert(vk_buffer_ && allocation_, "Failed to allocate buffer!");
 
     if (desc.usage & RHIBufferUsageFlagBits::kShaderDeviceAddress) {

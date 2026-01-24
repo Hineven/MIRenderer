@@ -92,15 +92,16 @@ endif()
 ##################
 #  Dependencies  #
 ##################
-find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
 # Emit include directories for vma
 if(NOT MI_USE_VCPKG_VMA_HPP)
     # Use submodule for VMA and VMA-HPP
     add_subdirectory(external/VulkanMemoryAllocator-Hpp)
     set(VMA_HPP_TARGET_NAME VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp)
+    # VulkanMemoryAllocator is a dependency of VMA-HPP, so no need to find it separately
 else()
     # Try to use VMA-HPP from vcpkg
     # Note: currently VMA-HPP on vcpkg is not up to date with the latest VMA version, causing compilation errors.
+    find_package(VulkanMemoryAllocator REQUIRED GLOBAL)
     find_package(unofficial-vulkan-memory-allocator-hpp REQUIRED GLOBAL)
     set(VMA_HPP_TARGET_NAME unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp)
 endif()
