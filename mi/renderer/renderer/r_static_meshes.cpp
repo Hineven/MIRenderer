@@ -167,6 +167,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, VisibilityTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWAlbedo)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWNormal)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWGeometryNormal)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWEmission)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWMetallicRoughness)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWMotionVector)
@@ -305,6 +306,7 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
             params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
             params->RWAlbedo = view->g_buffer_->G_albedo_.Raw();
             params->RWNormal = view->g_buffer_->G_normal_.Raw();
+            params->RWGeometryNormal = view->g_buffer_->G_geometry_normal_.Raw();
             params->RWEmission = view->g_buffer_->G_emission_.Raw();
             params->RWMetallicRoughness = view->g_buffer_->G_metallic_roughness_.Raw();
             params->RWMotionVector = view->g_buffer_->G_motion_vector_.Raw();

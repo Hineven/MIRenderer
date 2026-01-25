@@ -88,6 +88,8 @@ DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
 RWTexture2D<float4> RWAlbedo;
 [[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWNormal;
+[[vk::image_format("r32ui")]]
+RWTexture2D<uint> RWGeometryNormal;
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWEmission;
 [[vk::image_format("rg8")]]
@@ -155,14 +157,12 @@ void DecodeVisibility (uint2 DispatchID : SV_DispatchThreadID) {
         // Squash normal to [0,1]
         float3 GBufferShadingNormal = (Intersection.ShadingNormal.xyz * 0.5f) + 0.5f;
         RWNormal[PixelCoords] = float4(GBufferShadingNormal, 1);
+        RWGeometryNormal[PixelCoords] = PackGeometryNormal(Intersection.GeometryNormal);
         RWEmission[PixelCoords] = float4(Intersection.Emission, 1);
         RWMetallicRoughness[PixelCoords] = Intersection.MetallicRoughness;
         RWMotionVector[PixelCoords] = Motion;
     }
 }
-
-
-
 
 struct DrawForwardStaticMeshesVSOut {
     float4 Position : SV_POSITION;

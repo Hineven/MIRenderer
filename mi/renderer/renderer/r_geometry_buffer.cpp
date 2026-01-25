@@ -47,6 +47,11 @@ void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, 
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_normal_->SetName("GBuffer Normal");
 
+    G_geometry_normal_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+    G_geometry_normal_->SetName("GBuffer GeometryNormal");
+
     G_emission_ = RDGTexture::Create2D(width, height, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
@@ -101,6 +106,10 @@ void GeometryBufferPersistentData::FinalUpdate(RendererView *view) {
     prev_G_normal_ = view->g_buffer_->G_normal_;
     prev_G_normal_->SetName("PrevGNormal");
     prev_G_normal_->SetExport();
+
+    prev_G_geometry_normal_ = view->g_buffer_->G_geometry_normal_;
+    prev_G_geometry_normal_->SetName("PrevGGeometryNormal");
+    prev_G_geometry_normal_->SetExport();
 
     prev_G_transmittance_ = view->g_buffer_->G_transmittance_;
     prev_G_transmittance_->SetName("PrevGTransmittance");

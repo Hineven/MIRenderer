@@ -136,6 +136,16 @@ float3 UnpackTraceDirection (uint Packed) {
     return normalize(N);
 }
 
+uint PackGeometryNormal (float3 Normal) {
+    // Use higher precision packing for geometry normal
+    return PackTraceDirection(Normal);
+}
+
+float3 UnpackGeometryNormal (uint Packed) {
+    // Use higher precision packing for geometry normal
+    return UnpackTraceDirection(Packed);
+}
+
 uint PackUint2x16 (uint2 Value) {
     return Value.x | (Value.y << 16);
 }

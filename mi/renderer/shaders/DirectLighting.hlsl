@@ -246,6 +246,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
 
 Texture2D<float> G_DepthTexture;
 Texture2D<float4> G_NormalTexture;
+Texture2D<uint> G_GeometryNormalTexture;
 
 RWStructuredBuffer<float> RWShadowRayToTraceTMaxBuffer;
 RWStructuredBuffer<uint>  RWShadowRayToTraceSampledLightIndexBuffer;
@@ -282,6 +283,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
+    float3 WorldGeometryNormal = UnpackGeometryNormal(G_GeometryNormalTexture.Load(uint3(PixelIndex, 0)).x);
     Random R = MakeRandom(32618420u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
     float SumResampleWeights = 0.f;
     uint NumValidSamples = 0;
@@ -296,7 +298,10 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         SumResampleWeights, NumValidSamples,
         LightGridLightListCdf
     );
-    if (ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0) {
+    // Reject using sample weights and geometry normal
+    float3 LightSampleDirection = ReservedSample.bIsEnvironmentLightSample ? ReservedSample.Position : normalize(ReservedSample.Position - WorldPosition);
+    bool bValidSample = ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0 && dot(WorldGeometryNormal, LightSampleDirection) > 0;
+    if (bValidSample) {
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
         TraceDirection /= TraceDistance;
@@ -354,16 +359,16 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     
     {
         // Offset the origin a bit, but at most 0.45 pixel (45%)
-        float3 Normal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
+        float3 GeometryNormal = UnpackGeometryNormal(G_GeometryNormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).x);
         float MaxOffsetLength = LinearDepth * 1e-3f;
         float2 PixelSize = GetPixelWorldSize(C, LinearDepth);
-        float ProjectionX = abs(dot(C.NormalizedRight, Normal));
-        float ProjectionY = abs(dot(C.NormalizedUp, Normal));
+        float ProjectionX = abs(dot(C.NormalizedRight, GeometryNormal));
+        float ProjectionY = abs(dot(C.NormalizedUp, GeometryNormal));
         float Fraction = 0.45f;
         float MaxX = Fraction * PixelSize.x / max(ProjectionX, 1e-4f);
         float MaxY = Fraction * PixelSize.y / max(ProjectionY, 1e-4f);
         float OffsetLength = min(MaxOffsetLength, min(MaxX, MaxY));
-        WorldPosition += OffsetLength * Normal;
+        WorldPosition += OffsetLength * GeometryNormal;
     }
 
     float3 TraceDirection = RayToTrace.Direction;
@@ -571,7 +576,9 @@ void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 Loc
         RadianceEstimation,
         SumResampleWeights, NumValidSamples, LightGridLightListCdf
     );
-    if (ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0) {
+    
+    bool bValidSample = ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0;
+    if (bValidSample) {
         // Final sample acquired, prepare visibility trace
         float3 TraceDirection = ReservedSample.Position - WorldPosition;
         float TraceDistance = length(TraceDirection);
