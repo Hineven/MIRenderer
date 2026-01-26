@@ -5,6 +5,7 @@ set(SOURCES
     viewer_console.cpp
     render_frame.cpp
     viewer_zmq.cpp
+    viewer_control.cpp
     viewer_zmq.h
 )
 

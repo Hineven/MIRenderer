@@ -9,6 +9,7 @@
 #include <mutex>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include "util/renderable_node.h"
 
 #include "co_wrapper.h"
 #include "viewer_console.h"
@@ -68,6 +69,11 @@ public:
         bool should_export_baking_result {};
     };
 
+    struct LoadedScene {
+        std::string name;
+        std::vector<TRef<RenderableNode>> roots;
+    };
+
     struct PerfStat {
         float min_ms = std::numeric_limits<float>::infinity();
         float max_ms = 0.0f;
@@ -84,6 +90,9 @@ public:
     void ProcessClickSelect(FrameInternalDelayedOps& ops);
     void ProcessDelayedOps(FrameInternalDelayedOps& ops);
     void ProcessAxisDragging();
+    void SetSelectedRenderable(Renderable* renderable);
+    void RegisterLoadedScene(const std::string& name, const std::vector<TRef<RenderableNode>>& roots);
+    void UnloadScene(size_t idx);
     void Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
 
     // ZMQ server ops
@@ -117,6 +126,9 @@ public:
     TRef<Material> default_material_;
 
     std::vector<TRef<StaticMeshInstance>> meshes_;
+
+    std::vector<LoadedScene> loaded_scenes_;
+    std::unordered_map<Renderable*, TRef<RenderableNode>> renderable_node_lookup_;
 
     TRef<StaticMeshInstance> arrow_mesh_x_instance_;
     TRef<StaticMeshInstance> arrow_mesh_y_instance_;

@@ -10,6 +10,7 @@
 #include "util/volprims_loader.h"
 #include "util/texture_loader.h"
 #include "util/openvdb_loader.h"
+#include "util/renderable_node.h"
 
 MI_NAMESPACE_BEGIN
 void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
@@ -100,107 +101,86 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         arrow_mesh_z_instance_->SetVisible(false);
     }
     auto & rhi = RHI::Get();
+    auto load_gltf = [&](const std::filesystem::path& model_path, const char* name) {
+        std::vector<TRef<Geometry>> geometries;
+        std::vector<TRef<Material>> materials;
+        std::vector<TRef<RenderableNode>> nodes;
+        std::vector<TRef<StaticMeshInstance>> new_meshes;
+        if (!GLTFLoader::LoadGLTF(
+            model_path,
+            *resource_allocator_,
+            *scene_, default_material_.Raw(),
+            geometries, materials, new_meshes, &nodes
+        )) {
+            MI_WARN("Failed to load GLTF model {}.", model_path.string());
+            return;
+        }
+        meshes_.insert(meshes_.end(), new_meshes.begin(), new_meshes.end());
+        RegisterLoadedScene(name ? name : model_path.filename().string(), nodes);
+        auto & r = Renderer::Get();
+        for (auto e : new_meshes) {
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+        }
+    };
+
     switch(default_model_type) {
         case MESH_ONLY : {
-            std::vector<TRef<Geometry>> geometries;
-            std::vector<TRef<Material>> materials;
-            // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room/scene_.gltf");
-            // auto model_path = std::filesystem::path("D:/TestScene/remi-room/RemiIndoorsHard.gltf");
             auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
-            // auto model_path = std::filesystem::path("D:/TestScene/BugTest/Bug.gltf");
-            if (!GLTFLoader::LoadGLTF(
-                model_path,
-                *resource_allocator_,
-                *scene_, default_material_.Raw(),
-                geometries, materials, meshes_
-            )) {
-                MI_WARN("Failed to load GLTF model {}.", model_path.string());
-            } else {
-            }
-            auto & r = Renderer::Get();
-            for (auto e : meshes_) {
-                e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
-            }
+            load_gltf(model_path, "default");
             break;
         }
         case MESH_AND_VOLUME_PRIMITIVES : {
             std::vector<TRef<Geometry>> geometries;
             std::vector<TRef<Material>> materials;
             auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene_.gltf");
-            if (!GLTFLoader::LoadGLTF(
-                model_path,
-                *resource_allocator_,
-                *scene_, default_material_.Raw(),
-                geometries, materials, meshes_
-            )) {
-                MI_WARN("Failed to load GLTF model {}.", model_path.string());
-            } else {
-            }
-            auto & r = Renderer::Get();
-            for (auto e : meshes_) {
-                e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
-            }
-            TRef<VolumePrimitives> volprims;
-            VolumePrimitivesLoader::LoadPLY(
-                GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
-                // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
-                // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
-                *resource_allocator_, volprims//, 0.1f
-            );
-            if (volprims) {
-                volprims->UpdateOnDevice(resource_allocator_.Raw());
-                auto volprims_instance = VolumePrimitivesInstance::Create(scene_.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
-                volprims_instance->EditTransform().Translate({0, 0.5, 0});
-                // volprims_instance->EditTransform().Scale({0.1f, 0.1f, 0.1f});
-            }
+            load_gltf(model_path, "light_room_empty");
+             TRef<VolumePrimitives> volprims;
+             VolumePrimitivesLoader::LoadPLY(
+                 GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/puppy/point_cloud.ply"),
+                 // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/grid/point_cloud.ply"),
+                 // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/simple_volume/point_cloud_1point.ply"),
+                 // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/armadillo/point_cloud/iteration_35000/point_cloud.ply"),
+                 // GetInfra().TranslateResPathToFilePath("C:/Users/hineven/CLionProjects/3DGS_GI/data/barn/point_cloud/iteration_50000/point_cloud.ply"),
+                 *resource_allocator_, volprims//, 0.1f
+             );
+             if (volprims) {
+                 volprims->UpdateOnDevice(resource_allocator_.Raw());
+                 auto volprims_instance = VolumePrimitivesInstance::Create(scene_.get(), volprims.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
+                 volprims_instance->EditTransform().Translate({0, 0.5, 0});
+                 // volprims_instance->EditTransform().Scale({0.1f, 0.1f, 0.1f});
+             }
             break;
         }
         case MESH_AND_VOLUME_GRID : {
-            std::vector<TRef<Geometry>> geometries;
-            std::vector<TRef<Material>> materials;
             auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene_.gltf");
-            if (!GLTFLoader::LoadGLTF(
-                model_path,
-                *resource_allocator_,
-                *scene_, default_material_.Raw(),
-                geometries, materials, meshes_
-            )) {
-                MI_WARN("Failed to load GLTF model {}.", model_path.string());
-            } else {
-            }
-            auto & r = Renderer::Get();
-            for (auto e : meshes_) {
-                e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
-            }
-            TRef<VolumeGrid> volume_grid;
-            volume_grid = OpenVDBLoader::LoadVDB(
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density.vdb"),
-                // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density_color.vdb"),
-                // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density.vdb"),
-                GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density_color.vdb"),
-                *resource_allocator_, {1024, "density", "color"}
-            );
-            if(volume_grid) {
-                volume_grid->UpdateOnDevice(resource_allocator_.Raw());
-                auto volume_grid_instance = VolumeGridInstance::Create(scene_.get(), volume_grid.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
-            }
+            load_gltf(model_path, "light_room_empty_vdb");
+             TRef<VolumeGrid> volume_grid;
+             volume_grid = OpenVDBLoader::LoadVDB(
+                 // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density.vdb"),
+                 // GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/bunny/bunny_density_color.vdb"),
+                 // GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density.vdb"),
+                 GetInfra().TranslateResPathToFilePath("D:/Coding/Houdini/Houdini_Works/bunny_density_color.vdb"),
+                 *resource_allocator_, {1024, "density", "color"}
+             );
+             if(volume_grid) {
+                 volume_grid->UpdateOnDevice(resource_allocator_.Raw());
+                 auto volume_grid_instance = VolumeGridInstance::Create(scene_.get(), volume_grid.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
+             }
             break;
         }
         case GAUSSIAN_RADIANCE_FIELD : {
-            TRef<GaussianRadianceField> field;
-            if (!GaussianRadianceFieldLoader::LoadPLY("F:/CLionProjects/3DGS_GI/data/counter/point_cloud/iteration_30000/point_cloud.ply",
-                *resource_allocator_, field)) {
-                MI_WARN("Failed to load Gaussian Radiance Field PLY.");
-                }
-            if (field) {
-                field->UpdateOnDevice(resource_allocator_.Raw());
-                auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw());
-            }
-        }
-        default : break;
-    }
+             TRef<GaussianRadianceField> field;
+             if (!GaussianRadianceFieldLoader::LoadPLY("F:/CLionProjects/3DGS_GI/data/counter/point_cloud/iteration_30000/point_cloud.ply",
+                 *resource_allocator_, field)) {
+                 MI_WARN("Failed to load Gaussian Radiance Field PLY.");
+                 }
+             if (field) {
+                 field->UpdateOnDevice(resource_allocator_.Raw());
+                 auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw());
+             }
+         }
+         default : break;
+     }
 
     scene_->SetSkyCube(sky_cube_.Raw());
     scene_->CreateOnDevice();
