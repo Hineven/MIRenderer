@@ -12,6 +12,8 @@ import json
 from typing import Tuple, Dict, Optional, List, Any
 import zmq
 import numpy as np
+from pathlib import Path
+import math
 
 
 class ZmqClientError(RuntimeError):
@@ -162,7 +164,20 @@ class ViewerClient:
         meta, _ = self._send_recv("get_cvar", {"name": name})
         return meta
 
+    def set_cvar(self, name: str, value: Any) -> Dict:
+        # Use `s <cvar> <value>` console command to set cvar
+        line = f"s {name} {value}"
+        meta, _ = self._send_recv("console_execute", {"line": line})
+        return meta
+
     def render_and_export_current_frame(self, types: Optional[List[str]] = None, timeout_sec: float = 60.0) -> Dict[str, Any]:
+        '''
+        Render the current frame and export specified types of data.
+        :return: A dictionary containing metadata and decoded export frames. Example:
+        {"meta": {...}, "exports": [ { "name": str, "width": int, "height": int,
+                                      "format": str, "bytes_per_pixel": int,
+                                      "size_bytes": int, "data": np.ndarray }, ... ] }
+        '''
         if types is None:
             types = ["radiance"]
         meta, frames = self._send_recv(
@@ -174,5 +189,80 @@ class ViewerClient:
         decoded_exports = _decode_export_frames(meta, frames)
         return {"meta": meta, "exports": decoded_exports}
 
+    def load_gltf_abs_path(self, path: str | Path) -> Dict:
+        meta, _ = self._send_recv("load_gltf_abs_path", {"path": str(path)})
+        return meta
 
-__all__ = ["ViewerClient", "ZmqClientError"]
+    def load_ply_abs_path(self, path: str | Path) -> Dict:
+        meta, _ = self._send_recv("load_ply_abs_path", {"path": str(path)})
+        return meta
+
+    def remove_renderable(self, index: int) -> Dict:
+        meta, _ = self._send_recv("remove_renderable", {"index": int(index)})
+        return meta
+
+    def set_transform(self, index: int, pos, rot_deg, scale) -> Dict:
+        """Set world transform of a renderable via console command (uses degrees for rotation)."""
+        def _vec3(v):
+            if len(v) != 3:
+                raise ValueError("expected length-3 iterable")
+            return float(v[0]), float(v[1]), float(v[2])
+        px, py, pz = _vec3(pos)
+        rx, ry, rz = _vec3(rot_deg)
+        sx, sy, sz = _vec3(scale)
+        line = f"set_transform {int(index)} {px} {py} {pz} {rx} {ry} {rz} {sx} {sy} {sz}"
+        meta, _ = self._send_recv("console_execute", {"line": line})
+        return meta
+
+    def set_camera_pos(self, pos) -> Dict:
+        """Set camera position using console command 'c pos'."""
+        def _vec3(v):
+            if len(v) != 3:
+                raise ValueError("expected length-3 iterable")
+            return float(v[0]), float(v[1]), float(v[2])
+        px, py, pz = _vec3(pos)
+        line = f"c pos {px} {py} {pz}"
+        meta, _ = self._send_recv("console_execute", {"line": line})
+        return meta
+
+    def set_camera_dir(self, direction) -> Dict:
+        """Set camera direction (normalized if possible) using console command 'c dir'."""
+        def _vec3(v):
+            if len(v) != 3:
+                raise ValueError("expected length-3 iterable")
+            return float(v[0]), float(v[1]), float(v[2])
+        dx, dy, dz = _vec3(direction)
+        line = f"c dir {dx} {dy} {dz}"
+        meta, _ = self._send_recv("console_execute", {"line": line})
+        return meta
+
+    def set_camera_fovy(self, fovy_deg: float) -> Dict:
+        """Set camera vertical FOV in degrees using console command 'c fovy'."""
+        line = f"c fovy {float(fovy_deg)}"
+        meta, _ = self._send_recv("console_execute", {"line": line})
+        return meta
+
+    def set_camera_dir_euler(self, euler_deg) -> Dict:
+        """Set camera direction from Euler angles (degrees). Order: pitch(x), yaw(y), roll(z)."""
+        if len(euler_deg) != 3:
+            raise ValueError("expected length-3 iterable for euler_deg")
+        pitch = math.radians(float(euler_deg[0]))
+        yaw = math.radians(float(euler_deg[1]))
+        roll = math.radians(float(euler_deg[2]))
+
+        x, y, z = 0.0, 0.0, -1.0  # forward in view space
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        x, y, z = cy * x + sy * z, y, -sy * x + cy * z  # yaw about Y
+        cp, sp = math.cos(pitch), math.sin(pitch)
+        x, y, z = x, cp * y - sp * z, sp * y + cp * z   # pitch about X
+        cr, sr = math.cos(roll), math.sin(roll)
+        x, y, z = cr * x - sr * y, sr * x + cr * y, z   # roll about Z
+
+        norm = math.sqrt(x * x + y * y + z * z)
+        if norm < 1e-6:
+            raise ValueError("direction magnitude too small after euler conversion")
+        dir_vec = (x / norm, y / norm, z / norm)
+        return self.set_camera_dir(dir_vec)
+
+
+__all__ = ["ViewerClient", "ZmqClientError", "_decode_export_frames"]
