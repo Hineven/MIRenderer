@@ -1,6 +1,7 @@
 #include "viewer_app.h"
 
 #include <fstream>
+#include <algorithm>
 #include "vulkan/vulkan.hpp"
 #include <glfw/glfw3.h>
 #include <imgui.h>
@@ -26,6 +27,7 @@
 #include "../../renderer/renderer/r_volume_indirect_lighting.h"
 #include "../../renderer/renderer/r_volume_primitives.h"
 #include "../../renderer/renderer/r_persistent.h"
+#include "../../renderer/renderer/r_gaussian_radiance_field.h"
 
 #include "rdg/rdg_shader.h"
 #include "util/texture_loader.h"
@@ -36,6 +38,7 @@
 #include "3d_viewer.h"
 #include "core/util/command_line.h"
 #include "viewer_zmq.h"
+#include "viewer_commands.h"
 #include "viewer_control.h"
 #include "renderer/mi_renderer_view.h"
 #include "core/pixel_format.h"
@@ -226,140 +229,7 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
     LoadPinnedCVarsFromConfig(json_config, pinned_cvars_);
     console_.Initialize(json_config);
 
-    // Register viewer commands (app-owned state: pinned CVars and camera).
-    auto CompleteCVarId = [](std::string_view prefix) {
-        auto &reg = CVarRegistry::GetInstance();
-        auto list = reg.GetAllCVars();
-        std::vector<std::string> out;
-        out.reserve(list.size());
-        for (auto *e : list) {
-            const auto &id = e->GetId();
-            if (prefix.empty() || id.rfind(std::string(prefix), 0) == 0) out.push_back(id);
-        }
-        std::sort(out.begin(), out.end());
-        return out;
-    };
-
-    CommandRegistry::Get().MakeAndRegister(
-        "pin_cvar",
-        {
-            CommandTokenSpec::KeywordSet({"pin"}),
-            CommandTokenSpec::Free({}, "cvar", CompleteCVarId),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 2) {
-                MI_WARN("ViewerApp: expected 'pin <cvar>'");
-                return;
-            }
-            const std::string &cvar_id = match.args[1];
-            auto &reg = CVarRegistry::GetInstance();
-            CVarBase *cvar = reg.GetCVar(cvar_id);
-            if (!cvar) {
-                MI_WARN("ViewerApp: unknown cvar '{}'", cvar_id);
-                return;
-            }
-
-            auto it = std::find(pinned_cvars_.begin(), pinned_cvars_.end(), cvar);
-            const bool already_pinned = (it != pinned_cvars_.end());
-            if (!already_pinned) {
-                pinned_cvars_.push_back(cvar);
-                MI_LOG(MIInfraLogType::kInfo, "Pinned cvar '{}'", cvar_id);
-            } else {
-                pinned_cvars_.erase(it);
-                MI_LOG(MIInfraLogType::kInfo, "Unpinned cvar '{}'", cvar_id);
-            }
-        }
-    );
-
-    CommandRegistry::Get().MakeAndRegister(
-        "camera_dir",
-        {
-            CommandTokenSpec::KeywordSet({"c"}),
-            CommandTokenSpec::KeywordSet({"dir"}),
-            CommandTokenSpec::Free({}, "x"),
-            CommandTokenSpec::Free({}, "y"),
-            CommandTokenSpec::Free({}, "z"),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 5) {
-                MI_WARN("ViewerApp: expected 'c dir <x> <y> <z>'");
-                return;
-            }
-            if (!view_) {
-                MI_WARN("ViewerApp: camera not ready yet");
-                return;
-            }
-            try {
-                glm::vec3 dir;
-                dir.x = std::stof(match.args[2]);
-                dir.y = std::stof(match.args[3]);
-                dir.z = std::stof(match.args[4]);
-                const float len = glm::length(dir);
-                if (len <= 1e-6f) {
-                    MI_WARN("ViewerApp: direction length is too small");
-                    return;
-                }
-                view_->camera_.direction = dir / len;
-            } catch (...) {
-                MI_WARN("ViewerApp: invalid float(s) for 'c dir'");
-            }
-        }
-    );
-
-    CommandRegistry::Get().MakeAndRegister(
-        "camera_pos",
-        {
-            CommandTokenSpec::KeywordSet({"c"}),
-            CommandTokenSpec::KeywordSet({"pos"}),
-            CommandTokenSpec::Free({}, "x"),
-            CommandTokenSpec::Free({}, "y"),
-            CommandTokenSpec::Free({}, "z"),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 5) {
-                MI_WARN("ViewerApp: expected 'c pos <x> <y> <z>'");
-                return;
-            }
-            if (!view_) {
-                MI_WARN("ViewerApp: camera not ready yet");
-                return;
-            }
-            try {
-                glm::vec3 pos;
-                pos.x = std::stof(match.args[2]);
-                pos.y = std::stof(match.args[3]);
-                pos.z = std::stof(match.args[4]);
-                view_->camera_.position = pos;
-            } catch (...) {
-                MI_WARN("ViewerApp: invalid float(s) for 'c pos'");
-            }
-        }
-    );
-
-    CommandRegistry::Get().MakeAndRegister(
-        "camera_fovy",
-        {
-            CommandTokenSpec::KeywordSet({"c"}),
-            CommandTokenSpec::KeywordSet({"fovy"}),
-            CommandTokenSpec::Free({}, "fovy"),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 3) {
-                MI_WARN("ViewerApp: expected 'c fovy <fovy>'");
-                return;
-            }
-            if (!view_) {
-                MI_WARN("ViewerApp: camera not ready yet");
-                return;
-            }
-            try {
-                float fovy = std::stof(match.args[2]);
-                view_->camera_.fov_Y = fovy;
-            } catch (...) {
-                MI_WARN("ViewerApp: invalid float for 'c fovy'");
-            }
-        }
-    );
+    RegisterViewerCommands(*this);
 
     if (GetCurrentThreadType() != ThreadType::kUnknown) {
         mi_assert(false, "MainLoop: somehow the thread calling Start() is known.");
@@ -479,7 +349,8 @@ void ViewerApp::Destroy() {
 
     view_.reset();
 
-    meshes_.clear();
+    loaded_scenes_.clear();
+    renderable_node_lookup_.clear();
 
     scene_.reset();
 
@@ -952,8 +823,10 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         RDGProfilingContextRef current_profiling_context;
         {
             RenderGraphBuilder builder;
-            bool should_render_scene = !suspended_ || request_one_render_;
+            bool should_render_scene = !suspended_ || one_frame_rendering_requested_;
             RenderFrame(builder, view_.get(), should_render_scene);
+            // Clear flag
+            one_frame_rendering_requested_ = false;
 
             // Mark export flags.
             if (ops.should_process_click_select && !io.WantCaptureMouse) {
@@ -981,7 +854,19 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                     any_export_requests_pending = true;
                     view_->radiance_->SetExport();
                 }
-                // TODO more types
+                if (e == "overlay") {
+                    any_export_requests_pending = true;
+                    view_->overlay_->SetExport();
+                }
+                if (e == "depth") {
+                    any_export_requests_pending = true;
+                    view_->g_buffer_->G_depth_->SetExport();
+                }
+                if (e == "grf_depth") {
+                    any_export_requests_pending = true;
+                    view_->grf_->stochastic_rendering_depth_->SetExport();
+                }
+                // TODO more types...
             }
 
             std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
@@ -1022,8 +907,12 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             for (const auto &e : frame_export_requests) {
                 if (e == "radiance") {
                     PackOne(e, view_->radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
+                } else if (e == "overlay") {
+                    PackOne(e, view_->overlay_.Raw(), PixelFormatType::kR8G8B8A8_UNORM);
                 } else if (e == "depth") {
                     PackOne(e, view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
+                } else if (e == "grf_depth") {
+                    PackOne(e, view_->grf_->stochastic_rendering_depth_.Raw(), PixelFormatType::kD32_FLOAT);
                 } else if (e == "transmittance") {
                     PackOne(e, view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
                 } else if (e == "visibility") {
@@ -1096,6 +985,80 @@ ViewerApp::ViewerStatus ViewerApp::GetStatus() {
         s.camera = view_->camera_;
     }
     return s;
+}
+
+bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices) {
+    if (!scene_ || !resource_allocator_) return false;
+    if (path.empty() || !std::filesystem::exists(path)) {
+        MI_WARN("LoadGLTFAbsolute: file not found '{}'.", path.string());
+        return false;
+    }
+
+    std::vector<TRef<Geometry>> geometries;
+    std::vector<TRef<Material>> materials;
+    std::vector<TRef<RenderableNode>> nodes;
+    std::vector<TRef<StaticMeshInstance>> new_meshes;
+    if (!GLTFLoader::LoadGLTF(
+        path,
+        *resource_allocator_,
+        *scene_,
+        default_material_.Raw(),
+        geometries,
+        materials,
+        new_meshes,
+        &nodes)) {
+        MI_WARN("LoadGLTFAbsolute: failed to load GLTF '{}'.", path.string());
+        return false;
+    }
+
+    RegisterLoadedScene(path.filename().string(), nodes);
+    auto & r = Renderer::Get();
+    auto & rhi = RHI::Get();
+    for (auto e : new_meshes) {
+        if (e) {
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+            if (out_renderable_indices) out_renderable_indices->push_back(e->GetIndex());
+        }
+    }
+    return true;
+}
+
+bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices) {
+    if (!scene_ || !resource_allocator_) return false;
+    if (path.empty() || !std::filesystem::exists(path)) {
+        MI_WARN("LoadPLYAbsolute: file not found '{}'.", path.string());
+        return false;
+    }
+
+    TRef<GaussianRadianceField> grf;
+    if (!GaussianRadianceFieldLoader::LoadPLY(path, *resource_allocator_, grf)) {
+        MI_WARN("LoadPLYAbsolute: failed to load PLY '{}'.", path.string());
+        return false;
+    }
+    grf->UpdateOnDevice(resource_allocator_.Raw());
+    auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), grf.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
+    if (inst) {
+        out_renderable_indices.push_back(inst->GetIndex());
+        auto node = RenderableNode::Create(path.filename().string());
+        node->SetRenderable(inst.Raw());
+        node->UpdateWorldTransform();
+        RegisterLoadedScene(path.filename().string(), { node });
+    }
+    return inst.IsValid();
+}
+
+bool ViewerApp::RemoveRenderableByIndex(uint32_t renderable_index) {
+    if (!scene_) return false;
+    auto& renderables = scene_->GetRenderables();
+    if (renderable_index >= renderables.size()) return false;
+    auto r = renderables[renderable_index].Raw();
+    if (!r) return false;
+    scene_->RemoveRenderable(r);
+    renderable_node_lookup_.erase(r);
+    if (selection_state_.selected_renderable_index == renderable_index) {
+        SetSelectedRenderable(nullptr);
+    }
+    return true;
 }
 
 void Run3DViewer(std::unique_ptr<MIInfraInterface> &&infra, const MainLoopStartConfig &cfg) {

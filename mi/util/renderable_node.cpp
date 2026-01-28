@@ -7,8 +7,12 @@
 
 MI_NAMESPACE_BEGIN
 
+RenderableNode::~RenderableNode() {
+    puts(name_.c_str());
+}
+
 TRef<RenderableNode> RenderableNode::Create(const std::string& name) {
-    return TRef<RenderableNode>(new RenderableNode(name), false);
+    return TRef<RenderableNode>(new RenderableNode(name));
 }
 
 RenderableNode::RenderableNode(const std::string& name) : name_(name) {

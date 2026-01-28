@@ -7,6 +7,7 @@
 #include <limits>
 #include <future>
 #include <mutex>
+#include <filesystem>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include "util/renderable_node.h"
@@ -25,10 +26,21 @@ struct GLFWwindow;
 
 MI_NAMESPACE_BEGIN
 
+
+// Load default model
+enum PresetSceneType {
+    MESH_ONLY,
+    MESH_AND_VOLUME_PRIMITIVES,
+    MESH_AND_VOLUME_GRID,
+    GAUSSIAN_RADIANCE_FIELD,
+    NONE // Load environment map only
+};
+
 struct MainLoopStartConfig {
     std::string window_name;
     uint32_t window_width;
     uint32_t window_height;
+    PresetSceneType default_scene_type = MESH_ONLY;
 };
 
 class ViewerApp {
@@ -111,6 +123,10 @@ public:
     };
     std::vector<ExportedRenderResult> GetAndClearExportedFrameResults ();
 
+    bool LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices = nullptr);
+    bool LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices);
+    bool RemoveRenderableByIndex(uint32_t renderable_index);
+
     inline bool IsSuspended() const { return suspended_; }
     inline void SetSuspended(bool v) { suspended_ = v; }
 
@@ -125,7 +141,7 @@ public:
 
     TRef<Material> default_material_;
 
-    std::vector<TRef<StaticMeshInstance>> meshes_;
+    // std::vector<TRef<StaticMeshInstance>> meshes_;
 
     std::vector<LoadedScene> loaded_scenes_;
     std::unordered_map<Renderable*, TRef<RenderableNode>> renderable_node_lookup_;
@@ -157,7 +173,7 @@ public:
     // Suspended mode: when true, the render loop skips Renderer::Render.
     // A single frame render can be triggered by setting request_one_render_ = true.
     std::atomic<bool> suspended_{false};
-    std::atomic<bool> request_one_render_{false};
+    std::atomic<bool> one_frame_rendering_requested_{false};
 
     // Export frame handshake between ZMQ thread and render loop.
     std::atomic<bool> export_frame_request_{false};

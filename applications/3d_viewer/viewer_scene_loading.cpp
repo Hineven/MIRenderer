@@ -16,18 +16,8 @@ MI_NAMESPACE_BEGIN
 void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
 
     scene_ = std::make_unique<Scene>();
-
-    // Load default model
-    enum DEFAULT_MODEL_TYPE {
-        MESH_ONLY,
-        MESH_AND_VOLUME_PRIMITIVES,
-        MESH_AND_VOLUME_GRID,
-        GAUSSIAN_RADIANCE_FIELD
-    };
-
-    DEFAULT_MODEL_TYPE default_model_type = MESH_ONLY;
     
-    if (true) {
+    {
         auto sky_file = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/tief_etz_4k.exr");
         sky_cube_ = TextureLoader::LoadEnvironmentMap("Sky", sky_file);
         if (sky_cube_) {
@@ -62,16 +52,17 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         {
             std::vector<TRef<Geometry>> geometries;
             std::vector<TRef<Material>> materials;
+            std::vector<TRef<StaticMeshInstance>> meshes;
             auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/internal/arrow.gltf");
             if (!GLTFLoader::LoadGLTF(
                 model_path,
                 *resource_allocator_,
                 *scene_, default_material_.Raw(),
-                geometries, materials, meshes_
+                geometries, materials, meshes
             )) {
                 MI_WARN("Failed to load GLTF model {}.", model_path.string());
             }
-            original_arrow_instance = meshes_.back();
+            original_arrow_instance = meshes.back();
             auto mesh = original_arrow_instance->GetStaticMesh();
             arrow_geometry_ = mesh->GetGeometries()[0];
         }
@@ -115,7 +106,6 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
             return;
         }
-        meshes_.insert(meshes_.end(), new_meshes.begin(), new_meshes.end());
         RegisterLoadedScene(name ? name : model_path.filename().string(), nodes);
         auto & r = Renderer::Get();
         for (auto e : new_meshes) {
@@ -123,7 +113,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         }
     };
 
-    switch(default_model_type) {
+    switch(cfg.default_scene_type) {
         case MESH_ONLY : {
             auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
             load_gltf(model_path, "default");
@@ -178,7 +168,13 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
                  field->UpdateOnDevice(resource_allocator_.Raw());
                  auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw());
              }
+            break;
          }
+        case NONE : {
+            // Do nothing
+            MI_INFO("No preset scene loaded.");
+            break;
+        }
          default : break;
      }
 

@@ -22,6 +22,7 @@
 * `tinyexr`
 * `vulkan-memory-allocator`
 * `directx-dxc`
+* `argparse`
 # 使用
 请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表

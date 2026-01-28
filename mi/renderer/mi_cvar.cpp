@@ -215,10 +215,11 @@ std::string CVar<bool>::ToString() const {
 
 template<>
 bool CVar<bool>::FromString(const std::string& value) {
-    if (value == "true" || value == "1") {
+    // "True": making life easier when working with python
+    if (value == "True" || value == "true" || value == "1") {
         Set(true);
         return true;
-    } else if (value == "false" || value == "0") {
+    } else if (value == "False" || value == "false" || value == "0") {
         Set(false);
         return true;
     }

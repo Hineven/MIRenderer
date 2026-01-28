@@ -13,6 +13,7 @@ MI_NAMESPACE_BEGIN
 // Lightweight scene-graph node sitting above renderer::Renderable.
 class RenderableNode : public RefCounted<> {
 public:
+    virtual ~RenderableNode() override;
     static TRef<RenderableNode> Create(const std::string& name = "");
 
     void SetName(const std::string& name) { name_ = name; }

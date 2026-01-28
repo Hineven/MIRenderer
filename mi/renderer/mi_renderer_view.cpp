@@ -29,6 +29,7 @@
 #include "renderer/r_volume_direct_lighting.h"
 #include "renderer/r_volume_indirect_lighting.h"
 #include "renderer/r_volume_grid_direct_lighting.h"
+#include "renderer/r_gaussian_radiance_field.h"
 #include "renderer/mi_noise.h"
 
 MI_NAMESPACE_BEGIN

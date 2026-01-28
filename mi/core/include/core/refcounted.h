@@ -392,6 +392,13 @@ public:
         return *this;
     }
 
+    template<typename... Args>
+    FORCEINLINE TRef<ReferencedType> Recreate(Args...args)
+    {
+        *this = new ReferencedType(args...);
+        return *this;
+    }
+
 private:
 
     ReferencedType* ptr_;

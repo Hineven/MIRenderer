@@ -13,9 +13,15 @@
 
 #include "r_debug.h"
 #include "r_denoiser.h"
+#include "r_diffuse_direct_lighting.h"
+#include "r_diffuse_indirect_lighting.h"
+#include "r_gaussian_radiance_field.h"
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
+#include "r_volume_direct_lighting.h"
+#include "r_volume_grid_direct_lighting.h"
+#include "r_volume_indirect_lighting.h"
 #include "r_volume_primitives.h"
 #include "../shaders/shared/SharedHashGridCache.hlsl"
 
@@ -83,6 +89,21 @@ void HashGridPersistentData::FinalUpdate(RendererView *view) {
     active_tile_count->SetExport();
     active_tile_list_buffer = w->active_tile_list_buffer;
     active_tile_list_buffer->SetExport();
+}
+
+void RendererView::CreateSharedResources(RenderGraphBuilder & builder) {
+    g_buffer_.Recreate()->Allocate(builder, this);
+    volume_primitives_.Recreate()->Allocate(builder, this);
+    world_cache_.Recreate()->Allocate(builder);
+    light_structure_.Recreate()->Allocate(builder);
+    diffuse_direct_lighting_.Recreate()->Allocate(builder, this);
+    volume_direct_lighting_.Recreate()->Allocate(builder, this);
+    volume_grid_direct_lighting_.Recreate()->Allocate(builder, this);
+    volume_indirect_lighting_.Recreate()->Allocate(builder, this);
+    diffuse_indirect_lighting_.Recreate()->Allocate(builder, this);
+    grf_.Recreate()->Allocate(builder, this);
+    // volume_gird_indirect_lighting_.Recreate()->Allocate(builder, this);
+    denoiser_.Recreate()->Allocate(builder, this);
 }
 
 void RendererView::MakeSurePersistentDataExists(RenderGraphBuilder &builder) {

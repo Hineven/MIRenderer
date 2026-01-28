@@ -30,6 +30,10 @@ CVar<bool> CVar_GRF_StochasticRendering(
     true
 );
 
+void GaussianRadianceFieldViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
+    // Do nothing for now
+}
+
 struct GaussianRadianceFieldUB {
     float GaussianClampingScale;
     float GaussianExpandFactor;
@@ -282,6 +286,8 @@ void Renderer::Render_DrawGaussianRadianceFields(
             PixelFormatType::kD32_FLOAT,
             RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kTransfer
         );
+        // Save to view for external usage
+        view->grf_->stochastic_rendering_depth_ = testing_depth;
         // Copy
         Helpers::CopyTexture(builder, view->g_buffer_->G_depth_.Raw(), testing_depth.Raw());
     }

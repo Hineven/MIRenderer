@@ -29,3 +29,6 @@ CMakeSettings.json
 vcpkg.json
 /pipeline_cache.bin
 /imgui.ini
+
+# Data directory for applications/3d_viewer
+applications/3d_viewer/data/

@@ -11,5 +11,12 @@ MI_NAMESPACE_BEGIN
 
 extern CVar<float> CVar_GRF_EmitterIntensityScale;
 
+struct GaussianRadianceFieldViewData : RefCounted<> {
+    // Output depth for stochastic GRF rendering (if enabled). You can export this if you like.
+    TRef<RDGTexture> stochastic_rendering_depth_;
+
+    void Allocate (RenderGraphBuilder & builder, RendererView * view) ;
+};
+
 MI_NAMESPACE_END
 #endif //MI_R_GAUSSIAN_RADIANCE_FIELD_H

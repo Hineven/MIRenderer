@@ -357,19 +357,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     // Pre-allocate buffers that may be used among multiple lighting stages
-    {
-        view->g_buffer_.CreateIfNull()->Allocate(builder, view);
-        view->volume_primitives_.CreateIfNull()->Allocate(builder, view);
-        view->world_cache_.CreateIfNull()->Allocate(builder);
-        view->light_structure_.CreateIfNull()->Allocate(builder);
-        view->diffuse_direct_lighting_.CreateIfNull()->Allocate(builder, view);
-        view->volume_direct_lighting_.CreateIfNull()->Allocate(builder, view);
-        view->volume_grid_direct_lighting_.CreateIfNull()->Allocate(builder, view);
-        view->volume_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
-        view->diffuse_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
-        // view->volume_gird_indirect_lighting_.CreateIfNull()->Allocate(builder, view);
-        view->denoiser_.CreateIfNull()->Allocate(builder, view);
-    }
+    view->CreateSharedResources(builder);
 
     // Pre-allocate shared view persistent data among multiple lighting stages
     view->MakeSurePersistentDataExists(builder);
