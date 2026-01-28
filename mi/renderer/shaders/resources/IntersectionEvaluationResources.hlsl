@@ -12,11 +12,13 @@
 #include "MaterialResources.hlsl"
 #include "../headers/TextureSampling.hlsl"
 
-IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
+IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms (
     uint RenderableIndex, // Renderable index, must be a static mesh renderable
     uint DescriptorRank, // Descriptor rank of the static mesh this renderable refers to
     uint PrimitiveIndex, // Triangle index of the geometry
     float2 Barycentrics, // Intersection triangle barycentrics
+    float3x4 RenderableTransform, // Transform matrix for the renderable
+    float3x3 RenderableNormalTransform, // Normal transform matrix for the renderable
     float LOD = -1 // LOD level, -1 means automatic LOD selection (only works in PS)
 ) {
     IntersectionMaterial Intersection = (IntersectionMaterial)0;
@@ -41,10 +43,10 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     // Interpolate the vertex
     DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Barycentrics);
     float3 LocalNormal = normalize(cross(VertexB.Position - VertexA.Position, VertexC.Position - VertexA.Position));
-    Intersection.GeometryNormal = normalize(mul(RenderableNormalTransformBuffer[RenderableIndex], LocalNormal));
+    Intersection.GeometryNormal = normalize(mul(RenderableNormalTransform, LocalNormal));
     
     // Transform to world space
-    float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
+    float3x4 ToWorldTransform = RenderableTransform;
     Intersection.LocalPosition = InterpolatedVertex.Position;
     Intersection.WorldPosition = TransformPoint(ToWorldTransform, InterpolatedVertex.Position);
 
@@ -135,5 +137,22 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
     return Intersection;
 }
 
+IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
+    uint RenderableIndex, // Renderable index, must be a static mesh renderable
+    uint DescriptorRank, // Descriptor rank of the static mesh this renderable refers to
+    uint PrimitiveIndex, // Triangle index of the geometry
+    float2 Barycentrics, // Intersection triangle barycentrics
+    float LOD = -1 // LOD level, -1 means automatic LOD selection (only works in PS)
+) {
+    return EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
+        RenderableIndex,
+        DescriptorRank,
+        PrimitiveIndex,
+        Barycentrics,
+        RenderableTransformBuffer[RenderableIndex],
+        RenderableNormalTransformBuffer[RenderableIndex],
+        LOD
+    );
+}
 
 #endif

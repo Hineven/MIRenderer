@@ -122,6 +122,7 @@ void VulkanCommandExecutor::CommandQueueState::Destroy() {
         point.Destroy();
     }
     CloseCmd();
+    rhi->GetGraphicsQueue().waitIdle();
     rhi->GetDevice().destroyDescriptorPool(descriptor_pool);
     rhi->GetDevice().destroyCommandPool(cmd_pool);
 }

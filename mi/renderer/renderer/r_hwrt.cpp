@@ -55,6 +55,7 @@ public:
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -104,6 +105,7 @@ void Renderer::Render_HardwareShadowRayTracing(
 
     params->G_Depth = view->g_buffer_->G_depth_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+    params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
@@ -157,6 +159,7 @@ public:
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -214,6 +217,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
 
     params->G_Depth = view->g_buffer_->G_depth_.Raw();
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+    params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
@@ -273,6 +277,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -334,6 +339,7 @@ void Renderer::Render_HardwareRadianceRayTracing(
         params->EnvironmentMap = nullptr;
     }
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+    params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
@@ -395,6 +401,7 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+        SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -467,6 +474,7 @@ void Renderer::Render_HardwareVisibilityRayTracing(
         params->EnvironmentMap = nullptr;
     }
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
+    params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
