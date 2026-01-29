@@ -31,16 +31,6 @@ void ViewerApp::SetSelectedRenderable(Renderable* renderable) {
 
 void ViewerApp::RegisterLoadedScene(const std::string& name, const std::vector<TRef<RenderableNode>>& roots) {
     LoadedScene s{name, roots};
-    for (auto& root : roots) {
-        std::function<void(TRef<RenderableNode>)> walk = [&](TRef<RenderableNode> n) {
-            if (!n) return;
-            if (auto r = n->GetRenderable()) {
-                renderable_node_lookup_[r] = n;
-            }
-            for (auto& c : n->GetChildren()) walk(c);
-        };
-        walk(root);
-    }
     loaded_scenes_.push_back(std::move(s));
 }
 
@@ -51,8 +41,6 @@ void ViewerApp::UnloadScene(size_t idx) {
         std::function<void(TRef<RenderableNode>)> walk = [&](TRef<RenderableNode> n) {
             if (!n) return;
             if (auto r = n->GetRenderable()) {
-                scene_->RemoveRenderable(r);
-                renderable_node_lookup_.erase(r);
                 if (selection_state_.selected_renderable_index == r->GetIndex()) {
                     SetSelectedRenderable(nullptr);
                 }

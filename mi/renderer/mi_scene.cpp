@@ -37,11 +37,9 @@ Scene::Scene(): renderable_slots_(kMaxNumRenderables) {
 
 }
 Scene::~Scene() {
-    // Release renderable references first, because they may hold references to the scene &
-    // their de-allocations may create more allocations within the scene destruction process
-    // (such as inserting indices into the slot_allocator_).
-    // Which may lead to use-after-free bugs.
-    renderables_.clear();
+    mi_check(!renderable_slots_.NoAllocationActive(),
+        "There are still renderables allocated from the scene during its destruction."
+        "Make sure to purge all references to renderables before destroying the scene.");
 }
 
 
@@ -60,12 +58,46 @@ void Scene::SetSkyCube(Texture *texture) {
 
 
 void Scene::RemoveRenderable (Renderable * renderable) {
-    auto it = std::find_if(renderables_.begin(), renderables_.end(),
-        [renderable](const TRef<Renderable> & r) { return r.Raw() == renderable; });
-    if (it != renderables_.end()) {
-        // Not remove from the list, but set to nullptr to keep the indices valid.
-        it->SafeRelease();
+    // Just use the renderable index to find and remove it.
+    if (!renderable) return;
+    auto index = renderable->GetIndex();
+    if (index != UINT32_MAX && index < renderables_.size()) {
+        if (renderables_[index] == renderable) {
+            RemoveRenderableAtIndex(index);
+        } else {
+            mi_warning(false, "This renderable seems to not belong to this scene / already removed from this scene. Removal skipped.");
+        }
     }
+}
+
+void Scene::RemoveRenderableAtIndex(uint32_t index) {
+    if (index >= renderables_.size()) return;
+    {
+        if (renderables_[index]) {
+            // Delay 1 frame before removal
+            removing_renderables_[removing_renderables_list_index_ % 2].push_back(renderables_[index].Raw());
+            renderables_[index].rat();asdfasdf
+        }
+    }
+}
+
+void Scene::FlushRemovingRenderables() {
+    // TODO Make a super class to group resources that require delayed removal at renderer level.
+    // for example: UberBuffers, renderable indices, material indices, ...etc.
+    // Release the renderables that have been delayed for removal
+    auto & to_remove = removing_renderables_[((removing_renderables_list_index_ + 1) % 2)];
+    for (auto r : to_remove) {
+        auto index = r->GetIndex();
+        if (index != UINT32_MAX) {
+            // Recycle the index of the renderable
+            FreeRenderabeIndex(index);
+            // Reset the index of the renderable: it no longer belongs to the scene
+            r->index_ = UINT32_MAX;
+        }
+    }
+    // Release references. This can potentially destroy the renderables (however, it's safe to do so here because of the delay).
+    to_remove.clear();
+    removing_renderables_list_index_++;
 }
 
 void Scene::CreateOnDevice() {

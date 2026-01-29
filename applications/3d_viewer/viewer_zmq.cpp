@@ -221,14 +221,14 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
                 reply = { {"ok", ok} };
                 if (ok) reply["renderable_indices"] = indices; else reply["err"] = "load_failed";
             }
-        } else if (cmd == "remove_renderable") {
+        } else if (cmd == "remove_renderable_node") {
             uint32_t idx = j["args"].value("index", UINT32_MAX);
             if (!viewer_) {
                 reply = { {"ok", false}, {"err", "no_viewer"} };
             } else if (idx == UINT32_MAX) {
                 reply = { {"ok", false}, {"err", "missing_index"} };
             } else {
-                bool ok = viewer_->RemoveRenderableByIndex(idx);
+                bool ok = viewer_->RemoveRenderableNodeByIndex(idx);
                 reply = { {"ok", ok} };
                 if (!ok) reply["err"] = "remove_failed";
             }

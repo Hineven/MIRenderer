@@ -953,6 +953,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             previous_frame_sync_point->Reset();
         }
 
+        // Time to recycle renderables and rendering resources marked for deletion from the previous frame!
+        scene_->FlushRemovingRenderables();
+
         // Try resolve previous frame profiling results (non-blocking) after the previous frame has finished.
         // In case if not ready yet, keep last results.
         if (pending_profiling_context) {
@@ -1039,7 +1042,7 @@ bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vec
     auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), grf.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
     if (inst) {
         out_renderable_indices.push_back(inst->GetIndex());
-        auto node = RenderableNode::Create(path.filename().string());
+        auto node = renderable_node_registry_->Create(scene_.get(), path.filename().string());
         node->SetRenderable(inst.Raw());
         node->UpdateWorldTransform();
         RegisterLoadedScene(path.filename().string(), { node });
@@ -1047,17 +1050,20 @@ bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vec
     return inst.IsValid();
 }
 
-bool ViewerApp::RemoveRenderableByIndex(uint32_t renderable_index) {
+bool ViewerApp::RemoveRenderableNodeByIndex(uint32_t renderable_node_index) {
     if (!scene_) return false;
-    auto& renderables = scene_->GetRenderables();
-    if (renderable_index >= renderables.size()) return false;
-    auto r = renderables[renderable_index].Raw();
-    if (!r) return false;
-    scene_->RemoveRenderable(r);
-    renderable_node_lookup_.erase(r);
-    if (selection_state_.selected_renderable_index == renderable_index) {
-        SetSelectedRenderable(nullptr);
-    }
+    mi_assert(false, "Not implemented yet.");
+    return true;
+}
+
+bool ViewerApp::CleanAllRenderableNodes() {
+    if (!scene_) return false;
+    loaded_scenes_.clear();
+
+    selection_state_ = {};
+    if (arrow_mesh_x_instance_) arrow_mesh_x_instance_->SetVisible(false);
+    if (arrow_mesh_y_instance_) arrow_mesh_y_instance_->SetVisible(false);
+    if (arrow_mesh_z_instance_) arrow_mesh_z_instance_->SetVisible(false);
     return true;
 }
 

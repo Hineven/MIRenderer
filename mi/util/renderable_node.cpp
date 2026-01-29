@@ -7,15 +7,41 @@
 
 MI_NAMESPACE_BEGIN
 
+uint32_t RenderableNodeRegistry::AllocateRenderableNodeIndex() {
+    return renderable_node_slots_.AllocateSlot();
+}
+
+void RenderableNodeRegistry::FreeRenderableNodeIndex(uint32_t index) {
+    renderable_node_slots_.FreeSlot(index);
+    renderable_node_registry_.erase(index);
+}
+
+RenderableNodeRegistry::~RenderableNodeRegistry() {
+    mi_check(renderable_node_slots_.NoAllocationActive(),
+        "RenderableNodeRegistry destroyed with unreleased RenderableNodes.");
+}
+
+TRef<RenderableNode> RenderableNodeRegistry::Create(const std::string& name) {
+    auto id = AllocateRenderableNodeIndex();
+    auto node = TRef<RenderableNode>(new RenderableNode(this, name, id));
+    renderable_node_registry_[id] = node.Raw();
+    return node;
+}
+
+RenderableNode * RenderableNodeRegistry::GetByIndex(uint32_t index) const {
+    auto it = renderable_node_registry_.find(index);
+    if (it != renderable_node_registry_.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
 RenderableNode::~RenderableNode() {
-    puts(name_.c_str());
+    // Free index from registry
+    registry_->FreeRenderableNodeIndex(index_);
 }
 
-TRef<RenderableNode> RenderableNode::Create(const std::string& name) {
-    return TRef<RenderableNode>(new RenderableNode(name));
-}
-
-RenderableNode::RenderableNode(const std::string& name) : name_(name) {
+RenderableNode::RenderableNode(RenderableNodeRegistry * reg, const std::string& name, uint32_t id) : name_(name), registry_(reg), index_(id) {
     world_transform_ = local_transform_;
 }
 

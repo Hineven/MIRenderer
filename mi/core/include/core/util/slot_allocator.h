@@ -38,6 +38,44 @@ struct SlotAllocator {
         }
         return false;
     }
+
+    FORCEINLINE uint32_t GetMaxNumSlots() const {
+        return max_num_slots_;
+    }
+
+    FORCEINLINE bool NoAllocationActive() const {
+        return free_slots_.size() == max_num_slots_;
+    }
+};
+
+// A simple slot allocator that allows allocation and deallocation of slot indices. It can extend its capacity.
+struct ExtendableSlotAllocator {
+    uint32_t next_slot_index_ = 0;
+    std::stack<uint32_t> free_slots_;
+
+    FORCEINLINE ExtendableSlotAllocator() = default;
+
+    FORCEINLINE uint32_t AllocateSlot() {
+        if (!free_slots_.empty()) {
+            uint32_t slot = free_slots_.top();
+            free_slots_.pop();
+            return slot;
+        }
+        return next_slot_index_++;
+    }
+
+    FORCEINLINE bool FreeSlot(uint32_t slot) {
+        free_slots_.push(slot);
+        return true;
+    }
+
+    FORCEINLINE uint32_t GetMaxNumSlots() const {
+        return next_slot_index_;
+    }
+
+    FORCEINLINE bool NoAllocationActive() const {
+        return free_slots_.size() == next_slot_index_;
+    }
 };
 
 

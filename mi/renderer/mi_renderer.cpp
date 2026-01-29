@@ -4,6 +4,7 @@
  * See LICENSE for licensing.
  */
 
+#include <algorithm>
 #include <ranges>
 
 #include "shaders/shared/SharedRenderable.hlsl"

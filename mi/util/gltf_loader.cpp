@@ -391,7 +391,7 @@ bool GLTFLoader::LoadGLTF(
 
     auto MakeNode = [&](const cgltf_node* node, const Transform& world_t) {
         std::string name = node->name ? node->name : "";
-        auto n = RenderableNode::Create(name);
+        auto n = RenderableNode::Create(&world, name);
         n->SetLocalTransform(Transform::FromMatrix(glm::mat4(1.0f))); // set below
         n->SetRenderable(nullptr);
         n->SetLocalTransform(Transform::FromMatrix(world_t.GetToWorldTransformMatrix()));
@@ -406,7 +406,7 @@ bool GLTFLoader::LoadGLTF(
         glm::mat4 world_m(1.0f);
         cgltf_node_transform_local(gltf_node, (float*)&world_m);
         Transform local_t = Transform::FromMatrix(world_m);
-        auto node = RenderableNode::Create(gltf_node->name ? gltf_node->name : "");
+        auto node = RenderableNode::Create(&world, gltf_node->name ? gltf_node->name : "");
         node->SetLocalTransform(local_t);
         if (parent) parent->AddChild(node);
         if (gltf_node->mesh != nullptr) {

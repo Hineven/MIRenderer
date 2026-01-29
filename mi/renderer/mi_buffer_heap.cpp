@@ -9,6 +9,7 @@
 
 #include "rhi/rhi.h"
 #include "rhi/rhi_buffer.h"
+#include <renderer/mi_resource_allocator.h>
 
 MI_NAMESPACE_BEGIN
 DeviceBufferHeapBuffer::~DeviceBufferHeapBuffer() {
@@ -24,11 +25,12 @@ TRef<DeviceBufferHeapBuffer> DeviceBufferHeapInterface::AllocateRefCounted(uint3
 }
 
 TRef<DeviceUberBufferAllocation> DeviceUberBufferInterface::CreateAllocation(size_t offset, size_t size) {
-    auto allocation = new DeviceUberBufferAllocation();
-    allocation->offset_ = offset;
-    allocation->size_ = size;
-    allocation->uber_buffer_ = this;
-    return TRef<DeviceUberBufferAllocation>(allocation);
+     auto allocation = new DeviceUberBufferAllocation();
+     allocation->offset_ = offset;
+     allocation->size_ = size;
+     allocation->uber_buffer_ = this;
++    allocation->allocator_ = allocator_;
+     return TRef<DeviceUberBufferAllocation>(allocation);
 }
 
 void DeviceUberBufferInterface::SetName(const std::string &name) {
@@ -151,6 +153,16 @@ void SimpleDeviceBufferHeap::SetName(const std::string &name) {
 
 void SimpleDeviceBufferHeap::PreAllocateBlocks(uint32_t num_blocks) {
     for (int i = 0; i < (int)num_blocks; i++) AddNewBlock(default_buffer_block_size_);
+}
+
+void DeviceUberBufferAllocation::QueueForDestruction() {
+    // If we have an owning allocator, let it retire us a few frames later.
+    // Otherwise, fall back to immediate deletion.
+    if (allocator_) {
+        allocator_->EnqueueForDelayedDestruction(this);
+    } else {
+        delete this;
+    }
 }
 
 DeviceUberBufferAllocation::~DeviceUberBufferAllocation() {

@@ -18,11 +18,11 @@ MI_NAMESPACE_BEGIN
 
 // ---------------- DeviceGaussianRadianceField ----------------
 DeviceGaussianRadianceField::DeviceGaussianRadianceField(DeviceBindlessResourceAllocator * alloc) {
-    index_ = alloc->AllocateGaussianRadianceFieldSlot();
+    slot_ = alloc->AllocateGaussianRadianceFieldSlotKeeper();
 }
 
 DeviceGaussianRadianceField::~DeviceGaussianRadianceField() {
-    // Slot released by allocator lifetime management (same pattern as other device objects)
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 // ---------------- GaussianRadianceField ----------------
@@ -116,7 +116,7 @@ void GaussianRadianceField::UpdateOnDevice_Async(DeviceBindlessResourceAllocator
         srgb_space_ ? 1u : 0u,
         0
     };
-    Helpers::Upload_Async(queue, alloc->GetGaussianRadianceFieldHeaderBuffer(), sizeof(GaussianRadianceFieldHeader) * device_field_->index_, header);
+    Helpers::Upload_Async(queue, alloc->GetGaussianRadianceFieldHeaderBuffer(), sizeof(GaussianRadianceFieldHeader) * device_field_->GetIndex(), header);
 
     auto EvaluateRotationMatrix = [](glm::vec4 q) -> glm::mat3 {
         float x = q.x, y = q.y, z = q.z, w = q.w;

@@ -74,11 +74,14 @@ public:
     Scene();
     ~Scene();
 
-    void RemoveRenderable (Renderable * renderable) ;
-
-    FORCEINLINE const std::vector<TRef<Renderable>> & GetRenderables () const {
+    FORCEINLINE const std::vector<Renderable*> & GetRenderables () const {
         return renderables_;
     }
+    FORCEINLINE Renderable * GetRenderableByIndex (uint32_t index) const {
+        if (index >= renderables_.size()) return nullptr;
+        return renderables_[index];
+    }
+
     void SetSkyCube (Texture * texture) ;
 
     FORCEINLINE Texture * GetSkyTexture () const {
@@ -103,14 +106,23 @@ public:
 
     DirectionalLight directional_light_{};
 
+    // Flush the renderables that have been delayed for removal. Should be called at the (on device) end of each frame.
+    // Renderables at frame N are only actually removed at the end of frame N+1 to avoid
+    // issues with GPU resources still in use.
+    void FlushRemovingRenderables () ;
+
 protected:
+
 
     AABB aabb_;
 
     TRef<Texture> sky_cube_;
 
-    std::vector<TRef<Renderable>> renderables_;
+    std::vector<Renderable*> renderables_;
     std::mt19937 renderable_hash_generator {12345};
+
+    uint32_t removing_renderables_list_index_ {};
+    std::vector<Renderable*> removing_renderables_[2];
 
     uint32_t AllocateRenderableIndexAndHash (Renderable * renderable) ;
     FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
@@ -120,6 +132,8 @@ protected:
     SlotAllocator renderable_slots_;
 
     TRef<DeviceScene> device_scene_;
+
+    void RemoveRenderableAtIndex (uint32_t index) ;
 };
 
 MI_NAMESPACE_END

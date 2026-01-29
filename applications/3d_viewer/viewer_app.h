@@ -125,7 +125,8 @@ public:
 
     bool LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices = nullptr);
     bool LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices);
-    bool RemoveRenderableByIndex(uint32_t renderable_index);
+    bool RemoveRenderableNodeByIndex(uint32_t renderable_node_index);
+    bool CleanAllRenderableNodes();
 
     inline bool IsSuspended() const { return suspended_; }
     inline void SetSuspended(bool v) { suspended_ = v; }
@@ -141,10 +142,9 @@ public:
 
     TRef<Material> default_material_;
 
-    // std::vector<TRef<StaticMeshInstance>> meshes_;
+    TRef<RenderableNodeRegistry> renderable_node_registry_;
 
     std::vector<LoadedScene> loaded_scenes_;
-    std::unordered_map<Renderable*, TRef<RenderableNode>> renderable_node_lookup_;
 
     TRef<StaticMeshInstance> arrow_mesh_x_instance_;
     TRef<StaticMeshInstance> arrow_mesh_y_instance_;

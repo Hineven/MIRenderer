@@ -68,9 +68,10 @@ std::future<void> RHI::AdvanceFrame(RHISyncPoint * sync_point) {
         RHI::Get().GetBindlessManager().AdvanceFrame_RHIThread(slots_to_free);
         // Recycle resources that are pending for deletion
         RHI::Get().RecycleRHIResourcesPendingForDeletion_RHIThread();
-        // Increment the frame index kept by RHI thread.
+        // Increment the frame index kept by RHI thread. This marks the end of the frame for RHI thread.
         AdvanceFrame_RHIThread();
     };
+    // This marks the end of the frame for render thread
     frame_index_ ++;
     return EnqueueRHIThreadTask(std::move(lambda));
 }

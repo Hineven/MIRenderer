@@ -21,14 +21,16 @@ MI_NAMESPACE_BEGIN
 
 class DeviceGaussianRadianceField : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
-    FORCEINLINE bool IsValid() const { return index_ != UINT32_MAX; }
-    FORCEINLINE uint32_t GetIndex() const { return index_; }
+    FORCEINLINE bool IsValid() const { return slot_ && slot_->Get() != UINT32_MAX; }
+    FORCEINLINE uint32_t GetIndex() const { return slot_ ? slot_->Get() : UINT32_MAX; }
     FORCEINLINE uint32_t GetPointOffset() const { return (uint32_t)(point_buffer_->GetOffset() / sizeof(PackedGaussian3D)); }
     FORCEINLINE RHIAccelerationStructure * GetBLAS() const { return BLAS_.Raw(); }
 protected:
     DeviceGaussianRadianceField(DeviceBindlessResourceAllocator * alloc);
     ~DeviceGaussianRadianceField();
-    uint32_t index_ {UINT32_MAX};
+    // Index keeper of the GRF slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
+
     TRef<DeviceUberBufferAllocation> point_buffer_;
     TRef<DeviceUberBufferAllocation> sh_coeff_buffer_;
     TRef<RHIAccelerationStructure> BLAS_;

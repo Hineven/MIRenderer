@@ -24,6 +24,7 @@
 #include <renderer/mi_buffer_heap.h>
 #include <renderer/mi_scene.h>
 #include "../shaders/shared/SharedStaticMesh.hlsl"
+#include <renderer/mi_delayed_destruction.h>
 
 MI_NAMESPACE_BEGIN
 
@@ -38,6 +39,31 @@ public:
 
     friend class Renderer;
 
+    // Typed bindless slot categories. Public so keepers can be used by other systems too.
+    enum class SlotKind : uint8_t {
+        Material,
+        Geometry,
+        StaticMesh,
+        VolumePrimitives,
+        VolumeGrid,
+        GaussianRadianceField,
+    };
+
+    // Keeper type for bindless slots.
+    using SlotKeeper = TDelayedReleaseKeeper<DeviceBindlessResourceAllocator>;
+
+    // Allocate a keeper that will release the slot a few frames after the last reference is dropped.
+    TRef<SlotKeeper> AllocateSlotKeeper(SlotKind kind);
+
+    FORCEINLINE TRef<SlotKeeper> AllocateMaterialSlotKeeper() { return AllocateSlotKeeper(SlotKind::Material); }
+    FORCEINLINE TRef<SlotKeeper> AllocateGeometrySlotKeeper() { return AllocateSlotKeeper(SlotKind::Geometry); }
+    FORCEINLINE TRef<SlotKeeper> AllocateStaticMeshSlotKeeper() { return AllocateSlotKeeper(SlotKind::StaticMesh); }
+    FORCEINLINE TRef<SlotKeeper> AllocateVolumePrimitivesSlotKeeper() { return AllocateSlotKeeper(SlotKind::VolumePrimitives); }
+    FORCEINLINE TRef<SlotKeeper> AllocateVolumeGridSlotKeeper() { return AllocateSlotKeeper(SlotKind::VolumeGrid); }
+    FORCEINLINE TRef<SlotKeeper> AllocateGaussianRadianceFieldSlotKeeper() { return AllocateSlotKeeper(SlotKind::GaussianRadianceField); }
+
+    // Unified free by kind (used by keepers). This is the actual slot recycle.
+    void FreeSlot(SlotKind kind, uint32_t idx);
 
     static constexpr uint32_t kMaxNumMaterials = 1024;
     static constexpr uint32_t kMaxNumGeometries = 64 * 1024; // 64K geometries
@@ -174,6 +200,18 @@ public:
 
     size_t GetTotalAllocatedDeviceSize () const ;
 
+    // Centralized delayed destruction:
+    // Some renderer-side resources are not RHIResource (thus not protected by RHI deferred deletion)
+    // but still must not be destroyed while the GPU may reference them (e.g. uber-buffer sub-allocations,
+    // slot allocations mirrored into persistent device buffers, etc.).
+    //
+    // The owning system should call AdvanceFrame() once per frame at a point where frame N-1 has finished on GPU.
+    void AdvanceFrame();
+
+    // Enqueue an arbitrary delayed-destruction object.
+    // The queue takes ownership of the pointer and will delete it after a few frames.
+    void EnqueueForDelayedDestruction(DelayedDestructionResource * obj);
+
 protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
@@ -212,6 +250,9 @@ protected:
     // Slot allocators for bindless resources
     SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_, volume_grid_slots_, gaussian_radiance_field_slots_;
 
+    // Central delayed destruction ring.
+    // Stores resources whose refcount already reached 0 and are safe to delete after N frames.
+    DelayedDestructionQueue delayed_destruction_ {2};
 };
 
 MI_NAMESPACE_END

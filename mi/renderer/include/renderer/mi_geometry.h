@@ -33,7 +33,8 @@ protected:
     uint32_t vertex_count_ {};
     uint32_t index_count_ {};
 
-    uint32_t index_ {UINT32_MAX}; // Index of the geometry in the bindless device allocator
+    // Index keeper of the geometry slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
 
     friend StaticMeshInstance;
 
@@ -41,9 +42,9 @@ public:
 
     friend class Geometry;
 
-    FORCEINLINE uint32_t GetIndex () const {return index_;}
+    FORCEINLINE uint32_t GetIndex () const {return slot_ ? slot_->Get() : UINT32_MAX;}
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return slot_ && slot_->Get() != UINT32_MAX;
     }
 
     FORCEINLINE uint32_t GetVertexCount () const {return vertex_count_;}

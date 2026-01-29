@@ -23,7 +23,8 @@ RenderableHeader Renderable::GetDeviceRenderableHeader () const {
 
 Renderable::~Renderable() {
     if (index_ != UINT32_MAX) {
-        scene_->FreeRenderabeIndex(index_);
+        // Currently, this is done in Scene::RemoveRenderable
+        // scene_->FreeRenderabeIndex(index_);
     }
 }
 

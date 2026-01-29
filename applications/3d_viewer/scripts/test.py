@@ -1,5 +1,11 @@
 import os
 import sys
+# Allow running this script directly by adding project root to sys.path.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from typing import Dict, List, Tuple
 
 import argparse
@@ -9,13 +15,6 @@ import imageio.v3 as iio
 import matplotlib.pyplot as plt
 
 from scripts.unet_denoiser import ModelConfig, UNetDenoiser, _pad_to_multiple, _unpad
-
-
-# Allow running this script directly by adding project root to sys.path.
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 
 def _parse_args() -> argparse.Namespace:

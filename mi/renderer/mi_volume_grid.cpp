@@ -22,11 +22,11 @@ MI_NAMESPACE_BEGIN
 // ------------------------------------------------------------------
 
 DeviceVolumeGrid::DeviceVolumeGrid(DeviceBindlessResourceAllocator* allocator) {
-    index_ = allocator->AllocateVolumeGridSlot();
+    slot_ = allocator->AllocateVolumeGridSlotKeeper();
 }
 
 DeviceVolumeGrid::~DeviceVolumeGrid() {
-    // 资源释放通常由 Allocator 回收或 RefCount 归零处理
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 // ------------------------------------------------------------------
@@ -76,7 +76,7 @@ void VolumeGrid::UpdateOnDevice_Async(DeviceBindlessResourceAllocator* alloc, RH
 
     Helpers::Upload_Async(queue,
         alloc->GetVolumeGridHeaderBuffer(),
-        sizeof(VolumeGridHeader) * device_volume_grid_->index_,
+        sizeof(VolumeGridHeader) * device_volume_grid_->GetIndex(),
         header
     );
 

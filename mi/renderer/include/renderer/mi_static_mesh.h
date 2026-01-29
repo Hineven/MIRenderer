@@ -26,10 +26,10 @@ public:
         return BLAS_.Raw();
     }
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return slot_ && slot_->Get() != UINT32_MAX;
     }
     FORCEINLINE uint32_t GetIndex () const {
-        return index_;
+        return slot_ ? slot_->Get() : UINT32_MAX;
     }
 protected:
     DeviceStaticMesh (DeviceBindlessResourceAllocator * allocator) ;
@@ -39,7 +39,8 @@ protected:
     // If this static mesh is ray-traced, it should have a bottom-level acceleration structure.
     TRef<RHIAccelerationStructure> BLAS_;
 
-    uint32_t index_ {UINT32_MAX}; // Index of the static mesh in the bindless device allocator
+    // Index keeper of the static mesh slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
 
     DeviceBindlessResourceAllocator * allocator_ {};
 };

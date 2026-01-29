@@ -15,11 +15,11 @@
 MI_NAMESPACE_BEGIN
 DeviceGeometry::DeviceGeometry(DeviceBindlessResourceAllocator * allocator) {
     allocator_ = allocator;
-    index_ = allocator_->AllocateGeometrySlot();
+    slot_ = allocator_->AllocateGeometrySlotKeeper();
 }
 
 DeviceGeometry::~DeviceGeometry() {
-    if (IsValid()) allocator_->FreeGeometrySlot(index_);
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 Geometry::Geometry() {

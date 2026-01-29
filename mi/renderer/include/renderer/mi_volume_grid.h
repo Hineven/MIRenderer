@@ -32,10 +32,10 @@ public:
     friend class VolumeGrid;
 
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return slot_ && slot_->Get() != UINT32_MAX;
     }
     FORCEINLINE uint32_t GetIndex () const {
-        return index_;
+        return slot_ ? slot_->Get() : UINT32_MAX;
     }
 
     FORCEINLINE RHIAccelerationStructure * GetBLAS () const {
@@ -46,7 +46,8 @@ protected:
     DeviceVolumeGrid (DeviceBindlessResourceAllocator * allocator) ;
     ~DeviceVolumeGrid() ;
 
-    uint32_t index_ {UINT32_MAX}; // Index of the volume grid in the bindless device allocator
+    // Index keeper of the volume grid slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
 
     TRef<RHIAccelerationStructure> BLAS_;
 };

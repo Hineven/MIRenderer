@@ -1,5 +1,11 @@
 import os
 import sys
+# Allow running this script directly by adding project root to sys.path.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from typing import Dict, List, Optional
 
 import argparse
@@ -9,13 +15,6 @@ import imageio.v3 as iio
 
 from pymi.zmq_client import ViewerClient
 from scripts.data_collector import collect_batch
-
-
-# Allow running this script directly by adding project root to sys.path.
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 
 def _parse_args() -> argparse.Namespace:

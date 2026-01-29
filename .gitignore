@@ -30,5 +30,8 @@ vcpkg.json
 /pipeline_cache.bin
 /imgui.ini
 
+# any conda environment
+*.conda
+
 # Data directory for applications/3d_viewer
 applications/3d_viewer/data/

@@ -24,11 +24,11 @@ MI_NAMESPACE_BEGIN
 
 DeviceStaticMesh::DeviceStaticMesh(DeviceBindlessResourceAllocator * in_allocator) {
     allocator_ = in_allocator;
-    index_ = allocator_->AllocateStaticMeshSlot();
+    slot_ = allocator_->AllocateStaticMeshSlotKeeper();
 }
 
 DeviceStaticMesh::~DeviceStaticMesh() {
-    if (IsValid()) allocator_->FreeStaticMeshSlot(index_);
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
@@ -82,7 +82,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
     };
     Helpers::Upload_Async(queue,
         alloc->GetStaticMeshHeaderBuffer(),
-        sizeof(StaticMeshHeader) * device_static_mesh_->index_,
+        sizeof(StaticMeshHeader) * device_static_mesh_->GetIndex(),
         header
     );
     // Update BLAS if needed

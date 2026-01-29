@@ -197,8 +197,8 @@ class ViewerClient:
         meta, _ = self._send_recv("load_ply_abs_path", {"path": str(path)})
         return meta
 
-    def remove_renderable(self, index: int) -> Dict:
-        meta, _ = self._send_recv("remove_renderable", {"index": int(index)})
+    def remove_renderable_node(self, index: int) -> Dict:
+        meta, _ = self._send_recv("remove_renderable_node", {"index": int(index)})
         return meta
 
     def set_transform(self, index: int, pos, rot_deg, scale) -> Dict:

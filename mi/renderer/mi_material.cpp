@@ -19,11 +19,11 @@ MI_NAMESPACE_BEGIN
 
 DeviceMaterial::DeviceMaterial(DeviceBindlessResourceAllocator *allocator) {
     allocator_ = allocator;
-    index_ = allocator_->AllocateMaterialSlot();
+    slot_ = allocator_->AllocateMaterialSlotKeeper();
 }
 
 DeviceMaterial::~DeviceMaterial() {
-    if (IsValid()) allocator_->FreeMaterialSlot(index_);
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 Material::Material() {
@@ -75,11 +75,11 @@ void Material::UpdateOnDevice_Async(DeviceBindlessResourceAllocator *allocator, 
             device_material_ = new DeviceMaterial(allocator);
             mi_check(device_material_->IsValid(), "Failed to allocate device material slot. This may indicate that the device allocator is full.");
         }
-        device_material_->index_ = allocator->AllocateMaterialSlot();
-        assert(device_material_->index_ != UINT32_MAX);
+        auto idx = device_material_->GetIndex();
+        assert(idx != UINT32_MAX);
         device_material_->material_header_ = PackMaterialHeader();
         Helpers::Upload_Async(queue,
-            allocator->GetMaterialHeaderBuffer(), sizeof(MaterialHeader) * device_material_->index_,
+            allocator->GetMaterialHeaderBuffer(), sizeof(MaterialHeader) * idx,
             device_material_->material_header_
         );
         dirty_ = false;

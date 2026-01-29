@@ -8,6 +8,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "viewer_app.h"
+#include "../../mi/renderer/renderer/r_persistent.h"
 #include "core/util/command_line.h"
 
 MI_NAMESPACE_BEGIN
@@ -219,23 +220,23 @@ void RegisterViewerCommands(ViewerApp& app) {
         "remove",
         {
             CommandTokenSpec::KeywordSet({"remove"}),
-            CommandTokenSpec::Free({}, "renderable_index"),
+            CommandTokenSpec::Free({}, "renderable_node_index"),
         },
         [&app](const CommandMatchResult &match) {
             if (match.args.size() < 2) {
-                MI_WARN("ViewerApp: expected 'remove <renderable_index>'");
+                MI_WARN("ViewerApp: expected 'remove <renderable_node_index>'");
                 return;
             }
             uint32_t idx = UINT32_MAX;
             try { idx = static_cast<uint32_t>(std::stoul(match.args[1])); } catch (...) {}
             if (idx == UINT32_MAX) {
-                MI_WARN("ViewerApp: invalid renderable index '{}'", match.args[1]);
+                MI_WARN("ViewerApp: invalid renderable node index '{}'", match.args[1]);
                 return;
             }
-            if (app.RemoveRenderableByIndex(idx)) {
-                MI_LOG(MIInfraLogType::kInfo, "Removed renderable {}", idx);
+            if (app.RemoveRenderableNodeByIndex(idx)) {
+                MI_LOG(MIInfraLogType::kInfo, "Removed renderable node {}", idx);
             } else {
-                MI_WARN("ViewerApp: failed to remove renderable {}", idx);
+                MI_WARN("ViewerApp: failed to remove renderable node {}", idx);
             }
         }
     );
@@ -244,7 +245,7 @@ void RegisterViewerCommands(ViewerApp& app) {
         "set_transform",
         {
             CommandTokenSpec::KeywordSet({"set_transform"}),
-            CommandTokenSpec::Free({}, "renderable_index"),
+            CommandTokenSpec::Free({}, "renderable_node_index"),
             CommandTokenSpec::Free({}, "world_pos_x"),
             CommandTokenSpec::Free({}, "world_pos_y"),
             CommandTokenSpec::Free({}, "world_pos_z"),
@@ -264,7 +265,7 @@ void RegisterViewerCommands(ViewerApp& app) {
             uint32_t idx = UINT32_MAX;
             try { idx = static_cast<uint32_t>(std::stoul(match.args[1])); } catch (...) {}
             if (idx == UINT32_MAX) {
-                MI_WARN("ViewerApp: invalid renderable index '{}'", match.args[1]);
+                MI_WARN("ViewerApp: invalid renderable node index '{}'", match.args[1]);
                 return;
             }
             std::array<float, 10> vals{};
@@ -272,18 +273,11 @@ void RegisterViewerCommands(ViewerApp& app) {
                 MI_WARN("ViewerApp: set_transform failed to parse float parameters");
                 return;
             }
-            auto& renderables = app.scene_->GetRenderables();
-            if (idx >= renderables.size() || !renderables[idx]) {
-                MI_WARN("ViewerApp: renderable index {} not found", idx);
+            if (idx >= app.renderable_node_registry_->GetMaxNumRenderableNodes() || !app.renderable_node_registry_->GetByIndex(idx)) {
+                MI_WARN("ViewerApp: renderable node index {} not found", idx);
                 return;
             }
-            auto rend = renderables[idx].Raw();
-            auto it = app.renderable_node_lookup_.find(rend);
-            if (it == app.renderable_node_lookup_.end() || !it->second) {
-                MI_WARN("ViewerApp: renderable {} has no associated scene node", idx);
-                return;
-            }
-            auto node = it->second;
+            auto node = app.renderable_node_registry_->GetByIndex(idx);
             glm::mat4 parent_world = glm::mat4(1.0f);
             if (node->GetParent()) {
                 parent_world = ToMat4(node->GetParent()->GetWorldTransform());
@@ -298,6 +292,21 @@ void RegisterViewerCommands(ViewerApp& app) {
             Transform local = Transform::FromMatrix(local_m);
             node->SetLocalTransform(local);
             MI_LOG(MIInfraLogType::kInfo, "set_transform applied to renderable {}", idx);
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "clean",
+        {
+            CommandTokenSpec::KeywordSet({"clean"}),
+        },
+        [&app](const CommandMatchResult & /*match*/) {
+            const bool ok = app.CleanAllRenderableNodes();
+            if (ok) {
+                MI_LOG(MIInfraLogType::kInfo, "Cleaned all renderables from scene at frame {}.", app.view_->persistent_data_->frame_index_);
+            } else {
+                MI_WARN("ViewerApp: failed to clean renderables");
+            }
         }
     );
 }

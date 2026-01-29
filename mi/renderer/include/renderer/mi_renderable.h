@@ -32,9 +32,23 @@ enum class RenderableFlagBits : uint32_t {
 
 MAKE_FLAGS(Renderable);
 
-class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
+class Renderable : public NonMovable, public NonCopyable {
 public:
     friend Scene;
+
+    FORCEINLINE uint32_t IncRef() {
+        return ++ref_count_;
+    }
+
+    FORCEINLINE uint32_t DecRef() {
+        ref_count_--;
+        if (ref_count_ == 0) {
+            QueueForDeletion();
+        }
+        return ref_count_;
+    }
+
+
     virtual ~Renderable();
     // Invisible renderables wont be rendered & taken into consideration by lighting.
     FORCEINLINE bool IsVisible() const { return flags_ & RenderableFlagBits::kVisible; }
@@ -124,8 +138,10 @@ public:
 
 protected:
 
-    Renderable(RenderableType type, Scene * scene);
-    Transform transform_;
+
+    uint32_t ref_count_ {};
+
+    Transform transform_ {};
     Scene * scene_;
     uint32_t index_ {UINT32_MAX};
     uint32_t hash_ {0};
@@ -143,8 +159,11 @@ protected:
     // Transform dirty means the transform has changed.
     bool transform_dirty_ {true};
 
-
     RenderableType type_ {RenderableType::kStaticMeshInstance};
+
+    Renderable(RenderableType type, Scene * scene);
+
+    void QueueForDeletion ();
 
 };
 

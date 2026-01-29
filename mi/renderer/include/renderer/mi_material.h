@@ -39,9 +39,9 @@ MAKE_FLAGS(Material)
 class DeviceMaterial : public NonMovable, public RefCounted<> {
 public:
     friend class Material;
-    FORCEINLINE uint32_t GetIndex () const {return index_;}
+    FORCEINLINE uint32_t GetIndex () const {return slot_ ? slot_->Get() : UINT32_MAX;}
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return slot_ && slot_->Get() != UINT32_MAX;
     }
 protected:
     DeviceMaterial (DeviceBindlessResourceAllocator * allocator);
@@ -49,8 +49,8 @@ protected:
 
     DeviceBindlessResourceAllocator * allocator_ {};
 
-    // Index of the material (assigned by the renderer)
-    uint32_t index_ {UINT32_MAX};
+    // Index keeper of the material slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
     MaterialHeader material_header_;
 };
 
