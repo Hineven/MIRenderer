@@ -10,6 +10,7 @@ set(SOURCE_FILES
     rdg_builder.cpp
     rdg_cmd.cpp
     rdg_helper.cpp
+    rdg_global_memory_collector.cpp
 )
 
 add_library(rdg STATIC ${SOURCE_FILES})

@@ -1,0 +1,31 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(set = 0, binding = 0) uniform UBO {
+    uint frame;
+} ubo;
+
+layout(set = 0, binding = 1, rgba8) uniform image2D outImg;
+
+layout(set = 0, binding = 2) uniform accelerationStructureEXT tlas;
+
+layout(location = 0) rayPayloadEXT vec4 payload;
+
+void main() {
+    // Keep RT pipeline path active.
+    traceRayEXT(tlas,
+        gl_RayFlagsTerminateOnFirstHitEXT,
+        0xFF,
+        0, 0, 0,
+        vec3(0.0, 0.0, -1.0),
+        0.0,
+        vec3(0.0, 0.0, 1.0),
+        1e-3,
+        0);
+
+    ivec2 p = ivec2(gl_LaunchIDEXT.xy);
+    if (p.x < 1 && p.y < 1) {
+        imageStore(outImg, p, vec4(float(ubo.frame & 255u) / 255.0, 0.0, 0.0, 1.0));
+    }
+}
+

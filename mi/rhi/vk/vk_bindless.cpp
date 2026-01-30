@@ -119,6 +119,17 @@ VulkanBindlessManager::VulkanBindlessManager() : RHIBindlessManager() {
                 }
         );
         mi_assert(sets.size() == std::size(bindless_descriptor_sets_), "Failed to allocate descriptor sets");
+#if MI_ENABLE_RHI_OBJECT_NAMING
+        for (auto [i, set] : std::views::enumerate(sets)) {
+            GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
+                vk::DebugUtilsObjectNameInfoEXT {
+                    vk::ObjectType::eDescriptorSet,
+                    std::bit_cast<uint64_t>(set),
+                    "Bindless Descriptor Set"
+                }
+            );
+        }
+#endif
         std::copy(sets.begin(), sets.end(), bindless_descriptor_sets_);
     }
 }
@@ -176,7 +187,7 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
     assert(GetCurrentThreadType() == ThreadType::kRenderThread);
     auto & queue = GetVulkanRHI()->GetGraphicsCommandQueue();
     auto descriptor_write = vk::WriteDescriptorSet {
-        // Memory read is deferred to RHI thread
+        // Memory read from bindless_descriptor_sets_[set_index_] is deferred to RHI thread
         {},//bindless_descriptor_sets_[set_index_],
         static_cast<uint32_t>(type),
         slot,

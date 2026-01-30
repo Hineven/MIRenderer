@@ -28,10 +28,14 @@ VulkanBuffer::VulkanBuffer(RHIBufferDesc desc)
     };
     auto & vma = GetVulkanRHI()->GetVmaAllocator();
     auto result = vma.createBuffer(buffer_info, alloc_info);
-    if (GetName() && result.second) vma.setAllocationName(result.second, GetName());
-    vk_buffer_ = result.first;
-    allocation_ = result.second;
+    if (GetName() && result.second) vma.setAllocationName(result.first, GetName());
+    vk_buffer_ = result.second;
+    allocation_ = result.first;
     mi_assert(vk_buffer_ && allocation_, "Failed to allocate buffer!");
+
+    if (desc.usage & RHIBufferUsageFlagBits::kShaderDeviceAddress) {
+        cached_device_address_ = GetVulkanRHI()->GetDevice().getBufferAddress(vk_buffer_);
+    }
 }
 
 void *VulkanBuffer::Map() {
@@ -68,7 +72,7 @@ void *VulkanBuffer::GetAPIHandle() const {
 
 void VulkanBuffer::SetName(const std::string & name) {
     RHIBuffer::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eBuffer,
@@ -83,7 +87,11 @@ void VulkanBuffer::SetName(const std::string & name) {
 }
 
 uint64_t VulkanBuffer::GetDeviceAddress() const {
-    return GetVulkanRHI()->GetDevice().getBufferAddress(vk_buffer_);
+    if (!(this->desc_.usage & RHIBufferUsageFlagBits::kShaderDeviceAddress)) {
+        mi_assert(false, "Buffer was not created with kShaderDeviceAddress usage flag!");
+        return UINT64_MAX;
+    }
+    return cached_device_address_;
 }
 
 

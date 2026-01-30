@@ -458,13 +458,6 @@ static glm::uvec2 GetTileDimensions(RendererView * view) {
     };
 }
 
-static uint32_t GetTileIndexMipLevels(glm::uvec2 tile_dimensions) {
-    uint32_t tile_index_mip_levels = 0;
-    while ((1u << tile_index_mip_levels) < std::max(tile_dimensions.x, tile_dimensions.y))
-        tile_index_mip_levels++;
-    return tile_index_mip_levels;
-}
-
 void VolumeIndirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView * view) {
     auto tile_dimensions = GetTileDimensions(view);
     auto atlas_dimensions = tile_dimensions * VolumeIndirectLightingShader::kTileSize;

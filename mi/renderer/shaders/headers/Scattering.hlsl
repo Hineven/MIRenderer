@@ -2,7 +2,7 @@
 #define SCATTERING_HLSL
 
 #include "MathConstants.hlsl"
-#include "Radiometry.hlsl"
+#include "RadiometryAndColorSpace.hlsl"
 
 float HenyeyGreensteinPhaseFunction(float Cosine, float g) {
     // Henyey-Greenstein phase function

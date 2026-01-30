@@ -11,6 +11,7 @@
 #include <renderer/mi_resource_allocator.h>
 #include "r_view_common.h"
 #include <cstring>
+#include <gtest/internal/gtest-death-test-internal.h>
 
 #include "../include/renderer/r_geometry_buffer.h"
 #include "renderer/util/radix_sort.h"
@@ -21,6 +22,12 @@ CVar<float> CVar_GRF_EmitterIntensityScale(
     "r.grf.emitter_intensity_scale",
     "Scale factor for emitter intensity in Gaussian Radiance Fields.",
     0.5f
+);
+
+CVar<bool> CVar_GRF_StochasticRendering(
+    "r.grf.stochastic_rendering",
+    "Enable stochastic rendering for Gaussian Radiance Fields.",
+    true
 );
 
 struct GaussianRadianceFieldUB {
@@ -56,6 +63,38 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
     SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
 END_SHADER_PARAMETERS()
 
+IMPLEMENT_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
+
+// Shared parameter block
+BEGIN_SHADER_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
+    SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(GaussianRadianceFieldUB, UB)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianRenderableCount)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianRenderableListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianColorBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianLinearDepthSrcBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianIndirectionSrcBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianNDCPositionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector0Buffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector1Buffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
+    SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
+    SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
+    SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
+END_SHADER_PARAMETERS()
+
+
+IMPLEMENT_SHADER_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
+
 class GRF_Shader : public RDGShader {
 public:
     RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
@@ -77,7 +116,6 @@ IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_ClearCountersShader, "m
 
 class GRF_FilterShader : public GRF_Shader {
 public:
-    RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
     DECLARE_SHADER(GRF_Shader)
     static RDGShaderPipelineConfig GetShaderPipelineConfig() {
         RDGShaderPipelineConfig cfg{};
@@ -88,18 +126,16 @@ public:
         return cfg;
     }
 };
-IMPLEMENT_RDG_GRAPHICS_SHADER(GRF_FilterShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "FilterActiveGaussiansVS", "");
+IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(GRF_FilterShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "FilterActiveGaussiansVS", "");
 
 class GRF_ProjectShader : public GRF_Shader {
 public:
-    RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
     DECLARE_SHADER(GRF_Shader)
 };
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_ProjectShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "ProjectActiveGaussians");
 
 class GRF_DrawShader : public GRF_Shader {
 public:
-    RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
     DECLARE_SHADER(GRF_Shader)
     static RDGShaderPipelineConfig GetShaderPipelineConfig() {
         RDGShaderPipelineConfig cfg{};
@@ -117,6 +153,31 @@ IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(GRF_DrawShader,
     "DrawActiveGaussians_PS"
 );
 
+class GRF_StochasticDrawShader : public RDGShader {
+public:
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
+        return {
+            "WAVE_SIZE=" + std::to_string(wave_size)
+        };
+    }
+    RDG_SHADER_USE_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
+    DECLARE_SHADER()
+    static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+        RDGShaderPipelineConfig cfg{};
+        cfg.depth_test_enabled = true;
+        cfg.depth_write_enabled = true;
+        cfg.depth_compare_op = RHIDepthCompareOpType::kGreater;
+        cfg.topology = RHIPrimitiveTopologyType::kPointList;
+        return cfg;
+    }
+};
+IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(GRF_StochasticDrawShader,
+    "mi/renderer/shaders/GaussianRadianceField.hlsl",
+    "StochasticDrawActiveGaussians_VS",
+    "StochasticDrawActiveGaussians_GS",
+    "StochasticDrawActiveGaussians_PS"
+);
 void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
     // Build per-instance draw indirect commands for FilterActiveGaussians pass
     ctx.gaussian_radiance_fields.draw_indirect_commands.clear();
@@ -212,6 +273,19 @@ void Renderer::Render_DrawGaussianRadianceFields(
     auto active_gaussian_quad_vec0_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
     auto active_gaussian_quad_vec1_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
 
+    TRef<RDGTexture> testing_depth = view->g_buffer_->G_depth_;
+    if (CVar_GRF_StochasticRendering.Get()) {
+        // Duplicate depth buffer for stochastic rendering, because we're writing to it as well
+        testing_depth = builder.CreateTexture2D(
+            view->film_width_,
+            view->film_height_,
+            PixelFormatType::kD32_FLOAT,
+            RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kTransfer
+        );
+        // Copy
+        Helpers::CopyTexture(builder, view->g_buffer_->G_depth_.Raw(), testing_depth.Raw());
+    }
+
     auto params = builder.Allocate<GaussianRadianceFieldParameters>();
     auto UB = builder.Allocate<GaussianRadianceFieldUB>();
     {
@@ -239,12 +313,17 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->RWActiveGaussianNDCPositionBuffer = active_gaussian_ndc_pos_buffer.Raw();
     params->RWActiveGaussianQuadNDCVector0Buffer = active_gaussian_quad_vec0_buffer.Raw();
     params->RWActiveGaussianQuadNDCVector1Buffer = active_gaussian_quad_vec1_buffer.Raw();
-    params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_buffer.Raw();
+    if (CVar_GRF_StochasticRendering.Get()) {
+        // For stochastic rendering, we don't sort, so indirection src buffer is not needed
+        params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_src_buffer.Raw();
+    } else {
+        params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_buffer.Raw();
+    }
     params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     // Draw to linear color overlay
     params->Color = view->overlay_.Raw();
     // Test against the depth buffer.
-    params->Depth = view->g_buffer_->G_depth_.Raw();
+    params->Depth = testing_depth.Raw();
 
     auto & lib = RDGShaderLibrary::Get();
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
@@ -264,17 +343,27 @@ void Renderer::Render_DrawGaussianRadianceFields(
         auto shader = lib.GetShader<GRF_ProjectShader>();
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
-    // Pass 4: Radix Sort active gaussians by linear depth
-    DeviceRadixSort::AddRadixSort32BitsPass(builder, total_gaussians,
-        active_gaussian_linear_depth_src_buffer.Raw(), active_gaussian_linear_depth_dst_buffer.Raw(),
-        active_gaussian_indirection_src_buffer.Raw(), active_gaussian_indirection_buffer.Raw(),
-        active_gaussian_count_buffer.Raw()
-    );
-    // Pass 5: DrawActiveGaussians
-    {
-        auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
-        auto shader = lib.GetShader<GRF_DrawShader>();
-        Helpers::AddDrawIndirectPass(builder, shader, params, final_draw_command.Raw());
+    if (!CVar_GRF_StochasticRendering.Get()) {
+        // Pass 4: Radix Sort active gaussians by linear depth
+        DeviceRadixSort::AddRadixSort32BitsPass(builder, total_gaussians,
+            active_gaussian_linear_depth_src_buffer.Raw(), active_gaussian_linear_depth_dst_buffer.Raw(),
+            active_gaussian_indirection_src_buffer.Raw(), active_gaussian_indirection_buffer.Raw(),
+            active_gaussian_count_buffer.Raw()
+        );
+        // Pass 5: DrawActiveGaussians
+        {
+            auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
+            auto shader = lib.GetShader<GRF_DrawShader>();
+            Helpers::AddDrawIndirectPass(builder, shader, params, final_draw_command.Raw());
+        }
+    } else {
+        // Stochastic rendering: draw without sorting
+        {
+            auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
+            auto shader = lib.GetShader<GRF_StochasticDrawShader>();
+            // FIXME this is a hack (because they have identical memory layouts). We should have a better way to switch parameter blocks.
+            Helpers::AddDrawIndirectPass(builder, shader, (StochasticDrawGaussianRadianceFieldParameters*)params, final_draw_command.Raw());
+        }
     }
 
 }

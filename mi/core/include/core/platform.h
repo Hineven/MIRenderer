@@ -28,4 +28,15 @@
 #warning "FORCEINLINE is not defined for this compiler"
 #endif
 
+// Called on background threads to initialize platform-specific context.
+void InitializePlatformBackgroundThreadContext_Worker ();
+
+// Called on background threads to destroy platform-specific context.
+void DestroyPlatformBackgroundThreadContext_Worker ();
+
+// Called on main thread to initialize platform-specific context.
+// E.g., on Windows, initialize COM for the main thread.
+void InitializePlatformMainThreadContext ();
+void DestroyPlatformMainThreadContext ();
+
 #endif //MIRENDERER_CORE_PLATFORM_H

@@ -43,7 +43,7 @@ bool VulkanAccelerationStructure::Create(size_t size) {
     alloc_info.flags = vma::AllocationCreateFlagBits::eDedicatedMemory;
     alloc_info.requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
 
-    auto [buffer_result, allocation_result] = allocator.createBuffer(buffer_info, alloc_info);
+    auto [allocation_result, buffer_result] = allocator.createBuffer(buffer_info, alloc_info);
 
     buffer_ = buffer_result;
     allocation_ = allocation_result;
@@ -171,7 +171,7 @@ void VulkanAccelerationStructure::ResetRHI() {
 
 void VulkanAccelerationStructure::SetName(const std::string& name) {
     RHIResource::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     auto device = GetVulkanRHI()->GetDevice();
     vk::DebugUtilsObjectNameInfoEXT name_info{
         vk::ObjectType::eAccelerationStructureKHR,

@@ -67,20 +67,23 @@ static void RelocateShaderResourceBindings (
     RelocateResourcesInIR(RHIPipelineResourceType::kSampler, shader->GetSamplerDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kAccelerationStructure, shader->GetAccelerationStructureDesc());
 
-    // Relocate bindless resource arrays ni the shader IR
+    // Relocate bindless resource arrays in the shader IR
     if (shader->HasBindlessResources()) {
         auto desc = shader->GetBindlessArrayDescs();
         if (!desc.storage_buffer.name.empty()) {
-            Relocate(desc.storage_buffer.locations, 1, 0);
+            Relocate(desc.storage_buffer.locations, 1, (uint32_t)RHIBindlessResourceType::kReadOnlyStorageBuffer);
         }
         if (!desc.srv.name.empty()) {
-            Relocate(desc.srv.locations, 1, 1);
+            Relocate(desc.srv.locations, 1, (uint32_t)RHIBindlessResourceType::kSRV);
         }
         if (!desc.volume_srv.name.empty()) {
             Relocate(desc.volume_srv.locations, 1, 2);
         }
         if (!desc.acceleration_structure.name.empty()) {
-            Relocate(desc.acceleration_structure.locations, 1, 3);
+            Relocate(desc.acceleration_structure.locations, 1, (uint32_t)RHIBindlessResourceType::kAccelerationStructure);
+        }
+        if (!desc.volume_srv.name.empty()) {
+            Relocate(desc.volume_srv.locations, 1, (uint32_t)RHIBindlessResourceType::kVolumeSRV);
         }
     }
 
@@ -120,12 +123,12 @@ static auto GetResourceArraySize(T& obj) {
     else { return 0u; }
 }
 
-bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info) {
+bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info, const RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
 
 
     // Gather pipeline layout, align descriptor bindings
-    {
+    if (!root_signature) {
         std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
         std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
         // Take the first descriptor set for bindfull resources
@@ -196,6 +199,9 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                         .setPPushConstantRanges(push_constant_range.size > 0
                             ? (&push_constant_range) : nullptr)
         );
+    } else {
+        // TODO
+        mi_check(false, "Not implemented");
     }
 
     // Specify creation configuration
@@ -400,7 +406,7 @@ void VulkanGraphicsPipeline::ResetRHI() {
 
 void VulkanGraphicsPipeline::SetName(const std::string& name) {
     RHIGraphicsPipeline::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     if (vk_pipeline_) {
         GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
             vk::ObjectType::ePipeline,
@@ -442,7 +448,7 @@ void *VulkanGraphicsPipeline::GetAPIHandle() const {
 
 
 // Called from parent's constructor
-bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
+bool VulkanComputePipeline::CompileRHI (RHIShader *shader, const RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
     auto compute_shader = static_cast<VulkanShader *>(shader);
 
@@ -451,7 +457,7 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
     std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
     std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
     // Take the first descriptor set for bindfull resources
-    {
+    if (!root_signature) {
         int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
 
@@ -491,6 +497,8 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader) {
         } else {
             vk_private_descriptor_set_layout_ = nullptr;
         }
+    } else {
+        mi_check(false, "Not implemented");
     }
     // If the pipeline contains bindless resources, take set 1 as bindless set.
     if(HasBindlessResources()) {
@@ -557,7 +565,7 @@ void VulkanComputePipeline::ResetRHI() {
 
 void VulkanComputePipeline::SetName(const std::string& name) {
     RHIComputePipeline::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     if (vk_pipeline_) {
         GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
             vk::ObjectType::ePipeline,
@@ -684,19 +692,25 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
         int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
 
-        auto AddBindings = [&](const auto& desc, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
-            for (int i = 0; i < (int)desc.size(); ++i) {
-                auto& res = desc[i];
-                bindfull_bindings.emplace_back()
-                        .setBinding(current_binding_index + i)
+        auto AddBindings = [&](const auto& resources, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
+            if (!resources.empty()) {
+                int i = 0;
+                for (auto const& res : resources) {
+                    // Keep behavior consistent with graphics/compute: bindfull doesn't support arrayed resources.
+                    mi_check(GetResourceArraySize(res) == 0,
+                             "Shaders must not contain any arrayed resources in bindfull mode (we do not support that).");
+
+                    bindfull_bindings.emplace_back()
+                        .setBinding(current_binding_index)
                         .setDescriptorType(type)
-                        .setDescriptorCount(1)
+                        .setDescriptorCount(std::max(GetResourceArraySize(res), 1u))
                         .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
+
+                    remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index);
+                    ++i;
+                    ++current_binding_index;
+                }
             }
-            for(int i = 0; i < (int)desc.size(); ++i) {
-                remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index + i);
-            }
-            current_binding_index += (int)desc.size();
         };
 
         AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
@@ -712,9 +726,9 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
 
         if(!bindfull_bindings.empty()) {
             auto descriptor_set_layout = device.createDescriptorSetLayout(
-                    vk::DescriptorSetLayoutCreateInfo()
-                            .setBindingCount((int)bindfull_bindings.size())
-                            .setPBindings(bindfull_bindings.data())
+                vk::DescriptorSetLayoutCreateInfo()
+                    .setBindingCount((int)bindfull_bindings.size())
+                    .setPBindings(bindfull_bindings.data())
             );
             descriptor_set_layouts.push_back(descriptor_set_layout);
             vk_private_descriptor_set_layout_ = descriptor_set_layout;

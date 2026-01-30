@@ -91,6 +91,13 @@ public:
     // Thread safety: required
     virtual TRef<BlobResourceInterface> RIO_Open (const MIResourcePath & res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access = BlobResourceAccessFlagBits::kRead) = 0;
 
+    // Open a volatile blob resource (that may have external writers)
+    inline TRef<BlobResourceInterface> RIO_Open_Volatile (const MIResourcePath & res_path, MIInfraResourceHintType hint, BlobResourceAccessFlags access = BlobResourceAccessFlagBits::kRead) {
+        auto f = RIO_Open(res_path, hint, access);
+        f->SetVolatile();
+        return f;
+    }
+
     // Request the infrastructure to check if a resource exists.
     // @return true if the resource exists.
     // Thread safety: required
@@ -144,13 +151,18 @@ public:
     // Helper function for check shader changes.
     virtual uint64_t GetShaderXXHashFromShaderResourcePath (
         const MIResourcePath & shader_resource_path,
+        std::string entry_point,
+        std::string target_profile,
         std::vector<std::string> defines,
         std::vector<std::string> options,
         bool & is_shader_valid
     ) = 0;
 
     // Logging interface
-    virtual void               LogMessage (MIInfraLogType level, const std::string & message) = 0;
+    virtual void               LogMessage (MIInfraLogType level, const std::string & message, const std::string & location = "") = 0;
+    // Callback: type, message, location (can be empty)
+    typedef std::function<void(MIInfraLogType, const std::string &, const std::string &)> MIInfraLogCallback;
+    virtual void               SetLogCallback (MIInfraLogCallback callback) = 0;
 
     // Hooks
     // Called from the render thread when a new frame begins.
@@ -171,7 +183,8 @@ void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
 // GetInfra().Shutdown() is called prior to this function.
 void DestroyInfra () ;
 
-#define MI_LOG(level, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format("[{0}:{1}] {2}", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__)))
+#define MI_LOG_LOCATION(level, location, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format(fmt, ##__VA_ARGS__), location)
+#define MI_LOG(level, fmt, ...) MI_LOG_LOCATION(level, std::format("{0}:{1}", __FILE__, __LINE__), fmt, ##__VA_ARGS__)
 
 // Logging shortcuts
 #define MI_INFO(fmt, ...) MI_LOG(MIInfraLogType::kInfo, fmt, ##__VA_ARGS__)

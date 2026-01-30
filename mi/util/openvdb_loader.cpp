@@ -26,23 +26,22 @@
 #include <glm/gtc/packing.hpp>
 
 #include "core/infra.h"
+#include "core/task.h"
 #include "renderer/mi_volume_texture.h"
 
 MI_NAMESPACE_BEGIN
 
-// 静态初始化帮助类，确保 openvdb::initialize() 只调用一次
-struct VDBInitializer {
-    VDBInitializer() {
-        openvdb::initialize();
-    }
-};
-
-static VDBInitializer s_vdb_init;
+static bool vdb_initialized;
 
 TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
     const std::filesystem::path& path,
     DeviceBindlessResourceAllocator & allocator,
     LoadOptions options) {
+
+    // 切换到按需初始化
+    if (!vdb_initialized) {
+        openvdb::initialize();
+    }
 
     if (!std::filesystem::exists(path)) {
         MI_WARN("OpenVDBLoader: File {} does not exist.", path.string());
@@ -162,11 +161,12 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
     // 缓存 BBox 的起始坐标，以便在循环中加上偏移
     openvdb::Coord start_coord = bbox.min();
 
-    tbb::parallel_for(tbb::blocked_range<uint32_t>(0, depth), [&](const tbb::blocked_range<uint32_t>& range) {
+    // 切换到框架自带的 TaskGraph 处理每个切片，方便日后可能的统一调度
+    TaskGraph::Get().ForEachBlockedRange((uint32_t)0, depth, [&](uint32_t block_begin, uint32_t block_end) {
         // 每个线程本地的 Coord 变量，避免反复构造
         openvdb::Coord i_coord;
 
-        for (uint32_t z = range.begin(); z != range.end(); ++z) {
+        for (uint32_t z = block_begin; z != block_end; ++z) {
             for (uint32_t y = 0; y < height; ++y) {
                 // 预计算 z 和 y 的偏移
                 int offset_z = (scale_factor == 1.0f) ? z : (int)(z / scale_factor);

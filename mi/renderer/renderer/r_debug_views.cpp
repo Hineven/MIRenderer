@@ -40,7 +40,7 @@ DebugPersistentData::~DebugPersistentData() {
 
 }
 
-void DebugPersistentData::MakeSureExists(RendererView * view, RenderGraphBuilder & builder) {
+void DebugPersistentData::MakeSureExists([[maybe_unused]] RendererView * view, [[maybe_unused]] RenderGraphBuilder & builder) {
     // Do nothing.
 }
 

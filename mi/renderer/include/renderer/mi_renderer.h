@@ -18,6 +18,7 @@
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/mi_renderer_view.h"
 #include "renderer/mi_camera.h"
+#include "renderer/mi_console.h"
 MI_NAMESPACE_BEGIN
 class RHIBuffer;
 class RenderGraphBuilder;
@@ -25,6 +26,12 @@ class RHITexture;
 
 struct Render_StaticMeshesData;
 
+enum class PostProcessingFlagBits : unsigned {
+    eNone = 0,
+    // Use TAA (using visibility buffer and motion vectors)
+    eEnableTAA = 1 << 0,
+};
+MAKE_FLAGS(PostProcessing);
 
 // Integrated with scene resource management... Maybe I'll separate it later
 class Renderer : public NonCopyable, public NonMovable {
@@ -50,6 +57,8 @@ public:
     FORCEINLINE DeviceBindlessResourceAllocator * GetDeviceAllocator () {
         return device_allocator_.Raw();
     }
+
+    Console& GetConsole() { return console_; }
 
     // at most 4M
     constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
@@ -139,7 +148,9 @@ protected:
     ) ;
     void Render_DrawToOutput (
         RendererView * view, RenderGraphBuilder & builder,
-        RDGTexture * texture, DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB
+        RDGTexture * texture,
+        DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB,
+        PostProcessingFlags post_processing_flags = PostProcessingFlagBits::eNone
     ) ;
 
     void Render_DrawForwardStaticMeshes (
@@ -252,6 +263,8 @@ protected:
     TRef<RHITexture> blue_noise_128x128_;
     TRef<RHIBuffer> sobol_256x256_;
     TRef<RHIBuffer> sobol_scrambling_tile_256x256x8_;
+
+    Console console_;
 
 };
 

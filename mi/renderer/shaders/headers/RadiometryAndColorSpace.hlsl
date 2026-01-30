@@ -1,5 +1,5 @@
-#ifndef RADIOMETRY_HLSL
-#define RADIOMETRY_HLSL
+#ifndef RADIOMETRY_AND_COLOR_SPACE_HLSL
+#define RADIOMETRY_AND_COLOR_SPACE_HLSL
 
 // Map linear color to radiance (simple exponential heuristic)
 float3 LinearColorToRadiance (float3 Color, float Gamma = 2.2f) {
@@ -38,5 +38,23 @@ float LinearColorToLuminance (float3 Color) {
 float RadianceToLuminance (float3 Radiance, float Gamma = 2.2f) {
     return LinearColorToLuminance(RadianceToLinearColor(Radiance, Gamma));
 }
+
+float3 RGBToYCoCg(float3 c) {
+    float Y  = dot(c, float3(0.25, 0.5, 0.25));
+    float Co = c.r - c.b;
+    float Cg = c.g - Y;
+    return float3(Y, Co, Cg);
+}
+
+float3 YCoCgToRGB(float3 ycg) {
+    float Y = ycg.x;
+    float Co = ycg.y;
+    float Cg = ycg.z;
+    float r = Y + 0.5f * Co - Cg;
+    float g = Y + Cg;
+    float b = Y - 0.5f * Co - Cg;
+    return float3(r, g, b);
+}
+
 
 #endif

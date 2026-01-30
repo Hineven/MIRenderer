@@ -15,6 +15,14 @@
 
 MI_NAMESPACE_BEGIN
 
+#ifndef NDEBUG
+
+uint32_t GetRefCountedObjectCount();
+void IncrementRefCountedObjectCount();
+void DecrementRefCountedObjectCount();
+
+#endif
+
 /**
  * Base class implementing thread-safe reference counting.
  */
@@ -22,8 +30,17 @@ template<bool bThreadSafe = true, bool bWeakRef = false>
 class RefCounted
 {
 public:
+#ifndef NDEBUG
+    inline RefCounted() {
+        IncrementRefCountedObjectCount();
+    }
+    inline virtual ~RefCounted() {
+        DecrementRefCountedObjectCount();
+    }
+#else
     RefCounted() = default;
     virtual ~RefCounted() = default;
+#endif
 
     RefCounted(const RefCounted& Rhs) = delete;
     RefCounted& operator=(const RefCounted& Rhs) = delete;

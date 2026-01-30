@@ -86,6 +86,8 @@ protected:
         // Each command queue has its own command pool and 1 single command buffer recording
         vk::CommandPool cmd_pool {};
         vk::CommandBuffer cmd {};
+        // Keep track of allocated command buffers to free later. Used when RESET_COMMAND_POOL is false
+        std::vector<vk::CommandBuffer> cmd_buffers_to_free {};
         bool cmd_recording_started {};
 
         // Internal states
@@ -160,6 +162,7 @@ protected:
 
 
         vk::DescriptorPool descriptor_pool {};
+        std::vector<vk::DescriptorSet> allocated_descriptor_sets {};
 
         // RHI thread only allocator for temporaries.
         TOneTimeLinearAllocator<> allocator {};
@@ -188,17 +191,17 @@ protected:
         void SetupDefaultDynamicStates () const;
 
         // For debugging purposes only
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         std::stack<std::string> debug_marker_stack;
         std::string last_inserted_debug_marker;
 #endif
         FORCEINLINE void PushDebugMarker ([[maybe_unused]] const std::string & name) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             debug_marker_stack.push(name);
 #endif
         }
         FORCEINLINE void PopDebugMarker () {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             if (!debug_marker_stack.empty()) {
                 debug_marker_stack.pop();
             } else {
@@ -208,7 +211,7 @@ protected:
         }
 
         FORCEINLINE void CheckDebugMarkerStack () {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
             if (!debug_marker_stack.empty()) {
                 mi_assert(false, "Potential mismatch between PushDebugMarker and PopDebugMarker.");
             }

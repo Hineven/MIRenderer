@@ -26,6 +26,21 @@
 
 MI_NAMESPACE_BEGIN
 
+static std::string to_string(cgltf_result result) {
+    switch (result) {
+        case cgltf_result_success: return "success";
+        case cgltf_result_data_too_short: return "data_too_short";
+        case cgltf_result_unknown_format: return "unknown_format";
+        case cgltf_result_invalid_json: return "invalid_json";
+        case cgltf_result_invalid_gltf: return "invalid_gltf";
+        case cgltf_result_out_of_memory: return "out_of_memory";
+        case cgltf_result_invalid_options: return "invalid_options";
+        case cgltf_result_file_not_found: return "file_not_found";
+        case cgltf_result_io_error: return "io_error";
+        default: return "unknown_error";
+    }
+}
+
 bool GLTFLoader::LoadGLTF(
     std::filesystem::path path, DeviceBindlessResourceAllocator &allocator,
     Scene &world,
@@ -42,12 +57,12 @@ bool GLTFLoader::LoadGLTF(
     // TODO : use Infra resource ops to open file
     cgltf_result result = cgltf_parse_file(&options, path.string().c_str(), &gltf_model);
     if(result != cgltf_result_success) {
-        MI_WARN("GLTFLoader: Failed to parse GLTF file {}. Error: {}", path.string(), (uint32_t)result);
+        MI_WARN("GLTFLoader: Failed to parse GLTF file {}. Error: {}", path.string(), to_string(result));
         return false;
     }
     result = cgltf_load_buffers(&options, gltf_model, path.string().c_str());
     if(result != cgltf_result_success) {
-        MI_WARN("GLTFLoader: Failed to load buffers for GLTF file {}. Error: {}", path.string(), (uint32_t)result);
+        MI_WARN("GLTFLoader: Failed to load buffers for GLTF file {}. Error: {}", path.string(), to_string(result));
         return false;
     }
 #ifndef NDEBUG

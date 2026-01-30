@@ -24,11 +24,15 @@ MI_NAMESPACE_BEGIN
 // Must be consistent with the flag macros in SharedMaterial.hlsl
 enum class MaterialFlagBits : unsigned {
     kNone = 0,
-    kPointSampled = 1 << 0, // Point sampled texture
-    kForward = 1 << 1, // Simple forward material
+    kPointSampled = 1 << 0, // Material with point sampled textures
+    kForward = 1 << 1, // Rendered and shaded in forward passes.
     kDoubleSided = 1 << 2, // Double-sided material
-    kOpaque = 1 << 3, // Opaque material (no alpha blending)
+    kOpaque = 1 << 3, // Opaque material (rendered as alpha == 1.0f with best performance)
+    kSemiTransparent = 1 << 4, // Semi-transparent material (for materials explicitly designed to be translucent)
 };
+
+// Note: non-semi-transparent forward materials and deferred (non-forward) materials writes to G_visibility and G_motion_vector
+// Semi-transparent forward materials do not write to these buffers.
 
 MAKE_FLAGS(Material)
 

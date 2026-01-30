@@ -7,7 +7,7 @@
 // 跨平台实现：使用DXC编译HLSL到SPIRV
 #ifdef _WIN32
 #include <Windows.h>
-#include <dxcapi.h>
+#include <directx-dxc/dxcapi.h>
 #else
 #include <dlfcn.h>
 #include "dxc_linux.h"  // 处理Linux上的DXC接口
@@ -18,8 +18,8 @@
 #include <string>
 #include <codecvt>
 #include <locale>
-#include <unordered_set>
 #include <filesystem>
+#include <atomic>
 
 #include "infra_impl/infra.h"
 // 不再需要包含ShaderIncludeCollector
@@ -27,13 +27,80 @@
 
 MI_NAMESPACE_BEGIN
 
+// Custom include handler that routes file reads through Infra RIO_Open only
+class InfraIncludeHandler : public IDxcIncludeHandler {
+public:
+    InfraIncludeHandler(MyInfra* infra, IDxcUtils* dxc_lib)
+        : infra_(infra), dxc_lib_(dxc_lib) {}
+
+    // IUnknown
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) override {
+        if (!ppvObject) return E_POINTER;
+        if (riid == __uuidof(IDxcIncludeHandler) || riid == __uuidof(IUnknown)) {
+            *ppvObject = static_cast<IDxcIncludeHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppvObject = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return ++ref_count_;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG newCount = --ref_count_;
+        if (newCount == 0) delete this;
+        return newCount;
+    }
+
+    // IDxcIncludeHandler
+    HRESULT STDMETHODCALLTYPE LoadSource(LPCWSTR pFilename, IDxcBlob** ppIncludeSource) override {
+        if (!pFilename || !ppIncludeSource) return E_INVALIDARG;
+        *ppIncludeSource = nullptr;
+        try {
+            // Convert include path to resource path (relative to resource dir if absolute)
+            std::filesystem::path inc_path = std::filesystem::path(pFilename);
+            std::filesystem::path res_dir = infra_->GetResourceDirectory();
+            MIResourcePath res_path;
+            if (inc_path.is_absolute()) {
+                std::error_code ec;
+                auto rel = std::filesystem::relative(inc_path, res_dir, ec);
+                res_path = (!ec && !rel.empty()) ? rel.generic_string() : inc_path.generic_string();
+            } else {
+                res_path = inc_path.generic_string();
+            }
+
+            // Open via Infra only
+            TRef<BlobResourceInterface> blob = infra_->RIO_Open_Volatile(res_path, MIInfraResourceHintType::kShaderSource, BlobResourceAccessFlagBits::kRead);
+            if (!blob.Raw()) {
+                return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+            }
+            size_t size = blob->GetSize();
+            std::vector<char> buf(size);
+            if (size) blob->ReadBlob(0, size, buf.data());
+
+            IDxcBlobEncoding* out_blob = nullptr;
+            HRESULT hr = dxc_lib_->CreateBlob(buf.data(), (UINT32)size, CP_UTF8, &out_blob);
+            if (FAILED(hr)) return hr;
+            *ppIncludeSource = out_blob;
+            return S_OK;
+        } catch (...) {
+            return E_FAIL;
+        }
+    }
+
+private:
+    std::atomic<ULONG> ref_count_{1};
+    MyInfra* infra_ {nullptr};
+    IDxcUtils* dxc_lib_ {nullptr};
+};
+
 struct HLSLCompilerContext {
-    IDxcLibrary *dxc_lib {nullptr};
-    IDxcCompiler *dxc_compiler {nullptr};
+    IDxcUtils *dxc_lib {nullptr};
+    IDxcCompiler3 *dxc_compiler {nullptr};
     IDxcIncludeHandler *include_handler {nullptr};
-#ifdef _WIN32
-    bool com_initialized {false};
-#endif
 #ifndef _WIN32
     void* dxc_library_handle {nullptr}; // Linux上的动态库句柄
 #endif
@@ -93,16 +160,11 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
         auto ctx = new HLSLCompilerContext;
 
 #ifdef _WIN32
-        // Windows实现
-        HRESULT hrCo = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        if (FAILED(hrCo) && hrCo != RPC_E_CHANGED_MODE) {
-            MI_LOG(MIInfraLogType::kError, "CoInitializeEx failed hr={}", (int)hrCo);
-        } else {
-            ctx->com_initialized = (hrCo == S_OK || hrCo == S_FALSE);
-        }
-        DxcCreateInstance(CLSID_DxcLibrary, __uuidof(IDxcLibrary), (void **)&ctx->dxc_lib);
-        DxcCreateInstance(CLSID_DxcCompiler, __uuidof(IDxcCompiler), (void **)&ctx->dxc_compiler);
-        ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
+        DxcCreateInstance(CLSID_DxcLibrary, __uuidof(IDxcUtils), (void **)&ctx->dxc_lib);
+        DxcCreateInstance(CLSID_DxcCompiler, __uuidof(IDxcCompiler3), (void **)&ctx->dxc_compiler);
+        // Use our Infra-backed include handler
+        ctx->include_handler = new InfraIncludeHandler(this, ctx->dxc_lib);
+
 #else
         // Linux实现
         ctx->dxc_library_handle = dlopen("libdxcompiler.so", RTLD_LAZY);
@@ -112,7 +174,6 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             return nullptr;
         }
 
-        // 获取创建实例的函数指针
         auto DxcCreateInstance = (DxcCreateInstanceProc)dlsym(ctx->dxc_library_handle, "DxcCreateInstance");
         if (!DxcCreateInstance) {
             std::cerr << "Failed to get DxcCreateInstance function: " << dlerror() << std::endl;
@@ -121,7 +182,6 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             return nullptr;
         }
 
-        // 创建DXC实例
         HRESULT hr = DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&ctx->dxc_lib));
         if (FAILED(hr)) {
             std::cerr << "Failed to create DXC library instance" << std::endl;
@@ -138,12 +198,13 @@ HLSLCompilerContext * MyInfra::GetHLSLCompilerContextForThread(std::thread::id t
             delete ctx;
             return nullptr;
         }
-        hr = ctx->dxc_lib->CreateIncludeHandler(&ctx->include_handler);
+        // Use our Infra-backed include handler
+        ctx->include_handler = new InfraIncludeHandler(this, ctx->dxc_lib);
 #endif
-        // 古法引用计数，匠心独运，传承配方 (主要是因为Unix上没有ComPtr，还得自己实现）
-        ctx->include_handler->AddRef();
-        ctx->dxc_lib->AddRef();
-        ctx->dxc_compiler->AddRef();
+        // Manual ref management for COM-like interfaces
+        // DxcCreateInstance returns objects with refcount = 1, and InfraIncludeHandler starts with refcount = 1.
+        // We store the owning references directly and release them once in DestroyHLSLCompilerContexts.
+        // Calling AddRef here leaves refcount at 2 and leaks when releasing only once later.
         hlsl_compiler_contexts_[thread_id] = ctx;
         return ctx;
     } else {
@@ -158,9 +219,7 @@ void MyInfra::DestroyHLSLCompilerContexts() {
         ctx->dxc_lib->Release();
         ctx->dxc_compiler->Release();
 #ifdef _WIN32
-        if (ctx->com_initialized) {
-            CoUninitialize();
-        }
+
 #endif
 #ifndef _WIN32
         if (ctx->dxc_library_handle) {
@@ -172,7 +231,7 @@ void MyInfra::DestroyHLSLCompilerContexts() {
     hlsl_compiler_contexts_.clear();
 }
 
-static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shader_path, std::vector<std::string> options, bool preprocess_only = false) {
+static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shader_path, std::vector<std::string> options, [[maybe_unused]] bool preprocess_only = false) {
     auto w_options = std::vector<std::wstring>(options.size());
     for (size_t i = 0; i < options.size(); i++) {
         w_options[i] = Utf8ToWide(options[i]);
@@ -197,19 +256,25 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         add_option(L"-fspv-use-vulkan-memory-model"); // Use Vulkan memory model (see that in Vulkan spec)
         add_option(L"-Ges"); // Strict mode
         add_option(L"-disable-payload-qualifiers"); // Disable DXR 1.1 ray payload qualifiers
-#ifndef NDEBUG
+#if MI_ENABLE_SHADER_DEBUGGING
         // Debugging flag
         add_option(L"-Zi"); // Generate debug information
 #endif
-        // add_option(L"-fspv-reflect");
-        // add_option(L"-fspv-debug=vulkan-with-source");
         // Warnings as errors
         add_option(L"-WX");
-        // Debug printf (automatically used , no need to add it)
-        // add_option(L"-fspv-extension=SPV_KHR_non_semantic_info");
     }
     // Add a default include path (same as the shader parent directory)
-
+    try {
+        std::filesystem::path shader_fs_path = std::filesystem::absolute(std::wstring(shader_path));
+        auto parent_path = shader_fs_path.parent_path();
+        if (std::filesystem::exists(parent_path)) {
+            std::wstring parent_path_w = Utf8ToWide(parent_path.string());
+            add_option(L"-I");
+            add_option(parent_path_w);
+        }
+    } catch (...) {
+        // ignore
+    }
     // Always add the global renderer shader directory for shared includes
     try {
         std::filesystem::path global_shader_dir = std::filesystem::absolute("mi/renderer/shaders");
@@ -224,33 +289,41 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
     return w_options;
 }
 
-// TODO: 怪了，如果不使用此互斥锁，则可能在刷新Shader时崩溃（单线程多次大量调用PreprocessAndComputeHash）
-// 原因未探明，暂时先加个锁
-static std::mutex preprocess_mutex;
-
 // 添加预处理并计算哈希的辅助函数
 static uint64_t PreprocessAndComputeHash(
-        IDxcCompiler* dxc_compiler,
+        IDxcCompiler3* dxc_compiler,
+        IDxcUtils *dxc_utils,
         IDxcIncludeHandler* include_handler,
-        IDxcBlobEncoding* source_blob,
+        DxcBuffer* source,
         const wchar_t* shader_path,
+        const wchar_t* entry_point,
+        const wchar_t* target_profile,
         const std::vector<DxcDefine>& defines,
-        const std::vector<const wchar_t*>& options_cstr,
+        std::vector<const wchar_t*> options_cstr,
         uint32_t options_count) {
-    std::lock_guard lock(preprocess_mutex);
     // 进行预处理操作
     IDxcOperationResult *preprocess_result;
     // Make a local copy if we ever want to append internal defines (currently none)
     auto local_defines = defines;
     local_defines.push_back({L"MI_PREPROCESSING", nullptr});
-    dxc_compiler->Preprocess(
-        source_blob,
-        shader_path,
-        (LPCWSTR*)options_cstr.data(), options_count,
+    IDxcCompilerArgs * compiler_args;
+    // Preprocess only
+    dxc_utils->BuildArguments(
+        shader_path, nullptr, nullptr,
+        options_cstr.data(), options_count,
         local_defines.data(), (uint32_t)local_defines.size(),
-        include_handler,
-        &preprocess_result
+        &compiler_args
     );
+    auto preprocess_arg = L"-P";
+    compiler_args->AddArguments(&preprocess_arg, 1); // Preprocess only
+    dxc_compiler->Compile(
+        source,
+        compiler_args->GetArguments(),
+        compiler_args->GetCount(),
+        include_handler,
+        IID_PPV_ARGS(&preprocess_result)
+    );
+    compiler_args->Release();
 
     // 检查预处理结果
     HRESULT hr;
@@ -271,7 +344,8 @@ static uint64_t PreprocessAndComputeHash(
         IDxcBlobEncoding *error_blob;
         preprocess_result->GetErrorBuffer(&error_blob);
         if (error_blob) {
-            std::string error_message(static_cast<const char*>(error_blob->GetBufferPointer()), error_blob->GetBufferSize() - 1);
+            auto count = error_blob->GetBufferSize() ? error_blob->GetBufferSize() - 1 : 0;
+            std::string error_message(static_cast<const char*>(error_blob->GetBufferPointer()), count);
             MI_LOG(MIInfraLogType::kError, "HLSL Preprocessing Error: {}", error_message);
             error_blob->Release();
         } else {
@@ -313,11 +387,11 @@ MyInfra::CompileHLSLToSPIRV(
         return {};
     }
 
-    IDxcLibrary *dxc_lib = ctx->dxc_lib;
-    IDxcCompiler *dxc_compiler = ctx->dxc_compiler;
+    IDxcUtils *dxc_lib = ctx->dxc_lib;
+    IDxcCompiler3 *dxc_compiler = ctx->dxc_compiler;
 
     IDxcBlobEncoding *hlsl_blob;
-    dxc_lib->CreateBlobWithEncodingFromPinned(hlsl_code.data(), (uint32_t)hlsl_code.size(), CP_UTF8, &hlsl_blob);
+    dxc_lib->CreateBlob(hlsl_code.data(), (uint32_t)hlsl_code.size(), CP_UTF8, &hlsl_blob);
 
     std::wstring entry_point_w = Utf8ToWide(entry_point);
     std::wstring target_profile_w = Utf8ToWide(target_profile);
@@ -353,13 +427,21 @@ MyInfra::CompileHLSLToSPIRV(
     std::vector<std::wstring> define_names; // 保持生命周期，避免悬垂指针
     std::vector<std::wstring> define_values;
     auto defines_dxc = ConvertDefines(defines, define_names, define_values);
+    auto source_buffer = DxcBuffer{
+        hlsl_blob->GetBufferPointer(),
+        hlsl_blob->GetBufferSize(),
+        DXC_CP_ACP
+    };
     if (out_shader_xxhash64) {
         // 计算预处理后代码的哈希值
         *out_shader_xxhash64 ^= PreprocessAndComputeHash(
             dxc_compiler,
+            dxc_lib,
             ctx->include_handler,
-            hlsl_blob,
+            &source_buffer,
             shader_path,
+            entry_point_w.c_str(),
+            target_profile_w.c_str(),
             defines_dxc,
             prep_options_cstr,
             (uint32_t)prep_options_cstr.size()
@@ -367,41 +449,69 @@ MyInfra::CompileHLSLToSPIRV(
     }
 
     // 进行实际编译
-    IDxcOperationResult *compile_result;
-    dxc_compiler->Compile(hlsl_blob, shader_path, entry_point_w.c_str(), target_profile_w.c_str(),
-                          w_options_cstr.data(), (uint32_t)w_options_cstr.size(),
-                          defines_dxc.data(), (uint32_t)defines_dxc.size(), ctx->include_handler, &compile_result);
+    try {
+        IDxcCompilerArgs * compiler_args;
+        dxc_lib->BuildArguments(
+            shader_path, entry_point_w.c_str(), target_profile_w.c_str(),
+            w_options_cstr.data(), (uint32_t)w_options.size(),
+            defines_dxc.data(), (uint32_t)defines_dxc.size(),
+            &compiler_args
+        );
+        IDxcOperationResult* compile_result {};
+        dxc_compiler->Compile(
+            &source_buffer, compiler_args->GetArguments(), compiler_args->GetCount(),
+            ctx->include_handler, IID_PPV_ARGS(&compile_result)
+        );
+        compiler_args->Release();
 
-    HRESULT hr;
-    compile_result->GetStatus(&hr);
-    if (FAILED(hr)) {
-        IDxcBlobEncoding *error_blob;
-        compile_result->GetErrorBuffer(&error_blob);
-        error.resize(error_blob->GetBufferSize() - 1); // -1 to exclude null terminator
-        memcpy(error.data(), error_blob->GetBufferPointer(), error_blob->GetBufferSize() - 1);
-        error_blob->Release();
-        compile_result->Release();
+        if (compile_result) {
+            HRESULT hr;
+            compile_result->GetStatus(&hr);
+            if (FAILED(hr)) {
+                IDxcBlobEncoding* error_blob;
+                compile_result->GetErrorBuffer(&error_blob);
+                error.resize(error_blob->GetBufferSize() - 1); // -1 to exclude null terminator
+                memcpy(error.data(), error_blob->GetBufferPointer(), error_blob->GetBufferSize() - 1);
+                error_blob->Release();
+                compile_result->Release();
+                hlsl_blob->Release();
+                return {};
+            }
+
+
+            IDxcBlob* spirv_blob;
+            compile_result->GetResult(&spirv_blob);
+            std::vector<uint32_t> spirv(spirv_blob->GetBufferSize() / sizeof(uint32_t));
+            memcpy(spirv.data(), spirv_blob->GetBufferPointer(), spirv_blob->GetBufferSize());
+
+            spirv_blob->Release();
+            compile_result->Release();
+            hlsl_blob->Release();
+            return spirv;
+        }
+        else {
+            MI_WARN("DXC Compile returned null operation result. (This possibly means a bug within dxc.)");
+            hlsl_blob->Release();
+            return {};
+        }
+    }
+    catch (...) {
+        error = "DXC Compile threw an exception.";
         hlsl_blob->Release();
         return {};
     }
-
-    IDxcBlob *spirv_blob;
-    compile_result->GetResult(&spirv_blob);
-    std::vector<uint32_t> spirv(spirv_blob->GetBufferSize() / sizeof(uint32_t));
-    memcpy(spirv.data(), spirv_blob->GetBufferPointer(), spirv_blob->GetBufferSize());
-
-    spirv_blob->Release();
-    compile_result->Release();
-    hlsl_blob->Release();
-
-    return spirv;
 }
 
 uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
         const MIResourcePath & res_path,
+        std::string entry_point,
+        std::string target_profile,
         std::vector<std::string> defines,
         std::vector<std::string> options,
         bool & is_shader_valid) {
+
+    std::wstring entry_point_w = Utf8ToWide(entry_point);
+    std::wstring target_profile_w = Utf8ToWide(target_profile);
 
     is_shader_valid = false;
 
@@ -435,12 +545,12 @@ uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
         return 0; // 无法初始化编译器
     }
 
-    IDxcLibrary *dxc_lib = ctx->dxc_lib;
-    IDxcCompiler *dxc_compiler = ctx->dxc_compiler;
+    IDxcUtils *dxc_lib = ctx->dxc_lib;
+    IDxcCompiler3 *dxc_compiler = ctx->dxc_compiler;
 
     // 创建着色器代码 blob
     IDxcBlobEncoding *hlsl_blob;
-    dxc_lib->CreateBlobWithEncodingFromPinned(hlsl_code.data(), (uint32_t)hlsl_code.size(), CP_UTF8, &hlsl_blob);
+    dxc_lib->CreateBlob(hlsl_code.data(), (uint32_t)hlsl_code.size(), DXC_CP_ACP, &hlsl_blob);
 
     // 准备预处理选项（添加-P选项）
     auto w_options = GetImplicitCompileOptions(shader_path_w.c_str(), options, true);
@@ -455,12 +565,20 @@ uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
 
     uint64_t hash_value = GetHashForOptionsAndDefines(options, defines);
 
+    auto source_buffer = DxcBuffer{
+        hlsl_blob->GetBufferPointer(),
+        hlsl_blob->GetBufferSize(),
+        DXC_CP_ACP
+    };
     // 计算预处理后代码的哈希值
     hash_value ^= PreprocessAndComputeHash(
         dxc_compiler,
+        dxc_lib,
         ctx->include_handler,
-        hlsl_blob,
+        &source_buffer,
         shader_path_w.c_str(),
+        entry_point_w.c_str(),
+        target_profile_w.c_str(),
         defines_dxc,
         w_options_cstr,
         (uint32_t)w_options_cstr.size()

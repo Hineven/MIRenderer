@@ -12,6 +12,7 @@
 #include <rdg/rdg_param.h>
 #include <rhi/rhi_buffer.h>
 
+#include "core/util/debug_prof.h"
 #include "rdg/rdg_pass.h"
 #include "rdg/rdg_pool.h"
 #include "rdg/rdg_shader.h"
@@ -21,7 +22,12 @@
 // Instantly start a command buffer submit after the execution of each pass.
 // This is useful for debugging, but hurts performance alot.
 // #define INSTANT_SUBMIT_FOR_EACH_PASS
+
+// Enable extra validation checks during RDG execution.
+#define RDG_DEBUG_VALIDATION
 #endif
+
+
 MI_NAMESPACE_BEGIN
 
 static bool is_rdg_executing = false;
@@ -30,34 +36,68 @@ bool RDG_IsInRDGExecution () {
     return is_rdg_executing;
 }
 
+bool RDGProfilingContext::ResolveTimestampPeriods(std::vector<RDGTimePeriod> & out_periods,
+    RHI & rhi,
+    RHI::RHITimestampQueryMode mode) {
+#if MI_ENABLE_TIMESTAMP
+    out_periods.clear();
+
+    if (marker_timestamps_.size() < 2) {
+        return true;
+    }
+
+    auto marker_timestamp_results = rhi.QueryTimestamps(
+        std::span<RHITimestamp*>(reinterpret_cast<RHITimestamp **>(marker_timestamps_.data()), marker_timestamps_.size()),
+        mode
+    );
+
+    if (mode == RHI::RHITimestampQueryMode::kNonBlocking) {
+        for (auto v : marker_timestamp_results) {
+            if (v == UINT64_MAX) {
+                // Not ready yet.
+                return false;
+            }
+        }
+    }
+
+    uint64_t prev_time_ticks = marker_timestamp_results[0];
+
+    auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
+    const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
+    const float device_timestamp_tick_period = rhi.GetDeviceProperties().timestamp_period;
+
+    const size_t n = marker_timestamps_.size();
+    out_periods.reserve(n - 1);
+    for (size_t i = 0; i < n - 1; i++) {
+        uint64_t time_ticks = marker_timestamp_results[i + 1];
+        uint64_t delta;
+        if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
+            delta = (wrap_mod - prev_time_ticks) + time_ticks;
+        } else {
+            delta = time_ticks - prev_time_ticks;
+        }
+        double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns -> seconds
+        prev_time_ticks = time_ticks;
+
+        auto period = marker_periods_[i];
+        period.duration = (float)duration;
+        out_periods.emplace_back(std::move(period));
+    }
+
+    return true;
+#else
+    (void)out_periods;
+    (void)rhi;
+    (void)mode;
+    return false;
+#endif
+}
+
 RenderGraph::RenderGraph(const std::string & name): name_(name) {}
 RenderGraph::~RenderGraph() {}
 
-FORCEINLINE static void FastTinyCopy (void* __restrict dst, const void* __restrict src, size_t size) {
-    switch (size) {
-        case 4: *static_cast<uint32_t*>(dst) = *static_cast<const uint32_t*>(src); break;
-        case 8: *static_cast<uint64_t*>(dst) = *static_cast<const uint64_t*>(src); break;
-        case 12: {
-            const uint32_t* s = static_cast<const uint32_t*>(src);
-            uint32_t* d = static_cast<uint32_t*>(dst);
-            d[0] = s[0];
-            d[1] = s[1];
-            d[2] = s[2];
-            break;
-        }
-        case 16: {
-            const uint64_t* s = static_cast<const uint64_t*>(src);
-            uint64_t* d = static_cast<uint64_t*>(dst);
-            d[0] = s[0];
-            d[1] = s[1];
-            break;
-        }
-        default: std::memcpy(dst, src, size);
-    }
-}
-
 void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
-
+    DEBUG_PROFILE_SECTION(GraphExecSection);
     if (passes_.empty()) {
         MI_WARN("All graph passes are culled, nothing to execute.");
     }
@@ -140,6 +180,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             for (auto & [ptr, desc] : param_ptr_to_uniform_buffer_segment_) {
                 WriteUniforms((std::byte*)staging_ptr + desc.offset, desc.param_info, ptr);
             }
+            staging_buffer->Unmap();
             // Barrier the uniform buffer
             cmd.BufferBarrier(
                 uniform_buffer_->GetRHI(), uniform_buffer_->GetReadStages() | uniform_buffer_->GetWriteStages(),
@@ -169,24 +210,26 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     [[maybe_unused]] auto& rhi = RHI::Get();
 
     auto insert_timestamp = [&] () {
-#ifndef NDEBUG
+#if MI_ENABLE_TIMESTAMP
         auto timestamp = rhi.CreateTimestamp();
-        marker_timestamps.push_back(timestamp);
-        marker_periods.push_back(active_period);
-        cmd.InsertTimestamp(timestamp.Raw());
+        if (timestamp) {
+            marker_timestamps.push_back(timestamp);
+            marker_periods.push_back(active_period);
+            cmd.InsertTimestamp(timestamp.Raw());
+        }
+#else
+        (void)active_period;
 #endif
     };
 
     auto sync_active_period = [&] ([[maybe_unused]] RDGPass * pass, [[maybe_unused]] RHICommandQueueGraphics & queue) {
         insert_timestamp();
-#ifndef NDEBUG
+#if MI_ENABLE_TIMESTAMP
         auto curr_class_path = pass ? pass->class_path_ : std::vector<std::string>{};
         auto curr_pass_name = pass ? pass->GetName() : "";
         if (curr_class_path == active_period.class_names && curr_pass_name == active_period.pass_name) {
-            // Continue the current period
             return ;
         }
-        // Pop the previous period to a longest common ancestor
         size_t common_length = 0;
         while (common_length < std::min(active_period.class_names.size(), curr_class_path.size())) {
             if (active_period.class_names[common_length] != curr_class_path[common_length]) {
@@ -194,12 +237,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             }
             common_length ++;
         }
-        // Commit pop operations to RHI queue
         if (!active_period.pass_name.empty()) queue.EndDebugMarker();
         for (size_t i = active_period.class_names.size(); i > common_length; i--) {
             queue.EndDebugMarker();
         }
-        // Push new periods
         for (size_t i = common_length; i < curr_class_path.size(); i++) {
             queue.BeginDebugMarker(curr_class_path[i].c_str());
         }
@@ -207,11 +248,14 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
         active_period.class_names = curr_class_path;
         active_period.pass_name = curr_pass_name;
+#else
+        (void)pass;
+        (void)queue;
 #endif
     };
 
     // RDG buffer corruption check for debugging
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
     auto IsRDGResourceCorrupted = [&] (RDGResource * resource) -> bool {
         if (!resource) return false;
         return !resource->IsCanaryAlive();
@@ -219,7 +263,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 #endif
 
     while (!ready_passes.empty()) {
-#ifndef NDEBUG
+#ifdef RDG_DEBUG_VALIDATION
         for (auto & validating_pass : passes_) {
             if (!validating_pass) continue ;
             for (auto & texture_use : validating_pass->compiled_.textures) {
@@ -356,33 +400,13 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     cmd.EnqueueTranslateAndSubmit(sync_point, GetName());
 
-#ifndef NDEBUG
-    // Extract timestamp results
+#if MI_ENABLE_TIMESTAMP
+    // Store profiling context for later resolution (typically next frame).
+    profiling_context_.SafeRelease();
     if (!marker_timestamps.empty()) {
-        timestamp_periods_.clear();
-        uint64_t prev_time_ticks = 0;
-        if (!marker_timestamps.empty())
-            prev_time_ticks = marker_timestamps[0]->QueryTimestamp(); // This function implicitly waits for the GPU to finish.
-        auto valid_bits = std::min(rhi.GetDeviceProperties().timestamp_valid_bits, 64u);
-        const uint64_t wrap_mod = (valid_bits == 64u) ? 0ull : (1ull << valid_bits);
-        for (size_t i = 0; i < marker_timestamps.size() - 1; i++) {
-            uint64_t time_ticks = marker_timestamps[i + 1]->QueryTimestamp();
-
-            uint64_t delta;
-            if (wrap_mod != 0ull && time_ticks < prev_time_ticks) {
-                // Counter wrapped around within the valid bit width
-                delta = (wrap_mod - prev_time_ticks) + time_ticks;
-            } else {
-                delta = time_ticks - prev_time_ticks;
-            }
-            float device_timestamp_tick_period = rhi.GetDeviceProperties().timestamp_period;
-            double duration = double(delta) * double(device_timestamp_tick_period) * 1e-9; // ns
-            prev_time_ticks = time_ticks;
-            auto period = marker_periods[i];
-            period.duration = (float)duration;
-
-            timestamp_periods_.emplace_back(period);
-        }
+        profiling_context_.CreateIfNull();
+        profiling_context_->marker_timestamps_ = std::move(marker_timestamps);
+        profiling_context_->marker_periods_ = std::move(marker_periods);
     }
 #endif
 
@@ -393,3 +417,4 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 }
 
 MI_NAMESPACE_END
+

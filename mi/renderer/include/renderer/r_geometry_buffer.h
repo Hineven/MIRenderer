@@ -20,9 +20,13 @@ struct GeometryBufferData : public RefCounted<> {
 
     // Decoded G-buffers
     TRef<RDGTexture> G_albedo_;
+    // Shading normal as well as the default normal
     TRef<RDGTexture> G_normal_;
+    // GeometryNormal. Specially, this is an octahedron packed uint with high precision (PackGeometryNormal in hlsl)
+    TRef<RDGTexture> G_geometry_normal_;
     TRef<RDGTexture> G_emission_;
     TRef<RDGTexture> G_metallic_roughness_;
+    TRef<RDGTexture> G_motion_vector_;
 
     // Flags (R8Uint)
     TRef<RDGTexture> G_flags_;
@@ -47,7 +51,9 @@ struct GeometryBufferPersistentData : public RefCounted<> {
 
     TRef<RDGTexture> prev_G_depth_;
     TRef<RDGTexture> prev_G_normal_;
+    TRef<RDGTexture> prev_G_geometry_normal_;
     TRef<RDGTexture> prev_G_transmittance_;
+    TRef<RDGTexture> prev_G_motion_vector_;
 
     bool MakeSureExists(
         RendererView * view, RenderGraphBuilder & builder

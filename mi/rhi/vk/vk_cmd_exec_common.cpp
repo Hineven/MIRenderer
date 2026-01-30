@@ -19,9 +19,13 @@
 // down the entire program. So I just recreated the command pool every frame.
 // https://github.com/GPUOpen-Drivers/xgl/issues/63
 
-// False for recreating the command pool every frame.
+// False for vkFreeCommandBuffer
 // True for using vkResetCommandPool
 #define RESET_COMMAND_POOL false
+
+#define RESET_DESCRIPTOR_POOL true
+
+#define FREE_DESCRIPTOR_SET false
 
 MI_NAMESPACE_BEGIN
 
@@ -45,6 +49,47 @@ void VulkanCommandExecutor::CommandQueueState::ResetStates() {
     }
 }
 
+static vk::DescriptorPool CreateFrameTemporaryDescriptorPool() {
+    auto rhi = GetVulkanRHI();
+    vk::DescriptorPoolSize pool_sizes[] = {
+            {
+                    vk::DescriptorType::eUniformBuffer,
+                    C::kMaxNumUniformBufferDescriptorsPerFrame
+            },
+            {
+                    vk::DescriptorType::eStorageBuffer,
+                    C::kMaxNumStorageBufferDescriptorsPerFrame
+            },
+            {
+                    vk::DescriptorType::eSampledImage,
+                    C::kMaxNumSampledTextureDescriptorsPerFrame
+            },
+            {
+                    vk::DescriptorType::eStorageImage,
+                    C::kMaxNumStorageTextureDescriptorsPerFrame
+            },
+            {
+                    vk::DescriptorType::eAccelerationStructureKHR,
+                    C::kMaxNumAccelerationStructureDescriptorsPerFrame
+            },
+            {
+                    vk::DescriptorType::eSampler,
+                    C::kMaxNumSamplerDescriptorsPerFrame
+            }
+    };
+    return rhi->GetDevice().createDescriptorPool(
+            vk::DescriptorPoolCreateInfo{
+#if FREE_DESCRIPTOR_SET
+                    vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet
+#else
+                {}
+#endif
+                ,
+                    C::kMaxNumDescriptorSetsPerFrame,
+                    pool_sizes
+            }
+    );
+}
 
 void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
     CHECK_RHI_THREAD();
@@ -55,45 +100,13 @@ void VulkanCommandExecutor::CommandQueueState::Init(RHICommandQueueType type) {
         auto rhi = GetVulkanRHI();
         cmd_pool = rhi->GetDevice().createCommandPool(
                 vk::CommandPoolCreateInfo{
-                        vk::CommandPoolCreateFlagBits::eTransient,
+                        vk::CommandPoolCreateFlagBits::eTransient
+                    | vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
                         rhi->GetQueueFamilyIndex(type)
                 }
         );
         ResetStates();
-        // We reset the descriptor pool every frame.
-        vk::DescriptorPoolSize pool_sizes[] = {
-                {
-                        vk::DescriptorType::eUniformBuffer,
-                        C::kMaxNumUniformBufferDescriptorsPerFrame
-                },
-                {
-                        vk::DescriptorType::eStorageBuffer,
-                        C::kMaxNumStorageBufferDescriptorsPerFrame
-                },
-                {
-                        vk::DescriptorType::eSampledImage,
-                        C::kMaxNumSampledTextureDescriptorsPerFrame
-                },
-                {
-                        vk::DescriptorType::eStorageImage,
-                        C::kMaxNumStorageTextureDescriptorsPerFrame
-                },
-                {
-                        vk::DescriptorType::eAccelerationStructureKHR,
-                        C::kMaxNumAccelerationStructureDescriptorsPerFrame
-                },
-                {
-                        vk::DescriptorType::eSampler,
-                        C::kMaxNumSamplerDescriptorsPerFrame
-                }
-        };
-        descriptor_pool = rhi->GetDevice().createDescriptorPool(
-                vk::DescriptorPoolCreateInfo{
-                        {},
-                        C::kMaxNumDescriptorSetsPerFrame,
-                        pool_sizes
-                }
-        );
+        descriptor_pool = CreateFrameTemporaryDescriptorPool();
     }
 }
 
@@ -140,17 +153,31 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
             rhi->GetDevice().resetCommandPool(cmd_pool,
                           return_resources_to_system
                           ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlagBits{});
-        } else { rhi->GetDevice().destroy(cmd_pool);
-            cmd_pool = rhi->GetDevice().createCommandPool(
-                    vk::CommandPoolCreateInfo{
-                            vk::CommandPoolCreateFlagBits::eTransient,
-                            rhi->GetQueueFamilyIndex(RHICommandQueueType::kGraphics)
-                    }
-            );
+        } else {
+            if (!cmd_buffers_to_free.empty()) {
+                rhi->GetDevice().freeCommandBuffers(cmd_pool, cmd_buffers_to_free);
+                cmd_buffers_to_free.clear();
+            }
         }
     }
     {
-        rhi->GetDevice().resetDescriptorPool(descriptor_pool);
+        if (RESET_DESCRIPTOR_POOL) {
+            if (FREE_DESCRIPTOR_SET) {
+                // Free all descriptor sets allocated from the pool
+                rhi->GetDevice().freeDescriptorSets(descriptor_pool, allocated_descriptor_sets);
+            }
+            // We track allocated sets only for optional freeing/debugging. When we reset the pool,
+            // all descriptor sets become invalid anyway, so make sure the CPU-side tracking vector
+            // doesn't grow unbounded over time.
+            allocated_descriptor_sets.clear();
+
+            rhi->GetDevice().resetDescriptorPool(descriptor_pool);
+        } else {
+            rhi->GetDevice().destroyDescriptorPool(descriptor_pool);
+            descriptor_pool = CreateFrameTemporaryDescriptorPool();
+            // Pool was recreated; previously tracked sets are invalid.
+            allocated_descriptor_sets.clear();
+        }
     }
 }
 
@@ -170,7 +197,6 @@ void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
         cmd_recording_started = true;
         auto device = GetVulkanRHI()->GetDevice();
         // Allocate a new command buffer
-        // TODO accelerate this?
         cmd = device.allocateCommandBuffers(
                 vk::CommandBufferAllocateInfo{
                         cmd_pool,
@@ -178,6 +204,9 @@ void VulkanCommandExecutor::CommandQueueState::BeginCmd () {
                         1
                 }
         )[0];
+        // Add to the list of command buffers to free later
+        cmd_buffers_to_free.push_back(cmd);
+        // Begin recording
         cmd.begin(vk::CommandBufferBeginInfo{});
         // Setup default dynamic states.
         SetupDefaultDynamicStates();

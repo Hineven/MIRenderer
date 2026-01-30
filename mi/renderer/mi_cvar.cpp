@@ -248,9 +248,9 @@ std::string CVar<std::string>::GetTypeName() const {
 
 // CVarRegistry implementation
 CVarRegistry& CVarRegistry::GetInstance() {
-    static CVarRegistry * instance_ptr;
+    static std::unique_ptr<CVarRegistry> instance_ptr;
     if (instance_ptr == nullptr) {
-        instance_ptr = new CVarRegistry();
+        instance_ptr.reset(new CVarRegistry());
     }
     return *instance_ptr;
 }
@@ -269,14 +269,14 @@ void CVarRegistry::RegisterCVar(CVarBase * cvar) {
 CVarBase * CVarRegistry::GetCVar(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = cvars_.find(id);
-    return (it != cvars_.end()) ? it->second.Raw() : nullptr;
+    return (it != cvars_.end()) ? it->second : nullptr;
 }
 
 std::vector<CVarBase*> CVarRegistry::GetAllCVars() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<CVarBase*> result;
     for (const auto& pair : cvars_) {
-        result.push_back(pair.second.Raw());
+        result.push_back(pair.second);
     }
     return result;
 }
@@ -286,7 +286,7 @@ std::vector<CVarBase*> CVarRegistry::GetDirtyCVars() {
     std::vector<CVarBase*> result;
     for (const auto& pair : cvars_) {
         if (pair.second->IsDirty()) {
-            result.push_back(pair.second.Raw());
+            result.push_back(pair.second);
         }
     }
     return result;

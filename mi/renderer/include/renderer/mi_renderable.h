@@ -34,6 +34,7 @@ MAKE_FLAGS(Renderable);
 
 class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
+    friend Scene;
     virtual ~Renderable();
     // Invisible renderables wont be rendered & taken into consideration by lighting.
     FORCEINLINE bool IsVisible() const { return flags_ & RenderableFlagBits::kVisible; }
@@ -66,11 +67,17 @@ public:
     constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
     // Note that the renderable index is at most 24 bits
     virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableIndex; }
+    FORCEINLINE uint32_t GetHash() const { return hash_; }
 
     virtual bool IsEmpty () const ;
 
     FORCEINLINE bool IsTransformDirty () const { return transform_dirty_; }
-    FORCEINLINE void SetTransformDirty (bool dirty) { transform_dirty_ = dirty; }
+    FORCEINLINE void SetTransformDirty (bool dirty = true) { transform_dirty_ = dirty; }
+    FORCEINLINE bool ClearTransformDirty () {
+        bool was_dirty = transform_dirty_;
+        transform_dirty_ = false;
+        return was_dirty;
+    }
     FORCEINLINE RenderableType GetType() const { return type_; }
 
     // Called for dirty renderables before rendering each frame by the renderer.
@@ -121,6 +128,7 @@ protected:
     Transform transform_;
     Scene * scene_;
     uint32_t index_ {UINT32_MAX};
+    uint32_t hash_ {0};
 
     RenderableFlags flags_ {RenderableFlagBits::kVisible | RenderableFlagBits::kRayTraced};
 

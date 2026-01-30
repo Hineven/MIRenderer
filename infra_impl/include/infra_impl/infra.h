@@ -10,6 +10,7 @@
 #include <queue>
 #include <semaphore>
 #include <fstream>
+#include <unordered_map>
 
 #include <core/infra.h>
 #include <shared_mutex>
@@ -40,27 +41,30 @@ public:
     ~MyBlobResource() override;
 
     friend class MyInfra;
+
 protected:
     MyBlobResource(MyInfra * infra_, const std::filesystem::path &file_path, MIInfraResourceHintType hint) ;
+
+    // File operations must run on the dedicated FIO thread only.
+    void DoReadBlob(size_t pos, size_t size, void *data);
+    void DoWriteBlob(size_t pos, size_t size, const void *data);
+    size_t DoGetSize();
+    void DoClose();
 
     MyInfra * infra_ {nullptr};
 
     // Real file stream
     std::fstream file_;
-    // Make sure this value is always consistent with the file size upon reading
+    // (Cached) file size
     volatile size_t file_size_ {};
     // Visible to all threads, used to indicate that the file size is dirty and needs to be updated
     volatile bool file_size_dirty_ {};
 
     // Read/Write control.
-    // Multiple read tasks can be executed concurrently, while only one write task can be executed at a time.
-    std::atomic<uint32_t> num_active_r_tasks_ {0};
-    std::atomic<uint32_t> num_active_w_tasks_ {0};
+    std::mutex rw_mutex_;
 
     // True if the file is being closed, ie, WriteTaskWaitAndAcquire(true) is called.
     std::atomic<bool> file_closing_ {false};
-
-    std::shared_mutex rw_mutex_;
 
     // Try to acquire the read lock, if failed, wait until the write lock is released
     // Called by io tasks in fs threads
@@ -75,8 +79,6 @@ protected:
     // Release the write lock. Called by io tasks in fs threads
     // Called by io tasks in fs threads
     void WriteTaskRelease();
-
-
 };
 
 struct HLSLCompilerContext;
@@ -85,6 +87,7 @@ struct HLSLCompilerContext;
 // Windows, Vulkan 1.3, NVIDIA
 class MyInfra : public MIInfraInterface {
 public:
+    friend class InfraIncludeHandler;
     MyInfra(bool find_resource_directory = false, std::string resource_directory = "") ;
 
     std::filesystem::path GetResourceDirectory() override;
@@ -131,12 +134,16 @@ public:
 
     uint64_t GetShaderXXHashFromShaderResourcePath (
         const MIResourcePath & res_path,
+        std::string entry_point,
+        std::string target_profile,
         std::vector<std::string> defines,
         std::vector<std::string> options,
         bool & is_shader_valid
     ) override;
 
-    void LogMessage(MIInfraLogType level, const std::string &message) override;
+    void LogMessage(MIInfraLogType level, const std::string &message, const std::string & location = "") override;
+
+    void SetLogCallback(MIInfraLogCallback callback) override;
 
     void OnFrameBegin() override;
 
@@ -171,7 +178,7 @@ protected:
     // The mutex is used to protect the queue
     std::mutex fio_queue_mutex_;
     // The thread that processes the file io tasks
-    std::unique_ptr<std::thread> fio_threads_[kMaxFIOThreads];
+    std::unique_ptr<std::thread> fio_thread_;
     // The queue of file io tasks
     std::queue<std::packaged_task<void()>> fio_tasks_;
 
@@ -184,6 +191,14 @@ protected:
     // Compiler
     std::map<std::thread::id, HLSLCompilerContext *> hlsl_compiler_contexts_;
     std::mutex hlsl_compiler_contexts_mutex_; // Protect compiler contexts map (shader hot-reload multi-thread safety)
+
+    // Log mutex and callback
+    std::mutex log_mutex_;
+    MIInfraLogCallback log_callback_ {};
+
+    // Unique resource cache to ensure one BlobResource per path
+    std::unordered_map<MIResourcePath, TRef<BlobResourceInterface>> resource_cache_;
+    std::mutex resource_cache_mutex_;
 };
 
 MI_NAMESPACE_END

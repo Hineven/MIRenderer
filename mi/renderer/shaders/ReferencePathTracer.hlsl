@@ -8,7 +8,7 @@
 #include "headers/Transform.hlsl"
 #include "headers/Packing.hlsl"
 #include "headers/Math.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 #include "headers/Light.hlsl"
@@ -552,8 +552,10 @@ void ReferencePathTracerRaygen() {
       
     if(UB.EnableAccumulation != 0) {
         float4 FilmRadiance = RWRadiance[RayIndex];
+        if (any(isnan(FilmRadiance))) FilmRadiance = 0;
         FilmRadiance.w = min(FilmRadiance.w + 1.0f, 32768.0f);
-        float InvSampleCount = 1.0f / FilmRadiance.w;
+        float InvSampleCount = 1.0f / max(FilmRadiance.w, 1.f);
+        if (any(isnan(Radiance))) Radiance = 0;
         FilmRadiance.rgb = (1.f - InvSampleCount) * FilmRadiance.rgb + InvSampleCount * Radiance;
         RWRadiance[RayIndex] = FilmRadiance;
     } else {

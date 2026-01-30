@@ -353,6 +353,8 @@ LightSample SampleOneLightSample_RIS (
         }
         // the multipler 2 is for cancelling out the duplicated normal weight from EstimateEnvironmentLightContribution
         Weight *= saturate(2 * VisibilityFactor);
+        // FIXME
+        // Weight = 1.f;
         if(Weight > 0.f) {
             LightSamplerLight LSL = (LightSamplerLight)0;
             LSL.bIsEnvironment = true;

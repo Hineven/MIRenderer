@@ -151,6 +151,9 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableNormalTransformBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrevRenderableTransformBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHashBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrevRenderableHashBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
@@ -164,8 +167,10 @@ public:
         SHADER_RESOURCE_PARAMETER(Texture2D, VisibilityTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWAlbedo)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWNormal)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWGeometryNormal)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWEmission)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWMetallicRoughness)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWMotionVector)
         SHADER_RESOURCE_PARAMETER(Texture2D, DepthTexture)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
@@ -287,6 +292,10 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
             params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
             params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
             params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
+            // History transforms are allocated in the device allocator
+            params->PrevRenderableTransformBuffer = builder.Import(device_allocator_->GetPrevRenderableTransformBuffer());
+            params->RenderableHashBuffer = builder.Import(device_allocator_->GetRenderableHashBuffer());
+            params->PrevRenderableHashBuffer = builder.Import(device_allocator_->GetPrevRenderableHashBuffer());
             params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->static_mesh_description_uber_buffer_->GetRHI());
             params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->static_mesh_header_buffer_.Raw());
             params->GeometryHeaderBuffer = builder.Import(device_allocator_->geometry_header_buffer_.Raw());
@@ -297,8 +306,10 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
             params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
             params->RWAlbedo = view->g_buffer_->G_albedo_.Raw();
             params->RWNormal = view->g_buffer_->G_normal_.Raw();
+            params->RWGeometryNormal = view->g_buffer_->G_geometry_normal_.Raw();
             params->RWEmission = view->g_buffer_->G_emission_.Raw();
             params->RWMetallicRoughness = view->g_buffer_->G_metallic_roughness_.Raw();
+            params->RWMotionVector = view->g_buffer_->G_motion_vector_.Raw();
             params->VisibilityTexture = view->g_buffer_->G_visibility_.Raw();
             params->DepthTexture = view->g_buffer_->G_depth_.Raw();
         }

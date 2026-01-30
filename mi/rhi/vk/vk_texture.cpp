@@ -76,16 +76,16 @@ VulkanTexture::VulkanTexture(RHITextureDesc desc, bool imported) :
     });
 
     // Set the size of the image
-    size_ = vma.getAllocationInfo(result.second).size;
+    size_ = vma.getAllocationInfo(result.first).size;
 
-    if (GetName() && result.second) {
-        vma.setAllocationName(result.second, GetName());
+    if (GetName() && result.first) {
+        vma.setAllocationName(result.first, GetName());
     }
 
     vk_image_layout_ = vk::ImageLayout::eUndefined;
 
-    vk_image_ = result.first;
-    allocation_ = result.second;
+    vk_image_ = result.second;
+    allocation_ = result.first;
 
     mi_assert(vk_image_ && allocation_, "Failed to allocate texture!");
 
@@ -165,7 +165,7 @@ void *VulkanTexture::GetAPIHandle() const {
 
 void VulkanTexture::SetName(const std::string &name) {
     RHITexture::SetName(name);
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
     GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT {
             vk::ObjectType::eImage,

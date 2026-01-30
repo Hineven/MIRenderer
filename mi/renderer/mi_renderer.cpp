@@ -20,6 +20,7 @@
 #include <renderer/mi_material.h>
 #include <renderer/mi_gaussian_radiance_field.h>
 
+#include "core/util/debug_prof.h"
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
@@ -46,6 +47,12 @@ static CVar<int> CVar_FinalOutputType(
     "2 - Direct lighting\n"
     "3 - Prev Radiance\n",
     0
+);
+
+static CVar<bool> CVar_EnableTAA(
+    "r.postprocessing.enable_taa",
+    "Enable temporal anti-aliasing before tonemapping.",
+    true
 );
 
 Renderer::Renderer() {
@@ -85,7 +92,6 @@ void Renderer::FrameContext::Deinit() {
 }
 
 void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
-
     struct RenderFunctionContext {
         Renderer * r_;
         RenderFunctionContext (Renderer * r): r_(r) {
@@ -106,6 +112,24 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     }
 
     view->InitFrame();
+
+    // Stage history buffers for motion vectors (GPU-side copy before the current frame)
+    {
+        auto curr_transform = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+        auto prev_transform = builder.Import(device_allocator_->GetPrevRenderableTransformBuffer());
+        auto curr_hash = builder.Import(device_allocator_->GetRenderableHashBuffer());
+        auto prev_hash = builder.Import(device_allocator_->GetPrevRenderableHashBuffer());
+        builder.AddPass("StageRenderableHistory", RDGPassFlagBits::kNeverCull,
+            [curr_transform, prev_transform, curr_hash, prev_hash]([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+                queue.CopyBuffer(curr_transform->GetRHI(), prev_transform->GetRHI());
+                queue.CopyBuffer(curr_hash->GetRHI(), prev_hash->GetRHI());
+            })
+            ->AddBufferH(prev_transform, RHIGPUAccessFlagBits::kTransferWrite)
+            ->AddBufferH(curr_transform, RHIGPUAccessFlagBits::kTransferRead)
+            ->AddBufferH(prev_hash, RHIGPUAccessFlagBits::kTransferWrite)
+            ->AddBufferH(curr_hash, RHIGPUAccessFlagBits::kTransferRead);
+    }
+
     // Allocate and set view->view_common_params_
     view->SetupViewCommonShaderParameters(builder);
     // Allocate and set view->debug_common_params_
@@ -124,34 +148,38 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Update scene AABB
     view->scene_->UpdateAABB();
 
+
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
     std::vector<glm::mat4x3> renderable_inverse_transforms;
     std::vector<glm::mat3x3> renderable_normal_transforms;
     std::vector<RenderableHeader> renderable_headers;
     std::vector<uint32_t> visible_renderable_indices;
+    std::vector<uint32_t> renderable_hashes;
     {
         renderable_transforms.reserve(all_renderables.size());
         renderable_inverse_transforms.reserve(all_renderables.size());
         renderable_headers.reserve(all_renderables.size());
+        renderable_hashes.reserve(all_renderables.size());
         for (const auto& [i, e] : all_renderables | std::views::enumerate) {
             glm::mat4x3 to_world {};
             glm::mat4x3 to_local {};
             glm::mat3x3 normal_transform {};
             RenderableHeader renderable_header {};
+            uint32_t renderable_hash = 0;
             if (e) {
                 to_world = e->GetTransform().GetToWorldTransformMatrix();
                 to_local = e->GetTransform().GetToLocalTransformMatrix();
                 normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
                 renderable_header = e->GetDeviceRenderableHeader();
-                // Clear dirty flag
-                e->SetTransformDirty(false);
+                renderable_hash = e->GetHash();
                 if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
             }
             renderable_transforms.push_back(to_world);
             renderable_inverse_transforms.push_back(to_local);
             renderable_normal_transforms.push_back(normal_transform);
             renderable_headers.push_back(renderable_header);
+            renderable_hashes.push_back(renderable_hash);
         }
     }
     // Upload renderable transforms and headers
@@ -177,9 +205,17 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         renderable_headers.data(),
         renderable_headers.size() * sizeof(RenderableHeader)
     );
+    // Upload renderable hashes
+    view->upload_context_.Add(
+        builder.Import(device_allocator_->GetRenderableHashBuffer(),
+            RHIGPUAccessFlagBits::kAll, RHIPipelineStageFlagBits::kAll),
+        renderable_hashes.data(),
+        renderable_hashes.size() * sizeof(uint32_t)
+    );
 
     // Prepare instance data for rebuilding TLAS
     std::vector<int> visible_rt_renderable_indices;
+    bool visible_rt_renderable_transform_dirty = false;
     for (auto e : visible_renderable_indices) {
         if (auto renderable = all_renderables[e]) {
             if (renderable->IsRayTraced()
@@ -190,40 +226,52 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 && renderable->GetBLAS()
                 ) {
                 visible_rt_renderable_indices.push_back(e);
+                if (renderable->ClearTransformDirty()) {
+                    visible_rt_renderable_transform_dirty = true;
+                }
             }
         }
     }
-    auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
-    TRef<RDGBuffer> instance_buffer;
-    if (instance_count > 0){
-        auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
-        auto instance_data_bytesize = instance_count * instance_size;
+    for (const auto& e : all_renderables) {
+        if (e) e->ClearTransformDirty();
+    }
+    // If instance count changes, we must rebuild TLAS instead of update.
+    const bool visible_rt_renderable_instance_count_changed = (view->scene_->GetDeviceScene()->tlas_instance_count_ != visible_rt_renderable_indices.size());
+    bool should_rebuild_tlas = visible_rt_renderable_instance_count_changed;
+    bool should_update_tlas = visible_rt_renderable_transform_dirty || visible_rt_renderable_instance_count_changed;
+    TRef<RDGBuffer> tlas_instance_buffer;
+    if (should_update_tlas) {
+        auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
+        if (instance_count > 0){
+            auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
+            auto instance_data_bytesize = instance_count * instance_size;
 
-        auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc[]>(instance_count);
+            auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc[]>(instance_count);
 
-        auto instance_data = builder.Allocate(instance_data_bytesize);
-        for (const auto& [i, e] : std::views::enumerate(visible_rt_renderable_indices)) {
-            auto renderable = all_renderables[e];
-            auto data = RHIAccelerationStructureInstanceDesc {};
-            data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
-            data.mask = 0xFF; // Visible to all rays
-            // TODO support double sided & one sided geometries.
-            data.flags = (uint32_t)RHIASGeometryInstanceFlagBits::kNone;
-            data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
-            // Row major
-            auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
-            for (int x = 0; x < 4; x++)
-                for (int y = 0; y < 3; y++)
-                    data.transform[y * 4 + x] = to_world_matrix[x][y];
-            instance_data_raw[i] = data;
+            auto instance_data = builder.Allocate(instance_data_bytesize);
+            for (const auto& [i, e] : std::views::enumerate(visible_rt_renderable_indices)) {
+                auto renderable = all_renderables[e];
+                auto data = RHIAccelerationStructureInstanceDesc {};
+                data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
+                data.mask = 0xFF; // Visible to all rays
+                // TODO support double sided & one sided geometries.
+                data.flags = (uint32_t)RHIASGeometryInstanceFlagBits::kNone;
+                data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
+                // Row major
+                auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
+                for (int x = 0; x < 4; x++)
+                    for (int y = 0; y < 3; y++)
+                        data.transform[y * 4 + x] = to_world_matrix[x][y];
+                instance_data_raw[i] = data;
+            }
+            // Convert to underlying device format
+            RHI::Get().CreateAccelerationStructureInstances(instance_count, instance_data_raw, instance_data);
+            tlas_instance_buffer = builder.CreateBuffer(
+                RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
+                instance_data_bytesize
+            );
+            view->upload_context_.Add(tlas_instance_buffer.Raw(), instance_data, instance_data_bytesize);
         }
-        // Convert to underlying device format
-        RHI::Get().CreateAccelerationStructureInstances(instance_count, instance_data_raw, instance_data);
-        instance_buffer = builder.CreateBuffer(
-            RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
-            instance_data_bytesize
-        );
-        view->upload_context_.Add(instance_buffer.Raw(), instance_data, instance_data_bytesize);
     }
 
     // Filter visible rendeables
@@ -241,7 +289,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     view->upload_context_.Fire(builder);
 
     // Update TLAS
-    {
+    if (should_update_tlas) {
+        auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
         if (!view->scene_->GetDeviceScene()->TLAS_) {
             // Create one if not exists
             view->scene_->GetDeviceScene()->TLAS_ = RHI::Get().CreateAccelerationStructure(
@@ -258,8 +307,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             {},{},
             instance_count
         };
-        // If instance count changes, we must rebuild TLAS instead of update.
-        const bool instance_count_changed = (view->scene_->GetDeviceScene()->tlas_instance_count_ != instance_count);
         // Query sizes with current (default Update) build_info first; we may re-query if we need a Build.
         auto build_sizes = TLAS->GetBuildSizes(build_info);
         bool rebuild = false;
@@ -268,12 +315,9 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             TLAS->Create(build_sizes.acceleration_structure_size);
             rebuild = true;
         }
-        // Force rebuild if instance count changed (Update mode requires same primitive count)
-        if (instance_count_changed) {
-            rebuild = true;
-        }
+
         // If we decided to rebuild, scratch size should use build_scratch_size; otherwise use update_scratch_size
-        if (rebuild) {
+        if (should_rebuild_tlas) {
             // Re-query sizes with Build mode to ensure scratch size is correct
             auto build_mode_info = build_info;
             build_mode_info.mode = RHIAccelerationStructureBuildMode::kBuild;
@@ -285,7 +329,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         );
         scratch_buffer->SetName("TLAS Update Scratch Buffer");
         builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
-            [instance_buffer = instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw(), scene_ds = view->scene_->GetDeviceScene()]
+            [tlas_instance_buffer = tlas_instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw(), scene_ds = view->scene_->GetDeviceScene()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             // Barrier the previous update & use of the acceleration structure
             queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
@@ -295,7 +339,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 RHIGPUAccessFlagBits::kAccelerationStructureRW
             );
             auto as_build_info = build_info;
-            as_build_info.instance_data = instance_buffer ? instance_buffer->GetRHI() : RHIBufferSpan{};
+            as_build_info.instance_data = tlas_instance_buffer ? tlas_instance_buffer->GetRHI() : RHIBufferSpan{};
             as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
             queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
             // Barrier the TLAS after building
@@ -308,7 +352,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             // Record the instance count used for this TLAS build for future Update-vs-Build decisions
             scene_ds->tlas_instance_count_ = as_build_info.instance_count;
         })->AddASH_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
-        ->AddBufferH(instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
+        ->AddBufferH(tlas_instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
@@ -403,11 +447,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Final composition
     Render_LightingComposition(view, builder);
 
-    Render_DebugView(view, builder);
-
     auto type = CVar_FinalOutputType.Get();
-    if (type == 0)
-        Render_DrawToOutput(view, builder, view->radiance_.Raw());
+    if (type == 0) {
+        auto flags = CVar_EnableTAA.Get() ? PostProcessingFlagBits::eEnableTAA : PostProcessingFlagBits::eNone;
+        Render_DrawToOutput(view, builder, view->radiance_.Raw(), DrawToOutputMappingType::eRadianceToSRGB, flags);
+    }
     else if (type == 1)
         Render_DrawToOutput(view, builder, view->g_buffer_->G_albedo_.Raw());
     else if (type == 2)
@@ -415,7 +459,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     else if (type == 3)
         Render_DrawToOutput(view, builder, view->g_buffer_->G_normal_.Raw());
     else if (type == 4)
-        Render_DrawToOutput(view, builder, view->g_buffer_->G_transmittance_.Raw());
+        Render_DrawToOutput(view, builder, view->g_buffer_->G_motion_vector_.Raw());
     else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)

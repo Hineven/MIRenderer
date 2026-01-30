@@ -21,6 +21,9 @@ build/
 .vscode/
 # visual stdio
 .vs/
+CMakeSettings.json
+# Trae
+.trae/
 
 # vcpkg
 vcpkg.json

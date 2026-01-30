@@ -20,10 +20,16 @@ GeometryBufferData::~GeometryBufferData() {
 void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, RendererView * view) {
     auto width = view->film_width_;
     auto height = view->film_height_;
+    // Guard against zero-sized views to avoid creating invalid textures.
+    if (width == 0 || height == 0) {
+        mi_warning(true, "GeometryBufferData::Allocate received zero-sized view ({}x{}). Skipping allocation.", width, height);
+        return;
+    }
+
     G_depth_ = RDGTexture::Create2D(
         width, height, PixelFormatType::kD32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransferDst);
+        | RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kTransfer);
     G_depth_->SetName("GBuffer Depth");
 
     G_visibility_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32G32B32A32_UINT,
@@ -41,6 +47,11 @@ void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, 
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_normal_->SetName("GBuffer Normal");
 
+    G_geometry_normal_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32_UINT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+    G_geometry_normal_->SetName("GBuffer GeometryNormal");
+
     G_emission_ = RDGTexture::Create2D(width, height, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
@@ -51,9 +62,15 @@ void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, 
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
     G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
+    G_motion_vector_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32G32_FLOAT,
+        RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
+        | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+    G_motion_vector_->SetName("GBuffer MotionVector");
+
     G_flags_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
         |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+    G_flags_->SetName("GBuffer Flags");
 
     G_transmittance_ = RDGTexture::Create2D(
         width, height, PixelFormatType::kR8_UNORM,
@@ -77,6 +94,7 @@ bool GeometryBufferPersistentData::MakeSureExists([[maybe_unused]] RendererView 
     if (!prev_G_depth_) flag = true;
     if (!prev_G_normal_) flag = true;
     if (!prev_G_transmittance_) flag = true;
+    if (!prev_G_motion_vector_) flag = true;
     return flag;
 }
 
@@ -89,9 +107,18 @@ void GeometryBufferPersistentData::FinalUpdate(RendererView *view) {
     prev_G_normal_->SetName("PrevGNormal");
     prev_G_normal_->SetExport();
 
+    prev_G_geometry_normal_ = view->g_buffer_->G_geometry_normal_;
+    prev_G_geometry_normal_->SetName("PrevGGeometryNormal");
+    prev_G_geometry_normal_->SetExport();
+
     prev_G_transmittance_ = view->g_buffer_->G_transmittance_;
     prev_G_transmittance_->SetName("PrevGTransmittance");
     prev_G_transmittance_->SetExport();
+
+    prev_G_motion_vector_ = view->g_buffer_->G_motion_vector_;
+    prev_G_motion_vector_->SetName("PrevGMotionVector");
+    prev_G_motion_vector_->SetExport();
+
 }
 
 

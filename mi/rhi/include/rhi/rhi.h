@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <future>
+#include <atomic>
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"
@@ -86,8 +87,28 @@ public:
 
     RHISamplerRef CreateSampler (RHISamplerFilterType filter, RHISamplerAddressModeType address_mode) ;
 
-    // Create a GPU timestamp resource. Each resource owns a query slot in the global query pool.
+    // Create a GPU timestamp resource for the current frame. Each resource owns a query slot in the global query pool.
+    // The timestamp will stay valid until the next frame ends on the device. You should NEVER keep references to
+    // timestamps that are older than the previous frame.
+    // NOTE: This is fast. DO NOT CACHE TIMESTAMPS AND USE THEM ACROSS MULTIPLE FRAMES. Create them on demand instead.
+    // Simply drop them after use is preferred.
     virtual RHITimestampRef CreateTimestamp () = 0;
+    // Batched query for multiple timestamps. This is faster than RHITimestamp::QueryResult
+    enum class RHITimestampQueryMode : uint8_t {
+        // Block the CPU until query results are ready (backend may use vk::QueryResultFlagBits::eWait).
+        kBlocking = 0,
+        // Non-blocking query (backend should use availability bits and return UINT64_MAX for unavailable timestamps).
+        kNonBlocking,
+    };
+
+    // Returns a value per timestamp. If kNonBlocking is used, any timestamp not yet available MUST be returned as UINT64_MAX.
+    virtual std::vector<uint64_t> QueryTimestamps (std::span<RHITimestamp*> timestamps,
+        RHITimestampQueryMode mode) = 0;
+
+    // Convenience overload: blocking query.
+    FORCEINLINE std::vector<uint64_t> QueryTimestamps(std::span<RHITimestamp*> timestamps) {
+        return QueryTimestamps(timestamps, RHITimestampQueryMode::kBlocking);
+    }
 
     // Create a shader, thread safe
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
@@ -116,7 +137,7 @@ public:
         return *bindless_manager_;
     }
 
-    // Wait for the underlying render hardware and RHI layer to finish all the commands
+    // Flush all queues. Wait for the underlying render hardware and RHI layer to finish all the commands
     // If host_only is true, only the operations pending on the host side will be waited.
     // Otherwise, all the operations including device (render hardware) queues will be waited.
     virtual void WaitForIdle (bool host_only = false) = 0;
@@ -180,15 +201,20 @@ protected:
 
     // Only the render thread is allowed to operate on RHI resource references
     // so there are only one producer and one consumer (RHI thread) for this queue.
-    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne>
+    TLockFreeQueue<RHIResourceToRecycle, LockFreeQueueUserType::kOne, LockFreeQueueUserType::kOne, 16384>
         resources_pending_for_deletion_ {};
     // The resource that is not ready to be deleted in the previous frame.
     RHIResourceToRecycle remaining_resource_record_pending_for_deletion_ {};
+    std::atomic<size_t> resources_pending_for_deletion_count_ {0};
 
     // The function can be called from BOTH render thread and RHI thread. frame_index_ counter is retrieved from
     // either sides.
     FORCEINLINE bool AddResourcePendingForDeletion (RHIResource * resource) {
-        return resources_pending_for_deletion_.Push({resource, GetFrameIndexForCurrentThread()});
+        bool pushed = resources_pending_for_deletion_.Push({resource, GetFrameIndexForCurrentThread()});
+        if (pushed) {
+            resources_pending_for_deletion_count_.fetch_add(1, std::memory_order_relaxed);
+        }
+        return pushed;
     }
 
     // @param force if true, all pending resources will be recycled even if they are

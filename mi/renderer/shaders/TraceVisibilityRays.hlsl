@@ -13,7 +13,7 @@
 #include "headers/Material.hlsl"
 #include "headers/RayTracingHelpers.hlsl"
 #include "headers/GaussianSplatting.hlsl"
-#include "headers/Radiometry.hlsl"
+#include "headers/RadiometryAndColorSpace.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
@@ -67,6 +67,7 @@ StructuredBuffer<float3> RayToTraceOriginBuffer;
 // Optional (when the ray tmax is passed as a parameter, otherwise defaults to far plane)
 StructuredBuffer<float> RayToTraceTMaxBuffer; 
 
+#include "headers/HardwareRayTracing.hlsl"
 
 struct [raypayload] RayPayload {
     // Hit on meshes / proxy meshes, TMax for no hits
@@ -91,27 +92,8 @@ void TraceVisibilityRaysRaygen() {
     uint RayIndex = DispatchRaysIndex().x;
 #endif
 
-    RayDesc Ray = (RayDesc)0;
-    {
-        CameraParameters C = GetActiveCamera();
-#ifndef USE_SCREEN_COORDS
-        Ray.Origin = RayToTraceOriginBuffer[RayIndex];
-#else 
-        uint2 PixelIndex = UnpackUint2x16(RayToTraceOriginScreenCoordBuffer[RayIndex]);
-        float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
-        float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
-        float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-        Ray.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
-#endif
-        Ray.Direction = RayToTraceDirectionBuffer[RayIndex];
-        bool bHit = false;
-        Ray.TMin = UnpackRayToTraceState(RWRayToTraceStateBuffer[RayIndex], bHit);
-#ifdef USE_RAY_TMAX_BUFFER
-        Ray.TMax = RayToTraceTMaxBuffer[RayIndex];
-#else
-        Ray.TMax = C.FarPlane;
-#endif
-    }
+    RayDesc Ray;
+    SetupRayDesc(RayIndex, Ray);
 
     RayPayload Payload = (RayPayload)0;
     Payload.HitDistance = Ray.TMax; // Default to TMax, will only be updated in a closest hit on meshes

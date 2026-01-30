@@ -19,6 +19,8 @@
 #include "rhi/rhi_types.h"
 #include "rhi/rhi_fwd.h"
 #include "rhi_thread.h"
+#include "core/util/debug_prof.h"
+#include "rhi/rhi_cmd_stats.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -44,6 +46,7 @@ class TRHILambdaCommand : public RHICommandBase {
 public:
     TRHILambdaCommand(T func) : func_(std::move(func)) {}
     void ExecuteAndDestruct (RHICommandQueueBase & cmd) override {
+        MI_RHI_CMD_STAT_INC(RHICmdStatId::kLambda);
         func_(cmd);
         this->~TRHILambdaCommand();
     }
@@ -113,7 +116,7 @@ public:
 
     // Shortcut.
     // Flush the queue and wait for all commands to finish execution on the device.
-    void WaitForIdle (const std::string & submit_prefix = "") ;
+    void WaitForIdle (const std::string & submit_prefix = "", bool host_only = false) ;
 
     // End the frame, enqueue a present command, and return resources to the system if requested.
     // The command is special, it does not require submission to execute. Translation will be enough.
@@ -173,7 +176,8 @@ protected:
     }
 
     void AddCommand (RHICommandBase * cmd) {
-        if constexpr (BYPASS_RHI_THREAD) {
+        if constexpr (MI_BYPASS_RHI_THREAD) {
+            DEBUG_PROFILE_SECTION(AddCommand);
             // If we are bypassing the RHI thread, execute the command immediately.
             cmd->ExecuteAndDestruct(*this);
         } else {
@@ -659,7 +663,6 @@ public:
     RHIPipelineStageFlagBits stage_;
 };
 
-
 // Ray tracing commands
 class RHICommandBuildAccelerationStructure : public TRHICommand<RHICommandBuildAccelerationStructure> {
 public:
@@ -1009,7 +1012,7 @@ public:
     FORCEINLINE void BeginDebugMarker(
         [[maybe_unused]] const char* marker_name,
         [[maybe_unused]] const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);
@@ -1018,7 +1021,7 @@ public:
     }
 
     FORCEINLINE void EndDebugMarker() {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         AddCommand(AllocateCommand<RHICommandDebugMarkerEnd>());
 #endif
     }
@@ -1026,7 +1029,7 @@ public:
     FORCEINLINE void InsertDebugMarker(
         [[maybe_unused]] const char* marker_name,
         [[maybe_unused]] const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f}) {
-#ifndef NDEBUG
+#if MI_ENABLE_RHI_OBJECT_NAMING
         auto len = strlen(marker_name);
         auto name_copy = Allocate<char[]>(len + 1);
         memcpy(name_copy, marker_name, len + 1);

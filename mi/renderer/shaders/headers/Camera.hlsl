@@ -26,12 +26,13 @@ float3 NDC2ToCameraDirectionUnnormalized (CameraParameters C, float2 NDC2) {
     if(GetCameraType(C) == CAMERA_TYPE_ORTHOGRAPHIC) {
         return C.Direction;
     }
+    NDC2 -= C.Jitter;
     float3 UnnormalizedDirection = C.Right * NDC2.x + C.Up * NDC2.y + C.Direction;
     return UnnormalizedDirection;
 }
 
-float3 NDC2ToCameraDirection (CameraParameters Camera, float2 NDC2) {
-    return normalize(NDC2ToCameraDirectionUnnormalized(Camera, NDC2));
+float3 NDC2ToCameraDirection (CameraParameters C, float2 NDC2) {
+    return normalize(NDC2ToCameraDirectionUnnormalized(C, NDC2));
 }
 
 float3 NDC2ToCameraOrigin (CameraParameters C, float2 NDC2) {
@@ -114,11 +115,13 @@ float ReversedZDepthToLinearDepth(CameraParameters C, float ReversedZDepth)
     return ZDepthToLinearDepth(C, 1.0f - ReversedZDepth);
 }
 
+// Recover world position in the current frame, given NDC2 coordinates and linear depth
 float3 RecoverWorldPositionNDC2(CameraParameters C, float2 NDC2, float LinearDepth)
 {
     return C.Position + NDC2ToCameraDirectionUnnormalized(C, NDC2) * LinearDepth;
 }
 
+// Recover the world position from pixel coordinates in the current frame
 float3 RecoverWorldPositionPixelCoords(CameraParameters C, uint2 PixelCoords, float LinearDepth)
 {
     float2 UV = (PixelCoords + 0.5f.xx) / C.FilmDimensions;

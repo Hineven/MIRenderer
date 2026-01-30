@@ -22,8 +22,32 @@ class RDGPass;
 struct RDGTimePeriod {
     std::vector<std::string> class_names;
     std::string pass_name;
-    float duration {};
+    float duration {}; // Seconds
 };
+
+// Profiling context produced by a RenderGraph execution.
+// It owns the recorded timestamp queries and can be resolved later (typically next frame)
+// to avoid blocking QueryResult reads during the frame's RDG execution.
+class RDGProfilingContext : public RefCounted<> {
+public:
+    RDGProfilingContext() = default;
+
+    // Try resolving time periods. In non-blocking mode, this returns false if any timestamp is not ready yet.
+    // On success, out_periods will be filled with resolved durations.
+    bool ResolveTimestampPeriods(std::vector<RDGTimePeriod> & out_periods,
+        RHI & rhi,
+        RHI::RHITimestampQueryMode mode);
+
+    FORCEINLINE bool IsValid() const { return !marker_timestamps_.empty(); }
+
+private:
+    friend class RenderGraph;
+
+    std::vector<RHITimestampRef> marker_timestamps_;
+    std::vector<RDGTimePeriod> marker_periods_;
+};
+
+typedef TRef<RDGProfilingContext> RDGProfilingContextRef;
 
 class RenderGraph : public RefCounted<> {
 public:
@@ -45,8 +69,8 @@ public:
     }
     FORCEINLINE const std::string & GetName () {return name_;}
 
-    // This only works in debug builds. Otherwise it returns an empty vector.
-    const std::vector<RDGTimePeriod> & GetTimestampPeriods () const {return timestamp_periods_;}
+    // Timestamp profiling context for this graph execution (depends on ENABLE_TIMESTAMP_PROFILING).
+    RDGProfilingContextRef GetProfilingContext () const { return profiling_context_; }
 
 protected:
     RenderGraph(const std::string & name) ;
@@ -77,7 +101,7 @@ protected:
     std::string name_;
 
     // Timestamps. For profiling.
-    std::vector<RDGTimePeriod> timestamp_periods_;
+    RDGProfilingContextRef profiling_context_ {};
 };
 
 typedef TRef<RenderGraph> RenderGraphRef;

@@ -40,9 +40,12 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
     // Interpolate the vertex
     DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Barycentrics);
+    float3 LocalNormal = normalize(cross(VertexB.Position - VertexA.Position, VertexC.Position - VertexA.Position));
+    Intersection.GeometryNormal = normalize(mul(RenderableNormalTransformBuffer[RenderableIndex], LocalNormal));
     
     // Transform to world space
     float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
+    Intersection.LocalPosition = InterpolatedVertex.Position;
     Intersection.WorldPosition = TransformPoint(ToWorldTransform, InterpolatedVertex.Position);
 
     MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
@@ -68,7 +71,7 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
 
     // Reconstruct shading normal
     float3x3 NormalTransform  = RenderableNormalTransformBuffer[RenderableIndex];
-    Intersection.Normal = normalize(mul(NormalTransform, InterpolatedVertex.Normal));
+    Intersection.ShadingNormal = normalize(mul(NormalTransform, InterpolatedVertex.Normal));
     if(IsValid(Material.NormalMap)) {
         float3 PosA = TransformPoint(ToWorldTransform, VertexA.Position);
         float3 PosB = TransformPoint(ToWorldTransform, VertexB.Position);
@@ -89,9 +92,9 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
         float3 Bitangent = normalize((EdgePos2 * EdgeUV1.x - EdgePos1 * EdgeUV2.x) * r);
         
         // Making the tangent ortho to the interpolated vertex normal (Gram-Schmidt process)
-        Tangent = normalize(Tangent - dot(Tangent, Intersection.Normal) * Intersection.Normal);
-        float Handedness = dot(cross(Intersection.Normal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
-        Bitangent = cross(Intersection.Normal, Tangent) * Handedness;
+        Tangent = normalize(Tangent - dot(Tangent, Intersection.ShadingNormal) * Intersection.ShadingNormal);
+        float Handedness = dot(cross(Intersection.ShadingNormal, Tangent), Bitangent) < 0.0f ? -1.0f : 1.0f;
+        Bitangent = cross(Intersection.ShadingNormal, Tangent) * Handedness;
 
         // Sample normal map and reconstruct shading normal
         float3 NormalMapSample;
@@ -101,10 +104,10 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial (
         } else {
             NormalMapSample = SampleTexture(GetBindlessSRV(Material.NormalMap), LinearWrapSampler, InterpolatedVertex.UV, LOD).xyz * 2.0f - 1.0f;
         } 
-        Intersection.Normal = normalize(
+        Intersection.ShadingNormal = normalize(
             NormalMapSample.x * Tangent +
             NormalMapSample.y * Bitangent +
-            NormalMapSample.z * Intersection.Normal
+            NormalMapSample.z * Intersection.ShadingNormal
         );
     }
 

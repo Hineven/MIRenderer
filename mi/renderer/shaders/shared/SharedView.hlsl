@@ -58,6 +58,10 @@ struct CameraParameters {
     float4x4 ViewToNDC_ReversedZ;
 
     float4x4 Reprojection; // current NDC -> previous frame NDC (normal z)
+
+    // TAA jitter values (in NDC units per-axis). Current is applied to this frame, Previous belongs to the last frame.
+    float2 Jitter;
+    float2 PrevJitter;
 };
 
 struct ViewCommonShaderParameters {
@@ -67,6 +71,7 @@ struct ViewCommonShaderParameters {
     CameraParameters PreviousCamera;
 
     uint FrameIndex;
+    float3 Padding0; // keep 16-byte alignment
 };
 
 struct DirectionalLightForShadowMap

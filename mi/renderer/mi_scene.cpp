@@ -37,7 +37,11 @@ Scene::Scene(): renderable_slots_(kMaxNumRenderables) {
 
 }
 Scene::~Scene() {
-
+    // Release renderable references first, because they may hold references to the scene &
+    // their de-allocations may create more allocations within the scene destruction process
+    // (such as inserting indices into the slot_allocator_).
+    // Which may lead to use-after-free bugs.
+    renderables_.clear();
 }
 
 
@@ -69,6 +73,17 @@ void Scene::CreateOnDevice() {
         device_scene_ = new DeviceScene();
         mi_check(device_scene_.IsValid(), "Failed to allocate device scene.");
     }
+}
+
+uint32_t Scene::AllocateRenderableIndexAndHash(Renderable *renderable) {
+    auto slot = renderable_slots_.AllocateSlot();
+    if (slot == UINT32_MAX) return UINT32_MAX;
+    if (renderables_.size() <= slot) {
+        renderables_.resize(slot + 1);
+    }
+    renderables_[slot] = renderable;
+    renderable->hash_ = renderable_hash_generator();
+    return slot;
 }
 
 void Scene::UpdateAABB() {

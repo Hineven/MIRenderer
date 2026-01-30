@@ -34,9 +34,20 @@ public:
     // Thread safe.
     virtual std::future<void> Async_WriteBlob(size_t pos, size_t size, const void * data) = 0;
 
-    virtual ~BlobResourceInterface () = default;
-    friend class MIInfraInterface;
+    inline void SetVolatile (bool is_volatile = true) {
+        is_volatile_ = is_volatile;
+    }
+
+    inline bool IsVolatile() const {
+        return is_volatile_;
+    }
+
 protected:
+
+    // A volatile file may be written by outsiders. Need to always read the latest size from disk.
+    bool is_volatile_ {};
+
+    virtual ~BlobResourceInterface () = default; // prevent user deletion; allow base RefCounted to delete
     BlobResourceInterface () = default;
 };
 

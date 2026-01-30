@@ -25,6 +25,8 @@ enum class ThreadType {
     kRenderThread = 2,
     // There can be 1 or more task graph worker threads.
     kTaskGraphWorkerThread = 3,
+    // Specific thread for file I/O operations.
+    kFIOThread = 4,
     Max
 };
 

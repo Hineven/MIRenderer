@@ -50,6 +50,7 @@ protected:
 
 class VulkanTimestamp : public RHITimestamp {
 public:
+    friend class VulkanRHI;
     FORCEINLINE VulkanTimestamp(uint32_t allocated_query_index) : query_index_(allocated_query_index) {};
     ~VulkanTimestamp() override;
 

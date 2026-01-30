@@ -11,6 +11,8 @@
 #include <map>
 #include <vector>
 #include <mutex>
+#include <glm/fwd.hpp>
+
 #include "core/common.h"
 #include "core/refcounted.h"
 
@@ -28,8 +30,42 @@ enum class CVarType : unsigned {
     kMax
 };
 
+FORCEINLINE std::string ToString(CVarType type) {
+    switch (type) {
+        case CVarType::kInt: return "int";
+        case CVarType::kFloat: return "float";
+        case CVarType::kFloat2: return "float2";
+        case CVarType::kFloat3: return "float3";
+        case CVarType::kFloat4: return "float4";
+        case CVarType::kBool: return "bool";
+        case CVarType::kString: return "string";
+        default: return "unknown";
+    }
+}
+
+template <typename T>
+constexpr CVarType GetCVarType() {
+    if constexpr (std::is_same_v<T, int>) {
+        return CVarType::kInt;
+    } else if constexpr (std::is_same_v<T, float>) {
+        return CVarType::kFloat;
+    } else if constexpr (std::is_same_v<T, glm::vec2>) {
+        return CVarType::kFloat2;
+    } else if constexpr (std::is_same_v<T, glm::vec3>) {
+        return CVarType::kFloat3;
+    } else if constexpr (std::is_same_v<T, glm::vec4>) {
+        return CVarType::kFloat4;
+    } else if constexpr (std::is_same_v<T, bool>) {
+        return CVarType::kBool;
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        return CVarType::kString;
+    } else {
+        return CVarType::kUnknown;
+    }
+}
+
 // Base class for all CVars
-class CVarBase : public RefCounted<true> {
+class CVarBase {
 public:
     CVarBase(const std::string& id, const std::string& description, CVarType type);
     virtual ~CVarBase() = default;
@@ -87,6 +123,15 @@ public:
     void RegisterCVar(CVarBase * cvar);
     CVarBase * GetCVar(const std::string& id);
 
+    template <typename T>
+    CVar<T> * GetCVar(const std::string& id) {
+        CVarBase* base = GetCVar(id);
+        if (base && base->GetType() == GetCVarType<T>()) {
+            return static_cast<CVar<T>*>(base);
+        }
+        return nullptr;
+    }
+
     std::vector<CVarBase*> GetAllCVars();
     std::vector<CVarBase*> GetDirtyCVars();
     void ClearAllDirty();
@@ -97,7 +142,7 @@ public:
 
 private:
     CVarRegistry() = default;
-    std::map<std::string, TRef<CVarBase>> cvars_;
+    std::map<std::string, CVarBase*> cvars_;
     std::mutex mutex_;
 };
 
