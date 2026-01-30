@@ -459,7 +459,7 @@ void ReferencePathTracerRaygen() {
                 }
                 
                 // Update Ray
-                Ray.Origin = Intersection.WorldPosition + Intersection.Normal * 2e-5f;
+                Ray.Origin = Intersection.WorldPosition + Intersection.GeometryNormal * 2e-5f;
                 Ray.Direction = SampledDirection;
             }
 
