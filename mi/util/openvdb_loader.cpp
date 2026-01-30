@@ -162,7 +162,7 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
     openvdb::Coord start_coord = bbox.min();
 
     // 切换到框架自带的 TaskGraph 处理每个切片，方便日后可能的统一调度
-    TaskGraph::Get().ForEachBlockedRange((uint32_t)0, depth, [&](uint32_t block_begin, uint32_t block_end) {
+    auto tasks = TaskGraph::Get().ForEachBlockedRange((uint32_t)0, depth, [&](uint32_t block_begin, uint32_t block_end) {
         // 每个线程本地的 Coord 变量，避免反复构造
         openvdb::Coord i_coord;
 
@@ -206,6 +206,11 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
             }
         }
     });
+
+    // 等待所有线程全部加载完毕
+    for (auto& task : tasks) {
+        TaskGraph::Get().WaitForTask(task);
+    }
 
     file.close();
 
