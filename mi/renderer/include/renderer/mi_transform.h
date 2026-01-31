@@ -11,7 +11,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include "core/common.h"
+
+#include <core/common.h>
 MI_NAMESPACE_BEGIN
 
 struct Transform {

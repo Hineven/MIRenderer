@@ -5,7 +5,9 @@
  */
 #include <random>
 #include <happly.h>
-#include "util/gaussian_radiance_field_loader.h"
+
+#include <renderer/mi_resource_allocator.h>
+#include <util/gaussian_radiance_field_loader.h>
 
 #include <numeric>
 MI_NAMESPACE_BEGIN

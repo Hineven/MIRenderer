@@ -5,17 +5,19 @@
  */
 
 #include <ranges>
-#include <renderer/mi_renderer.h>
+#include <rhi/rhi_buffer.h>
 #include <rdg/rdg_cmd.h>
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_shader.h>
 
+#include <renderer/mi_renderer.h>
+#include <renderer/mi_material.h>
+#include <renderer/mi_renderable.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_static_mesh.h>
+#include <renderer/mi_buffer_heap.h>
+
 #include "r_view_common.h"
-#include "renderer/mi_material.h"
-#include "renderer/mi_renderable.h"
-#include "renderer/mi_resource_allocator.h"
-#include "renderer/mi_static_mesh.h"
-#include "rhi/rhi_buffer.h"
 
 MI_NAMESPACE_BEGIN
 

@@ -12,9 +12,6 @@
 
 #include <vector>
 
-#include <core/refcounted.h>
-
-// For NonMovable/NonCopyable, mi_assert, FORCEINLINE
 #include <core/base.h>
 
 MI_NAMESPACE_BEGIN
@@ -70,6 +67,8 @@ public:
     virtual ~IDeferredFreeOwner() = default;
     // Take ownership of the object and delete it later.
     virtual void EnqueueForDelayedDestruction(DelayedDestructionResource *obj) = 0;
+    // Tick once per frame to delete queued objects on the previous frame.
+    virtual void AdvanceFrameForDelayedDestruction() = 0;
 };
 
 // Generic keeper for a "handle" (slot id, index, etc.) whose release must be delayed.
@@ -95,7 +94,7 @@ class TDelayedReleaseKeeper : public DelayedDestructionResource {
 
     void QueueForDestruction() const override {
         // Owner controls actual deletion timing.
-        owner_->EnqueueForDelayedDestruction(this);
+        owner_->EnqueueForDelayedDestruction(const_cast<TDelayedReleaseKeeper<OwnerT>*>(this));
     }
 
  protected:
@@ -127,7 +126,6 @@ public:
 
     explicit TDelayedDestructionQueue(uint32_t delay_frames = kDefaultDelayFrames)
         : delay_frames_(delay_frames) {
-        mi_assert(delay_frames_ >= 1 && delay_frames_ <= 8, "DelayFrames should be within a small range.");
         ring_.resize(delay_frames_ + 1); // +1 so that delay=2 means: push in bucket curr, release when bucket wraps.
     }
 

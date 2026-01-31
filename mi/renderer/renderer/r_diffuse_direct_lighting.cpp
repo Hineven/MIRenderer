@@ -11,15 +11,17 @@
 #include <renderer/mi_renderer.h>
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_scene.h>
-#include "../shaders/shared/SharedLight.hlsl"
-#include "../shaders/shared/SharedDebug.hlsl"
+#include <renderer/mi_buffer_heap.h>
+#include <renderer/r_geometry_buffer.h>
+
 #include "r_view_common.h"
 #include "r_persistent.h"
 #include "r_light_structure.h"
 #include "r_direct_lighting.h"
 #include "r_diffuse_direct_lighting.h"
 
-#include "../include/renderer/r_geometry_buffer.h"
+#include "../shaders/shared/SharedLight.hlsl"
+#include "../shaders/shared/SharedDebug.hlsl"
 MI_NAMESPACE_BEGIN
     // Some CVars are exposed through r_diffuse_direct_lighting.h
 static CVar<bool> CVar_DebugOutputTransmittanceRaysForMesh(

@@ -3,15 +3,17 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "r_light_structure.h"
+
+#include <rdg/rdg_helper.h>
+#include <renderer/mi_renderer.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_scene.h>
+#include <renderer/mi_texture.h>
+#include <renderer/mi_buffer_heap.h>
 
 #include "r_persistent.h"
-#include "renderer/mi_renderer.h"
-#include "renderer/mi_resource_allocator.h"
+#include "r_light_structure.h"
 #include "../shaders/shared/SharedLight.hlsl"
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_scene.h"
-#include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
 CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",

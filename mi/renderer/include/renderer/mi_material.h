@@ -16,6 +16,8 @@
 #include <rhi/rhi_cmd.h>
 #include <renderer/mi_dirty_tracker.h>
 #include <renderer/mi_renderer_fwd.h>
+#include <renderer/mi_resource_allocator_slot.h>
+
 #include "../../shaders/shared/SharedMaterial.hlsl"
 
 // Simple material implementation. Only uber material supported
@@ -50,7 +52,7 @@ protected:
     DeviceBindlessResourceAllocator * allocator_ {};
 
     // Index keeper of the material slot (assigned by the allocator, delayed free).
-    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
+    TRef<DeviceBindlessResourceSlotKeeper> slot_;
     MaterialHeader material_header_;
 };
 

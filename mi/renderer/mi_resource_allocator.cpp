@@ -7,6 +7,8 @@
 
 #include <renderer/mi_material.h>
 #include <rhi/rhi.h>
+
+#include "renderer/mi_buffer_heap.h"
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_bindless.h"
 #include "shaders/shared/SharedMaterial.hlsl"
@@ -28,18 +30,16 @@ volume_grid_slots_(kMaxNumVolumeGrids){
     vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage
         | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
-        128
+        128, 256 * 1024 * 1024, this
     );
     vertex_uber_buffer_->SetName("VertexUberBuffer");
-    vertex_uber_buffer_->allocator_ = this;
 
     index_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage
         | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
-        128
+        128, 256 * 1024 * 1024, this
     );
     index_uber_buffer_->SetName("IndexUberBuffer");
-    index_uber_buffer_->allocator_ = this;
 
     material_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kStorage}
@@ -74,17 +74,15 @@ volume_grid_slots_(kMaxNumVolumeGrids){
 
     static_mesh_description_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kStorage,
-        1, 16 * 1024
+        1, 16 * 1024, this
     );
     static_mesh_description_uber_buffer_->SetName("StaticMeshDescriptionUberBuffer");
-    static_mesh_description_uber_buffer_->allocator_ = this;
 
     area_lights_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kStorage,
-        1, 16 * 1024
+        1, 16 * 1024, this
     );
     area_lights_uber_buffer_->SetName("AreaLightsUberBuffer");
-    area_lights_uber_buffer_->allocator_ = this;
 
     volume_primitives_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(VolumePrimitivesHeader) * kMaxNumVolumePrimitiveGroups, RHIBufferUsageFlagBits::kStorage}
@@ -113,6 +111,10 @@ void DeviceBindlessResourceAllocator::AdvanceFrame() {
 
 void DeviceBindlessResourceAllocator::EnqueueForDelayedDestruction(DelayedDestructionResource * obj) {
     delayed_destruction_.Enqueue(obj);
+}
+
+void DeviceBindlessResourceAllocator::AdvanceFrameForDelayedDestruction() {
+    delayed_destruction_.Tick();
 }
 
 size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
@@ -168,6 +170,23 @@ TRef<DeviceBindlessResourceAllocator::SlotKeeper> DeviceBindlessResourceAllocato
     }
 
     return TRef<SlotKeeper>(new SlotKeeper(this, idx, fn));
+}
+
+void DeviceBindlessResourceAllocator::RegisterCustomBufferHeap (uint32_t index, DeviceBufferHeapInterface * heap) {
+    assert(custom_buffer_heaps_.find(index) == custom_buffer_heaps_.end() && "Custom buffer heap already registered for this index.");
+    custom_buffer_heaps_[index] = heap;
+}
+
+void DeviceBindlessResourceAllocator::RegisterCustomUberBuffer (uint32_t index, DeviceUberBufferInterface * uber_buffer) {
+    assert(custom_uber_buffers_.find(index) == custom_uber_buffers_.end() && "Custom uber buffer already registered for this index.");
+    custom_uber_buffers_[index] = uber_buffer;
+}
+
+std::pair<TRef<DeviceUberBufferAllocation>, bool> DeviceBindlessResourceAllocator::AllocateVertexBuffer (uint32_t size, bool allow_reallocation) {
+    return vertex_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
+}
+std::pair<TRef<DeviceUberBufferAllocation>, bool> DeviceBindlessResourceAllocator::AllocateIndexBuffer (uint32_t size, bool allow_reallocation) {
+    return index_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
 }
 
 void DeviceBindlessResourceAllocator::FreeSlot(SlotKind kind, uint32_t idx) {

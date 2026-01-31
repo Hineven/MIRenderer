@@ -11,19 +11,19 @@
 #include <renderer/mi_scene.h>
 #include <renderer/mi_texture.h>
 #include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_buffer_heap.h>
+#include <renderer/r_geometry_buffer.h>
+
 #include "r_view_common.h"
 #include "r_volume_indirect_lighting.h"
-
 #include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
-#include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
 
 MI_NAMESPACE_BEGIN
-
-static CVar CVar_VolumeProbeSearchSize(
+    static CVar CVar_VolumeProbeSearchSize(
     "r.volume_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     5.5f

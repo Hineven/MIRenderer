@@ -26,7 +26,7 @@ public:
         return BLAS_.Raw();
     }
     FORCEINLINE bool IsValid () const {
-        return slot_ && slot_->Get() != UINT32_MAX;
+        return slot_ && (slot_->Get() != UINT32_MAX);
     }
     FORCEINLINE uint32_t GetIndex () const {
         return slot_ ? slot_->Get() : UINT32_MAX;

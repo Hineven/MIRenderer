@@ -12,6 +12,7 @@
 #include "mi_aabb.h"
 #include "mi_dirty_tracker.h"
 #include "mi_renderer.h"
+#include "mi_resource_allocator.h"
 #include "core/base.h"
 #include "core/refcounted.h"
 #include "rhi/rhi_desc.h"
@@ -34,7 +35,7 @@ protected:
     uint32_t index_count_ {};
 
     // Index keeper of the geometry slot (assigned by the allocator, delayed free).
-    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
+    TRef<DeviceBindlessResourceSlotKeeper> slot_;
 
     friend StaticMeshInstance;
 

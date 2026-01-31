@@ -3,7 +3,6 @@
  * Author: Exploring Air Joe
  * See LICENSE for licensing.
  */
-#include "r_volume_grid_direct_lighting.h"
 
 #include <rdg/rdg_shader.h>
 #include <rdg/rdg_builder.h>
@@ -12,15 +11,16 @@
 #include <renderer/mi_renderer.h>
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_scene.h>
+#include <renderer/mi_buffer_heap.h>
 #include <renderer/r_geometry_buffer.h>
 
 #include "r_view_common.h"
 #include "r_light_structure.h"
 #include "r_direct_lighting.h"
+#include "r_volume_grid_direct_lighting.h"
 
 MI_NAMESPACE_BEGIN
-
-void VolumeGridDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
+    void VolumeGridDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
     radiance = builder.CreateTexture2D(
         view->film_width_, view->film_height_,
         PixelFormatType::kR16G16B16A16_FLOAT

@@ -5,6 +5,8 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include <renderer/mi_scene.h>
+
 MI_NAMESPACE_BEGIN
 
 uint32_t RenderableNodeRegistry::AllocateRenderableNodeIndex() {
@@ -17,7 +19,7 @@ void RenderableNodeRegistry::FreeRenderableNodeIndex(uint32_t index) {
 }
 
 RenderableNodeRegistry::~RenderableNodeRegistry() {
-    mi_check(renderable_node_slots_.NoAllocationActive(),
+    mi_check_nothrow(renderable_node_slots_.NoAllocationActive(),
         "RenderableNodeRegistry destroyed with unreleased RenderableNodes.");
 }
 

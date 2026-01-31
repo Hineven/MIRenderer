@@ -10,18 +10,12 @@
 // Allocate buffer segments on a single buffer or a few buffers.
 // Reduce fragmentation and number of bindings when invocating shaders. (Bind entire heaps with a few bindings)
 
-#include <set>
+#include <core/common.h>
+#include <core/util/segment_allocator.h>
+#include <rhi/rhi_desc.h>
+#include <rhi/rhi_types.h>
 
-#include "mi_buffer_heap.h"
-#include "core/common.h"
-#include "core/infra.h"
-#include "core/util/segment_allocator.h"
-#include "rhi/rhi_desc.h"
-#include "rhi/rhi_fwd.h"
-#include "rhi/rhi_types.h"
-#include "renderer/mi_delayed_destruction.h"
-
-class DeviceBindlessResourceAllocator;
+#include <renderer/mi_delayed_destruction.h>
 
 MI_NAMESPACE_BEGIN
 
@@ -82,9 +76,8 @@ public:
 
 protected:
     ~DeviceUberBufferAllocation() override;
-    void QueueForDestruction() override;
+    void QueueForDestruction() const override;
 
-protected:
     // Offset and size of the allocation in the uber buffer.
     size_t offset_ {}, size_ {};
     // The uber buffer interface that this allocation belongs to.
@@ -102,7 +95,8 @@ class DeviceUberBufferInterface : public NonMovable, public NonCopyable, public 
 public:
     friend class DeviceUberBufferAllocation;
     friend class DeviceBindlessResourceAllocator;
-    DeviceUberBufferInterface (RHIBufferUsageFlags usage, uint32_t alignment) : usage_(usage), allocation_alignment(alignment) {}
+    DeviceUberBufferInterface (RHIBufferUsageFlags usage, uint32_t alignment, DeviceBindlessResourceAllocator * allocator):
+        usage_(usage), allocation_alignment(alignment), allocator_(allocator){}
     // Allocate a buffer segment from the uber buffer.
     // Be aware that the allocation may trigger an expansion of the uber buffer.
     virtual std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) = 0;
@@ -207,7 +201,8 @@ protected:
 // A very simple uber buffer implementation.
 class SimpleDeviceUberBuffer : public DeviceUberBufferInterface {
 public:
-    SimpleDeviceUberBuffer (RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024);
+    SimpleDeviceUberBuffer (RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024,
+        DeviceBindlessResourceAllocator * allocator = nullptr);
     ~SimpleDeviceUberBuffer() override;
 
     std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) override;
@@ -216,9 +211,10 @@ public:
     RHIBuffer * GetRHI () const override;
 
     FORCEINLINE static TRef<SimpleDeviceUberBuffer> Create (
-        RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024
+        RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024,
+        DeviceBindlessResourceAllocator * allocator = nullptr
     ) {
-        return {new SimpleDeviceUberBuffer(usage, allocation_alignment, initial_size)};
+        return {new SimpleDeviceUberBuffer(usage, allocation_alignment, initial_size, allocator)};
     }
 
     size_t GetAllocationLimitByteOffset() const override;

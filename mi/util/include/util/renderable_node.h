@@ -5,9 +5,11 @@
 #include <optional>
 #include <map>
 #include <glm/mat4x4.hpp>
+
+#include <core/refcounted.h>
+#include <core/util/slot_allocator.h>
 #include <renderer/mi_transform.h>
 #include <renderer/mi_renderable.h>
-#include <core/refcounted.h>
 
 MI_NAMESPACE_BEGIN
 

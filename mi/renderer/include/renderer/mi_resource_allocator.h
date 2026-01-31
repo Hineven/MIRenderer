@@ -13,18 +13,15 @@
 #include <stack>
 #include <vector>
 
-#include <rdg/rdg_cmd.h>
+#include <core/util/slot_allocator.h>
+#include <core/base.h>
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_shader.h>
 
-#include <core/base.h>
-#include <core/util/slot_allocator.h>
-#include <rhi/rhi_desc.h>
-#include <renderer/mi_renderer_fwd.h>
-#include <renderer/mi_buffer_heap.h>
-#include <renderer/mi_scene.h>
-#include "../shaders/shared/SharedStaticMesh.hlsl"
 #include <renderer/mi_delayed_destruction.h>
+#include <renderer/mi_scene.h>
+#include <renderer/mi_resource_allocator_slot.h>
+#include "../shaders/shared/SharedStaticMesh.hlsl"
 
 MI_NAMESPACE_BEGIN
 
@@ -32,7 +29,7 @@ MI_NAMESPACE_BEGIN
 // Resources that does not need to be bindless, or already bindless via RHI layers (for example, textures) should
 // be allocated separately.
 // One allocator for one renderer.
-class DeviceBindlessResourceAllocator : public NonCopyable, public NonMovable, public RefCounted<> {
+class DeviceBindlessResourceAllocator : public NonCopyable, public NonMovable, public RefCounted<>, public IDeferredFreeOwner {
 public:
     DeviceBindlessResourceAllocator ();
     ~DeviceBindlessResourceAllocator();
@@ -50,7 +47,7 @@ public:
     };
 
     // Keeper type for bindless slots.
-    using SlotKeeper = TDelayedReleaseKeeper<DeviceBindlessResourceAllocator>;
+    using SlotKeeper = DeviceBindlessResourceSlotKeeper;
 
     // Allocate a keeper that will release the slot a few frames after the last reference is dropped.
     TRef<SlotKeeper> AllocateSlotKeeper(SlotKind kind);
@@ -63,6 +60,7 @@ public:
     FORCEINLINE TRef<SlotKeeper> AllocateGaussianRadianceFieldSlotKeeper() { return AllocateSlotKeeper(SlotKind::GaussianRadianceField); }
 
     // Unified free by kind (used by keepers). This is the actual slot recycle.
+    // Do not call this directly unless you know exactly what you are doing.
     void FreeSlot(SlotKind kind, uint32_t idx);
 
     static constexpr uint32_t kMaxNumMaterials = 1024;
@@ -81,19 +79,13 @@ public:
         return index_uber_buffer_.Raw();
     }
 
-    FORCEINLINE void RegisterCustomBufferHeap (uint32_t index, DeviceBufferHeapInterface * heap) {
-        assert(custom_buffer_heaps_.find(index) == custom_buffer_heaps_.end() && "Custom buffer heap already registered for this index.");
-        custom_buffer_heaps_[index] = heap;
-    }
+    void RegisterCustomBufferHeap (uint32_t index, DeviceBufferHeapInterface * heap) ;
 
     FORCEINLINE DeviceBufferHeapInterface * GetCustomBufferHeap (uint32_t index) const {
         return custom_buffer_heaps_.at(index).Raw();
     }
 
-    FORCEINLINE void RegisterCustomUberBuffer (uint32_t index, DeviceUberBufferInterface * uber_buffer) {
-        assert(custom_uber_buffers_.find(index) == custom_uber_buffers_.end() && "Custom uber buffer already registered for this index.");
-        custom_uber_buffers_[index] = uber_buffer;
-    }
+    void RegisterCustomUberBuffer (uint32_t index, DeviceUberBufferInterface * uber_buffer) ;
 
     FORCEINLINE DeviceUberBufferInterface * GetCustomUberBuffer (uint32_t index) const {
         auto it = custom_uber_buffers_.find(index);
@@ -104,12 +96,8 @@ public:
     }
 
     // Allocate a vertex buffer from the vertex buffer heap.
-    FORCEINLINE std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateVertexBuffer (uint32_t size, bool allow_reallocation = true) {
-        return vertex_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
-    }
-    FORCEINLINE std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateIndexBuffer (uint32_t size, bool allow_reallocation = true) {
-        return index_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
-    }
+    std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateVertexBuffer (uint32_t size, bool allow_reallocation = true) ;
+    std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateIndexBuffer (uint32_t size, bool allow_reallocation = true) ;
 
     FORCEINLINE uint32_t AllocateMaterialSlot () {
         return material_slots_.AllocateSlot();
@@ -210,7 +198,9 @@ public:
 
     // Enqueue an arbitrary delayed-destruction object.
     // The queue takes ownership of the pointer and will delete it after a few frames.
-    void EnqueueForDelayedDestruction(DelayedDestructionResource * obj);
+    void EnqueueForDelayedDestruction(DelayedDestructionResource * obj) override;
+    // Advance frame, removing objects whose delay has elapsed.
+    void AdvanceFrameForDelayedDestruction() override;
 
 protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.

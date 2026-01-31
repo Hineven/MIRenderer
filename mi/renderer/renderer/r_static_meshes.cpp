@@ -12,13 +12,14 @@
 #include <rdg/rdg_shader.h>
 #include <rdg/rdg_helper.h>
 
-#include "renderer/mi_material.h"
-#include "renderer/mi_renderable.h"
-#include "renderer/mi_resource_allocator.h"
-#include "renderer/mi_static_mesh.h"
+#include <renderer/mi_material.h>
+#include <renderer/mi_renderable.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_static_mesh.h>
+#include <renderer/mi_buffer_heap.h>
+#include <renderer/r_geometry_buffer.h>
 
 #include "r_view_common.h"
-#include "../include/renderer/r_geometry_buffer.h"
 
 MI_NAMESPACE_BEGIN
 class DrawDeferredStaticMeshesShader : public RDGShader {

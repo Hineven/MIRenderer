@@ -17,7 +17,7 @@ class GLTFLoader {
 public:
     static bool LoadGLTF (
         std::filesystem::path path, DeviceBindlessResourceAllocator & allocator,
-        Scene & scene,
+        Scene & scene, RenderableNodeRegistry * reg,
         Material * default_material,
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,

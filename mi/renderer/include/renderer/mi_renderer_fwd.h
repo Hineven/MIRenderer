@@ -52,6 +52,7 @@ struct RendererViewPersistentData;
 struct RendererView;
 
 class DeviceBindlessResourceAllocator;
+class DeviceBindlessResourceSlotKeeper;
 class DeviceBufferHeapInterface;
 class DeviceBufferHeapBuffer;
 class DeviceUberBufferAllocation;

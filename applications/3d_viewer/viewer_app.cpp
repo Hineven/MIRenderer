@@ -315,6 +315,8 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
 
     resource_allocator_ = Create<DeviceBindlessResourceAllocator>();
 
+    renderable_node_registry_ = Create<RenderableNodeRegistry>();
+
     Renderer::Get().Init(resource_allocator_.Raw(), pool_.Raw());
 
     // Initialize ZMQ server.
@@ -350,7 +352,6 @@ void ViewerApp::Destroy() {
     view_.reset();
 
     loaded_scenes_.clear();
-    renderable_node_lookup_.clear();
 
     scene_.reset();
 
@@ -361,6 +362,7 @@ void ViewerApp::Destroy() {
     assert(pool_.GetRefCount() == 1);
     pool_.SafeRelease();
 
+    renderable_node_registry_.SafeRelease();
     resource_allocator_.SafeRelease();
 
     RDGShaderLibrary::Get().Deinit();
@@ -665,7 +667,7 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
                 && renderable_index != arrow_mesh_z_instance_->GetIndex()
             ) {
                 selection_state_.selected_deferred_renderable_index = renderable_index;
-                auto renderable = scene_->GetRenderables()[renderable_index].Raw();
+                auto renderable = scene_->GetRenderableByIndex(renderable_index);
                 arrow_mesh_x_instance_->EditTransform().position = renderable->GetTransform().position;
                 arrow_mesh_x_instance_->SetVisible(true);
                 arrow_mesh_y_instance_->EditTransform().position = renderable->GetTransform().position;
@@ -705,7 +707,7 @@ void ViewerApp::ProcessAxisDragging() {
                 // 在箭头上左键点下，此时开始拖拽
                 input_state_.drag_mouse_start_pos_ = mouse;
                 if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                    auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
+                    auto renderable = scene_->GetRenderableByIndex(selection_state_.selected_deferred_renderable_index);
                     input_state_.drag_start_obj_pos_ = renderable->GetTransform().position;
                 }
                 input_state_.dragging_ = true;
@@ -730,7 +732,7 @@ void ViewerApp::ProcessAxisDragging() {
                 delta_projected[axis] = delta[axis];
                 end_world_pos = input_state_.drag_start_obj_pos_ + delta_projected;
                 if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                    auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
+                    auto renderable = scene_->GetRenderableByIndex(selection_state_.selected_deferred_renderable_index);
                     renderable->EditTransform().position = end_world_pos;
                     arrow_mesh_x_instance_->EditTransform().position = end_world_pos;
                     arrow_mesh_y_instance_->EditTransform().position = end_world_pos;
@@ -954,7 +956,8 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         }
 
         // Time to recycle renderables and rendering resources marked for deletion from the previous frame!
-        scene_->FlushRemovingRenderables();
+        scene_->AdvanceFrameForDelayedDestruction();
+        resource_allocator_->AdvanceFrameForDelayedDestruction();
 
         // Try resolve previous frame profiling results (non-blocking) after the previous frame has finished.
         // In case if not ready yet, keep last results.
@@ -1005,6 +1008,7 @@ bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<
         path,
         *resource_allocator_,
         *scene_,
+        renderable_node_registry_.Raw(),
         default_material_.Raw(),
         geometries,
         materials,
@@ -1042,7 +1046,7 @@ bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vec
     auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), grf.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
     if (inst) {
         out_renderable_indices.push_back(inst->GetIndex());
-        auto node = renderable_node_registry_->Create(scene_.get(), path.filename().string());
+        auto node = renderable_node_registry_->Create(path.filename().string());
         node->SetRenderable(inst.Raw());
         node->UpdateWorldTransform();
         RegisterLoadedScene(path.filename().string(), { node });

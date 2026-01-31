@@ -14,6 +14,7 @@
 #include <core/base.h>
 #include <core/refcounted.h>
 #include <core/util/slot_allocator.h>
+#include <core/infra.h>
 #include <rhi/rhi_fwd.h>
 
 #include <renderer/mi_renderer_fwd.h>
@@ -59,7 +60,7 @@ public:
 
 };
 
-class Scene : public NonMovable, public NonCopyable {
+class Scene : public NonMovable, public NonCopyable, public IDeferredFreeOwner {
 public:
     friend class Renderable;
 
@@ -103,13 +104,12 @@ public:
 
     void UpdateAABB () ;
 
+    // Implement IDeferredFreeOwner for delayed destruction of renderable indices
+    void EnqueueForDelayedDestruction(DelayedDestructionResource *obj) override;
+
+    void AdvanceFrameForDelayedDestruction() override;
 
     DirectionalLight directional_light_{};
-
-    // Flush the renderables that have been delayed for removal. Should be called at the (on device) end of each frame.
-    // Renderables at frame N are only actually removed at the end of frame N+1 to avoid
-    // issues with GPU resources still in use.
-    void FlushRemovingRenderables () ;
 
 protected:
 
@@ -121,19 +121,38 @@ protected:
     std::vector<Renderable*> renderables_;
     std::mt19937 renderable_hash_generator {12345};
 
-    uint32_t removing_renderables_list_index_ {};
-    std::vector<Renderable*> removing_renderables_[2];
+    DelayedDestructionQueue delayed_destruction_;
 
-    uint32_t AllocateRenderableIndexAndHash (Renderable * renderable) ;
+    TRef<TDelayedReleaseKeeper<Scene>> AllocateRenderableSlot () ;
+    uint32_t NextRenderableHash () {
+        return renderable_hash_generator();
+    }
+    // De-allocate the renderable slot at the given index.
+    // This is deferred to the next frame after the renderable is removed from the scene.
     FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
         renderable_slots_.FreeSlot(index);
+    }
+
+    // Register the renderable at the given index. This is executed immediately after allocation by the Renderble constructor.
+    FORCEINLINE void RegisterRenderableAtIndex (uint32_t index, Renderable * renderable) {
+        mi_check(index < kMaxNumRenderables, "Renderable index exceeds maximum number of renderables.");
+        if (renderables_.size() <= index) {
+            renderables_.resize(index + 1);
+        }
+        renderables_[index] = renderable;
+    }
+    // Un-register the renderable at the given index without freeing the slot.
+    // This is executed immediately after the reference count of a renderable approaches zero.
+    FORCEINLINE void UnregisterRenderableAtIndex (uint32_t index) {
+        if (index < renderables_.size()) {
+            renderables_[index] = nullptr;
+        }
     }
 
     SlotAllocator renderable_slots_;
 
     TRef<DeviceScene> device_scene_;
 
-    void RemoveRenderableAtIndex (uint32_t index) ;
 };
 
 MI_NAMESPACE_END

@@ -3,12 +3,12 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "renderer/mi_renderable.h"
+#include <renderer/mi_scene.h>
+#include <renderer/mi_renderable.h>
 
-#include "renderer/mi_scene.h"
 MI_NAMESPACE_BEGIN
 Renderable::Renderable(RenderableType type, Scene * scene): type_(type), scene_(scene) {
-    index_ = scene->AllocateRenderableIndexAndHash(this);
+    index_keeper_ = scene->AllocateRenderableSlot();
     if (!IsValid()) {
         MI_LOG(MIInfraLogType::kError, "Failed to allocate renderable index from world."
                                        "Potentially too many renderables in the world.");
@@ -21,12 +21,17 @@ RenderableHeader Renderable::GetDeviceRenderableHeader () const {
     };
 }
 
-Renderable::~Renderable() {
-    if (index_ != UINT32_MAX) {
-        // Currently, this is done in Scene::RemoveRenderable
-        // scene_->FreeRenderabeIndex(index_);
+uint32_t Renderable::DecRef() {
+    ref_count_--;
+    if (ref_count_ == 0) {
+        // Immediately unregister from the scene
+        scene_->UnregisterRenderableAtIndex(GetIndex());
+        delete this;
     }
+    return ref_count_;
 }
+
+Renderable::~Renderable() {}
 
 bool Renderable::IsEmpty() const {
     return false; // Default implementation, can be overridden

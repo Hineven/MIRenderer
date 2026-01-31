@@ -23,6 +23,7 @@
 #include "r_volume_direct_lighting.h"
 
 #include "../include/renderer/r_geometry_buffer.h"
+#include "renderer/mi_buffer_heap.h"
 
 MI_NAMESPACE_BEGIN
     void VolumeDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {

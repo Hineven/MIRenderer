@@ -57,7 +57,9 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             if (!GLTFLoader::LoadGLTF(
                 model_path,
                 *resource_allocator_,
-                *scene_, default_material_.Raw(),
+                *scene_,
+                renderable_node_registry_.Raw(),
+                default_material_.Raw(),
                 geometries, materials, meshes
             )) {
                 MI_WARN("Failed to load GLTF model {}.", model_path.string());
@@ -86,10 +88,10 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             arrow_mesh_z_instance_ = StaticMeshInstance::Create(scene_.get(), arrow_mesh_z_.Raw(),
                 original_arrow_instance->GetTransform().RotatedAbout(glm::radians(-90.0f), {0, 1, 0}).Scaled(glm::vec3(scale)));
         }
-        scene_->RemoveRenderable(original_arrow_instance.Raw());
         arrow_mesh_x_instance_->SetVisible(false);
         arrow_mesh_y_instance_->SetVisible(false);
         arrow_mesh_z_instance_->SetVisible(false);
+        original_arrow_instance.SafeRelease();
     }
     auto & rhi = RHI::Get();
     auto load_gltf = [&](const std::filesystem::path& model_path, const char* name) {
@@ -100,7 +102,9 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         if (!GLTFLoader::LoadGLTF(
             model_path,
             *resource_allocator_,
-            *scene_, default_material_.Raw(),
+            *scene_,
+                renderable_node_registry_.Raw(),
+            default_material_.Raw(),
             geometries, materials, new_meshes, &nodes
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
