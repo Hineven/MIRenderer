@@ -46,6 +46,9 @@ protected:
 
     // Top level acceleration structure for ray-traced objects
     TRef<RHIAccelerationStructure> TLAS_;
+    // Keep a hash value for TLAS update / rebuild decision.
+    // The hash value is updated within the renderer when the TLAS is built.
+    uint32_t TLAS_vrt_hash_ {};
 
     // Track last built TLAS instance count to decide Build vs Update.
     // Vulkan requires the number of primitives (instances) to remain the same for Update mode.
@@ -111,8 +114,15 @@ public:
 
     DirectionalLight directional_light_{};
 
-protected:
+    FORCEINLINE void SetStructuralHash (uint32_t hash) {
+        structural_hash_ = hash;
+    }
 
+    FORCEINLINE uint32_t GetStructuralHash () const {
+        return structural_hash_;
+    }
+
+protected:
 
     AABB aabb_;
 
@@ -120,6 +130,11 @@ protected:
 
     std::vector<Renderable*> renderables_;
     std::mt19937 renderable_hash_generator {12345};
+
+    // The scene structural hash value. If any structural change happens (e.g. renderable added/removed,
+    // geometry insertion / modification, visibility change, material flag change, etc.), this value should be updated.
+    // It is updated externally by the renderer.
+    uint32_t structural_hash_ {};
 
     DelayedDestructionQueue delayed_destruction_;
 

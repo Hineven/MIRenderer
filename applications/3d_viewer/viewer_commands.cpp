@@ -301,12 +301,15 @@ void RegisterViewerCommands(ViewerApp& app) {
             CommandTokenSpec::KeywordSet({"clean"}),
         },
         [&app](const CommandMatchResult & /*match*/) {
-            const bool ok = app.CleanAllRenderableNodes();
-            if (ok) {
-                MI_LOG(MIInfraLogType::kInfo, "Cleaned all renderables from scene at frame {}.", app.view_->persistent_data_->frame_index_);
-            } else {
-                MI_WARN("ViewerApp: failed to clean renderables");
-            }
+            app.EnqueueNextFrameOperations([&app]() {
+                auto ok = app.CleanAllRenderableNodes();
+                if (ok) {
+                    MI_LOG(MIInfraLogType::kInfo, "Cleaned all renderable nodes");
+                } else {
+                    MI_WARN("ViewerApp: failed to clean all renderable nodes");
+                }
+            });
+
         }
     );
 }

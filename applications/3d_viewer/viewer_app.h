@@ -107,6 +107,9 @@ public:
     void UnloadScene(size_t idx);
     void Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
 
+    void EnqueueNextFrameOperations (std::function<void()> func);
+    std::vector<std::function<void()>> next_frame_operations_;
+
     // ZMQ server ops
 
     struct ViewerStatus {

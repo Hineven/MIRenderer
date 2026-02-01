@@ -126,7 +126,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         case MESH_AND_VOLUME_PRIMITIVES : {
             std::vector<TRef<Geometry>> geometries;
             std::vector<TRef<Material>> materials;
-            auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene_.gltf");
+            auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/light_room_empty/scene.gltf");
             load_gltf(model_path, "light_room_empty");
              TRef<VolumePrimitives> volprims;
              VolumePrimitivesLoader::LoadPLY(

@@ -33,20 +33,12 @@ enum class RenderableFlagBits : uint32_t {
 
 MAKE_FLAGS(Renderable);
 
-// This class manually implements reference counting. It should be managed by TRef pointers though
-// it is not derived from RefCounted<>.
 // Note: Renderable instances are created by the Scene, but the scene does not own them. They are owned by TRef pointers.
 // Once the reference count drops to zero, the renderable will unregister itself from the scene and delete itself automatically.
 // Keep a list of renderable handles if you wish to make them stay alive.
-class Renderable : public NonMovable, public NonCopyable {
+class Renderable : public DelayedDestructionResource {
 public:
     friend Scene;
-
-    FORCEINLINE uint32_t IncRef() {
-        return ++ref_count_;
-    }
-
-    uint32_t DecRef() ;
 
     virtual ~Renderable();
 
@@ -137,10 +129,10 @@ public:
 
     FORCEINLINE RenderableFlags GetRenderableFlags () const { return flags_; }
 
+    FORCEINLINE bool IsBLASUpdated () const { return blas_updated_; }
+    FORCEINLINE void SetBLASUpdated (bool updated = true) { blas_updated_ = updated; }
+
 protected:
-
-
-    uint32_t ref_count_ {};
 
     Transform transform_ {};
     Scene * scene_;
@@ -159,12 +151,17 @@ protected:
     // Dirty means the data associated with the renderable (except transform) needs to be updated on device.
     bool dirty_ {true};
 
+    // Is BLAS updated? If it is updated at some point, this should be set to true to notify the renderer to rebuild TLAS.
+    bool blas_updated_ {true};
+
     // Transform dirty means the transform has changed.
     bool transform_dirty_ {true};
 
     RenderableType type_ {RenderableType::kStaticMeshInstance};
 
     Renderable(RenderableType type, Scene * scene);
+
+    void QueueForDestruction() const override;
 
 };
 

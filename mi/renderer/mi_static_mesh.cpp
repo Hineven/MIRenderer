@@ -101,7 +101,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
             auto geometries = queue.Allocate<RHIASGeometry[]>(geometries_.size());
             RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
             build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : RHIAccelerationStructureBuildFlagBits::kNone);
-            for (auto [i, geometry] : std::views::enumerate(geometries_)) {
+            for (const auto& [i, geometry] : std::views::enumerate(geometries_)) {
                 auto material = materials_[i];
                 RHIASGeometryFlags geometry_flags = material->IsOpaque() ? RHIASGeometryFlagBits::kOpaque : RHIASGeometryFlagBits::kNone;
                 auto device_geom = geometry->GetDeviceGeometry();

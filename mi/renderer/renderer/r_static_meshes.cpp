@@ -438,7 +438,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
                 if (!e->IsDirty()) continue ;
                 if (auto mesh_instance = e->As<StaticMeshInstance>()) {
                     auto mesh = mesh_instance->GetStaticMesh();
-                    for (auto geom : mesh->GetGeometries()) {
+                    for (const auto& geom : mesh->GetGeometries()) {
                         if (auto dev = geom->GetDeviceGeometry()) {
                             if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb->GetRHI().buffer);
                             if (auto ib = dev->GetDeviceIndexBuffer()) barrier_buffers.insert(ib->GetRHI().buffer);

@@ -769,6 +769,11 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        // Start of frame operations
+        for (auto e : next_frame_operations_) e();
+        next_frame_operations_.clear();
+
+        // Major UI and Input Handling
         HandleNavigationInput(cpu_duration);
         HandleKeyboardShortcuts(ops);
 
@@ -976,6 +981,11 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         auto cpu_tp_end = std::chrono::steady_clock::now();
         cpu_duration = std::chrono::duration<float>(cpu_tp_end - cpu_tp_start).count();
     }
+}
+
+void ViewerApp::EnqueueNextFrameOperations(std::function<void()> func) {
+    // Delayed to the beginning of next frame
+    next_frame_operations_.push_back(std::move(func));
 }
 
 std::vector<ViewerApp::ExportedRenderResult> ViewerApp::GetAndClearExportedFrameResults() {

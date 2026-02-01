@@ -10,6 +10,7 @@
 #include "shaders/shared/SharedRenderable.hlsl"
 
 #include <barrier>
+#include <xxhash.h>
 #include <core/infra.h>
 #include <rhi/rhi_as.h>
 #include <rdg/rdg_builder.h>
@@ -22,6 +23,7 @@
 #include <renderer/mi_gaussian_radiance_field.h>
 
 #include "core/util/debug_prof.h"
+#include "core/util/unordered_hashing.h"
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
@@ -45,8 +47,7 @@ static CVar<int> CVar_FinalOutputType(
     "Final output on screen.\n"
     "0 - Radiance\n"
     "1 - Albedo\n"
-    "2 - Direct lighting\n"
-    "3 - Prev Radiance\n",
+    "...\n",
     0
 );
 
@@ -90,6 +91,27 @@ void Renderer::FrameContext::Deinit() {
     visible_renderables.clear();
     deferred_static_meshes = {};
     forward_static_meshes = {};
+}
+
+// A: An unordered hash of renderable TLAS handles & TLAS configurations. (Rebuild required)
+// B: BLAS updated / rebuilt? (Update required)
+// This is used to determine if we should update or rebuild the TLAS.
+static std::pair<uint32_t, bool> ComputeRenderableStructureHashAndClearBLASUpdatedFlags (
+    const std::vector<uint32_t> & visible_rt_renderables, const std::vector<Renderable*> & all_renderables) {
+    std::vector<void*> handles;
+    handles.reserve(visible_rt_renderables.size());
+    bool h2 {};
+    for (auto index : visible_rt_renderables) {
+        auto e = all_renderables[index];
+        auto e1 = e->GetBLAS()->GetAPIHandle();
+        handles.push_back(e1);
+        h2 |= e->IsBLASUpdated() || e->IsTransformDirty();
+        e->SetBLASUpdated(false);
+    }
+    // The order of the handles is crucial here, as different order means different TLAS structure. (Though they are
+    // unordered in the represented TLAS scene.)
+    auto h1 = XXH32(handles.data(), handles.size() * sizeof(void*), 0);
+    return {h1, h2};
 }
 
 void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
@@ -215,7 +237,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     );
 
     // Prepare instance data for rebuilding TLAS
-    std::vector<int> visible_rt_renderable_indices;
+    std::vector<uint32_t> visible_rt_renderable_indices;
     bool visible_rt_renderable_transform_dirty = false;
     for (auto e : visible_renderable_indices) {
         if (auto renderable = all_renderables[e]) {
@@ -236,10 +258,13 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     for (const auto& e : all_renderables) {
         if (e) e->ClearTransformDirty();
     }
+
+    // TODO: batched update all BLAS (they are performed in renderable->Update currently)
+
     // If instance count changes, we must rebuild TLAS instead of update.
-    const bool visible_rt_renderable_instance_count_changed = (view->scene_->GetDeviceScene()->tlas_instance_count_ != visible_rt_renderable_indices.size());
-    bool should_rebuild_tlas = visible_rt_renderable_instance_count_changed;
-    bool should_update_tlas = visible_rt_renderable_transform_dirty || visible_rt_renderable_instance_count_changed;
+    auto [vrt_hash, vrt_blas_updated] = ComputeRenderableStructureHashAndClearBLASUpdatedFlags(visible_rt_renderable_indices, all_renderables);
+    bool should_rebuild_tlas = vrt_hash != view->scene_->GetDeviceScene()->TLAS_vrt_hash_;
+    bool should_update_tlas = visible_rt_renderable_transform_dirty || should_rebuild_tlas || vrt_blas_updated;
     TRef<RDGBuffer> tlas_instance_buffer;
     if (should_update_tlas) {
         auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
@@ -310,11 +335,11 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         };
         // Query sizes with current (default Update) build_info first; we may re-query if we need a Build.
         auto build_sizes = TLAS->GetBuildSizes(build_info);
-        bool rebuild = false;
+        // Condition 1: Requested a larger TLAS allocation
         if (build_sizes.acceleration_structure_size > TLAS->GetSize()) {
             // Resize the TLAS if needed
             TLAS->Create(build_sizes.acceleration_structure_size);
-            rebuild = true;
+            should_rebuild_tlas = true;
         }
 
         // If we decided to rebuild, scratch size should use build_scratch_size; otherwise use update_scratch_size
@@ -323,14 +348,16 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             auto build_mode_info = build_info;
             build_mode_info.mode = RHIAccelerationStructureBuildMode::kBuild;
             build_sizes = TLAS->GetBuildSizes(build_mode_info);
+            // Update vrt hash for scene
+            view->scene_->GetDeviceScene()->TLAS_vrt_hash_ = vrt_hash;
         }
         auto scratch_buffer = builder.CreateBuffer(
             RHIBufferUsageFlagBits::kAccelerationStructureScratch,
-            rebuild ? build_sizes.build_scratch_size : build_sizes.update_scratch_size
+            should_rebuild_tlas ? build_sizes.build_scratch_size : build_sizes.update_scratch_size
         );
         scratch_buffer->SetName("TLAS Update Scratch Buffer");
         builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
-            [tlas_instance_buffer = tlas_instance_buffer.Raw(), rebuild, build_info, scratch = scratch_buffer.Raw(), scene_ds = view->scene_->GetDeviceScene()]
+            [tlas_instance_buffer = tlas_instance_buffer.Raw(), should_rebuild_tlas, build_info, scratch = scratch_buffer.Raw(), scene_ds = view->scene_->GetDeviceScene()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
             // Barrier the previous update & use of the acceleration structure
             queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
@@ -341,7 +368,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
             );
             auto as_build_info = build_info;
             as_build_info.instance_data = tlas_instance_buffer ? tlas_instance_buffer->GetRHI() : RHIBufferSpan{};
-            as_build_info.mode = rebuild ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
+            as_build_info.mode = should_rebuild_tlas ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
             queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
             // Barrier the TLAS after building
             queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
@@ -357,7 +384,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
-    // Pre-allocate buffers that may be used among multiple lighting stages
+    // Pre-allocate RDG resources that may be used among multiple lighting stages
     view->CreateSharedResources(builder);
 
     // Pre-allocate shared view persistent data among multiple lighting stages

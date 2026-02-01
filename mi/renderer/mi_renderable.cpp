@@ -6,12 +6,17 @@
 #include <renderer/mi_scene.h>
 #include <renderer/mi_renderable.h>
 
+#include "rhi/rhi.h"
+
 MI_NAMESPACE_BEGIN
 Renderable::Renderable(RenderableType type, Scene * scene): type_(type), scene_(scene) {
     index_keeper_ = scene->AllocateRenderableSlot();
     if (!IsValid()) {
         MI_LOG(MIInfraLogType::kError, "Failed to allocate renderable index from world."
                                        "Potentially too many renderables in the world.");
+    } else {
+        // Register renderable to the scene
+        scene->RegisterRenderableAtIndex(GetIndex(), this);
     }
 }
 
@@ -21,21 +26,19 @@ RenderableHeader Renderable::GetDeviceRenderableHeader () const {
     };
 }
 
-uint32_t Renderable::DecRef() {
-    ref_count_--;
-    if (ref_count_ == 0) {
-        // Immediately unregister from the scene
-        scene_->UnregisterRenderableAtIndex(GetIndex());
-        delete this;
-    }
-    return ref_count_;
+void Renderable::QueueForDestruction() const {
+    // Immediately unregister from the scene, making it invisible to the renderer.
+    scene_->UnregisterRenderableAtIndex(GetIndex());
+    // Queue up for destruction later
+    scene_->EnqueueForDelayedDestruction(const_cast<Renderable *>(this));
 }
 
-Renderable::~Renderable() {}
+Renderable::~Renderable() {
+    printf("Renderable (index %u, frame %llu) destroyed.\n", GetIndex(), GetFrameIndexForCurrentThread());
+}
 
 bool Renderable::IsEmpty() const {
     return false; // Default implementation, can be overridden
 }
-
 
 MI_NAMESPACE_END

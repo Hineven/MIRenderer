@@ -57,7 +57,7 @@ protected:
     virtual void QueueForDestruction() const = 0;
 
 private:
-    mutable uint32_t ref_count_ {0};
+    mutable std::atomic<uint32_t> ref_count_ {0};
 };
 
 // Owner interface for delayed destruction.

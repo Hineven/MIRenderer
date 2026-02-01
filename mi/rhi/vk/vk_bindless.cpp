@@ -282,7 +282,6 @@ void VulkanBindlessManager::AdvanceFrame_RHIThread (std::span<RHIPackedBindlessS
 
     // Free batched slots in the new set by writing null descriptors
     if (!slots_to_free.empty()) {
-        auto device = GetVulkanRHI()->GetDevice();
         std::vector<vk::WriteDescriptorSet> null_descriptors;
         std::vector<vk::DescriptorBufferInfo> null_buffers;
         std::vector<vk::DescriptorImageInfo> null_images;
