@@ -88,7 +88,7 @@ void VulkanSyncPoint::Wait() {
     // Wait for command buffer submission first.
     submission_sem_.acquire();
     auto dev = GetVulkanRHI()->GetDevice();
-    [[maybe_unused]] auto ret = dev.waitForFences({vk_fence_}, VK_TRUE, 500 * 1000 * 1000); // 500 ms timeout
+    [[maybe_unused]] auto ret = dev.waitForFences({vk_fence_}, VK_TRUE, 2000 * 1000 * 1000); // 500 ms timeout
     mi_assert(ret == vk::Result::eSuccess, "Failed to wait for fence.");
     can_be_waited_ = false;
 }

@@ -21,6 +21,10 @@
 MI_NAMESPACE_BEGIN
 
 void VolumeGridDirectLightingData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
+    sampled_color_and_depth = builder.CreateTexture2D(
+        view->film_width_, view->film_height_,
+        PixelFormatType::kR16G16B16A16_FLOAT
+    );
     radiance = builder.CreateTexture2D(
         view->film_width_, view->film_height_,
         PixelFormatType::kR16G16B16A16_FLOAT
@@ -80,6 +84,7 @@ BEGIN_SHADER_PARAMETERS(VolumeGridDirectLightingShaderParameters)
 
     // Direct Lighting Result
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeGridSumTransmittanceTexture)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeGridSampledColorAndDepth)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeGridDirectLightingTexture)
 
 END_SHADER_PARAMETERS()
@@ -222,6 +227,7 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     volume_grid_params->RWVolumeGridRadianceEstimateTexture = volume_grid_radiance_estimate_texture.Raw();
 
     volume_grid_params->RWVolumeGridSumTransmittanceTexture = view->g_buffer_->G_transmittance_.Raw();
+    volume_grid_params->RWVolumeGridSampledColorAndDepth = view->volume_grid_direct_lighting_->sampled_color_and_depth.Raw();
     volume_grid_params->RWVolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
 
     // Volume Grid Direct Lighting

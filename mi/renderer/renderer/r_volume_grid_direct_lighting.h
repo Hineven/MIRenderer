@@ -14,6 +14,7 @@
 MI_NAMESPACE_BEGIN
 
 struct VolumeGridDirectLightingData : public RefCounted<> {
+    TRef<RDGTexture> sampled_color_and_depth;
     TRef<RDGTexture> radiance;
 
     void Allocate (RenderGraphBuilder & builder, RendererView * view) ;

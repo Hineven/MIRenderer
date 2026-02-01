@@ -30,7 +30,7 @@ public:
         glm::vec3 DefaultColor = glm::vec3(1.0f);
 
         // 密度乘数 (在加载阶段烘焙进纹理)
-        float DensityMultiplier = 100.0f;
+        float DensityMultiplier = 50.0f;
     };
 
     /**

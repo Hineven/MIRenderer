@@ -76,6 +76,9 @@ static void RelocateShaderResourceBindings (
         if (!desc.srv.name.empty()) {
             Relocate(desc.srv.locations, 1, (uint32_t)RHIBindlessResourceType::kSRV);
         }
+        if (!desc.volume_srv.name.empty()) {
+            Relocate(desc.volume_srv.locations, 1, 2);
+        }
         if (!desc.acceleration_structure.name.empty()) {
             Relocate(desc.acceleration_structure.locations, 1, (uint32_t)RHIBindlessResourceType::kAccelerationStructure);
         }

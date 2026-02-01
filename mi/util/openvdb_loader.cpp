@@ -136,6 +136,10 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
     glm::vec3 vol_min(std::min(ws_min.x(), ws_max.x()), std::min(ws_min.y(), ws_max.y()), std::min(ws_min.z(), ws_max.z()));
     glm::vec3 vol_max(std::max(ws_min.x(), ws_max.x()), std::max(ws_min.y(), ws_max.y()), std::max(ws_min.z(), ws_max.z()));
 
+    // TODO:修改模型本身以调整至合适尺寸
+    // vol_min /= 50.f;
+    // vol_max /= 50.f;
+
     // --- 4. 准备 Accessor (直接访问器) ---
     // 使用 ConstAccessor 是线程安全的，且比 GridSampler 更快
     auto density_acc = density_grid->getConstAccessor();
@@ -158,7 +162,7 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
     openvdb::Coord start_coord = bbox.min();
 
     // 切换到框架自带的 TaskGraph 处理每个切片，方便日后可能的统一调度
-    TaskGraph::Get().ForEachBlockedRange((uint32_t)0, depth, [&](uint32_t block_begin, uint32_t block_end) {
+    auto tasks = TaskGraph::Get().ForEachBlockedRange((uint32_t)0, depth, [&](uint32_t block_begin, uint32_t block_end) {
         // 每个线程本地的 Coord 变量，避免反复构造
         openvdb::Coord i_coord;
 
@@ -202,6 +206,11 @@ TRef<VolumeGrid> OpenVDBLoader::LoadVDB(
             }
         }
     });
+
+    // 等待所有线程全部加载完毕
+    for (auto& task : tasks) {
+        TaskGraph::Get().WaitForTask(task);
+    }
 
     file.close();
 

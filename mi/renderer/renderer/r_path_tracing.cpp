@@ -11,6 +11,8 @@
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
+#include "renderer/mi_volume_texture.h"
+#include "renderer/mi_volume_grid.h"
 #include "r_view_common.h"
 #include "r_persistent.h"
 #include "r_diffuse_direct_lighting.h"
@@ -53,6 +55,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
@@ -114,6 +117,7 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
     params->PrimitiveData = builder.Import(
         device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
     );
+    params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
     params->RWRadiance = view->persistent_data_->path_tracing_film_.Raw();
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

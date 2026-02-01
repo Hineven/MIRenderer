@@ -430,7 +430,7 @@ MyInfra::CompileHLSLToSPIRV(
     auto source_buffer = DxcBuffer{
         hlsl_blob->GetBufferPointer(),
         hlsl_blob->GetBufferSize(),
-        DXC_CP_ACP
+        DXC_CP_UTF8
     };
     if (out_shader_xxhash64) {
         // 计算预处理后代码的哈希值
@@ -550,7 +550,7 @@ uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
 
     // 创建着色器代码 blob
     IDxcBlobEncoding *hlsl_blob;
-    dxc_lib->CreateBlob(hlsl_code.data(), (uint32_t)hlsl_code.size(), DXC_CP_ACP, &hlsl_blob);
+    dxc_lib->CreateBlob(hlsl_code.data(), (uint32_t)hlsl_code.size(), DXC_CP_UTF8, &hlsl_blob);
 
     // 准备预处理选项（添加-P选项）
     auto w_options = GetImplicitCompileOptions(shader_path_w.c_str(), options, true);
@@ -568,7 +568,7 @@ uint64_t MyInfra::GetShaderXXHashFromShaderResourcePath(
     auto source_buffer = DxcBuffer{
         hlsl_blob->GetBufferPointer(),
         hlsl_blob->GetBufferSize(),
-        DXC_CP_ACP
+        DXC_CP_UTF8
     };
     // 计算预处理后代码的哈希值
     hash_value ^= PreprocessAndComputeHash(

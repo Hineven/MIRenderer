@@ -27,5 +27,7 @@ CMakeSettings.json
 
 # vcpkg
 vcpkg.json
-/pipeline_cache.bin
-/imgui.ini
+
+# temp file
+pipeline_cache.bin
+imgui.ini
