@@ -119,7 +119,8 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
 
     switch(cfg.default_scene_type) {
         case MESH_ONLY : {
-            auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
+            // auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
+            auto model_path = std::filesystem::path("D:/TestScene/CartoonRoom/scene.gltf");
             load_gltf(model_path, "default");
             break;
         }

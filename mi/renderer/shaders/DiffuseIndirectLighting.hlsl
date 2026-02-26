@@ -1243,7 +1243,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
             TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(OcclusionEpsilon, CoordinateEpsilon), 0.f);
         }
 		// Account for shading
-        ShadedRadiance *= EvaluateCachedMaterialBRDF(
+        ShadedRadiance *= EvaluateCachedMaterialBRDF_ColorOnly(
             ShadeMaterial, ShadeViewDirection,
             TransmittanceRayDirection, VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G
         );
