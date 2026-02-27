@@ -17,6 +17,7 @@
 #include "r_view_common.h"
 #include "r_light_structure.h"
 #include "r_direct_lighting.h"
+#include "r_directional_light.h"
 #include "r_volume_grid_direct_lighting.h"
 
 MI_NAMESPACE_BEGIN
@@ -31,6 +32,7 @@ MI_NAMESPACE_BEGIN
 BEGIN_SHADER_PARAMETERS(VolumeGridDirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
+    SHADER_UNIFORM_BUFFER(DirectionalLightUniform, DirectionalLight_UB)
     SHADER_UNIFORM_BUFFER(DirectLightingUB, DirectLighting_UB)
     SHADER_UNIFORM_BUFFER(HybridTracingUB, HybridTracing_UB)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
@@ -158,6 +160,9 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     auto DirectLighting_UB = builder.Allocate<DirectLightingUB>();
     FillUniformBufferForDirectLighting(view, DirectLighting_UB);
     volume_grid_params->DirectLighting_UB = DirectLighting_UB;
+    auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
+    FillUniformBufferForDirectionalLight(view, directional_light_ub);
+    volume_grid_params->DirectionalLight_UB = directional_light_ub;
     auto HybridTracing_UB = builder.Allocate<HybridTracingUB>();
     FillUniformBufferForHybridTracing(view, HybridTracing_UB);
     volume_grid_params->HybridTracing_UB = HybridTracing_UB;

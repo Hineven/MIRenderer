@@ -292,19 +292,25 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float3 RadianceEstimation = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, WorldNormal, ViewDirection,
-        true, true, false, 
+        true, true, false, true,
         R,
         RadianceEstimation,
         SumResampleWeights, NumValidSamples,
         LightGridLightListCdf
     );
     // Reject using sample weights and geometry normal
-    float3 LightSampleDirection = ReservedSample.bIsEnvironmentLightSample ? ReservedSample.Position : normalize(ReservedSample.Position - WorldPosition);
+    float3 LightSampleDirection = ReservedSample.IsInfiniteLight() ? ReservedSample.Position : normalize(ReservedSample.Position - WorldPosition);
     bool bValidSample = ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0 && dot(WorldGeometryNormal, LightSampleDirection) > 0;
     if (bValidSample) {
-        float3 TraceDirection = ReservedSample.Position - WorldPosition;
-        float TraceDistance = length(TraceDirection);
-        TraceDirection /= TraceDistance;
+        float3 TraceDirection;
+        float  TraceDistance;
+        if(ReservedSample.IsInfiniteLight()) {
+            TraceDirection = ReservedSample.Position;
+            TraceDistance = C.FarPlane;
+        } else {
+            TraceDirection = normalize(ReservedSample.Position - WorldPosition);
+            TraceDistance = length(ReservedSample.Position - WorldPosition);
+        }
         // Write to the direct lighting sample buffer
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = float4(RadianceEstimation, 1.f);
         bool bPrimaryThread = WaveIsFirstLane();
@@ -469,7 +475,13 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
             uint LightIndex = RWShadowRayToTraceSampledLightIndexBuffer[RayIndex];
-            LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            if (IsInvalid(LightIndex)) {
+                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayToTrace.Direction);
+            } else if (IsDirectionalLightSampleIndex(LightIndex)) {
+                // Directional light does not use LightGrid visibility history/cache.
+            } else {
+                LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            }
         }
     }
 #ifdef DEBUG_OUTPUT_TRACED_RAY
@@ -571,7 +583,7 @@ void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 Loc
     float3 RadianceEstimation = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, 0.xxx, ViewDirection,
-        false, true, false,
+        false, true, false, true,
         R,
         RadianceEstimation,
         SumResampleWeights, NumValidSamples, LightGridLightListCdf
@@ -580,9 +592,9 @@ void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 Loc
     bool bValidSample = ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0;
     if (bValidSample) {
         // Final sample acquired, prepare visibility trace
-        float3 TraceDirection = ReservedSample.Position - WorldPosition;
-        float TraceDistance = length(TraceDirection);
-        TraceDirection /= TraceDistance;
+        float3 TraceDirection = ReservedSample.IsInfiniteLight() ? ReservedSample.Position : (ReservedSample.Position - WorldPosition);
+        float TraceDistance = ReservedSample.IsInfiniteLight() ? C.FarPlane : length(TraceDirection);
+        TraceDirection /= max(TraceDistance, 1e-7f);
         // Write to the direct lighting sample buffer
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = float4(RadianceEstimation, 1.f);
         bool bPrimaryThread = WaveIsFirstLane();
@@ -654,7 +666,13 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
             uint LightIndex = RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex];
-            LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            if (IsInvalid(LightIndex)) {
+                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayToTrace.Direction);
+            } else if (IsDirectionalLightSampleIndex(LightIndex)) {
+                // Directional light does not use LightGrid visibility history/cache.
+            } else {
+                LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            }
         }
     }
 }
@@ -786,7 +804,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     LightSample ReservedSample = SampleOneLightSample_RIS(
         scatterPos, 0.f.xxx, -RayDirection,
-        false, true, false,
+        false, true, false, true,
         rng,
         RadianceEstimation,
         SumResampleWeights, NumValidSamples, LightGridLightListCdf
@@ -794,8 +812,8 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     bool scatterValid = scattered && ReservedSample.IsValid() && (dot(RadianceEstimation, 1.f.xxx) > 0);
 
-    float3 TraceDirection = ReservedSample.Position - scatterPos;
-    float TraceDistance = length(TraceDirection);
+    float3 TraceDirection = ReservedSample.IsInfiniteLight() ? ReservedSample.Position : (ReservedSample.Position - scatterPos);
+    float TraceDistance = ReservedSample.IsInfiniteLight() ? C.FarPlane : length(TraceDirection);
     TraceDirection /= max(TraceDistance, 1e-9);
 
     // Phase Function (Isotropic)

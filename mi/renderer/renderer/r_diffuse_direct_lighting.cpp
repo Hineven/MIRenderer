@@ -18,6 +18,7 @@
 #include "r_persistent.h"
 #include "r_light_structure.h"
 #include "r_direct_lighting.h"
+#include "r_directional_light.h"
 #include "r_diffuse_direct_lighting.h"
 
 #include "../shaders/shared/SharedLight.hlsl"
@@ -45,6 +46,7 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
     SHADER_UNIFORM_BUFFER(DebugCommonShaderParameters, Debug)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
+    SHADER_UNIFORM_BUFFER(DirectionalLightUniform, DirectionalLight_UB)
     SHADER_UNIFORM_BUFFER(DirectLightingUB, DirectLighting_UB)
     SHADER_UNIFORM_BUFFER(HybridTracingUB, HybridTracing_UB)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
@@ -261,6 +263,9 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         auto DI_UB = builder.Allocate<DirectLightingUB>();
         FillUniformBufferForDirectLighting(view, DI_UB);
         params->DirectLighting_UB = DI_UB;
+        auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
+        FillUniformBufferForDirectionalLight(view, directional_light_ub);
+        params->DirectionalLight_UB = directional_light_ub;
         auto HT_UB = builder.Allocate<HybridTracingUB>();
         FillUniformBufferForHybridTracing(view, HT_UB);
         params->HybridTracing_UB = HT_UB;

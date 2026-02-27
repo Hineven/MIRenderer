@@ -10,6 +10,13 @@
 #include "headers/VertexShaderInstanceIndex.hlsl"
 #include "resources/IntersectionEvaluationResources.hlsl"
 
+struct DrawDeferredStaticMeshesShaderUB {
+    float FragmentOpaqueThreshold;
+    uint32_t Padding0, Padding1, Padding2; // Pad to 16 bytes
+};
+
+ConstantBuffer<DrawDeferredStaticMeshesShaderUB> UB;
+
 StructuredBuffer<uint2>            RenderableIndexAndDescriptorIndexBuffer;
 
 struct DrawDeferredStaticMeshesVSOut {
@@ -70,7 +77,7 @@ DrawDeferredStaticMeshesPSOut DrawDeferredStaticMeshesPS (
         CameraParameters C = GetActiveCamera();
         float2 NoiseUV = float2(Input.UV.x * C.FilmAspectRatioAndInvAspectRatio.x, Input.UV.y);
         float Threshold = lerp(MinAlpha, MaxAlpha, InterleavedGradientNoise(NoiseUV * 259, GetViewFrameIndex()));
-        if(ColorOpacity.a < Threshold) {
+        if(ColorOpacity.a < max(Threshold, UB.FragmentOpaqueThreshold)) {
             // Discard the pixel
             discard;
         }

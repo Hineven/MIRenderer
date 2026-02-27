@@ -241,6 +241,4 @@ void Renderer::Render_UpdateLightStructureHistory(RendererView *view, RenderGrap
     );
 }
 
-
-
 MI_NAMESPACE_END

@@ -21,6 +21,7 @@
 #include "r_persistent.h"
 #include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
+#include "r_directional_light.h"
 
 MI_NAMESPACE_BEGIN
     static CVar CVar_VolumeProbeSearchSize(
@@ -120,6 +121,7 @@ struct VolumeIndirectLightingUB {
 
 BEGIN_SHADER_PARAMETERS(VolumeIndirectLightingParams)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(DirectionalLightUniform, DirectionalLight_UB)
 
     // SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeProbeRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWVolumeProbeRadianceDepthTexture)
@@ -822,6 +824,10 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             auto LightStructure_UB = builder.Allocate<LightStructureUB>();
             FillUniformBufferForLightStructure(view, LightStructure_UB);
             params->LightStructure_UB = LightStructure_UB;
+
+            auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
+            FillUniformBufferForDirectionalLight(view, directional_light_ub);
+            params->DirectionalLight_UB = directional_light_ub;
         }
 
         // Geometry & Material & Lighting

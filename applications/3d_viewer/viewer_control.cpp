@@ -1,7 +1,9 @@
 #include "viewer_control.h"
 
+#include <algorithm>
 #include <format>
 #include <imgui.h>
+#include <glm/geometric.hpp>
 #include "renderer/mi_scene.h"
 
 MI_NAMESPACE_BEGIN
@@ -66,6 +68,26 @@ void ViewerControlUI::DrawControlUI(ViewerApp& app, ViewerApp::FrameInternalDela
             }
         }
         ImGui::TreePop();
+    }
+
+    if (ImGui::CollapsingHeader("Direct Lighting")) {
+        auto& directional_light = app.scene_->directional_light_;
+        ImGui::Checkbox("Enabled", &directional_light.enabled);
+        if (ImGui::DragFloat3("Direction", &directional_light.direction[0], 0.01f)) {
+            if (glm::length(directional_light.direction) > 1e-6f) {
+                directional_light.direction = glm::normalize(directional_light.direction);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Normalize")) {
+            if (glm::length(directional_light.direction) > 1e-6f) {
+                directional_light.direction = glm::normalize(directional_light.direction);
+            }
+        }
+        ImGui::ColorEdit3("Color", &directional_light.color[0]);
+        if (ImGui::DragFloat("Intensity", &directional_light.intensity, 0.05f, 0.0f, 1000.0f)) {
+            directional_light.intensity = std::max(0.0f, directional_light.intensity);
+        }
     }
 
     // Existing UI moved from ViewerApp::HandleControlUILogic

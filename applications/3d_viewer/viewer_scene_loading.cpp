@@ -113,14 +113,17 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         RegisterLoadedScene(name ? name : model_path.filename().string(), nodes);
         auto & r = Renderer::Get();
         for (auto e : new_meshes) {
-            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+            // e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
     };
 
     switch(cfg.default_scene_type) {
         case MESH_ONLY : {
             // auto model_path = std::filesystem::path("D:/TestScene/room/Room.gltf");
-            auto model_path = std::filesystem::path("D:/TestScene/CartoonRoom/scene.gltf");
+            // auto model_path = std::filesystem::path("D:/TestScene/CartoonRoom/scene.gltf");
+            // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
+            // auto model_path = std::filesystem::path("D:/TestScene/airport_blender/scene.gltf");
+            auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene.gltf");
             load_gltf(model_path, "default");
             break;
         }
@@ -191,7 +194,10 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
     view_->film_height_ = cfg.window_height;
     view_->scene_ = scene_.get();
 
+    scene_->directional_light_.enabled = true;
     scene_->directional_light_.direction = glm::normalize(glm::vec3(-5.5f, -4.4f, 5.5f));
+    scene_->directional_light_.color = glm::vec3(1.0f, 1.0f, 1.0f);
+    scene_->directional_light_.intensity = 1.0f;
 }
 
 MI_NAMESPACE_END
