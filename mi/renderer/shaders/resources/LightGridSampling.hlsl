@@ -126,7 +126,7 @@ struct LightSample {
     // For area light: sampled position on the light
     // For environment light: sampled normalized direction
     float3 Position;
-    // Pdf in solid angle domain
+    // Pdf in solid angle domain. For area light, it is multiplied by LightGridLightListCdf to account for overflowing lights that are not injected into the grid
     float Pdf;
     float3 Radiance;
     // Keep the index of the sampled light. INVALID_UINT for environment light
@@ -352,12 +352,11 @@ LightSample SampleOneLightSample_RIS (
             VisibilityFactor += (X + Y + Z) / (4 * 6 * dot(abs(WorldNormal), 1.f.xxx));
         }
         // the multipler 2 is for cancelling out the duplicated normal weight from EstimateEnvironmentLightContribution
-        Weight *= saturate(2 * VisibilityFactor);
-        // FIXME
-        // Weight = 1.f;
+        Weight *= max(saturate(2 * VisibilityFactor), 0.1f);
         if(Weight > 0.f) {
             LightSamplerLight LSL = (LightSamplerLight)0;
             LSL.bIsEnvironment = true;
+            LSL.bValid = true;
             LightSampler_AddLightToSampler(LS, Weight, LSL);
         }
     }
@@ -393,6 +392,8 @@ LightSample SampleOneLightSample_RIS (
                 Sample = SampleAreaLightDiffuseWithPreMultiplied(
                     WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2
                 );
+                // Account for overflowing lights that have not been injected into the grid.
+                if(LightGridLightListCdf > 0) Sample.Pdf *= LightGridLightListCdf;
                 // Keep the light index
                 Sample.LightIndex = LightIndex;
             }
@@ -424,9 +425,6 @@ LightSample SampleOneLightSample_RIS (
     // Estimate the radiance using RIS.
     float Norm = SumResampleWeights / max(NumValidSamples, 1u);
     RadianceEstimation = Norm * ReservedSample.Radiance / (RadianceToLuminance(ReservedSample.Radiance) + 1e-6f);
-    // Account for overflowing lights that have not been injected into the grid.
-    if(LightGridLightListCdf > 0) RadianceEstimation /= LightGridLightListCdf;
-    else RadianceEstimation = 0;
     return ReservedSample;
 }
 
