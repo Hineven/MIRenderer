@@ -121,8 +121,9 @@ IntersectionMaterial EvaluateStaticMeshRenderableIntersectionMaterial_InputTrans
         } else {
             EmissionA = SampleTexture(GetBindlessSRV(Material.EmissiveMap), LinearWrapSampler, InterpolatedVertex.UV, LOD);
         }
-        // For A channel, we assume it's a exponential multiplier (2 base)
-        Intersection.Emission = EmissionA.rgb * pow(2.0f, EmissionA.a * 255);
+        // Regular GLTF ignores A channel of emissive maps.
+        // TODO make use of that channel in our custom material format.
+        Intersection.Emission = EmissionA.rgb;
     }
 
     // MetallicRoughness texture

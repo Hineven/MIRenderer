@@ -217,6 +217,7 @@ void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *all
         if (materials[i]->IsEmissive()) {
             // Emissive material found, insert all primitives as lights to the light buffer
             // TODO better optimization only upload lights that are actually lit for static textured lights
+            // TODO classify low level lights and intense lights into different rendering paths
             auto & geom = geometries[i];
             for (int j = 0; j * 3 < (int)geom->GetIndexCount(); j++) {
                 RawLight light {};

@@ -1071,6 +1071,7 @@ void ResolveHitLightingFromScreenHistoryAndSpecialEmitter (uint DispatchID : SV_
             RWScreenProbeUpdateRayRadianceBuffer[RayIndex] = Packed;
         } else if(CM.HitType == CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE) {
             float3 HitWorldPosition = RayOrigin + RayDirection * RayHitT;
+            // For surface hits, we try to reproject the hit point to previous frame to fetch the radiance from history if possible
             CameraParameters PrevC = GetPreviousCamera();
             float4 PreviousHomogeneousW = mul(PrevC.WorldToNDC, float4(HitWorldPosition, 1));
             float3 PreviousHomogeneous = PreviousHomogeneousW.xyz / PreviousHomogeneousW.w;
