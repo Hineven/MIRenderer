@@ -103,19 +103,37 @@ float LightGrid_EstimateLightGridPerceptualContribution(PrecomputedLight L, floa
     // Calculate the distance from the light to the grid
     float3 GridCenter = GridMin + GridSize * 0.5f;
     float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3;
-    float3 UnnormalizedDirection = GridCenter - LightCenter;
-    float3 Direction = normalize(UnnormalizedDirection);
-    float DotProduct = dot(
-        // Offset the light position according to the light normal for conservative estimation
-        normalize(UnnormalizedDirection + L.Normal * (GridSize * sqrt(3.f) * 0.6f + 0.01f)),
-        L.Normal
-    );
-    
-    float Distance = length(UnnormalizedDirection);
+    float3 LightToGrid = GridCenter - LightCenter;
+    float Distance = length(LightToGrid);
+    float3 LightToGridDirection;
+    {
+        // Offset the grid center for conservative estimation
+        float3 LightToGridDirectionUnnormalized = LightToGrid + (L.Normal * sqrt(3.f) * 0.6f);
+        float  Len = length(LightToGridDirectionUnnormalized);
+        if(Len > 1e-6f) {
+            LightToGridDirection = LightToGridDirectionUnnormalized / Len;
+        } else {
+            // The light is very close to the grid center
+            LightToGridDirection = L.Normal;
+        }
+    }
+    float LightFacingCosineFactor = saturate(dot(L.Normal, LightToGridDirection));
 
-    // Assume that the light is small enough compared to the grid, estimate the solid angle.
-    float CosineFactor = max(saturate(DotProduct), Distance * Distance);
-    float SolidAngle = CosineFactor / max(Distance * Distance, 1e-6f);
+    float LightArea = length(cross(L.V1 - L.V0, L.V2 - L.V0)) * 0.5f;
+    float3 CenterToV0 = L.V0 - LightCenter;
+    float3 CenterToV1 = L.V1 - LightCenter;
+    float3 CenterToV2 = L.V2 - LightCenter;
+    float3 LightVertexDistancesSq = float3(
+        dot(CenterToV0, CenterToV0),
+        dot(CenterToV1, CenterToV1),
+        dot(CenterToV2, CenterToV2)
+    );
+    float MaxLightRadius = sqrt(max(LightVertexDistancesSq.x, max(LightVertexDistancesSq.y, LightVertexDistancesSq.z)));
+    float GridBoundingRadius = GridSize * sqrt(3.f) * 0.5f;
+
+    float EffectiveDistance = max(Distance - (MaxLightRadius + GridBoundingRadius), 1e-3f);
+    float EffectiveDistanceSq = EffectiveDistance * EffectiveDistance;
+    float SolidAngle = LightArea * LightFacingCosineFactor / max(EffectiveDistanceSq + LightArea / PI, 1e-6f);
 
     // Area has been taken account by L.PerceptualIntensity
     return L.PerceptualIntensity * SolidAngle;

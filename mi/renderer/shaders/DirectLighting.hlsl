@@ -124,8 +124,7 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
         L.Normal = N;
         L.Hash = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
         float Area = length(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0)) * 0.5f;
-        L.PerceptualIntensity = 
-            log2(1.f + RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area);
+        L.PerceptualIntensity = RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area;
         if (L.PerceptualIntensity > 1e-3f) {
             // Allocate active light list
             uint WaveNumActiveLights = WaveActiveCountBits(true);
@@ -169,7 +168,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
 
     // TODO this still introduces a lot of noise upon overflowing. Need a better strategy.
 
-    float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;//max(4 * R.rand(), LightStructure_UB.LightInjectionIntensityThreshold);
+    float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
