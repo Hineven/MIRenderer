@@ -15,6 +15,8 @@ MI_NAMESPACE_BEGIN
 extern CVar<int> CVar_MaxNumGridLights;
 extern CVar<int> CVar_NumLightSamplerSamples;
 extern CVar<int> CVar_MaxNumLightGridEntries;
+extern CVar<glm::vec3> CVar_EnvironmentLightMultiplier;
+extern CVar<float> CVar_EnvironmentLightEvaluateLOD;
 
 static constexpr uint32_t kLightGridSize = 16;
 static constexpr uint32_t kLightGridNumCascades = 6; // Number of cascades in the light grid
@@ -35,7 +37,9 @@ struct LightStructureUB {
     uint32_t FrameIndex;
     uint32_t MaxNumLights;
     float    EnvironmentLightHemisphereSampleLOD;
-    uint32_t Unused;
+    uint Padding0;
+    glm::vec3   EnvironmentLightMultiplier;
+    float EnvironmentLightEvaluateLOD;
 };
 
 struct LightStructurePersistentData : RefCounted<> {

@@ -114,7 +114,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             if (!n->GetParent()) {
                 // Root node, apply global transform
                 auto t = n->GetLocalTransform();
-                t.Translate(translate * scale);
+                t.Translate(translate);
                 t.Scale(scale);
                 n->SetLocalTransform(t);
             }
@@ -138,7 +138,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             auto model_path_l = std::filesystem::path("D:/TestScene/MillitaryBase/light.gltf");
             // -17.95 2.1 -6.7
             // 0.8 0.02 1.8
-            load_gltf(model_path_l, "light", glm::vec3(-17.95f, 2.1f, -6.7f), glm::vec3(0.8f, 0.02f, 1.8f));
+            load_gltf(model_path_l, "light", glm::vec3(-17.95f, 2.1f, -6.7f), glm::vec3(1.9f, 1.f, 5.2f));
             break;
         }
         case MESH_AND_VOLUME_PRIMITIVES : {

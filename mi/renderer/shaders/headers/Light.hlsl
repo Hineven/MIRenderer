@@ -7,6 +7,7 @@
 #include "../shared/SharedLight.hlsl"
 #include "../shared/SharedStaticMesh.hlsl"
 #include "../shared/SharedMaterial.hlsl"
+#include "RadiometryAndColorSpace.hlsl"
 #include "../resources/CommonSamplerResources.hlsl"
 #include "../resources/BindlessTextureResources.hlsl"
 #include "../resources/GeometryResources.hlsl"

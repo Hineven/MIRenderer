@@ -17,6 +17,7 @@
 #include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
 #include "r_debug.h"
+#include "r_light_structure.h"
 #include "../shaders/shared/SharedLight.hlsl"
 MI_NAMESPACE_BEGIN
 
@@ -46,8 +47,14 @@ void DebugPersistentData::MakeSureExists([[maybe_unused]] RendererView * view, [
 
 class VisualizeRayTracingSceneShader : public RDGShader {
 public:
+    struct VisualizeRayTracingSceneUB {
+        glm::vec3 EnvironmentMapMultiplier;
+        float EnvironmentMapLOD;
+    };
+
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_UNIFORM_BUFFER(VisualizeRayTracingSceneUB, UB)
         SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
@@ -176,6 +183,12 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         auto shader = RDGShaderLibrary::Get().GetShader<VisualizeRayTracingSceneShader>();
         auto params = builder.Allocate<VisualizeRayTracingSceneShader::Params>();
         params->View = view->view_common_params_;
+        {
+            auto UB = builder.Allocate<VisualizeRayTracingSceneShader::VisualizeRayTracingSceneUB>();
+            UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
+            UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
+            params->UB = UB;
+        }
         params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
         params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());

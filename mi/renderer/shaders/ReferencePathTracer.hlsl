@@ -45,7 +45,9 @@ struct ReferencePathTracerUB {
     uint FrameIndex;
     uint EnableAccumulation;
     uint MaxNumBounces;
-    uint Padding1;
+    float EnvironmentMapLOD;
+    float3 EnvironmentMapMultiplier;
+    uint Padding; // Padding to make the size of the struct a multiple of 16 bytes
 };
 
 ConstantBuffer<ReferencePathTracerUB> UB;
@@ -162,7 +164,7 @@ void ReferencePathTracerRaygen() {
         {
             if(CurrentOverlappingVolumePrimitiveCount == 0) {
                 // No pending volume hit is present, accumulate environment lighting and terminate
-                float3 EnvironmentColor = EvaluateEnvironmentMap(-Ray.Direction);
+                float3 EnvironmentColor = EvaluateEnvironmentMap_Raw(-Ray.Direction, UB.EnvironmentMapLOD, UB.EnvironmentMapMultiplier);
                 Radiance += Throughput * EnvironmentColor;
                 // Terminate directly
                 break;

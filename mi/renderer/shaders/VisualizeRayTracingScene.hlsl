@@ -9,16 +9,19 @@
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
+#include "resources/LightGrid.hlsl"
 #include "resources/EnvironmentLightResource.hlsl"
+
+struct VisualizeRayTracingSceneUB {
+    float3 EnvironmentMapMultiplier;
+    float EnvironmentMapLOD;
+};
+ConstantBuffer<VisualizeRayTracingSceneUB> UB;
 
 RaytracingAccelerationStructure TLAS;
 
-StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
-StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
-StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
-StructuredBuffer<uint> IndexBuffer;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
@@ -75,7 +78,11 @@ void VisualizeRayTracingSceneRaygen() {
 [shader("miss")]
 void VisualizeRayTracingSceneMiss(inout RayPayload Payload: SV_RayPayload) {
     float3 RayDirection = WorldRayDirection();
-    float3 EnvironmentColor = EvaluateEnvironmentMap(-RayDirection);
+    float3 EnvironmentColor = EvaluateEnvironmentMap_Raw(
+        -RayDirection, 
+        UB.EnvironmentMapLOD,
+        UB.EnvironmentMapMultiplier
+    );
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 

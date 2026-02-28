@@ -32,6 +32,8 @@ struct ReferencePathTracerUB {
     uint FrameIndex;
     uint EnableAccumulation;
     uint MaxNumBounces;
+    float EnvironmentMapLOD;
+    glm::vec3 EnvironmentMapMultiplier;
     uint Padding;
 };
 
@@ -87,6 +89,8 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
         UB->FrameIndex = view->persistent_data_->frame_index_;
         UB->EnableAccumulation = CVar_PathTracingEnableAccumulation.Get() ? 1 : 0;
         UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
+        UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
+        UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
         bool camera_dirty = false;
         if (view->camera_ != view->persistent_data_->prev_camera) {
             camera_dirty = true;

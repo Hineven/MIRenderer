@@ -42,6 +42,18 @@ CVar<int> CVar_NumLightSamplerSamples(
     8
 );
 
+CVar<glm::vec3> CVar_EnvironmentLightMultiplier(
+    "r.lightgrid.environment_light_multiplier",
+    "Multiplier for environment light contribution in the light grid.",
+    glm::vec3{1.0f}
+);
+
+CVar<float> CVar_EnvironmentLightEvaluateLOD(
+    "r.lightgrid.environment_light_evaluate_lod",
+    "LOD at which to evaluate environment light contribution in the light grid. Higher values will result in blurrier environment lighting but better performance.",
+    0.0f
+);
+
 static CVar<bool> CVar_DebugFreezeFrameSeed(
     "r.lightgrid.debug.freeze_frame_seed",
     "Freeze the frame index used for random seed generation when injecting lights. This is useful for debugging.",
@@ -139,6 +151,9 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     } else {
         UB->EnvironmentLightHemisphereSampleLOD = 0;
     }
+
+    UB->EnvironmentLightMultiplier = glm::max(glm::vec3{0.f}, CVar_EnvironmentLightMultiplier.Get());
+    UB->EnvironmentLightEvaluateLOD = CVar_EnvironmentLightEvaluateLOD.Get();
 }
 
 std::vector<std::string> GetLightStructureShaderMacros () {

@@ -27,7 +27,9 @@ struct LightStructureUB {
     uint FrameIndex;
     uint MaxNumLights;
     float EnvironmentLightHemisphereSampleLOD;
-    uint Unused;
+    float Padding0;
+    float3 EnvironmentLightMultiplier;
+    float  EnvironmentLightEvaluateLOD;
 };
 
 ConstantBuffer<LightStructureUB> LightStructure_UB;

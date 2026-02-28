@@ -6,6 +6,7 @@
 #include "r_denoiser.h"
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
+#include "r_light_structure.h"
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_volume_direct_lighting.h"
 #include "r_volume_indirect_lighting.h"
@@ -82,7 +83,10 @@ public:
         uint32_t EnableVolumeDirect;
         uint32_t EnableVolumeIndirect;
         uint32_t EnableVolumeGridDirect;
-        uint32_t Padding[2]; // keep 16-byte alignment
+        float  EnvironmentMapLOD;
+        uint   Padding1;
+        float3 EnvironmentMapMultiplier;
+        float  Padding2;
     };
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
@@ -129,7 +133,8 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         UB->EnableVolumeDirect     = CVar_EnableVolumeDirect.Get()     ? 1 : 0;
         UB->EnableVolumeIndirect   = CVar_EnableVolumeIndirect.Get()   ? 1 : 0;
         UB->EnableVolumeGridDirect = CVar_EnableVolumeGridDirect.Get() ? 1 : 0;
-        UB->Padding[0] = UB->Padding[1] = 0;
+        UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
+        UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
     }
     params->UB = UB;
     if (!CVar_UseDenoisedDirectLighting.Get()) {

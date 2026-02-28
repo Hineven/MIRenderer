@@ -402,7 +402,11 @@ LightSample SampleOneLightSample_RIS (
     // Specially, handle environment light
     LightGrid_CubicVisibility GridCubicVisibility = LightGrid_FetchEnvironmentVisibility(GridIndex1);
     if (bWithEnvironment) {
-        float3 AvgRadiance = EvaluateEnvironmentMap(-WorldNormal, LightStructure_UB.EnvironmentLightHemisphereSampleLOD);
+        // Sample a certain LOD for hemispherical radiance estimation.
+        float3 AvgRadiance = EvaluateEnvironmentMap_Raw(-WorldNormal, 
+            LightStructure_UB.EnvironmentLightHemisphereSampleLOD, 
+            LightStructure_UB.EnvironmentLightMultiplier
+        );
         float Weight = EstimateEnvironmentLightContribution(AvgRadiance, WorldPosition, WorldNormal);
         uint VisibilityMask = 0;
         [unroll(LIGHT_GRID_NUM_HISTORY_FRAMES)]
