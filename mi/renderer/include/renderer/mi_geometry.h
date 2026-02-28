@@ -94,6 +94,14 @@ public:
     FORCEINLINE uint32_t GetVertexCount () const {return (uint32_t)vertices_.size();}
     FORCEINLINE uint32_t GetIndexCount () const {return (uint32_t)indices_.size();}
 
+    FORCEINLINE const std::vector<DefaultStaticMeshVertex> & GetVertexBuffer () const {
+        return vertices_;
+    }
+
+    FORCEINLINE const std::vector<uint32_t> & GetIndexBufferRef () const {
+        return indices_;
+    }
+
     FORCEINLINE size_t GetVertexBufferSize () const {
         return vertices_.size() * sizeof(DefaultStaticMeshVertex);
     }

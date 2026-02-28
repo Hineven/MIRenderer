@@ -91,7 +91,7 @@ void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
         LightGrid_ActiveLightListCount[0] = 0;
     }
     uint Index = DispatchID;
-    if (Index >= LightStructure_UB.LighGridNumCascadesUsed * LightStructure_UB.LightGridNumGrids) {
+    if (Index >= LightStructure_UB.LightGridNumGrids) {
         return;
     }
      LightGrid_GridLightListLengthBuffer[Index] = 0;
@@ -238,8 +238,16 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     }
     GroupMemoryBarrierWithGroupSync();
     uint GlobalOffset = SharedListOffsetBase + LocalOffset;
+    uint NumWritableLights = NumSampledLights;
+    uint MaxNumEntries = max(LightStructure_UB.LightGridMaxNumEntries, 1u);
+    if (GlobalOffset >= MaxNumEntries) {
+        NumWritableLights = 0;
+    } else {
+        NumWritableLights = min(NumWritableLights, MaxNumEntries - GlobalOffset);
+    }
     LightGrid_GridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
-    for (uint i = 0; i < NumSampledLights; i++) {
+    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumWritableLights;
+    for (uint i = 0; i < NumWritableLights; i++) {
         uint LightListIndex = SharedGridLightListIndices[(SampledOffset + i) * WAVE_SIZE + LocalID];
         // This time we store active light list index in the grid buffer 
         LightGrid_ListActiveLightListIndexBuffer[GlobalOffset + i] = LightListIndex;

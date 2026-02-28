@@ -23,7 +23,7 @@ CVar<int> CVar_MaxNumGridLights(
 CVar<int> CVar_MaxNumLightGridEntries(
     "r.lightgrid.max_num_entries",
     "Maximum number of entries in the light grid.",
-    1024 * 1024
+    2 * 1024 * 1024
 );
 static CVar<float> CVar_MinLightGridSize(
     "r.lightgrid.min_size",
@@ -150,6 +150,7 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     if (CVar_DebugFreezeFrameSeed.Get()) UB->FrameIndex = 0;
     else UB->FrameIndex = view->persistent_data_->frame_index_;
     UB->MaxNumLights = (uint32_t)max_num_lights;
+    UB->LightGridMaxNumEntries = std::max(CVar_MaxNumLightGridEntries.Get(), 1);
 
     if (auto env = view->scene_->GetSkyTexture()) {
         auto num_env_mips = env->GetMipLevels();

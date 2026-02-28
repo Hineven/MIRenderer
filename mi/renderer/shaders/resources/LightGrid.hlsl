@@ -26,6 +26,7 @@ struct LightStructureUB {
     float4 LightGridCascadeMax[LIGHT_GRID_NUM_CASCADES];
     uint FrameIndex;
     uint MaxNumLights;
+    uint LightGridMaxNumEntries;
     float EnvironmentLightHemisphereSampleLOD;
     float LightCullingRate;
     float3 EnvironmentLightMultiplier;

@@ -37,7 +37,6 @@ struct LightStructureUB {
     glm::vec4 LightGridCascadeMax[kLightGridNumCascades];
     uint32_t FrameIndex;
     uint32_t MaxNumLights;
-    float    EnvironmentLightHemisphereSampleLOD;
     float    LightCullingRate;
     glm::vec3   EnvironmentLightMultiplier;
     float EnvironmentLightEvaluateLOD;

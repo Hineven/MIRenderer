@@ -315,7 +315,10 @@ uint LightGrid_GetInfiniteVisibilityBitIndex(float3 Direction) {
         FaceIndex = Direction.z > 0 ? 4 : 5;
         SubDirection = Direction.xy;
     }
-    uint2 SubIndex = select(SubDirection > 0, 0.xx, 1.xx);
+    uint2 SubIndex = uint2(
+        SubDirection.x > 0 ? 0u : 1u,
+        SubDirection.y > 0 ? 0u : 1u
+    );
     return FaceIndex * 4 + SubIndex.x * 2 + SubIndex.y;
 }
 
@@ -342,65 +345,79 @@ LightSample SampleOneLightSample_RIS (
     // Look up the light grid
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     LightSample Sample = (LightSample)0;
-    if (!IsValid(GridIndex.x)) {
-        return Sample; // Out of light grid
-    }
-    uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
+    bool bInsideLightGrid = IsValid(GridIndex.x);
+    uint GridIndex1 = bInsideLightGrid ? LightGrid_GetGridIndex1(GridIndex) : 0;
 
     LightSampler LS = InitLightSampler(R);
 
     float GridSize = 0;
-    float3 GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
-    uint NumGridLights = LightGrid_GridLightListLengthBuffer[GridIndex1];
-    uint GridLightListOffset = LightGrid_GridLightListOffsetBuffer[GridIndex1];
-    LightGridLightListCdf = LightGrid_GridLightListCdfBuffer[GridIndex1];
-
-    LightGrid_GridLightVisibility GridVisibility = GetGridLightVisibility(GridIndex1);
+    float3 GridMin = 0.xxx;
+    uint NumGridLights = 0;
+    uint GridLightListOffset = 0;
+    LightGrid_GridLightVisibility GridVisibility = (LightGrid_GridLightVisibility)0;
+    if (bInsideLightGrid) {
+        GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
+        NumGridLights = LightGrid_GridLightListLengthBuffer[GridIndex1];
+        GridLightListOffset = LightGrid_GridLightListOffsetBuffer[GridIndex1];
+        uint MaxNumEntries = max(LightStructure_UB.LightGridMaxNumEntries, 1u);
+        if (GridLightListOffset >= MaxNumEntries) {
+            NumGridLights = 0;
+        } else {
+            NumGridLights = min(NumGridLights, MaxNumEntries - GridLightListOffset);
+        }
+        LightGridLightListCdf = LightGrid_GridLightListCdfBuffer[GridIndex1];
+        GridVisibility = GetGridLightVisibility(GridIndex1);
+    }
 
     // Spawn candidate samples from the lights in the grid
     uint NumNonZeroGridLights = 0;
-    bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
-    if (bUniformGrid || !bGroupedAccess) {
-        // Assume one wave have locality regarding the grid index
-        for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
-            uint ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
-            PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
-            float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
-            // Estimate history visibility weight
-            float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
-            Weight *= VisibilityWeight;
-            if(Weight > 0.f) {
-                LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
-                NumNonZeroGridLights ++;
-            }
-        }
-    } else {
-        // Process the light with the minimum index in the grid
-        uint LightListIndex = 0, Iteration = 0;
-        // TODO remove Iteration (used to prevent driver timeouts)
-        // TODO add a noisy occlusion modifier based on history cache to the target distribution
-        while(LightListIndex < NumGridLights && Iteration < 256) {
-            uint ActiveLightListIndex = INVALID_UINT;
-            ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
-            uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
-            if (WaveMinLightIndex == ActiveLightListIndex) {
+    if (bInsideLightGrid) {
+        bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
+        if (bUniformGrid || !bGroupedAccess) {
+            // Assume one wave have locality regarding the grid index
+            for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
+                uint ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
                 PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
                 float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
                 // Estimate history visibility weight
                 float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
                 Weight *= VisibilityWeight;
-                if (Weight > 0.f) {
-                    // Add the light to the sampler
+                if(Weight > 0.f) {
                     LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
                     NumNonZeroGridLights ++;
                 }
-                LightListIndex++;
             }
-            Iteration++;
+        } else {
+            // Process the light with the minimum index in the grid
+            uint LightListIndex = 0, Iteration = 0;
+            // TODO remove Iteration (used to prevent driver timeouts)
+            // TODO add a noisy occlusion modifier based on history cache to the target distribution
+            while(LightListIndex < NumGridLights && Iteration < 256) {
+                uint ActiveLightListIndex = INVALID_UINT;
+                ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
+                uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
+                if (WaveMinLightIndex == ActiveLightListIndex) {
+                    PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
+                    float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
+                    // Estimate history visibility weight
+                    float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
+                    Weight *= VisibilityWeight;
+                    if (Weight > 0.f) {
+                        // Add the light to the sampler
+                        LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
+                        NumNonZeroGridLights ++;
+                    }
+                    LightListIndex++;
+                }
+                Iteration++;
+            }
         }
     }
     // Specially, handle environment light
-    LightGrid_CubicVisibility GridCubicVisibility = LightGrid_FetchEnvironmentVisibility(GridIndex1);
+    LightGrid_CubicVisibility GridCubicVisibility = (LightGrid_CubicVisibility)0;
+    if (bInsideLightGrid) {
+        GridCubicVisibility = LightGrid_FetchEnvironmentVisibility(GridIndex1);
+    }
     if (bWithEnvironment) {
         // Sample a certain LOD for hemispherical radiance estimation.
         float3 AvgRadiance = EvaluateEnvironmentMap_Raw(-WorldNormal, 
@@ -521,6 +538,9 @@ LightSample SampleOneLightSample_RIS (
 // performance
 void LightGrid_UpdateVisibilityForAreaLight(float3 WorldPosition, uint LightIndex, bool bWaveOp = false) {
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
+    if (!IsValid(GridIndex.x)) {
+        return;
+    }
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
     AreaLight LightData = LightBuffer[LightIndex];
     uint2 Hash64 = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
@@ -558,6 +578,9 @@ void LightGrid_UpdateVisibilityForAreaLight(float3 WorldPosition, uint LightInde
 
 void LightGrid_UpdateVisibilityForEnvironmentLight(float3 WorldPosition, float3 Direction) {
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
+    if (!IsValid(GridIndex.x)) {
+        return;
+    }
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
     uint BitIndex = LightGrid_GetInfiniteVisibilityBitIndex(Direction);
     InterlockedOr(

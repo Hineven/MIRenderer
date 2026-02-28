@@ -10,6 +10,8 @@
 #include <memory>
 #include <span>
 #include <vector>
+#include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
 
 #include "core/base.h"
 #include "core/infra.h"
@@ -21,6 +23,13 @@
 #include "rhi/rhi_bindlesskeeper.h"
 
 MI_NAMESPACE_BEGIN
+
+enum class TextureSampleMode {
+    kNearestClamp,
+    kNearestWrap,
+    kLinearClamp,
+    kLinearWrap,
+};
 
 // An ususally static 2D (array) texture resource.
 class Texture : public RefCounted<>, public NonMovable {
@@ -77,6 +86,11 @@ public:
     FORCEINLINE void AddDeviceUsage (RHITextureUsageFlags usage) {
         extra_device_usage_ = extra_device_usage_ | usage;
     }
+
+    // CPU side texture access operation.
+    glm::vec4 Load (uint32_t x, uint32_t y, uint32_t layer = 0) const;
+    // CPU side texture access operation.
+    glm::vec4 Sample (TextureSampleMode mode, glm::vec2 uv, uint32_t layer = 0) const;
 
     // shortcut.
     FORCEINLINE uint32_t GetBindlessIndex (bool validation = true) {
