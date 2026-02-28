@@ -489,7 +489,7 @@ LightSample SampleOneLightSample_RIS (
             // 25.10.22: This must be placed OUTSIDE for unbiased normalization weight! 
             NumValidSamples ++;
             // Clip samples with low pdf (to evade potential fireflies)
-            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.005f) {
+            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.001f) {
                 float LightCdf =  LS.Weights[SamplerLightListIndex] / LS.SumWeight;
                 // Pdf of the proposed unnormalized distribution (projected solid angle for all lights,
                 // a special integration domain different from both area and solid angle)
