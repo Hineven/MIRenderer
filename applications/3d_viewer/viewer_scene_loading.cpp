@@ -94,7 +94,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         original_arrow_instance.SafeRelease();
     }
     auto & rhi = RHI::Get();
-    auto load_gltf = [&](const std::filesystem::path& model_path, const char* name) {
+    auto load_gltf = [&](const std::filesystem::path& model_path, const char* name, glm::vec3 translate = glm::vec3(0.0f), glm::vec3 scale = glm::vec3(1.0f)) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
         std::vector<TRef<RenderableNode>> nodes;
@@ -110,10 +110,19 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
             return;
         }
+        for (auto & n : nodes) {
+            if (!n->GetParent()) {
+                // Root node, apply global transform
+                auto t = n->GetLocalTransform();
+                t.Translate(translate * scale);
+                t.Scale(scale);
+                n->SetLocalTransform(t);
+            }
+        }
         RegisterLoadedScene(name ? name : model_path.filename().string(), nodes);
         auto & r = Renderer::Get();
         for (auto e : new_meshes) {
-            // e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
     };
 
@@ -123,8 +132,13 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             // auto model_path = std::filesystem::path("D:/TestScene/CartoonRoom/scene.gltf");
             // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
             // auto model_path = std::filesystem::path("D:/TestScene/airport_blender/scene.gltf");
-            auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene.gltf");
+            // auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene.gltf");
+            auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene_dark.gltf");
             load_gltf(model_path, "default");
+            auto model_path_l = std::filesystem::path("D:/TestScene/MillitaryBase/light.gltf");
+            // -17.95 2.1 -6.7
+            // 0.8 0.02 1.8
+            load_gltf(model_path_l, "light", glm::vec3(-17.95f, 2.1f, -6.7f), glm::vec3(0.8f, 0.02f, 1.8f));
             break;
         }
         case MESH_AND_VOLUME_PRIMITIVES : {

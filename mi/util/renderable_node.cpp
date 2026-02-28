@@ -59,6 +59,22 @@ void RenderableNode::SetLocalTransform(const Transform& t) {
     UpdateWorldTransform(parent_ ? &parent_->world_transform_ : nullptr);
 }
 
+void RenderableNode::TranslateLocal(const glm::vec3& delta) {
+    local_transform_.position += delta;
+    UpdateWorldTransform(parent_ ? &parent_->world_transform_ : nullptr);
+}
+
+void RenderableNode::RotateLocal(const glm::vec3& euler_angles_rad) {
+    local_transform_.rotation += euler_angles_rad;
+    UpdateWorldTransform(parent_ ? &parent_->world_transform_ : nullptr);
+}
+
+void RenderableNode::ScaleLocal(const glm::vec3& euler_angles_rad) {
+    local_transform_.rotation += euler_angles_rad;
+    UpdateWorldTransform(parent_ ? &parent_->world_transform_ : nullptr);
+}
+
+
 void RenderableNode::UpdateWorldTransform(const Transform* parent_world) {
     if (parent_world) {
         world_transform_ = Compose(*parent_world, local_transform_);

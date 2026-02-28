@@ -54,6 +54,9 @@ public:
 
     void SetLocalTransform(const Transform& t);
     const Transform& GetLocalTransform() const { return local_transform_; }
+    void TranslateLocal(const glm::vec3& delta);
+    void RotateLocal(const glm::vec3& euler_angles_rad);
+    void ScaleLocal(const glm::vec3& factor);
 
     // Call after changing local or parent to refresh world transform down the tree.
     void UpdateWorldTransform(const Transform* parent_world = nullptr);
