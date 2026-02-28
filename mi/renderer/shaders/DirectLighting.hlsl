@@ -170,11 +170,14 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     // TODO this still introduces a lot of noise upon overflowing. Need a better strategy.
 
     float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;//max(4 * R.rand(), LightStructure_UB.LightInjectionIntensityThreshold);
-
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
-        if (Weight > DynamicThreshold) {
+        float LightCullingProbabilityMin = LightStructure_UB.LightCullingRate;
+        // Lights with lower contribution have higher probability to be culled.
+        float LightCullingProbability = LightCullingProbabilityMin + (1 - LightCullingProbabilityMin) * saturate(DynamicThreshold / max(Weight, 1e-6f));
+        bool bIsLightAlive = R.rand() > LightCullingProbability;
+        if (bIsLightAlive) {
             // Keep this light in the double buffer and accumulate weights depending on which
             // group it is in
             SharedGridLightListIndices[WriteLocation * WAVE_SIZE + LocalID] = LightListIndex;
@@ -224,7 +227,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     // Write to grid
     LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
     // It's mathematically incorrect to include filtered out weights here
-    float SumWeights = SumFilteredWeights;// + SumFilteredOutWeights;
+    float SumWeights = SumFilteredWeights + SumFilteredOutWeights;
     LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();

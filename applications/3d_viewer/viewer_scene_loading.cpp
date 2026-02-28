@@ -132,13 +132,13 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             // auto model_path = std::filesystem::path("D:/TestScene/CartoonRoom/scene.gltf");
             // auto model_path = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/assets/box/scene.gltf");
             // auto model_path = std::filesystem::path("D:/TestScene/airport_blender/scene.gltf");
-            // auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene.gltf");
-            auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene_dark.gltf");
+            auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene.gltf");
+            // auto model_path = std::filesystem::path("D:/TestScene/MillitaryBase/scene_dark.gltf");
             load_gltf(model_path, "default");
-            auto model_path_l = std::filesystem::path("D:/TestScene/MillitaryBase/light.gltf");
+            // auto model_path_l = std::filesystem::path("D:/TestScene/MillitaryBase/light.gltf");
             // -17.95 2.1 -6.7
             // 0.8 0.02 1.8
-            load_gltf(model_path_l, "light", glm::vec3(-17.95f, 2.1f, -6.7f), glm::vec3(1.9f, 1.f, 5.2f));
+            // load_gltf(model_path_l, "light", glm::vec3(-17.95f, 2.1f, -6.7f), glm::vec3(1.9f, 1.f, 5.2f));
             break;
         }
         case MESH_AND_VOLUME_PRIMITIVES : {

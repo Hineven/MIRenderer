@@ -27,7 +27,7 @@ struct LightStructureUB {
     uint FrameIndex;
     uint MaxNumLights;
     float EnvironmentLightHemisphereSampleLOD;
-    float Padding0;
+    float LightCullingRate;
     float3 EnvironmentLightMultiplier;
     float  EnvironmentLightEvaluateLOD;
 };

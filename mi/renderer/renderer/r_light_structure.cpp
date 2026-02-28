@@ -42,6 +42,12 @@ CVar<int> CVar_NumLightSamplerSamples(
     8
 );
 
+CVar<float> CVar_LightCullingRate(
+    "r.lightgrid.light_culling_rate",
+    "Culling rate for lights to be injected into the light grid. Higher values will result in less injected lights, but can increase noise.",
+    0.0f
+);
+
 CVar<glm::vec3> CVar_EnvironmentLightMultiplier(
     "r.lightgrid.environment_light_multiplier",
     "Multiplier for environment light contribution in the light grid.",
@@ -151,6 +157,7 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     } else {
         UB->EnvironmentLightHemisphereSampleLOD = 0;
     }
+    UB->LightCullingRate = CVar_LightCullingRate.Get();
 
     UB->EnvironmentLightMultiplier = glm::max(glm::vec3{0.f}, CVar_EnvironmentLightMultiplier.Get());
     UB->EnvironmentLightEvaluateLOD = CVar_EnvironmentLightEvaluateLOD.Get();

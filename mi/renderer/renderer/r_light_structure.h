@@ -15,6 +15,7 @@ MI_NAMESPACE_BEGIN
 extern CVar<int> CVar_MaxNumGridLights;
 extern CVar<int> CVar_NumLightSamplerSamples;
 extern CVar<int> CVar_MaxNumLightGridEntries;
+extern CVar<float> CVar_LightCullingRate;
 extern CVar<glm::vec3> CVar_EnvironmentLightMultiplier;
 extern CVar<float> CVar_EnvironmentLightEvaluateLOD;
 
@@ -37,7 +38,7 @@ struct LightStructureUB {
     uint32_t FrameIndex;
     uint32_t MaxNumLights;
     float    EnvironmentLightHemisphereSampleLOD;
-    uint Padding0;
+    float    LightCullingRate;
     glm::vec3   EnvironmentLightMultiplier;
     float EnvironmentLightEvaluateLOD;
 };
