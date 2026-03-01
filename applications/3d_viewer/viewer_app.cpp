@@ -353,6 +353,10 @@ void ViewerApp::Destroy() {
 
     loaded_scenes_.clear();
 
+    if (scene_) {
+        scene_->ForceFlushDelayedDestruction();
+    }
+
     scene_.reset();
 
     sky_cube_.SafeRelease();
@@ -363,6 +367,9 @@ void ViewerApp::Destroy() {
     pool_.SafeRelease();
 
     renderable_node_registry_.SafeRelease();
+    if (resource_allocator_) {
+        resource_allocator_->ForceFlushDelayedDestruction();
+    }
     resource_allocator_.SafeRelease();
 
     RDGShaderLibrary::Get().Deinit();
@@ -680,9 +687,11 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         selection_state_.selected_renderable_index = renderable_index;
         selection_state_.selected_primitive_index = primitive_index;
         selection_state_.selected_uv = uv;
-        MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
-            selection_state_.selected_renderable_index, selection_state_.selected_primitive_index, selection_state_.selected_descriptor_rank, selection_state_.selected_uv.x, selection_state_.selected_uv.y
-        );
+        if (selection_state_.selected_renderable_index != UINT32_MAX) {
+            MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
+                selection_state_.selected_renderable_index, selection_state_.selected_primitive_index, selection_state_.selected_descriptor_rank, selection_state_.selected_uv.x, selection_state_.selected_uv.y
+            );
+        }
     }
 
     if (ops.should_reload_shaders) {

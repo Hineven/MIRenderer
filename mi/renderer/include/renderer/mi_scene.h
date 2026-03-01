@@ -112,6 +112,10 @@ public:
 
     void AdvanceFrameForDelayedDestruction() override;
 
+    // Force-delete all delayed destruction objects immediately.
+    // Intended for shutdown path where no more frames will be advanced.
+    void ForceFlushDelayedDestruction();
+
     DirectionalLight directional_light_{};
 
     FORCEINLINE void SetStructuralHash (uint32_t hash) {

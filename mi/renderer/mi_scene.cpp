@@ -98,5 +98,9 @@ void Scene::AdvanceFrameForDelayedDestruction() {
     delayed_destruction_.Tick();
 }
 
+void Scene::ForceFlushDelayedDestruction() {
+    delayed_destruction_.ClearAllNow();
+}
+
 
 MI_NAMESPACE_END

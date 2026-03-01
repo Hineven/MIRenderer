@@ -117,6 +117,10 @@ void DeviceBindlessResourceAllocator::AdvanceFrameForDelayedDestruction() {
     delayed_destruction_.Tick();
 }
 
+void DeviceBindlessResourceAllocator::ForceFlushDelayedDestruction() {
+    delayed_destruction_.ClearAllNow();
+}
+
 size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
     size_t sum = 0;
     sum += vertex_uber_buffer_->GetRHI()->GetBufferSize();

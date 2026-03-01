@@ -34,7 +34,7 @@ void Renderable::QueueForDestruction() const {
 }
 
 Renderable::~Renderable() {
-    printf("Renderable (index %u, frame %llu) destroyed.\n", GetIndex(), GetFrameIndexForCurrentThread());
+    // Noop
 }
 
 bool Renderable::IsEmpty() const {

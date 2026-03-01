@@ -201,6 +201,9 @@ public:
     void EnqueueForDelayedDestruction(DelayedDestructionResource * obj) override;
     // Advance frame, removing objects whose delay has elapsed.
     void AdvanceFrameForDelayedDestruction() override;
+    // Force-delete all delayed destruction objects immediately.
+    // Intended for shutdown path where no more frames will be advanced.
+    void ForceFlushDelayedDestruction();
 
 protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
