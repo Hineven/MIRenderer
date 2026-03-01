@@ -31,5 +31,6 @@ find_package(argparse CONFIG REQUIRED)
 
 add_resources(3d_viewer shaders "shaders/*.hlsl")
 add_resources(3d_viewer assets  "assets/*")
+add_resources(3d_viewer scene_config "viewer_scene.json")
 
 target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw PRIVATE libzmq libzmq-static cppzmq cppzmq-static argparse::argparse)

@@ -26,21 +26,10 @@ struct GLFWwindow;
 
 MI_NAMESPACE_BEGIN
 
-
-// Load default model
-enum PresetSceneType {
-    MESH_ONLY,
-    MESH_AND_VOLUME_PRIMITIVES,
-    MESH_AND_VOLUME_GRID,
-    GAUSSIAN_RADIANCE_FIELD,
-    NONE // Load environment map only
-};
-
 struct MainLoopStartConfig {
     std::string window_name;
     uint32_t window_width;
     uint32_t window_height;
-    PresetSceneType default_scene_type = MESH_ONLY;
 };
 
 class ViewerApp {

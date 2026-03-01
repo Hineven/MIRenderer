@@ -23,24 +23,6 @@ int main (int argc, char** argv) {
         .help("Window height")
         .default_value(cfg.window_height)
         .scan<'u', uint32_t>();
-    program.add_argument("--scene")
-        .help("Preset scene to load (mesh_only, mesh_and_volume_primitives, mesh_and_volume_grid, gaussian_radiance_field, none)")
-        .default_value(std::string("mesh_only"))
-        .action([&cfg](const std::string& value) {
-            if (value == "mesh_only") {
-                cfg.default_scene_type = MESH_ONLY;
-            } else if (value == "mesh_and_volume_primitives") {
-                cfg.default_scene_type = MESH_AND_VOLUME_PRIMITIVES;
-            } else if (value == "mesh_and_volume_grid") {
-                cfg.default_scene_type = MESH_AND_VOLUME_GRID;
-            } else if (value == "gaussian_radiance_field") {
-                cfg.default_scene_type = GAUSSIAN_RADIANCE_FIELD;
-            } else if (value == "none") {
-                cfg.default_scene_type = NONE;
-            } else {
-                throw std::runtime_error("Invalid scene type: " + value);
-            }
-        });
     
     try {
         program.parse_args(argc, argv);
