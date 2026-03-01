@@ -288,8 +288,8 @@ void ReferencePathTracerRaygen() {
         Ray.Direction = NDC2ToCameraDirectionUnnormalized(C, NDC2);
         float DirLen = length(Ray.Direction);
         Ray.Direction = Ray.Direction / DirLen; // Normalize direction
-        Ray.TMin = C.NearPlane * DirLen;
-        Ray.TMax = C.FarPlane * DirLen; // Scale TMin and TMax by the direction length
+        Ray.TMin = 0;
+        Ray.TMax = Infinity;
     }
 
     Random rng = MakeRandom(61937141 + (RayIndex.x * 6183 + RayIndex.y) * UB.FrameIndex);
@@ -365,6 +365,8 @@ void ReferencePathTracerRaygen() {
 
         RayPayload Payload = (RayPayload) 0;
         Payload.TCurrent = Ray.TMax;
+        Payload.bIsSurfaceHit = false;
+        Payload.bIsVolumeGridHit = false;
 
         // Trace surface ray first
         TraceRay(
@@ -385,13 +387,11 @@ void ReferencePathTracerRaygen() {
         // Case A: Overlapping Volume Primitives Scatter
         if (T_VolumeScatter < Infinity && Payload.TCurrent >= T_VolumeScatter)
         {
-            // 1. Move ray origin to scatter position
-            Ray.Origin = Ray.Origin + Ray.Direction * T_VolumeScatter;
 
-            // 2. Update ray throughtput. Phase function cancelled out naturally due to perfect sampling
+            // 1. Update ray throughtput. Phase function cancelled out naturally due to perfect sampling
             Throughput *= VolumeSampledColor;
 
-            // 3. Sample ray scatter direction
+            // 2. Sample ray scatter direction
             // In fact, wo do not need to tak account of the value and pdf because of perfect sampling.
             float Pdf;
             float3 LocalSampledDirection = SampleHenyeyGreenstein(g, rng.rand2(), Pdf);
@@ -405,10 +405,9 @@ void ReferencePathTracerRaygen() {
                 + LocalSampledDirection.z * Ray.Direction
             );
 
-            // Reset ray TMin & TMax.
+            // 3. Forward the ray ray origin to scatter position
+            Ray.Origin = Ray.Origin + Ray.Direction * T_VolumeScatter;
             Ray.TMin = 1e-4f;
-            Ray.TMax = Infinity;
-
             // Add a bounce.
             BounceIndex++;
         }
@@ -424,28 +423,27 @@ void ReferencePathTracerRaygen() {
                 0
             );
 
-            // 1. Add emission radiance
-            if (Payload.bIsFrontFace)
-            {
-                Radiance += Intersection.Emission * Throughput;
-            }
-
-            // 2. Sample outgoing ray direction (if pass alpha test)
-            ShadingMaterial M = GetShadingMaterial(Intersection);
-            // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
-            float3 SampledDirection;
-            float BsdfPdf;
 
             // Simple alpha test
-            if (Intersection.Opacity < 1.0f && rng.rand() > Intersection.Opacity)
+            if (rng.rand() > Intersection.Opacity)
             {
                 // Pass static mesh: keep direction and move forward a little.
-                Ray.Origin = Intersection.WorldPosition + Ray.Direction * 1e-4f;
+                Ray.TMin = Payload.TCurrent + 1e-6f;
             }
             else
             {
+                // A new bounce
+                // 1. Add emission radiance
+                if (Payload.bIsFrontFace)
+                {
+                    Radiance += Intersection.Emission * Throughput;
+                }
+                // 2. Sample outgoing ray direction (if pass alpha test)
+                ShadingMaterial M = GetShadingMaterial(Intersection);
+                // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
+                float3 SampledDirection;
                 // Sample BSDF
-                BsdfPdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
+                float BsdfPdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
 
                 // Update throughput
                 float3 BsdfVal = EvaluateBSDF(M, -Ray.Direction, SampledDirection);
@@ -460,14 +458,12 @@ void ReferencePathTracerRaygen() {
                     break; // Absorbed or Invalid sample.
                 }
 
-                // Update Ray
+                // Update ray origin
                 Ray.Origin = Intersection.WorldPosition + Intersection.GeometryNormal * 2e-5f;
                 Ray.Direction = SampledDirection;
+                Ray.TMin = 1e-6f;
+                BounceIndex++;
             }
-
-            Ray.TMin = 1e-4f;
-            Ray.TMax = Infinity;
-            BounceIndex++;
         }
         // Case C: Volume Boundary Crossing (bIsSurfaceHit == false, Primitive or Grid)
         else if (Payload.TCurrent < T_VolumeScatter && !Payload.bIsSurfaceHit)
@@ -535,12 +531,8 @@ void ReferencePathTracerRaygen() {
                 }
             }
 
-            // Move forward ray, but do not add bounce.
-            Ray.Origin = Ray.Origin + Ray.Direction * Payload.TCurrent;
-            Ray.TMin = 1e-4f;
-            Ray.TMax = Infinity;
-
-            continue;
+            // Forward a bit.
+            Ray.TMin = Payload.TCurrent + 1e-6f;
         }
         // Case D: Miss (Environment)
         else
