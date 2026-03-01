@@ -93,3 +93,41 @@ add_test(NAME rdg COMMAND rdg_test)
 add_executable(util_test util/util_test.cpp util/test_fixed_allocator.cpp)
 target_link_libraries(util_test PRIVATE cpptrace::cpptrace infra rhi rdg util core ${GTEST_LIBRARIES})
 add_test(NAME util COMMAND util_test)
+
+# Renderer - Light Cluster Hierarchy
+add_executable(
+        renderer_light_cluster_test
+        renderer/test_light_cluster_hierarchy.cpp
+        renderer/test_light_cluster_hierarchy_gltf_template.cpp
+)
+
+file(GLOB RENDERER_TEST_RESOURCE_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/renderer/resources/*.gltf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/renderer/resources/*.glb"
+        "${CMAKE_CURRENT_SOURCE_DIR}/renderer/resources/*.bin"
+        "${CMAKE_CURRENT_SOURCE_DIR}/renderer/resources/*.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/renderer/resources/*.jpg"
+        "${CMAKE_CURRENT_SOURCE_DIR}/renderer/resources/*.jpeg"
+)
+set(RENDERER_DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/renderer/resources)
+if(RENDERER_TEST_RESOURCE_FILES)
+    add_custom_target(
+            copy_renderer_resources ALL
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${RENDERER_DEST_DIR}
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${RENDERER_TEST_RESOURCE_FILES}
+            ${RENDERER_DEST_DIR}
+            DEPENDS ${RENDERER_TEST_RESOURCE_FILES}
+            COMMENT "Copying renderer test resources to build directory"
+    )
+else()
+    add_custom_target(
+            copy_renderer_resources ALL
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${RENDERER_DEST_DIR}
+            COMMENT "No renderer test resources found yet; created destination directory"
+    )
+endif()
+add_dependencies(renderer_light_cluster_test copy_renderer_resources)
+
+target_link_libraries(renderer_light_cluster_test PRIVATE renderer util ${GTEST_LIBRARIES})
+add_test(NAME renderer_light_cluster COMMAND renderer_light_cluster_test)

@@ -831,7 +831,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     float3 ShadedRadiance = 0.f;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         ShadePosition, ShadeNormal, ShadeViewDirection,
-        ShadeMaterial.IsSurface(), false, true, 
+        ShadeMaterial.IsSurface(), false, true, true,
         R,
         ShadedRadiance,
         SumResampleWeights, NumValidSamples,
@@ -860,8 +860,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
     const float OcclusionEpsilon = 2e-3f; // 25.10.19: a too small value can cause false positives for shadow rays due to precision issues
 	if(bValidRay) {
 
-        if(ReservedSample.bIsEnvironmentLightSample) {
-            // Environment light sample, trace to TMax
+        if(ReservedSample.IsInfiniteLight()) {
+            // Infinite light sample, trace to TMax
             TransmittanceRayDirection = ReservedSample.Position;
             TransmittanceRayOcclusionThreshold = C.FarPlane; // Far plane
         } else {
@@ -872,7 +872,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
             TransmittanceRayOcclusionThreshold = max(TransmittanceRayOcclusionThreshold - max(OcclusionEpsilon, CoordinateEpsilon), 0.f);
         }
 		// Account for shading
-        ShadedRadiance *= EvaluateCachedMaterialBRDF(
+        ShadedRadiance *= EvaluateCachedMaterialBRDF_ColorOnly(
             ShadeMaterial, ShadeViewDirection,
             TransmittanceRayDirection, VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G
         );
@@ -934,6 +934,8 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
             if(IsInvalid(SampledLightIndex)) {
                 // Environment light
                 LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayDirection);
+            } else if (IsDirectionalLightSampleIndex(SampledLightIndex)) {
+                // Directional light does not use LightGrid visibility history/cache.
             } else {
                 // Light grid area light
                 LightGrid_UpdateVisibilityForAreaLight(

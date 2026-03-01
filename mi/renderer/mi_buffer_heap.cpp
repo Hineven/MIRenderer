@@ -5,10 +5,12 @@
  */
 
 #include <ranges>
-#include "renderer/mi_buffer_heap.h"
 
-#include "rhi/rhi.h"
-#include "rhi/rhi_buffer.h"
+#include <rhi/rhi.h>
+#include <rhi/rhi_buffer.h>
+
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_buffer_heap.h>
 
 MI_NAMESPACE_BEGIN
 DeviceBufferHeapBuffer::~DeviceBufferHeapBuffer() {
@@ -24,11 +26,12 @@ TRef<DeviceBufferHeapBuffer> DeviceBufferHeapInterface::AllocateRefCounted(uint3
 }
 
 TRef<DeviceUberBufferAllocation> DeviceUberBufferInterface::CreateAllocation(size_t offset, size_t size) {
-    auto allocation = new DeviceUberBufferAllocation();
-    allocation->offset_ = offset;
-    allocation->size_ = size;
-    allocation->uber_buffer_ = this;
-    return TRef<DeviceUberBufferAllocation>(allocation);
+     auto allocation = new DeviceUberBufferAllocation();
+     allocation->offset_ = offset;
+     allocation->size_ = size;
+     allocation->uber_buffer_ = this;
+     allocation->allocator_ = allocator_;
+     return TRef<DeviceUberBufferAllocation>(allocation);
 }
 
 void DeviceUberBufferInterface::SetName(const std::string &name) {
@@ -153,6 +156,16 @@ void SimpleDeviceBufferHeap::PreAllocateBlocks(uint32_t num_blocks) {
     for (int i = 0; i < (int)num_blocks; i++) AddNewBlock(default_buffer_block_size_);
 }
 
+void DeviceUberBufferAllocation::QueueForDestruction() const {
+    // If we have an owning allocator, let it retire us a few frames later.
+    // Otherwise, fall back to immediate deletion.
+    if (allocator_) {
+        allocator_->EnqueueForDelayedDestruction(const_cast<DeviceUberBufferAllocation *>(this));
+    } else {
+        delete this;
+    }
+}
+
 DeviceUberBufferAllocation::~DeviceUberBufferAllocation() {
     if (uber_buffer_) {
         uber_buffer_->Free(offset_, size_);
@@ -162,8 +175,8 @@ RHIBufferSpan DeviceUberBufferAllocation::GetRHI() const {
     return uber_buffer_ ? uber_buffer_->GetRHI()->GetSpan(offset_, size_) : RHIBufferSpan{};
 }
 
-SimpleDeviceUberBuffer::SimpleDeviceUberBuffer(RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size):
-DeviceUberBufferInterface(usage, allocation_alignment), segments_(initial_size, allocation_alignment) {
+SimpleDeviceUberBuffer::SimpleDeviceUberBuffer(RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size, DeviceBindlessResourceAllocator * allocator):
+DeviceUberBufferInterface(usage, allocation_alignment, allocator), segments_(initial_size, allocation_alignment) {
     uber_buffer_ = RHI::Get().CreateBuffer(initial_size, usage);
 }
 

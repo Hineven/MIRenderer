@@ -14,6 +14,7 @@
 #include <core/base.h>
 #include <core/refcounted.h>
 #include <core/util/slot_allocator.h>
+#include <core/infra.h>
 #include <rhi/rhi_fwd.h>
 
 #include <renderer/mi_renderer_fwd.h>
@@ -45,6 +46,9 @@ protected:
 
     // Top level acceleration structure for ray-traced objects
     TRef<RHIAccelerationStructure> TLAS_;
+    // Keep a hash value for TLAS update / rebuild decision.
+    // The hash value is updated within the renderer when the TLAS is built.
+    uint32_t TLAS_vrt_hash_ {};
 
     // Track last built TLAS instance count to decide Build vs Update.
     // Vulkan requires the number of primitives (instances) to remain the same for Update mode.
@@ -59,7 +63,7 @@ public:
 
 };
 
-class Scene : public NonMovable, public NonCopyable {
+class Scene : public NonMovable, public NonCopyable, public IDeferredFreeOwner {
 public:
     friend class Renderable;
 
@@ -74,11 +78,14 @@ public:
     Scene();
     ~Scene();
 
-    void RemoveRenderable (Renderable * renderable) ;
-
-    FORCEINLINE const std::vector<TRef<Renderable>> & GetRenderables () const {
+    FORCEINLINE const std::vector<Renderable*> & GetRenderables () const {
         return renderables_;
     }
+    FORCEINLINE Renderable * GetRenderableByIndex (uint32_t index) const {
+        if (index >= renderables_.size()) return nullptr;
+        return renderables_[index];
+    }
+
     void SetSkyCube (Texture * texture) ;
 
     FORCEINLINE Texture * GetSkyTexture () const {
@@ -100,8 +107,20 @@ public:
 
     void UpdateAABB () ;
 
+    // Implement IDeferredFreeOwner for delayed destruction of renderable indices
+    void EnqueueForDelayedDestruction(DelayedDestructionResource *obj) override;
+
+    void AdvanceFrameForDelayedDestruction() override;
 
     DirectionalLight directional_light_{};
+
+    FORCEINLINE void SetStructuralHash (uint32_t hash) {
+        structural_hash_ = hash;
+    }
+
+    FORCEINLINE uint32_t GetStructuralHash () const {
+        return structural_hash_;
+    }
 
 protected:
 
@@ -109,17 +128,46 @@ protected:
 
     TRef<Texture> sky_cube_;
 
-    std::vector<TRef<Renderable>> renderables_;
+    std::vector<Renderable*> renderables_;
     std::mt19937 renderable_hash_generator {12345};
 
-    uint32_t AllocateRenderableIndexAndHash (Renderable * renderable) ;
+    // The scene structural hash value. If any structural change happens (e.g. renderable added/removed,
+    // geometry insertion / modification, visibility change, material flag change, etc.), this value should be updated.
+    // It is updated externally by the renderer.
+    uint32_t structural_hash_ {};
+
+    DelayedDestructionQueue delayed_destruction_;
+
+    TRef<TDelayedReleaseKeeper<Scene>> AllocateRenderableSlot () ;
+    uint32_t NextRenderableHash () {
+        return renderable_hash_generator();
+    }
+    // De-allocate the renderable slot at the given index.
+    // This is deferred to the next frame after the renderable is removed from the scene.
     FORCEINLINE void FreeRenderabeIndex (uint32_t index) {
         renderable_slots_.FreeSlot(index);
+    }
+
+    // Register the renderable at the given index. This is executed immediately after allocation by the Renderble constructor.
+    FORCEINLINE void RegisterRenderableAtIndex (uint32_t index, Renderable * renderable) {
+        mi_check(index < kMaxNumRenderables, "Renderable index exceeds maximum number of renderables.");
+        if (renderables_.size() <= index) {
+            renderables_.resize(index + 1);
+        }
+        renderables_[index] = renderable;
+    }
+    // Un-register the renderable at the given index without freeing the slot.
+    // This is executed immediately after the reference count of a renderable approaches zero.
+    FORCEINLINE void UnregisterRenderableAtIndex (uint32_t index) {
+        if (index < renderables_.size()) {
+            renderables_[index] = nullptr;
+        }
     }
 
     SlotAllocator renderable_slots_;
 
     TRef<DeviceScene> device_scene_;
+
 };
 
 MI_NAMESPACE_END

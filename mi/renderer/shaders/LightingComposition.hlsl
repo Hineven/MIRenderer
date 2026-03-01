@@ -14,8 +14,10 @@ struct LightingCompositionUB {
     uint EnableVolumeDirect;
     uint EnableVolumeIndirect;
     uint EnableVolumeGridDirect;
-    uint Padding0;
+    float EnvironmentMapLOD;
     uint Padding1;
+    float3 EnvironmentMapMultiplier;
+    float Padding2;
 };
 
 ConstantBuffer<LightingCompositionUB> UB;
@@ -54,7 +56,7 @@ void LightingComposition(uint2 DispatchID : SV_DispatchThreadID)
     float3 Emission = G_Emission.SampleLevel(PointEdgeSampler, UV, 0).rgb;
     if(AlbedoAlpha.w == 0.f) {
         float3 RayDirection = NDC2ToCameraDirection(C, UVToNDC2(UV));
-        float3 EnvironmentColor = EvaluateEnvironmentMap(-RayDirection);
+        float3 EnvironmentColor = EvaluateEnvironmentMap_Raw(-RayDirection, UB.EnvironmentMapLOD, UB.EnvironmentMapMultiplier);
         Emission = EnvironmentColor;
     }
 

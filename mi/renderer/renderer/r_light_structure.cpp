@@ -3,15 +3,17 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "r_light_structure.h"
+
+#include <rdg/rdg_helper.h>
+#include <renderer/mi_renderer.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_scene.h>
+#include <renderer/mi_texture.h>
+#include <renderer/mi_buffer_heap.h>
 
 #include "r_persistent.h"
-#include "renderer/mi_renderer.h"
-#include "renderer/mi_resource_allocator.h"
+#include "r_light_structure.h"
 #include "../shaders/shared/SharedLight.hlsl"
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_scene.h"
-#include "renderer/mi_texture.h"
 MI_NAMESPACE_BEGIN
 CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
@@ -21,7 +23,7 @@ CVar<int> CVar_MaxNumGridLights(
 CVar<int> CVar_MaxNumLightGridEntries(
     "r.lightgrid.max_num_entries",
     "Maximum number of entries in the light grid.",
-    1024 * 1024
+    2 * 1024 * 1024
 );
 static CVar<float> CVar_MinLightGridSize(
     "r.lightgrid.min_size",
@@ -38,6 +40,24 @@ CVar<int> CVar_NumLightSamplerSamples(
     "r.lightgrid.num_light_sampler_samples",
     "Number of candidate samples to take when sampling lights in the light grid.",
     8
+);
+
+CVar<float> CVar_LightCullingRate(
+    "r.lightgrid.light_culling_rate",
+    "Culling rate for lights to be injected into the light grid. Higher values will result in less injected lights, but can increase noise.",
+    0.0f
+);
+
+CVar<glm::vec3> CVar_EnvironmentLightMultiplier(
+    "r.lightgrid.environment_light_multiplier",
+    "Multiplier for environment light contribution in the light grid.",
+    glm::vec3{1.0f}
+);
+
+CVar<float> CVar_EnvironmentLightEvaluateLOD(
+    "r.lightgrid.environment_light_evaluate_lod",
+    "LOD at which to evaluate environment light contribution in the light grid. Higher values will result in blurrier environment lighting but better performance.",
+    0.0f
 );
 
 static CVar<bool> CVar_DebugFreezeFrameSeed(
@@ -130,6 +150,7 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     if (CVar_DebugFreezeFrameSeed.Get()) UB->FrameIndex = 0;
     else UB->FrameIndex = view->persistent_data_->frame_index_;
     UB->MaxNumLights = (uint32_t)max_num_lights;
+    UB->LightGridMaxNumEntries = std::max(CVar_MaxNumLightGridEntries.Get(), 1);
 
     if (auto env = view->scene_->GetSkyTexture()) {
         auto num_env_mips = env->GetMipLevels();
@@ -137,6 +158,10 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
     } else {
         UB->EnvironmentLightHemisphereSampleLOD = 0;
     }
+    UB->LightCullingRate = CVar_LightCullingRate.Get();
+
+    UB->EnvironmentLightMultiplier = glm::max(glm::vec3{0.f}, CVar_EnvironmentLightMultiplier.Get());
+    UB->EnvironmentLightEvaluateLOD = CVar_EnvironmentLightEvaluateLOD.Get();
 }
 
 std::vector<std::string> GetLightStructureShaderMacros () {
@@ -238,7 +263,5 @@ void Renderer::Render_UpdateLightStructureHistory(RendererView *view, RenderGrap
         builder, shader, params, num_groups
     );
 }
-
-
 
 MI_NAMESPACE_END

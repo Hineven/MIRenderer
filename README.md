@@ -22,11 +22,12 @@
 * `tinyexr`
 * `vulkan-memory-allocator`
 * `directx-dxc`
+* `argparse`
 # 使用
 请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表
 * `3d_viewer`：一个简单的3D模型查看器，目前功能较为匮乏，是主要的测试程序，可以编辑其代码来加载不同模型。
-* `core`：核心库。
+* `core`：公共核心库。
 * `rhi`：RHI抽象层。目前仅支持Vulkan。
 * `rdg`：渲染图框架。
 * `renderer`：渲染器实现。
@@ -45,10 +46,25 @@
 * 最终性能测试，请使用以下配置：
   * 使用`Release`模式编译，并关闭`MI_BYPASS_RHI_THREAD`选项。
   * 如果你打开了`Vulkan Configurator`，请关闭它。
+### 资源层级、持有方式和释放备注
+* 在不深入RHI层，或者需要创建新类型的Renderable时，资源层级和释放机制基本不需要关心。但若要深入RHI层进行修改，或想要拓展Renderable，则需要了解资源层级和释放机制。
+* 资源层级分为两类：RHI资源、Host资源。其中，Host资源可以细分为RHI SubAllocation类和纯Host类两种。
+  * RHI资源：直接对应RHI API的资源，由RHI层管理，比如`RHIBuffer`、`RHITexture`等。
+  * Host资源：不直接对应RHI API的资源，或者纯粹Host资源。
+    * RHI SubAllocation类：这些资源享有一个RHI资源的**一部分**，但不直接管理RHI资源的生命周期，也不由RHI层管理。比如`DeviceUberBufferAllocation`、各类对应一个RHI Buffer内某Slot的SlotKeeper等。
+    * 纯Host类：这些资源完全在Host端管理，它们可能持有一些RHI资源和RHI SubAllocation句柄。比如`Material`、`DeviceGeometry`等。
+* 在`mi`渲染器外，一般而言，如果你想要一个资源活得久，你必须持有其`TRef`引用。未被引用的资源会自动在合适时机释放。
+* 不同资源的释放时间是有区别的。
+  * 对于RHI资源和RHI SubAllocation类资源，它们的释放必须**延迟**一帧以上进行，防止在GPU-CPU并行时，在GPU上还在使用的资源被CPU释放了。
+    * 对于RHI资源，引用计数由RHIResource基类实现，自动延迟释放。
+    * 对于RHI SubAllocation类资源，它们的延迟释放依赖于`DeviceBindlessResourceAllocator`和`DelayedDestructionResource`系列基类和模板，该分配器会在每帧结束时收集待释放的SubAllocation。
+  * 对于纯Host类资源，它们的释放可以立即进行。
 ### 线程关系备注
 * 线程分五类别：RHI线程、渲染线程、工作线程、主线程、FIO线程
 * **只有**RHI线程负责与图形API交互，RHI线程只有一个
 * **只有**渲染线程负责与RHI线程交互。一般而言，**只有**渲染线程能访问/**间接或直接持有**/使用RHI资源引用，渲染线程只有一个
+  * 多线程编译管线时是个例外，你可以查阅`rdg_shader.cpp`中相关实现，了解如何在工作线程中访问RHI资源。
+  * 部分RHI API调用也实际上是线程安全的。这在RHI层中会有相关注释。
 * 渲染器核心中（`mi`中），FIO线程专门负责文件读写。异步文件读写请求都通过Infra委托FIO线程完成，同步读写则由各自线程完成，Infra的读写接口是线程安全的。
 * 在一些调试模式下，RHI线程和渲染线程合并成一个线程。
 * 工作线程和主线程不能持有，也不能直接使用任何Device相关方法。它们应当仅限于在Host端进行计算和数据处理。

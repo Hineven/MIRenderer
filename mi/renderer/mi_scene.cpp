@@ -37,11 +37,9 @@ Scene::Scene(): renderable_slots_(kMaxNumRenderables) {
 
 }
 Scene::~Scene() {
-    // Release renderable references first, because they may hold references to the scene &
-    // their de-allocations may create more allocations within the scene destruction process
-    // (such as inserting indices into the slot_allocator_).
-    // Which may lead to use-after-free bugs.
-    renderables_.clear();
+    mi_check_nothrow(!renderable_slots_.NoAllocationActive(),
+        "There are still renderables allocated from the scene during its destruction."
+        "Make sure to purge all references to renderables before destroying the scene.");
 }
 
 
@@ -58,16 +56,6 @@ void Scene::SetSkyCube(Texture *texture) {
     sky_cube_ = texture;
 }
 
-
-void Scene::RemoveRenderable (Renderable * renderable) {
-    auto it = std::find_if(renderables_.begin(), renderables_.end(),
-        [renderable](const TRef<Renderable> & r) { return r.Raw() == renderable; });
-    if (it != renderables_.end()) {
-        // Not remove from the list, but set to nullptr to keep the indices valid.
-        it->SafeRelease();
-    }
-}
-
 void Scene::CreateOnDevice() {
     if (!device_scene_) {
         device_scene_ = new DeviceScene();
@@ -75,25 +63,17 @@ void Scene::CreateOnDevice() {
     }
 }
 
-uint32_t Scene::AllocateRenderableIndexAndHash(Renderable *renderable) {
+TRef<TDelayedReleaseKeeper<Scene>> Scene::AllocateRenderableSlot () {
     auto slot = renderable_slots_.AllocateSlot();
-    if (slot == UINT32_MAX) return UINT32_MAX;
-    if (renderables_.size() <= slot) {
-        renderables_.resize(slot + 1);
-    }
-    renderables_[slot] = renderable;
-    renderable->hash_ = renderable_hash_generator();
-    return slot;
+    if (slot == UINT32_MAX) return {};
+    auto keeper = Create<TDelayedReleaseKeeper<Scene>>(this, slot, [](Scene * owner, uint32_t index) {
+        owner->FreeRenderabeIndex(index);
+    });
+    return std::move(keeper);
 }
 
 void Scene::UpdateAABB() {
     aabb_ = {};
-    auto update = [&](glm::vec3 p, glm::mat4 transform) {
-        auto world_pw = transform * glm::vec4(p, 1.0f);
-        auto world_p = glm::vec3(world_pw.x, world_pw.y, world_pw.z) / world_pw.w;
-        aabb_.min = glm::min(aabb_.min, world_p);
-        aabb_.max = glm::max(aabb_.max, world_p);
-    };
     for (const auto & renderable : renderables_) {
         if (renderable) {
             auto aabb = renderable->GetAABB();
@@ -108,6 +88,14 @@ void Scene::UpdateAABB() {
 #endif
         }
     }
+}
+
+void Scene::EnqueueForDelayedDestruction(DelayedDestructionResource *obj) {
+    delayed_destruction_.Enqueue(obj);
+}
+
+void Scene::AdvanceFrameForDelayedDestruction() {
+    delayed_destruction_.Tick();
 }
 
 

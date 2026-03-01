@@ -4,6 +4,7 @@ set(SOURCES
         volprims_loader.cpp
         openvdb_loader.cpp
         gaussian_radiance_field_loader.cpp
+        renderable_node.cpp
 )
 
 add_library(util ${SOURCES})

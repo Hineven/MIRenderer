@@ -60,19 +60,36 @@ float SampleBDSF (ShadingMaterial M, float3 ViewDirection, float2 U, out float3 
 }
 
 // Evaluate cached material brdf
-// Simple lambertian
 float3 EvaluateCachedMaterialBRDF (
     CachedHitMaterial M, float3 ViewDirection, float3 LightDirection,
     float PhaseG
 ) {
     float3 Normal = M.Normal;
     if(M.IsSurface()) {
+        // Simple lambertian
         if(dot(Normal, ViewDirection) * dot(Normal, LightDirection) <= 0) return 0;
         float Cosine = dot(Normal, LightDirection);
         return EvaluateLambert(M.Albedo) * Cosine;
     } else if(M.IsVolume()) {
         float Cosine = dot(LightDirection, ViewDirection);
         return HenyeyGreensteinPhaseFunction(Cosine, PhaseG) * M.Albedo;
+    } else {
+        // Gaussain RF and others. They should never be shaded.
+        return 0;
+    }
+}
+
+// Evaluate cached material brdf without cosine / phase term. Useful when the light sample is already premultiplied by the cosine / phase term.
+float3 EvaluateCachedMaterialBRDF_ColorOnly (
+    CachedHitMaterial M, float3 ViewDirection, float3 LightDirection,
+    float PhaseG
+) {
+    float3 Normal = M.Normal;
+    if(M.IsSurface()) {
+        if(dot(Normal, ViewDirection) * dot(Normal, LightDirection) <= 0) return 0;
+        return EvaluateLambert(M.Albedo);
+    } else if(M.IsVolume()) {
+        return M.Albedo;
     } else {
         // Gaussain RF and others. They should never be shaded.
         return 0;

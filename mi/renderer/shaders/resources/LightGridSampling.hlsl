@@ -9,6 +9,7 @@
 
 #include "LightGrid.hlsl"
 #include "EnvironmentLightResource.hlsl"
+#include "DirectionalLightResource.hlsl"
 
 // Input macros
 #ifndef MAX_NUM_GRID_LIGHTS
@@ -47,6 +48,12 @@ RWStructuredBuffer<uint>  LightGrid_NextEnvironmentVisibilityBuffer;
 
 RWStructuredBuffer<PackedPrecomputedLight> LightGrid_PrecomputedActiveLightBuffer;
 
+static const uint LIGHT_SAMPLE_INDEX_DIRECTIONAL = INVALID_UINT - 1u;
+
+bool IsDirectionalLightSampleIndex(uint LightIndex) {
+    return LightIndex == LIGHT_SAMPLE_INDEX_DIRECTIONAL;
+}
+
 
 struct LightSampler {
     uint NumResampledLights;
@@ -59,23 +66,29 @@ struct LightSampler {
 struct LightSamplerLight {
     uint ActiveLightListIndex; // ActiveLightListIndex or environment light octahedron tile index
     bool bIsEnvironment;
+    bool bIsDirectional;
     bool bValid;
 };
 
 uint PackLightSamplerLight(LightSamplerLight LSL) {
+    if (!LSL.bValid) {
+        return INVALID_UINT;
+    }
     uint Packed = 0;
-    Packed |= LSL.ActiveLightListIndex & 0x7FFFFFFF;
-    Packed |= (LSL.bIsEnvironment ? 1u : 0u) << 31;
-    // INVALID_UINT for invalid light
-    Packed |= (LSL.bValid ? 0u : INVALID_UINT);
+    Packed |= LSL.ActiveLightListIndex & 0x3FFFFFFF;
+    Packed |= (LSL.bIsEnvironment ? 1u : 0u) << 30;
+    Packed |= (LSL.bIsDirectional ? 1u : 0u) << 31;
     return Packed;
 }
 
 LightSamplerLight UnpackLightSamplerLight(uint Packed) {
     LightSamplerLight LSL = (LightSamplerLight)0;
-    LSL.ActiveLightListIndex = Packed & 0x7FFFFFFF;
-    LSL.bIsEnvironment = ((Packed >> 31) & 0x1) != 0;
     LSL.bValid = (Packed != INVALID_UINT);
+    if (LSL.bValid) {
+        LSL.ActiveLightListIndex = Packed & 0x3FFFFFFF;
+        LSL.bIsEnvironment = ((Packed >> 30) & 0x1) != 0;
+        LSL.bIsDirectional = ((Packed >> 31) & 0x1) != 0;
+    }
     return LSL;
 }
 
@@ -118,6 +131,15 @@ void LightSampler_AddListLightToSampler(inout LightSampler LS, float Weight, uin
     LightSamplerLight LSL = (LightSamplerLight)0;
     LSL.ActiveLightListIndex = ActiveLightListIndex;
     LSL.bIsEnvironment = false;
+    LSL.bIsDirectional = false;
+    LSL.bValid = true;
+    LightSampler_AddLightToSampler(LS, Weight, LSL);
+}
+
+void LightSampler_AddDirectionalLightToSampler(inout LightSampler LS, float Weight) {
+    LightSamplerLight LSL = (LightSamplerLight)0;
+    LSL.bIsEnvironment = false;
+    LSL.bIsDirectional = true;
     LSL.bValid = true;
     LightSampler_AddLightToSampler(LS, Weight, LSL);
 }
@@ -126,18 +148,22 @@ struct LightSample {
     // For area light: sampled position on the light
     // For environment light: sampled normalized direction
     float3 Position;
-    // Pdf in solid angle domain
+    // Pdf in solid angle domain. For area light, it is multiplied by LightGridLightListCdf to account for overflowing lights that are not injected into the grid
     float Pdf;
     float3 Radiance;
     // Keep the index of the sampled light. INVALID_UINT for environment light
     uint LightIndex;
     bool bIsEnvironmentLightSample;
+    bool bIsDirectionalLightSample;
     // Returns true if the sample is valid: pdf > 0
     bool IsValid() {
         return Pdf > 0;
     }
     bool IsEnvironmentLight() {
         return bIsEnvironmentLightSample;
+    }
+    bool IsInfiniteLight() {
+        return bIsEnvironmentLightSample || bIsDirectionalLightSample;
     }
 };
 
@@ -217,6 +243,26 @@ LightSample SampleLightWithPreMultipliedPhaseFunction(
     );
 }
 
+LightSample SampleDirectionalLightDiffuseWithPreMultiplied(
+    float3 Normal, float3 ViewDirection,
+    bool bSurface,
+    float g
+) {
+    LightSample Result = (LightSample)0;
+    if (!DirectionalLightEnabled()) {
+        return Result;
+    }
+    Result.bIsDirectionalLightSample = true;
+    Result.Position = GetDirectionalLightDirection();
+    Result.Pdf = 1.f;
+    Result.LightIndex = LIGHT_SAMPLE_INDEX_DIRECTIONAL;
+
+    float ReceiverCosine = bSurface ? dot(Result.Position, Normal) : dot(Result.Position, ViewDirection);
+    float PreMultiplied = bSurface ? saturate(ReceiverCosine) : HenyeyGreensteinPhaseFunction(ReceiverCosine, g);
+    Result.Radiance = GetDirectionalLightIrradiance() * PreMultiplied;
+    return Result;
+}
+
 struct LightGrid_CubicVisibility {
     uint GridCubicHistory[LIGHT_GRID_NUM_HISTORY_FRAMES];
 };
@@ -255,13 +301,38 @@ float LightGrid_GridLightVisibilityWeight(LightGrid_GridLightVisibility GridVisi
     return max(Weight / LIGHT_GRID_NUM_HISTORY_FRAMES, 0.1f);
 }
 
+uint LightGrid_GetInfiniteVisibilityBitIndex(float3 Direction) {
+    float3 AbsDirection = abs(Direction);
+    uint FaceIndex = 0;
+    float2 SubDirection;
+    if (AbsDirection.x >= AbsDirection.y && AbsDirection.x >= AbsDirection.z) {
+        FaceIndex = Direction.x > 0 ? 0 : 1;
+        SubDirection = Direction.yz;
+    } else if (AbsDirection.y >= AbsDirection.x && AbsDirection.y >= AbsDirection.z) {
+        FaceIndex = Direction.y > 0 ? 2 : 3;
+        SubDirection = Direction.zx;
+    } else {
+        FaceIndex = Direction.z > 0 ? 4 : 5;
+        SubDirection = Direction.xy;
+    }
+    uint2 SubIndex = uint2(
+        SubDirection.x > 0 ? 0u : 1u,
+        SubDirection.y > 0 ? 0u : 1u
+    );
+    return FaceIndex * 4 + SubIndex.x * 2 + SubIndex.y;
+}
+
+float LightGrid_EstimateInfiniteLightVisibility(float3 Direction, LightGrid_CubicVisibility GridCubicVisibility) {
+    return 1.f;
+}
+
 // bSurface: if the sample is sampled for surface shading (otherwise we assume volume shading and WorldNormal is omitted)
 // bGroupedAccess: whether locality is assumed when accessing the light grid for each wave. You can enable this when you 
 // know that the threads in a wave will access similar grid cells (e.g., tiled rendering on screen)
 // bWithEnvironment: whether environment light is considered and can be sampled
 LightSample SampleOneLightSample_RIS (
     float3 WorldPosition, float3 WorldNormal, float3 ViewDirection,
-    bool bSurface, bool bGroupedAccess, bool bWithEnvironment,
+    bool bSurface, bool bGroupedAccess, bool bWithEnvironment, bool bWithDirectional,
     inout Random R, 
     out float3 RadianceEstimation,
     out float SumResampleWeights, out uint NumValidSamples,
@@ -274,67 +345,85 @@ LightSample SampleOneLightSample_RIS (
     // Look up the light grid
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     LightSample Sample = (LightSample)0;
-    if (!IsValid(GridIndex.x)) {
-        return Sample; // Out of light grid
-    }
-    uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
+    bool bInsideLightGrid = IsValid(GridIndex.x);
+    uint GridIndex1 = bInsideLightGrid ? LightGrid_GetGridIndex1(GridIndex) : 0;
 
     LightSampler LS = InitLightSampler(R);
 
     float GridSize = 0;
-    float3 GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
-    uint NumGridLights = LightGrid_GridLightListLengthBuffer[GridIndex1];
-    uint GridLightListOffset = LightGrid_GridLightListOffsetBuffer[GridIndex1];
-    LightGridLightListCdf = LightGrid_GridLightListCdfBuffer[GridIndex1];
-
-    LightGrid_GridLightVisibility GridVisibility = GetGridLightVisibility(GridIndex1);
+    float3 GridMin = 0.xxx;
+    uint NumGridLights = 0;
+    uint GridLightListOffset = 0;
+    LightGrid_GridLightVisibility GridVisibility = (LightGrid_GridLightVisibility)0;
+    if (bInsideLightGrid) {
+        GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
+        NumGridLights = LightGrid_GridLightListLengthBuffer[GridIndex1];
+        GridLightListOffset = LightGrid_GridLightListOffsetBuffer[GridIndex1];
+        uint MaxNumEntries = max(LightStructure_UB.LightGridMaxNumEntries, 1u);
+        if (GridLightListOffset >= MaxNumEntries) {
+            NumGridLights = 0;
+        } else {
+            NumGridLights = min(NumGridLights, MaxNumEntries - GridLightListOffset);
+        }
+        LightGridLightListCdf = LightGrid_GridLightListCdfBuffer[GridIndex1];
+        GridVisibility = GetGridLightVisibility(GridIndex1);
+    }
 
     // Spawn candidate samples from the lights in the grid
     uint NumNonZeroGridLights = 0;
-    bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
-    if (bUniformGrid || !bGroupedAccess) {
-        // Assume one wave have locality regarding the grid index
-        for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
-            uint ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
-            PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
-            float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
-            // Estimate history visibility weight
-            float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
-            Weight *= VisibilityWeight;
-            if(Weight > 0.f) {
-                LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
-                NumNonZeroGridLights ++;
-            }
-        }
-    } else {
-        // Process the light with the minimum index in the grid
-        uint LightListIndex = 0, Iteration = 0;
-        // TODO remove Iteration (used to prevent driver timeouts)
-        // TODO add a noisy occlusion modifier based on history cache to the target distribution
-        while(LightListIndex < NumGridLights && Iteration < 256) {
-            uint ActiveLightListIndex = INVALID_UINT;
-            ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
-            uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
-            if (WaveMinLightIndex == ActiveLightListIndex) {
+    if (bInsideLightGrid) {
+        bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
+        if (bUniformGrid || !bGroupedAccess) {
+            // Assume one wave have locality regarding the grid index
+            for (uint LightListIndex = 0; LightListIndex < NumGridLights; LightListIndex++) {
+                uint ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
                 PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
                 float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
                 // Estimate history visibility weight
                 float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
                 Weight *= VisibilityWeight;
-                if (Weight > 0.f) {
-                    // Add the light to the sampler
+                if(Weight > 0.f) {
                     LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
                     NumNonZeroGridLights ++;
                 }
-                LightListIndex++;
             }
-            Iteration++;
+        } else {
+            // Process the light with the minimum index in the grid
+            uint LightListIndex = 0, Iteration = 0;
+            // TODO remove Iteration (used to prevent driver timeouts)
+            // TODO add a noisy occlusion modifier based on history cache to the target distribution
+            while(LightListIndex < NumGridLights && Iteration < 256) {
+                uint ActiveLightListIndex = INVALID_UINT;
+                ActiveLightListIndex = LightGrid_ListActiveLightListIndexBuffer[GridLightListOffset + LightListIndex];
+                uint WaveMinLightIndex = WaveActiveMin(ActiveLightListIndex);
+                if (WaveMinLightIndex == ActiveLightListIndex) {
+                    PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[ActiveLightListIndex]);
+                    float Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
+                    // Estimate history visibility weight
+                    float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, L.Hash);
+                    Weight *= VisibilityWeight;
+                    if (Weight > 0.f) {
+                        // Add the light to the sampler
+                        LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
+                        NumNonZeroGridLights ++;
+                    }
+                    LightListIndex++;
+                }
+                Iteration++;
+            }
         }
     }
     // Specially, handle environment light
-    LightGrid_CubicVisibility GridCubicVisibility = LightGrid_FetchEnvironmentVisibility(GridIndex1);
+    LightGrid_CubicVisibility GridCubicVisibility = (LightGrid_CubicVisibility)0;
+    if (bInsideLightGrid) {
+        GridCubicVisibility = LightGrid_FetchEnvironmentVisibility(GridIndex1);
+    }
     if (bWithEnvironment) {
-        float3 AvgRadiance = EvaluateEnvironmentMap(-WorldNormal, LightStructure_UB.EnvironmentLightHemisphereSampleLOD);
+        // Sample a certain LOD for hemispherical radiance estimation.
+        float3 AvgRadiance = EvaluateEnvironmentMap_Raw(-WorldNormal, 
+            LightStructure_UB.EnvironmentLightHemisphereSampleLOD, 
+            LightStructure_UB.EnvironmentLightMultiplier
+        );
         float Weight = EstimateEnvironmentLightContribution(AvgRadiance, WorldPosition, WorldNormal);
         uint VisibilityMask = 0;
         [unroll(LIGHT_GRID_NUM_HISTORY_FRAMES)]
@@ -352,13 +441,24 @@ LightSample SampleOneLightSample_RIS (
             VisibilityFactor += (X + Y + Z) / (4 * 6 * dot(abs(WorldNormal), 1.f.xxx));
         }
         // the multipler 2 is for cancelling out the duplicated normal weight from EstimateEnvironmentLightContribution
-        Weight *= saturate(2 * VisibilityFactor);
-        // FIXME
-        // Weight = 1.f;
+        Weight *= max(saturate(2 * VisibilityFactor), 0.1f);
         if(Weight > 0.f) {
             LightSamplerLight LSL = (LightSamplerLight)0;
             LSL.bIsEnvironment = true;
+            LSL.bIsDirectional = false;
+            LSL.bValid = true;
             LightSampler_AddLightToSampler(LS, Weight, LSL);
+        }
+    }
+
+    if (bWithDirectional && DirectionalLightEnabled()) {
+        float3 Direction = GetDirectionalLightDirection();
+        float Weight = RadianceToLuminance(GetDirectionalLightIrradiance());
+        if (bSurface) {
+            Weight *= saturate(dot(WorldNormal, Direction));
+        }
+        if (Weight > 0.f) {
+            LightSampler_AddDirectionalLightToSampler(LS, Weight);
         }
     }
 
@@ -376,7 +476,6 @@ LightSample SampleOneLightSample_RIS (
             LightSample Sample;
             if(bWithEnvironment && LSL.bIsEnvironment) {
                 // Sample environment light
-                uint TileIndex = LSL.ActiveLightListIndex;
                 Sample = SampleEnvironmentLightDiffuseWithPreMultiplied(
                     WorldNormal, ViewDirection,
                     bSurface,
@@ -384,6 +483,12 @@ LightSample SampleOneLightSample_RIS (
                 );
                 // Mark as environment light
                 Sample.LightIndex = INVALID_UINT;
+            } else if (bWithDirectional && LSL.bIsDirectional) {
+                Sample = SampleDirectionalLightDiffuseWithPreMultiplied(
+                    WorldNormal, ViewDirection,
+                    bSurface,
+                    g
+                );
             } else {
                 // Sample area light    
                 uint ActiveLightListIndex = LSL.ActiveLightListIndex;
@@ -393,13 +498,15 @@ LightSample SampleOneLightSample_RIS (
                 Sample = SampleAreaLightDiffuseWithPreMultiplied(
                     WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2
                 );
+                // Account for overflowing lights that have not been injected into the grid.
+                if(LightGridLightListCdf > 0) Sample.Pdf *= LightGridLightListCdf;
                 // Keep the light index
                 Sample.LightIndex = LightIndex;
             }
             // 25.10.22: This must be placed OUTSIDE for unbiased normalization weight! 
             NumValidSamples ++;
             // Clip samples with low pdf (to evade potential fireflies)
-            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.005f) {
+            if (Sample.IsValid() && dot(Sample.Radiance, 1.f.xxx) > 0 && Sample.Pdf > 0.001f) {
                 float LightCdf =  LS.Weights[SamplerLightListIndex] / LS.SumWeight;
                 // Pdf of the proposed unnormalized distribution (projected solid angle for all lights,
                 // a special integration domain different from both area and solid angle)
@@ -424,9 +531,6 @@ LightSample SampleOneLightSample_RIS (
     // Estimate the radiance using RIS.
     float Norm = SumResampleWeights / max(NumValidSamples, 1u);
     RadianceEstimation = Norm * ReservedSample.Radiance / (RadianceToLuminance(ReservedSample.Radiance) + 1e-6f);
-    // Account for overflowing lights that have not been injected into the grid.
-    if(LightGridLightListCdf > 0) RadianceEstimation /= LightGridLightListCdf;
-    else RadianceEstimation = 0;
     return ReservedSample;
 }
 
@@ -434,6 +538,9 @@ LightSample SampleOneLightSample_RIS (
 // performance
 void LightGrid_UpdateVisibilityForAreaLight(float3 WorldPosition, uint LightIndex, bool bWaveOp = false) {
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
+    if (!IsValid(GridIndex.x)) {
+        return;
+    }
     uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
     AreaLight LightData = LightBuffer[LightIndex];
     uint2 Hash64 = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
@@ -471,23 +578,11 @@ void LightGrid_UpdateVisibilityForAreaLight(float3 WorldPosition, uint LightInde
 
 void LightGrid_UpdateVisibilityForEnvironmentLight(float3 WorldPosition, float3 Direction) {
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
-    uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
-    float3 AbsDirection = abs(Direction);
-    uint FaceIndex = 0;
-    float2 SubDirection;
-    if (AbsDirection.x >= AbsDirection.y && AbsDirection.x >= AbsDirection.z) {
-        FaceIndex = Direction.x > 0 ? 0 : 1;
-        SubDirection = Direction.yz;
-    } else if (AbsDirection.y >= AbsDirection.x && AbsDirection.y >= AbsDirection.z) {
-        FaceIndex = Direction.y > 0 ? 2 : 3;
-        SubDirection = Direction.zx;
-    } else {
-        FaceIndex = Direction.z > 0 ? 4 : 5;
-        SubDirection = Direction.xy;
+    if (!IsValid(GridIndex.x)) {
+        return;
     }
-    // Sub index within the cube face
-    uint2 SubIndex = select(SubDirection > 0, 0.xx, 1.xx);
-    uint BitIndex = FaceIndex * 4 + SubIndex.x * 2 + SubIndex.y;
+    uint GridIndex1 = LightGrid_GetGridIndex1(GridIndex);
+    uint BitIndex = LightGrid_GetInfiniteVisibilityBitIndex(Direction);
     InterlockedOr(
         LightGrid_NextEnvironmentVisibilityBuffer[GridIndex1],
         1u << BitIndex

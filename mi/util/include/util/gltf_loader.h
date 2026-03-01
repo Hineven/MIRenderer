@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <renderer/mi_geometry.h>
+#include "util/renderable_node.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -16,11 +17,12 @@ class GLTFLoader {
 public:
     static bool LoadGLTF (
         std::filesystem::path path, DeviceBindlessResourceAllocator & allocator,
-        Scene & scene,
+        Scene & scene, RenderableNodeRegistry * reg,
         Material * default_material,
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,
-        std::vector<TRef<StaticMeshInstance>> & out_meshes
+        std::vector<TRef<StaticMeshInstance>> & out_meshes,
+        std::vector<TRef<RenderableNode>> * out_nodes = nullptr
     );
     // Load SRV image
     // static TRef<Texture> LoadImage (std::string name, std::filesystem::path path);

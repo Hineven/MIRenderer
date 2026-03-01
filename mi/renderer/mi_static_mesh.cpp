@@ -5,6 +5,9 @@
  */
 #include <ranges>
 #include <random>
+#include <array>
+#include <algorithm>
+#include <cmath>
 #include "renderer/mi_static_mesh.h"
 
 #include <gtest/internal/gtest-port.h>
@@ -16,19 +19,140 @@
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_view.h"
 #include "renderer/mi_resource_allocator.h"
+#include "renderer/mi_texture.h"
 #include "rhi/rhi_as.h"
+#include <renderer/r_light_cluster_hiearchy.h>
 
 #include "shaders/shared/SharedLight.hlsl"
 
 MI_NAMESPACE_BEGIN
 
+CVar<int> CVar_MaxMeshLightsPerGeometry(
+    "r.mesh_light.max_lights_per_geometry",
+    "Maximum number of mesh lights generated for each emissive geometry. <= 0 means no explicit limit.",
+    128
+);
+
+namespace {
+
+constexpr float kOverlapEpsilon = 1e-6f;
+
+FORCEINLINE float Cross2D(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
+    glm::vec2 ab = b - a;
+    glm::vec2 ac = c - a;
+    return ab.x * ac.y - ab.y * ac.x;
+}
+
+bool TryIntersectEdgeWithScanlineY(glm::vec2 p0, glm::vec2 p1, float scan_y, float & out_x) {
+    if (std::abs(p0.y - p1.y) <= kOverlapEpsilon) {
+        return false;
+    }
+
+    float edge_min_y = std::min(p0.y, p1.y);
+    float edge_max_y = std::max(p0.y, p1.y);
+    if (scan_y < edge_min_y || scan_y >= edge_max_y) {
+        return false;
+    }
+
+    float t = (scan_y - p0.y) / (p1.y - p0.y);
+    out_x = p0.x + t * (p1.x - p0.x);
+    return true;
+}
+
+bool HasAnyEmissiveTexelInTriangle(Texture * emissive_map, glm::vec2 uv0, glm::vec2 uv1, glm::vec2 uv2) {
+    if (!emissive_map) {
+        return true;
+    }
+
+    uint32_t width = emissive_map->GetWidth();
+    uint32_t height = emissive_map->GetHeight();
+    if (width == 0 || height == 0) {
+        return true;
+    }
+    if (emissive_map->GetBinary().empty()) {
+        return true;
+    }
+
+    auto uv_in_01 = [](glm::vec2 uv) {
+        return uv.x >= 0.f && uv.x <= 1.f && uv.y >= 0.f && uv.y <= 1.f;
+    };
+    if (!uv_in_01(uv0) || !uv_in_01(uv1) || !uv_in_01(uv2)) {
+        return true;
+    }
+
+    glm::vec2 p0 = uv0 * glm::vec2((float)width, (float)height) - glm::vec2(0.5f);
+    glm::vec2 p1 = uv1 * glm::vec2((float)width, (float)height) - glm::vec2(0.5f);
+    glm::vec2 p2 = uv2 * glm::vec2((float)width, (float)height) - glm::vec2(0.5f);
+
+    float tri_min_y_f = std::min({p0.y, p1.y, p2.y});
+    float tri_max_y_f = std::max({p0.y, p1.y, p2.y});
+    int32_t min_y = std::clamp((int32_t)std::ceil(tri_min_y_f), 0, (int32_t)height - 1);
+    int32_t max_y = std::clamp((int32_t)std::floor(tri_max_y_f), 0, (int32_t)height - 1);
+
+    if (min_y > max_y) {
+        return false;
+    }
+
+    for (int32_t y = min_y; y <= max_y; ++y) {
+        float scan_y = (float)y;
+        std::array<float, 3> intersections {};
+        int intersection_count = 0;
+
+        float hit_x;
+        if (TryIntersectEdgeWithScanlineY(p0, p1, scan_y, hit_x)) {
+            intersections[intersection_count++] = hit_x;
+        }
+        if (TryIntersectEdgeWithScanlineY(p1, p2, scan_y, hit_x)) {
+            intersections[intersection_count++] = hit_x;
+        }
+        if (TryIntersectEdgeWithScanlineY(p2, p0, scan_y, hit_x)) {
+            intersections[intersection_count++] = hit_x;
+        }
+
+        if (intersection_count < 2) {
+            continue;
+        }
+
+        float x_min = intersections[0];
+        float x_max = intersections[1];
+        if (x_min > x_max) {
+            std::swap(x_min, x_max);
+        }
+        if (intersection_count == 3) {
+            float x2 = intersections[2];
+            if (x2 < x_min) {
+                x_min = x2;
+            } else if (x2 > x_max) {
+                x_max = x2;
+            }
+        }
+
+        int32_t x_start = std::clamp((int32_t)std::ceil(x_min), 0, (int32_t)width - 1);
+        int32_t x_end = std::clamp((int32_t)std::floor(x_max), 0, (int32_t)width - 1);
+
+        if (x_start > x_end) {
+            continue;
+        }
+
+        for (int32_t x = x_start; x <= x_end; ++x) {
+            auto emissive = emissive_map->Load((uint32_t)x, (uint32_t)y);
+            if (emissive.x > 0.f || emissive.y > 0.f || emissive.z > 0.f) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+}
+
 DeviceStaticMesh::DeviceStaticMesh(DeviceBindlessResourceAllocator * in_allocator) {
     allocator_ = in_allocator;
-    index_ = allocator_->AllocateStaticMeshSlot();
+    slot_ = allocator_->AllocateStaticMeshSlotKeeper();
 }
 
 DeviceStaticMesh::~DeviceStaticMesh() {
-    if (IsValid()) allocator_->FreeStaticMeshSlot(index_);
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
@@ -82,7 +206,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
     };
     Helpers::Upload_Async(queue,
         alloc->GetStaticMeshHeaderBuffer(),
-        sizeof(StaticMeshHeader) * device_static_mesh_->index_,
+        sizeof(StaticMeshHeader) * device_static_mesh_->GetIndex(),
         header
     );
     // Update BLAS if needed
@@ -101,7 +225,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
             auto geometries = queue.Allocate<RHIASGeometry[]>(geometries_.size());
             RHIAccelerationStructureBuildFlags build_flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace;
             build_flags = build_flags | (dynamic_ ? RHIAccelerationStructureBuildFlagBits::kAllowUpdate : RHIAccelerationStructureBuildFlagBits::kNone);
-            for (auto [i, geometry] : std::views::enumerate(geometries_)) {
+            for (const auto& [i, geometry] : std::views::enumerate(geometries_)) {
                 auto material = materials_[i];
                 RHIASGeometryFlags geometry_flags = material->IsOpaque() ? RHIASGeometryFlagBits::kOpaque : RHIASGeometryFlagBits::kNone;
                 auto device_geom = geometry->GetDeviceGeometry();
@@ -216,9 +340,26 @@ void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *all
     for (int i = 0; i < (int)geometries.size(); i++) {
         if (materials[i]->IsEmissive()) {
             // Emissive material found, insert all primitives as lights to the light buffer
-            // TODO better optimization only upload lights that are actually lit for static textured lights
+            // TODO Use light cluster hiearchy
+            // TODO classify low level lights and intense lights into different rendering paths
             auto & geom = geometries[i];
-            for (int j = 0; j * 3 < (int)geom->GetIndexCount(); j++) {
+            auto * emissive_map = materials[i]->GetEmissiveTexture();
+            auto const & vertices = geom->GetVertexBuffer();
+            auto const & indices = geom->GetIndexBufferRef();
+            uint32_t triangle_count = geom->GetIndexCount() / 3;
+            for (uint32_t j = 0; j < triangle_count; j++) {
+                if (emissive_map) {
+                    uint32_t i0 = indices[j * 3 + 0];
+                    uint32_t i1 = indices[j * 3 + 1];
+                    uint32_t i2 = indices[j * 3 + 2];
+                    if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) {
+                        continue;
+                    }
+                    if (!HasAnyEmissiveTexelInTriangle(emissive_map, vertices[i0].UV, vertices[i1].UV, vertices[i2].UV)) {
+                        continue;
+                    }
+                }
+
                 RawLight light {};
                 light.Data0.x = GetIndex();
                 light.Data0.y = i; // Geometry index

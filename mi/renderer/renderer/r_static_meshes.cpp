@@ -12,19 +12,33 @@
 #include <rdg/rdg_shader.h>
 #include <rdg/rdg_helper.h>
 
-#include "renderer/mi_material.h"
-#include "renderer/mi_renderable.h"
-#include "renderer/mi_resource_allocator.h"
-#include "renderer/mi_static_mesh.h"
+#include <renderer/mi_material.h>
+#include <renderer/mi_renderable.h>
+#include <renderer/mi_resource_allocator.h>
+#include <renderer/mi_static_mesh.h>
+#include <renderer/mi_buffer_heap.h>
+#include <renderer/r_geometry_buffer.h>
 
 #include "r_view_common.h"
-#include "../include/renderer/r_geometry_buffer.h"
 
 MI_NAMESPACE_BEGIN
+
+CVar<float> CVar_DeferredStaticMeshFragmentOpaqueThreshold(
+    "r.static_mesh.fragment_opaque_threshold",
+    "Threshold for determining whether a fragment of a static mesh is opaque or not. Fragments with alpha values below this threshold in the deferred rendering process will be discarded.",
+    0.9f
+);
+
+struct DrawDeferredStaticMeshesShaderUB {
+    float FragmentOpaqueThreshold;
+    uint32_t Padding[3];
+};
+
 class DrawDeferredStaticMeshesShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+        SHADER_UNIFORM_BUFFER(DrawDeferredStaticMeshesShaderUB, UB)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableNormalTransformBuffer)
@@ -190,6 +204,9 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
     {   
         auto params = builder.Allocate<DrawDeferredStaticMeshesShader::Params>();
         params->View = view->view_common_params_;
+        auto UB = builder.Allocate<DrawDeferredStaticMeshesShaderUB>();
+        UB->FragmentOpaqueThreshold = CVar_DeferredStaticMeshFragmentOpaqueThreshold.Get();
+        params->UB = UB;
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
         params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
         params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
@@ -437,7 +454,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
                 if (!e->IsDirty()) continue ;
                 if (auto mesh_instance = e->As<StaticMeshInstance>()) {
                     auto mesh = mesh_instance->GetStaticMesh();
-                    for (auto geom : mesh->GetGeometries()) {
+                    for (const auto& geom : mesh->GetGeometries()) {
                         if (auto dev = geom->GetDeviceGeometry()) {
                             if (auto vb = dev->GetDeviceVertexBuffer()) barrier_buffers.insert(vb->GetRHI().buffer);
                             if (auto ib = dev->GetDeviceIndexBuffer()) barrier_buffers.insert(ib->GetRHI().buffer);

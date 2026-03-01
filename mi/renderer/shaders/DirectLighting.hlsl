@@ -91,7 +91,7 @@ void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
         LightGrid_ActiveLightListCount[0] = 0;
     }
     uint Index = DispatchID;
-    if (Index >= LightStructure_UB.LighGridNumCascadesUsed * LightStructure_UB.LightGridNumGrids) {
+    if (Index >= LightStructure_UB.LightGridNumGrids) {
         return;
     }
      LightGrid_GridLightListLengthBuffer[Index] = 0;
@@ -124,8 +124,7 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
         L.Normal = N;
         L.Hash = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
         float Area = length(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0)) * 0.5f;
-        L.PerceptualIntensity = 
-            log2(1.f + RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area);
+        L.PerceptualIntensity = RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area;
         if (L.PerceptualIntensity > 1e-3f) {
             // Allocate active light list
             uint WaveNumActiveLights = WaveActiveCountBits(true);
@@ -169,12 +168,15 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
 
     // TODO this still introduces a lot of noise upon overflowing. Need a better strategy.
 
-    float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;//max(4 * R.rand(), LightStructure_UB.LightInjectionIntensityThreshold);
-
+    float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
-        if (Weight > DynamicThreshold) {
+        float LightCullingProbabilityMin = LightStructure_UB.LightCullingRate;
+        // Lights with lower contribution have higher probability to be culled.
+        float LightCullingProbability = LightCullingProbabilityMin + (1 - LightCullingProbabilityMin) * saturate(DynamicThreshold / max(Weight, 1e-6f));
+        bool bIsLightAlive = R.rand() > LightCullingProbability;
+        if (bIsLightAlive) {
             // Keep this light in the double buffer and accumulate weights depending on which
             // group it is in
             SharedGridLightListIndices[WriteLocation * WAVE_SIZE + LocalID] = LightListIndex;
@@ -224,7 +226,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     // Write to grid
     LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
     // It's mathematically incorrect to include filtered out weights here
-    float SumWeights = SumFilteredWeights;// + SumFilteredOutWeights;
+    float SumWeights = SumFilteredWeights + SumFilteredOutWeights;
     LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();
@@ -236,8 +238,16 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     }
     GroupMemoryBarrierWithGroupSync();
     uint GlobalOffset = SharedListOffsetBase + LocalOffset;
+    uint NumWritableLights = NumSampledLights;
+    uint MaxNumEntries = max(LightStructure_UB.LightGridMaxNumEntries, 1u);
+    if (GlobalOffset >= MaxNumEntries) {
+        NumWritableLights = 0;
+    } else {
+        NumWritableLights = min(NumWritableLights, MaxNumEntries - GlobalOffset);
+    }
     LightGrid_GridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
-    for (uint i = 0; i < NumSampledLights; i++) {
+    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumWritableLights;
+    for (uint i = 0; i < NumWritableLights; i++) {
         uint LightListIndex = SharedGridLightListIndices[(SampledOffset + i) * WAVE_SIZE + LocalID];
         // This time we store active light list index in the grid buffer 
         LightGrid_ListActiveLightListIndexBuffer[GlobalOffset + i] = LightListIndex;
@@ -292,19 +302,25 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float3 RadianceEstimation = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, WorldNormal, ViewDirection,
-        true, true, false, 
+        true, true, false, true,
         R,
         RadianceEstimation,
         SumResampleWeights, NumValidSamples,
         LightGridLightListCdf
     );
     // Reject using sample weights and geometry normal
-    float3 LightSampleDirection = ReservedSample.bIsEnvironmentLightSample ? ReservedSample.Position : normalize(ReservedSample.Position - WorldPosition);
+    float3 LightSampleDirection = ReservedSample.IsInfiniteLight() ? ReservedSample.Position : normalize(ReservedSample.Position - WorldPosition);
     bool bValidSample = ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0 && dot(WorldGeometryNormal, LightSampleDirection) > 0;
     if (bValidSample) {
-        float3 TraceDirection = ReservedSample.Position - WorldPosition;
-        float TraceDistance = length(TraceDirection);
-        TraceDirection /= TraceDistance;
+        float3 TraceDirection;
+        float  TraceDistance;
+        if(ReservedSample.IsInfiniteLight()) {
+            TraceDirection = ReservedSample.Position;
+            TraceDistance = C.FarPlane;
+        } else {
+            TraceDirection = normalize(ReservedSample.Position - WorldPosition);
+            TraceDistance = length(ReservedSample.Position - WorldPosition);
+        }
         // Write to the direct lighting sample buffer
         RWDirectLightingRadianceEstimateTexture[PixelIndex] = float4(RadianceEstimation, 1.f);
         bool bPrimaryThread = WaveIsFirstLane();
@@ -469,7 +485,13 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
             uint LightIndex = RWShadowRayToTraceSampledLightIndexBuffer[RayIndex];
-            LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            if (IsInvalid(LightIndex)) {
+                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayToTrace.Direction);
+            } else if (IsDirectionalLightSampleIndex(LightIndex)) {
+                // Directional light does not use LightGrid visibility history/cache.
+            } else {
+                LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            }
         }
     }
 #ifdef DEBUG_OUTPUT_TRACED_RAY
@@ -571,7 +593,7 @@ void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 Loc
     float3 RadianceEstimation = 0;
     LightSample ReservedSample = SampleOneLightSample_RIS(
         WorldPosition, 0.xxx, ViewDirection,
-        false, true, false,
+        false, true, false, true,
         R,
         RadianceEstimation,
         SumResampleWeights, NumValidSamples, LightGridLightListCdf
@@ -580,9 +602,9 @@ void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 Loc
     bool bValidSample = ReservedSample.IsValid() && dot(RadianceEstimation, 1.f.xxx) > 0;
     if (bValidSample) {
         // Final sample acquired, prepare visibility trace
-        float3 TraceDirection = ReservedSample.Position - WorldPosition;
-        float TraceDistance = length(TraceDirection);
-        TraceDirection /= TraceDistance;
+        float3 TraceDirection = ReservedSample.IsInfiniteLight() ? ReservedSample.Position : (ReservedSample.Position - WorldPosition);
+        float TraceDistance = ReservedSample.IsInfiniteLight() ? C.FarPlane : length(TraceDirection);
+        TraceDirection /= max(TraceDistance, 1e-7f);
         // Write to the direct lighting sample buffer
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = float4(RadianceEstimation, 1.f);
         bool bPrimaryThread = WaveIsFirstLane();
@@ -654,7 +676,13 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
             uint LightIndex = RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex];
-            LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            if (IsInvalid(LightIndex)) {
+                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayToTrace.Direction);
+            } else if (IsDirectionalLightSampleIndex(LightIndex)) {
+                // Directional light does not use LightGrid visibility history/cache.
+            } else {
+                LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
+            }
         }
     }
 }
@@ -791,7 +819,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     LightSample ReservedSample = SampleOneLightSample_RIS(
         scatterPos, 0.f.xxx, -RayDirection,
-        false, true, false,
+        false, true, false, true,
         rng,
         RadianceEstimation,
         SumResampleWeights, NumValidSamples, LightGridLightListCdf
@@ -799,8 +827,8 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
 
     bool scatterValid = scattered && ReservedSample.IsValid() && (dot(RadianceEstimation, 1.f.xxx) > 0);
 
-    float3 TraceDirection = ReservedSample.Position - scatterPos;
-    float TraceDistance = length(TraceDirection);
+    float3 TraceDirection = ReservedSample.IsInfiniteLight() ? ReservedSample.Position : (ReservedSample.Position - scatterPos);
+    float TraceDistance = ReservedSample.IsInfiniteLight() ? C.FarPlane : length(TraceDirection);
     TraceDirection /= max(TraceDistance, 1e-9);
 
     float3 FinalThroughput = RadianceEstimation * volumeColor;

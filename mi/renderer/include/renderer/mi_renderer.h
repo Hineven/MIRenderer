@@ -265,7 +265,6 @@ protected:
     TRef<RHIBuffer> sobol_scrambling_tile_256x256x8_;
 
     Console console_;
-
 };
 
 

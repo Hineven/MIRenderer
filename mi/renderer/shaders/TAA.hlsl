@@ -53,7 +53,7 @@ float4 ClampHistory(float4 hist, float2 uv) {
     float3 mu = m1 / 9.0f;
     float3 sigma = sqrt(abs(m2 / 9.0f - mu * mu));
     
-    float gamma = 1.5f;
+    float gamma = 2.5f;
     float3 minN = mu - gamma * sigma;
     float3 maxN = mu + gamma * sigma;
 

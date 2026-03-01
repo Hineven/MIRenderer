@@ -6,8 +6,8 @@
 
 #ifndef MI_AABB_H
 #define MI_AABB_H
-#include "mi_transform.h"
-#include "renderer/mi_renderer_fwd.h"
+#include <renderer/mi_renderer_fwd.h>
+#include <renderer/mi_transform.h>
 MI_NAMESPACE_BEGIN
 
 struct AABB {

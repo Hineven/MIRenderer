@@ -1,6 +1,7 @@
 #include <coroutine>
 #include <nlohmann/json.hpp>
 #include <zmq.hpp>
+#include <filesystem>
 
 #include "viewer_zmq.h"
 
@@ -193,7 +194,44 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
             auto types = args.value("types", std::vector<std::string>{"radiance"});
             pending_export_types_ = types;
             has_pending_export_reply_ = true;
+            // Request one-frame rendering.
+            viewer_->one_frame_rendering_requested_ = true;
             return pending_export_types_;
+        } else if (cmd == "load_gltf_abs_path") {
+            auto path_str = j["args"].value("path", std::string{});
+            if (!viewer_) {
+                reply = { {"ok", false}, {"err", "no_viewer"} };
+            } else if (path_str.empty()) {
+                reply = { {"ok", false}, {"err", "missing_path"} };
+            } else {
+                std::vector<uint32_t> indices;
+                bool ok = viewer_->LoadGLTFAbsolute(std::filesystem::path(path_str), &indices);
+                reply = { {"ok", ok} };
+                if (ok) reply["renderable_indices"] = indices; else reply["err"] = "load_failed";
+            }
+        } else if (cmd == "load_ply_abs_path") {
+            auto path_str = j["args"].value("path", std::string{});
+            if (!viewer_) {
+                reply = { {"ok", false}, {"err", "no_viewer"} };
+            } else if (path_str.empty()) {
+                reply = { {"ok", false}, {"err", "missing_path"} };
+            } else {
+                std::vector<uint32_t> indices;
+                bool ok = viewer_->LoadPLYAsGRFAbsolute(std::filesystem::path(path_str), indices);
+                reply = { {"ok", ok} };
+                if (ok) reply["renderable_indices"] = indices; else reply["err"] = "load_failed";
+            }
+        } else if (cmd == "remove_renderable_node") {
+            uint32_t idx = j["args"].value("index", UINT32_MAX);
+            if (!viewer_) {
+                reply = { {"ok", false}, {"err", "no_viewer"} };
+            } else if (idx == UINT32_MAX) {
+                reply = { {"ok", false}, {"err", "missing_index"} };
+            } else {
+                bool ok = viewer_->RemoveRenderableNodeByIndex(idx);
+                reply = { {"ok", ok} };
+                if (!ok) reply["err"] = "remove_failed";
+            }
         } else {
             reply = { {"ok", false}, {"err", "unknown_cmd"} };
         }

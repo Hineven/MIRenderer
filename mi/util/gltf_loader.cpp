@@ -6,6 +6,7 @@
 
 #include <map>
 #include <set>
+#include <stack>
 
 #include "util/gltf_loader.h"
 
@@ -43,11 +44,12 @@ static std::string to_string(cgltf_result result) {
 
 bool GLTFLoader::LoadGLTF(
     std::filesystem::path path, DeviceBindlessResourceAllocator &allocator,
-    Scene &world,
+    Scene &world, RenderableNodeRegistry * reg,
     Material * default_material,
     std::vector<TRef<Geometry> > &out_geometries,
     std::vector<TRef<Material> > &out_materials,
-    std::vector<TRef<StaticMeshInstance> > &out_meshes
+    std::vector<TRef<StaticMeshInstance> > &out_meshes,
+    std::vector<TRef<RenderableNode>> * out_nodes
 ) {
     assert(!path.empty());
     if (default_material) default_material->UpdateOnDevice(&allocator);
@@ -384,44 +386,71 @@ bool GLTFLoader::LoadGLTF(
         mesh_map[&gltf_mesh] = mesh.Raw();
     }
     std::vector<TRef<StaticMeshInstance>> mesh_instances;
-    std::function<void (cgltf_node const *gltf_node)> VisitNode
-        = [&](cgltf_node const *gltf_node)
+    std::vector<TRef<RenderableNode>> local_nodes;
+    local_nodes.reserve(gltf_model->nodes_count);
+
+    auto MakeNode = [&](const cgltf_node* node, const Transform& world_t) {
+        std::string name = node->name ? node->name : "";
+        auto n = reg->Create(name);
+        n->SetLocalTransform(Transform::FromMatrix(glm::mat4(1.0f))); // set below
+        n->SetRenderable(nullptr);
+        n->SetLocalTransform(Transform::FromMatrix(world_t.GetToWorldTransformMatrix()));
+        n->UpdateWorldTransform(nullptr);
+        return n;
+    };
+
+    std::function<TRef<RenderableNode>(const cgltf_node*, RenderableNode*)> VisitNode
+        = [&](const cgltf_node* gltf_node, RenderableNode* parent) -> TRef<RenderableNode>
     {
-        if(gltf_node == nullptr)
-            return ;   // out of bounds
-        glm::mat4 world_transform(1.0);
-        cgltf_node_transform_world(gltf_node, (float*)&world_transform);
-        if(gltf_node->mesh != nullptr)
-        {
+        if (!gltf_node) return {};
+        glm::mat4 world_m(1.0f);
+        cgltf_node_transform_local(gltf_node, (float*)&world_m);
+        Transform local_t = Transform::FromMatrix(world_m);
+        auto node = reg->Create(gltf_node->name ? gltf_node->name : "");
+        node->SetLocalTransform(local_t);
+        if (parent) parent->AddChild(node);
+        if (gltf_node->mesh != nullptr) {
             auto it = mesh_map.find(gltf_node->mesh);
-            if(it != mesh_map.end())
-            {
+            if (it != mesh_map.end()) {
                 auto mesh = it->second;
                 TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(
-                    &world, mesh.Raw(), Transform::FromMatrix(world_transform)
+                    &world, mesh.Raw(), Transform::FromMatrix(glm::mat4(1.0f))
                 );
+                node->SetRenderable(instance_ref.Raw());
                 mesh_instances.push_back(instance_ref);
             }
         }
-
-        for(size_t i = 0; i < gltf_node->children_count; ++i)
-        {
-            VisitNode(gltf_node->children[i]);
+        for (size_t i = 0; i < gltf_node->children_count; ++i) {
+            VisitNode(gltf_node->children[i], node.Raw());
         }
+        node->UpdateWorldTransform(parent ? &parent->GetWorldTransform() : nullptr);
+        local_nodes.push_back(node);
+        return node;
     };
+
     cgltf_scene const &gltf_scene = gltf_model->scene != nullptr ? *gltf_model->scene : gltf_model->scenes[0];
-    for(size_t i = 0; i < gltf_scene.nodes_count; ++i)
-        VisitNode(gltf_scene.nodes[i]);
+    std::vector<TRef<RenderableNode>> roots;
+    for(size_t i = 0; i < gltf_scene.nodes_count; ++i) {
+        auto root = VisitNode(gltf_scene.nodes[i], nullptr);
+        if (root) roots.push_back(root);
+    }
+
+    // Add instances to output
     out_meshes.insert(out_meshes.end(), mesh_instances.begin(), mesh_instances.end());
-    for (auto e : materials) {
-        out_materials.push_back(e.second);
+    if (out_nodes) {
+        out_nodes->insert(out_nodes->end(), roots.begin(), roots.end());
     }
-    for (auto e : geometry_map) {
-        out_geometries.push_back(e.second);
-    }
+     for (auto e : materials) {
+         out_materials.push_back(e.second);
+     }
+     for (auto e : geometry_map) {
+         out_geometries.push_back(e.second);
+     }
+
     cgltf_free(gltf_model);
     return true;
 }
 
 
 MI_NAMESPACE_END
+

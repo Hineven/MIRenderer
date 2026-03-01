@@ -1,6 +1,7 @@
 #include "viewer_app.h"
 
 #include <fstream>
+#include <algorithm>
 #include "vulkan/vulkan.hpp"
 #include <glfw/glfw3.h>
 #include <imgui.h>
@@ -26,6 +27,7 @@
 #include "../../renderer/renderer/r_volume_indirect_lighting.h"
 #include "../../renderer/renderer/r_volume_primitives.h"
 #include "../../renderer/renderer/r_persistent.h"
+#include "../../renderer/renderer/r_gaussian_radiance_field.h"
 
 #include "rdg/rdg_shader.h"
 #include "util/texture_loader.h"
@@ -36,6 +38,8 @@
 #include "3d_viewer.h"
 #include "core/util/command_line.h"
 #include "viewer_zmq.h"
+#include "viewer_commands.h"
+#include "viewer_control.h"
 #include "renderer/mi_renderer_view.h"
 #include "core/pixel_format.h"
 
@@ -225,140 +229,7 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
     LoadPinnedCVarsFromConfig(json_config, pinned_cvars_);
     console_.Initialize(json_config);
 
-    // Register viewer commands (app-owned state: pinned CVars and camera).
-    auto CompleteCVarId = [](std::string_view prefix) {
-        auto &reg = CVarRegistry::GetInstance();
-        auto list = reg.GetAllCVars();
-        std::vector<std::string> out;
-        out.reserve(list.size());
-        for (auto *e : list) {
-            const auto &id = e->GetId();
-            if (prefix.empty() || id.rfind(std::string(prefix), 0) == 0) out.push_back(id);
-        }
-        std::sort(out.begin(), out.end());
-        return out;
-    };
-
-    CommandRegistry::Get().MakeAndRegister(
-        "pin_cvar",
-        {
-            CommandTokenSpec::KeywordSet({"pin"}),
-            CommandTokenSpec::Free({}, "cvar", CompleteCVarId),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 2) {
-                MI_WARN("ViewerApp: expected 'pin <cvar>'");
-                return;
-            }
-            const std::string &cvar_id = match.args[1];
-            auto &reg = CVarRegistry::GetInstance();
-            CVarBase *cvar = reg.GetCVar(cvar_id);
-            if (!cvar) {
-                MI_WARN("ViewerApp: unknown cvar '{}'", cvar_id);
-                return;
-            }
-
-            auto it = std::find(pinned_cvars_.begin(), pinned_cvars_.end(), cvar);
-            const bool already_pinned = (it != pinned_cvars_.end());
-            if (!already_pinned) {
-                pinned_cvars_.push_back(cvar);
-                MI_LOG(MIInfraLogType::kInfo, "Pinned cvar '{}'", cvar_id);
-            } else {
-                pinned_cvars_.erase(it);
-                MI_LOG(MIInfraLogType::kInfo, "Unpinned cvar '{}'", cvar_id);
-            }
-        }
-    );
-
-    CommandRegistry::Get().MakeAndRegister(
-        "camera_dir",
-        {
-            CommandTokenSpec::KeywordSet({"c"}),
-            CommandTokenSpec::KeywordSet({"dir"}),
-            CommandTokenSpec::Free({}, "x"),
-            CommandTokenSpec::Free({}, "y"),
-            CommandTokenSpec::Free({}, "z"),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 5) {
-                MI_WARN("ViewerApp: expected 'c dir <x> <y> <z>'");
-                return;
-            }
-            if (!view_) {
-                MI_WARN("ViewerApp: camera not ready yet");
-                return;
-            }
-            try {
-                glm::vec3 dir;
-                dir.x = std::stof(match.args[2]);
-                dir.y = std::stof(match.args[3]);
-                dir.z = std::stof(match.args[4]);
-                const float len = glm::length(dir);
-                if (len <= 1e-6f) {
-                    MI_WARN("ViewerApp: direction length is too small");
-                    return;
-                }
-                view_->camera_.direction = dir / len;
-            } catch (...) {
-                MI_WARN("ViewerApp: invalid float(s) for 'c dir'");
-            }
-        }
-    );
-
-    CommandRegistry::Get().MakeAndRegister(
-        "camera_pos",
-        {
-            CommandTokenSpec::KeywordSet({"c"}),
-            CommandTokenSpec::KeywordSet({"pos"}),
-            CommandTokenSpec::Free({}, "x"),
-            CommandTokenSpec::Free({}, "y"),
-            CommandTokenSpec::Free({}, "z"),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 5) {
-                MI_WARN("ViewerApp: expected 'c pos <x> <y> <z>'");
-                return;
-            }
-            if (!view_) {
-                MI_WARN("ViewerApp: camera not ready yet");
-                return;
-            }
-            try {
-                glm::vec3 pos;
-                pos.x = std::stof(match.args[2]);
-                pos.y = std::stof(match.args[3]);
-                pos.z = std::stof(match.args[4]);
-                view_->camera_.position = pos;
-            } catch (...) {
-                MI_WARN("ViewerApp: invalid float(s) for 'c pos'");
-            }
-        }
-    );
-
-    CommandRegistry::Get().MakeAndRegister(
-        "camera_fovy",
-        {
-            CommandTokenSpec::KeywordSet({"c"}),
-            CommandTokenSpec::KeywordSet({"fovy"}),
-            CommandTokenSpec::Free({}, "fovy"),
-        },
-        [this](const CommandMatchResult &match) {
-            if (match.args.size() < 3) {
-                MI_WARN("ViewerApp: expected 'c fovy <fovy>'");
-                return;
-            }
-            if (!view_) {
-                MI_WARN("ViewerApp: camera not ready yet");
-                return;
-            }
-            try {
-                float fovy = std::stof(match.args[2]);
-                view_->camera_.fov_Y = fovy;
-            } catch (...) {
-                MI_WARN("ViewerApp: invalid float for 'c fovy'");
-            }
-        }
-    );
+    RegisterViewerCommands(*this);
 
     if (GetCurrentThreadType() != ThreadType::kUnknown) {
         mi_assert(false, "MainLoop: somehow the thread calling Start() is known.");
@@ -444,6 +315,8 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
 
     resource_allocator_ = Create<DeviceBindlessResourceAllocator>();
 
+    renderable_node_registry_ = Create<RenderableNodeRegistry>();
+
     Renderer::Get().Init(resource_allocator_.Raw(), pool_.Raw());
 
     // Initialize ZMQ server.
@@ -478,7 +351,7 @@ void ViewerApp::Destroy() {
 
     view_.reset();
 
-    meshes_.clear();
+    loaded_scenes_.clear();
 
     scene_.reset();
 
@@ -489,6 +362,7 @@ void ViewerApp::Destroy() {
     assert(pool_.GetRefCount() == 1);
     pool_.SafeRelease();
 
+    renderable_node_registry_.SafeRelease();
     resource_allocator_.SafeRelease();
 
     RDGShaderLibrary::Get().Deinit();
@@ -597,224 +471,7 @@ void ViewerApp::HandleKeyboardShortcuts(FrameInternalDelayedOps& ops) {
 }
 
 void ViewerApp::HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration) {
-
-    auto& io = ImGui::GetIO();
-    CVar_DebugCursorScreenCoordsX.Set((int)round(io.MousePos.x));
-    CVar_DebugCursorScreenCoordsY.Set((int)round(io.MousePos.y));
-
-    // This function is now expected to be called within an existing window/child.
-    // Make it look like a panel header.
-    ImGui::TextUnformatted("Rendering");
-    ImGui::Separator();
-
-    {
-        if (ImGui::TreeNode("Pinned CVars")) {
-            auto DrawImGuiControlForCVar = [&](CVarBase& e) {
-                auto cvar_name = e.GetId();
-                if (e.GetType() == CVarType::kBool) {
-                    auto cvar = static_cast<CVar<bool>*>(&e);
-                    bool value = cvar->Get();
-                    if (ImGui::Checkbox(cvar_name.c_str(), &value)) {
-                        cvar->Set(value);
-                    }
-                } else if (e.GetType() == CVarType::kFloat) {
-                    auto cvar = static_cast<CVar<float>*>(&e);
-                    float value = cvar->Get();
-                    if (ImGui::DragFloat(cvar_name.c_str(), &value, 0.01f)) {
-                        cvar->Set(value);
-                    }
-                } else if (e.GetType() == CVarType::kFloat2) {
-                    auto cvar = static_cast<CVar<glm::vec2>*>(&e);
-                    glm::vec2 value = cvar->Get();
-                    if (ImGui::DragFloat2(cvar_name.c_str(), &value[0], 0.01f)) {
-                        cvar->Set(value);
-                    }
-                } else if (e.GetType() == CVarType::kFloat3) {
-                    auto cvar = static_cast<CVar<glm::vec3>*>(&e);
-                    glm::vec3 value = cvar->Get();
-                    if (ImGui::DragFloat3(cvar_name.c_str(), &value[0], 0.01f)) {
-                        cvar->Set(value);
-                    }
-                } else if (e.GetType() == CVarType::kFloat4) {
-                    auto cvar = static_cast<CVar<glm::vec4>*>(&e);
-                    glm::vec4 value = cvar->Get();
-                    if (ImGui::DragFloat4(cvar_name.c_str(), &value[0], 0.01f)) {
-                        cvar->Set(value);
-                    }
-                } else if (e.GetType() == CVarType::kInt) {
-                    auto cvar = static_cast<CVar<int>*>(&e);
-                    int value = cvar->Get();
-                    if (ImGui::DragInt(cvar_name.c_str(), &value)) {
-                        cvar->Set(value);
-                    }
-                } else if (e.GetType() == CVarType::kString) {
-                    auto cvar = static_cast<CVar<std::string>*>(&e);
-                    std::string value = cvar->Get();
-                    char buffer[256];
-                    strncpy_s(buffer, value.c_str(), sizeof(buffer));
-                    if (ImGui::InputText(cvar_name.c_str(), buffer, sizeof(buffer))) {
-                        cvar->Set(std::string(buffer));
-                    }
-                }
-            };
-            ImGui::Indent(20);
-            for (auto & cvar : pinned_cvars_) {
-                DrawImGuiControlForCVar(*cvar);
-            }
-            ImGui::Unindent(20);
-            ImGui::TreePop();
-        }
-        if (ImGui::Button("Reload Shaders")) {
-            ops.should_reload_shaders = true;
-        }
-        if (ImGui::CollapsingHeader("Selected Renderable")) {
-            if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index];
-                ImGui::Text("Index: %d", renderable->GetIndex());
-                ImGui::Text("Type: %s", ToString(renderable->GetType()).c_str());
-                Transform& t = renderable->EditTransform();
-                ImGui::InputFloat3("Position", &t.position[0]);
-                ImGui::InputFloat3("Rotation", &t.rotation[0]);
-                ImGui::InputFloat3("Scale", &t.scale[0]);
-                ImGui::Text("AABB: Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f)",
-                    renderable->GetAABB().min.x, renderable->GetAABB().min.y, renderable->GetAABB().min.z,
-                    renderable->GetAABB().max.x, renderable->GetAABB().max.y, renderable->GetAABB().max.z
-                );
-                bool hide = renderable->IsVisible();
-                ImGui::Checkbox("Visible", &hide);
-                renderable->SetVisible(hide);
-            } else {
-                ImGui::Text("None");
-                if (ImGui::Button("Reveal All Hidden")) {
-                    for (const auto& r : scene_->GetRenderables()) {
-                        if (r) r->SetVisible(true);
-                    }
-                }
-            }
-        }
-        if (!baking_state_.is_baking_mode) {
-            if (ImGui::Button("Start Baking")) {
-                ops.should_start_baking = true;
-            }
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-            if (ImGui::Button("Halt Baking")) {
-                baking_state_.is_baking_mode = false;
-            }
-            ImGui::PopStyleColor();
-        }
-        if (baking_state_.is_baking_mode) {
-            float fraction = (float)baking_state_.baking_frame_index / (float)baking_state_.baking_max_num_frames;
-            ImGui::Text("Baking Mode: Camera %d / %d, Frame %d / %d",
-                baking_state_.baking_camera_index + 1, (uint32_t)baking_state_.baking_camera_positions.size(),
-                baking_state_.baking_frame_index + 1, baking_state_.baking_max_num_frames
-            );
-            float remaining_frames = (float)(((int)baking_state_.baking_camera_positions.size() - baking_state_.baking_camera_index - 1) * baking_state_.baking_max_num_frames
-                + (baking_state_.baking_max_num_frames - baking_state_.baking_frame_index));
-            float avg_frame_time = cpu_duration;
-            float raw_remaining_time_sec = remaining_frames * avg_frame_time;
-            static float remaining_time_sec = 0;
-            remaining_time_sec = remaining_time_sec * 0.99f + raw_remaining_time_sec * 0.01f;
-            float remaining_time_min = remaining_time_sec / 60.0f;
-            float remaining_time_hr = remaining_time_min / 60.0f;
-            float rest_remaining_time_min = fmod(remaining_time_min, 60.0f);
-            float rest_remaining_time_sec = fmod(remaining_time_sec, 60.0f);
-            int show_hr = (int)floor(remaining_time_hr);
-            int show_min = (int)floor(rest_remaining_time_min);
-            int show_sec = (int)floor(rest_remaining_time_sec);
-            ImGui::Text("ETA: %02d:%02d:%02d", show_hr, show_min, show_sec);
-            ImGui::SameLine();
-            ImGui::ProgressBar(fraction, ImVec2(0.0f, 0.0f));
-        }
-        if (ImGui::CollapsingHeader("Performance")) {
-            ImGui::Text("CPU: %3.2f ms (FPS: %3.2f)", cpu_duration * 1000.0, 1.0f / cpu_duration);
-            float device_duration = 0.f;
-            for (auto & period : time_periods) {
-                device_duration += period.duration;
-            }
-            if (!time_periods.empty()) ImGui::Text("GPU: %.2f ms", device_duration * 1000.0);
-            else ImGui::Text("GPU : N/A (Available in Debug build)");
-            ImGui::Separator();
-            if (RHICmdStats::IsEnabled()) {
-                uint32_t num_rhi_commands = 0;
-                {
-                    auto counters = RHICmdStats::Get().GetLastFrameCounters();
-                    for (auto& counter : counters) {
-                        num_rhi_commands += (uint32_t)counter;
-                    }
-                }
-                // TODO this is buggy (it always displays 0)
-                ImGui::Text("RHI Command Throughput: %d", num_rhi_commands);
-            } else {
-                ImGui::Text("RHI Command Throughput: N/A (Available in Debug build)");
-            }
-            if (DebugProfIsEnabled()) {
-                ImGui::Text("CPU Frame Timed Sections:");
-                auto prof_cpu_periods = DebugProfGetSectionStatistics();
-                for (auto& period : prof_cpu_periods) {
-                    ImGui::Text("  %s: %3.2f ms (%5d)", period.second.name.c_str(), double(period.second.time_ns) / 1e6, period.second.call_count);
-                }
-                DebugProfResetSectionTimes();
-            } else {
-                ImGui::Text("CPU Frame Timed Sections: N/A (Available in Debug build)");
-            }
-            ImGui::Separator();
-            ImGui::Indent(20);
-            if (ImGui::TreeNode("Detailed GPU Profile")) {
-                std::function<void(int, int, int)> DrawTree;
-                DrawTree = [&](int start, int end, int depth) {
-                    ImGui::Indent(20);
-                    int last = start;
-                    for (int i = start; i < end; i++) {
-                        if (time_periods[i].class_names.size() <= depth
-                        ||  time_periods[i].class_names[depth] != time_periods[last].class_names[depth]) {
-                            if (last != i) {
-                                std::string node_name = time_periods[last].class_names[depth];
-                                float duration = 0.0f;
-                                for (int j = last; j < i; j++) {
-                                    duration += time_periods[j].duration;
-                                }
-                                std::string id = node_name;
-                                node_name += std::format(" ({:.2f} ms)", duration * 1000);
-                                if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
-                                    DrawTree(last, i, depth + 1);
-                                    ImGui::TreePop();
-                                }
-                            }
-                            if (time_periods[i].class_names.size() <= depth) {
-                                std::string node_name = time_periods[i].pass_name;
-                                if (node_name.empty()) node_name = "<unnamed>";
-                                // Update stats per pass name from start of program.
-                                auto & stat = perf_stats_[node_name];
-                                float ms = time_periods[i].duration * 1000.0f;
-                                stat.min_ms = std::min(stat.min_ms, ms);
-                                stat.max_ms = std::max(stat.max_ms, ms);
-                                ImGui::Text("%s: %.2f ms (min %.2f / max %.2f)", node_name.c_str(), ms, stat.min_ms, stat.max_ms);
-                            }
-                            last = i + 1;
-                        }
-                    }
-                    if (last < end) {
-                        std::string node_name = time_periods[last].class_names[depth];
-                        float duration = 0.0f;
-                        for (int j = last; j < end; j++) {
-                            duration += time_periods[j].duration;
-                        }
-                        std::string id = node_name;
-                        node_name += std::format(" ({:.2f} ms)", duration * 1000);
-                        if (ImGui::TreeNode(id.c_str(), "%s", node_name.c_str())) {
-                            DrawTree(last, end, depth + 1);
-                            ImGui::TreePop();
-                        }
-                    }
-                    ImGui::Unindent(20);
-                };
-                DrawTree(0, (int)time_periods.size(), 0);
-                ImGui::TreePop();
-            }
-            ImGui::Unindent(20);
-        }
-    }
+    ViewerControlUI::DrawControlUI(*this, ops, std::move(time_periods), cpu_duration);
 }
 
 void ViewerApp::ProcessClickSelect(FrameInternalDelayedOps& ops) {
@@ -1010,7 +667,7 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
                 && renderable_index != arrow_mesh_z_instance_->GetIndex()
             ) {
                 selection_state_.selected_deferred_renderable_index = renderable_index;
-                auto renderable = scene_->GetRenderables()[renderable_index].Raw();
+                auto renderable = scene_->GetRenderableByIndex(renderable_index);
                 arrow_mesh_x_instance_->EditTransform().position = renderable->GetTransform().position;
                 arrow_mesh_x_instance_->SetVisible(true);
                 arrow_mesh_y_instance_->EditTransform().position = renderable->GetTransform().position;
@@ -1050,7 +707,7 @@ void ViewerApp::ProcessAxisDragging() {
                 // 在箭头上左键点下，此时开始拖拽
                 input_state_.drag_mouse_start_pos_ = mouse;
                 if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                    auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
+                    auto renderable = scene_->GetRenderableByIndex(selection_state_.selected_deferred_renderable_index);
                     input_state_.drag_start_obj_pos_ = renderable->GetTransform().position;
                 }
                 input_state_.dragging_ = true;
@@ -1075,7 +732,7 @@ void ViewerApp::ProcessAxisDragging() {
                 delta_projected[axis] = delta[axis];
                 end_world_pos = input_state_.drag_start_obj_pos_ + delta_projected;
                 if (selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
-                    auto renderable = scene_->GetRenderables()[selection_state_.selected_deferred_renderable_index].Raw();
+                    auto renderable = scene_->GetRenderableByIndex(selection_state_.selected_deferred_renderable_index);
                     renderable->EditTransform().position = end_world_pos;
                     arrow_mesh_x_instance_->EditTransform().position = end_world_pos;
                     arrow_mesh_y_instance_->EditTransform().position = end_world_pos;
@@ -1112,6 +769,11 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        // Start of frame operations
+        for (auto e : next_frame_operations_) e();
+        next_frame_operations_.clear();
+
+        // Major UI and Input Handling
         HandleNavigationInput(cpu_duration);
         HandleKeyboardShortcuts(ops);
 
@@ -1168,8 +830,10 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         RDGProfilingContextRef current_profiling_context;
         {
             RenderGraphBuilder builder;
-            bool should_render_scene = !suspended_ || request_one_render_;
+            bool should_render_scene = !suspended_ || one_frame_rendering_requested_;
             RenderFrame(builder, view_.get(), should_render_scene);
+            // Clear flag
+            one_frame_rendering_requested_ = false;
 
             // Mark export flags.
             if (ops.should_process_click_select && !io.WantCaptureMouse) {
@@ -1197,7 +861,19 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                     any_export_requests_pending = true;
                     view_->radiance_->SetExport();
                 }
-                // TODO more types
+                if (e == "overlay") {
+                    any_export_requests_pending = true;
+                    view_->overlay_->SetExport();
+                }
+                if (e == "depth") {
+                    any_export_requests_pending = true;
+                    view_->g_buffer_->G_depth_->SetExport();
+                }
+                if (e == "grf_depth") {
+                    any_export_requests_pending = true;
+                    view_->grf_->stochastic_rendering_depth_->SetExport();
+                }
+                // TODO more types...
             }
 
             std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
@@ -1238,8 +914,12 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             for (const auto &e : frame_export_requests) {
                 if (e == "radiance") {
                     PackOne(e, view_->radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
+                } else if (e == "overlay") {
+                    PackOne(e, view_->overlay_.Raw(), PixelFormatType::kR8G8B8A8_UNORM);
                 } else if (e == "depth") {
                     PackOne(e, view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
+                } else if (e == "grf_depth") {
+                    PackOne(e, view_->grf_->stochastic_rendering_depth_.Raw(), PixelFormatType::kD32_FLOAT);
                 } else if (e == "transmittance") {
                     PackOne(e, view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
                 } else if (e == "visibility") {
@@ -1280,6 +960,10 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             previous_frame_sync_point->Reset();
         }
 
+        // Time to recycle renderables and rendering resources marked for deletion from the previous frame!
+        scene_->AdvanceFrameForDelayedDestruction();
+        resource_allocator_->AdvanceFrameForDelayedDestruction();
+
         // Try resolve previous frame profiling results (non-blocking) after the previous frame has finished.
         // In case if not ready yet, keep last results.
         if (pending_profiling_context) {
@@ -1299,6 +983,11 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
     }
 }
 
+void ViewerApp::EnqueueNextFrameOperations(std::function<void()> func) {
+    // Delayed to the beginning of next frame
+    next_frame_operations_.push_back(std::move(func));
+}
+
 std::vector<ViewerApp::ExportedRenderResult> ViewerApp::GetAndClearExportedFrameResults() {
     return std::move(exported_render_results_);
 }
@@ -1314,6 +1003,84 @@ ViewerApp::ViewerStatus ViewerApp::GetStatus() {
     return s;
 }
 
+bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices) {
+    if (!scene_ || !resource_allocator_) return false;
+    if (path.empty() || !std::filesystem::exists(path)) {
+        MI_WARN("LoadGLTFAbsolute: file not found '{}'.", path.string());
+        return false;
+    }
+
+    std::vector<TRef<Geometry>> geometries;
+    std::vector<TRef<Material>> materials;
+    std::vector<TRef<RenderableNode>> nodes;
+    std::vector<TRef<StaticMeshInstance>> new_meshes;
+    if (!GLTFLoader::LoadGLTF(
+        path,
+        *resource_allocator_,
+        *scene_,
+        renderable_node_registry_.Raw(),
+        default_material_.Raw(),
+        geometries,
+        materials,
+        new_meshes,
+        &nodes)) {
+        MI_WARN("LoadGLTFAbsolute: failed to load GLTF '{}'.", path.string());
+        return false;
+    }
+
+    RegisterLoadedScene(path.filename().string(), nodes);
+    auto & r = Renderer::Get();
+    auto & rhi = RHI::Get();
+    for (auto e : new_meshes) {
+        if (e) {
+            e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
+            if (out_renderable_indices) out_renderable_indices->push_back(e->GetIndex());
+        }
+    }
+    return true;
+}
+
+bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices) {
+    if (!scene_ || !resource_allocator_) return false;
+    if (path.empty() || !std::filesystem::exists(path)) {
+        MI_WARN("LoadPLYAbsolute: file not found '{}'.", path.string());
+        return false;
+    }
+
+    TRef<GaussianRadianceField> grf;
+    if (!GaussianRadianceFieldLoader::LoadPLY(path, *resource_allocator_, grf)) {
+        MI_WARN("LoadPLYAbsolute: failed to load PLY '{}'.", path.string());
+        return false;
+    }
+    grf->UpdateOnDevice(resource_allocator_.Raw());
+    auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), grf.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
+    if (inst) {
+        out_renderable_indices.push_back(inst->GetIndex());
+        auto node = renderable_node_registry_->Create(path.filename().string());
+        node->SetRenderable(inst.Raw());
+        node->UpdateWorldTransform();
+        RegisterLoadedScene(path.filename().string(), { node });
+    }
+    return inst.IsValid();
+}
+
+bool ViewerApp::RemoveRenderableNodeByIndex(uint32_t renderable_node_index) {
+    if (!scene_) return false;
+    mi_assert(false, "Not implemented yet.");
+    return true;
+}
+
+bool ViewerApp::CleanAllRenderableNodes() {
+    if (!scene_) return false;
+    loaded_scenes_.clear();
+
+    selection_state_ = {};
+    if (arrow_mesh_x_instance_) arrow_mesh_x_instance_->SetVisible(false);
+    if (arrow_mesh_y_instance_) arrow_mesh_y_instance_->SetVisible(false);
+    if (arrow_mesh_z_instance_) arrow_mesh_z_instance_->SetVisible(false);
+    return true;
+}
+
 void Run3DViewer(std::unique_ptr<MIInfraInterface> &&infra, const MainLoopStartConfig &cfg) {
     ViewerApp app;
 
@@ -1327,5 +1094,4 @@ void Run3DViewer(std::unique_ptr<MIInfraInterface> &&infra, const MainLoopStartC
 }
 
 MI_NAMESPACE_END
-
 

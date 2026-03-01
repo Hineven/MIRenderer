@@ -14,12 +14,11 @@
 MI_NAMESPACE_BEGIN
 // DeviceVolumePrimitives implementation
 DeviceVolumePrimitives::DeviceVolumePrimitives(DeviceBindlessResourceAllocator * allocator) {
-    index_ = allocator->AllocateVolumePrimitivesSlot();
+    slot_ = allocator->AllocateVolumePrimitivesSlotKeeper();
 }
 
 DeviceVolumePrimitives::~DeviceVolumePrimitives() {
-    // Note: We don't have access to the allocator here, so we assume it will be cleaned up elsewhere
-    // This follows the same pattern as DeviceStaticMesh in the reference implementation
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 // VolumePrimitives implementation
@@ -120,7 +119,7 @@ void VolumePrimitives::UpdateOnDevice_Async(DeviceBindlessResourceAllocator * al
     // Upload header to device
     Helpers::Upload_Async(queue,
         alloc->GetVolumePrimitivesHeaderBuffer(),
-        sizeof(VolumePrimitivesHeader) * device_volume_primitives_->index_,
+        sizeof(VolumePrimitivesHeader) * device_volume_primitives_->GetIndex(),
         header
     );
 

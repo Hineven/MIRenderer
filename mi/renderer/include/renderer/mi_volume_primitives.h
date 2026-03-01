@@ -25,28 +25,29 @@ class DeviceVolumePrimitives : public NonCopyable, public NonMovable, public Ref
 public:
     friend class VolumePrimitives;
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return slot_ && (slot_->Get() != UINT32_MAX);
     }
     FORCEINLINE uint32_t GetIndex () const {
-        return index_;
+        return slot_ ? slot_->Get() : UINT32_MAX;
     }
     FORCEINLINE uint32_t GetPrimitiveOffset () const {
-        return (uint32_t)(primitive_buffer_->GetOffset() / sizeof(PackedVolumePrimitive));
+         return (uint32_t)(primitive_buffer_->GetOffset() / sizeof(PackedVolumePrimitive));
     }
 
     FORCEINLINE RHIAccelerationStructure * GetBLAS () const {
-        return BLAS_.Raw();
+         return BLAS_.Raw();
     }
 
 protected:
-    DeviceVolumePrimitives (DeviceBindlessResourceAllocator * allocator) ;
-    ~DeviceVolumePrimitives() ;
+     DeviceVolumePrimitives (DeviceBindlessResourceAllocator * allocator) ;
+     ~DeviceVolumePrimitives() ;
 
-    uint32_t index_ {UINT32_MAX}; // Index of the volume primitives in the bindless device allocator
-    // Store a list of volume primitives on the device
-    TRef<DeviceUberBufferAllocation> primitive_buffer_;
+    // Index keeper of the volume primitives slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
+     // Store a list of volume primitives on the device
+     TRef<DeviceUberBufferAllocation> primitive_buffer_;
 
-    TRef<RHIAccelerationStructure> BLAS_; // Bottom level acceleration structure for the volume primitives
+     TRef<RHIAccelerationStructure> BLAS_; // Bottom level acceleration structure for the volume primitives
 };
 
 class VolumePrimitives : public NonMovable, public NonCopyable, public RefCounted<> {

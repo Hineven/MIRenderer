@@ -47,7 +47,9 @@ struct ReferencePathTracerUB {
     uint FrameIndex;
     uint EnableAccumulation;
     uint MaxNumBounces;
-    uint Padding1;
+    float EnvironmentMapLOD;
+    float3 EnvironmentMapMultiplier;
+    uint Padding; // Padding to make the size of the struct a multiple of 16 bytes
 };
 
 ConstantBuffer<ReferencePathTracerUB> UB;
@@ -72,9 +74,9 @@ RWTexture2D<float4> RWRadiance; // Output radiance (1spp)
 
 // Remove Volume Primitive from Overlapping Volume Primitive List.
 void RemoveVolumePrimitive(
-    uint PrimitiveIndex, 
+    uint PrimitiveIndex,
     uint InstanceIndex,
-    inout uint Count, 
+    inout uint Count,
     inout uint VolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES],
     inout uint InstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES]
 ) {
@@ -177,7 +179,7 @@ float ResampleVolumeGrids(
 ) {
     float SampledDistance = Infinity;
     OutSampledColor = float3(0, 0, 0);
-    
+
     // Translate all the grids where the current ray is located.
     [unroll(MAX_OVERLAPPING_VOLUME_GRIDS)]
     for (int i = 0; i < min(NumVolumeGrids, MAX_OVERLAPPING_VOLUME_GRIDS); i++)
@@ -185,40 +187,40 @@ float ResampleVolumeGrids(
         uint InstanceIndex = InstanceIndices[i];
         uint VolumeGridIndex = VolumeGridIndices[i];
         VolumeGridHeader Header = VolumeGridHeaderBuffer[VolumeGridIndex];
-        
+
         // 1. Calculate path of ray in object space
         float3x4 WorldToObj = RenderableInverseTransformBuffer[InstanceIndex];
         float3 RayOriginObj = mul(WorldToObj, float4(Ray.Origin, 1.0));
         float3 RayDirObj = mul((float3x3) WorldToObj, Ray.Direction);
-        
+
         // 2. Intersect AABB to find entry/exit
         // Get AABB Size.
         float3 BoxMin = Header.LocalMin;
         float3 BoxMax = Header.LocalMax;
         float3 BoxSize = max(BoxMax - BoxMin, 1e-6f);
         float3 InvBoxSize = 1.0f / BoxSize;
-        
+
         float tNear, tFar;
         bool bHit = IntersectAABB(RayOriginObj, RayDirObj, BoxMin, BoxMax, tNear, tFar);
         if (!bHit)
         {
             continue;
         }
-        
+
         float tStart = max(0.0f, tNear);
         float tEnd = max(0.0f, tFar);
         if (tStart >= tEnd)
         {
             continue;
         }
-        
+
         // 3. Get Bindless Texture
         Texture3D<float4> VolumeTex = GetBindlessVolumeSRV(Header.TextureBindlessIndex);
-        
+
         // 4. Calculate Majorant (Max Density) for this ray segment
         float3 RayOriginNorm = (RayOriginObj - BoxMin) * InvBoxSize;
         float3 RayDirNorm = RayDirObj * InvBoxSize;
-        
+
         float MaxDensity = CalculateMaxDensityDDA(
             VolumeTex,
             RayOriginNorm,
@@ -227,29 +229,29 @@ float ResampleVolumeGrids(
             tEnd,
             1.0f
         );
-        
+
         MaxDensity = max(MaxDensity, 1e-6f);
         float InvMaxDensity = 1.0f / MaxDensity;
-        
+
         // 5. Delta Tracking Loop
         float tCurrent = tStart;
-        
+
         while (true)
         {
             // Free flight step
             tCurrent -= log(max(1e-6f, rng.rand())) * InvMaxDensity;
-            
+
             if (tCurrent >= tEnd)
             {
                 // Pass through the volume
                 break;
             }
-            
+
             // Sample Density at current position
             float3 UVW = RayOriginNorm + RayDirNorm * tCurrent;
             float4 TexVal = VolumeTex.SampleLevel(PointWrapSampler, UVW, 0);
             float Density = TexVal.a;
-            
+
             // Null collision rejection
             if (rng.rand() < (Density * InvMaxDensity))
             {
@@ -301,24 +303,24 @@ void ReferencePathTracerRaygen() {
     uint OverlappingVolumePrimitivesInstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
     uint OverlappingVolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
     uint CurrentOverlappingVolumePrimitiveCount = 0;
-    
+
     // --- State: Grids ---
     uint OverlappingVolumeGridsInstanceIndices[MAX_OVERLAPPING_VOLUME_GRIDS];
     uint OverlappingVolumeGridIndices[MAX_OVERLAPPING_VOLUME_GRIDS];
     uint CurrentOverlappingVolumeGridCount = 0;
-    
+
     float3 VolumeSampledColor = 0;
     uint MaxNumBounces = UB.MaxNumBounces;
     
     while (BounceIndex < MaxNumBounces)
     {
-        
+
         // ------------------------------
         // Step 1: Free-path Sampling
         // ------------------------------
         float T_VolumeScatter = Infinity;
         float3 TempColor = float3(0, 0, 0);
-        
+
         // 1. Sample Volume Primitives
         if (CurrentOverlappingVolumePrimitiveCount > 0)
         {
@@ -336,7 +338,7 @@ void ReferencePathTracerRaygen() {
                 VolumeSampledColor = TempColor;
             }
         }
-        
+
         // 2. Sample Volume Grids
         if (CurrentOverlappingVolumeGridCount > 0)
         {
@@ -354,16 +356,16 @@ void ReferencePathTracerRaygen() {
                 VolumeSampledColor = TempColor;
             }
         }
-        
+
         // --------------------------
         // Step 2: Geometry Trace
         // --------------------------
         // We want to know which happens first: Reach static mesh, or oveerlapping volume primitives
         Ray.TMax = T_VolumeScatter;
-        
+
         RayPayload Payload = (RayPayload) 0;
         Payload.TCurrent = Ray.TMax;
-        
+
         // Trace surface ray first
         TraceRay(
             TLAS,
@@ -375,25 +377,25 @@ void ReferencePathTracerRaygen() {
             Ray,
             Payload
         );
-        
+
         // ----------------------------------------------
         // Step 3: Decide which case should be chosen
         // ----------------------------------------------
-        
+
         // Case A: Overlapping Volume Primitives Scatter
         if (T_VolumeScatter < Infinity && Payload.TCurrent >= T_VolumeScatter)
         {
             // 1. Move ray origin to scatter position
             Ray.Origin = Ray.Origin + Ray.Direction * T_VolumeScatter;
-            
+
             // 2. Update ray throughtput. Phase function cancelled out naturally due to perfect sampling
             Throughput *= VolumeSampledColor;
-            
+
             // 3. Sample ray scatter direction
             // In fact, wo do not need to tak account of the value and pdf because of perfect sampling.
             float Pdf;
             float3 LocalSampledDirection = SampleHenyeyGreenstein(g, rng.rand2(), Pdf);
-            
+
             // Rebuild orthogonal space.
             float3 Tangent, Bitangent;
             GetOrthoVectors(Ray.Direction, Tangent, Bitangent);
@@ -402,11 +404,11 @@ void ReferencePathTracerRaygen() {
                 + LocalSampledDirection.y * Bitangent
                 + LocalSampledDirection.z * Ray.Direction
             );
-            
+
             // Reset ray TMin & TMax.
             Ray.TMin = 1e-4f;
             Ray.TMax = Infinity;
-            
+
             // Add a bounce.
             BounceIndex++;
         }
@@ -427,13 +429,13 @@ void ReferencePathTracerRaygen() {
             {
                 Radiance += Intersection.Emission * Throughput;
             }
-            
+
             // 2. Sample outgoing ray direction (if pass alpha test)
             ShadingMaterial M = GetShadingMaterial(Intersection);
             // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
             float3 SampledDirection;
             float BsdfPdf;
-            
+
             // Simple alpha test
             if (Intersection.Opacity < 1.0f && rng.rand() > Intersection.Opacity)
             {
@@ -444,11 +446,11 @@ void ReferencePathTracerRaygen() {
             {
                 // Sample BSDF
                 BsdfPdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
-                
+
                 // Update throughput
                 float3 BsdfVal = EvaluateBSDF(M, -Ray.Direction, SampledDirection);
                 float CosTerm = abs(dot(M.Normal, SampledDirection));
-                
+
                 if (BsdfPdf > 1e-6f)
                 {
                     Throughput *= BsdfVal * CosTerm / max(BsdfPdf, 1e-5f);
@@ -457,7 +459,7 @@ void ReferencePathTracerRaygen() {
                 {
                     break; // Absorbed or Invalid sample.
                 }
-                
+
                 // Update Ray
                 Ray.Origin = Intersection.WorldPosition + Intersection.GeometryNormal * 2e-5f;
                 Ray.Direction = SampledDirection;
@@ -472,14 +474,14 @@ void ReferencePathTracerRaygen() {
         {
             // Now we hit a proxy box. Update processing volume list and forward.
             uint InstanceIndex = Payload.HitInstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-            
+
             // Determinate if it is a Primitive or a Grid based on Payload Flag
             if (Payload.bIsVolumeGridHit)
             {
                 // --- Processing Volume Grid ---
                 VolumeGridInstanceHeader Renderable = GetVolumeGridInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
                 uint GridIndex = Renderable.VolumeGridIndex;
-                
+
                 if (!Payload.bIsFrontFace)
                 {
                     // Back hit: ray is entering the volume grid.
@@ -503,12 +505,12 @@ void ReferencePathTracerRaygen() {
                 }
                 else
                 {
-                    // --- Processing Volume Primitives --- 
+                    // --- Processing Volume Primitives ---
                     uint InstanceVolumePrimitiveIndex = Payload.HitPrimitiveIndex / 20;
                     VolumePrimitivesInstanceHeader Renderable = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
                     uint VolumePrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
                     uint PrimitiveIndex = VolumePrimitiveOffset + InstanceVolumePrimitiveIndex;
-                    
+
                     if (!Payload.bIsFrontFace)
                     {
                         // Back hit: ray is entering the volume.
@@ -537,19 +539,19 @@ void ReferencePathTracerRaygen() {
             Ray.Origin = Ray.Origin + Ray.Direction * Payload.TCurrent;
             Ray.TMin = 1e-4f;
             Ray.TMax = Infinity;
-            
+
             continue;
         }
         // Case D: Miss (Environment)
         else
         {
-            float3 EnvironmentColor = EvaluateEnvironmentMap(-Ray.Direction);
+            float3 EnvironmentColor = EvaluateEnvironmentMap_Raw(-Ray.Direction, UB.EnvironmentMapLOD, UB.EnvironmentMapMultiplier);
             Radiance += Throughput * EnvironmentColor;
             // Terminate directly
             break;
         }
     }
-      
+
     if(UB.EnableAccumulation != 0) {
         float4 FilmRadiance = RWRadiance[RayIndex];
         if (any(isnan(FilmRadiance))) FilmRadiance = 0;

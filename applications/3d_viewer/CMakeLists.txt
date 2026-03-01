@@ -1,10 +1,13 @@
 set(SOURCES
     3d_viewer.cpp
     viewer_app.cpp
+    viewer_scene.cpp
     viewer_scene_loading.cpp
     viewer_console.cpp
+    viewer_commands.cpp
     render_frame.cpp
     viewer_zmq.cpp
+    viewer_control.cpp
     viewer_zmq.h
 )
 
@@ -23,7 +26,10 @@ endif()
 find_package(ZeroMQ CONFIG REQUIRED)
 find_package(cppzmq CONFIG REQUIRED)
 
+# argparse
+find_package(argparse CONFIG REQUIRED)
+
 add_resources(3d_viewer shaders "shaders/*.hlsl")
 add_resources(3d_viewer assets  "assets/*")
 
-target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw PRIVATE libzmq libzmq-static cppzmq cppzmq-static)
+target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw PRIVATE libzmq libzmq-static cppzmq cppzmq-static argparse::argparse)

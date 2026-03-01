@@ -7,17 +7,18 @@
 #ifndef MI_RENDERABLE_H
 #define MI_RENDERABLE_H
 
-#include "mi_aabb.h"
-#include "../../shaders/shared/SharedRenderable.hlsl"
+#include <core/base.h>
+#include <core/common.h>
+#include <core/infra.h>
+#include <core/refcounted.h>
+#include <rhi/rhi_fwd.h>
 
-#include "mi_scene.h"
-#include "core/base.h"
-#include "core/common.h"
-#include "core/infra.h"
-#include "core/refcounted.h"
-#include "renderer/mi_renderer_fwd.h"
-#include "renderer/mi_renderer_types.h"
-#include "renderer/mi_transform.h"
+#include <renderer/mi_renderer_fwd.h>
+#include <renderer/mi_renderer_types.h>
+#include <renderer/mi_transform.h>
+#include <renderer/mi_aabb.h>
+#include <renderer/mi_delayed_destruction.h>
+#include "../../shaders/shared/SharedRenderable.hlsl"
 
 MI_NAMESPACE_BEGIN
 
@@ -32,10 +33,15 @@ enum class RenderableFlagBits : uint32_t {
 
 MAKE_FLAGS(Renderable);
 
-class Renderable : public NonMovable, public NonCopyable, public RefCounted<> {
+// Note: Renderable instances are created by the Scene, but the scene does not own them. They are owned by TRef pointers.
+// Once the reference count drops to zero, the renderable will unregister itself from the scene and delete itself automatically.
+// Keep a list of renderable handles if you wish to make them stay alive.
+class Renderable : public DelayedDestructionResource {
 public:
     friend Scene;
+
     virtual ~Renderable();
+
     // Invisible renderables wont be rendered & taken into consideration by lighting.
     FORCEINLINE bool IsVisible() const { return flags_ & RenderableFlagBits::kVisible; }
     FORCEINLINE void SetVisible(bool visible) {
@@ -64,6 +70,7 @@ public:
 
     // Override the functions if the renderable can be ray-traced.
     virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
+
     constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
     // Note that the renderable index is at most 24 bits
     virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableIndex; }
@@ -98,8 +105,8 @@ public:
 
     // Index of the renderable within its world
     FORCEINLINE uint32_t GetIndex () const {
-        mi_assert(index_ != UINT32_MAX, "Index is not set.");
-        return index_;
+        mi_assert(index_keeper_ && index_keeper_->Get() != UINT32_MAX, "Index is not set.");
+        return index_keeper_ ? index_keeper_->Get() : UINT32_MAX;
     }
 
     template<typename T>
@@ -113,7 +120,7 @@ public:
     virtual RenderableHeader GetDeviceRenderableHeader () const ;
 
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return index_keeper_ && (index_keeper_->Get() != UINT32_MAX);
     }
 
     FORCEINLINE const AABB & GetAABB () const {
@@ -122,12 +129,17 @@ public:
 
     FORCEINLINE RenderableFlags GetRenderableFlags () const { return flags_; }
 
+    FORCEINLINE bool IsBLASUpdated () const { return blas_updated_; }
+    FORCEINLINE void SetBLASUpdated (bool updated = true) { blas_updated_ = updated; }
+
 protected:
 
-    Renderable(RenderableType type, Scene * scene);
-    Transform transform_;
+    Transform transform_ {};
     Scene * scene_;
-    uint32_t index_ {UINT32_MAX};
+
+    // Keep the index of the renderable in the scene, delayed release.
+    TRef<TDelayedReleaseKeeper<Scene>> index_keeper_;
+
     uint32_t hash_ {0};
 
     RenderableFlags flags_ {RenderableFlagBits::kVisible | RenderableFlagBits::kRayTraced};
@@ -136,15 +148,20 @@ protected:
     // Should be updated in Update().
     AABB aabb_ {};
 
-
     // Dirty means the data associated with the renderable (except transform) needs to be updated on device.
     bool dirty_ {true};
+
+    // Is BLAS updated? If it is updated at some point, this should be set to true to notify the renderer to rebuild TLAS.
+    bool blas_updated_ {true};
 
     // Transform dirty means the transform has changed.
     bool transform_dirty_ {true};
 
-
     RenderableType type_ {RenderableType::kStaticMeshInstance};
+
+    Renderable(RenderableType type, Scene * scene);
+
+    void QueueForDestruction() const override;
 
 };
 

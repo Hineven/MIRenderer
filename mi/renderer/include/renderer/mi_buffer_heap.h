@@ -10,15 +10,12 @@
 // Allocate buffer segments on a single buffer or a few buffers.
 // Reduce fragmentation and number of bindings when invocating shaders. (Bind entire heaps with a few bindings)
 
-#include <set>
+#include <core/common.h>
+#include <core/util/segment_allocator.h>
+#include <rhi/rhi_desc.h>
+#include <rhi/rhi_types.h>
 
-#include "mi_buffer_heap.h"
-#include "core/common.h"
-#include "core/infra.h"
-#include "core/util/segment_allocator.h"
-#include "rhi/rhi_desc.h"
-#include "rhi/rhi_fwd.h"
-#include "rhi/rhi_types.h"
+#include <renderer/mi_delayed_destruction.h>
 
 MI_NAMESPACE_BEGIN
 
@@ -59,27 +56,36 @@ protected:
 
 class DeviceUberBufferInterface;
 
-class DeviceUberBufferAllocation : public NonMovable, public NonCopyable, public RefCounted<> {
+class DeviceUberBufferAllocation : public DelayedDestructionResource {
 public:
     friend class DeviceUberBufferInterface;
+    friend class DeviceBindlessResourceAllocator;
+
     // Offset in bytes
-    FORCEINLINE size_t GetOffset () const {
+    [[nodiscard]] FORCEINLINE size_t GetOffset () const {
         return offset_;
     }
     // Size in bytes
-    FORCEINLINE size_t GetSize () const {
+    [[nodiscard]] FORCEINLINE size_t GetSize () const {
         return size_;
     }
-    FORCEINLINE DeviceUberBufferInterface * GetUberBuffer () const {
+    [[nodiscard]] FORCEINLINE DeviceUberBufferInterface * GetUberBuffer () const {
         return uber_buffer_;
     }
-    RHIBufferSpan GetRHI () const ;
-    ~DeviceUberBufferAllocation() ;
+    [[nodiscard]] RHIBufferSpan GetRHI () const ;
+
 protected:
+    ~DeviceUberBufferAllocation() override;
+    void QueueForDestruction() const override;
+
     // Offset and size of the allocation in the uber buffer.
     size_t offset_ {}, size_ {};
     // The uber buffer interface that this allocation belongs to.
     DeviceUberBufferInterface * uber_buffer_ {};
+
+    // Optional owning allocator used to perform delayed destruction.
+    // If null, destruction happens immediately.
+    DeviceBindlessResourceAllocator * allocator_ {};
 };
 
 
@@ -88,7 +94,9 @@ protected:
 class DeviceUberBufferInterface : public NonMovable, public NonCopyable, public RefCounted<> {
 public:
     friend class DeviceUberBufferAllocation;
-    DeviceUberBufferInterface (RHIBufferUsageFlags usage, uint32_t alignment) : usage_(usage), allocation_alignment(alignment) {}
+    friend class DeviceBindlessResourceAllocator;
+    DeviceUberBufferInterface (RHIBufferUsageFlags usage, uint32_t alignment, DeviceBindlessResourceAllocator * allocator):
+        usage_(usage), allocation_alignment(alignment), allocator_(allocator){}
     // Allocate a buffer segment from the uber buffer.
     // Be aware that the allocation may trigger an expansion of the uber buffer.
     virtual std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) = 0;
@@ -119,6 +127,10 @@ protected:
 
     // Implementations of the interface can use this to create an allocation.
     TRef<DeviceUberBufferAllocation> CreateAllocation (size_t offset, size_t size);
+
+    // Optional owning allocator to enable delayed destruction for sub-allocations.
+    // If null, allocations will free immediately on destruction.
+    DeviceBindlessResourceAllocator * allocator_ {};
 
     std::string name_ {};
     RHIBufferUsageFlags usage_;
@@ -189,7 +201,8 @@ protected:
 // A very simple uber buffer implementation.
 class SimpleDeviceUberBuffer : public DeviceUberBufferInterface {
 public:
-    SimpleDeviceUberBuffer (RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024);
+    SimpleDeviceUberBuffer (RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024,
+        DeviceBindlessResourceAllocator * allocator = nullptr);
     ~SimpleDeviceUberBuffer() override;
 
     std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) override;
@@ -198,9 +211,10 @@ public:
     RHIBuffer * GetRHI () const override;
 
     FORCEINLINE static TRef<SimpleDeviceUberBuffer> Create (
-        RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024
+        RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size = 256 * 1024 * 1024,
+        DeviceBindlessResourceAllocator * allocator = nullptr
     ) {
-        return {new SimpleDeviceUberBuffer(usage, allocation_alignment, initial_size)};
+        return {new SimpleDeviceUberBuffer(usage, allocation_alignment, initial_size, allocator)};
     }
 
     size_t GetAllocationLimitByteOffset() const override;

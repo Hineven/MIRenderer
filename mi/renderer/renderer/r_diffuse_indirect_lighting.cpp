@@ -12,18 +12,20 @@
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_scene.h>
 #include <renderer/mi_texture.h>
+#include <renderer/mi_buffer_heap.h>
+#include <renderer/r_geometry_buffer.h>
+
 #include "r_view_common.h"
-#include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
 
 #include "r_gaussian_radiance_field.h"
-#include "../include/renderer/r_geometry_buffer.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_world_radiance_cache.h"
+#include "r_directional_light.h"
 
 MI_NAMESPACE_BEGIN
-static CVar<float> CVar_ProbeSearchSize(
+    static CVar<float> CVar_ProbeSearchSize(
     "r.diffuse_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     2.f
@@ -105,6 +107,7 @@ struct DiffuseIndirectLightingUB {
 
 BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
     SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(DirectionalLightUniform, DirectionalLight_UB)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousScreenProbeRadianceDepthTexture)
     SHADER_RESOURCE_PARAMETER(RWTexture2D, RWScreenProbeRadianceDepthTexture)
@@ -888,6 +891,10 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
             auto LightStructure_UB = builder.Allocate<LightStructureUB>();
             FillUniformBufferForLightStructure(view, LightStructure_UB);
             params->LightStructure_UB = LightStructure_UB;
+
+            auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
+            FillUniformBufferForDirectionalLight(view, directional_light_ub);
+            params->DirectionalLight_UB = directional_light_ub;
         }
 
         // Geometry & Material & Lighting

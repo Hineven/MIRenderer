@@ -12,6 +12,7 @@
 #include "mi_aabb.h"
 #include "mi_dirty_tracker.h"
 #include "mi_renderer.h"
+#include "mi_resource_allocator.h"
 #include "core/base.h"
 #include "core/refcounted.h"
 #include "rhi/rhi_desc.h"
@@ -33,7 +34,8 @@ protected:
     uint32_t vertex_count_ {};
     uint32_t index_count_ {};
 
-    uint32_t index_ {UINT32_MAX}; // Index of the geometry in the bindless device allocator
+    // Index keeper of the geometry slot (assigned by the allocator, delayed free).
+    TRef<DeviceBindlessResourceSlotKeeper> slot_;
 
     friend StaticMeshInstance;
 
@@ -41,9 +43,9 @@ public:
 
     friend class Geometry;
 
-    FORCEINLINE uint32_t GetIndex () const {return index_;}
+    FORCEINLINE uint32_t GetIndex () const {return slot_ ? slot_->Get() : UINT32_MAX;}
     FORCEINLINE bool IsValid () const {
-        return index_ != UINT32_MAX;
+        return slot_ && slot_->Get() != UINT32_MAX;
     }
 
     FORCEINLINE uint32_t GetVertexCount () const {return vertex_count_;}
@@ -91,6 +93,14 @@ public:
     
     FORCEINLINE uint32_t GetVertexCount () const {return (uint32_t)vertices_.size();}
     FORCEINLINE uint32_t GetIndexCount () const {return (uint32_t)indices_.size();}
+
+    FORCEINLINE const std::vector<DefaultStaticMeshVertex> & GetVertexBuffer () const {
+        return vertices_;
+    }
+
+    FORCEINLINE const std::vector<uint32_t> & GetIndexBufferRef () const {
+        return indices_;
+    }
 
     FORCEINLINE size_t GetVertexBufferSize () const {
         return vertices_.size() * sizeof(DefaultStaticMeshVertex);

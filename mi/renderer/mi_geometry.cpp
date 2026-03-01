@@ -3,23 +3,24 @@
  * Author:  hineven
  * See LICENSE for licensing.
  */
-#include "renderer/mi_geometry.h"
+
+#include <rhi/rhi.h>
+#include <rhi/rhi_as.h>
+#include <rdg/rdg_helper.h>
 
 #include <renderer/mi_resource_allocator.h>
-#include <renderer/mi_geometry.h>
-#include <rhi/rhi.h>
+#include <renderer/mi_buffer_heap.h>
+#include <renderer/mi_scene.h>
 
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_scene.h"
-#include "rhi/rhi_as.h"
+#include <renderer/mi_geometry.h>
 MI_NAMESPACE_BEGIN
 DeviceGeometry::DeviceGeometry(DeviceBindlessResourceAllocator * allocator) {
     allocator_ = allocator;
-    index_ = allocator_->AllocateGeometrySlot();
+    slot_ = allocator_->AllocateGeometrySlotKeeper();
 }
 
 DeviceGeometry::~DeviceGeometry() {
-    if (IsValid()) allocator_->FreeGeometrySlot(index_);
+    // Slot is freed (delayed) by SlotKeeper.
 }
 
 Geometry::Geometry() {

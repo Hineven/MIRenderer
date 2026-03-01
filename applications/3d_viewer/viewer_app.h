@@ -7,8 +7,10 @@
 #include <limits>
 #include <future>
 #include <mutex>
+#include <filesystem>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include "util/renderable_node.h"
 
 #include "co_wrapper.h"
 #include "viewer_console.h"
@@ -24,10 +26,21 @@ struct GLFWwindow;
 
 MI_NAMESPACE_BEGIN
 
+
+// Load default model
+enum PresetSceneType {
+    MESH_ONLY,
+    MESH_AND_VOLUME_PRIMITIVES,
+    MESH_AND_VOLUME_GRID,
+    GAUSSIAN_RADIANCE_FIELD,
+    NONE // Load environment map only
+};
+
 struct MainLoopStartConfig {
     std::string window_name;
     uint32_t window_width;
     uint32_t window_height;
+    PresetSceneType default_scene_type = MESH_ONLY;
 };
 
 class ViewerApp {
@@ -68,6 +81,11 @@ public:
         bool should_export_baking_result {};
     };
 
+    struct LoadedScene {
+        std::string name;
+        std::vector<TRef<RenderableNode>> roots;
+    };
+
     struct PerfStat {
         float min_ms = std::numeric_limits<float>::infinity();
         float max_ms = 0.0f;
@@ -84,7 +102,13 @@ public:
     void ProcessClickSelect(FrameInternalDelayedOps& ops);
     void ProcessDelayedOps(FrameInternalDelayedOps& ops);
     void ProcessAxisDragging();
+    void SetSelectedRenderable(Renderable* renderable);
+    void RegisterLoadedScene(const std::string& name, const std::vector<TRef<RenderableNode>>& roots);
+    void UnloadScene(size_t idx);
     void Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
+
+    void EnqueueNextFrameOperations (std::function<void()> func);
+    std::vector<std::function<void()>> next_frame_operations_;
 
     // ZMQ server ops
 
@@ -102,6 +126,11 @@ public:
     };
     std::vector<ExportedRenderResult> GetAndClearExportedFrameResults ();
 
+    bool LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices = nullptr);
+    bool LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices);
+    bool RemoveRenderableNodeByIndex(uint32_t renderable_node_index);
+    bool CleanAllRenderableNodes();
+
     inline bool IsSuspended() const { return suspended_; }
     inline void SetSuspended(bool v) { suspended_ = v; }
 
@@ -116,7 +145,9 @@ public:
 
     TRef<Material> default_material_;
 
-    std::vector<TRef<StaticMeshInstance>> meshes_;
+    TRef<RenderableNodeRegistry> renderable_node_registry_;
+
+    std::vector<LoadedScene> loaded_scenes_;
 
     TRef<StaticMeshInstance> arrow_mesh_x_instance_;
     TRef<StaticMeshInstance> arrow_mesh_y_instance_;
@@ -145,7 +176,7 @@ public:
     // Suspended mode: when true, the render loop skips Renderer::Render.
     // A single frame render can be triggered by setting request_one_render_ = true.
     std::atomic<bool> suspended_{false};
-    std::atomic<bool> request_one_render_{false};
+    std::atomic<bool> one_frame_rendering_requested_{false};
 
     // Export frame handshake between ZMQ thread and render loop.
     std::atomic<bool> export_frame_request_{false};

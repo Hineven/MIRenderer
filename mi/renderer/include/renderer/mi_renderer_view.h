@@ -120,6 +120,8 @@ struct RendererView {
     TRef<VolumeIndirectLightingData> volume_indirect_lighting_;
     // TODO:Shared data from volume grid indirect lighting
     // TRef<VolumeGridIndirectLightingData> volume_grid_indirect_lighting_data_;
+    // Shared data from GRF rendering
+    TRef<GaussianRadianceFieldViewData> grf_;
     // Shared data from denoiser
     TRef<DenoiserViewData> denoiser_;
 
@@ -127,7 +129,7 @@ struct RendererView {
     TRef<RDGTexture> radiance_;
     // TAA-resolved radiance (after temporal accumulation)
     TRef<RDGTexture> taa_radiance_;
-    // Linear color overlay for gaussian RDF / forward passes
+    // Linear color overlay for gaussian RDF / forward passes (kR8G8B8A8_UNORM)
     TRef<RDGTexture> overlay_;
     // Shaded radiance without emission, created & written by final composition, used for lighting reuse
     TRef<RDGTexture> shaded_radiance_no_emission_;
@@ -184,6 +186,7 @@ struct RendererView {
 
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
+    void CreateSharedResources (RenderGraphBuilder & builder);
     void MakeSurePersistentDataExists (RenderGraphBuilder & builder);
 
     // Current frame jitter (NDC space per-axis)

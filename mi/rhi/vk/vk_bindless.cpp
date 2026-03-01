@@ -259,9 +259,29 @@ void VulkanBindlessManager::CommitResourceSlotUpdateRHI(RHIBindlessResourceType 
 }
 
 void VulkanBindlessManager::AdvanceFrame_RHIThread (std::span<RHIPackedBindlessSlot> slots_to_free) {
-    // Free batched slots
+
+    set_index_ = (set_index_ + 1) % 2;
+
+    auto device = GetVulkanRHI()->GetDevice();
+    // Copy the previous set to the new set
+    std::vector<vk::CopyDescriptorSet> copies;
+    for (int i = 0; i < std::size(bindless_channels_); i++) {
+        auto size = bindless_channels_[i].total_count;
+        auto copy = vk::CopyDescriptorSet {
+            bindless_descriptor_sets_[set_index_ ^ 1],
+            (uint32_t)i,
+            0,
+            bindless_descriptor_sets_[set_index_],
+            (uint32_t)i,
+            0,
+            (uint32_t)size
+        };
+        copies.push_back(copy);
+    }
+    device.updateDescriptorSets({}, copies);
+
+    // Free batched slots in the new set by writing null descriptors
     if (!slots_to_free.empty()) {
-        auto device = GetVulkanRHI()->GetDevice();
         std::vector<vk::WriteDescriptorSet> null_descriptors;
         std::vector<vk::DescriptorBufferInfo> null_buffers;
         std::vector<vk::DescriptorImageInfo> null_images;
@@ -324,25 +344,6 @@ void VulkanBindlessManager::AdvanceFrame_RHIThread (std::span<RHIPackedBindlessS
         // Remember to free the memory allocated by PrepareDelayedSlotsForRHIFree
         delete [] slots_to_free.data();
     }
-
-    set_index_ = (set_index_ + 1) % 2;
-    auto device = GetVulkanRHI()->GetDevice();
-    // Copy the previous set to the new set
-    std::vector<vk::CopyDescriptorSet> copies;
-    for (int i = 0; i < std::size(bindless_channels_); i++) {
-        auto size = bindless_channels_[i].total_count;
-        auto copy = vk::CopyDescriptorSet {
-            bindless_descriptor_sets_[set_index_ ^ 1],
-            (uint32_t)i,
-            0,
-            bindless_descriptor_sets_[set_index_],
-            (uint32_t)i,
-            0,
-            (uint32_t)size
-        };
-        copies.push_back(copy);
-    }
-    device.updateDescriptorSets({}, copies);
 }
 
 MI_NAMESPACE_END
