@@ -27,19 +27,28 @@ static constexpr uint32_t kLightGridNumHistories = 4; // Number of history frame
 struct LightStructureUB {
     glm::uvec3 LightGridSize;
     float LightGridCellSize;
+
     glm::vec3 LightGridCenter;
     uint32_t LighGridNumCascadesUsed;
+
     uint32_t LightGridMaxNumGridLights;
     uint32_t LightGridNumCascadeGrids;
     uint32_t LightGridNumGrids;
     float LightInjectionIntensityThreshold;
+
     glm::vec4 LightGridCascadeMin[kLightGridNumCascades];
     glm::vec4 LightGridCascadeMax[kLightGridNumCascades];
+
     uint32_t FrameIndex;
     uint32_t MaxNumLights;
+    uint32_t LightGridMaxNumEntries;
+    float    EnvironmentLightHemisphereSampleLOD;
+
     float    LightCullingRate;
     glm::vec3   EnvironmentLightMultiplier;
+
     float EnvironmentLightEvaluateLOD;
+    uint32_t padding[3];
 };
 
 struct LightStructurePersistentData : RefCounted<> {

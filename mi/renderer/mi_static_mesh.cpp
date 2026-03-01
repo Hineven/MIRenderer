@@ -21,10 +21,17 @@
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_texture.h"
 #include "rhi/rhi_as.h"
+#include <renderer/r_light_cluster_hiearchy.h>
 
 #include "shaders/shared/SharedLight.hlsl"
 
 MI_NAMESPACE_BEGIN
+
+CVar<int> CVar_MaxMeshLightsPerGeometry(
+    "r.mesh_light.max_lights_per_geometry",
+    "Maximum number of mesh lights generated for each emissive geometry. <= 0 means no explicit limit.",
+    128
+);
 
 namespace {
 
@@ -333,6 +340,7 @@ void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *all
     for (int i = 0; i < (int)geometries.size(); i++) {
         if (materials[i]->IsEmissive()) {
             // Emissive material found, insert all primitives as lights to the light buffer
+            // TODO Use light cluster hiearchy
             // TODO classify low level lights and intense lights into different rendering paths
             auto & geom = geometries[i];
             auto * emissive_map = materials[i]->GetEmissiveTexture();

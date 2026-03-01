@@ -31,6 +31,7 @@ struct LightStructureUB {
     float LightCullingRate;
     float3 EnvironmentLightMultiplier;
     float  EnvironmentLightEvaluateLOD;
+    uint3  Padding;
 };
 
 ConstantBuffer<LightStructureUB> LightStructure_UB;
