@@ -110,7 +110,7 @@ float LightGrid_EstimateLightGridPerceptualContribution(PrecomputedLight L, floa
     float3 LightToGridDirection;
     {
         // Offset the grid center when computing Light-Grid direction for conservative estimation
-        float3 LightToGridDirectionUnnormalized = LightToGrid + (L.Normal * sqrt(3.f) * 0.6f);
+        float3 LightToGridDirectionUnnormalized = LightToGrid + (L.Normal * sqrt(3.f) * 0.6f * GridSize);
         float  Len = length(LightToGridDirectionUnnormalized);
         if(Len > 1e-6f) {
             LightToGridDirection = LightToGridDirectionUnnormalized / Len;
