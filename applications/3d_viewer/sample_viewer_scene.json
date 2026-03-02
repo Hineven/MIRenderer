@@ -1,0 +1,28 @@
+{
+  "environment_map": "applications/3d_viewer/assets/tief_etz_4k.exr",
+  "scenes": [
+    {
+      "name": "main_scene",
+      "objects": [
+        {
+          "name": "light_room",
+          "path": "applications/3d_viewer/assets/light_room/scene.gltf"
+        }
+      ]
+    }
+  ],
+  "camera": {
+    "position": [0, 0, 0],
+    "direction": [0, 0, -1],
+    "up": [0, 1, 0],
+    "fov_y_deg": 60,
+    "near_plane": 0.1,
+    "far_plane": 100
+  },
+  "directional_light": {
+    "enabled": true,
+    "direction": [-5.5, -4.4, 5.5],
+    "color": [1, 0.93, 0.8],
+    "intensity": 2
+  }
+}
