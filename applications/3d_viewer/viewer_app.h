@@ -30,6 +30,8 @@ struct MainLoopStartConfig {
     std::string window_name;
     uint32_t window_width;
     uint32_t window_height;
+    std::string scene_config_path;
+    bool start_empty = false;
 };
 
 class ViewerApp {

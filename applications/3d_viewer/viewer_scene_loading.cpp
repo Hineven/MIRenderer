@@ -124,8 +124,10 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
     scene_ = std::make_unique<Scene>();
 
     json scene_config = json::object();
-    {
-        const auto scene_config_path = FindViewerSceneConfigPath(*this);
+    if (!cfg.start_empty) {
+        std::filesystem::path scene_config_path;
+        if (cfg.scene_config_path.empty()) scene_config_path = FindViewerSceneConfigPath(*this);
+        else scene_config_path = cfg.scene_config_path;
         std::ifstream ifs(scene_config_path);
         if (!ifs) {
             MI_WARN("Viewer scene config not found at '{}'. Scene loads with defaults.", scene_config_path.string());
@@ -282,11 +284,29 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         const std::string object_path_str = object_j["path"].get<std::string>();
         const auto object_path = ResolvePathForLoading(*this, object_path_str);
         const auto object_transform = ParseTransformOrDefault(object_j.value("transform", json::object()));
+        std::string object_name = object_path.filename().string();
+        if (object_j.contains("name") && object_j["name"].is_string()) {
+            object_name = object_j["name"].get<std::string>();
+        }
 
         json metadata = json::object();
         if (object_j.contains("metadata") && object_j["metadata"].is_object()) {
             metadata = object_j["metadata"];
         }
+        if (metadata.contains("name") && metadata["name"].is_string()) {
+            object_name = metadata["name"].get<std::string>();
+        }
+
+        auto register_non_gltf_renderable = [&](Renderable* renderable) {
+            if (!renderable) {
+                return;
+            }
+            auto node = renderable_node_registry_->Create(object_name);
+            node->SetRenderable(renderable);
+            node->SetLocalTransform(object_transform);
+            node->UpdateWorldTransform();
+            scene_nodes.push_back(node);
+        };
 
         std::string loading_format;
         if (object_j.contains("loading_format") && object_j["loading_format"].is_string()) {
@@ -327,7 +347,8 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
                 return;
             }
             volprims->UpdateOnDevice(resource_allocator_.Raw());
-            VolumePrimitivesInstance::Create(scene_.get(), volprims.Raw(), object_transform);
+            auto instance = VolumePrimitivesInstance::Create(scene_.get(), volprims.Raw(), object_transform);
+            register_non_gltf_renderable(instance.Raw());
             return;
         }
 
@@ -345,7 +366,8 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
                 return;
             }
             field->UpdateOnDevice(resource_allocator_.Raw());
-            GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw(), object_transform);
+            auto instance = GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw(), object_transform);
+            register_non_gltf_renderable(instance.Raw());
             return;
         }
 
@@ -380,7 +402,8 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
                 return;
             }
             volume_grid->UpdateOnDevice(resource_allocator_.Raw());
-            VolumeGridInstance::Create(scene_.get(), volume_grid.Raw(), object_transform);
+            auto instance = VolumeGridInstance::Create(scene_.get(), volume_grid.Raw(), object_transform);
+            register_non_gltf_renderable(instance.Raw());
             return;
         }
 

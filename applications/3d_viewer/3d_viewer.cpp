@@ -23,6 +23,14 @@ int main (int argc, char** argv) {
         .help("Window height")
         .default_value(cfg.window_height)
         .scan<'u', uint32_t>();
+    program.add_argument("--scene")
+        .help("Scene file path (json)")
+        .default_value("");
+
+    program.add_argument("--empty")
+        .help("Start without loading anything (overrides --scene)")
+        .default_value(false)
+        .implicit_value(true);
     
     try {
         program.parse_args(argc, argv);
@@ -31,6 +39,14 @@ int main (int argc, char** argv) {
         std::cerr << program;
         return -1;
     }
+
+    // parse args
+    cfg.window_width = program.get<uint32_t>("--width");
+    cfg.window_height = program.get<uint32_t>("--height");
+    std::string scene_path = program.get<std::string>("--scene");
+    bool start_empty = program.get<bool>("--empty");
+    cfg.scene_config_path = scene_path;
+    cfg.start_empty = start_empty;
 
 #if MI_ENABLE_SHADER_DEBUGGING
     auto infra = std::make_unique<MyInfra>(false, MI_PROJECT_ROOT);
