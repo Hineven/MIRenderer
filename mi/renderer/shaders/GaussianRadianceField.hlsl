@@ -151,8 +151,9 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
     float  Det           = Cov2D.x * Cov2D.z - Cov2D.y * Cov2D.y;
 
 	SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
-	float3 ViewDirection = normalize(C.Position - GaussianWorldPosition);
-	float3 Color = SH3Evaluate(ViewDirection, SH3, 2);
+    float3 LocalCameraPosition = TransformPoint(RenderableInverseTransformBuffer[RenderableIndex], C.Position);
+    float3 LocalViewDirection = normalize(LocalCameraPosition - G.Position);
+	float3 Color = SH3Evaluate(LocalViewDirection, SH3, 2);
     Color = max(Color + 0.5f, 0.f); // Gaussian color biasing. Coherent with training process.
     // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
     RenderableHeader RH = RenderableHeaderBuffer[RenderableIndex];
@@ -185,11 +186,7 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
 	float2 ClampedPosition = saturateDown(Homogeneous.xy * 0.25 + 0.5f);
 	RWActiveGaussianNDCPositionBuffer[ActiveIndex] = PackUnorm2x16(ClampedPosition);
 	float LinearDepth = RWActiveGaussianLinearDepthSrcBuffer[ActiveIndex];
-	// Clamp the radius for gaussians (to fix holes for the dataset)
-	// TODO: this is totally an empirical trick. But I found it useful.
-	// Otherwise my renderer can be visually inconsistent with the original one intensively in
-	// some circumstances...
-	float Bias = UB.GaussianClampingScale / LinearDepth;
+	float Bias = 0;
 	Lambda1 = abs(Lambda1) + Bias*Bias;
 	Lambda2 = abs(Lambda2) + Bias*Bias;
  	// Larger objects have larger clamping scale
