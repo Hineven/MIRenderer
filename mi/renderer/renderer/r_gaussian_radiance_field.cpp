@@ -47,6 +47,7 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableInverseTransformBuffer)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
@@ -76,6 +77,7 @@ BEGIN_SHADER_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableInverseTransformBuffer)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
@@ -303,6 +305,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->View=view->view_common_params_;
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+    params->RenderableInverseTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_inverse_transforms_.Raw());
     // Bind resources
     params->Gaussian3DBuffer = packed_gaussians_buffer;
     params->GaussianSHBuffer = sh_buffer;
