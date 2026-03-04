@@ -1,3 +1,6 @@
 [submodule "external/VulkanMemoryAllocator-Hpp"]
 	path = external/VulkanMemoryAllocator-Hpp
 	url = https://github.com/Hineven/VulkanMemoryAllocator-Hpp
+[submodule "applications/3d_viewer/pymi"]
+	path = applications/3d_viewer/pymi
+	url = https://gitee.com/hineven/pymi
