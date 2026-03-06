@@ -4,3 +4,6 @@
 [submodule "applications/3d_viewer/pymi"]
 	path = applications/3d_viewer/pymi
 	url = https://gitee.com/hineven/pymi
+[submodule "external/ncnn"]
+	path = external/ncnn
+	url = https://github.com/Tencent/ncnn/
