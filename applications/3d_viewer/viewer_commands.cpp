@@ -235,6 +235,56 @@ void RegisterViewerCommands(ViewerApp& app) {
     );
 
     CommandRegistry::Get().MakeAndRegister(
+        "camera_near",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"near"}),
+            CommandTokenSpec::Free({}, "near"),
+        },
+        [&app](const CommandMatchResult &match) {
+            if (match.args.size() < 3) {
+                MI_WARN("ViewerApp: expected 'c near <near>'");
+                return;
+            }
+            if (!app.view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                float near = std::stof(match.args[2]);
+                app.view_->camera_.near_plane = near;
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float for 'c near'");
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "camera_far",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"far"}),
+            CommandTokenSpec::Free({}, "far"),
+        },
+        [&app](const CommandMatchResult &match) {
+            if (match.args.size() < 3) {
+                MI_WARN("ViewerApp: expected 'c far <far>'");
+                return;
+            }
+            if (!app.view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                float far = std::stof(match.args[2]);
+                app.view_->camera_.far_plane = far;
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float for 'c far'");
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
         "load",
         {
             CommandTokenSpec::KeywordSet({"load"}),
