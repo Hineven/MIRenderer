@@ -30,6 +30,12 @@ CVar<bool> CVar_GRF_StochasticRendering(
     true
 );
 
+CVar<bool> CVar_GRF_StochasticLargeGaussianHalfResolution(
+    "r.grf.stochastic_large_gaussian_half_resolution",
+    "Render large stochastic GRF gaussians at half resolution and composite them back.",
+    true
+);
+
 void GaussianRadianceFieldViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
     // Do nothing for now
 }
@@ -37,7 +43,8 @@ void GaussianRadianceFieldViewData::Allocate(RenderGraphBuilder &builder, Render
 struct GaussianRadianceFieldUB {
     float GaussianClampingScale;
     float GaussianExpandFactor;
-    glm::uvec2 Padding;
+    float StochasticSplitShortAxisThreshold;
+    uint32_t Padding;
 };
 
 // Shared parameter block
@@ -62,6 +69,11 @@ BEGIN_SHADER_PARAMETERS(GaussianRadianceFieldParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianNDCPositionBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector0Buffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector1Buffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWSmallGaussianCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWSmallGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLargeGaussianCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLargeGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, DrawGaussianCount)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
@@ -92,6 +104,11 @@ BEGIN_SHADER_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianNDCPositionBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector0Buffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector1Buffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWSmallGaussianCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWSmallGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLargeGaussianCount)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWLargeGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, DrawGaussianCount)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
@@ -100,6 +117,43 @@ END_SHADER_PARAMETERS()
 
 
 IMPLEMENT_SHADER_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
+
+BEGIN_SHADER_PARAMETERS(GRF_CompositeLargeGaussianParameters)
+    SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableInverseTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianRenderableListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(Texture2D, LargeGaussianIndex)
+    SHADER_RESOURCE_PARAMETER(Texture2D, LargeGaussianDepth)
+    SHADER_RESOURCE_PARAMETER(Texture2D, FullResolutionDepth)
+    SHADER_RESOURCE_PARAMETER(RWTexture2D, RWOverlay)
+END_SHADER_PARAMETERS()
+
+IMPLEMENT_SHADER_PARAMETERS(GRF_CompositeLargeGaussianParameters)
+
+BEGIN_SHADER_PARAMETERS(StochasticDrawLargeGaussianIndexParameters)
+    SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
+    SHADER_UNIFORM_BUFFER(GaussianRadianceFieldUB, UB)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianRenderableListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianListBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianLinearDepthSrcBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianNDCPositionBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector0Buffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWActiveGaussianQuadNDCVector1Buffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, DrawGaussianCount)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
+    SHADER_RENDER_TARGET(PixelFormatType::kR32_UINT, ColorIndex, {})
+    SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
+END_SHADER_PARAMETERS()
+
+IMPLEMENT_SHADER_PARAMETERS(StochasticDrawLargeGaussianIndexParameters)
 
 class GRF_Shader : public RDGShader {
 public:
@@ -117,6 +171,11 @@ class GRF_ClearCountersShader : public GRF_Shader {
 public:
     RDG_SHADER_USE_PARAMETERS(GaussianRadianceFieldParameters)
     DECLARE_SHADER(GRF_Shader)
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {
+            "LARGE_GAUSSIAN_HALF_RESOLUTION_PATH"
+        };
+    }
 };
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_ClearCountersShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "ClearCounters");
 
@@ -137,6 +196,11 @@ IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(GRF_FilterShader, "mi/rend
 class GRF_ProjectShader : public GRF_Shader {
 public:
     DECLARE_SHADER(GRF_Shader)
+    static std::vector<std::string> GetShaderOptionalMacros() {
+        return {
+            "LARGE_GAUSSIAN_HALF_RESOLUTION_PATH"
+        };
+    }
 };
 IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_ProjectShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "ProjectActiveGaussians");
 
@@ -184,6 +248,81 @@ IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(GRF_StochasticDrawShade
     "StochasticDrawActiveGaussians_GS",
     "StochasticDrawActiveGaussians_PS"
 );
+
+class GRF_StochasticDrawLargeGaussianIndexShader : public RDGShader {
+public:
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
+        return {
+            "WAVE_SIZE=" + std::to_string(wave_size)
+        };
+    }
+    RDG_SHADER_USE_PARAMETERS(StochasticDrawLargeGaussianIndexParameters)
+    DECLARE_SHADER()
+    static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+        RDGShaderPipelineConfig cfg{};
+        cfg.depth_test_enabled = true;
+        cfg.depth_write_enabled = true;
+        cfg.depth_compare_op = RHIDepthCompareOpType::kGreater;
+        cfg.topology = RHIPrimitiveTopologyType::kPointList;
+        return cfg;
+    }
+};
+IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER_GS(GRF_StochasticDrawLargeGaussianIndexShader,
+    "mi/renderer/shaders/GaussianRadianceField.hlsl",
+    "StochasticDrawLargeGaussianIndex_VS",
+    "StochasticDrawLargeGaussianIndex_GS",
+    "StochasticDrawLargeGaussianIndex_PS"
+);
+
+class GRF_CompositeLargeGaussianShader : public RDGShader {
+public:
+    RDG_SHADER_USE_PARAMETERS(GRF_CompositeLargeGaussianParameters)
+    DECLARE_SHADER()
+    constexpr static uint32_t kThreadGroupSize = 8;
+    static std::vector<std::string> GetShaderDefaultMacros() {
+        return {
+            "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
+            "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
+        };
+    }
+};
+IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GRF_CompositeLargeGaussianShader, "mi/renderer/shaders/GaussianRadianceField.hlsl", "ComposeLargeGaussians")
+
+static void UpdateScaledViewCommonShaderParameters(ViewCommonShaderParameters & params, uint32_t film_width, uint32_t film_height) {
+    auto & camera = params.Camera;
+    camera.FilmDimensions = {film_width, film_height};
+
+    float aspect_ratio = float(film_width) / float(film_height);
+    camera.FilmAspectRatioAndInvAspectRatio = {aspect_ratio, 1.0f / aspect_ratio};
+
+    uint32_t hzb_size = 1;
+    while (hzb_size < film_width || hzb_size < film_height) {
+        hzb_size *= 2;
+    }
+    hzb_size /= 2;
+    camera.HZBDimensions = glm::uvec2(hzb_size);
+    float film_viewport_world_height = 1.f;
+    float film_viewport_world_width = film_viewport_world_height * aspect_ratio;
+    camera.FilmPixelWorldSize = {
+        1.0f / (film_viewport_world_width * film_width),
+        1.0f / (film_viewport_world_height * film_height)
+    };
+
+    camera.InvFilmDimensions = {1.0f / float(film_width), 1.0f / float(film_height)};
+    camera.UVToHZBScale = {
+        (float)film_width / (2 * (float)hzb_size),
+        (float)film_height / (2 * (float)hzb_size)
+    };
+    camera.HZBBaseTexelSize = {
+        1.0f / (float)hzb_size,
+        1.0f / (float)hzb_size
+    };
+    camera.HZBToUVScale = {
+        2 * (float)hzb_size / (float)film_width,
+        2 * (float)hzb_size / (float)film_height
+    };
+}
 void Renderer::Render_PrepareGaussianRadianceFields(RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
     // Build per-instance draw indirect commands for FilterActiveGaussians pass
     ctx.gaussian_radiance_fields.draw_indirect_commands.clear();
@@ -278,6 +417,17 @@ void Renderer::Render_DrawGaussianRadianceFields(
     auto active_gaussian_ndc_pos_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
     auto active_gaussian_quad_vec0_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
     auto active_gaussian_quad_vec1_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
+    bool enable_multires_stochastic = CVar_GRF_StochasticRendering.Get() && CVar_GRF_StochasticLargeGaussianHalfResolution.Get();
+    TRef<RDGBuffer> small_gaussian_count_buffer;
+    TRef<RDGBuffer> small_gaussian_list_buffer;
+    TRef<RDGBuffer> large_gaussian_count_buffer;
+    TRef<RDGBuffer> large_gaussian_list_buffer;
+    if (enable_multires_stochastic) {
+        small_gaussian_count_buffer = builder.CreateBuffer<uint32_t>();
+        small_gaussian_list_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
+        large_gaussian_count_buffer = builder.CreateBuffer<uint32_t>();
+        large_gaussian_list_buffer = builder.CreateBuffer<uint32_t>(total_gaussians);
+    }
 
     TRef<RDGTexture> testing_depth = view->g_buffer_->G_depth_;
     if (CVar_GRF_StochasticRendering.Get()) {
@@ -299,7 +449,8 @@ void Renderer::Render_DrawGaussianRadianceFields(
     {
         UB->GaussianClampingScale = 1e-3f;
         UB->GaussianExpandFactor  = 3.5f;
-        UB->Padding[0] = UB->Padding[1] = 0;
+        UB->StochasticSplitShortAxisThreshold = 6.0f;
+        UB->Padding = 0;
     }
     params->UB=UB;
     params->View=view->view_common_params_;
@@ -322,6 +473,11 @@ void Renderer::Render_DrawGaussianRadianceFields(
     params->RWActiveGaussianNDCPositionBuffer = active_gaussian_ndc_pos_buffer.Raw();
     params->RWActiveGaussianQuadNDCVector0Buffer = active_gaussian_quad_vec0_buffer.Raw();
     params->RWActiveGaussianQuadNDCVector1Buffer = active_gaussian_quad_vec1_buffer.Raw();
+    params->RWSmallGaussianCount = small_gaussian_count_buffer.Raw();
+    params->RWSmallGaussianListBuffer = small_gaussian_list_buffer.Raw();
+    params->RWLargeGaussianCount = large_gaussian_count_buffer.Raw();
+    params->RWLargeGaussianListBuffer = large_gaussian_list_buffer.Raw();
+    params->DrawGaussianCount = active_gaussian_count_buffer.Raw();
     if (CVar_GRF_StochasticRendering.Get()) {
         // For stochastic rendering, we don't sort, so indirection src buffer is not needed
         params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_src_buffer.Raw();
@@ -336,8 +492,12 @@ void Renderer::Render_DrawGaussianRadianceFields(
 
     auto & lib = RDGShaderLibrary::Get();
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
+    RDGShaderInitializationInfo stochastic_large_gaussian_ini {};
+    if (enable_multires_stochastic) {
+        stochastic_large_gaussian_ini.optional_macros.push_back("LARGE_GAUSSIAN_HALF_RESOLUTION_PATH");
+    }
     // Pass 1: ClearCounters
-    auto clear_shader = lib.GetShader<GRF_ClearCountersShader>();
+    auto clear_shader = lib.GetShader<GRF_ClearCountersShader>(stochastic_large_gaussian_ini);
     Helpers::AddComputePass(builder, clear_shader, params);
     // Pass 2: FilterActiveGaussians
     if (ctx.gaussian_radiance_fields.d_filter_draw_commands) {
@@ -349,7 +509,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     // Pass 3: ProjectActiveGaussians
     {
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_gaussian_count_buffer.Raw(), wave_size);
-        auto shader = lib.GetShader<GRF_ProjectShader>();
+        auto shader = lib.GetShader<GRF_ProjectShader>(stochastic_large_gaussian_ini);
         Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
     if (!CVar_GRF_StochasticRendering.Get()) {
@@ -363,15 +523,92 @@ void Renderer::Render_DrawGaussianRadianceFields(
         {
             auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
             auto shader = lib.GetShader<GRF_DrawShader>();
+            params->DrawGaussianCount = active_gaussian_count_buffer.Raw();
+            params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_buffer.Raw();
             Helpers::AddDrawIndirectPass(builder, shader, params, final_draw_command.Raw());
         }
     } else {
-        // Stochastic rendering: draw without sorting
-        {
+        if (!enable_multires_stochastic) {
             auto final_draw_command = Helpers::SpawnDrawIndirectCommand(builder, active_gaussian_count_buffer.Raw());
             auto shader = lib.GetShader<GRF_StochasticDrawShader>();
-            // FIXME this is a hack (because they have identical memory layouts). We should have a better way to switch parameter blocks.
-            Helpers::AddDrawIndirectPass(builder, shader, (StochasticDrawGaussianRadianceFieldParameters*)params, final_draw_command.Raw());
+            auto stochastic_params = builder.Allocate<StochasticDrawGaussianRadianceFieldParameters>();
+            *stochastic_params = *(StochasticDrawGaussianRadianceFieldParameters*)params;
+            stochastic_params->DrawGaussianCount = active_gaussian_count_buffer.Raw();
+            stochastic_params->ActiveGaussianIndirectionBuffer = active_gaussian_indirection_src_buffer.Raw();
+            Helpers::AddDrawIndirectPass(builder, shader, stochastic_params, final_draw_command.Raw());
+        } else {
+            auto shader = lib.GetShader<GRF_StochasticDrawShader>();
+
+            auto small_draw_command = Helpers::SpawnDrawIndirectCommand(builder, small_gaussian_count_buffer.Raw());
+            auto small_params = builder.Allocate<StochasticDrawGaussianRadianceFieldParameters>();
+            *small_params = *(StochasticDrawGaussianRadianceFieldParameters*)params;
+            small_params->DrawGaussianCount = small_gaussian_count_buffer.Raw();
+            small_params->ActiveGaussianIndirectionBuffer = small_gaussian_list_buffer.Raw();
+            Helpers::AddDrawIndirectPass(builder, shader, small_params, small_draw_command.Raw());
+
+            uint32_t half_width = DivideAndRoundUp(view->film_width_, 2u);
+            uint32_t half_height = DivideAndRoundUp(view->film_height_, 2u);
+            auto large_index = builder.CreateTexture2D(
+                half_width,
+                half_height,
+                PixelFormatType::kR32_UINT,
+                RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kRenderTarget
+            );
+            auto large_depth = builder.CreateTexture2D(
+                half_width,
+                half_height,
+                PixelFormatType::kD32_FLOAT,
+                RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kShaderResource
+            );
+
+            auto half_res_view = builder.Allocate<ViewCommonShaderParameters>();
+            *half_res_view = *view->view_common_params_;
+            UpdateScaledViewCommonShaderParameters(*half_res_view, half_width, half_height);
+
+            auto large_draw_command = Helpers::SpawnDrawIndirectCommand(builder, large_gaussian_count_buffer.Raw());
+            auto large_shader = lib.GetShader<GRF_StochasticDrawLargeGaussianIndexShader>();
+            auto large_params = builder.Allocate<StochasticDrawLargeGaussianIndexParameters>();
+            large_params->View = half_res_view;
+            large_params->UB = UB;
+            large_params->RenderableTransformBuffer = params->RenderableTransformBuffer;
+            large_params->Gaussian3DBuffer = params->Gaussian3DBuffer;
+            large_params->ActiveGaussianRenderableListBuffer = params->ActiveGaussianRenderableListBuffer;
+            large_params->RWActiveGaussianListBuffer = params->RWActiveGaussianListBuffer;
+            large_params->RWActiveGaussianLinearDepthSrcBuffer = params->RWActiveGaussianLinearDepthSrcBuffer;
+            large_params->RWActiveGaussianNDCPositionBuffer = params->RWActiveGaussianNDCPositionBuffer;
+            large_params->RWActiveGaussianQuadNDCVector0Buffer = params->RWActiveGaussianQuadNDCVector0Buffer;
+            large_params->RWActiveGaussianQuadNDCVector1Buffer = params->RWActiveGaussianQuadNDCVector1Buffer;
+            large_params->DrawGaussianCount = large_gaussian_count_buffer.Raw();
+            large_params->ActiveGaussianIndirectionBuffer = large_gaussian_list_buffer.Raw();
+            large_params->ColorIndex = large_index.Raw();
+            large_params->ColorIndex.load_op = RHILoadOpType::kClear;
+            large_params->ColorIndex.clear_value = {0, 0, 0, 0};
+            large_params->Depth = large_depth.Raw();
+            large_params->Depth.load_op = RHILoadOpType::kClear;
+            large_params->Depth.clear_value = {0, 0, 0, 0};
+            Helpers::AddDrawIndirectPass(builder, large_shader, large_params, large_draw_command.Raw());
+
+            auto composite_shader = lib.GetShader<GRF_CompositeLargeGaussianShader>();
+            auto composite_params = builder.Allocate<GRF_CompositeLargeGaussianParameters>();
+            composite_params->View = view->view_common_params_;
+            composite_params->RenderableHeaderBuffer = params->RenderableHeaderBuffer;
+            composite_params->RenderableInverseTransformBuffer = params->RenderableInverseTransformBuffer;
+            composite_params->Gaussian3DBuffer = params->Gaussian3DBuffer;
+            composite_params->GaussianSHBuffer = params->GaussianSHBuffer;
+            composite_params->GaussianRadianceFieldHeaderBuffer = params->GaussianRadianceFieldHeaderBuffer;
+            composite_params->ActiveGaussianRenderableListBuffer = params->ActiveGaussianRenderableListBuffer;
+            composite_params->RWActiveGaussianListBuffer = params->RWActiveGaussianListBuffer;
+            composite_params->LargeGaussianIndex = large_index.Raw();
+            composite_params->LargeGaussianDepth = large_depth.Raw();
+            composite_params->FullResolutionDepth = testing_depth.Raw();
+            composite_params->RWOverlay = view->overlay_.Raw();
+            Helpers::AddComputePass(
+                builder,
+                composite_shader,
+                composite_params,
+                DivideAndRoundUp(view->film_width_, GRF_CompositeLargeGaussianShader::kThreadGroupSize),
+                DivideAndRoundUp(view->film_height_, GRF_CompositeLargeGaussianShader::kThreadGroupSize)
+            );
         }
     }
 

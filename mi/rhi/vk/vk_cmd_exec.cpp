@@ -72,7 +72,12 @@ void VulkanCommandExecutor::RHIClearTexture(RHICommandQueueBase *cmd, RHICommand
     auto & color = clear_texture->clear_value_;
     CheckImageLayout(texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral);
     if (texture->GetImageAspect() & vk::ImageAspectFlagBits::eColor) {
-        state.cmd.clearColorImage(texture->GetImage(), texture->GetImageLayout(), vk::ClearColorValue(color), region);
+        state.cmd.clearColorImage(
+            texture->GetImage(),
+            texture->GetImageLayout(),
+            GetVulkanClearColorValue(texture->GetFormat(), color),
+            region
+        );
     } else {
         // TODO support stencil clear value.
         state.cmd.clearDepthStencilImage(
@@ -244,7 +249,7 @@ void VulkanCommandExecutor::RHIBeginRendering(RHICommandQueueBase *cmd, [[maybe_
                 {}, {}, {},
                 GetVulkanLoadOp(state.draw_state_.load_ops[i]),
                 GetVulkanStoreOp(state.draw_state_.store_ops[i]),
-                {state.draw_state_.clear_values[i]}
+                vk::ClearValue(GetVulkanClearColorValue(tex->GetFormat(), state.draw_state_.clear_values[i]))
             };
         } else {
             attachments_info[i] = vk::RenderingAttachmentInfo{};

@@ -346,11 +346,18 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
                 desc.format = RHIFragmentOutputFormatType::k4xFp32;
             } else if(base_type.basetype == spirv_cross::SPIRType::Int
                     ||base_type.basetype == spirv_cross::SPIRType::UInt) {
-                if(base_type.vecsize != 4) {
+                if(base_type.vecsize == 1) {
+                    desc.format = RHIFragmentOutputFormatType::k1xUIint32;
+                } else if(base_type.vecsize == 2) {
+                    desc.format = RHIFragmentOutputFormatType::k2xUIint32;
+                } else if(base_type.vecsize == 3) {
+                    desc.format = RHIFragmentOutputFormatType::k3xUIint32;
+                } else if(base_type.vecsize == 4) {
+                    desc.format = RHIFragmentOutputFormatType::k4xUIint32;
+                } else {
                     MI_LOG(MIInfraLogType::kWarning, "Unsupported vector size for fragment output.");
                     return false;
                 }
-                desc.format = RHIFragmentOutputFormatType::k4xUIint32;
             } else {
                 // TODO support more output types ?
                 MI_LOG(MIInfraLogType::kWarning, "Unsupported base type for fragment output.");

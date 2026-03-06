@@ -218,23 +218,13 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
         return ;
     }
     for(int i = 0; i < desc.color_attachments.size(); ++i) {
-        if(fragment_outputs_[i].format == RHIFragmentOutputFormatType::k4xFp32) {
-            if(!IsFloatPixelFormat(desc.color_attachments[i].format)) {
-                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} ({}) format mismatch,"
-                                                 "provided {}, reflected {}", i, fragment_outputs_[i].name,
-                                                 GetPixelFormatName(desc.color_attachments[i].format),
-                                                 GetRHIFragmentOutputFormatName(fragment_outputs_[i].format));
-                return ;
-            }
-        } else if(fragment_outputs_[i].format == RHIFragmentOutputFormatType::k4xUIint32) {
-            if(!IsUIntPixelFormat(desc.color_attachments[i].format)) {
-                MI_LOG(MIInfraLogType::kWarning, "Color attachment {} ({}) format mismatch,"
-                                                 "provided {}, reflected {}",
-                                                 i, fragment_outputs_[i].name,
-                                                 GetPixelFormatName(desc.color_attachments[i].format),
-                                                 GetRHIFragmentOutputFormatName(fragment_outputs_[i].format));
-                return ;
-            }
+        if(!RHIIsOutputCompatiablePixelFormat(fragment_outputs_[i].format, desc.color_attachments[i].format)) {
+            MI_LOG(MIInfraLogType::kWarning, "Color attachment {} ({}) format mismatch,"
+                                             "provided {}, reflected {}",
+                                             i, fragment_outputs_[i].name,
+                                             GetPixelFormatName(desc.color_attachments[i].format),
+                                             GetRHIFragmentOutputFormatName(fragment_outputs_[i].format));
+            return ;
         }
     }
     if(depth_test_enable_ && desc.depth_stencil_attachment.format != PixelFormatType::kD32_FLOAT) {

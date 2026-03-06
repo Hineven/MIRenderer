@@ -542,6 +542,9 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         else if (fmt == "rgba8") pf = PixelFormatType::kR8G8B8A8_UNORM;
         else if (fmt == "rgba16f") pf = PixelFormatType::kR16G16B16A16_FLOAT;
         else if (fmt == "r32u") pf = PixelFormatType::kR32_UINT;
+        else if (fmt == "rg32u") pf = PixelFormatType::kR32G32_UINT;
+        else if (fmt == "rgb32u") pf = PixelFormatType::kR32G32B32_UINT;
+        else if (fmt == "rgba32u") pf = PixelFormatType::kR32G32B32A32_UINT;
         // If still unknown, approximate by channel count from bpp (assume 4 channels of 1 byte when bpp==4, etc.)
         if (pf == PixelFormatType::kUnknown) {
             if (bpp == 4) pf = PixelFormatType::kR8G8B8A8_UNORM;

@@ -44,6 +44,8 @@ FORCEINLINE vk::Format GetVulkanPixelFormat (PixelFormatType format) {
             return vk::Format::eD32Sfloat;
         case PixelFormatType::kR32G32B32A32_UINT:
             return vk::Format::eR32G32B32A32Uint;
+        case PixelFormatType::kR32G32B32_UINT:
+            return vk::Format::eR32G32B32Uint;
         case PixelFormatType::kR32G32_UINT:
             return vk::Format::eR32G32Uint;
         case PixelFormatType::kR32_UINT:
@@ -82,6 +84,8 @@ FORCEINLINE PixelFormatType GetPixelFormatFromVulkanFormat (vk::Format format) {
             return PixelFormatType::kD32_FLOAT;
         case vk::Format::eR32G32B32A32Uint:
             return PixelFormatType::kR32G32B32A32_UINT;
+        case vk::Format::eR32G32B32Uint:
+            return PixelFormatType::kR32G32B32_UINT;
         case vk::Format::eR32G32Uint:
             return PixelFormatType::kR32G32_UINT;
         case vk::Format::eR32Uint:
@@ -90,6 +94,39 @@ FORCEINLINE PixelFormatType GetPixelFormatFromVulkanFormat (vk::Format format) {
             mi_assert(false, "Unrecognized pixel format by the Vulkan backend. Missing transition code?");
             return PixelFormatType::kUnknown;
     }
+}
+
+FORCEINLINE vk::ClearColorValue GetVulkanClearColorValue (PixelFormatType format, const std::array<float, 4> & clear_value) {
+    if (IsUIntPixelFormat(format)) {
+        return vk::ClearColorValue(std::array<uint32_t, 4> {
+            static_cast<uint32_t>(clear_value[0]),
+            static_cast<uint32_t>(clear_value[1]),
+            static_cast<uint32_t>(clear_value[2]),
+            static_cast<uint32_t>(clear_value[3])
+        });
+    }
+    return vk::ClearColorValue(clear_value);
+}
+
+FORCEINLINE vk::ColorComponentFlags GetVulkanColorWriteMask (PixelFormatType format) {
+    vk::ColorComponentFlags mask {};
+    switch (GetPixelFormatNumChannels(format)) {
+        case 4:
+            mask |= vk::ColorComponentFlagBits::eA;
+            [[fallthrough]];
+        case 3:
+            mask |= vk::ColorComponentFlagBits::eB;
+            [[fallthrough]];
+        case 2:
+            mask |= vk::ColorComponentFlagBits::eG;
+            [[fallthrough]];
+        case 1:
+            mask |= vk::ColorComponentFlagBits::eR;
+            break;
+        default:
+            break;
+    }
+    return mask;
 }
 
 FORCEINLINE vk::ImageType GetVulkanImageType (RHITextureType type) {

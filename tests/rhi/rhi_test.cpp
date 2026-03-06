@@ -154,6 +154,24 @@ static auto f_shader_code = "// Fragment Shader\n"
                      "    return output;\n"
                      "}";
 
+static auto f_shader_uint123_code = "// Fragment Shader\n"
+                     "struct PSInput {\n"
+                     "    float3 color : COLOR;\n"
+                     "};\n"
+                     "struct PSOutput {\n"
+                     "    uint  color0 : SV_Target0;\n"
+                     "    uint2 color1 : SV_Target1;\n"
+                     "    uint3 color2 : SV_Target2;\n"
+                     "};\n"
+                     "PSOutput Main(PSInput input) {\n"
+                     "    uint3 u = uint3(input.color * 100);\n"
+                     "    PSOutput output;\n"
+                     "    output.color0 = u.x;\n"
+                     "    output.color1 = u.xy;\n"
+                     "    output.color2 = u.xyz;\n"
+                     "    return output;\n"
+                     "}";
+
 TEST(RHITest, RHITriangle) {
     using namespace mi;
     CPPTRACE_TRY {
@@ -449,6 +467,7 @@ TEST(PixelFormatTest, FormatFunctions) {
     EXPECT_EQ(PixelFormatDataType::kSRGB, GetPixelFormatDataType(PixelFormatType::kR8G8B8A8_SRGB));
     EXPECT_EQ(PixelFormatDataType::kFLOAT, GetPixelFormatDataType(PixelFormatType::kR32_FLOAT));
     EXPECT_EQ(PixelFormatDataType::kUINT, GetPixelFormatDataType(PixelFormatType::kR32_UINT));
+    EXPECT_EQ(PixelFormatDataType::kUINT, GetPixelFormatDataType(PixelFormatType::kR32G32B32_UINT));
     
     // GetPixelFormatNumBytesPerChannel
     EXPECT_EQ(1u, GetPixelFormatNumBytesPerChannel(PixelFormatType::kR8_UNORM));
@@ -459,6 +478,7 @@ TEST(PixelFormatTest, FormatFunctions) {
     EXPECT_EQ(1u, GetPixelFormatNumChannels(PixelFormatType::kR8_UNORM));
     EXPECT_EQ(2u, GetPixelFormatNumChannels(PixelFormatType::kR8G8_UNORM));
     EXPECT_EQ(3u, GetPixelFormatNumChannels(PixelFormatType::kR32G32B32_FLOAT));
+    EXPECT_EQ(3u, GetPixelFormatNumChannels(PixelFormatType::kR32G32B32_UINT));
     EXPECT_EQ(4u, GetPixelFormatNumChannels(PixelFormatType::kR8G8B8A8_UNORM));
     
     // IsDepthStencilPixelFormat
@@ -468,6 +488,7 @@ TEST(PixelFormatTest, FormatFunctions) {
     // GetPixelFormatName
     EXPECT_STREQ("R8_UNORM", GetPixelFormatName(PixelFormatType::kR8_UNORM));
     EXPECT_STREQ("R32G32B32A32_FLOAT", GetPixelFormatName(PixelFormatType::kR32G32B32A32_FLOAT));
+    EXPECT_STREQ("R32G32B32_UINT", GetPixelFormatName(PixelFormatType::kR32G32B32_UINT));
     
     // ToString
     EXPECT_EQ(std::string("R16G16B16A16_FLOAT"), ToString(PixelFormatType::kR16G16B16A16_FLOAT));
@@ -479,7 +500,16 @@ TEST(PixelFormatTest, FormatFunctions) {
     
     // IsUIntPixelFormat
     EXPECT_TRUE(IsUIntPixelFormat(PixelFormatType::kR32_UINT));
+    EXPECT_TRUE(IsUIntPixelFormat(PixelFormatType::kR32G32B32_UINT));
     EXPECT_FALSE(IsUIntPixelFormat(PixelFormatType::kR32_FLOAT));
+
+    // RHI fragment output / render target compatibility
+    EXPECT_TRUE(RHIIsOutputCompatiablePixelFormat(RHIFragmentOutputFormatType::k1xUIint32, PixelFormatType::kR32_UINT));
+    EXPECT_TRUE(RHIIsOutputCompatiablePixelFormat(RHIFragmentOutputFormatType::k2xUIint32, PixelFormatType::kR32G32_UINT));
+    EXPECT_TRUE(RHIIsOutputCompatiablePixelFormat(RHIFragmentOutputFormatType::k3xUIint32, PixelFormatType::kR32G32B32_UINT));
+    EXPECT_FALSE(RHIIsOutputCompatiablePixelFormat(RHIFragmentOutputFormatType::k2xUIint32, PixelFormatType::kR32_UINT));
+    EXPECT_FALSE(RHIIsOutputCompatiablePixelFormat(RHIFragmentOutputFormatType::k3xUIint32, PixelFormatType::kR32G32B32A32_UINT));
+    EXPECT_FALSE(RHIIsOutputCompatiablePixelFormat(RHIFragmentOutputFormatType::k1xUIint32, PixelFormatType::kR32_FLOAT));
     
     // IsPixelFormat4ComponentFloat
     EXPECT_TRUE(IsPixelFormat4ComponentFloat(PixelFormatType::kR32G32B32A32_FLOAT));
@@ -491,6 +521,7 @@ TEST(PixelFormatTest, FormatFunctions) {
     EXPECT_EQ(1u, GetPixelFormatBytesPerPixel(PixelFormatType::kR8_UNORM)); // 1通道 × 1字节
     EXPECT_EQ(4u, GetPixelFormatBytesPerPixel(PixelFormatType::kR8G8B8A8_UNORM)); // 4通道 × 1字节
     EXPECT_EQ(8u, GetPixelFormatBytesPerPixel(PixelFormatType::kR16G16B16A16_FLOAT)); // 4通道 × 2字节
+    EXPECT_EQ(12u, GetPixelFormatBytesPerPixel(PixelFormatType::kR32G32B32_UINT)); // 3通道 × 4字节
     EXPECT_EQ(16u, GetPixelFormatBytesPerPixel(PixelFormatType::kR32G32B32A32_FLOAT)); // 4通道 × 4字节
     
     // 测试异常情况下的断言（这些测试会触发断言，仅在调试模式下有效）
@@ -518,6 +549,104 @@ TEST(PixelFormatTest, FormatFunctions) {
         GetPixelFormatName(static_cast<PixelFormatType>(999));
     }, "");
 #endif
+}
+
+TEST(RHITest, FragmentUint123Outputs) {
+    using namespace mi;
+    CPPTRACE_TRY {
+    TransferInfra(std::make_unique<MyInfra>());
+    GetInfra().Init();
+    SetCurrentThreadType(ThreadType::kRenderThread);
+    RHI::InitializeSingleton(RHIType::kVulkan);
+    {
+        std::vector<std::string> options;
+        options.push_back("-fspv-target-env=vulkan1.3");
+        options.push_back("-fvk-use-scalar-layout");
+        options.push_back("-Zi");
+
+        std::string errmsg;
+        auto v_shader_bcode = GetInfra().CompileHLSLToSPIRV(
+            L"", "Main", "vs_6_3", std::span(v_shader_code, strlen(v_shader_code)), options, errmsg);
+        auto f_shader_bcode = GetInfra().CompileHLSLToSPIRV(
+            L"", "Main", "ps_6_3", std::span(f_shader_uint123_code, strlen(f_shader_uint123_code)), options, errmsg);
+        if (v_shader_bcode.empty() || f_shader_bcode.empty()) {
+        MI_LOG(MIInfraLogType::kError, "Failed to compile uint123 test shaders: {}", errmsg);
+        }
+
+        auto v_shader = RHI::Get().CreateShader(
+            RHIShaderFrequencyFlagBits::kVertex, "Main",
+            RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte *>(v_shader_bcode.data()),
+                               v_shader_bcode.size() * sizeof(uint32_t))
+        );
+        auto f_shader = RHI::Get().CreateShader(
+            RHIShaderFrequencyFlagBits::kFragment, "Main",
+            RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte *>(f_shader_bcode.data()),
+                               f_shader_bcode.size() * sizeof(uint32_t))
+        );
+        ASSERT_TRUE(v_shader);
+        ASSERT_TRUE(f_shader);
+
+        auto foutputs = f_shader->GetFragmentOutputDesc();
+        ASSERT_EQ(foutputs.size(), 3);
+        EXPECT_EQ(foutputs[0].format, RHIFragmentOutputFormatType::k1xUIint32);
+        EXPECT_EQ(foutputs[1].format, RHIFragmentOutputFormatType::k2xUIint32);
+        EXPECT_EQ(foutputs[2].format, RHIFragmentOutputFormatType::k3xUIint32);
+
+        auto vertex_attribute_descs = v_shader->GetVertexInputAttributeDescForPipeline(0);
+        auto binding_descs = std::vector<RHIVertexInputBindingDesc>{
+            RHIVertexInputBindingDesc{
+                .binding = 0,
+                .stride = v_shader->GetVertexStride(),
+                .input_rate = RHIVertexInputRateType::kVertex
+            }
+        };
+        auto pipeline_desc = RHIGraphicsPipelineDesc{
+            .stages = {
+                .vertex_shader = v_shader.Raw(),
+                .fragment_shader = f_shader.Raw()
+            },
+            .vertex_input = {
+                .vertex_buffers = {binding_descs.begin(), binding_descs.end()},
+                .vertex_attributes = {vertex_attribute_descs.begin(), vertex_attribute_descs.end()}
+            },
+            .topology = RHIPrimitiveTopologyType::kTriangleList,
+            .depth_stencil = {
+                false,
+                false,
+                RHIDepthCompareOpType::kLess
+            },
+            .color_attachments = {
+                RHIColorAttachmentDesc{.format = PixelFormatType::kR32_UINT},
+                RHIColorAttachmentDesc{.format = PixelFormatType::kR32G32_UINT},
+                RHIColorAttachmentDesc{.format = PixelFormatType::kR32G32B32_UINT}
+            }
+        };
+
+        auto pipeline = RHI::Get().CreateGraphicsPipeline(pipeline_desc);
+        EXPECT_TRUE(pipeline);
+        EXPECT_TRUE(pipeline->IsValid());
+
+        auto texture0 = RHI::Get().CreateTexture(
+            RHITextureType::k2D, RHITextureDimensions{64, 64}, PixelFormatType::kR32_UINT,
+            RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer
+        );
+        auto texture1 = RHI::Get().CreateTexture(
+            RHITextureType::k2D, RHITextureDimensions{64, 64}, PixelFormatType::kR32G32_UINT,
+            RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer
+        );
+        auto texture2 = RHI::Get().CreateTexture(
+            RHITextureType::k2D, RHITextureDimensions{64, 64}, PixelFormatType::kR32G32B32_UINT,
+            RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer
+        );
+        EXPECT_TRUE(texture0);
+        EXPECT_TRUE(texture1);
+        EXPECT_TRUE(texture2);
+    }
+    RHI::Get().FinalizeSingleton();
+    GetInfra().Finalize();
+    } CPPTRACE_CATCH (...) {
+    FAIL() << cpptrace::from_current_exception().to_string();
+    }
 }
 
 int main(int argc, char **argv) {

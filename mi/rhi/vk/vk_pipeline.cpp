@@ -315,18 +315,22 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         color_blend_vk.setLogicOp(vk::LogicOp::eCopy);
         for(auto & attachment : pipeline_info.color_attachments) {
             auto & blending = attachment.blending;
+            bool blend_enable = blending.blend_enable;
+            if (blend_enable && IsUIntPixelFormat(attachment.format)) {
+                MI_LOG(MIInfraLogType::kWarning,
+                       "Pipeline {}: blending is not supported for integer color attachment format {}, disabling blending.",
+                       GetName(), GetPixelFormatName(attachment.format));
+                blend_enable = false;
+            }
             blend_attachments.push_back(vk::PipelineColorBlendAttachmentState()
-                                         .setBlendEnable(blending.blend_enable)
+                                         .setBlendEnable(blend_enable)
                                          .setSrcColorBlendFactor(GetVulkanBlendFactor(blending.src_color_blend_factor))
                                          .setDstColorBlendFactor(GetVulkanBlendFactor(blending.dst_color_blend_factor))
                                          .setColorBlendOp(GetVulkanBlendOp(blending.color_blend_op))
                                          .setSrcAlphaBlendFactor(GetVulkanBlendFactor(blending.src_alpha_blend_factor))
                                          .setDstAlphaBlendFactor(GetVulkanBlendFactor(blending.dst_alpha_blend_factor))
                                          .setAlphaBlendOp(GetVulkanBlendOp(blending.alpha_blend_op))
-                                         .setColorWriteMask(vk::ColorComponentFlagBits::eA |
-                                                            vk::ColorComponentFlagBits::eR |
-                                                            vk::ColorComponentFlagBits::eG |
-                                                            vk::ColorComponentFlagBits::eB));
+                                         .setColorWriteMask(GetVulkanColorWriteMask(attachment.format)));
         }
         color_blend_vk.setAttachments(blend_attachments);
         pipeline_info_vk.setPColorBlendState(&color_blend_vk);

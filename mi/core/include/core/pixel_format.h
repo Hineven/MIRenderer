@@ -31,6 +31,7 @@ enum class PixelFormatType {
     kR32_FLOAT,
     kD32_FLOAT,
     kR32G32B32A32_UINT,
+    kR32G32B32_UINT,
     kR32G32_UINT,
     kR32_UINT,
     kMax
@@ -67,6 +68,7 @@ FORCEINLINE PixelFormatDataType GetPixelFormatDataType (PixelFormatType type) {
             return PixelFormatDataType::kFLOAT;
 
         case PixelFormatType::kR32G32B32A32_UINT:
+        case PixelFormatType::kR32G32B32_UINT:
         case PixelFormatType::kR32G32_UINT:
         case PixelFormatType::kR32_UINT:
         case PixelFormatType::kR8_UINT:
@@ -99,6 +101,7 @@ FORCEINLINE uint32_t GetPixelFormatNumBytesPerChannel(PixelFormatType type) {
         case PixelFormatType::kR32_FLOAT:
         case PixelFormatType::kD32_FLOAT:
         case PixelFormatType::kR32G32B32A32_UINT:
+        case PixelFormatType::kR32G32B32_UINT:
         case PixelFormatType::kR32G32_UINT:
         case PixelFormatType::kR32_UINT:
             return 4;
@@ -125,6 +128,7 @@ FORCEINLINE uint32_t GetPixelFormatNumChannels (PixelFormatType type) {
             return 2;
 
         case PixelFormatType::kR32G32B32_FLOAT:
+        case PixelFormatType::kR32G32B32_UINT:
             return 3;
 
         case PixelFormatType::kB8G8R8A8_UNORM:
@@ -180,6 +184,8 @@ FORCEINLINE const char * GetPixelFormatName (PixelFormatType type) {
             return "D32_FLOAT";
         case PixelFormatType::kR32G32B32A32_UINT:
             return "R32G32B32A32_UINT";
+        case PixelFormatType::kR32G32B32_UINT:
+            return "R32G32B32_UINT";
         case PixelFormatType::kR32G32_UINT:
             return "R32G32_UINT";
         case PixelFormatType::kR32_UINT:

@@ -342,6 +342,9 @@ FORCEINLINE uint32_t GetVertexAttributeFormatSize (RHIVertexAttributeFormatType 
 enum class RHIFragmentOutputFormatType {
     k4xFp32,
     // Signed / unsigned all considered as 32bit integer
+    k1xUIint32,
+    k2xUIint32,
+    k3xUIint32,
     k4xUIint32,
     kMax
 };
@@ -350,6 +353,12 @@ FORCEINLINE std::string ToString (RHIFragmentOutputFormatType type) {
     switch (type) {
         case RHIFragmentOutputFormatType::k4xFp32:
             return "4xfp32";
+        case RHIFragmentOutputFormatType::k1xUIint32:
+            return "1xuint32";
+        case RHIFragmentOutputFormatType::k2xUIint32:
+            return "2xuint32";
+        case RHIFragmentOutputFormatType::k3xUIint32:
+            return "3xuint32";
         case RHIFragmentOutputFormatType::k4xUIint32:
             return "4xuint32";
         default:
@@ -357,12 +366,40 @@ FORCEINLINE std::string ToString (RHIFragmentOutputFormatType type) {
     }
 }
 
+FORCEINLINE uint32_t GetRHIFragmentOutputNumChannels (RHIFragmentOutputFormatType type) {
+    switch (type) {
+        case RHIFragmentOutputFormatType::k1xUIint32:
+            return 1;
+        case RHIFragmentOutputFormatType::k2xUIint32:
+            return 2;
+        case RHIFragmentOutputFormatType::k3xUIint32:
+            return 3;
+        case RHIFragmentOutputFormatType::k4xFp32:
+        case RHIFragmentOutputFormatType::k4xUIint32:
+            return 4;
+        default:
+            return 0;
+    }
+}
+
+FORCEINLINE bool IsUIntRHIFragmentOutputFormat (RHIFragmentOutputFormatType type) {
+    switch (type) {
+        case RHIFragmentOutputFormatType::k1xUIint32:
+        case RHIFragmentOutputFormatType::k2xUIint32:
+        case RHIFragmentOutputFormatType::k3xUIint32:
+        case RHIFragmentOutputFormatType::k4xUIint32:
+            return true;
+        default:
+            return false;
+    }
+}
+
 FORCEINLINE bool RHIIsOutputCompatiablePixelFormat (RHIFragmentOutputFormatType output, PixelFormatType type) {
     if (IsFloatPixelFormat(type) && output == RHIFragmentOutputFormatType::k4xFp32) {
         return true;
     }
-    if (IsUIntPixelFormat(type) && output == RHIFragmentOutputFormatType::k4xUIint32) {
-        return true;
+    if (IsUIntPixelFormat(type) && IsUIntRHIFragmentOutputFormat(output)) {
+        return GetPixelFormatNumChannels(type) == GetRHIFragmentOutputNumChannels(output);
     }
     return false;
 }
@@ -371,6 +408,12 @@ FORCEINLINE const char * GetRHIFragmentOutputFormatName (RHIFragmentOutputFormat
     switch(type) {
         case RHIFragmentOutputFormatType::k4xFp32:
             return "4xfp32";
+        case RHIFragmentOutputFormatType::k1xUIint32:
+            return "1xinteger32";
+        case RHIFragmentOutputFormatType::k2xUIint32:
+            return "2xinteger32";
+        case RHIFragmentOutputFormatType::k3xUIint32:
+            return "3xinteger32";
         case RHIFragmentOutputFormatType::k4xUIint32:
             return "4xinteger32";
         default:
