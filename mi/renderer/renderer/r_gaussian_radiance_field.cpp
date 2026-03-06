@@ -298,7 +298,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     auto UB = builder.Allocate<GaussianRadianceFieldUB>();
     {
         UB->GaussianClampingScale = 1e-3f;
-        UB->GaussianExpandFactor  = 2.25f;
+        UB->GaussianExpandFactor  = 3.5f;
         UB->Padding[0] = UB->Padding[1] = 0;
     }
     params->UB=UB;

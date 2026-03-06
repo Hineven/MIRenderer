@@ -32,6 +32,7 @@
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
 #include "include/renderer/r_geometry_buffer.h"
+#include "renderer/r_gaussian_radiance_field.h"
 #include "renderer/r_internal_common.h"
 #include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"

@@ -174,6 +174,67 @@ void RegisterViewerCommands(ViewerApp& app) {
     );
 
     CommandRegistry::Get().MakeAndRegister(
+        "camera_fovy_deg",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"fovy_deg"}),
+            CommandTokenSpec::Free({}, "fovy_deg"),
+        },
+        [&app](const CommandMatchResult &match) {
+            if (match.args.size() < 3) {
+                MI_WARN("ViewerApp: expected 'c fovy_deg <fovy_deg>'");
+                return;
+            }
+            if (!app.view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                float fovy_deg = std::stof(match.args[2]);
+                fovy_deg = std::max(0.1f, std::min(179.9f, fovy_deg)); // Clamp to avoid extreme FOVs.
+                app.view_->camera_.fov_Y = glm::radians(fovy_deg);
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float for 'c fovy_deg'");
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "camera_up",
+        {
+            CommandTokenSpec::KeywordSet({"c"}),
+            CommandTokenSpec::KeywordSet({"up"}),
+            CommandTokenSpec::Free({}, "x"),
+            CommandTokenSpec::Free({}, "y"),
+            CommandTokenSpec::Free({}, "z"),
+        },
+        [&app](const CommandMatchResult &match) {
+            if (match.args.size() < 5) {
+                MI_WARN("ViewerApp: expected 'c up <x> <y> <z>'");
+                return;
+            }
+            if (!app.view_) {
+                MI_WARN("ViewerApp: camera not ready yet");
+                return;
+            }
+            try {
+                glm::vec3 up;
+                up.x = std::stof(match.args[2]);
+                up.y = std::stof(match.args[3]);
+                up.z = std::stof(match.args[4]);
+                const float len = glm::length(up);
+                if (len <= 1e-6f) {
+                    MI_WARN("ViewerApp: up vector length is too small");
+                    return;
+                }
+                app.view_->camera_.up = up / len;
+            } catch (...) {
+                MI_WARN("ViewerApp: invalid float(s) for 'c up'");
+            }
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
         "load",
         {
             CommandTokenSpec::KeywordSet({"load"}),
@@ -310,6 +371,31 @@ void RegisterViewerCommands(ViewerApp& app) {
                 }
             });
 
+        }
+    );
+
+    CommandRegistry::Get().MakeAndRegister(
+        "set_suspended",
+        {
+            CommandTokenSpec::KeywordSet({"set_suspended"}),
+            CommandTokenSpec::KeywordSet({"true", "false"}),
+        },
+        [&app](const CommandMatchResult &match) {
+            if (match.args.size() < 2) {
+                MI_WARN("ViewerApp: expected 'set_suspended <true_or_false>'");
+                return;
+            }
+            std::string val = match.args[1];
+            std::transform(val.begin(), val.end(), val.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+            if (val == "true") {
+                app.SetSuspended(true);
+                MI_LOG(MIInfraLogType::kInfo, "Viewer suspended");
+            } else if (val == "false") {
+                app.SetSuspended(false);
+                MI_LOG(MIInfraLogType::kInfo, "Viewer resumed");
+            } else {
+                MI_WARN("ViewerApp: expected 'set_suspended <true_or_false>'");
+            }
         }
     );
 }

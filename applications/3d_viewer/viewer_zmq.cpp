@@ -232,6 +232,35 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
                 reply = { {"ok", ok} };
                 if (!ok) reply["err"] = "remove_failed";
             }
+        } else if (cmd == "load_scene_config") {
+            if (!viewer_) {
+                reply = { {"ok", false}, {"err", "no_viewer"} };
+            } else {
+                auto args = j.value("args", json::object());
+                const auto scene_json_str = args.value("json", std::string{});
+                const auto scene_path_str = args.value("path", std::string{});
+
+                if (scene_json_str.empty() && scene_path_str.empty()) {
+                    reply = { {"ok", false}, {"err", "missing_json_or_path"} };
+                } else {
+                    bool ok = false;
+                    std::string error;
+                    if (!scene_path_str.empty()) {
+                        const std::filesystem::path scene_path(scene_path_str);
+                        if (!scene_path.is_absolute()) {
+                            reply = { {"ok", false}, {"err", "path_must_be_absolute"} };
+                        } else {
+                            ok = viewer_->LoadSceneFromConfigAbsolutePath(scene_path, &error, true);
+                            reply = { {"ok", ok} };
+                            if (!ok) reply["err"] = error.empty() ? "load_scene_failed" : error;
+                        }
+                    } else {
+                        ok = viewer_->LoadSceneFromConfigJsonString(scene_json_str, &error, true);
+                        reply = { {"ok", ok} };
+                        if (!ok) reply["err"] = error.empty() ? "load_scene_failed" : error;
+                    }
+                }
+            }
         } else {
             reply = { {"ok", false}, {"err", "unknown_cmd"} };
         }

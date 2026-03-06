@@ -364,6 +364,7 @@ GBufferOutput DrawActiveGaussians_PS (DrawActiveGaussians_PSInput Input) {
     float2 UV     = Input.UVW.xy;
     float4 RGBA   = float4(Input.RGB.rgb, Input.UVW.z);
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
+    if (Alpha < 0.01f) discard; // Early cull to save bandwidth. The threshold is a magic number that works well in practice.
     
     float3 Color = saturate(RGBA.xyz);
     CameraParameters C = GetActiveCamera();
@@ -498,6 +499,7 @@ GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PS
     uint Seed     = uint(max(0, int(Input.UVWS.w)));
     float4 RGBA   = float4(Input.RGB.rgb, Input.UVWS.z);    
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
+    if (Alpha < 0.01f) discard; // Early cull to save bandwidth. The threshold is a magic number that works well in practice.
     CameraParameters C = GetActiveCamera();
 
     int2 PixelCoords = int2(floor(Input.Position.xy * float2(C.FilmDimensions)));
@@ -510,6 +512,6 @@ GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PS
 
     float3 Color = saturate(RGBA.xyz);
     GBufferOutput Result = (GBufferOutput)0;
-    Result.ColorAlpha    = float4(Color, 1);//Alpha);
+    Result.ColorAlpha    = float4(Color, 1);
     return Result;
 }

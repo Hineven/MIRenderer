@@ -8,6 +8,7 @@
 #include <future>
 #include <mutex>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include "util/renderable_node.h"
@@ -86,6 +87,9 @@ public:
     void Initialize(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
     void Destroy();
     void LoadScene(const MainLoopStartConfig& cfg);
+    bool LoadSceneFromConfigAbsolutePath(const std::filesystem::path& scene_config_path, std::string* out_error = nullptr, bool clear_existing = true);
+    bool LoadSceneFromConfigJsonString(const std::string& scene_json_str, std::string* out_error = nullptr, bool clear_existing = true);
+    bool ApplySceneConfig(const nlohmann::json& scene_config, bool clear_existing);
     void HandleNavigationInput(float delta_time);
     void HandleKeyboardShortcuts(FrameInternalDelayedOps& ops);
     void HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration);

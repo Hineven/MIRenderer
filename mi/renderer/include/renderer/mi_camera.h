@@ -14,6 +14,7 @@ struct Camera {
     glm::vec3 direction {0, 0, -1};
     glm::vec3 up {0, 1, 0};
 
+    // Radians
     float fov_Y {1.f};
     float near_plane {0.1f};
     float far_plane {1000.f};

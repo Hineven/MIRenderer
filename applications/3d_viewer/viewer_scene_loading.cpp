@@ -67,7 +67,7 @@ static Transform ParseTransformOrDefault(const json& j) {
     return t;
 }
 
-static std::filesystem::path ResolvePathForLoading(ViewerApp& app, const std::string& path_str) {
+static std::filesystem::path ResolvePathForLoading(const std::string& path_str) {
     std::filesystem::path p(path_str);
     if (p.is_absolute()) {
         return p;
@@ -99,7 +99,7 @@ static std::filesystem::path GetSampleSceneConfigPath() {
     return GetInfra().TranslateResPathToFilePath("applications/3d_viewer/" + sample_scene_file_name);
 }
 
-static std::filesystem::path FindViewerSceneConfigPath(ViewerApp& app) {
+static std::filesystem::path FindViewerSceneConfigPath() {
     const auto infra_candidate = GetInfra().TranslateResPathToFilePath("applications/3d_viewer/" + scene_file_name);
     if (std::filesystem::exists(infra_candidate)) {
         return infra_candidate;
@@ -117,58 +117,56 @@ static std::filesystem::path FindViewerSceneConfigPath(ViewerApp& app) {
     return GetSampleSceneConfigPath();
 }
 
+static bool ParseSceneConfigJsonString(const std::string& scene_json_str, json& out_scene_config, std::string* out_error) {
+    try {
+        out_scene_config = json::parse(scene_json_str, nullptr, false);
+        if (out_scene_config.is_discarded()) {
+            if (out_error) {
+                *out_error = "json_parse_error";
+            }
+            out_scene_config = json::object();
+            return false;
+        }
+    } catch (const std::exception& e) {
+        if (out_error) {
+            *out_error = std::string("json_parse_error: ") + e.what();
+        }
+        out_scene_config = json::object();
+        return false;
+    }
+    return true;
+}
+
+static bool LoadSceneConfigFromFile(const std::filesystem::path& scene_config_path, json& out_scene_config, std::string* out_error) {
+    std::ifstream ifs(scene_config_path);
+    if (!ifs) {
+        if (out_error) {
+            *out_error = "scene_config_not_found";
+        }
+        return false;
+    }
+
+    try {
+        ifs >> out_scene_config;
+        return true;
+    } catch (const std::exception& e) {
+        if (out_error) {
+            *out_error = std::string("json_parse_error: ") + e.what();
+        }
+        out_scene_config = json::object();
+        return false;
+    }
+}
+
 } // namespace
 
 void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
-
     scene_ = std::make_unique<Scene>();
 
-    json scene_config = json::object();
-    if (!cfg.start_empty) {
-        std::filesystem::path scene_config_path;
-        if (cfg.scene_config_path.empty()) scene_config_path = FindViewerSceneConfigPath(*this);
-        else scene_config_path = cfg.scene_config_path;
-        std::ifstream ifs(scene_config_path);
-        if (!ifs) {
-            MI_WARN("Viewer scene config not found at '{}'. Scene loads with defaults.", scene_config_path.string());
-        } else {
-            try {
-                ifs >> scene_config;
-                MI_INFO("Loaded viewer scene config from '{}'.", scene_config_path.string());
-            } catch (const std::exception& e) {
-                MI_WARN("Failed to parse viewer scene config '{}': {}. Scene loads with defaults.",
-                    scene_config_path.string(), e.what());
-                scene_config = json::object();
-            }
-        }
-    }
-    
-    {
-        sky_cube_.SafeRelease();
-        std::string environment_map_path;
-        if (scene_config.contains("environment_map") && scene_config["environment_map"].is_string()) {
-            environment_map_path = scene_config["environment_map"].get<std::string>();
-        }
-
-        if (!environment_map_path.empty()) {
-            auto sky_file = ResolvePathForLoading(*this, environment_map_path);
-            sky_cube_ = TextureLoader::LoadEnvironmentMap("Sky", sky_file);
-            if (sky_cube_) {
-                sky_cube_->UpdateOnDevice();
-                sky_cube_->ConvertToBindless();
-                if (!sky_cube_->IsBindless() || !sky_cube_->GetDeviceTexture()) {
-                    MI_WARN("Sky cubemap '{}' failed to become a valid bindless device texture (bindless={}, device_tex={}). Environment light sampling may be invalid.",
-                        sky_file.string(),
-                        sky_cube_->IsBindless() ? 1 : 0,
-                        sky_cube_->GetDeviceTexture() ? 1 : 0);
-                }
-            }
-            else {
-                MI_WARN("Failed to load sky environment map from '{}'.", sky_file.string());
-            }
-        }
-        scene_->SetSkyCube(sky_cube_.Raw());
-    }
+    view_ = std::make_unique<RendererView>();
+    view_->film_width_ = cfg.window_width;
+    view_->film_height_ = cfg.window_height;
+    view_->scene_ = scene_.get();
 
     default_material_ = Material::Create("default_material_", {0.8f, 0.8f, 0.8f, 1.0f}, 1.0f, {0.0f, 0.0f, 0.0f});
 
@@ -233,6 +231,88 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         original_arrow_instance.SafeRelease();
     }
 
+    if (!cfg.start_empty) {
+        std::string error;
+        std::filesystem::path scene_config_path = cfg.scene_config_path.empty() ? FindViewerSceneConfigPath() : cfg.scene_config_path;
+        if (!LoadSceneFromConfigAbsolutePath(scene_config_path, &error, false)) {
+            MI_WARN("Failed to load viewer scene config from '{}': {}. Scene loads with defaults.", scene_config_path.string(), error);
+            ApplySceneConfig(json::object(), false);
+        }
+    } else {
+        ApplySceneConfig(json::object(), false);
+    }
+
+    scene_->CreateOnDevice();
+}
+
+bool ViewerApp::LoadSceneFromConfigAbsolutePath(const std::filesystem::path& scene_config_path, std::string* out_error, bool clear_existing) {
+    if (!scene_ || !resource_allocator_) {
+        if (out_error) {
+            *out_error = "scene_not_initialized";
+        }
+        return false;
+    }
+
+    json scene_config = json::object();
+    if (!LoadSceneConfigFromFile(scene_config_path, scene_config, out_error)) {
+        return false;
+    }
+
+    MI_INFO("Loaded viewer scene config from '{}'.", scene_config_path.string());
+    return ApplySceneConfig(scene_config, clear_existing);
+}
+
+bool ViewerApp::LoadSceneFromConfigJsonString(const std::string& scene_json_str, std::string* out_error, bool clear_existing) {
+    if (!scene_ || !resource_allocator_) {
+        if (out_error) {
+            *out_error = "scene_not_initialized";
+        }
+        return false;
+    }
+
+    json scene_config = json::object();
+    if (!ParseSceneConfigJsonString(scene_json_str, scene_config, out_error)) {
+        return false;
+    }
+
+    return ApplySceneConfig(scene_config, clear_existing);
+}
+
+bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_existing) {
+    if (!scene_ || !resource_allocator_) {
+        return false;
+    }
+
+    if (clear_existing) {
+        CleanAllRenderableNodes();
+    }
+
+    {
+        sky_cube_.SafeRelease();
+        std::string environment_map_path;
+        if (scene_config.contains("environment_map") && scene_config["environment_map"].is_string()) {
+            environment_map_path = scene_config["environment_map"].get<std::string>();
+        }
+
+        if (!environment_map_path.empty()) {
+            auto sky_file = ResolvePathForLoading(environment_map_path);
+            sky_cube_ = TextureLoader::LoadEnvironmentMap("Sky", sky_file);
+            if (sky_cube_) {
+                sky_cube_->UpdateOnDevice();
+                sky_cube_->ConvertToBindless();
+                if (!sky_cube_->IsBindless() || !sky_cube_->GetDeviceTexture()) {
+                    MI_WARN("Sky cubemap '{}' failed to become a valid bindless device texture (bindless={}, device_tex={}). Environment light sampling may be invalid.",
+                        sky_file.string(),
+                        sky_cube_->IsBindless() ? 1 : 0,
+                        sky_cube_->GetDeviceTexture() ? 1 : 0);
+                }
+            } else {
+                MI_WARN("Failed to load sky environment map from '{}'.", sky_file.string());
+            }
+        }
+        scene_->SetSkyCube(sky_cube_.Raw());
+    }
+
     auto & rhi = RHI::Get();
 
     auto load_gltf_object = [&](const std::filesystem::path& model_path,
@@ -282,7 +362,7 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
         }
 
         const std::string object_path_str = object_j["path"].get<std::string>();
-        const auto object_path = ResolvePathForLoading(*this, object_path_str);
+        const auto object_path = ResolvePathForLoading(object_path_str);
         const auto object_transform = ParseTransformOrDefault(object_j.value("transform", json::object()));
         std::string object_name = object_path.filename().string();
         if (object_j.contains("name") && object_j["name"].is_string()) {
@@ -450,12 +530,6 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
     }
 
     scene_->SetSkyCube(sky_cube_.Raw());
-    scene_->CreateOnDevice();
-
-    view_ = std::make_unique<RendererView>();
-    view_->film_width_ = cfg.window_width;
-    view_->film_height_ = cfg.window_height;
-    view_->scene_ = scene_.get();
 
     if (scene_config.contains("camera") && scene_config["camera"].is_object()) {
         const auto& camera_j = scene_config["camera"];
@@ -506,6 +580,8 @@ void ViewerApp::LoadScene(const MainLoopStartConfig& cfg) {
             scene_->directional_light_.direction = glm::normalize(glm::vec3(-5.5f, -4.4f, 5.5f));
         }
     }
+
+    return true;
 }
 
 MI_NAMESPACE_END
