@@ -33,7 +33,7 @@ CVar<bool> CVar_GRF_StochasticRendering(
 CVar<bool> CVar_GRF_StochasticLargeGaussianHalfResolution(
     "r.grf.stochastic_large_gaussian_half_resolution",
     "Render large stochastic GRF gaussians at half resolution and composite them back.",
-    true
+    false
 );
 
 void GaussianRadianceFieldViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
@@ -150,6 +150,7 @@ BEGIN_SHADER_PARAMETERS(StochasticDrawLargeGaussianIndexParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, DrawGaussianCount)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
     SHADER_RENDER_TARGET(PixelFormatType::kR32_UINT, ColorIndex, {})
+    // SHADER_RENDER_TARGET(PixelFormatType::kR8_UNORM, Alpha, {})
     SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
 END_SHADER_PARAMETERS()
 
@@ -440,8 +441,16 @@ void Renderer::Render_DrawGaussianRadianceFields(
         );
         // Save to view for external usage
         view->grf_->stochastic_rendering_depth_ = testing_depth;
+        view->grf_->stochastic_rendering_opacity_ = builder.CreateTexture2D(
+            view->film_width_,
+            view->film_height_,
+            PixelFormatType::kR8_UNORM,
+            RHITextureUsageFlagBits::kUnorderedAccess | RHITextureUsageFlagBits::kTransfer
+        );
         // Copy
         Helpers::CopyTexture(builder, view->g_buffer_->G_depth_.Raw(), testing_depth.Raw());
+        // Clear
+        Helpers::Clear(builder, view->grf_->stochastic_rendering_opacity_.Raw());
     }
 
     auto params = builder.Allocate<GaussianRadianceFieldParameters>();
@@ -449,7 +458,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     {
         UB->GaussianClampingScale = 1e-3f;
         UB->GaussianExpandFactor  = 3.5f;
-        UB->StochasticSplitShortAxisThreshold = 6.0f;
+        UB->StochasticSplitShortAxisThreshold = 10.0f;
         UB->Padding = 0;
     }
     params->UB=UB;
@@ -560,6 +569,14 @@ void Renderer::Render_DrawGaussianRadianceFields(
                 PixelFormatType::kD32_FLOAT,
                 RHITextureUsageFlagBits::kDepthStencil | RHITextureUsageFlagBits::kShaderResource
             );
+            auto large_alpha = builder.CreateTexture2D(
+                half_width,
+                half_height,
+                PixelFormatType::kR8_UNORM,
+                RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kRenderTarget
+            );
+            // Prepare for export
+            view->grf_->stochastic_rendering_opacity_large_ = large_alpha;
 
             auto half_res_view = builder.Allocate<ViewCommonShaderParameters>();
             *half_res_view = *view->view_common_params_;
@@ -586,6 +603,10 @@ void Renderer::Render_DrawGaussianRadianceFields(
             large_params->Depth = large_depth.Raw();
             large_params->Depth.load_op = RHILoadOpType::kClear;
             large_params->Depth.clear_value = {0, 0, 0, 0};
+            // large_params->Alpha = large_alpha.Raw();
+            // large_params->Alpha.load_op = RHILoadOpType::kClear;
+            // large_params->Alpha.clear_value = {0, 0, 0, 0};
+
             Helpers::AddDrawIndirectPass(builder, large_shader, large_params, large_draw_command.Raw());
 
             auto composite_shader = lib.GetShader<GRF_CompositeLargeGaussianShader>();

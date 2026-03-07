@@ -554,6 +554,7 @@ GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PS
 
     float3 Color = saturate(RGBA.xyz);
     GBufferOutput Result = (GBufferOutput)0;
+    // TODO also export alpha
     Result.ColorAlpha    = float4(Color, 1);
     return Result;
 }
@@ -643,7 +644,13 @@ void StochasticDrawLargeGaussianIndex_GS(point DrawActiveGaussians_GSInput Input
     TriStream.RestartStrip();
 }
 
-uint StochasticDrawLargeGaussianIndex_PS (StochasticDrawLargeGaussianIndex_PSInput Input) : SV_TARGET0 {
+struct StochasticDrawLargeGaussianIndex_PSOutput
+{
+    uint ActiveListIndex : SV_Target0;
+    //float Opacity : SV_Target1;
+};
+
+StochasticDrawLargeGaussianIndex_PSOutput StochasticDrawLargeGaussianIndex_PS (StochasticDrawLargeGaussianIndex_PSInput Input) {
     float2 UV = Input.UVW.xy;
     float Alpha = Input.UVW.z * Evaluate2DUnnormalizedGaussian(UV);
     if (Alpha < 0.01f) discard;
@@ -655,13 +662,17 @@ uint StochasticDrawLargeGaussianIndex_PS (StochasticDrawLargeGaussianIndex_PSInp
     float Noise = rng.rand();
     if (Alpha < Noise) discard;
 
-    return Input.ActiveListIndex;
+    StochasticDrawLargeGaussianIndex_PSOutput Output;
+    //Output.Opacity = Alpha;
+    Output.ActiveListIndex = Input.ActiveListIndex;
+    return Output;
 }
 
 Texture2D<uint> LargeGaussianIndex;
 Texture2D<float> LargeGaussianDepth;
 Texture2D<float> FullResolutionDepth;
 RWTexture2D<float4> RWOverlay;
+RWTexture2D<float>  RWOpacity;
 
 float3 EvaluateLargeGaussianColor(uint ActiveListIndex, uint2 PixelCoords) {
     CameraParameters C = GetActiveCamera();
