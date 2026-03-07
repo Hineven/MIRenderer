@@ -885,6 +885,10 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                     any_export_requests_pending = true;
                     view_->grf_->stochastic_rendering_depth_->SetExport();
                 }
+                if (e == "grf_opacity") {
+                    any_export_requests_pending = true;
+                    view_->grf_->stochastic_rendering_opacity_->SetExport();
+                }
                 // TODO more types...
             }
 
@@ -932,6 +936,8 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                     PackOne(e, view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
                 } else if (e == "grf_depth") {
                     PackOne(e, view_->grf_->stochastic_rendering_depth_.Raw(), PixelFormatType::kD32_FLOAT);
+                } else if (e == "grf_opacity") {
+                    PackOne(e, view_->grf_->stochastic_rendering_opacity_.Raw(), PixelFormatType::kR8_UNORM);
                 } else if (e == "transmittance") {
                     PackOne(e, view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
                 } else if (e == "visibility") {
@@ -1017,6 +1023,8 @@ ViewerApp::ViewerStatus ViewerApp::GetStatus() {
 
 bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices) {
     if (!scene_ || !resource_allocator_) return false;
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
     if (path.empty() || !std::filesystem::exists(path)) {
         MI_WARN("LoadGLTFAbsolute: file not found '{}'.", path.string());
         return false;
@@ -1054,6 +1062,8 @@ bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<
 
 bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices) {
     if (!scene_ || !resource_allocator_) return false;
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
     if (path.empty() || !std::filesystem::exists(path)) {
         MI_WARN("LoadPLYAbsolute: file not found '{}'.", path.string());
         return false;
@@ -1084,12 +1094,18 @@ bool ViewerApp::RemoveRenderableNodeByIndex(uint32_t renderable_node_index) {
 
 bool ViewerApp::CleanAllRenderableNodes() {
     if (!scene_) return false;
+
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
+
     loaded_scenes_.clear();
 
     selection_state_ = {};
     if (arrow_mesh_x_instance_) arrow_mesh_x_instance_->SetVisible(false);
     if (arrow_mesh_y_instance_) arrow_mesh_y_instance_->SetVisible(false);
     if (arrow_mesh_z_instance_) arrow_mesh_z_instance_->SetVisible(false);
+
+    FlushSceneDelayedDestruction();
     return true;
 }
 

@@ -253,6 +253,9 @@ bool ViewerApp::LoadSceneFromConfigAbsolutePath(const std::filesystem::path& sce
         return false;
     }
 
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
+
     json scene_config = json::object();
     if (!LoadSceneConfigFromFile(scene_config_path, scene_config, out_error)) {
         return false;
@@ -269,6 +272,9 @@ bool ViewerApp::LoadSceneFromConfigJsonString(const std::string& scene_json_str,
         }
         return false;
     }
+
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
 
     json scene_config = json::object();
     if (!ParseSceneConfigJsonString(scene_json_str, scene_config, out_error)) {

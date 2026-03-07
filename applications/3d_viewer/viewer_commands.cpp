@@ -412,14 +412,12 @@ void RegisterViewerCommands(ViewerApp& app) {
             CommandTokenSpec::KeywordSet({"clean"}),
         },
         [&app](const CommandMatchResult & /*match*/) {
-            app.EnqueueNextFrameOperations([&app]() {
-                auto ok = app.CleanAllRenderableNodes();
-                if (ok) {
-                    MI_LOG(MIInfraLogType::kInfo, "Cleaned all renderable nodes");
-                } else {
-                    MI_WARN("ViewerApp: failed to clean all renderable nodes");
-                }
-            });
+            auto ok = app.CleanAllRenderableNodes();
+            if (ok) {
+                MI_LOG(MIInfraLogType::kInfo, "Cleaned all renderable nodes");
+            } else {
+                MI_WARN("ViewerApp: failed to clean all renderable nodes");
+            }
 
         }
     );

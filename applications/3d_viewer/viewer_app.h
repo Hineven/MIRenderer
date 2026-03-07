@@ -99,6 +99,8 @@ public:
     void ProcessAxisDragging();
     void SetSelectedRenderable(Renderable* renderable);
     void RegisterLoadedScene(const std::string& name, const std::vector<TRef<RenderableNode>>& roots);
+    void WaitForSceneMutation();
+    void FlushSceneDelayedDestruction();
     void UnloadScene(size_t idx);
     void Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
 

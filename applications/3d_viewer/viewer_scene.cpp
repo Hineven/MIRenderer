@@ -34,8 +34,25 @@ void ViewerApp::RegisterLoadedScene(const std::string& name, const std::vector<T
     loaded_scenes_.push_back(std::move(s));
 }
 
+void ViewerApp::WaitForSceneMutation() {
+    RHI::Get().WaitForIdle();
+}
+
+void ViewerApp::FlushSceneDelayedDestruction() {
+    if (scene_) {
+        scene_->ForceFlushDelayedDestruction();
+    }
+    if (resource_allocator_) {
+        resource_allocator_->ForceFlushDelayedDestruction();
+    }
+}
+
 void ViewerApp::UnloadScene(size_t idx) {
     if (idx >= loaded_scenes_.size()) return;
+
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
+
     auto& s = loaded_scenes_[idx];
     for (auto& root : s.roots) {
         std::function<void(TRef<RenderableNode>)> walk = [&](TRef<RenderableNode> n) {
@@ -50,6 +67,9 @@ void ViewerApp::UnloadScene(size_t idx) {
         walk(root);
     }
     s.roots.clear();
+    loaded_scenes_.erase(loaded_scenes_.begin() + static_cast<std::ptrdiff_t>(idx));
+
+    FlushSceneDelayedDestruction();
 }
 
 MI_NAMESPACE_END
