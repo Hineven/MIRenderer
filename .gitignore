@@ -38,3 +38,7 @@ imgui.ini
 # Data directory for applications/3d_viewer
 applications/3d_viewer/data/
 /applications/3d_viewer/viewer_scene.json
+
+# AI Agent related stuff
+AGENTS.md
+*/*PLAN.md
