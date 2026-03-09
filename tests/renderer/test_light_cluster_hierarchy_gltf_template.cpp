@@ -20,6 +20,7 @@
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_scene.h>
 #include <renderer/r_light_cluster_hiearchy.h>
+#include <renderer/mi_static_mesh.h>
 #include <rhi/rhi.h>
 #include <util/gltf_loader.h>
 #include <util/renderable_node.h>
@@ -84,7 +85,7 @@ TEST(RendererLightClusterHierarchyGltfTemplateTest, BuildFromGltfAssetTemplate) 
     Scene scene;
     scene.CreateOnDevice();
 
-    auto node_registry = RenderableNodeRegistry::Create();
+    auto node_registry = Create<RenderableNodeRegistry>();
     auto default_material = Material::Create("gltf_default", glm::vec4(1.f), 0.5f, glm::vec3(0.f));
 
     std::vector<TRef<Geometry>> geometries;
@@ -120,7 +121,7 @@ TEST(RendererLightClusterHierarchyGltfTemplateTest, BuildFromGltfAssetTemplate) 
             continue;
         }
 
-        auto hierarchy = BuildMeshLightClusterHiearchy(*geometries[i], *materials[i], config);
+        auto hierarchy = BuildMeshLightClusterHierarchy(*geometries[i], *materials[i], config);
         if (hierarchy.Empty()) {
             continue;
         }

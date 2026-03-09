@@ -85,7 +85,7 @@ TEST(RendererLightClusterHierarchyTest, BuildHierarchyBasicStructure) {
     MeshLightClusterBuildConfig config {};
     config.supplement_morton_neighbor_window = 3;
 
-    auto hierarchy = BuildMeshLightClusterHiearchy(*geom, *mat, config);
+    auto hierarchy = BuildMeshLightClusterHierarchy(*geom, *mat, config);
 
     ASSERT_FALSE(hierarchy.Empty());
     ASSERT_FALSE(hierarchy.triangles.empty());
@@ -111,7 +111,7 @@ TEST(RendererLightClusterHierarchyTest, BudgetSelectionRespectsMaxLights) {
     auto mat = CreateEmissiveMaterial();
 
     MeshLightClusterBuildConfig config {};
-    auto hierarchy = BuildMeshLightClusterHiearchy(*geom, *mat, config);
+    auto hierarchy = BuildMeshLightClusterHierarchy(*geom, *mat, config);
     ASSERT_FALSE(hierarchy.Empty());
 
     constexpr uint32_t kBudget = 64;
@@ -138,7 +138,7 @@ TEST(RendererLightClusterHierarchyTest, PerformanceSmokeBuildAndSelect) {
     config.supplement_morton_neighbor_window = 2;
 
     auto t0 = std::chrono::high_resolution_clock::now();
-    auto hierarchy = BuildMeshLightClusterHiearchy(*geom, *mat, config);
+    auto hierarchy = BuildMeshLightClusterHierarchy(*geom, *mat, config);
     auto selection = SelectMeshLightPrimitivesByBudget(hierarchy, 128, true);
     auto t1 = std::chrono::high_resolution_clock::now();
 

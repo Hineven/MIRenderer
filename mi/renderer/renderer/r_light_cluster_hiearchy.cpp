@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <numeric>
-#include <queue>
+#include <set>
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,18 +31,74 @@ namespace {
  *
  * Core idea:
  * 1) Start from emissive triangles as leaf clusters.
- * 2) Build topology adjacency (shared edge) and supplement graph links from Morton neighbors.
+ * 2) Build topology adjacency (shared edge).
  * 3) Iteratively merge the best pair (greedy agglomerative clustering) using a multi-objective cost.
- * 4) Store the merge process as a tree.
- * 5) Capture independent LOD snapshots when active cluster count reaches N, N/2, N/4 ... 1.
+ * 4) if no topology-adjacent pair is available, for the first N smallest (low emissive power) active cluster, find the best merge regardless of topology and merge them as a fallback. (N is specified as a constant, e.g. 8 or 16, to balance between quality and build time)
+ * 5) Store the merge process as a tree.
+ * 6) Capture independent LOD snapshots when active cluster count reaches N, N/2, N/4 ... 1.
  *
  * Why this shape:
  * - Tree storage keeps total node count O(N), avoiding O(N log N) duplication in hierarchy storage.
- * - Snapshot levels still provide easy GPU upload and budgeted runtime selection.
+ * - Snapshot levels still provide easy GPU upload and budgeted runtime selection.P
  */
+
+
+CVar<int> CVar_LightClusterBuildFallbackSearchN("r.light_grid.cluster_build_fallback_search_n",
+    "Number of active clusters to search for best merge when no topology-adjacent pair is available during cluster hierarchy building." 
+    "Higher value may improve quality but increase build time.",
+    8
+);
 
 constexpr glm::vec3 kLuminanceCoeff = glm::vec3(0.2126f, 0.7152f, 0.0722f);
 constexpr float kOverlapEpsilon = 1e-6f;
+constexpr float kTopologyVertexTolerance = 1e-5f;
+
+struct QuantizedPositionKey {
+    int64_t x {};
+    int64_t y {};
+    int64_t z {};
+
+    bool operator==(const QuantizedPositionKey & rhs) const {
+        return x == rhs.x && y == rhs.y && z == rhs.z;
+    }
+
+    bool operator<(const QuantizedPositionKey & rhs) const {
+        if (x != rhs.x) {
+            return x < rhs.x;
+        }
+        if (y != rhs.y) {
+            return y < rhs.y;
+        }
+        return z < rhs.z;
+    }
+};
+
+struct QuantizedEdgeKey {
+    QuantizedPositionKey a {};
+    QuantizedPositionKey b {};
+
+    bool operator==(const QuantizedEdgeKey & rhs) const {
+        return a == rhs.a && b == rhs.b;
+    }
+};
+
+struct QuantizedEdgeKeyHash {
+    size_t operator()(const QuantizedEdgeKey & key) const {
+        size_t seed = 0;
+        auto hash_combine = [&](int64_t value) {
+            size_t h = std::hash<int64_t>{}(value);
+            seed ^= h + 0x9e3779b9u + (seed << 6u) + (seed >> 2u);
+        };
+
+        hash_combine(key.a.x);
+        hash_combine(key.a.y);
+        hash_combine(key.a.z);
+        hash_combine(key.b.x);
+        hash_combine(key.b.y);
+        hash_combine(key.b.z);
+        return seed;
+    }
+};
 
 FORCEINLINE uint32_t ExpandBits10(uint32_t v) {
     v = (v * 0x00010001u) & 0xFF0000FFu;
@@ -73,6 +129,24 @@ FORCEINLINE uint64_t BuildEdgeKey(uint32_t a, uint32_t b) {
         std::swap(a, b);
     }
     return (uint64_t(a) << 32ull) | uint64_t(b);
+}
+
+FORCEINLINE QuantizedPositionKey QuantizePosition(glm::vec3 p, float tolerance) {
+    float inv_tolerance = 1.f / tolerance;
+    return {
+        (int64_t)std::llround((double)p.x * (double)inv_tolerance),
+        (int64_t)std::llround((double)p.y * (double)inv_tolerance),
+        (int64_t)std::llround((double)p.z * (double)inv_tolerance)
+    };
+}
+
+FORCEINLINE QuantizedEdgeKey BuildQuantizedEdgeKey(glm::vec3 a, glm::vec3 b, float tolerance) {
+    QuantizedPositionKey qa = QuantizePosition(a, tolerance);
+    QuantizedPositionKey qb = QuantizePosition(b, tolerance);
+    if (qb < qa) {
+        std::swap(qa, qb);
+    }
+    return {qa, qb};
 }
 
 FORCEINLINE float AABBVolume(const AABB & aabb) {
@@ -192,6 +266,26 @@ bool HasAnyEmissiveTexelInTriangle(Texture * emissive_map, glm::vec2 uv0, glm::v
     return false;
 }
 
+struct MergePairRecord {
+    uint32_t adjacent_cluster_id {UINT32_MAX};
+    float cost {std::numeric_limits<float>::infinity()};
+    bool topology_adjacent {false};
+};
+
+struct ActiveClusterOrder {
+    float total_intensity {0.f};
+    uint32_t node_idx {UINT32_MAX};
+};
+
+struct ActiveClusterOrderLess {
+    bool operator()(const ActiveClusterOrder & lhs, const ActiveClusterOrder & rhs) const {
+        if (lhs.total_intensity != rhs.total_intensity) {
+            return lhs.total_intensity < rhs.total_intensity;
+        }
+        return lhs.node_idx < rhs.node_idx;
+    }
+};
+
 struct BuildRuntimeNode {
     bool active {true};
 
@@ -204,8 +298,8 @@ struct BuildRuntimeNode {
 
     std::vector<uint32_t> triangle_indices;
 
-    std::unordered_set<uint32_t> augmented_neighbors;
     std::unordered_set<uint32_t> topology_neighbors;
+    std::unordered_map<uint32_t, MergePairRecord> merge_pair_records;
 };
 
 struct MergeEdge {
@@ -215,11 +309,28 @@ struct MergeEdge {
     bool topology_adjacent {false};
 };
 
-struct MergeEdgeGreater {
+struct MergeEdgeLess {
     bool operator()(const MergeEdge & lhs, const MergeEdge & rhs) const {
-        return lhs.cost > rhs.cost;
+        if (lhs.cost != rhs.cost) {
+            return lhs.cost < rhs.cost;
+        }
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        return lhs.b < rhs.b;
     }
 };
+
+FORCEINLINE MergeEdge MakeCanonicalMergeEdge(uint32_t a, uint32_t b, float cost, bool topology_adjacent) {
+    if (a > b) {
+        std::swap(a, b);
+    }
+    return {a, b, cost, topology_adjacent};
+}
+
+FORCEINLINE ActiveClusterOrder MakeActiveClusterOrder(const BuildRuntimeNode & node, uint32_t node_idx) {
+    return {node.total_intensity, node_idx};
+}
 
 void BuildTriangleList(
     const Geometry & geometry,
@@ -321,7 +432,10 @@ std::vector<std::unordered_set<uint32_t>> BuildTopologyAdjacency(
 
     const auto & indices = geometry.GetIndexBufferRef();
     std::unordered_map<uint64_t, uint32_t> edge_owner;
+    std::unordered_map<QuantizedEdgeKey, uint32_t, QuantizedEdgeKeyHash> geometric_edge_owner;
     edge_owner.reserve(filtered_triangles.size() * 3);
+    geometric_edge_owner.reserve(filtered_triangles.size() * 3);
+    const auto & vertices = geometry.GetVertexBuffer();
 
     for (const auto & tri : filtered_triangles) {
         uint32_t primitive = tri.primitive_index;
@@ -336,7 +450,16 @@ std::vector<std::unordered_set<uint32_t>> BuildTopologyAdjacency(
         uint32_t i0 = indices[primitive * 3 + 0];
         uint32_t i1 = indices[primitive * 3 + 1];
         uint32_t i2 = indices[primitive * 3 + 2];
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) {
+            continue;
+        }
+
         uint32_t e[3][2] = {{i0, i1}, {i1, i2}, {i2, i0}};
+        glm::vec3 edge_positions[3][2] = {
+            {vertices[i0].Position, vertices[i1].Position},
+            {vertices[i1].Position, vertices[i2].Position},
+            {vertices[i2].Position, vertices[i0].Position}
+        };
 
         for (uint32_t edge_i = 0; edge_i < 3; ++edge_i) {
             uint64_t key = BuildEdgeKey(e[edge_i][0], e[edge_i][1]);
@@ -345,6 +468,22 @@ std::vector<std::unordered_set<uint32_t>> BuildTopologyAdjacency(
                 edge_owner.emplace(key, tri_idx);
             } else {
                 uint32_t other = iter->second;
+                if (other != tri_idx) {
+                    adjacency[tri_idx].insert(other);
+                    adjacency[other].insert(tri_idx);
+                }
+            }
+
+            QuantizedEdgeKey geometric_key = BuildQuantizedEdgeKey(
+                edge_positions[edge_i][0],
+                edge_positions[edge_i][1],
+                kTopologyVertexTolerance
+            );
+            auto geometric_iter = geometric_edge_owner.find(geometric_key);
+            if (geometric_iter == geometric_edge_owner.end()) {
+                geometric_edge_owner.emplace(geometric_key, tri_idx);
+            } else {
+                uint32_t other = geometric_iter->second;
                 if (other != tri_idx) {
                     adjacency[tri_idx].insert(other);
                     adjacency[other].insert(tri_idx);
@@ -466,6 +605,89 @@ float EvaluatePairMergeCost(
         config.weight_intensity_imbalance * intensity_imbalance;
 }
 
+void RemoveMergePairRecord(
+    std::vector<BuildRuntimeNode> & runtime_nodes,
+    std::set<MergeEdge, MergeEdgeLess> & merge_pairs,
+    uint32_t a,
+    uint32_t b
+) {
+    if (a == b || a >= runtime_nodes.size() || b >= runtime_nodes.size()) {
+        return;
+    }
+    if (a > b) {
+        std::swap(a, b);
+    }
+
+    auto iter = runtime_nodes[a].merge_pair_records.find(b);
+    if (iter == runtime_nodes[a].merge_pair_records.end()) {
+        return;
+    }
+
+    const MergePairRecord & record = iter->second;
+    merge_pairs.erase(MakeCanonicalMergeEdge(a, b, record.cost, record.topology_adjacent));
+    runtime_nodes[a].merge_pair_records.erase(iter);
+    runtime_nodes[b].merge_pair_records.erase(a);
+}
+
+void RemoveAllMergePairRecordsForNode(
+    std::vector<BuildRuntimeNode> & runtime_nodes,
+    std::set<MergeEdge, MergeEdgeLess> & merge_pairs,
+    uint32_t node_idx
+) {
+    if (node_idx >= runtime_nodes.size()) {
+        return;
+    }
+
+    std::vector<uint32_t> neighbors;
+    neighbors.reserve(runtime_nodes[node_idx].merge_pair_records.size());
+    for (const auto & [neighbor_idx, _] : runtime_nodes[node_idx].merge_pair_records) {
+        neighbors.push_back(neighbor_idx);
+    }
+
+    for (uint32_t neighbor_idx : neighbors) {
+        RemoveMergePairRecord(runtime_nodes, merge_pairs, node_idx, neighbor_idx);
+    }
+}
+
+void UpsertMergePairRecord(
+    std::vector<BuildRuntimeNode> & runtime_nodes,
+    std::set<MergeEdge, MergeEdgeLess> & merge_pairs,
+    uint32_t a,
+    uint32_t b,
+    const MeshLightClusterBuildConfig & config,
+    float inv_scene_diag
+) {
+    if (a == b || a >= runtime_nodes.size() || b >= runtime_nodes.size()) {
+        return;
+    }
+    if (!runtime_nodes[a].active || !runtime_nodes[b].active) {
+        return;
+    }
+
+    bool topology_adjacent = runtime_nodes[a].topology_neighbors.find(b) != runtime_nodes[a].topology_neighbors.end();
+    uint32_t edge_a = std::min(a, b);
+    uint32_t edge_b = std::max(a, b);
+    RemoveMergePairRecord(runtime_nodes, merge_pairs, edge_a, edge_b);
+
+    if (!topology_adjacent) {
+        return;
+    }
+
+    float cost = EvaluatePairMergeCost(runtime_nodes[a], runtime_nodes[b], true, config, inv_scene_diag);
+    MergeEdge edge = MakeCanonicalMergeEdge(a, b, cost, true);
+    merge_pairs.insert(edge);
+
+    runtime_nodes[edge.a].merge_pair_records[edge.b] = {edge.b, edge.cost, edge.topology_adjacent};
+    runtime_nodes[edge.b].merge_pair_records[edge.a] = {edge.a, edge.cost, edge.topology_adjacent};
+}
+
+MergeEdge FindBestTopologyMergeEdge(const std::set<MergeEdge, MergeEdgeLess> & merge_pairs) {
+    if (!merge_pairs.empty()) {
+        return *merge_pairs.begin();
+    }
+    return {};
+}
+
 std::vector<uint32_t> BuildSnapshotTargets(uint32_t n) {
     std::vector<uint32_t> targets;
     if (n == 0) {
@@ -524,24 +746,38 @@ MeshLightClusterLevel BuildSnapshotLevel(
 
 MergeEdge FindFallbackMergeEdge(
     const std::vector<BuildRuntimeNode> & runtime_nodes,
-    const std::vector<uint32_t> & active_nodes,
+    const std::set<ActiveClusterOrder, ActiveClusterOrderLess> & active_clusters_by_intensity,
+    const std::unordered_set<uint32_t> & active_nodes,
     const MeshLightClusterBuildConfig & config,
     float inv_scene_diag
 ) {
+    uint32_t search_count = std::min<uint32_t>((uint32_t)active_clusters_by_intensity.size(), (uint32_t)std::max(CVar_LightClusterBuildFallbackSearchN.Get(), 1));
     MergeEdge best {};
-    for (uint32_t i = 0; i < (uint32_t)active_nodes.size(); ++i) {
-        uint32_t a = active_nodes[i];
-        if (!runtime_nodes[a].active) {
-            continue;
-        }
-        for (uint32_t j = i + 1; j < (uint32_t)active_nodes.size(); ++j) {
-            uint32_t b = active_nodes[j];
-            if (!runtime_nodes[b].active) {
+    std::unordered_set<uint64_t> visited_pairs;
+    visited_pairs.reserve((size_t)search_count * std::max<size_t>(active_nodes.size(), 1));
+
+    std::vector<uint32_t> weakest_active_nodes;
+    weakest_active_nodes.reserve(search_count);
+    auto weakest_iter = active_clusters_by_intensity.begin();
+    for (uint32_t i = 0; i < search_count && weakest_iter != active_clusters_by_intensity.end(); ++i, ++weakest_iter) {
+        weakest_active_nodes.push_back(weakest_iter->node_idx);
+    }
+
+    // Fallback intentionally starts from the weakest active clusters first.
+    // This keeps disconnected low-power islands from stalling the agglomeration process,
+    // while still allowing them to merge with any active cluster in the hierarchy.
+    for (uint32_t a : weakest_active_nodes) {
+        for (uint32_t b : active_nodes) {
+            if (a == b) {
+                continue;
+            }
+            uint64_t pair_key = BuildEdgeKey(a, b);
+            if (!visited_pairs.insert(pair_key).second) {
                 continue;
             }
             float cost = EvaluatePairMergeCost(runtime_nodes[a], runtime_nodes[b], false, config, inv_scene_diag);
             if (cost < best.cost) {
-                best = {a, b, cost, false};
+                best = MakeCanonicalMergeEdge(a, b, cost, false);
             }
         }
     }
@@ -550,7 +786,7 @@ MergeEdge FindFallbackMergeEdge(
 
 } // namespace
 
-MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
+MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
     const Geometry & geometry,
     const Material & material,
     const MeshLightClusterBuildConfig & config
@@ -569,6 +805,7 @@ MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
     }
 
     AABB total_aabb {};
+    printf("StartBuilding Lit Triangles!\n");
     BuildTriangleList(
         geometry,
         material.GetEmissiveTexture(),
@@ -578,25 +815,26 @@ MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
         total_aabb,
         hierarchy.total_intensity
     );
+    printf("Total valid emissive triangles: %zu, total intensity: %f\n", hierarchy.triangles.size(), hierarchy.total_intensity);
     if (hierarchy.triangles.empty()) {
         return hierarchy;
     }
 
     const uint32_t leaf_count = (uint32_t)hierarchy.triangles.size();
-    auto morton_order = BuildSortedTriangleIndicesByMorton(hierarchy.triangles, total_aabb);
-
-    // Build topology and supplemented adjacency over filtered triangle indices.
+    // Build topology adjacency over filtered triangle indices.
     auto topology_adjacency = BuildTopologyAdjacency(geometry, hierarchy.triangles, hierarchy.source_triangle_count);
-    auto augmented_adjacency = topology_adjacency;
-    AugmentAdjacencyByMortonWindow(augmented_adjacency, morton_order, config.supplement_morton_neighbor_window);
+
+    printf("Topology built! start merging with %u leaves...\n", leaf_count);
 
     // Prepare leaf nodes.
     hierarchy.nodes.reserve(leaf_count * 2 - 1);
     std::vector<BuildRuntimeNode> runtime_nodes;
     runtime_nodes.reserve(leaf_count * 2 - 1);
 
-    std::vector<uint32_t> active_nodes;
-    active_nodes.reserve(leaf_count);
+    std::unordered_set<uint32_t> active_nodes;
+    active_nodes.reserve(leaf_count * 2 - 1);
+
+    std::set<ActiveClusterOrder, ActiveClusterOrderLess> active_clusters_by_intensity;
 
     for (uint32_t tri_idx = 0; tri_idx < leaf_count; ++tri_idx) {
         MeshLightClusterNode node {};
@@ -618,74 +856,59 @@ MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
         rt.weighted_centroid_sum = hierarchy.triangles[tri_idx].centroid * hierarchy.triangles[tri_idx].intensity;
         rt.total_intensity = hierarchy.triangles[tri_idx].intensity;
         rt.triangle_indices = {tri_idx};
-        rt.augmented_neighbors = augmented_adjacency[tri_idx];
         rt.topology_neighbors = topology_adjacency[tri_idx];
 
         uint32_t node_idx = (uint32_t)hierarchy.nodes.size();
         hierarchy.nodes.push_back(std::move(node));
         runtime_nodes.push_back(std::move(rt));
-        active_nodes.push_back(node_idx);
+        active_nodes.insert(node_idx);
+        active_clusters_by_intensity.insert(MakeActiveClusterOrder(runtime_nodes[node_idx], node_idx));
     }
 
-    // Merge priority queue initialized from augmented neighborhood pairs.
-    std::priority_queue<MergeEdge, std::vector<MergeEdge>, MergeEdgeGreater> queue;
+    // Only topology-adjacent merge candidates live in the ordered set.
+    // Morton supplementation is intentionally excluded from long-lived pair maintenance,
+    // and is reserved for separate initialization/fallback logic.
+    std::set<MergeEdge, MergeEdgeLess> merge_pairs;
 
     AABB scene_aabb = total_aabb;
     float scene_diag = glm::length(glm::max(scene_aabb.max - scene_aabb.min, glm::vec3(1e-6f)));
     float inv_scene_diag = 1.f / std::max(scene_diag, 1e-6f);
 
-    std::unordered_set<uint64_t> pushed_pairs;
-    pushed_pairs.reserve(leaf_count * 8);
-
-    auto try_push_pair = [&](uint32_t a, uint32_t b) {
-        if (a == b || !runtime_nodes[a].active || !runtime_nodes[b].active) {
-            return;
-        }
-        if (a > b) {
-            std::swap(a, b);
-        }
-        uint64_t key = BuildEdgeKey(a, b);
-        if (pushed_pairs.find(key) != pushed_pairs.end()) {
-            return;
-        }
-        pushed_pairs.insert(key);
-
-        bool topo_adj = runtime_nodes[a].topology_neighbors.find(b) != runtime_nodes[a].topology_neighbors.end();
-        float cost = EvaluatePairMergeCost(runtime_nodes[a], runtime_nodes[b], topo_adj, config, inv_scene_diag);
-        queue.push({a, b, cost, topo_adj});
-    };
-
     for (uint32_t i = 0; i < leaf_count; ++i) {
-        for (uint32_t n : runtime_nodes[i].augmented_neighbors) {
-            try_push_pair(i, n);
+        for (uint32_t n : runtime_nodes[i].topology_neighbors) {
+            UpsertMergePairRecord(runtime_nodes, merge_pairs, i, n, config, inv_scene_diag);
         }
     }
 
     // Capture snapshots at N, N/2, N/4 ... 1 active clusters.
     auto snapshot_targets = BuildSnapshotTargets(leaf_count);
     uint32_t snapshot_cursor = 0;
-    uint32_t active_count = leaf_count;
 
-    hierarchy.levels.push_back(BuildSnapshotLevel(hierarchy.triangles, hierarchy.nodes, active_nodes, snapshot_cursor));
+    auto collect_active_nodes = [&]() {
+        std::vector<uint32_t> alive;
+        alive.reserve(active_nodes.size());
+        for (uint32_t node_idx : active_nodes) {
+            alive.push_back(node_idx);
+        }
+        return alive;
+    };
+
+    hierarchy.levels.push_back(BuildSnapshotLevel(hierarchy.triangles, hierarchy.nodes, collect_active_nodes(), snapshot_cursor));
     snapshot_cursor = 1;
 
-    while (active_count > 1) {
-        MergeEdge best_edge {};
-        bool found = false;
+    while (active_nodes.size() > 1) {
 
-        while (!queue.empty()) {
-            auto e = queue.top();
-            queue.pop();
-            if (!runtime_nodes[e.a].active || !runtime_nodes[e.b].active) {
-                continue;
-            }
-            best_edge = e;
-            found = true;
-            break;
+        if (active_nodes.size() % 5000 == 0) {
+            printf("BuildMeshLightClusterHierarchy(): Large light mesh detected. Clustering... %zu clusters.\n", active_nodes.size());
         }
+        // Regular path only considers topology-adjacent pairs.
+        // If topology is broken and the set contains no such pair, we fall back to the
+        // documented "first N weakest clusters" search below.
+        MergeEdge best_edge = FindBestTopologyMergeEdge(merge_pairs);
+        bool found = best_edge.a != UINT32_MAX && best_edge.b != UINT32_MAX;
 
         if (!found) {
-            best_edge = FindFallbackMergeEdge(runtime_nodes, active_nodes, config, inv_scene_diag);
+            best_edge = FindFallbackMergeEdge(runtime_nodes, active_clusters_by_intensity, active_nodes, config, inv_scene_diag);
             found = best_edge.a != UINT32_MAX && best_edge.b != UINT32_MAX;
         }
 
@@ -693,6 +916,7 @@ MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
             break;
         }
 
+        // Merge nodes a and b into a new node, and rewire neighbors.
         uint32_t a = best_edge.a;
         uint32_t b = best_edge.b;
 
@@ -732,72 +956,60 @@ MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
         hierarchy.nodes.push_back(std::move(merged_node));
         runtime_nodes.push_back(std::move(merged_rt));
 
-        // Union neighbors and rewire.
-        std::unordered_set<uint32_t> union_aug = runtime_nodes[a].augmented_neighbors;
-        union_aug.insert(runtime_nodes[b].augmented_neighbors.begin(), runtime_nodes[b].augmented_neighbors.end());
-        union_aug.erase(a);
-        union_aug.erase(b);
+        // Maintain active clusters (sorted by intensity for fallback search).
+        active_clusters_by_intensity.erase(MakeActiveClusterOrder(runtime_nodes[a], a));
+        active_clusters_by_intensity.erase(MakeActiveClusterOrder(runtime_nodes[b], b));
+        active_clusters_by_intensity.insert(MakeActiveClusterOrder(runtime_nodes[merged_idx], merged_idx));
 
+        // Gather the topology neighborhood before removing old pair records.
+        // Since merge_pairs only tracks topology-adjacent pairs, only those edges need
+        // to be rewired and reinserted after the merge.
         std::unordered_set<uint32_t> union_topo = runtime_nodes[a].topology_neighbors;
         union_topo.insert(runtime_nodes[b].topology_neighbors.begin(), runtime_nodes[b].topology_neighbors.end());
         union_topo.erase(a);
         union_topo.erase(b);
 
-        for (uint32_t n : union_aug) {
+        RemoveAllMergePairRecordsForNode(runtime_nodes, merge_pairs, a);
+        RemoveAllMergePairRecordsForNode(runtime_nodes, merge_pairs, b);
+
+        for (uint32_t n : union_topo) {
             if (!runtime_nodes[n].active) {
                 continue;
             }
-            runtime_nodes[n].augmented_neighbors.erase(a);
-            runtime_nodes[n].augmented_neighbors.erase(b);
-            runtime_nodes[n].augmented_neighbors.insert(merged_idx);
-
-            bool topo_link =
-                runtime_nodes[n].topology_neighbors.find(a) != runtime_nodes[n].topology_neighbors.end() ||
-                runtime_nodes[n].topology_neighbors.find(b) != runtime_nodes[n].topology_neighbors.end();
             runtime_nodes[n].topology_neighbors.erase(a);
             runtime_nodes[n].topology_neighbors.erase(b);
-            if (topo_link) {
-                runtime_nodes[n].topology_neighbors.insert(merged_idx);
-            }
+            runtime_nodes[n].topology_neighbors.insert(merged_idx);
+            runtime_nodes[merged_idx].topology_neighbors.insert(n);
+        }
 
-            runtime_nodes[merged_idx].augmented_neighbors.insert(n);
-            if (topo_link || union_topo.find(n) != union_topo.end()) {
-                runtime_nodes[merged_idx].topology_neighbors.insert(n);
-            }
-
-            try_push_pair(merged_idx, n);
+        // Recompute only the pairs that are actually affected by the merge.
+        // The per-node pair records let us erase old values exactly and then insert the
+        // new topology-adjacent costs without any floating-point key reconstruction issues.
+        for (uint32_t n : runtime_nodes[merged_idx].topology_neighbors) {
+            UpsertMergePairRecord(runtime_nodes, merge_pairs, merged_idx, n, config, inv_scene_diag);
         }
 
         runtime_nodes[a].active = false;
         runtime_nodes[b].active = false;
-        runtime_nodes[a].augmented_neighbors.clear();
-        runtime_nodes[b].augmented_neighbors.clear();
         runtime_nodes[a].topology_neighbors.clear();
         runtime_nodes[b].topology_neighbors.clear();
+        runtime_nodes[a].merge_pair_records.clear();
+        runtime_nodes[b].merge_pair_records.clear();
 
-        active_count -= 1;
-        active_nodes.push_back(merged_idx);
+        active_nodes.erase(a);
+        active_nodes.erase(b);
+        active_nodes.insert(merged_idx);
 
         // Capture snapshot when crossing target count exactly.
-        while (snapshot_cursor < snapshot_targets.size() && active_count == snapshot_targets[snapshot_cursor]) {
-            std::vector<uint32_t> alive;
-            alive.reserve(active_count);
-            for (uint32_t node_idx : active_nodes) {
-                if (node_idx < runtime_nodes.size() && runtime_nodes[node_idx].active) {
-                    alive.push_back(node_idx);
-                }
-            }
-            hierarchy.levels.push_back(BuildSnapshotLevel(hierarchy.triangles, hierarchy.nodes, alive, snapshot_cursor));
+        while (snapshot_cursor < snapshot_targets.size() && active_nodes.size() == snapshot_targets[snapshot_cursor]) {
+            hierarchy.levels.push_back(BuildSnapshotLevel(hierarchy.triangles, hierarchy.nodes, collect_active_nodes(), snapshot_cursor));
             ++snapshot_cursor;
         }
     }
 
-    // Determine root.
-    for (int i = (int)runtime_nodes.size() - 1; i >= 0; --i) {
-        if (runtime_nodes[i].active) {
-            hierarchy.root_node_index = (uint32_t)i;
-            break;
-        }
+    // Only one active node should remain once agglomeration finishes.
+    if (!active_nodes.empty()) {
+        hierarchy.root_node_index = *active_nodes.begin();
     }
 
     // Ensure final level exists (in case of disconnected/fallback edge corner cases).

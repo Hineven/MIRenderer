@@ -1352,7 +1352,7 @@ void RDGShaderLibrary::Init() {
         GenerateShaderPermutations(macro_decls, shader_class.second.get(), generated_macro_decls, 0);
     }
 
-    MI_INFO("ShaderLibrary: Gathered {} shader permutations to compile.", shaders_to_compile.size());
+    MI_INFO("ShaderLibrary: Gathered {} shader permutations, compiling...", shaders_to_compile.size());
 
     std::vector<TaskRef> compile_tasks;
     compile_tasks.reserve(shaders_to_compile.size());
@@ -1378,8 +1378,6 @@ void RDGShaderLibrary::Init() {
                 std::lock_guard<std::mutex> lock(cache_mutex);
                 cached_shaders_[HashCompiledShader(shader.shader_class->type_hash, ini)].reset(new_shader);
                 num_shaders_compiled ++;
-                //for (int i = 0; i < 256; i++) putchar('\b');
-                printf("ShaderLibrary: Compiled %u / %u shaders.\n", num_shaders_compiled.load(), (uint32_t)num_all_shaders);
                 fflush(stdout);
             }
         });

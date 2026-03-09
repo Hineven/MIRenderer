@@ -114,7 +114,7 @@ struct MeshLightClusterSelection {
     std::vector<uint32_t> primitive_indices;
 };
 
-MeshLightClusterHierarchy BuildMeshLightClusterHiearchy(
+MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
     const Geometry & geometry,
     const Material & material,
     const MeshLightClusterBuildConfig & config = {}
