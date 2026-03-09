@@ -111,7 +111,7 @@ BEGIN_SHADER_PARAMETERS(StochasticDrawGaussianRadianceFieldParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, DrawGaussianCount)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, ActiveGaussianIndirectionBuffer)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
-    SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kSrcAlpha, RHIBlendFactorType::kOneMinusSrcAlpha})
+    SHADER_RENDER_TARGET(PixelFormatType::kR8G8B8A8_UNORM, Color, {RHIBlendOpType::kBlendAdd, RHIBlendFactorType::kOne, RHIBlendFactorType::kZero})
     SHADER_RENDER_TARGET(PixelFormatType::kD32_FLOAT, Depth)
 END_SHADER_PARAMETERS()
 

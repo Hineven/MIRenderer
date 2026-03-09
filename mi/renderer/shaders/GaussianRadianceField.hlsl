@@ -554,8 +554,7 @@ GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PS
 
     float3 Color = saturate(RGBA.xyz);
     GBufferOutput Result = (GBufferOutput)0;
-    // TODO also export alpha
-    Result.ColorAlpha    = float4(Color, 1);
+    Result.ColorAlpha    = float4(Color, Alpha);
     return Result;
 }
 
