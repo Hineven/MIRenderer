@@ -1,0 +1,15 @@
+/*
+ * Created: 2026/03/08
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef MACROMC_REGISTRY_COMMON_H
+#define MACROMC_REGISTRY_COMMON_H
+
+#define MACROMC_REGISTRY_NAMESPACE macromc::registry
+
+#define MACROMC_REGISTRY_NAMESPACE_BEGIN namespace MACROMC_REGISTRY_NAMESPACE {
+#define MACROMC_REGISTRY_NAMESPACE_END }
+
+#endif // MACROMC_REGISTRY_COMMON_H
