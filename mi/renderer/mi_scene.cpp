@@ -37,7 +37,7 @@ Scene::Scene(): renderable_slots_(kMaxNumRenderables) {
 
 }
 Scene::~Scene() {
-    mi_check_nothrow(!renderable_slots_.NoAllocationActive(),
+    mi_check_nothrow(renderable_slots_.NoAllocationActive(),
         "There are still renderables allocated from the scene during its destruction."
         "Make sure to purge all references to renderables before destroying the scene.");
 }

@@ -36,7 +36,7 @@ CVar<bool> CVar_GRF_StochasticLargeGaussianHalfResolution(
     false
 );
 
-void GaussianRadianceFieldViewData::Allocate(RenderGraphBuilder &builder, RendererView *view) {
+void GaussianRadianceFieldViewData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, [[maybe_unused]] RendererView *view) {
     // Do nothing for now
 }
 

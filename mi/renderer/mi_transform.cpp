@@ -56,21 +56,6 @@ Transform Transform::FromMatrix(glm::mat4 to_world) {
     // Rotation from proper rotation matrix 
     glm::quat q = glm::normalize(glm::quat_cast(R));
 
-    // Optional: warn on skew/perspective using decompose, but ignore its rot/scale
-    glm::vec3 tmpS, skew;
-    glm::quat tmpQ;
-    glm::vec3 tmpT;
-    glm::vec4 perspective;
-    glm::decompose(to_world, tmpS, tmpQ, tmpT, skew, perspective);
-    [[maybe_unused]] float skewLen = glm::length(skew);
-    mi_warning(skewLen < 0.005f,
-               "Transform::FromMatrix: Skew {} is not zero. Discarding that.", skewLen);
-    glm::vec4 idealP(0, 0, 0, 1);
-    [[maybe_unused]] bool perspOk = glm::all(glm::lessThan(glm::abs(perspective - idealP), glm::vec4(1e-4f)));
-    mi_warning(perspOk,
-        "Transform::FromMatrix: Perspective ({}, {}, {}, {}) is non standard. Discarding that.",
-        perspective.x, perspective.y, perspective.z, perspective.w);
-
     transform.scale = scale;
     transform.rotation = glm::eulerAngles(q); // 弧度
 

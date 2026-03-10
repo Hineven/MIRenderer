@@ -147,8 +147,10 @@ public:
 
     void ClearAllNow() {
         for (auto &bucket : ring_) {
-            for (auto *e : bucket) {
-                delete e;
+            // Note: it is important NOT TO USE "for (auto *ptr : bucket)" here, because deleting ptr may cause side effects that modify the bucket (e.g. enqueue more objects).
+            for (uint32_t i = 0; i < bucket.size(); i++) {
+                auto ptr = bucket[i];
+                delete ptr;
             }
             bucket.clear();
         }
