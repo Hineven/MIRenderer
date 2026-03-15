@@ -1,5 +1,5 @@
 set(SOURCE_FILES
-        include/rdg/rdg.h
+    include/rdg/rdg.h
     rdg.cpp
     rdg_resource.cpp
     rdg_base.cpp

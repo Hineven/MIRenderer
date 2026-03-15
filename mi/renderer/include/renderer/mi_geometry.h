@@ -78,6 +78,9 @@ protected:
     DirtyTracker<Geometry> * tracker_ {};
 
 public:
+    FORCEINLINE bool IsTriangularGeometry () const {
+        return true;
+    }
     friend class StaticMeshInstance;
     static TRef<Geometry> CreateFromVertices (
         std::span<DefaultStaticMeshVertex> vertices = {},

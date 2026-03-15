@@ -539,7 +539,7 @@ void StochasticDrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1]
 GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PSInput Input) {
     float2 UV     = Input.UVWS.xy;
     uint Seed     = uint(max(0, int(Input.UVWS.w)));
-    float4 RGBA   = float4(Input.RGB.rgb, Input.UVWS.z);    
+    float4 RGBA   = float4(Input.RGB.rgb, Input.UVWS.z);
     float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
     if (Alpha < 0.01f) discard; // Early cull to save bandwidth. The threshold is a magic number that works well in practice.
     CameraParameters C = GetActiveCamera();

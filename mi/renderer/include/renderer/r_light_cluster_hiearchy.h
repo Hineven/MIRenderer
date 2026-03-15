@@ -12,6 +12,7 @@
 #include <renderer/mi_aabb.h>
 #include <renderer/mi_geometry.h>
 #include <renderer/mi_material.h>
+#include "../../shaders/shared/SharedLightClusterHierarchy.hlsl"
 
 MI_NAMESPACE_BEGIN
 
@@ -37,93 +38,60 @@ struct MeshLightClusterBuildConfig {
     float weight_centroid_distance {0.35f};
     float weight_normal_deviation {1.f};
     float weight_intensity_imbalance {0.25f};
+    float emissive_power_penalty_weight {2.f};
 
     // Penalty value used when merging non-topology-adjacent clusters.
     float non_topology_penalty_value {1.0f};
 };
 
-struct MeshLightTriangle {
-    uint32_t primitive_index {UINT32_MAX};
+struct EvaluatedMeshLightTriangle {
+    float area {};
+    float intensity {};
     glm::vec3 v0 {};
     glm::vec3 v1 {};
     glm::vec3 v2 {};
-    glm::vec3 normal {0.f, 0.f, 1.f};
-    glm::vec3 centroid {};
-    AABB local_aabb {};
-    float area {};
-    float intensity {};
-};
-
-struct MeshLightClusterHeader {
-    AABB local_aabb {};
-    glm::vec3 weighted_normal {0.f, 0.f, 1.f};
-    float weighted_normal_variance {};
-    float intensity {};
-    uint32_t level {};
-    uint32_t triangle_offset {};
-    uint32_t triangle_count {};
-};
-
-// Tree node representing one merged emissive cluster.
-// Leaf node: left_child/right_child are UINT32_MAX and triangle_indices contains one triangle.
-// Internal node: children point to previous nodes and triangle_indices stores merged leaves.
-struct MeshLightClusterNode {
-    uint32_t parent {UINT32_MAX};
-    uint32_t left_child {UINT32_MAX};
-    uint32_t right_child {UINT32_MAX};
-    bool is_leaf {false};
-
-    MeshLightClusterHeader header {};
-    std::vector<uint32_t> triangle_indices;
 };
 
 struct MeshLightClusterLevel {
-    // Snapshot level index in ascending coarseness order:
-    // level 0 is N clusters, level 1 is around N/2, ... last level is 1.
-    uint32_t level {};
-    uint32_t cluster_count {};
-
-    // Node indices in hierarchy.nodes used by this snapshot.
-    std::vector<uint32_t> cluster_node_indices;
-
-    // Compact per-level arrays kept for easy GPU upload and backward compatibility.
-    std::vector<MeshLightClusterHeader> clusters;
-    std::vector<uint32_t> triangle_indices;
+    std::vector<MeshLightClusterChild> level_node_indices; // Index into MeshLightClusterHierarchy.nodes
 };
 
 struct MeshLightClusterHierarchy {
-    uint32_t source_triangle_count {};
     float total_intensity {};
+    MeshLightClusterChild root_node {true, UINT32_MAX}; // Root node reference. Can be a leaf triangle if the hierarchy degenerates to a single triangle.
+
+    //       R <- root node (cluster, indexed within `headers` and `nodes`)
+    //      / \
+    //    A    B  <- internal node (cluster, indexed within `headers` and `nodes`)
+    //   / \  / \
+    //  C  D L1 L2 <- leaf node (triangle, indexed within `triangles`)
+    // ... ...
+
+    // Every node in the binary tree must have zero or two children.
+
+    // Leaf triangle light data.
     std::vector<MeshLightTriangle> triangles;
-
-    // Full merge tree and root node index.
+    // Headers for clusters (internal tree nodes).
+    std::vector<MeshLightClusterHeader> headers;
+    // Nodes for clusters (internal tree nodes).
     std::vector<MeshLightClusterNode> nodes;
-    uint32_t root_node_index {UINT32_MAX};
 
-    // Snapshot LOD levels captured at N, N/2, N/4 ... 1 active clusters.
+    // LOD levels captured at N, N/2, N/4 ... 1 active clusters.
     std::vector<MeshLightClusterLevel> levels;
 
     FORCEINLINE bool Empty() const {
         return triangles.empty() || levels.empty();
     }
+
+    FORCEINLINE bool IsSingleTriangle () const {
+        return triangles.size() == 1;
+    }
 };
 
-struct MeshLightClusterSelection {
-    uint32_t selected_level {};
-    uint32_t selected_cluster_count {};
-    std::vector<uint32_t> primitive_indices;
-};
-
-MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
+std::optional<MeshLightClusterHierarchy> BuildMeshLightClusterHierarchy(
     const Geometry & geometry,
     const Material & material,
     const MeshLightClusterBuildConfig & config = {}
-);
-
-MeshLightClusterSelection SelectMeshLightPrimitivesByBudget(
-    const MeshLightClusterHierarchy & hierarchy,
-    uint32_t max_lights,
-    bool prefer_brightest_triangle_in_cluster = true
 );
 
 MI_NAMESPACE_END

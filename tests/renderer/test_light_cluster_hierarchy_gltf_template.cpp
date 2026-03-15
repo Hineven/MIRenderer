@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -69,6 +70,21 @@ std::filesystem::path ResolveGltfAssetPathForTemplateTest() {
     return {};
 }
 
+uint32_t SelectLevelIndexByBudget(const MeshLightClusterHierarchy & hierarchy, uint32_t budget) {
+    if (hierarchy.levels.empty()) {
+        return 0;
+    }
+
+    uint32_t selected_level = (uint32_t)hierarchy.levels.size() - 1;
+    for (uint32_t i = 0; i < hierarchy.levels.size(); ++i) {
+        if (hierarchy.levels[i].level_node_indices.size() <= budget) {
+            selected_level = i;
+            break;
+        }
+    }
+    return selected_level;
+}
+
 } // namespace
 
 TEST(RendererLightClusterHierarchyGltfTemplateTest, BuildFromGltfAssetTemplate) {
@@ -112,7 +128,7 @@ TEST(RendererLightClusterHierarchyGltfTemplateTest, BuildFromGltfAssetTemplate) 
 
     constexpr uint32_t kBudget = 128;
     uint32_t num_emissive_geometries = 0;
-    uint32_t total_cluster_lights = 0;
+    uint32_t total_selected_nodes = 0;
     uint32_t max_selected_level = 0;
 
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -121,18 +137,29 @@ TEST(RendererLightClusterHierarchyGltfTemplateTest, BuildFromGltfAssetTemplate) 
             continue;
         }
 
-        auto hierarchy = BuildMeshLightClusterHierarchy(*geometries[i], *materials[i], config);
+        auto hierarchy_opt = BuildMeshLightClusterHierarchy(*geometries[i], *materials[i], config);
+        auto hierarchy = hierarchy_opt.has_value() ? std::move(hierarchy_opt.value()) : MeshLightClusterHierarchy{};
         if (hierarchy.Empty()) {
             continue;
         }
 
-        auto selection = SelectMeshLightPrimitivesByBudget(hierarchy, kBudget, true);
-        EXPECT_LE(selection.primitive_indices.size(), kBudget);
-        EXPECT_FALSE(selection.primitive_indices.empty());
+        uint32_t selected_level = SelectLevelIndexByBudget(hierarchy, kBudget);
+        ASSERT_LT(selected_level, hierarchy.levels.size());
+        const auto & selected_nodes = hierarchy.levels[selected_level].level_node_indices;
+        EXPECT_LE(selected_nodes.size(), std::max(1u, kBudget));
+        EXPECT_FALSE(selected_nodes.empty());
+
+        std::unordered_set<uint64_t> unique_nodes;
+        unique_nodes.reserve(selected_nodes.size());
+        for (const auto & child : selected_nodes) {
+            uint64_t key = (uint64_t(child.bIsLeaf) << 32u) | uint64_t(child.Index);
+            unique_nodes.insert(key);
+        }
+        EXPECT_EQ(unique_nodes.size(), selected_nodes.size());
 
         ++num_emissive_geometries;
-        total_cluster_lights += (uint32_t)selection.primitive_indices.size();
-        max_selected_level = std::max(max_selected_level, selection.selected_level);
+        total_selected_nodes += (uint32_t)selected_nodes.size();
+        max_selected_level = std::max(max_selected_level, selected_level);
     }
     auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -144,7 +171,7 @@ TEST(RendererLightClusterHierarchyGltfTemplateTest, BuildFromGltfAssetTemplate) 
     std::cout
         << "[LightClusterGLTFTemplate] asset=" << gltf_path.string()
         << ", emissive_geometries=" << num_emissive_geometries
-        << ", total_selected_lights=" << total_cluster_lights
+        << ", total_selected_nodes=" << total_selected_nodes
         << ", max_selected_level=" << max_selected_level
         << ", elapsed_ms=" << elapsed_ms
         << std::endl;

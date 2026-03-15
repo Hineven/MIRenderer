@@ -269,8 +269,14 @@ bool HasAnyEmissiveTexelInTriangle(Texture * emissive_map, glm::vec2 uv0, glm::v
 struct MergePairRecord {
     uint32_t adjacent_cluster_id {UINT32_MAX};
     float cost {std::numeric_limits<float>::infinity()};
-    bool topology_adjacent {false};
 };
+
+bool operator < (const MergePairRecord & lhs, const MergePairRecord & rhs) {
+    if (lhs.cost != rhs.cost) {
+        return lhs.cost < rhs.cost;
+    }
+    return lhs.adjacent_cluster_id < rhs.adjacent_cluster_id;
+}
 
 struct ActiveClusterOrder {
     float total_intensity {0.f};
@@ -287,19 +293,28 @@ struct ActiveClusterOrderLess {
 };
 
 struct BuildRuntimeNode {
-    bool active {true};
 
     AABB position_aabb {};
     AABB normal_aabb {};
 
     glm::vec3 weighted_normal_sum {0.f};
+    glm::vec3 weighted_normal_sum_2 {0.f};
     glm::vec3 weighted_centroid_sum {0.f};
     float total_intensity {};
+    uint32_t triangle_count {};
 
-    std::vector<uint32_t> triangle_indices;
+    union {
+        struct {
+            uint32_t a, b;
+        } childs;
+        uint32_t rt_triangle_idx;
+    } data {};
 
-    std::unordered_set<uint32_t> topology_neighbors;
-    std::unordered_map<uint32_t, MergePairRecord> merge_pair_records;
+    FORCEINLINE bool IsLeaf() const {
+        return triangle_count == 1;
+    }
+
+    std::set<MergePairRecord> adjacent_merge_pair_records;
 };
 
 struct MergeEdge {
@@ -332,12 +347,36 @@ FORCEINLINE ActiveClusterOrder MakeActiveClusterOrder(const BuildRuntimeNode & n
     return {node.total_intensity, node_idx};
 }
 
-void BuildTriangleList(
+struct BuildRuntimeTriangle {
+    uint32_t primitive_index {};
+    glm::vec3 v0 {};
+    glm::vec3 v1 {};
+    glm::vec3 v2 {};
+    float intensity {};
+    FORCEINLINE glm::vec3 Centroid() const {
+        return (v0 + v1 + v2) / 3.f;
+    }
+    FORCEINLINE glm::vec3 Normal() const {
+        return SafeNormalize(glm::cross(v1 - v0, v2 - v0));
+    }
+    FORCEINLINE float Area() const {
+        return 0.5f * glm::length(glm::cross(v1 - v0, v2 - v0));
+    }
+    FORCEINLINE AABB LocalAABB() const {
+        AABB aabb {};
+        aabb.Encapsulate(v0);
+        aabb.Encapsulate(v1);
+        aabb.Encapsulate(v2);
+        return aabb;
+    }
+};
+
+void BuildRuntimeTriangleList(
     const Geometry & geometry,
     Texture * emissive_map,
     float emissive_luma,
     const MeshLightClusterBuildConfig & config,
-    std::vector<MeshLightTriangle> & out_triangles,
+    std::vector<BuildRuntimeTriangle> & out_triangles,
     AABB & out_total_aabb,
     float & out_total_intensity
 ) {
@@ -366,55 +405,28 @@ void BuildTriangleList(
         glm::vec3 v1 = vertices[i1].Position;
         glm::vec3 v2 = vertices[i2].Position;
 
-        glm::vec3 cross_n = glm::cross(v1 - v0, v2 - v0);
-        float area2 = glm::length(cross_n);
-        float area = area2 * 0.5f;
-        if (area <= config.min_triangle_area) {
-            continue;
-        }
-
-        float intensity = area * emissive_luma;
-        if (intensity <= config.min_cluster_intensity) {
-            continue;
-        }
-
-        MeshLightTriangle tri {};
+        BuildRuntimeTriangle tri {};
         tri.primitive_index = i;
         tri.v0 = v0;
         tri.v1 = v1;
         tri.v2 = v2;
-        tri.area = area;
+        float area = tri.Area();
+        float intensity = area * emissive_luma;
         tri.intensity = intensity;
-        tri.centroid = (v0 + v1 + v2) * (1.f / 3.f);
-        tri.local_aabb = {};
-        tri.local_aabb.Encapsulate(v0);
-        tri.local_aabb.Encapsulate(v1);
-        tri.local_aabb.Encapsulate(v2);
-        tri.normal = area2 > 0.f ? (cross_n / area2) : glm::vec3(0.f, 0.f, 1.f);
 
-        out_total_aabb.Encapsulate(tri.local_aabb);
+        if (area <= config.min_triangle_area || intensity <= config.min_cluster_intensity) {
+            continue;
+        }
+
+        out_total_aabb.Encapsulate(tri.LocalAABB());
         out_total_intensity += tri.intensity;
         out_triangles.emplace_back(tri);
     }
 }
 
-std::vector<uint32_t> BuildSortedTriangleIndicesByMorton(const std::vector<MeshLightTriangle> & triangles, const AABB & total_aabb) {
-    std::vector<uint32_t> sorted_indices(triangles.size());
-    std::iota(sorted_indices.begin(), sorted_indices.end(), 0u);
-
-    glm::vec3 extent = glm::max(total_aabb.max - total_aabb.min, glm::vec3(1e-6f));
-    std::sort(sorted_indices.begin(), sorted_indices.end(), [&](uint32_t a, uint32_t b) {
-        glm::vec3 pa = (triangles[a].centroid - total_aabb.min) / extent;
-        glm::vec3 pb = (triangles[b].centroid - total_aabb.min) / extent;
-        return MortonCode3D(pa) < MortonCode3D(pb);
-    });
-
-    return sorted_indices;
-}
-
 std::vector<std::unordered_set<uint32_t>> BuildTopologyAdjacency(
     const Geometry & geometry,
-    const std::vector<MeshLightTriangle> & filtered_triangles,
+    const std::vector<BuildRuntimeTriangle> & filtered_triangles,
     uint32_t source_triangle_count
 ) {
     std::vector<std::unordered_set<uint32_t>> adjacency(filtered_triangles.size());
@@ -495,80 +507,6 @@ std::vector<std::unordered_set<uint32_t>> BuildTopologyAdjacency(
     return adjacency;
 }
 
-void AugmentAdjacencyByMortonWindow(
-    std::vector<std::unordered_set<uint32_t>> & adjacency,
-    const std::vector<uint32_t> & sorted_indices,
-    uint32_t morton_neighbor_window
-) {
-    if (sorted_indices.empty() || morton_neighbor_window == 0) {
-        return;
-    }
-
-    for (uint32_t sorted_pos = 0; sorted_pos < (uint32_t)sorted_indices.size(); ++sorted_pos) {
-        uint32_t tri_a = sorted_indices[sorted_pos];
-        uint32_t begin = sorted_pos > morton_neighbor_window ? sorted_pos - morton_neighbor_window : 0;
-        uint32_t end = std::min<uint32_t>((uint32_t)sorted_indices.size(), sorted_pos + morton_neighbor_window + 1);
-        for (uint32_t pos = begin; pos < end; ++pos) {
-            if (pos == sorted_pos) {
-                continue;
-            }
-            uint32_t tri_b = sorted_indices[pos];
-            if (tri_a == tri_b) {
-                continue;
-            }
-            adjacency[tri_a].insert(tri_b);
-            adjacency[tri_b].insert(tri_a);
-        }
-    }
-}
-
-MeshLightClusterHeader BuildClusterHeaderFromTriangleMembers(
-    const std::vector<MeshLightTriangle> & triangles,
-    std::span<const uint32_t> triangle_members,
-    uint32_t level,
-    uint32_t triangle_offset
-) {
-    MeshLightClusterHeader header {};
-    header.level = level;
-    header.triangle_offset = triangle_offset;
-    header.triangle_count = (uint32_t)triangle_members.size();
-
-    glm::vec3 weighted_normal_acc = glm::vec3(0.f);
-    float total_intensity = 0.f;
-    header.local_aabb = {};
-
-    for (uint32_t tri_idx : triangle_members) {
-        const auto & tri = triangles[tri_idx];
-        header.local_aabb.Encapsulate(tri.local_aabb);
-        weighted_normal_acc += tri.normal * tri.intensity;
-        total_intensity += tri.intensity;
-    }
-
-    header.intensity = total_intensity;
-    header.weighted_normal = SafeNormalize(weighted_normal_acc);
-
-    float variance_acc = 0.f;
-    if (total_intensity > 0.f) {
-        for (uint32_t tri_idx : triangle_members) {
-            const auto & tri = triangles[tri_idx];
-            float one_minus_dot = 1.f - glm::dot(header.weighted_normal, tri.normal);
-            variance_acc += tri.intensity * one_minus_dot * one_minus_dot;
-        }
-        header.weighted_normal_variance = variance_acc / total_intensity;
-    }
-
-    return header;
-}
-
-MeshLightClusterHeader BuildClusterHeaderFromRuntimeNode(
-    const std::vector<MeshLightTriangle> & triangles,
-    const BuildRuntimeNode & node,
-    uint32_t level,
-    uint32_t triangle_offset
-) {
-    return BuildClusterHeaderFromTriangleMembers(triangles, node.triangle_indices, level, triangle_offset);
-}
-
 float EvaluatePairMergeCost(
     const BuildRuntimeNode & a,
     const BuildRuntimeNode & b,
@@ -597,59 +535,36 @@ float EvaluatePairMergeCost(
     float topology_penalty = topology_adjacent ? 0.f : config.non_topology_penalty_value;
 
     return
-        config.weight_aabb_expand * pos_expand +
-        config.weight_normal_aabb_expand * normal_expand +
-        config.weight_non_topology_penalty * topology_penalty +
-        config.weight_centroid_distance * centroid_dist +
-        config.weight_normal_deviation * normal_deviation +
+    // FIXME: commented other stuffs out for now for debugging purposes.
+        // config.weight_aabb_expand * pos_expand +
+        // config.weight_normal_aabb_expand * normal_expand +
+        // config.weight_non_topology_penalty * topology_penalty +
+        // config.weight_centroid_distance * centroid_dist +
+        // config.weight_normal_deviation * normal_deviation +
         config.weight_intensity_imbalance * intensity_imbalance;
 }
 
-void RemoveMergePairRecord(
-    std::vector<BuildRuntimeNode> & runtime_nodes,
-    std::set<MergeEdge, MergeEdgeLess> & merge_pairs,
-    uint32_t a,
-    uint32_t b
-) {
-    if (a == b || a >= runtime_nodes.size() || b >= runtime_nodes.size()) {
-        return;
-    }
-    if (a > b) {
-        std::swap(a, b);
-    }
-
-    auto iter = runtime_nodes[a].merge_pair_records.find(b);
-    if (iter == runtime_nodes[a].merge_pair_records.end()) {
-        return;
-    }
-
-    const MergePairRecord & record = iter->second;
-    merge_pairs.erase(MakeCanonicalMergeEdge(a, b, record.cost, record.topology_adjacent));
-    runtime_nodes[a].merge_pair_records.erase(iter);
-    runtime_nodes[b].merge_pair_records.erase(a);
-}
-
-void RemoveAllMergePairRecordsForNode(
+// Remove all merge pair records between the given node and its neighbors.
+void RemoveAllMergePairRecordsAdjacentToNode(
     std::vector<BuildRuntimeNode> & runtime_nodes,
     std::set<MergeEdge, MergeEdgeLess> & merge_pairs,
     uint32_t node_idx
 ) {
-    if (node_idx >= runtime_nodes.size()) {
-        return;
+    for (const auto & [neighbor_idx, cost] : runtime_nodes[node_idx].adjacent_merge_pair_records) {
+        auto edge = MakeCanonicalMergeEdge(node_idx, neighbor_idx, cost, true);
+        merge_pairs.erase(edge);
+        // Also, remove the corresponding record in the neighbor node.
+        auto & neighbor_records = runtime_nodes[neighbor_idx].adjacent_merge_pair_records;
+        auto neighbor_iter = neighbor_records.find(MergePairRecord{node_idx, cost});
+        if (neighbor_iter != neighbor_records.end()) {
+            neighbor_records.erase(neighbor_iter);
+        }
     }
-
-    std::vector<uint32_t> neighbors;
-    neighbors.reserve(runtime_nodes[node_idx].merge_pair_records.size());
-    for (const auto & [neighbor_idx, _] : runtime_nodes[node_idx].merge_pair_records) {
-        neighbors.push_back(neighbor_idx);
-    }
-
-    for (uint32_t neighbor_idx : neighbors) {
-        RemoveMergePairRecord(runtime_nodes, merge_pairs, node_idx, neighbor_idx);
-    }
+    runtime_nodes[node_idx].adjacent_merge_pair_records.clear();
 }
 
-void UpsertMergePairRecord(
+// Insert merge pairs into the global set and the per-node record. (Topologically adjacent)
+void InsertMergePairRecord(
     std::vector<BuildRuntimeNode> & runtime_nodes,
     std::set<MergeEdge, MergeEdgeLess> & merge_pairs,
     uint32_t a,
@@ -657,28 +572,15 @@ void UpsertMergePairRecord(
     const MeshLightClusterBuildConfig & config,
     float inv_scene_diag
 ) {
-    if (a == b || a >= runtime_nodes.size() || b >= runtime_nodes.size()) {
-        return;
-    }
-    if (!runtime_nodes[a].active || !runtime_nodes[b].active) {
-        return;
-    }
-
-    bool topology_adjacent = runtime_nodes[a].topology_neighbors.find(b) != runtime_nodes[a].topology_neighbors.end();
-    uint32_t edge_a = std::min(a, b);
-    uint32_t edge_b = std::max(a, b);
-    RemoveMergePairRecord(runtime_nodes, merge_pairs, edge_a, edge_b);
-
-    if (!topology_adjacent) {
-        return;
-    }
+    if (a == b) return;
+    if (a > b) std::swap(a, b);
 
     float cost = EvaluatePairMergeCost(runtime_nodes[a], runtime_nodes[b], true, config, inv_scene_diag);
     MergeEdge edge = MakeCanonicalMergeEdge(a, b, cost, true);
     merge_pairs.insert(edge);
 
-    runtime_nodes[edge.a].merge_pair_records[edge.b] = {edge.b, edge.cost, edge.topology_adjacent};
-    runtime_nodes[edge.b].merge_pair_records[edge.a] = {edge.a, edge.cost, edge.topology_adjacent};
+    runtime_nodes[edge.a].adjacent_merge_pair_records.insert(MergePairRecord{edge.b, edge.cost});
+    runtime_nodes[edge.b].adjacent_merge_pair_records.insert(MergePairRecord{edge.a, edge.cost});
 }
 
 MergeEdge FindBestTopologyMergeEdge(const std::set<MergeEdge, MergeEdgeLess> & merge_pairs) {
@@ -704,57 +606,27 @@ std::vector<uint32_t> BuildSnapshotTargets(uint32_t n) {
     return targets;
 }
 
-MeshLightClusterLevel BuildSnapshotLevel(
-    const std::vector<MeshLightTriangle> & triangles,
-    const std::vector<MeshLightClusterNode> & nodes,
-    const std::vector<uint32_t> & active_node_indices,
-    uint32_t snapshot_level
+std::vector<uint32_t> SnapshotLevelRuntimeNodes(
+    const std::set<ActiveClusterOrder, ActiveClusterOrderLess> & active_clusters_by_intensity
 ) {
-    MeshLightClusterLevel level {};
-    level.level = snapshot_level;
-    level.cluster_count = (uint32_t)active_node_indices.size();
-    level.cluster_node_indices = active_node_indices;
-
-    std::vector<uint32_t> sorted_node_indices = active_node_indices;
-    std::sort(sorted_node_indices.begin(), sorted_node_indices.end(), [&](uint32_t a, uint32_t b) {
-        return nodes[a].header.intensity > nodes[b].header.intensity;
-    });
-
-    level.clusters.reserve(sorted_node_indices.size());
-    size_t total_tri_refs = 0;
-    for (uint32_t node_idx : sorted_node_indices) {
-        total_tri_refs += nodes[node_idx].triangle_indices.size();
+    std::vector<uint32_t> level;
+    level.reserve(active_clusters_by_intensity.size());
+    for (const auto & active : active_clusters_by_intensity) {
+        level.push_back(active.node_idx);
     }
-    level.triangle_indices.reserve(total_tri_refs);
-
-    for (uint32_t node_idx : sorted_node_indices) {
-        const auto & node = nodes[node_idx];
-        uint32_t tri_offset = (uint32_t)level.triangle_indices.size();
-        level.triangle_indices.insert(level.triangle_indices.end(), node.triangle_indices.begin(), node.triangle_indices.end());
-
-        auto header = BuildClusterHeaderFromTriangleMembers(
-            triangles,
-            std::span<const uint32_t>(node.triangle_indices.data(), node.triangle_indices.size()),
-            snapshot_level,
-            tri_offset
-        );
-        level.clusters.push_back(header);
-    }
-
     return level;
 }
 
 MergeEdge FindFallbackMergeEdge(
     const std::vector<BuildRuntimeNode> & runtime_nodes,
     const std::set<ActiveClusterOrder, ActiveClusterOrderLess> & active_clusters_by_intensity,
-    const std::unordered_set<uint32_t> & active_nodes,
     const MeshLightClusterBuildConfig & config,
     float inv_scene_diag
 ) {
     uint32_t search_count = std::min<uint32_t>((uint32_t)active_clusters_by_intensity.size(), (uint32_t)std::max(CVar_LightClusterBuildFallbackSearchN.Get(), 1));
     MergeEdge best {};
     std::unordered_set<uint64_t> visited_pairs;
-    visited_pairs.reserve((size_t)search_count * std::max<size_t>(active_nodes.size(), 1));
+    visited_pairs.reserve((size_t)search_count * std::max<size_t>(active_clusters_by_intensity.size(), 1));
 
     std::vector<uint32_t> weakest_active_nodes;
     weakest_active_nodes.reserve(search_count);
@@ -767,17 +639,17 @@ MergeEdge FindFallbackMergeEdge(
     // This keeps disconnected low-power islands from stalling the agglomeration process,
     // while still allowing them to merge with any active cluster in the hierarchy.
     for (uint32_t a : weakest_active_nodes) {
-        for (uint32_t b : active_nodes) {
-            if (a == b) {
+        for (auto b : active_clusters_by_intensity) {
+            if (a == b.node_idx) {
                 continue;
             }
-            uint64_t pair_key = BuildEdgeKey(a, b);
+            uint64_t pair_key = BuildEdgeKey(a, b.node_idx);
             if (!visited_pairs.insert(pair_key).second) {
                 continue;
             }
-            float cost = EvaluatePairMergeCost(runtime_nodes[a], runtime_nodes[b], false, config, inv_scene_diag);
+            float cost = EvaluatePairMergeCost(runtime_nodes[a], runtime_nodes[b.node_idx], false, config, inv_scene_diag);
             if (cost < best.cost) {
-                best = MakeCanonicalMergeEdge(a, b, cost, false);
+                best = MakeCanonicalMergeEdge(a, b.node_idx, cost, false);
             }
         }
     }
@@ -786,13 +658,12 @@ MergeEdge FindFallbackMergeEdge(
 
 } // namespace
 
-MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
+std::optional<MeshLightClusterHierarchy> BuildMeshLightClusterHierarchy(
     const Geometry & geometry,
     const Material & material,
     const MeshLightClusterBuildConfig & config
 ) {
     MeshLightClusterHierarchy hierarchy {};
-    hierarchy.source_triangle_count = geometry.GetIndexCount() / 3;
 
     if (geometry.GetIndexCount() < 3 || !material.IsEmissive()) {
         return hierarchy;
@@ -806,63 +677,61 @@ MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
 
     AABB total_aabb {};
     printf("StartBuilding Lit Triangles!\n");
-    BuildTriangleList(
+    std::vector<BuildRuntimeTriangle> rt_triangles;
+    float total_intensity {};
+    BuildRuntimeTriangleList(
         geometry,
         material.GetEmissiveTexture(),
         emissive_luma,
         config,
-        hierarchy.triangles,
+        rt_triangles,
         total_aabb,
-        hierarchy.total_intensity
+        total_intensity
     );
-    printf("Total valid emissive triangles: %zu, total intensity: %f\n", hierarchy.triangles.size(), hierarchy.total_intensity);
-    if (hierarchy.triangles.empty()) {
+    printf("Total valid emissive triangles: %zu, intensity: %f\n", rt_triangles.size(), total_intensity);
+
+    if (rt_triangles.empty()) {
+        // No valid emissive triangles after filtering, return empty hierarchy.
         return hierarchy;
     }
 
-    const uint32_t leaf_count = (uint32_t)hierarchy.triangles.size();
     // Build topology adjacency over filtered triangle indices.
-    auto topology_adjacency = BuildTopologyAdjacency(geometry, hierarchy.triangles, hierarchy.source_triangle_count);
+    mi_check(geometry.IsTriangularGeometry(), "BuildMeshLightClusterHierarchy currently only supports triangular meshes.");
+    auto triangle_topology_adjacency = BuildTopologyAdjacency(geometry, rt_triangles, geometry.GetIndexCount() / 3);
+    // Triangle index -> runtime leaf node indirection
+    auto triangle_to_rt_leaf_node = std::unordered_map<uint32_t, uint32_t>();
 
+    auto leaf_count = (uint32_t)rt_triangles.size();
     printf("Topology built! start merging with %u leaves...\n", leaf_count);
 
-    // Prepare leaf nodes.
-    hierarchy.nodes.reserve(leaf_count * 2 - 1);
+    // Prepare leaf runtime nodes
     std::vector<BuildRuntimeNode> runtime_nodes;
     runtime_nodes.reserve(leaf_count * 2 - 1);
 
-    std::unordered_set<uint32_t> active_nodes;
-    active_nodes.reserve(leaf_count * 2 - 1);
-
     std::set<ActiveClusterOrder, ActiveClusterOrderLess> active_clusters_by_intensity;
 
-    for (uint32_t tri_idx = 0; tri_idx < leaf_count; ++tri_idx) {
-        MeshLightClusterNode node {};
-        node.is_leaf = true;
-        node.triangle_indices = {tri_idx};
-        node.header = BuildClusterHeaderFromTriangleMembers(
-            hierarchy.triangles,
-            std::span<const uint32_t>(node.triangle_indices.data(), node.triangle_indices.size()),
-            0,
-            0
-        );
-
+    for (uint32_t rt_tri_index = 0; rt_tri_index < leaf_count; ++rt_tri_index) {
+        // Initialize runtime nodes.
         BuildRuntimeNode rt {};
-        rt.active = true;
-        rt.position_aabb = hierarchy.triangles[tri_idx].local_aabb;
+        const auto tri = rt_triangles[rt_tri_index];
+        rt.position_aabb = tri.LocalAABB();
         rt.normal_aabb = {};
-        rt.normal_aabb.Encapsulate(hierarchy.triangles[tri_idx].normal);
-        rt.weighted_normal_sum = hierarchy.triangles[tri_idx].normal * hierarchy.triangles[tri_idx].intensity;
-        rt.weighted_centroid_sum = hierarchy.triangles[tri_idx].centroid * hierarchy.triangles[tri_idx].intensity;
-        rt.total_intensity = hierarchy.triangles[tri_idx].intensity;
-        rt.triangle_indices = {tri_idx};
-        rt.topology_neighbors = topology_adjacency[tri_idx];
+        rt.normal_aabb.Encapsulate(tri.Normal());
+        rt.weighted_normal_sum = tri.Normal() * tri.intensity;
+        rt.weighted_normal_sum_2 = tri.Normal() * tri.Normal() * tri.intensity;
+        rt.weighted_centroid_sum = tri.Centroid() * tri.intensity;
+        rt.total_intensity = tri.intensity;
+        rt.triangle_count = 1;
+        rt.data.rt_triangle_idx = rt_tri_index;
+        rt.data.childs.b = UINT32_MAX;
 
-        uint32_t node_idx = (uint32_t)hierarchy.nodes.size();
-        hierarchy.nodes.push_back(std::move(node));
+        // Insert rt node
+        auto rt_node_idx = (uint32_t)runtime_nodes.size();
         runtime_nodes.push_back(std::move(rt));
-        active_nodes.insert(node_idx);
-        active_clusters_by_intensity.insert(MakeActiveClusterOrder(runtime_nodes[node_idx], node_idx));
+        // Store indirection
+        triangle_to_rt_leaf_node[tri.primitive_index] = rt_tri_index;
+        // Build active rt node sets.
+        active_clusters_by_intensity.insert(MakeActiveClusterOrder(runtime_nodes[rt_node_idx], rt_node_idx));
     }
 
     // Only topology-adjacent merge candidates live in the ordered set.
@@ -874,9 +743,17 @@ MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
     float scene_diag = glm::length(glm::max(scene_aabb.max - scene_aabb.min, glm::vec3(1e-6f)));
     float inv_scene_diag = 1.f / std::max(scene_diag, 1e-6f);
 
-    for (uint32_t i = 0; i < leaf_count; ++i) {
-        for (uint32_t n : runtime_nodes[i].topology_neighbors) {
-            UpsertMergePairRecord(runtime_nodes, merge_pairs, i, n, config, inv_scene_diag);
+    // Initialize the global merge pair candidate set.
+    for (uint32_t u = 0; u < leaf_count; u++) {
+        auto tri_idx = runtime_nodes[u].data.rt_triangle_idx;
+        for (uint32_t adj_tri_idx : triangle_topology_adjacency[tri_idx]) {
+            // Filtered triangles have identical index to their corresponding rt nodes. No mapping needed here.
+            auto v = adj_tri_idx;
+            if (u >= v) {
+                // Only insert each pair once.
+                continue;
+            }
+            InsertMergePairRecord(runtime_nodes, merge_pairs, u, v, config, inv_scene_diag);
         }
     }
 
@@ -884,22 +761,14 @@ MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
     auto snapshot_targets = BuildSnapshotTargets(leaf_count);
     uint32_t snapshot_cursor = 0;
 
-    auto collect_active_nodes = [&]() {
-        std::vector<uint32_t> alive;
-        alive.reserve(active_nodes.size());
-        for (uint32_t node_idx : active_nodes) {
-            alive.push_back(node_idx);
-        }
-        return alive;
-    };
-
-    hierarchy.levels.push_back(BuildSnapshotLevel(hierarchy.triangles, hierarchy.nodes, collect_active_nodes(), snapshot_cursor));
+    std::vector<std::vector<uint32_t>> level_snapshots;
+    level_snapshots.emplace_back(SnapshotLevelRuntimeNodes(active_clusters_by_intensity));
     snapshot_cursor = 1;
 
-    while (active_nodes.size() > 1) {
+    while (active_clusters_by_intensity.size() > 1) {
 
-        if (active_nodes.size() % 5000 == 0) {
-            printf("BuildMeshLightClusterHierarchy(): Large light mesh detected. Clustering... %zu clusters.\n", active_nodes.size());
+        if (active_clusters_by_intensity.size() % 5000 == 0) {
+            printf("BuildMeshLightClusterHierarchy(): Large light mesh detected. Clustering... %zu clusters.\n", active_clusters_by_intensity.size());
         }
         // Regular path only considers topology-adjacent pairs.
         // If topology is broken and the set contains no such pair, we fall back to the
@@ -908,12 +777,14 @@ MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
         bool found = best_edge.a != UINT32_MAX && best_edge.b != UINT32_MAX;
 
         if (!found) {
-            best_edge = FindFallbackMergeEdge(runtime_nodes, active_clusters_by_intensity, active_nodes, config, inv_scene_diag);
+            best_edge = FindFallbackMergeEdge(runtime_nodes, active_clusters_by_intensity, config, inv_scene_diag);
             found = best_edge.a != UINT32_MAX && best_edge.b != UINT32_MAX;
         }
 
-        if (!found) {
-            break;
+        if (!found) { // No valid merge edge found, should only happen in very degenerate cases.
+            // Exit immediately and report
+            MI_WARN("Failed to build light cluster hierarchy: no valid merge pairs found.");
+            return std::nullopt;
         }
 
         // Merge nodes a and b into a new node, and rewire neighbors.
@@ -921,157 +792,117 @@ MeshLightClusterHierarchy BuildMeshLightClusterHierarchy(
         uint32_t b = best_edge.b;
 
         // Build merged runtime node.
-        BuildRuntimeNode merged_rt {};
-        merged_rt.active = true;
-        merged_rt.position_aabb = AABB::Merge(runtime_nodes[a].position_aabb, runtime_nodes[b].position_aabb);
-        merged_rt.normal_aabb = AABB::Merge(runtime_nodes[a].normal_aabb, runtime_nodes[b].normal_aabb);
-        merged_rt.weighted_normal_sum = runtime_nodes[a].weighted_normal_sum + runtime_nodes[b].weighted_normal_sum;
-        merged_rt.weighted_centroid_sum = runtime_nodes[a].weighted_centroid_sum + runtime_nodes[b].weighted_centroid_sum;
-        merged_rt.total_intensity = runtime_nodes[a].total_intensity + runtime_nodes[b].total_intensity;
+        uint32_t merged_rt_node = (uint32_t)runtime_nodes.size();
+        {
+            BuildRuntimeNode merged_rt {};
+            merged_rt.position_aabb = AABB::Merge(runtime_nodes[a].position_aabb, runtime_nodes[b].position_aabb);
+            merged_rt.normal_aabb = AABB::Merge(runtime_nodes[a].normal_aabb, runtime_nodes[b].normal_aabb);
+            merged_rt.weighted_normal_sum = runtime_nodes[a].weighted_normal_sum + runtime_nodes[b].weighted_normal_sum;
+            merged_rt.weighted_normal_sum_2 = runtime_nodes[a].weighted_normal_sum_2 + runtime_nodes[b].weighted_normal_sum_2;
+            merged_rt.weighted_centroid_sum = runtime_nodes[a].weighted_centroid_sum + runtime_nodes[b].weighted_centroid_sum;
+            merged_rt.total_intensity = runtime_nodes[a].total_intensity + runtime_nodes[b].total_intensity;
+            merged_rt.triangle_count = runtime_nodes[a].triangle_count + runtime_nodes[b].triangle_count;
+            merged_rt.data.childs.a = a;
+            merged_rt.data.childs.b = b;
 
-        merged_rt.triangle_indices.reserve(runtime_nodes[a].triangle_indices.size() + runtime_nodes[b].triangle_indices.size());
-        merged_rt.triangle_indices.insert(
-            merged_rt.triangle_indices.end(),
-            runtime_nodes[a].triangle_indices.begin(),
-            runtime_nodes[a].triangle_indices.end()
-        );
-        merged_rt.triangle_indices.insert(
-            merged_rt.triangle_indices.end(),
-            runtime_nodes[b].triangle_indices.begin(),
-            runtime_nodes[b].triangle_indices.end()
-        );
+            // printf("num_tr: %d %d %d\n", runtime_nodes[a].triangle_indices.size(), runtime_nodes[b].triangle_indices.size(), merged_rt.triangle_indices.capacity());
+            printf("cost: %f, topology_adj: %d, lc: %d, rc: %d\n", best_edge.cost, best_edge.topology_adjacent, runtime_nodes[a].triangle_count, runtime_nodes[b].triangle_count);
 
-        // Build merged node in tree.
-        MeshLightClusterNode merged_node {};
-        merged_node.is_leaf = false;
-        merged_node.left_child = a;
-        merged_node.right_child = b;
-        merged_node.triangle_indices = merged_rt.triangle_indices;
-        merged_node.header = BuildClusterHeaderFromRuntimeNode(hierarchy.triangles, merged_rt, 0, 0);
+            runtime_nodes.push_back(std::move(merged_rt));
+        }
 
-        uint32_t merged_idx = (uint32_t)hierarchy.nodes.size();
-        hierarchy.nodes[a].parent = merged_idx;
-        hierarchy.nodes[b].parent = merged_idx;
-
-        hierarchy.nodes.push_back(std::move(merged_node));
-        runtime_nodes.push_back(std::move(merged_rt));
-
-        // Maintain active clusters (sorted by intensity for fallback search).
-        active_clusters_by_intensity.erase(MakeActiveClusterOrder(runtime_nodes[a], a));
-        active_clusters_by_intensity.erase(MakeActiveClusterOrder(runtime_nodes[b], b));
-        active_clusters_by_intensity.insert(MakeActiveClusterOrder(runtime_nodes[merged_idx], merged_idx));
+        // Maintain active clusters sorted by intensity for fallback search.
+        auto xx = active_clusters_by_intensity.erase(MakeActiveClusterOrder(runtime_nodes[a], a));
+        auto yy = active_clusters_by_intensity.erase(MakeActiveClusterOrder(runtime_nodes[b], b));
+        if (xx + yy != 2) {
+            puts("what the fuck?");
+        }
+        active_clusters_by_intensity.insert(MakeActiveClusterOrder(runtime_nodes[merged_rt_node], merged_rt_node));
 
         // Gather the topology neighborhood before removing old pair records.
         // Since merge_pairs only tracks topology-adjacent pairs, only those edges need
         // to be rewired and reinserted after the merge.
-        std::unordered_set<uint32_t> union_topo = runtime_nodes[a].topology_neighbors;
-        union_topo.insert(runtime_nodes[b].topology_neighbors.begin(), runtime_nodes[b].topology_neighbors.end());
-        union_topo.erase(a);
-        union_topo.erase(b);
+        std::vector<uint32_t> union_adj;
+        for (auto e : runtime_nodes[a].adjacent_merge_pair_records) {
+            union_adj.push_back(e.adjacent_cluster_id);
+        }
+        for (auto e : runtime_nodes[b].adjacent_merge_pair_records) {
+            union_adj.push_back(e.adjacent_cluster_id);
+        }
+        std::sort(union_adj.begin(), union_adj.end());
+        union_adj.erase(std::unique(union_adj.begin(), union_adj.end()), union_adj.end());
 
-        RemoveAllMergePairRecordsForNode(runtime_nodes, merge_pairs, a);
-        RemoveAllMergePairRecordsForNode(runtime_nodes, merge_pairs, b);
+        // Remove all merge pair records between a and its neighbors, and b and its neighbors, to avoid stale records after the merge.
+        RemoveAllMergePairRecordsAdjacentToNode(runtime_nodes, merge_pairs, a);
+        RemoveAllMergePairRecordsAdjacentToNode(runtime_nodes, merge_pairs, b);
 
-        for (uint32_t n : union_topo) {
-            if (!runtime_nodes[n].active) {
+        // Okay, insert new topology edges between the merged node and the union of the old neighborhoods of a and b.
+        for (auto v : union_adj) {
+            if (v == a || v == b) {
                 continue;
             }
-            runtime_nodes[n].topology_neighbors.erase(a);
-            runtime_nodes[n].topology_neighbors.erase(b);
-            runtime_nodes[n].topology_neighbors.insert(merged_idx);
-            runtime_nodes[merged_idx].topology_neighbors.insert(n);
+            InsertMergePairRecord(runtime_nodes, merge_pairs, merged_rt_node, v, config, inv_scene_diag);
         }
 
-        // Recompute only the pairs that are actually affected by the merge.
-        // The per-node pair records let us erase old values exactly and then insert the
-        // new topology-adjacent costs without any floating-point key reconstruction issues.
-        for (uint32_t n : runtime_nodes[merged_idx].topology_neighbors) {
-            UpsertMergePairRecord(runtime_nodes, merge_pairs, merged_idx, n, config, inv_scene_diag);
-        }
-
-        runtime_nodes[a].active = false;
-        runtime_nodes[b].active = false;
-        runtime_nodes[a].topology_neighbors.clear();
-        runtime_nodes[b].topology_neighbors.clear();
-        runtime_nodes[a].merge_pair_records.clear();
-        runtime_nodes[b].merge_pair_records.clear();
-
-        active_nodes.erase(a);
-        active_nodes.erase(b);
-        active_nodes.insert(merged_idx);
+        // Done.
 
         // Capture snapshot when crossing target count exactly.
-        while (snapshot_cursor < snapshot_targets.size() && active_nodes.size() == snapshot_targets[snapshot_cursor]) {
-            hierarchy.levels.push_back(BuildSnapshotLevel(hierarchy.triangles, hierarchy.nodes, collect_active_nodes(), snapshot_cursor));
+        while (snapshot_cursor < snapshot_targets.size() && active_clusters_by_intensity.size() == snapshot_targets[snapshot_cursor]) {
+            level_snapshots.emplace_back(SnapshotLevelRuntimeNodes(active_clusters_by_intensity));
             ++snapshot_cursor;
         }
     }
 
-    // Only one active node should remain once agglomeration finishes.
-    if (!active_nodes.empty()) {
-        hierarchy.root_node_index = *active_nodes.begin();
-    }
+    auto rng32 = std::mt19937(std::random_device{}());
 
-    // Ensure final level exists (in case of disconnected/fallback edge corner cases).
-    if (hierarchy.root_node_index != UINT32_MAX && (hierarchy.levels.empty() || hierarchy.levels.back().cluster_count != 1)) {
-        hierarchy.levels.push_back(BuildSnapshotLevel(
-            hierarchy.triangles,
-            hierarchy.nodes,
-            std::vector<uint32_t>{hierarchy.root_node_index},
-            (uint32_t)hierarchy.levels.size()
-        ));
+    std::unordered_map<uint32_t, MeshLightClusterChild> rt_node_to_hierarchy_node;
+    // Build final hierarchy structures
+    std::function<MeshLightClusterChild(uint32_t)> BuildFinalHierarchyNode = [&](uint32_t rt_node_idx) {
+        auto & rt_node = runtime_nodes[rt_node_idx];
+        if (rt_node.IsLeaf()) {
+            // Build a leaf triangle and return the index.
+            auto u = hierarchy.triangles.size();
+            rt_node_to_hierarchy_node[rt_node_idx] = {true, (uint32_t)u};
+            auto tri_idx = rt_node.data.rt_triangle_idx;
+            hierarchy.triangles.push_back({rt_triangles[tri_idx].primitive_index});
+            return MeshLightClusterChild{true, (uint32_t)u};
+        }
+        auto lc = BuildFinalHierarchyNode(rt_node.data.childs.a);
+        auto rc = BuildFinalHierarchyNode(rt_node.data.childs.b);
+        auto u = hierarchy.nodes.size();
+        rt_node_to_hierarchy_node[rt_node_idx] = {false, (uint32_t)u};
+        MeshLightClusterNode node {};
+        MeshLightClusterHeader header {};
+        node.L = lc;
+        node.R = rc;
+        node.L_Weight = runtime_nodes[rt_node.data.childs.a].total_intensity;
+        node.R_Weight = runtime_nodes[rt_node.data.childs.b].total_intensity;
+        hierarchy.nodes.push_back(node);
+        header.Hash = rng32();
+        header.LocalAABBMin = rt_node.position_aabb.min;
+        header.LocalAABBMax = rt_node.position_aabb.max;
+        header.TotalIntensity = rt_node.total_intensity;
+        header.WeightedNormal = SafeNormalize(rt_node.weighted_normal_sum);
+        auto diffs = rt_node.weighted_normal_sum_2 - (rt_node.weighted_normal_sum * rt_node.weighted_normal_sum);
+        header.WeightedNormalVariance = glm::dot(diffs, diffs);
+        hierarchy.headers.push_back(header);
+        return MeshLightClusterChild{false, (uint32_t)u};
+    };
+
+    auto root = BuildFinalHierarchyNode((uint32_t)runtime_nodes.size() - 1);
+    hierarchy.total_intensity = runtime_nodes.back().total_intensity;
+    hierarchy.root_node = root; // <- this can be a triangle index if the hierarchy degenerates to a single triangle
+    // Record levels
+    for (const auto & level : level_snapshots) {
+        std::vector<MeshLightClusterChild> level_node_indices;
+        level_node_indices.reserve(level.size());
+        for (uint32_t rt_node_idx : level) {
+            level_node_indices.push_back(rt_node_to_hierarchy_node[rt_node_idx]);
+        }
+        hierarchy.levels.push_back({std::move(level_node_indices)});
     }
 
     return hierarchy;
-}
-
-MeshLightClusterSelection SelectMeshLightPrimitivesByBudget(
-    const MeshLightClusterHierarchy & hierarchy,
-    uint32_t max_lights,
-    bool prefer_brightest_triangle_in_cluster
-) {
-    MeshLightClusterSelection result {};
-    if (hierarchy.Empty() || max_lights == 0) {
-        return result;
-    }
-
-    uint32_t selected_level = (uint32_t)hierarchy.levels.size() - 1;
-    uint32_t best_cluster_count = 0;
-    for (uint32_t level = 0; level < (uint32_t)hierarchy.levels.size(); ++level) {
-        uint32_t num_clusters = (uint32_t)hierarchy.levels[level].clusters.size();
-        if (num_clusters <= max_lights && num_clusters > best_cluster_count) {
-            selected_level = level;
-            best_cluster_count = num_clusters;
-        }
-    }
-
-    const auto & level = hierarchy.levels[selected_level];
-    result.selected_level = selected_level;
-    result.selected_cluster_count = (uint32_t)level.clusters.size();
-    result.primitive_indices.reserve(level.clusters.size());
-
-    for (const auto & cluster : level.clusters) {
-        if (cluster.triangle_count == 0) {
-            continue;
-        }
-
-        uint32_t picked_triangle_index = level.triangle_indices[cluster.triangle_offset];
-        if (prefer_brightest_triangle_in_cluster && cluster.triangle_count > 1) {
-            float max_intensity = -1.f;
-            for (uint32_t i = 0; i < cluster.triangle_count; ++i) {
-                uint32_t tri_idx = level.triangle_indices[cluster.triangle_offset + i];
-                float tri_intensity = hierarchy.triangles[tri_idx].intensity;
-                if (tri_intensity > max_intensity) {
-                    max_intensity = tri_intensity;
-                    picked_triangle_index = tri_idx;
-                }
-            }
-        }
-
-        result.primitive_indices.push_back(hierarchy.triangles[picked_triangle_index].primitive_index);
-    }
-
-    return result;
 }
 
 MI_NAMESPACE_END
