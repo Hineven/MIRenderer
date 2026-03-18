@@ -32,4 +32,8 @@ function(add_resources target suffix files)
 
     # make sure that the build responds to changes in the resources
     target_sources(${target} PRIVATE ${RESOURCE_FILES})
+    set_source_files_properties(${RESOURCE_FILES} PROPERTIES
+            HEADER_FILE_ONLY ON  # Tell FXC to ignore these files. Do not compile them directly.
+            VS_TOOL_OVERRIDE ""
+    )
 endfunction()
