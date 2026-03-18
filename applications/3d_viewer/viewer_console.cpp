@@ -232,8 +232,7 @@ void ViewerImGuiConsole::DrawImGuiConsoleEmbedded(glm::vec2 size) {
                 child_height += line_height + ImGui::GetStyle().ItemSpacing.y; // room for meta line
             }
 
-            ImGui::BeginChild("log_item", ImVec2(0, child_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
+            ImGui::BeginChild("log_item", ImVec2(0, child_height), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
             // Expand/collapse toggle
             if (styled) {
                 if (ImGui::SmallButton(item.expanded ? "-" : "+")) {
