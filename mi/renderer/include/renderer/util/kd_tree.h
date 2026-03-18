@@ -128,7 +128,6 @@ public:
         points_.clear();
         nodes_.clear();
         free_list_.clear();
-        cluster_id_to_node_.clear();
         root_index_ = -1;
     }
 
@@ -167,7 +166,6 @@ public:
 
         int node_index = AllocateNode(point_index);
         UpdateNodeAABB(node_index);
-        RegisterNodeClusterId(node_index);
 
         if (root_index_ < 0) {
             root_index_ = node_index;
@@ -195,7 +193,6 @@ public:
         Node& node = nodes_[node_index];
         if (node.deleted) return;
 
-        UnregisterNodeClusterId(node_index);
         node.deleted = true;
 
         // Scheme B: subtree_size tracks active (non-deleted) nodes only.
@@ -204,13 +201,6 @@ public:
             --nodes_[current].subtree_size;
             current = nodes_[current].parent;
         }
-    }
-
-    [[nodiscard]] int FindNodeByClusterId(uint64_t cluster_id) const
-        requires requires(const Point& p) { p.cluster_id; } {
-        auto it = cluster_id_to_node_.find(cluster_id);
-        if (it == cluster_id_to_node_.end()) return -1;
-        return it->second;
     }
 
     // Result type for KNN queries
@@ -313,8 +303,7 @@ private:
 
     std::vector<Point> points_;
     std::vector<Node> nodes_;
-    std::vector<int> free_list_;  // Free node indices for reuse
-    std::unordered_map<uint64_t, int> cluster_id_to_node_;
+    std::vector<int> free_list_;
     int root_index_ = -1;
 
     static constexpr bool kHasClusterId = requires(const Point& p) { p.cluster_id; };
@@ -322,25 +311,6 @@ private:
     static uint64_t ToClusterId(const Point& point)
         requires requires(const Point& p) { p.cluster_id; } {
         return static_cast<uint64_t>(point.cluster_id);
-    }
-
-    void RegisterNodeClusterId(int node_index) {
-        if constexpr (kHasClusterId) {
-            const Node& node = nodes_[node_index];
-            cluster_id_to_node_[ToClusterId(points_[node.point_index])] = node_index;
-        }
-    }
-
-    void UnregisterNodeClusterId(int node_index) {
-        if constexpr (kHasClusterId) {
-            if (node_index < 0 || node_index >= static_cast<int>(nodes_.size())) return;
-            const Node& node = nodes_[node_index];
-            const uint64_t cluster_id = ToClusterId(points_[node.point_index]);
-            auto it = cluster_id_to_node_.find(cluster_id);
-            if (it != cluster_id_to_node_.end() && it->second == node_index) {
-                cluster_id_to_node_.erase(it);
-            }
-        }
     }
 
     // Get coordinate by axis
@@ -385,7 +355,6 @@ private:
 
     // Free a node for reuse
     void FreeNode(int node_index) {
-        UnregisterNodeClusterId(node_index);
         free_list_.push_back(node_index);
     }
 
@@ -427,7 +396,6 @@ private:
         const int node_index = AllocateNode(mid);
         Node& node = nodes_[node_index];
         node.deleted = false;  // Ensure deleted flag is reset for reused nodes
-        RegisterNodeClusterId(node_index);
 
         node.left_child = BuildRecursive(start, mid, depth + 1);
         node.right_child = BuildRecursive(mid + 1, end, depth + 1);
