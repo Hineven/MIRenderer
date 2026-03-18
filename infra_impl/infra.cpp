@@ -191,6 +191,10 @@ MIInfraInterface & GetInfra() {
     return *G_Inftra;
 }
 
+bool HasInfra() {
+    return G_Inftra != nullptr;
+}
+
 void TransferInfra(std::unique_ptr<MIInfraInterface> &&infra) {
     G_Inftra = std::move(infra);
 }

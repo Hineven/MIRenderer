@@ -175,6 +175,9 @@ public:
 
 // Get the globally unique provided infrastructure instance for the renderer.
 MIInfraInterface & GetInfra () ;
+// Check if the infrastructure instance is provided.
+bool HasInfra () ;
+
 // Transferring the ownership of the infra to the renderer after external construction.
 // Init() is called on the infrastructure by the render thread when it starts.
 void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
@@ -183,7 +186,7 @@ void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
 // GetInfra().Shutdown() is called prior to this function.
 void DestroyInfra () ;
 
-#define MI_LOG_LOCATION(level, location, fmt, ...) ::MI_NAMESPACE::GetInfra().LogMessage(level, std::format(fmt, ##__VA_ARGS__), location)
+#define MI_LOG_LOCATION(level, location, fmt, ...) {if(::MI_NAMESPACE::HasInfra()){::MI_NAMESPACE::GetInfra().LogMessage(level, std::format(fmt, ##__VA_ARGS__), location)}}
 #define MI_LOG(level, fmt, ...) MI_LOG_LOCATION(level, std::format("{0}:{1}", __FILE__, __LINE__), fmt, ##__VA_ARGS__)
 
 // Logging shortcuts
