@@ -124,8 +124,8 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
         L.Normal = N;
         L.Hash = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
         float Area = length(cross(Evaluated.V1 - Evaluated.V0, Evaluated.V2 - Evaluated.V0)) * 0.5f;
-        L.PerceptualIntensity = RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area;
-        if (L.PerceptualIntensity > 1e-3f) {
+        L.Intensity = RadianceToLuminance(Evaluated.EstimatedAverageEmission) * Area;
+        if (L.Intensity > 1e-3f) {
             // Allocate active light list
             uint WaveNumActiveLights = WaveActiveCountBits(true);
             uint WaveLightListOffset = 0;
@@ -172,9 +172,9 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
         PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
-        float LightCullingProbabilityMin = LightStructure_UB.LightCullingRate;
+        float LightCullingProbabilityMax = LightStructure_UB.LightCullingRate;
         // Lights with lower contribution have higher probability to be culled.
-        float LightCullingProbability = LightCullingProbabilityMin + (1 - LightCullingProbabilityMin) * saturate(DynamicThreshold / max(Weight, 1e-6f));
+        float LightCullingProbability = LightCullingProbabilityMax * saturate(DynamicThreshold / max(Weight, 1e-6f));
         bool bIsLightAlive = R.rand() > LightCullingProbability;
         if (bIsLightAlive) {
             // Keep this light in the double buffer and accumulate weights depending on which
