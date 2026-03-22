@@ -41,7 +41,7 @@ PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
         P.V2 = float3(asfloat(L.Type), 0, 0);
         P.Normal = INVALID_UINT;
     }
-    P.PerceptualIntensity = L.PerceptualIntensity;
+    P.Intensity = L.Intensity;
     P.Hash = L.Hash;
     return P;
 }
@@ -61,7 +61,7 @@ PrecomputedLight UnpackPrecomputedLight(PackedPrecomputedLight P) {
         L.Normal = INVALID_UINT;
         L.Type = asuint(P.V2.x);
     }
-    L.PerceptualIntensity = P.PerceptualIntensity;
+    L.Intensity = P.Intensity;
     L.Hash = P.Hash;
     return L;
 }
@@ -118,8 +118,9 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         LightFacingCosineFactor = 1;
 #endif
 
-        float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
-        return L.PerceptualIntensity * SolidAngle * ReceiverCosineFactor / PI;
+        float SolidAngleNoArea = LightFacingCosineFactor / (DistanceSq + LightArea);
+
+        // Equivalent to L.AvgIntensity * SolidAngle * ReceiverCosineFactor, where L.AvgIntensity is L.Intensity / L.Area        return L.Intensity * SolidAngleNoArea * ReceiverCosineFactor / PI;
     } else {
         float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
         float3 ToLightCenter = LightCenter - Position;
@@ -174,8 +175,10 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         LightFacingCosineFactor = 1;
 #endif
 
-        float SolidAngle = LightArea * LightFacingCosineFactor / (DistanceSq + LightArea);
-        return L.PerceptualIntensity * SolidAngle * ReceiverCosineFactor;
+        float SolidAngleNoArea = LightFacingCosineFactor / (DistanceSq + LightArea);
+
+        // Equivalent to L.AvgIntensity * SolidAngle * ReceiverCosineFactor, where L.AvgIntensity is L.Intensity / L.Area
+        return L.Intensity * SolidAngleNoArea * ReceiverCosineFactor;
     }
 }
 
