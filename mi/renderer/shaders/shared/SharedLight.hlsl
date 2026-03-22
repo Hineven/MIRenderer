@@ -36,8 +36,8 @@ struct PrecomputedLight {
     float3 V0, V1, V2;
     // Triangle normal. Makes sense only for triangle lights
     float3 Normal;
-    // Perceptual intensity for the light. Usually log(total power)
-    float PerceptualIntensity;
+    // Intensity for the light. 
+    float Intensity;
     bool bInvalid;
     // One of the above types
     uint Type;
@@ -50,7 +50,7 @@ struct PackedPrecomputedLight {
     float3 V0, V1, V2;
     // Triangle normal. For non-triangle lights, this is INVALID_UINT
     uint  Normal;
-    float PerceptualIntensity;
+    float Intensity;
     uint2 Hash;
 };
 
