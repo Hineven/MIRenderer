@@ -169,6 +169,10 @@ void StaticMesh::ClearMeshPrimitives() {
     materials_.clear();
     device_static_mesh_ = {};
     aabb_ = {};
+    light_hierarchy_records_.clear();
+    mesh_light_instance_template_.clear();
+    light_cluster_headers_.SafeRelease();
+    light_cluster_nodes_.SafeRelease();
     SetDirty(true);
 }
 
@@ -204,6 +208,7 @@ void StaticMesh::UpdateOnDevice_Async (DeviceBindlessResourceAllocator * alloc, 
         (uint32_t)(device_static_mesh_->geometry_material_indices_->GetRHI().offset / (2 * sizeof(uint32_t))),
         (uint32_t)geometries_.size(),
     };
+    header_ = header;
     Helpers::Upload_Async(queue,
         alloc->GetStaticMeshHeaderBuffer(),
         sizeof(StaticMeshHeader) * device_static_mesh_->GetIndex(),
@@ -306,6 +311,175 @@ void StaticMesh::UpdateOnDevice(DeviceBindlessResourceAllocator * alloc) {
     queue.WaitForIdle("StaticMesh::UpdateOnDevice");
 }
 
+void StaticMesh::RebuildLightClusterHierarchy_CPU(const MeshLightClusterBuildConfig & config) {
+    if (!light_hierarchy_dirty_) {
+        return;
+    }
+
+    light_hierarchy_records_.clear();
+    mesh_light_instance_template_.clear();
+
+    if (IsEmpty()) {
+        light_hierarchy_dirty_ = false;
+        light_hierarchy_device_dirty_ = true;
+        return;
+    }
+
+    light_hierarchy_records_.reserve(geometries_.size());
+    for (uint32_t i = 0; i < (uint32_t)geometries_.size(); ++i) {
+        auto * geom = geometries_[i].Raw();
+        auto * mat = materials_[i].Raw();
+        if (!geom || !mat || !mat->IsEmissive()) {
+            continue;
+        }
+
+        auto hierarchy_opt = BuildMeshLightClusterHierarchy(*geom, *mat, config);
+        if (!hierarchy_opt.has_value()) {
+            MI_WARN("Failed to build light cluster hierarchy for static mesh geometry {}.", i);
+            continue;
+        }
+
+        if (hierarchy_opt->Empty()) {
+            continue;
+        }
+
+        light_hierarchy_records_.push_back(MeshLightHierarchyRecord{
+            i,
+            std::move(hierarchy_opt.value())
+        });
+    }
+
+    light_hierarchy_dirty_ = false;
+    light_hierarchy_device_dirty_ = true;
+}
+
+void StaticMesh::UploadLightClusterHierarchy_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue) {
+    RebuildLightClusterHierarchy_CPU();
+    if (!light_hierarchy_device_dirty_) {
+        return;
+    }
+
+    // Clear buffers only if no longer needed (empty records)
+    if (light_hierarchy_records_.empty()) {
+        if (light_cluster_headers_) {
+            Helpers::Clear_Async(queue, light_cluster_headers_->GetRHI());
+            light_cluster_headers_.SafeRelease();
+        }
+        if (light_cluster_nodes_) {
+            Helpers::Clear_Async(queue, light_cluster_nodes_->GetRHI());
+            light_cluster_nodes_.SafeRelease();
+        }
+        mesh_light_instance_template_.clear();
+        light_hierarchy_device_dirty_ = false;
+        return;
+    }
+
+    size_t total_headers = 0;
+    size_t total_nodes = 0;
+    for (const auto & record : light_hierarchy_records_) {
+        total_headers += record.hierarchy.headers.size();
+        total_nodes += record.hierarchy.nodes.size();
+    }
+
+    const size_t required_headers_size = total_headers * sizeof(MeshLightClusterHeader);
+    const size_t required_nodes_size = total_nodes * sizeof(MeshLightClusterNode);
+
+    std::vector<MeshLightClusterHeader> packed_headers;
+    std::vector<MeshLightClusterNode> packed_nodes;
+    packed_headers.reserve(total_headers);
+    packed_nodes.reserve(total_nodes);
+    mesh_light_instance_template_.clear();
+    mesh_light_instance_template_.reserve(light_hierarchy_records_.size());
+
+    for (const auto & record : light_hierarchy_records_) {
+        uint32_t node_base = (uint32_t)packed_nodes.size();
+        packed_headers.insert(packed_headers.end(), record.hierarchy.headers.begin(), record.hierarchy.headers.end());
+        packed_nodes.insert(packed_nodes.end(), record.hierarchy.nodes.begin(), record.hierarchy.nodes.end());
+
+        MeshLightClusterChild root = record.hierarchy.root_node;
+        if (!root.bIsLeaf) {
+            root.Index += node_base;
+        }
+
+        MeshLightInstance instance {};
+        instance.RenderableIndex = UINT32_MAX;
+        instance.StaticMeshDescriptionIndex = header_.DescriptionOffset + record.static_mesh_local_geometry_index;
+        instance.RootCluster = root;
+        mesh_light_instance_template_.push_back(instance);
+    }
+
+    bool upload_ok = true;
+
+    // Handle headers buffer: reuse if size is sufficient, otherwise reallocate
+    if (!packed_headers.empty()) {
+        bool need_reallocate = !light_cluster_headers_ || 
+            light_cluster_headers_->GetSize() < required_headers_size || light_cluster_headers_->GetSize() > required_headers_size * 2; // Avoid keeping too large buffer for long time
+        
+        if (need_reallocate) {
+            // Release old buffer and allocate new one
+            if (light_cluster_headers_) {
+                Helpers::Clear_Async(queue, light_cluster_headers_->GetRHI());
+                light_cluster_headers_.SafeRelease();
+            }
+            auto alloc_res = alloc->GetMeshLightClusterHeaderUberBuffer()->AllocateRefCounted(
+                (uint32_t)required_headers_size
+            );
+            if (alloc_res.second) {
+                light_cluster_headers_ = alloc_res.first;
+            } else {
+                MI_WARN("Failed to allocate mesh light cluster header uber buffer.");
+                upload_ok = false;
+            }
+        }
+        
+        if (upload_ok && light_cluster_headers_) {
+            Helpers::Upload_Async(queue, light_cluster_headers_->GetRHI(), 
+                packed_headers.data(), required_headers_size);
+        }
+    } else if (light_cluster_headers_) {
+        // No headers needed, release existing buffer
+        Helpers::Clear_Async(queue, light_cluster_headers_->GetRHI());
+        light_cluster_headers_.SafeRelease();
+    }
+
+    // Handle nodes buffer: reuse if size is sufficient, otherwise reallocate
+    if (!packed_nodes.empty() && upload_ok) {
+        bool need_reallocate = !light_cluster_nodes_ || 
+            light_cluster_nodes_->GetSize() < required_nodes_size || light_cluster_nodes_->GetSize() > required_nodes_size * 2; // Avoid keeping too large buffer for long time
+        
+        if (need_reallocate) {
+            // Release old buffer and allocate new one
+            if (light_cluster_nodes_) {
+                Helpers::Clear_Async(queue, light_cluster_nodes_->GetRHI());
+                light_cluster_nodes_.SafeRelease();
+            }
+            auto alloc_res = alloc->GetMeshLightClusterNodeUberBuffer()->AllocateRefCounted(
+                (uint32_t)required_nodes_size
+            );
+            if (alloc_res.second) {
+                light_cluster_nodes_ = alloc_res.first;
+            } else {
+                MI_WARN("Failed to allocate mesh light cluster node uber buffer.");
+                upload_ok = false;
+            }
+        }
+        
+        if (upload_ok && light_cluster_nodes_) {
+            Helpers::Upload_Async(queue, light_cluster_nodes_->GetRHI(), 
+                packed_nodes.data(), required_nodes_size);
+        }
+    } else if (light_cluster_nodes_) {
+        // No nodes needed, release existing buffer
+        Helpers::Clear_Async(queue, light_cluster_nodes_->GetRHI());
+        light_cluster_nodes_.SafeRelease();
+    }
+
+    if (!upload_ok) {
+        mesh_light_instance_template_.clear();
+    }
+    light_hierarchy_device_dirty_ = !upload_ok;
+}
+
 TRef<StaticMesh> StaticMesh::Create(bool is_ray_traced, bool dynamic) {
     auto mesh = TRef(new StaticMesh());
     mesh->is_ray_traced_ = is_ray_traced;
@@ -328,11 +502,40 @@ void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *all
         Helpers::Clear_Async(queue, lights_->GetRHI());
         lights_.SafeRelease();
     }
+    if (mesh_light_instances_) {
+        Helpers::Clear_Async(queue, mesh_light_instances_->GetRHI());
+        mesh_light_instances_.SafeRelease();
+    }
     if (!static_mesh_ || static_mesh_->IsEmpty()) return ;
     if (!static_mesh_->GetDeviceStaticMesh()) {
         MI_WARN("Can not update lights for static mesh instance. static mesh is not updated on device.");
         return ;
     }
+
+    // New path: upload mesh-light hierarchy and instance entries.
+    static_mesh_->UploadLightClusterHierarchy_Async(alloc, queue);
+    auto const & hierarchy_instances_template = static_mesh_->GetMeshLightInstanceTemplate();
+    if (!hierarchy_instances_template.empty()) {
+        auto result = alloc->GetMeshLightInstanceUberBuffer()->AllocateRefCounted(
+            (uint32_t)(hierarchy_instances_template.size() * sizeof(MeshLightInstance))
+        );
+        if (result.second) {
+            mesh_light_instances_ = result.first;
+            auto hierarchy_instances = hierarchy_instances_template;
+            for (auto & inst : hierarchy_instances) {
+                inst.RenderableIndex = GetIndex();
+            }
+            Helpers::Upload_Async(
+                queue,
+                mesh_light_instances_->GetRHI(),
+                hierarchy_instances.data(),
+                hierarchy_instances.size() * sizeof(MeshLightInstance)
+            );
+        } else {
+            MI_WARN("Failed to allocate mesh light instance buffer for static mesh instance {}.", GetIndex());
+        }
+    }
+
     auto & geometries = static_mesh_->GetGeometries();
     auto & materials = static_mesh_->GetMaterials();
     std::vector<RawLight> lights;

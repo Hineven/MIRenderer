@@ -178,7 +178,6 @@ TEST(RendererLightClusterHierarchyTest, SnapshotLevelsSupportBudgetDrivenSelecti
 TEST(RendererLightClusterHierarchyTest, PerformanceSmokeBuildHierarchy) {
     auto geom = CreateUVSphereGeometry(64, 96, 1.0f);
     auto mat = CreateEmissiveMaterial();
-
     MeshLightClusterBuildConfig config {};
     config.supplement_morton_neighbor_window = 2;
 

@@ -96,7 +96,7 @@ FORCEINLINE PixelFormatType GetPixelFormatFromVulkanFormat (vk::Format format) {
     }
 }
 
-FORCEINLINE vk::ClearColorValue GetVulkanClearColorValue (PixelFormatType format, const std::array<float, 4> & clear_value) {
+FORCEINLINE vk::ClearColorValue GetVulkanClearColorValue ([[maybe_unused]] PixelFormatType format, const std::array<float, 4> & clear_value) {
     return vk::ClearColorValue(clear_value);
 }
 

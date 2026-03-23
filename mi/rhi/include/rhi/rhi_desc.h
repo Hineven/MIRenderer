@@ -444,6 +444,7 @@ struct RHIDrawStateDesc {
     FORCEINLINE void SetNumAttachments (uint32_t num) {
         num_framebuffer_attachments_ = num;
     }
+    // For uint textures, use std::bit_cast<float>(uint_value) to set the clear value for the texture.
     FORCEINLINE void SetAttachment(uint32_t index, RHITexture * texture,
                                    RHILoadOpType load_op = RHILoadOpType::kClear,
                                    RHIStoreOpType store_op = RHIStoreOpType::kStore,

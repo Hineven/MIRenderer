@@ -165,6 +165,18 @@ public:
         return area_lights_uber_buffer_.Raw();
     }
 
+    FORCEINLINE DeviceUberBufferInterface * GetMeshLightClusterHeaderUberBuffer() const {
+        return mesh_light_cluster_header_uber_buffer_.Raw();
+    }
+
+    FORCEINLINE DeviceUberBufferInterface * GetMeshLightClusterNodeUberBuffer() const {
+        return mesh_light_cluster_node_uber_buffer_.Raw();
+    }
+
+    FORCEINLINE DeviceUberBufferInterface * GetMeshLightInstanceUberBuffer() const {
+        return mesh_light_instance_uber_buffer_.Raw();
+    }
+
     FORCEINLINE RHIBuffer * GetVolumePrimitivesHeaderBuffer() const {
         return volume_primitives_header_buffer_.Raw();
     }
@@ -234,6 +246,11 @@ protected:
 
     // A buffer holding all area lights (RawLight structs).
     TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;
+
+    // Mesh light hierarchy buffers.
+    TRef<DeviceUberBufferInterface> mesh_light_cluster_header_uber_buffer_;
+    TRef<DeviceUberBufferInterface> mesh_light_cluster_node_uber_buffer_;
+    TRef<DeviceUberBufferInterface> mesh_light_instance_uber_buffer_;
 
     // Custom buffer heaps for custom resources (e.g. custom renderable class)
     std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;

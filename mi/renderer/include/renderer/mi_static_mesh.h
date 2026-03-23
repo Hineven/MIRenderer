@@ -16,6 +16,7 @@
 #include "renderer/mi_geometry.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_fwd.h"
+#include "renderer/r_light_cluster_hiearchy.h"
 MI_NAMESPACE_BEGIN
 
 // Device side of a static mesh. Holds BLAS & geometry buffers & placeholder
@@ -48,6 +49,11 @@ protected:
 // Static mesh, holds a "static mesh" assembled from pairs of geometry and material.
 class StaticMesh : public NonCopyable, public NonMovable, public RefCounted<true> {
 public:
+    struct MeshLightHierarchyRecord {
+        uint32_t static_mesh_local_geometry_index {};
+        MeshLightClusterHierarchy hierarchy {};
+    };
+
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 
@@ -73,6 +79,10 @@ public:
         if (tracker_ && !dirty_ && dirty) {
             tracker_->OnObjectTurnedDirty(this);
         }
+        if (dirty) {
+            light_hierarchy_dirty_ = true;
+            light_hierarchy_device_dirty_ = true;
+        }
         dirty_ = dirty;
     }
 
@@ -91,6 +101,22 @@ public:
 
     void UpdateOnDevice (DeviceBindlessResourceAllocator * alloc);
 
+    // Build mesh-light hierarchies on CPU and cache them on this static mesh.
+    // The cache is shared across all instances referencing this static mesh.
+    void RebuildLightClusterHierarchy_CPU(const MeshLightClusterBuildConfig & config = {});
+
+    // Upload persistent cluster headers/nodes to allocator uber buffers.
+    // This is independent from legacy RawLight generation.
+    void UploadLightClusterHierarchy_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue);
+
+    FORCEINLINE const std::vector<MeshLightHierarchyRecord> & GetLightHierarchyRecords() const {
+        return light_hierarchy_records_;
+    }
+
+    FORCEINLINE const std::vector<MeshLightInstance> & GetMeshLightInstanceTemplate() const {
+        return mesh_light_instance_template_;
+    }
+
     FORCEINLINE DeviceStaticMesh * GetDeviceStaticMesh () const {
         return device_static_mesh_.Raw();
     }
@@ -99,6 +125,10 @@ public:
 
     FORCEINLINE const AABB & GetAABB () const {
         return aabb_;
+    }
+
+    FORCEINLINE const StaticMeshHeader & GetHeader() const {
+        return header_;
     }
 
     // Visibility buffer reserved 8 bits for static mesh descriptor index. So the max number is 256.
@@ -122,6 +152,22 @@ protected:
 
     // Dirty bit. If dirty, the object is updated on the host but not on the device.
     bool dirty_ {true};
+
+    // Marked when geometry/material changed and CPU hierarchy cache must rebuild.
+    bool light_hierarchy_dirty_ {true};
+
+    // Marked when hierarchy upload to GPU uber buffers is stale.
+    bool light_hierarchy_device_dirty_ {true};
+
+    std::vector<MeshLightHierarchyRecord> light_hierarchy_records_;
+
+    // MeshLightInstance template generated from hierarchy records.
+    // RenderableIndex is filled per-instance at upload time.
+    std::vector<MeshLightInstance> mesh_light_instance_template_;
+
+    // Persistent shared allocations owned by static mesh and reused by all instances.
+    TRef<DeviceUberBufferAllocation> light_cluster_headers_;
+    TRef<DeviceUberBufferAllocation> light_cluster_nodes_;
 
     DirtyTracker<StaticMesh> * tracker_ {};
 };
@@ -157,6 +203,9 @@ protected:
     // A buffer storing the lights for this static mesh, used for lighting calculations.
     // Leave empty for static meshes with no emissive materials.
     TRef<DeviceUberBufferAllocation> lights_;
+
+    // Per-instance mesh-light hierarchy references uploaded from static mesh hierarchy template.
+    TRef<DeviceUberBufferAllocation> mesh_light_instances_;
 
     TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to
 };

@@ -131,3 +131,8 @@ add_dependencies(renderer_light_cluster_test copy_renderer_resources)
 
 target_link_libraries(renderer_light_cluster_test PRIVATE renderer util ${GTEST_LIBRARIES})
 add_test(NAME renderer_light_cluster COMMAND renderer_light_cluster_test)
+
+# Renderer - KD-Tree
+add_executable(renderer_kd_tree_test renderer/test_kd_tree.cpp)
+target_link_libraries(renderer_kd_tree_test PRIVATE renderer util ${GTEST_LIBRARIES})
+add_test(NAME renderer_kd_tree COMMAND renderer_kd_tree_test)

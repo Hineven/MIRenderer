@@ -35,6 +35,9 @@ imgui.ini
 # any conda environment
 *.conda
 
+# locally used scrips for constant computation, data processing, etc.
+local_scripts/
+
 # Data directory for applications/3d_viewer
 applications/3d_viewer/data/
 /applications/3d_viewer/viewer_scene.json
@@ -42,3 +45,4 @@ applications/3d_viewer/data/
 # AI Agent related stuff
 AGENTS.md
 */*PLAN.md
+/.claude/settings.local.json

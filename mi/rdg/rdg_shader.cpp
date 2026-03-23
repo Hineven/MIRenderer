@@ -340,6 +340,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
             }
         }
     }
+    // C++ side should be sufficient, but not necessarily 1-to-1 match. We adjust the compilation of pipeline based on the shader reflected outputs.
     for (const auto & [i, output] : std::views::enumerate(shader->GetFragmentOutputDesc())) {
         int index = (int)i;
         if (index < info.render_targets_.size()) {
@@ -1072,6 +1073,8 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 
         std::vector<RHIColorAttachmentDesc> color_attachments;
         RHIDepthStencilAttachmentDesc depth_stencil {};
+        // Pipeline is created mainly based on shader reflection info.
+        // The shader parameters specified in C++ provide additional configuration for the pipeline, but they must be compatible with the shader reflected info.
         if (shaders_.fragment) {
             auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
             // Gather color attachment configurations from shader param struct info

@@ -38,7 +38,6 @@ struct MeshLightClusterBuildConfig {
     float weight_centroid_distance {0.35f};
     float weight_normal_deviation {1.f};
     float weight_intensity_imbalance {0.25f};
-    float emissive_power_penalty_weight {2.f};
 
     // Penalty value used when merging non-topology-adjacent clusters.
     float non_topology_penalty_value {1.0f};

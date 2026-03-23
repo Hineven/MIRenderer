@@ -15,6 +15,7 @@
 #include "shaders/shared/SharedVolumePrimitives.hlsl"
 #include "shaders/shared/SharedGaussianRadianceField.hlsl"
 #include "shaders/shared/SharedVolumeGrid.hlsl"
+#include "shaders/shared/SharedLightClusterHierarchy.hlsl"
 
 
 MI_NAMESPACE_BEGIN
@@ -84,6 +85,30 @@ volume_grid_slots_(kMaxNumVolumeGrids){
     );
     area_lights_uber_buffer_->SetName("AreaLightsUberBuffer");
 
+    mesh_light_cluster_header_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        alignof(MeshLightClusterHeader),
+        16 * 1024,
+        this
+    );
+    mesh_light_cluster_header_uber_buffer_->SetName("MeshLightClusterHeaderUberBuffer");
+
+    mesh_light_cluster_node_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        alignof(MeshLightClusterNode),
+        16 * 1024,
+        this
+    );
+    mesh_light_cluster_node_uber_buffer_->SetName("MeshLightClusterNodeUberBuffer");
+
+    mesh_light_instance_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        alignof(MeshLightInstance),
+        16 * 1024,
+        this
+    );
+    mesh_light_instance_uber_buffer_->SetName("MeshLightInstanceUberBuffer");
+
     volume_primitives_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(VolumePrimitivesHeader) * kMaxNumVolumePrimitiveGroups, RHIBufferUsageFlagBits::kStorage}
     );
@@ -127,6 +152,9 @@ size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
     sum += index_uber_buffer_->GetRHI()->GetBufferSize();
     sum += static_mesh_description_uber_buffer_->GetRHI()->GetBufferSize();
     sum += area_lights_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += mesh_light_cluster_header_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += mesh_light_cluster_node_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += mesh_light_instance_uber_buffer_->GetRHI()->GetBufferSize();
     sum += material_header_buffer_->GetBufferSize();
     sum += geometry_header_buffer_->GetBufferSize();
     sum += static_mesh_header_buffer_->GetBufferSize();

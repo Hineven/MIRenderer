@@ -18,6 +18,7 @@ struct GaussianRadianceFieldViewData : RefCounted<> {
     // Output opacity for stochastic GRF rendering (if enabled). You can export this if you like.
     TRef<RDGTexture> stochastic_rendering_opacity_;
     TRef<RDGTexture> stochastic_rendering_opacity_large_;
+    TRef<RDGTexture> stochastic_rendering_visibility_;
 
     void Allocate (RenderGraphBuilder & builder, RendererView * view) ;
 };

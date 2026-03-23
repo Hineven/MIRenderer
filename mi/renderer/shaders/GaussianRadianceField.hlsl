@@ -175,7 +175,8 @@ void ProjectActiveGaussians (uint DispatchID : SV_DispatchThreadID) {
     if(FieldHeader.SRGBColorSpace != 0) {
         Color = SRGBColorToLinearColor(Color);
     }
-	RWActiveGaussianColorBuffer[ActiveIndex] = PackUnorm4x8(float4(Color, 0.f));
+    float Opacity = G.Opacity;
+	RWActiveGaussianColorBuffer[ActiveIndex] = PackUnorm4x8(float4(Color, Opacity));
 
     // Compute extent in screen space (by finding eigenvalues of
     // 2D covariance matrix). Use extent to compute a bounding rectangle
@@ -414,14 +415,23 @@ struct StochasticDrawActiveGaussians_GSOutput
 {
     float4 Position : SV_POSITION;
     float4 UVWS : TEXCOORD0;
+#ifdef STOCHASTIC_GATHERING_PATH
+    // Use stochastic gaussian gathering rendering path, encode the active gaussian index into the shader input
+    uint   ActiveGaussianIndex : TEXCOORD1;
+#else
     float3 RGB  : TEXCOORD1;
+#endif
 };
 
 struct StochasticDrawActiveGaussians_PSInput
 {
     float4 Position : SV_Position;
     float4 UVWS : TEXCOORD0;
+#ifdef STOCHASTIC_GATHERING_PATH
+    uint   ActiveGaussianIndex : TEXCOORD1;
+#else
     float3 RGB : TEXCOORD1;
+#endif
 };
 
 struct StochasticDrawLargeGaussianIndex_GSOutput
@@ -507,8 +517,11 @@ void StochasticDrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1]
     StochasticDrawActiveGaussians_GSOutput Output;
 
     Output.UVWS.zw = float2(Alpha, float(0x3FFFF & (ActiveListIndex ^ 0x48f4c)));
+#ifdef STOCHASTIC_GATHERING_PATH
+    Output.ActiveGaussianIndex = ActiveListIndex;
+#else
     Output.RGB = Color.rgb;
-
+#endif
     Output.UVWS.xy = Expand * float2(-1, -0.5);
     Output.Position = float4(Left1, LinearDepthToReversedZDepth(C, InterpolateBarycentrics(D_TL, D_TR, D_BL, float2(0, 0.25))), 1);
     TriStream.Append(Output);
@@ -536,25 +549,45 @@ void StochasticDrawActiveGaussians_GS(point DrawActiveGaussians_GSInput Input[1]
     TriStream.RestartStrip();
 }
 
-GBufferOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PSInput Input) {
+struct StochasticDrawActiveGaussians_PSOutput
+{
+#ifdef STOCHASTIC_GATHERING_PATH
+    uint   GaussianVisibility : SV_Target0;
+#else
+    float4 ColorAlpha    : SV_Target0;
+#endif
+};
+
+StochasticDrawActiveGaussians_PSOutput StochasticDrawActiveGaussians_PS (StochasticDrawActiveGaussians_PSInput Input) {
     float2 UV     = Input.UVWS.xy;
     uint Seed     = uint(max(0, int(Input.UVWS.w)));
-    float4 RGBA   = float4(Input.RGB.rgb, Input.UVWS.z);
-    float  Alpha  = RGBA.w *  Evaluate2DUnnormalizedGaussian(UV);
+#ifdef STOCHASTIC_GATHERING_PATH
+    uint ActiveGaussianIndex = Input.ActiveGaussianIndex;    
+#else
+    float3 RGB   = Input.RGB.rgb;
+#endif
+    float  Alpha  = Input.UVWS.z *  Evaluate2DUnnormalizedGaussian(UV);
     if (Alpha < 0.01f) discard; // Early cull to save bandwidth. The threshold is a magic number that works well in practice.
     CameraParameters C = GetActiveCamera();
 
-    int2 PixelCoords = int2(floor(Input.Position.xy * float2(C.FilmDimensions)));
+    int2 PixelCoords = int2(floor(Input.Position.xy) * float2(C.FilmDimensions));
     uint PixelIndex = asuint(PixelCoords.y) * C.FilmDimensions.x + asuint(PixelCoords.x);
     Random rng = MakeRandom(PixelIndex, Seed + View.FrameIndex);
     float Noise = rng.rand();
+
+    // This seems to produce worse results.
+    // TODO: use a rotated blue noise.
     // float Noise = InterleavedGradientNoise(Input.Position.xy, Seed + View.FrameIndex);
     
     if(Alpha < Noise) discard;
 
-    float3 Color = saturate(RGBA.xyz);
-    GBufferOutput Result = (GBufferOutput)0;
-    Result.ColorAlpha    = float4(Color, Alpha);
+    StochasticDrawActiveGaussians_PSOutput Result = (StochasticDrawActiveGaussians_PSOutput)0;
+#ifdef STOCHASTIC_GATHERING_PATH
+    Result.GaussianVisibility = ActiveGaussianIndex;
+#else
+    float3 Color = saturate(RGB);
+    Result.ColorAlpha    = float4(Color, 1);
+#endif
     return Result;
 }
 
@@ -613,7 +646,7 @@ void StochasticDrawLargeGaussianIndex_GS(point DrawActiveGaussians_GSInput Input
 
     StochasticDrawLargeGaussianIndex_GSOutput Output;
     Output.UVW.z = G.Opacity;
-    Output.ActiveListIndex = ActiveListIndex + 1;
+    Output.ActiveListIndex = ActiveListIndex;
     Output.Seed = 0x3FFFF & (ActiveListIndex ^ 0x48f4c);
 
     Output.UVW.xy = Expand * float2(-1, -0.5);
@@ -655,14 +688,13 @@ StochasticDrawLargeGaussianIndex_PSOutput StochasticDrawLargeGaussianIndex_PS (S
     if (Alpha < 0.01f) discard;
 
     CameraParameters C = GetActiveCamera();
-    int2 PixelCoords = int2(floor(Input.Position.xy * float2(C.FilmDimensions)));
+    int2 PixelCoords = int2(floor(Input.Position.xy) * float2(C.FilmDimensions));
     uint PixelIndex = asuint(PixelCoords.y) * C.FilmDimensions.x + asuint(PixelCoords.x);
     Random rng = MakeRandom(PixelIndex, Input.Seed + View.FrameIndex);
     float Noise = rng.rand();
     if (Alpha < Noise) discard;
 
     StochasticDrawLargeGaussianIndex_PSOutput Output;
-    //Output.Opacity = Alpha;
     Output.ActiveListIndex = Input.ActiveListIndex;
     return Output;
 }
@@ -703,19 +735,186 @@ float3 EvaluateLargeGaussianColor(uint ActiveListIndex, uint2 PixelCoords) {
 
 [numthreads(THREAD_GROUP_SIZE, THREAD_GROUP_SIZE, 1)]
 void ComposeLargeGaussians(uint2 DispatchID : SV_DispatchThreadID) {
-    if (any(DispatchID >= View.Camera.FilmDimensions)) return;
+    CameraParameters C = GetActiveCamera();
+    if (any(DispatchID >= C.FilmDimensions)) return;
 
     uint LargeWidth, LargeHeight;
     LargeGaussianIndex.GetDimensions(LargeWidth, LargeHeight);
     uint2 LargePixel = min(DispatchID >> 1, uint2(LargeWidth - 1, LargeHeight - 1));
 
     uint LargeActiveGaussianIndex = LargeGaussianIndex.Load(int3(LargePixel, 0));
-    if (LargeActiveGaussianIndex == 0) return;
+    if (IsInvalid(LargeActiveGaussianIndex)) return;
 
     float LargeDepthValue = LargeGaussianDepth.Load(int3(LargePixel, 0));
     float FullResolutionDepthValue = FullResolutionDepth.Load(int3(DispatchID, 0));
     if (LargeDepthValue >= FullResolutionDepthValue) {
-        float3 Color = EvaluateLargeGaussianColor(LargeActiveGaussianIndex - 1, DispatchID);
+        float3 Color = EvaluateLargeGaussianColor(LargeActiveGaussianIndex, DispatchID);
         RWOverlay[DispatchID] = float4(Color, 1);
+    }
+}
+
+
+Texture2D<uint> GaussianVisibilityTexture;
+
+StructuredBuffer<uint> ActiveGaussianColorBuffer;
+StructuredBuffer<float> ActiveGaussianLinearDepthSrcBuffer;
+StructuredBuffer<uint> ActiveGaussianNDCPositionBuffer;
+StructuredBuffer<uint> ActiveGaussianQuadNDCVector0Buffer;
+StructuredBuffer<uint> ActiveGaussianQuadNDCVector1Buffer;
+
+#ifndef TILE_SIZE
+#define TILE_SIZE 8
+#endif
+
+#define RADIUS 1
+#define SOURCE_TILE_WIDTH (TILE_SIZE + 2 * RADIUS)   // 10
+#define SOURCE_TILE_HEIGHT (TILE_SIZE + 2 * RADIUS)   // 10
+#define SOURCE_TEXEL_COUNT (SOURCE_TILE_WIDTH * SOURCE_TILE_HEIGHT)          // 100
+#define GATHER_NEIGHBOR_COUNT ((RADIUS * 2 + 1) * (RADIUS * 2 + 1))   // 9
+
+groupshared uint SharedTileActiveListIndex[SOURCE_TEXEL_COUNT];
+groupshared uint SharedTileActiveGaussianColor[SOURCE_TEXEL_COUNT];
+groupshared uint SharedTileActiveGaussianLinearDepth[SOURCE_TEXEL_COUNT];
+groupshared uint SharedTileActiveGaussianVec1[SOURCE_TEXEL_COUNT];
+groupshared uint SharedTileActiveGaussianVec2[SOURCE_TEXEL_COUNT];
+groupshared uint SharedTileActiveGaussianNDCCenter[SOURCE_TEXEL_COUNT];
+
+uint Hash32(uint x)
+{
+    // 简单 avalanche hash（非加密）
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+uint MapElementToBloomMask(uint Value)
+{
+    uint h1 = Hash32(Value);
+    uint b0 = 1u << (h1 & 31u);
+    uint b1 = 1u << ((h1>>6) & 31u);
+    uint b2 = 1u << ((h1>>12) & 31u);
+
+    return b0 | b1 | b2;
+}
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void StochasticGatheringShading(uint2 DispatchID : SV_DispatchThreadID,
+        uint2 GroupID : SV_GroupID,
+        uint2 LocalIndex : SV_GroupThreadID)
+{
+    uint LocalIndex1 = LocalIndex.y * TILE_SIZE + LocalIndex.x;
+    const uint GroupSize = TILE_SIZE * TILE_SIZE;
+
+    uint2 BaseCoords = GroupID * TILE_SIZE;
+
+    CameraParameters C = GetActiveCamera();
+    
+
+    [unroll]
+    for (uint i = LocalIndex1; i < SOURCE_TEXEL_COUNT; i += GroupSize)
+    {
+        uint OffsetX = i % SOURCE_TILE_WIDTH;
+        uint OffsetY = i / SOURCE_TILE_WIDTH;
+
+        int2 TexelCoords = int2(BaseCoords) + int2(OffsetX, OffsetY) - int2(RADIUS, RADIUS);
+
+        TexelCoords.x = clamp(TexelCoords.x, 0, int(C.FilmDimensions.x) - 1);
+        TexelCoords.y = clamp(TexelCoords.y, 0, int(C.FilmDimensions.y) - 1);
+
+        uint Index = GaussianVisibilityTexture.Load(int3(TexelCoords, 0));
+        SharedTileActiveListIndex[i] = Index;
+        if(IsValid(Index)) {
+            SharedTileActiveGaussianColor[i] = ActiveGaussianColorBuffer[Index];
+            SharedTileActiveGaussianLinearDepth[i] = ActiveGaussianLinearDepthSrcBuffer[Index];
+            SharedTileActiveGaussianVec1[i] = ActiveGaussianQuadNDCVector0Buffer[Index];
+            SharedTileActiveGaussianVec2[i] = ActiveGaussianQuadNDCVector1Buffer[Index];
+            SharedTileActiveGaussianNDCCenter[i] = ActiveGaussianNDCPositionBuffer[Index];
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Collect a list of identical gaussians for each texel.
+    uint ActiveGausisanLocalIndices[GATHER_NEIGHBOR_COUNT];
+    uint ActiveGaussianCount = 0, FilledTexelCount = 0;
+    if(all(DispatchID < C.FilmDimensions)) {
+        uint BloomFilter = 0;
+
+        int2 LocalTexelCoords = RADIUS.xx + LocalIndex;
+        for(int dy = -RADIUS; dy <= RADIUS; dy++) {
+            for(int dx = -RADIUS; dx <= RADIUS; dx++) {
+                int2 NeighborLocalCoords = LocalTexelCoords + int2(dx, dy);
+                uint NeighborLocalIndex = NeighborLocalCoords.y * SOURCE_TILE_WIDTH + NeighborLocalCoords.x;
+                uint NeighborActiveListIndex = SharedTileActiveListIndex[NeighborLocalIndex];
+                uint BloomMask = MapElementToBloomMask(NeighborActiveListIndex);
+                if (IsValid(NeighborActiveListIndex)) {
+                    FilledTexelCount ++;
+                    if ((BloomFilter & BloomMask) != BloomMask) {
+                        BloomFilter |= BloomMask;
+                        ActiveGausisanLocalIndices[ActiveGaussianCount++] = NeighborLocalIndex;
+                    }
+                }
+            }
+        }
+        
+        // Extract the maximum number of gaussians that can contribute to each pixel.
+        int WaveMaxNumActiveGaussians = (int)WaveActiveMax(ActiveGaussianCount);
+        // Bubble sorting based on gaussian depths.
+        float ActiveGaussianDepths[GATHER_NEIGHBOR_COUNT];
+        for(int i = 0; i < WaveMaxNumActiveGaussians; i++) {
+            if(i < ActiveGaussianCount) {
+                ActiveGaussianDepths[i] = SharedTileActiveGaussianLinearDepth[ActiveGausisanLocalIndices[i]];
+            } else ActiveGaussianDepths[i] = 1e9f; // Put invalid gaussians at the end
+        }
+        for(int i = 0; i < WaveMaxNumActiveGaussians - 1; i++) {
+            for(int j = 0; j < WaveMaxNumActiveGaussians - i - 1; j++) {
+                if(ActiveGaussianDepths[j] > ActiveGaussianDepths[j + 1]) {
+                    // Swap depths
+                    float TempDepth = ActiveGaussianDepths[j];
+                    ActiveGaussianDepths[j] = ActiveGaussianDepths[j + 1];
+                    ActiveGaussianDepths[j + 1] = TempDepth;
+                    // Swap indices
+                    uint TempIndex = ActiveGausisanLocalIndices[j];
+                    ActiveGausisanLocalIndices[j] = ActiveGausisanLocalIndices[j + 1];
+                    ActiveGausisanLocalIndices[j + 1] = TempIndex;
+                }
+            }
+        }
+
+        
+        // Finally, render the colors
+        float Transmittance = 1.f;
+        float3 Color = 0.f;
+        float2 NDC = ScreenCoordsToNDC2(View.Camera, DispatchID);
+        for(int i = 0; i < WaveMaxNumActiveGaussians; i++) {
+            if(i < ActiveGaussianCount) {
+                uint LocalGaussianIndex = ActiveGausisanLocalIndices[i];
+                float4 GaussianColor = UnpackUnorm4x8(SharedTileActiveGaussianColor[LocalGaussianIndex]);
+
+                float2 GaussianCenter  = UnpackUnorm2x16(SharedTileActiveGaussianNDCCenter[LocalGaussianIndex]) * 4 - 2;
+                float2 GaussianVec1    = -(UnpackUnorm2x16(SharedTileActiveGaussianVec1[LocalGaussianIndex]) * 2 - 1);
+                float2 GaussianVec2    = -(UnpackUnorm2x16(SharedTileActiveGaussianVec2[LocalGaussianIndex]) * 2 - 1);
+                float2 GaussianLocal   = NDC - GaussianCenter;
+                float2 GaussianScales2 = float2(dot(GaussianVec1, GaussianVec1), dot(GaussianVec2, GaussianVec2));
+                float2 FragmentUV      = float2(dot(GaussianLocal, GaussianVec1), dot(GaussianLocal, GaussianVec2)) / GaussianScales2;
+
+                GaussianColor.a *= Evaluate2DUnnormalizedGaussian(FragmentUV);
+                Color += Transmittance * GaussianColor.rgb * GaussianColor.a;
+                Transmittance *= (1 - GaussianColor.a);
+            }
+        }
+        // Current opacity Oa: 1 - Transmittance
+        // Unbiased estimated opacity Ob: NumNonEmpty / (1 + RADIUS*2) ^ 2
+        // Color approximation: Ob / max(Oa, 1e-2f) * Color
+
+        float Oa = 1 - Transmittance;
+        float Ob = float(FilledTexelCount) / float(GATHER_NEIGHBOR_COUNT);
+        float ColorModifier = Ob / max(Oa, 1e-2f);
+
+        // Write out
+        RWOverlay[DispatchID] = float4(Color * ColorModifier, Ob);
     }
 }
