@@ -413,11 +413,14 @@ bool GLTFLoader::LoadGLTF(
             auto it = mesh_map.find(gltf_node->mesh);
             if (it != mesh_map.end()) {
                 auto mesh = it->second;
-                TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(
-                    &world, mesh.Raw(), Transform::FromMatrix(glm::mat4(1.0f))
-                );
-                node->SetRenderable(instance_ref.Raw());
-                mesh_instances.push_back(instance_ref);
+                if (!mesh->IsEmpty()) {
+                    // Filter out empty meshes to avoid creating useless nodes and instances
+                    TRef<StaticMeshInstance> instance_ref = StaticMeshInstance::Create(
+                        &world, mesh.Raw(), Transform::FromMatrix(glm::mat4(1.0f))
+                    );
+                    node->SetRenderable(instance_ref.Raw());
+                    mesh_instances.push_back(instance_ref);
+                }
             }
         }
         for (size_t i = 0; i < gltf_node->children_count; ++i) {

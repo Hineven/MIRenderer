@@ -354,6 +354,9 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
 
         auto& r = Renderer::Get();
         for (auto& e : new_meshes) {
+            if (!e->GetStaticMesh()->GetDeviceStaticMesh()) {
+                puts("What the fuck");
+            }
             e->UpdateLights_Async(r.GetDeviceAllocator(), rhi.GetGraphicsCommandQueue());
         }
     };
