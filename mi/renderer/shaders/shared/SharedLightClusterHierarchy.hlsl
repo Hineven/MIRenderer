@@ -10,6 +10,10 @@ struct MeshLightTriangle {
     uint PrimitiveIndex;
 };
 
+struct MeshLightTriangleHash {
+    uint Hash;
+};
+
 struct MeshLightTriangleBakedData {
     // Average emissive power of the triangle. Precomputed on CPU.
     float AvgIntensity;
@@ -65,7 +69,8 @@ struct MeshLightInstanceClusterNode {
     // Tree hierarchy is inherited from the mesh light it derives from. 
 };
 
-// Almost the same as MeshLightClusterNode. This is the real stuff injected into the light grid. Indexed by the instance cluster index.
+// Almost the same as MeshLightClusterNode (but this one is in world space with applied transforms).
+// This is the real stuff injected into the light grid. Indexed by the instance cluster index.
 struct MeshLightInstanceClusterHeader {
     // World space AABB
     float3 AABBMin;
@@ -105,13 +110,26 @@ struct MeshLight {
     uint NumTriangles;
 };
 
-struct MeshLightInstaceClusterOffset {
-    bool bIsTriangle : 1;
-    uint Offset : 31;
+// An offset into the MLI cluster / triangle buffer. Usually the offset is an absolute offset relative to the buffer start.
+// Can be a reference to a specific cluster / triangle of the MLI structure.
+struct MeshLightInstanceElementOffset {
+    uint Packed;
+
+    bool IsValid () {
+        return !(bIsTriangle && Offset == 0x7FFFFFFFu);
+    }
+    bool bIsTriangle() {
+        return (Packed & 0x80000000u) != 0;
+    }
+    uint Offset() {
+        return Packed & 0x7FFFFFFFu;
+    }
 };
 
-bool IsValid (MeshLightInstaceClusterOffset Offset) {
-    return !(Offset.bIsTriangle && Offset.Offset == 0x7FFFFFFFu);
+MeshLightInstanceElementOffset MakeMeshLightInstanceElementOffset(bool bIsTriangle, uint Offset) {
+    MeshLightInstanceElementOffset Element;
+    Element.Packed = (bIsTriangle ? 0x80000000u : 0) | (Offset & 0x7FFFFFFFu);
+    return Element;
 }
 
 // Represent an instance of a mesh light (either persistent in the scene or transient when injected to the light grid)
@@ -120,7 +138,7 @@ struct MeshLightInstance {
     uint RenderableIndex;
     // The offset to the first MLI cluster node of this instance in the MeshLightInstanceClusterNodeBuffer
     // Possibly it is a triangle index if the mesh light has no cluster (NumLevels == 0 in MeshLight).
-    MeshLightInstaceClusterOffset MeshLightInstanceClusterOffset;
+    MeshLightInstanceElementOffset MeshLightInstanceClusterOffset;
     uint MeshLightInstanceTriangleOffset;
 };
 

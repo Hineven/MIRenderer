@@ -150,9 +150,12 @@ void TAA_Main(uint2 tid: SV_DispatchThreadID)
     float3 CurrRadiance  = CurrentSample.rgb;
     
     // Use velocity dilation to find the most prominent motion in the neighborhood
-    float2 mv = GetClosestDepthMotionVector(int2(tid));
+    // Note: jittering is excluded from motion vector calculation. That is, motion vectors
+    // is 0 for static pixels even with camera jittering, which allows better use of history and less ghosting.
+    float2 mv = GetClosestDepthMotionVector(int2(tid)); // NDC space motion vector
     
     // Standard TAA reprojection
+    // TODO: LLMs say that using Jitter - PrevJitter will be more stable
     float2 DeltaJitter = 0; // Reproject in non-jittered space
     float2 PrevUV = UV - 0.5f * float2(mv.x, -mv.y) - 0.5f * float2(DeltaJitter.x, -DeltaJitter.y);
 
@@ -162,7 +165,7 @@ void TAA_Main(uint2 tid: SV_DispatchThreadID)
         return;
     }
 
-
+    // Get the anti-aliased results from the previous frame
     float4 PrevSample = SampleHistoryCatmullRom(PrevUV, C.InvFilmDimensions);
     float3 PrevRadiance = PrevSample.rgb;
     // Compress to tone-mapped space for better clamping and ghosting removal for bright areas

@@ -87,14 +87,14 @@ RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
 void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
     if(DispatchID == 0) {
-        LightGrid_ListAllocator[0] = 0;
-        LightGrid_ActiveLightListCount[0] = 0;
+        LightGrid_RWListAllocator[0] = 0;
+        LightGrid_RWActiveLightListCount[0] = 0;
     }
     uint Index = DispatchID;
     if (Index >= LightStructure_UB.LightGridNumGrids) {
         return;
     }
-     LightGrid_GridLightListLengthBuffer[Index] = 0;
+     LightGrid_RWGridLightListLengthBuffer[Index] = 0;
 }
 
 [numthreads(1, 1, 1)]

@@ -70,7 +70,6 @@ struct LightStructurePersistentData : RefCounted<> {
 };
 
 struct LightStructureData : RefCounted<> {
-    TRef<RDGBuffer> precomputed_active_light_buffer;
     TRef<RDGBuffer> active_light_list_count;
     TRef<RDGBuffer> active_light_list_buffer;
     // List of light indices for each grid
@@ -92,43 +91,40 @@ template<typename T>
 void FillParametersForLightStructure (RendererView * view, T * params) {
     auto ls = view->light_structure_;
 
-    if constexpr(requires{params->LightGrid_PrecomputedActiveLightBuffer;}) {
-        params->LightGrid_PrecomputedActiveLightBuffer = ls->precomputed_active_light_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWActiveLightListCount;}) {
+        params->LightGrid_RWActiveLightListCount = ls->active_light_list_count.Raw();
     }
-    if constexpr(requires{params->LightGrid_ActiveLightListCount;}) {
-        params->LightGrid_ActiveLightListCount = ls->active_light_list_count.Raw();
+    if constexpr(requires{params->LightGrid_RWActiveLightListBuffer;}) {
+        params->LightGrid_RWActiveLightListBuffer = ls->active_light_list_buffer.Raw();
     }
-    if constexpr(requires{params->LightGrid_ActiveLightListBuffer;}) {
-        params->LightGrid_ActiveLightListBuffer = ls->active_light_list_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWListAllocator;}) {
+        params->LightGrid_RWListAllocator = ls->list_allocator.Raw();
     }
-    if constexpr(requires{params->LightGrid_ListAllocator;}) {
-        params->LightGrid_ListAllocator = ls->list_allocator.Raw();
+    if constexpr(requires{params->LightGrid_RWListActiveLightListIndexBuffer;}) {
+        params->LightGrid_RWListActiveLightListIndexBuffer = ls->list_active_light_list_index_buffer.Raw();
     }
-    if constexpr(requires{params->LightGrid_ListActiveLightListIndexBuffer;}) {
-        params->LightGrid_ListActiveLightListIndexBuffer = ls->list_active_light_list_index_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWGridLightListOffsetBuffer;}) {
+        params->LightGrid_RWGridLightListOffsetBuffer = ls->grid_light_list_offset_buffer.Raw();
     }
-    if constexpr(requires{params->LightGrid_GridLightListOffsetBuffer;}) {
-        params->LightGrid_GridLightListOffsetBuffer = ls->grid_light_list_offset_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWGridLightListCdfBuffer;}) {
+        params->LightGrid_RWGridLightListCdfBuffer = ls->grid_light_list_cdf_buffer.Raw();
     }
-    if constexpr(requires{params->LightGrid_GridLightListCdfBuffer;}) {
-        params->LightGrid_GridLightListCdfBuffer = ls->grid_light_list_cdf_buffer.Raw();
-    }
-    if constexpr(requires{params->LightGrid_GridLightListLengthBuffer;}) {
-        params->LightGrid_GridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWGridLightListLengthBuffer;}) {
+        params->LightGrid_RWGridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
     }
     auto persistent = view->persistent_data_->light_structure_persistent_data_;
-    if constexpr(requires{params->LightGrid_EnvironmentVisibilityHistoryBuffer;}) {
-        params->LightGrid_EnvironmentVisibilityHistoryBuffer = persistent->environment_visibility_history_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWEnvironmentVisibilityHistoryBuffer;}) {
+        params->LightGrid_RWEnvironmentVisibilityHistoryBuffer = persistent->environment_visibility_history_buffer.Raw();
     }
-    if constexpr(requires{params->LightGrid_BloomFilterBuffer;}) {
-        params->LightGrid_BloomFilterBuffer = persistent->bloom_filter_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWBloomFilterBuffer;}) {
+        params->LightGrid_RWBloomFilterBuffer = persistent->bloom_filter_buffer.Raw();
     }
 
-    if constexpr(requires{params->LightGrid_NextBloomFilterBuffer;}) {
-        params->LightGrid_NextBloomFilterBuffer = ls->next_bloom_filter_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWNextBloomFilterBuffer;}) {
+        params->LightGrid_RWNextBloomFilterBuffer = ls->next_bloom_filter_buffer.Raw();
     }
-    if constexpr(requires{params->LightGrid_NextEnvironmentVisibilityBuffer;}) {
-        params->LightGrid_NextEnvironmentVisibilityBuffer = ls->next_environment_visibility_buffer.Raw();
+    if constexpr(requires{params->LightGrid_RWNextEnvironmentVisibilityBuffer;}) {
+        params->LightGrid_RWNextEnvironmentVisibilityBuffer = ls->next_environment_visibility_buffer.Raw();
     }
 }
 

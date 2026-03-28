@@ -39,7 +39,7 @@ void LightPrecomputation_Triangle (uint VertexID : SV_VertexID, uint InstanceID 
     MLITriangle.V2 = TransformPoint(RenderableToWorld, V2.Position);
     float Area = length(cross(MLITriangle.V1 - MLITriangle.V0, MLITriangle.V2 - MLITriangle.V0) * 0.5f);
     MLITriangle.Intensity = BakedData.AvgIntensity * Area;
-    MLITriangle.Hash = MLTriangle.Hash;
+    MLITriangle.Hash = LCH_MeshLightTriangleHashBuffer[MeshLightTriangleIndex].Hash;
     // Write to output buffer.
     LCH_RWMeshLightInstanceTriangleBuffer[MeshLightInstanceTriangleIndex] = MLITriangle;
 }
@@ -57,6 +57,7 @@ ConstantBuffer<LightPrecomputationLevelUB> LightPrecomputation_LevelUB;
 // TODO modify this function to use the data from MeshLightInstanceTriangleBuffer
 void AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild (
     MeshLightClusterChild TriangleChild,
+    MeshLight ML,
     MeshLightInstance MLI,
     GeometryHeader MeshGeometry,
     float3x4 RenderableToWorld,
@@ -146,7 +147,7 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
     uint MLLocalRootClusterIndex = RootLevelHeader.ClusterOffset + MLLevelLocalRootClusterIndex;
     uint MLRootClusterIndex = MeshLightClusterOffset + MLLocalRootClusterIndex;
     // Get the MLI cluster index we want to write to.
-    uint MLIRootClusterIndex = MLI.MeshLightInstanceClusterNodeOffset + MLLocalRootClusterIndex;
+    uint MLIRootClusterIndex = MLI.MeshLightInstanceClusterOffset.Offset + MLLocalRootClusterIndex;
 
     float3x4 RenderableToWorld = RenderableTransformBuffer[MLI.RenderableIndex];
     
@@ -208,7 +209,7 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                     if(LeftChild.bIsLeaf) {
                         // Leaf node, interpret as triangle index
                         AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild(
-                            LeftChild, MLI, MeshGeometry, RenderableToWorld,
+                            LeftChild, ML, MLI, MeshGeometry, RenderableToWorld,
                             MLIClusterHeader, WeightedNormal, L_Weight
                         );
                     } else {
@@ -216,7 +217,7 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                         if(CurrentSubtreeLevel == PROCESSING_LEVELS_PER_DISPATCH - 1) {
                             // Child is not present in the local buffer, load directly from the global cluster header buffer.
                             AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External(
-                                LeftChild, ML, MLI.MeshLightInstanceClusterNodeOffset.Offset,
+                                LeftChild, ML, MLI.MeshLightInstanceClusterOffset.Offset,
                                 RenderableToWorld, MLIClusterHeader, WeightedNormal, L_Weight
                             );
                         } else {
@@ -233,14 +234,14 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                     if(RightChild.bIsLeaf) {
                         // Leaf node, interpret as triangle index
                         AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild(
-                            RightChild, MLI, MeshGeometry, RenderableToWorld,
+                            RightChild, ML, MLI, MeshGeometry, RenderableToWorld,
                             MLIClusterHeader, WeightedNormal, R_Weight
                         );
                     } else {
                         // Inner node, interpret as cluster index
                         if(CurrentSubtreeLevel == PROCESSING_LEVELS_PER_DISPATCH - 1) {
                             AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External(
-                                RightChild, ML, MLI.MeshLightInstanceClusterNodeOffset.Offset,
+                                RightChild, ML, MLI.MeshLightInstanceClusterOffset.Offset,
                                 RenderableToWorld, MLIClusterHeader, WeightedNormal, R_Weight
                             );
                         } else {
@@ -257,14 +258,14 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
 
                 // Write back to the instance cluster header buffer.
                 // (Duplicate the same tree hierarchy in ML cluster buffers to MLI cluster buffers for each instance.)
-                uint MLIClusterIndex = MLI.MeshLightInstanceClusterNodeOffset + MLLocalClusterIndex.Index;
+                uint MLIClusterIndex = MLI.MeshLightInstanceClusterOffset.Offset + MLLocalClusterIndex.Index;
                 LCH_MeshLightInstanceClusterHeaderBuffer[MLIClusterIndex] = MLIClusterHeader;
 
                 // Build sampling probabilities
                 MeshLightInstanceClusterNode MLINode = (MeshLightInstanceClusterNode)0;
                 float eps = min(0.01 * (L_Weight + R_Weight), 1e-7f);
                 MLINode.L_Probability = (L_Weight + eps) / (L_Weight + R_Weight + 2 * eps);
-                LCH_MeshLightInstanceClusterNodeBuffer[MLIClusterIndex] = MLINode;
+                LCH_RWMeshLightInstanceClusterNodeBuffer[MLIClusterIndex] = MLINode;
             }
         }
     }
@@ -282,6 +283,10 @@ void LightPrecomputation_FinalizeMLIClusters (uint DispatchID : SV_DispatchThrea
 
 StructuredBuffer<uint> LightGrid_ActiveGridIndicesBuffer;
 StructuredBuffer<uint> LightGrid_ActiveMeshLightInstanceCount;
+
+#ifndef MAX_NUM_GRID_LIGHTS
+#define MAX_NUM_GRID_LIGHTS 8
+#endif
 
 groupshared uint SharedListElementsRequired, SharedListOffsetBase;
 [numthreads(WAVE_SIZE, 1, 1)]
@@ -306,8 +311,9 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     float SumFilteredOutWeights = 0.f;
 
     float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;
-    MeshLightClusterChild LocalGridLightMLIClusterSelection[MAX_NUM_GRID_LIGHTS * 2]; // Temporary buffer to store light list indices for the current grid. The first half is for sampled lights, the second half is for candidate lights.
-    float LocalGridLightWeights[MAX_NUM_GRID_LIGHTS * 2]; // Temporary buffer to store light weights for the current grid, used for light selection. The first half is for sampled lights, the second half is for candidate lights.
+    // Temporary buffer to store light list indices for the current grid. The first half is for sampled lights, the second half is for candidate lights.
+    MeshLightClusterChild LocalGridLightMLIClusterSelection[MAX_NUM_GRID_LIGHTS * 2]; 
+    float LocalGridLightWeights[MAX_NUM_GRID_LIGHTS * 2]; 
     // TODO better injection strategy (subdivide first, then inject?)
     for (uint MeshLightInstanceIndex = 0; MeshLightInstanceIndex < NumActiveLights; MeshLightInstanceIndex++) {
         MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
@@ -316,7 +322,12 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
         uint SubdivisionLevel = TODO;
         MeshLight ML = LCH_MeshLightBuffer[MLI.MeshLightIndex];
         SubdivisionLevel = min(SubdivisionLevel, ML.NumLevels);
-        uint ClusterCount = 0, ReadOffset = 0;
+        uint ClusterCount = 0;
+        // The offset to read from the MLI cluster/triangle buffer. 
+        // It can be either the triangle offset or the cluster offset depending on whether we use triangle or cluster for injection.
+        uint SrcOffset = 0;
+        // The level cluster offset in local MLI if the injection source is a cluster node.
+        uint LevelClusterOffset = 0;
         bool bUseTriangle = false;
         if(SubdivisionLevel == ML.NumLevels)
         {
@@ -325,12 +336,12 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
         if(bUseTriangle && SubdivisionLevel == 0) {
             // A cluster with a single triangle.
             ClusterCount = 1;
-            ReadOffset = MLI.MeshLightInstanceClusterOffset.Offset;
+            SrcOffset    = MLI.MeshLightInstanceClusterOffset.Offset;
         } else {
             if(bUseTriangle) SubdivisionLevel --;
             MeshLightLevelHeader LevelHeader = LCH_MeshLightLevelHeaderBuffer[ML.LevelOffset + SubdivisionLevel];
             ClusterCount  = LevelHeader.ClusterCount;
-            ReadOffset    = MLI.MeshLightInstanceClusterOffset.Offset + LevelHeader.ClusterOffset;
+            SrcOffset     = MLI.MeshLightInstanceClusterOffset.Offset + LevelHeader.ClusterOffset;
         }
         
         for(int i = 0; i < ClusterCount; i++) {
@@ -338,15 +349,15 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
             MeshLightClusterChild Selected;
             if(bUseTriangle) {
                 MeshLightInstanceTriangle MLITriangle = LCH_MeshLightInstanceTriangleBuffer[
-                    ReadOffset + i
+                    SrcOffset + i
                 ];
                 Selected = MakeMeshLightClusterChild(true, i);
                 Weight = LightGrid_EstimateLightGridPerceptualContribution(MLITriangle, GridMin, GridSize);
             } else {
                 MeshLightInstanceClusterHeader MLICluster = LCH_MeshLightInstanceClusterHeaderBuffer[
-                    ReadOffset + i
+                    SrcOffset + i
                 ];
-                Selected = MakeMeshLightClusterChild(false, LevelHeader.ClusterOffset + i);
+                Selected = MakeMeshLightClusterChild(false, LevelClusterOffset + i);
                 Weight = LightGrid_EstimateLightGridPerceptualContribution(MLICluster, GridMin, GridSize);
             }
             float LightCullingProbabilityMin = LightStructure_UB.LightCullingRate;
@@ -403,7 +414,7 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
         }
     }
     // Get ready for the final list
-    MeshLightInstaceClusterOffset FinalSampledClusters[MAX_NUM_GRID_LIGHTS];
+    MeshLightInstanceElementOffset FinalSampledClusters[MAX_NUM_GRID_LIGHTS];
     float FinalSampledWeights[MAX_NUM_GRID_LIGHTS];
     for(int i = 0; i < NumSampledLights; i++) {
         FinalSampledClusters[i] = LocalGridLightMLIClusterSelection[SampledOffset + i];
@@ -411,17 +422,17 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     }
 
     // Write to grid
-    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
+    LightGrid_RWGridLightListLengthBuffer[GridIndex1] = NumSampledLights;
     // It's mathematically incorrect to include filtered out weights here
     float SumWeights = SumFilteredWeights + SumFilteredOutWeights;
-    LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
+    LightGrid_RWGridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();
     uint LocalOffset = 0;
     InterlockedAdd(SharedListElementsRequired, NumSampledLights, LocalOffset);
     GroupMemoryBarrierWithGroupSync();
     if (LocalID == 0) {
-        InterlockedAdd(LightGrid_ListAllocator[0], SharedListElementsRequired, SharedListOffsetBase);
+        InterlockedAdd(LightGrid_RWListAllocator[0], SharedListElementsRequired, SharedListOffsetBase);
     }
     GroupMemoryBarrierWithGroupSync();
     uint GlobalOffset = SharedListOffsetBase + LocalOffset;
@@ -432,13 +443,14 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     } else {
         NumWritableLights = min(NumWritableLights, MaxNumEntries - GlobalOffset);
     }
-    LightGrid_GridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
-    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumWritableLights;
+    LightGrid_RWGridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
+    LightGrid_RWGridLightListLengthBuffer[GridIndex1] = NumWritableLights;
     for (uint i = 0; i < NumWritableLights; i++) {
         MeshLightClusterChild Value = FinalSampledClusters[i];
         // This time we store active light list index in the grid buffer 
-        LightGrid_ListActiveLightListIndexBuffer[GlobalOffset + i] = Value;
+        LightGrid_RWListActiveLightListIndexBuffer[GlobalOffset + i] = Value;
     }
+}
 
 // Precompute lights, filter active lights and gather light data for later injection
 [numthreads(THREAD_GROUP_SIZE, 1, 1)]
@@ -467,14 +479,14 @@ void PrecomputeLights(uint DispatchID: SV_DispatchThreadID) {
             uint WaveNumActiveLights = WaveActiveCountBits(true);
             uint WaveLightListOffset = 0;
             if (WaveIsFirstLane()) {
-                InterlockedAdd(LightGrid_ActiveLightListCount[0], WaveNumActiveLights, WaveLightListOffset);
+                InterlockedAdd(LightGrid_RWActiveLightListCount[0], WaveNumActiveLights, WaveLightListOffset);
             }
             WaveLightListOffset = WaveReadLaneFirst(WaveLightListOffset);
             uint WaveLightListIndex = WavePrefixCountBits(true);
             uint LightListIndex = WaveLightListOffset + WaveLightListIndex;
             // Precompute and store active lights
-            LightGrid_ActiveLightListBuffer[LightListIndex] = LightIndex;
-            LightGrid_PrecomputedActiveLightBuffer[LightListIndex] = PackPrecomputedLight(L);
+            LightGrid_RWActiveLightListBuffer[LightListIndex] = LightIndex;
+            LightGrid_RWPrecomputedActiveLightBuffer[LightListIndex] = PackPrecomputedLight(L);
         }
     }
 }
@@ -491,7 +503,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     float GridSize;
     float3 GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
     // TODO use multi level injection for a large number of lights
-    uint NumActiveLights = LightGrid_ActiveLightListCount[0];
+    uint NumActiveLights = LightGrid_RWActiveLightListCount[0];
     uint NumGridLights = 0, WriteLocation = 0;
     // Double buffering for unbiased selection of a group of lights
     // Sampled: current selected, Candidate: new candidate group
@@ -507,7 +519,7 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
 
     float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;
     for (uint LightListIndex = 0; LightListIndex < NumActiveLights; LightListIndex++) {
-        PrecomputedLight L = UnpackPrecomputedLight(LightGrid_PrecomputedActiveLightBuffer[LightListIndex]);
+        PrecomputedLight L = UnpackPrecomputedLight(LightGrid_RWPrecomputedActiveLightBuffer[LightListIndex]);
         float Weight = LightGrid_EstimateLightGridPerceptualContribution(L, GridMin, GridSize);
         float LightCullingProbabilityMin = LightStructure_UB.LightCullingRate;
         // Lights with lower contribution have higher probability to be culled.
@@ -561,17 +573,17 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
         }
     }
     // Write to grid
-    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumSampledLights;
+    LightGrid_RWGridLightListLengthBuffer[GridIndex1] = NumSampledLights;
     // It's mathematically incorrect to include filtered out weights here
     float SumWeights = SumFilteredWeights + SumFilteredOutWeights;
-    LightGrid_GridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
+    LightGrid_RWGridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);
     if (LocalID == 0) SharedListElementsRequired = 0;
     GroupMemoryBarrierWithGroupSync();
     uint LocalOffset = 0;
     InterlockedAdd(SharedListElementsRequired, NumSampledLights, LocalOffset);
     GroupMemoryBarrierWithGroupSync();
     if (LocalID == 0) {
-        InterlockedAdd(LightGrid_ListAllocator[0], SharedListElementsRequired, SharedListOffsetBase);
+        InterlockedAdd(LightGrid_RWListAllocator[0], SharedListElementsRequired, SharedListOffsetBase);
     }
     GroupMemoryBarrierWithGroupSync();
     uint GlobalOffset = SharedListOffsetBase + LocalOffset;
@@ -582,11 +594,11 @@ void InjectLights(uint DispatchID: SV_DispatchThreadID, uint LocalID : SV_GroupT
     } else {
         NumWritableLights = min(NumWritableLights, MaxNumEntries - GlobalOffset);
     }
-    LightGrid_GridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
-    LightGrid_GridLightListLengthBuffer[GridIndex1] = NumWritableLights;
+    LightGrid_RWGridLightListOffsetBuffer[GridIndex1] = GlobalOffset;
+    LightGrid_RWGridLightListLengthBuffer[GridIndex1] = NumWritableLights;
     for (uint i = 0; i < NumWritableLights; i++) {
         uint LightListIndex = SharedGridLightListIndices[(SampledOffset + i) * WAVE_SIZE + LocalID];
         // This time we store active light list index in the grid buffer 
-        LightGrid_ListActiveLightListIndexBuffer[GlobalOffset + i] = LightListIndex;
+        LightGrid_RWListActiveLightListIndexBuffer[GlobalOffset + i] = LightListIndex;
     }
 }

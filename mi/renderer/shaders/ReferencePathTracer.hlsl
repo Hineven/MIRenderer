@@ -24,17 +24,16 @@
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
-StructuredBuffer<PackedPrecomputedLight> LightGrid_PrecomputedActiveLightBuffer;
 
-StructuredBuffer<uint> LightGrid_ActiveLightListCount;
-StructuredBuffer<uint> LightGrid_ActiveLightListBuffer;
+StructuredBuffer<uint> LightGrid_RWActiveLightListCount;
+StructuredBuffer<uint> LightGrid_RWActiveLightListBuffer;
 
 StructuredBuffer<uint> LightGrid_ListLightIndexBuffer;
-StructuredBuffer<uint> LightGrid_GridLightListOffsetBuffer;
-StructuredBuffer<float> LightGrid_GridLightListCdfBuffer;
-StructuredBuffer<uint> LightGrid_GridLightListLengthBuffer;
+StructuredBuffer<uint> LightGrid_RWGridLightListOffsetBuffer;
+StructuredBuffer<float> LightGrid_RWGridLightListCdfBuffer;
+StructuredBuffer<uint> LightGrid_RWGridLightListLengthBuffer;
 // Record the combination of light encodings that successfully illuminated geometries in the grid
-StructuredBuffer<uint4> LightGrid_BloomFilterBuffer;
+StructuredBuffer<uint4> LightGrid_RWBloomFilterBuffer;
 
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;

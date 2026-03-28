@@ -74,9 +74,6 @@ struct EvaluatedAreaLight {
     float3 EstimatedAverageEmission;
 };
 
-// Use an extra factor on the estimation of light contribution.
-#define LIGHT_PROJECTION_ESTIMATION
-
 // A coarse estimtion used for light -> point contribution (incoming irradiance)
 float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Normal, bool bVolume = false) {
     if(bVolume) {
@@ -114,13 +111,11 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         // In case the light is close to the shading point, reduce the effect from LightFacingCosineFactor
         if(LightFacingCosineFactor > 0 && DistanceSq < 1.5f * MaxLightRadiusSq)
             LightFacingCosineFactor = lerp(1, LightFacingCosineFactor, DistanceSq / max(1.5f * MaxLightRadiusSq, 1e-4f));
-#ifndef LIGHT_PROJECTION_ESTIMATION
-        LightFacingCosineFactor = 1;
-#endif
 
         float SolidAngleNoArea = LightFacingCosineFactor / (DistanceSq + LightArea);
 
-        // Equivalent to L.AvgIntensity * SolidAngle * ReceiverCosineFactor, where L.AvgIntensity is L.Intensity / L.Area        return L.Intensity * SolidAngleNoArea * ReceiverCosineFactor / PI;
+        // Equivalent to L.AvgIntensity * SolidAngle * ReceiverCosineFactor, where L.AvgIntensity is L.Intensity / L.Area
+        return L.Intensity * SolidAngleNoArea * ReceiverCosineFactor / PI;
     } else {
         float3 LightCenter = (L.V0 + L.V1 + L.V2) / 3.0f;
         float3 ToLightCenter = LightCenter - Position;
@@ -171,9 +166,6 @@ float EstimateLightContribution(PrecomputedLight L, float3 Position, float3 Norm
         if(LightFacingCosineFactor > 0 && DistanceSq < 1.5f * MaxLightRadiusSq)
             LightFacingCosineFactor = lerp(1, LightFacingCosineFactor, DistanceSq / max(1.5f * MaxLightRadiusSq, 1e-4f));
 
-#ifndef LIGHT_PROJECTION_ESTIMATION
-        LightFacingCosineFactor = 1;
-#endif
 
         float SolidAngleNoArea = LightFacingCosineFactor / (DistanceSq + LightArea);
 
@@ -187,7 +179,5 @@ float EstimateEnvironmentLightContribution(float3 AvgRadiance, float3 WorldPosit
     // Integral of cos(theta) over hemisphere = PI. Thus we easily estimate the irradiance by multiplying PI.
     return RadianceToLuminance(AvgRadiance) * PI;
 }
-
-#undef LIGHT_PROJECTION_ESTIMATION
 
 #endif

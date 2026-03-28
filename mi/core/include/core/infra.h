@@ -186,7 +186,7 @@ void TransferInfra (std::unique_ptr<MIInfraInterface> && infra) ;
 // GetInfra().Shutdown() is called prior to this function.
 void DestroyInfra () ;
 
-#define MI_LOG_LOCATION(level, location, fmt, ...) {if(::MI_NAMESPACE::HasInfra()){::MI_NAMESPACE::GetInfra().LogMessage(level, std::format(fmt, ##__VA_ARGS__), location)}}
+#define MI_LOG_LOCATION(level, location, fmt, ...) {if(::MI_NAMESPACE::HasInfra()){::MI_NAMESPACE::GetInfra().LogMessage(level, std::format(fmt, ##__VA_ARGS__), location);}}
 #define MI_LOG(level, fmt, ...) MI_LOG_LOCATION(level, std::format("{0}:{1}", __FILE__, __LINE__), fmt, ##__VA_ARGS__)
 
 // Logging shortcuts

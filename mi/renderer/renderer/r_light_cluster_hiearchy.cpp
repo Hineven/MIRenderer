@@ -808,25 +808,27 @@ std::optional<MeshLightClusterHierarchy> BuildMeshLightClusterHierarchy(
         MeshLightClusterHeader header {};
         node.L = lc;
         node.R = rc;
-        float L_UnnormalizedWeight = runtime_nodes[rt_node.data.childs.a].total_intensity;
-        float R_UnnormalizedWeight = runtime_nodes[rt_node.data.childs.b].total_intensity;
-        float L_Scale = asdfasfsda
+        // Statistics are calculated on runtime nodes each frame.
+
+        // float L_UnnormalizedWeight = runtime_nodes[rt_node.data.childs.a].total_intensity;
+        // float R_UnnormalizedWeight = runtime_nodes[rt_node.data.childs.b].total_intensity;
+        // float L_Scale = asdfasfsda
         hierarchy.nodes.push_back(node);
         header.Hash = rng32();
-        header.LocalAABBMin = rt_node.position_aabb.min;
-        header.LocalAABBMax = rt_node.position_aabb.max;
-        header.TotalIntensity = rt_node.total_intensity;
-        header.WeightedNormal = SafeNormalize(rt_node.weighted_normal_sum);
-        if (rt_node.total_intensity > 1e-12f) {
-            float inv_total_intensity = 1.0f / rt_node.total_intensity;
-            glm::vec3 mean = rt_node.weighted_normal_sum * inv_total_intensity;
-            glm::vec3 mean2 = rt_node.weighted_normal_sum_2 * inv_total_intensity;
-            glm::vec3 diffs = glm::max(mean2 - (mean * mean), glm::vec3(0.0f));
-            header.WeightedNormalVariance = glm::dot(diffs, diffs);
-        } else {
-            header.WeightedNormalVariance = 0.0f;
-        }
-        header.ScaleIntensityMultiplier = rt_node.scale_intensity_multiplier;
+        // header.LocalAABBMin = rt_node.position_aabb.min;
+        // header.LocalAABBMax = rt_node.position_aabb.max;
+        // header.TotalIntensity = rt_node.total_intensity;
+        // header.WeightedNormal = SafeNormalize(rt_node.weighted_normal_sum);
+        // if (rt_node.total_intensity > 1e-12f) {
+        //     float inv_total_intensity = 1.0f / rt_node.total_intensity;
+        //     glm::vec3 mean = rt_node.weighted_normal_sum * inv_total_intensity;
+        //     glm::vec3 mean2 = rt_node.weighted_normal_sum_2 * inv_total_intensity;
+        //     glm::vec3 diffs = glm::max(mean2 - (mean * mean), glm::vec3(0.0f));
+        //     header.WeightedNormalVariance = glm::dot(diffs, diffs);
+        // } else {
+        //     header.WeightedNormalVariance = 0.0f;
+        // }
+        // header.ScaleIntensityMultiplier = rt_node.scale_intensity_multiplier;
 
         hierarchy.headers.push_back(header);
         return MeshLightClusterChild{false, (uint32_t)u};

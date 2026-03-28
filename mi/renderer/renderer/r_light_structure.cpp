@@ -71,13 +71,13 @@ bool LightStructurePersistentData::MakeSureExists([[maybe_unused]] RendererView 
     auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
     if (!environment_visibility_history_buffer) {
         environment_visibility_history_buffer = builder.CreateBuffer<uint32_t>(num_light_grids * kLightGridNumHistories);
-        environment_visibility_history_buffer->SetName("LightGrid_EnvironmentVisibilityHistoryBuffer");
+        environment_visibility_history_buffer->SetName("LightGrid_RWEnvironmentVisibilityHistoryBuffer");
         environment_visibility_history_buffer->SetExport();
         flag = true;
     }
     if (!bloom_filter_buffer) {
         bloom_filter_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids * kLightGridNumHistories);
-        bloom_filter_buffer->SetName("LightGrid_BloomFilterBuffer");
+        bloom_filter_buffer->SetName("LightGrid_RWBloomFilterBuffer");
         bloom_filter_buffer->SetExport();
         flag = true;
     }
@@ -95,28 +95,26 @@ void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     auto max_num_lights = r.GetDeviceAllocator()->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(RawLight);
     auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
 
-    precomputed_active_light_buffer = builder.CreateBuffer<PackedPrecomputedLight>(max_num_lights);
-    precomputed_active_light_buffer->SetName("LightGrid_PrecomputedActiveLightBuffer");
     active_light_list_count = builder.CreateBuffer<uint32_t>();
-    active_light_list_count->SetName("LightGrid_ActiveLightListCount");
+    active_light_list_count->SetName("LightGrid_RWActiveLightListCount");
     active_light_list_buffer = builder.CreateBuffer<uint32_t>(max_num_lights);
-    active_light_list_buffer->SetName("LightGrid_ActiveLightListBuffer");
+    active_light_list_buffer->SetName("LightGrid_RWActiveLightListBuffer");
     auto max_num_light_grid_entries = CVar_MaxNumLightGridEntries.Get();
     list_active_light_list_index_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries);
     list_allocator = builder.CreateBuffer<uint32_t>();
-    list_allocator->SetName("LightGrid_ListAllocator");
-    list_active_light_list_index_buffer->SetName("LightGrid_ListActiveLightListIndexBuffer");
+    list_allocator->SetName("LightGrid_RWListAllocator");
+    list_active_light_list_index_buffer->SetName("LightGrid_RWListActiveLightListIndexBuffer");
     grid_light_list_offset_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
-    grid_light_list_offset_buffer->SetName("LightGrid_GridLightListOffsetBuffer");
+    grid_light_list_offset_buffer->SetName("LightGrid_RWGridLightListOffsetBuffer");
     grid_light_list_cdf_buffer = builder.CreateBuffer<float>(num_light_grids);
-    grid_light_list_cdf_buffer->SetName("LightGrid_GridLightListCdfBuffer");
+    grid_light_list_cdf_buffer->SetName("LightGrid_RWGridLightListCdfBuffer");
     grid_light_list_length_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
-    grid_light_list_length_buffer->SetName("LightGrid_GridLightListLengthBuffer");
+    grid_light_list_length_buffer->SetName("LightGrid_RWGridLightListLengthBuffer");
 
     next_bloom_filter_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids);
-    next_bloom_filter_buffer->SetName("LightGrid_NextBloomFilterBuffer");
+    next_bloom_filter_buffer->SetName("LightGrid_RWNextBloomFilterBuffer");
     next_environment_visibility_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
-    next_environment_visibility_buffer->SetName("LightGrid_NextEnvironmentVisibilityBuffer");
+    next_environment_visibility_buffer->SetName("LightGrid_RWNextEnvironmentVisibilityBuffer");
 }
 
 
@@ -176,8 +174,8 @@ class ClearLightStructureHistoryShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWBloomFilterBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWEnvironmentVisibilityHistoryBuffer)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
@@ -198,10 +196,10 @@ class UpdateLightStructureHistoryShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_BloomFilterBuffer)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_EnvironmentVisibilityHistoryBuffer)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextBloomFilterBuffer)
-        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_NextEnvironmentVisibilityBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWBloomFilterBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWEnvironmentVisibilityHistoryBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextBloomFilterBuffer)
+        SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextEnvironmentVisibilityBuffer)
     END_SHADER_PARAMETERS()
     RDG_SHADER_USE_PARAMETERS(Params)
     DECLARE_SHADER()
