@@ -33,6 +33,17 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     # Disable C4127, which is triggered by mi_check with constant conditions
     # This is stupid, because it is impossible to detect if a condition is constant at compile time in C++ compiled by MSVC
     add_definitions(-wd4127)
+    # Log MSVC version
+    message(STATUS "MSVC version: ${CMAKE_CXX_COMPILER_VERSION}")
+    # Check if the version is higher than 19.44, which is good enough for our needs. Sometimes, the use of static_assert()
+    # triggers false compiler errors in older versions of MSVC, which is a known issue. We need to ensure that the compiler version is new enough to avoid this problem.
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19.44)
+        message(FATAL_ERROR
+                "MSVC version < 19.44 is not supported."
+                "Your compiler version (currently): ${CMAKE_CXX_COMPILER_VERSION}"
+                "Update your Visual Studio to the latest version to get a compatible MSVC version."
+        )
+    endif()
 endif()
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     add_definitions(-DMI_COMPILER_GNU)
