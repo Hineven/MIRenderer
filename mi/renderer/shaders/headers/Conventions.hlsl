@@ -58,4 +58,13 @@ float4 select (float4 a, float4 b, bool4 c) {
     );
 }
 
+float3 SafeNormalize (float3 v) {
+    float lenSq = dot(v, v);
+    if (lenSq > 1e-9f) {
+        return v / sqrt(lenSq);
+    } else {
+        return float3(0, 0, 1); // Default normal
+    }
+}
+
 #endif

@@ -1,6 +1,7 @@
 #ifndef LIGHT_CLUSTER_HIERARCHY_RESOURCES_HLSL
 #define LIGHT_CLUSTER_HIERARCHY_RESOURCES_HLSL
 
+#include "../resources/LightEvaluation.hlsl"
 #include "../shared/SharedLightClusterHierarchy.hlsl"
 
 StructuredBuffer<MeshLightTriangle> LCH_MeshLightTriangleBuffer;
@@ -103,7 +104,7 @@ float LightGrid_EstimateLightGridPerceptualContribution(MeshLightInstanceCluster
 
     float3 ToCluster = WorldCenter - GridCenter;
     float ToClusterLen = length(ToCluster);
-    float3 WorldWeightedNormal = normalize(MLICluster.WeightedNormal);
+    float3 WorldWeightedNormal = normalize(UnpackNormal(MLICluster.WeightedNormal));
     float3 ToClusterDir = ToClusterLen > 1e-6f ? (ToCluster / ToClusterLen) : -WorldWeightedNormal;
     float LightFacingCosineFactor = saturate(dot(WorldWeightedNormal, -ToClusterDir));
 
@@ -179,10 +180,9 @@ float EstimateLightContribution(MeshLightInstanceTriangle L, float3 Position, fl
         if (MaxK <= 0.0f) {
             return 0.0f;
         }
+        // Take into account the cosine factor how much the sampled point is facing towards the light
         ReceiverCosineFactor = saturate(CosineBias + MaxK);
     }
-    // Take into account the cosine factor how much the sampled point is facing towards the light
-    ReceiverCosineFactor = saturate(CosineBias + MaxK);
 
     // Take account for how well is the light facing the shading point
     float LightFacingCosineFactor = saturate(-dot(ToLightDirection, LightNormal));
@@ -201,20 +201,20 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
 
     // Estimate the contribution from the mesh light cluster using appriximated solid angle
 
-    // Transform local cluster AABB to a conservative world-space AABB.
+    // Use the world-space AABB of the cluster as a conservative spatial proxy.
     float3 ClusterMin = L.AABBMin;
     float3 ClusterMax = L.AABBMax;
     float3 WorldCenter = (ClusterMin + ClusterMax) * 0.5f;
     float3 WorldExtent = max((ClusterMax - ClusterMin) * 0.5f, float3(0, 0, 0));
 
-    // Min separation vector between two AABBs (cluster AABB and grid cube AABB)
-    float3 ToClusterDistances = max(max(ClusterMin - Position, Position - ClusterMax), float3(0, 0, 0));
-    float Distance = length(ToClusterDistances);
-
+    // Closest point on the cluster AABB to the shaded position.
+    float3 ClosestPoint = clamp(Position, ClusterMin, ClusterMax);
+    float3 ToClosestPoint = ClosestPoint - Position;
+    float ClosestDistanceSq = dot(ToClosestPoint, ToClosestPoint);
     float3 ToCluster = WorldCenter - Position;
     float ToClusterLen = length(ToCluster);
-    float3 WorldWeightedNormal = normalize(L.WeightedNormal);
-    float3 ToClusterDir = ToClusterLen > 1e-6f ? (ToCluster / ToClusterLen) : -WorldWeightedNormal;
+    float3 WorldWeightedNormal = UnpackNormal(L.WeightedNormal);
+    float3 ToClusterDir = ToClusterLen > 1e-6f ? (ToCluster / ToClusterLen) : WorldWeightedNormal;
     float LightFacingCosineFactor = saturate(dot(WorldWeightedNormal, -ToClusterDir));
 
     float LerpingFactor = LightGrid_EstimateLightGridPerceptualContribution_ClusterNormalVarianceToLerpFactor(L.WeightedNormalVariance);
@@ -231,22 +231,40 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
     float Az = Extent.x * Extent.y;
     float MaxProjectedArea = sqrt(Ax * Ax + Ay * Ay + Az * Az);
 
-    float DistanceSq = Distance * Distance;
+    float DistanceSq = ClosestDistanceSq;
 
 
     float ReceiverCosineFactor;
     if(bVolume) {
-        // The light is big & close enough (distance < 2 * max light radius), reduce the effect from CosineFactor
-        float ReceiverCosineBias = 1.f - saturate(DistanceSq / (2 * MaxLightRadiusSq));
-        // Take into account the cosine factor how much the sampled point is facing towards the light
-        // Regarding the nature of volume scattering, lights that the sample is not facing towards will still have a lower
-        // effect on the sample. So a constant bias of 1.5 and a scaling factor of 0.4 are applied.
-        ReceiverCosineFactor = saturate(ReceiverCosineBias + (1.5f + dot(Normal, ToLightDirection)) * 0.4f) / PI;
-        // TODO take account of different parameterizations of HG phase function
+        // For volume scattering we use the AABB as an extended emitter proxy:
+        // 1) use the closest-point distance to preserve near-field contributions inside / near the box;
+        // 2) relax directional attenuation when the sample is close to the cluster extent.
+        float3 OutsideDistances = abs(ToClosestPoint);
+        float DistanceToExitAlongAxes = max(
+            max(WorldExtent.x - OutsideDistances.x, WorldExtent.y - OutsideDistances.y),
+            WorldExtent.z - OutsideDistances.z
+        );
+        float NearFieldDistance = ClosestDistanceSq > 0.f ? sqrt(ClosestDistanceSq) : 0.f;
+        if (ClosestDistanceSq <= 0.f) {
+            NearFieldDistance = -DistanceToExitAlongAxes;
+        }
+        float ClusterNearFieldRange = max(max(WorldExtent.x, max(WorldExtent.y, WorldExtent.z)), 1e-4f);
+        float NearFieldBlend = saturate(NearFieldDistance / (2.f * ClusterNearFieldRange) + 0.5f);
+        float NearFieldBias = 1.f - NearFieldBlend;
+        float ViewAlignment = dot(Normal, ToClusterDir);
+        ReceiverCosineFactor = saturate(NearFieldBias + (1.5f + ViewAlignment) * 0.4f) / LCH_PI;
+
+        // Close to the cluster, the AABB proxy becomes less directional than the weighted normal alone suggests.
+        float DirectionalityBlend = saturate(NearFieldDistance / (1.5f * ClusterNearFieldRange) + 0.5f);
+        LightFacingCosineFactor = lerp(1.f, LightFacingCosineFactor, DirectionalityBlend);
+        LightFacingCosineFactor = lerp(
+            LightFacingCosineFactor,
+            1.f / LCH_PI,
+            0.5f * LerpingFactor
+        );
     } else {
-        // With AABB bounds, ReceiverCosineBias is no longer needed.
         // Select larger coordinates if the normal is facing towards the positive direction, otherwise select smaller coordinates.
-        float3 SelectedVertex = select(L.AABBMin, L.AABBMax, Normal > 0); 
+        float3 SelectedVertex = select(Normal > 0, L.AABBMax, L.AABBMin);
         float MaxK = saturate(dot(Normal, normalize(SelectedVertex - Position)));
         // the sampled surface is not facing the light. Cull it out.
         if (MaxK <= 0.0f) {
@@ -262,28 +280,57 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
     return L.TotalIntensity * ReceiverCosineFactor / max(L.TotalArea, 1e-9f) * SolidAngle;
 }
 
-EvaluatedLight LCH_ExtractTriangleLight (MeshLight Light, MeshLightInstanceTriangle Triangle) {
-    asdasd
+EvaluatedAreaLight LCH_ExtractTriangleLight (MeshLight ML, MeshLightInstance MLI, MeshLightTriangle MLTriangle) {
+    AreaLight InAreaLight;
+    InAreaLight.RenderableIndex = MLI.RenderableIndex;
+    InAreaLight.StaticMeshDescriptionIndex = ML.StaticMeshDescriptionIndex;
+    InAreaLight.PrimitiveIndex = MLTriangle.PrimitiveIndex;
+    InAreaLight.Flags = 0; // Useless when unpacking
+    bool bActive;
+    return EvaluateLight(InAreaLight, bActive);
 }
 
-EvaluatedLight LCH_SelectAndEvaluateLight (uint MLClusterNodeOffset, uint MLIClusterNodeOffset, MeshLightInstanceElementOffset Element, float u) {
+EvaluatedAreaLight LCH_SampleAndEvaluateLight (
+    // uint MLClusterOffset, uint MLIClusterNodeOffset,
+    MeshLightInstanceElementOffset AbsElement, float u
+) {
+    uint MLClusterOffset, MLIClusterOffset;
+    MeshLight ML;
+    MeshLightInstance MLI;
+    if(AbsElement.bIsTriangle()) {
+        MeshLightInstanceTriangle Triangle = LCH_MeshLightInstanceTriangleBuffer[AbsElement.Offset()];
+        MLI = LCH_MeshLightInstanceBuffer[Triangle.MeshLightInstanceIndex];
+        ML  = LCH_MeshLightBuffer[MLI.MeshLightIndex];
+    } else {
+        MeshLightInstanceClusterHeader ClusterHeader = LCH_MeshLightInstanceClusterHeaderBuffer[AbsElement.Offset()];
+        MLI = LCH_MeshLightInstanceBuffer[ClusterHeader.MeshLightInstanceIndex];
+        ML  = LCH_MeshLightBuffer[MLI.MeshLightIndex];
+    }
+    uint MLIClusterNodeOffset = MLI.MeshLightInstanceClusterOffset.Offset();
     float Pdf = 1.f;
-    while(!Element.IsTriangle()) {
-        uint LocalOffset = Element.Offset() - MLIClusterNodeOffset;
-        MeshLightInstanceClusterNode ClusterNode = LCH_MeshLightInstanceClusterNodeBuffer[Element.Offset()];
-        MeshLightClusterNode MLClusterNode = LCH_MeshLightClusterNodeBuffer[MLClusterNodeOffset + LocalOffset];
+    while(!AbsElement.bIsTriangle()) {
+        uint LocalOffset = AbsElement.Offset() - MLIClusterNodeOffset;
+        MeshLightInstanceClusterNode ClusterNode = LCH_MeshLightInstanceClusterNodeBuffer[AbsElement.Offset()];
+        MeshLightClusterNode MLClusterNode = LCH_MeshLightClusterNodeBuffer[ML.ClusterOffset + LocalOffset];
         if(u < ClusterNode.L_Probability) {
             // Go to the left child
-            Element = MakeMeshLightInstanceElementOffset(MLClusterNode.L.bIsLeaf, MLClusterNode.L.Index + MLIClusterNodeOffset);
+            AbsElement = MakeMeshLightInstanceElementOffset(
+                MLClusterNode.L.bIsLeaf(), MLClusterNode.L.Index() + MLIClusterNodeOffset
+            );
             u = u / ClusterNode.L_Probability;
         } else {
             // Go to the right child
-            Element = MakeMeshLightInstanceElementOffset(MLClusterNode.R.bIsLeaf, MLClusterNode.R.Index + MLIClusterNodeOffset);
+            AbsElement = MakeMeshLightInstanceElementOffset(
+                MLClusterNode.R.bIsLeaf(), MLClusterNode.R.Index() + MLIClusterNodeOffset
+            );
             u = (u - ClusterNode.L_Probability) / (1.f - ClusterNode.L_Probability);
         }
     }
     // Extract and evaluate triangle
-    todo
+    MeshLightTriangle MLTriangle = LCH_MeshLightInstanceTriangleBuffer[
+        AbsElement.Offset() - MLI.MeshLightInstanceTriangleOffset + ML.TriangleOffset
+    ];
+    return LCH_ExtractTriangleLight(ML, MLI, MLTriangle);
 }
 
 #endif // LIGHT_CLUSTER_HIERARCHY_RESOURCES_HLSL

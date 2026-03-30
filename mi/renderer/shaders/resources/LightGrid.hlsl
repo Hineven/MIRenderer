@@ -16,22 +16,30 @@
 struct LightStructureUB {
     uint3 LightGridSize;
     float LightGridCellSize;
+    
     float3 LightGridCenter;
     uint LighGridNumCascadesUsed;
+    
     uint LightGridMaxNumGridLights;
     uint LightGridNumCascadeGrids;
     uint LightGridNumGrids;
     float LightInjectionIntensityThreshold;
+    
     float4 LightGridCascadeMin[LIGHT_GRID_NUM_CASCADES];
     float4 LightGridCascadeMax[LIGHT_GRID_NUM_CASCADES];
+    
     uint FrameIndex;
     uint MaxNumLights;
     uint LightGridMaxNumEntries;
     float EnvironmentLightHemisphereSampleLOD;
+    
     float LightCullingRate;
     float3 EnvironmentLightMultiplier;
+    
     float  EnvironmentLightEvaluateLOD;
-    uint3  Padding;
+    uint   NumMLIClusters;
+    uint   MaxNumActiveLightGrids;
+    uint   Padding;
 };
 
 ConstantBuffer<LightStructureUB> LightStructure_UB;

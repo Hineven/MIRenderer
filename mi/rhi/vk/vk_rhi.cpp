@@ -977,8 +977,6 @@ void VulkanRHI::CreateAccelerationStructureInstances(uint32_t count, const RHIAc
     }
 }
 
-
-
 void VulkanRHI::PostInitialize() {
     RHI::PostInitialize();
     // Create bindless manager and command executor

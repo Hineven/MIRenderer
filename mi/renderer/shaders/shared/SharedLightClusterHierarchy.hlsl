@@ -19,11 +19,19 @@ struct MeshLightTriangleBakedData {
     float AvgIntensity;
 };
 
+// A child node in the mesh light cluster hierarchy. It can be either an inner node (cluster) or a leaf node (triangle).
+// This is a offset to the first cluster node / triangle of the MeshLight structure. Not an absolute offset to the buffer.
 struct MeshLightClusterChild {
-    bool bIsLeaf : 1;
+    uint Packed;
+    // Whether this child is a leaf node (triangle) or an inner node (cluster). If it's a leaf node, the index is the triangle index. If it's an inner node, the index is the cluster index.
+    bool bIsLeaf () {
+        return (Packed & 0x80000000u) != 0;
+    }
     // Mesh light local indices
     // For leaf nodes, this is the index of the MeshLightTriangle. For internal nodes, this is the index of the cluster.
-    uint Index : 31;
+    uint Index () {
+        return Packed & 0x7FFFFFFFu;
+    }
 };
 
 bool IsMeshLightClusterChildValid (MeshLightClusterChild Child) {
@@ -32,15 +40,13 @@ bool IsMeshLightClusterChildValid (MeshLightClusterChild Child) {
 
 MeshLightClusterChild MakeInvalidMeshLightClusterChild() {
     MeshLightClusterChild Child;
-    Child.bIsLeaf = true;
-    Child.Index = 0x7FFFFFFFu;
+    Child.Packed = 0xFFFFFFFFu;
     return Child;
 }
 
 MeshLightClusterChild MakeMeshLightClusterChild(bool bIsLeaf, uint Index) {
     MeshLightClusterChild Child;
-    Child.bIsLeaf = bIsLeaf;
-    Child.Index = Index;
+    Child.Packed = (bIsLeaf ? 0x80000000u : 0) | (Index & 0x7FFFFFFFu);
     return Child;
 }
 
@@ -59,7 +65,7 @@ struct MeshLightClusterNode {
 struct MeshLightInstanceTriangle {
     float3 V0, V1, V2;
     float Intensity;
-    uint  MeshLightIndex;
+    uint  MeshLightInstanceIndex;
     uint  Hash;
 };
 
@@ -80,7 +86,7 @@ struct MeshLightInstanceClusterHeader {
     // World space weighted normal. 
     uint   WeightedNormal;
     
-    uint   MeshLightIndex;
+    uint   MeshLightInstanceIndex;
     uint   Hash;
     float  TotalIntensity;
     float  TotalArea;
@@ -108,6 +114,10 @@ struct MeshLight {
     uint NumLevels;
     uint NumClusters;
     uint NumTriangles;
+
+    bool bIsTriangle () {
+        return NumLevels == 0;
+    }
 };
 
 // An offset into the MLI cluster / triangle buffer. Usually the offset is an absolute offset relative to the buffer start.
@@ -116,7 +126,7 @@ struct MeshLightInstanceElementOffset {
     uint Packed;
 
     bool IsValid () {
-        return !(bIsTriangle && Offset == 0x7FFFFFFFu);
+        return Packed != 0xFFFFFFFFu;
     }
     bool bIsTriangle() {
         return (Packed & 0x80000000u) != 0;
@@ -125,6 +135,10 @@ struct MeshLightInstanceElementOffset {
         return Packed & 0x7FFFFFFFu;
     }
 };
+
+bool IsValid(MeshLightInstanceElementOffset Element) {
+    return Element.IsValid();
+}
 
 MeshLightInstanceElementOffset MakeMeshLightInstanceElementOffset(bool bIsTriangle, uint Offset) {
     MeshLightInstanceElementOffset Element;

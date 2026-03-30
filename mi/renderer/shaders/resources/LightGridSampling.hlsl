@@ -26,8 +26,39 @@
 #define LIGHT_GRID_NUM_HISTORY_FRAMES 4
 #endif
 
-RWStructuredBuffer<uint> LightGrid_RWActiveLightListCount;
+// Flag grids that are active in the current frame. 
+RWStructuredBuffer<uint> LightGrid_RWActiveGridFlagBuffer;
+// Record the status for the "pressure" of each light grid. This is related to how subdivided the MLI
+// clusters are for the grid. Grids with higher lighting pressure will have coarser clusters.
+RWStructuredBuffer<uint2> LightGrid_RWGridPressureBuffer;
 
+struct LightGridPressureContext {
+    float IntensityThreshold;
+    uint  PreviousNumLights;
+    uint  CurrentNumLights;
+    bool  bCanFurtherSubdivide;
+};
+LightGridPressureContext LightGridPressureContext_Init(uint2 GridPressure) {
+    LightGridPressureContext Context = (LightGridPressureContext)0;
+    Context.IntensityThreshold = asfloat(GridPressure.x);
+    Context.PreviousNumLights = GridPressure.y;
+    return Context;
+}
+uint2 LightGrid_UpdateGridPressure(LightGridPressureContext Context) {
+    uint2 NewGridPressure = 0;
+    NewGridPressure.x = asuint(Context.IntensityThreshold);
+    NewGridPressure.y = Context.CurrentNumLights;
+    return NewGridPressure;
+}
+
+// A list of currently active grids
+RWStructuredBuffer<uint> LightGrid_RWActiveGridCount;
+RWStructuredBuffer<uint> LightGrid_RWActiveGridIndicesBuffer;
+
+// Number of active mesh light instances. This is uploaded from CPU.
+RWStructuredBuffer<uint> LightGrid_RWActiveMeshLightInstanceCount;
+
+// Allocator for the light list elements of each grid. 
 RWStructuredBuffer<uint>  LightGrid_RWListAllocator;
 // Can be either MLI triangle or MLI cluster reference. They should be absolute offsets in the buffer.
 RWStructuredBuffer<MeshLightInstanceElementOffset>  LightGrid_RWListMeshLightInstanceElementIndexBuffer;
@@ -64,7 +95,7 @@ struct LightSampler {
 
 struct LightSamplerLight {
     // The element (MLI triangle / cluster) to sample from
-    MeshLightInstanceElementOffset ElementIndex;
+    MeshLightInstanceElementOffset AbsElementIndex;
     bool bIsEnvironment;
     bool bIsDirectional;
     bool bValid;
@@ -75,8 +106,8 @@ uint PackLightSamplerLight(LightSamplerLight LSL) {
         return INVALID_UINT;
     }
     uint Packed = 0;
-    Packed |= LSL.ElementIndex.Offset & 0x1FFFFFFFu;
-    Packed |= LSL.ElementIndex.bIsTriangle ? (0x30000000u) : 0u;
+    Packed |= LSL.AbsElementIndex.Offset & 0x1FFFFFFFu;
+    Packed |= LSL.AbsElementIndex.bIsTriangle ? (0x30000000u) : 0u;
     Packed |= (LSL.bIsEnvironment ? 1u : 0u) << 30;
     Packed |= (LSL.bIsDirectional ? 1u : 0u) << 31;
     return Packed;
@@ -86,8 +117,8 @@ LightSamplerLight UnpackLightSamplerLight(uint Packed) {
     LightSamplerLight LSL = (LightSamplerLight)0;
     LSL.bValid = (Packed != INVALID_UINT);
     if (LSL.bValid) {
-        LSL.ElementIndex.Offset = Packed & 0x1FFFFFFFu;
-        LSL.ElementIndex.bIsTriangle = (Packed & 0x30000000u) != 0;
+        LSL.AbsElementIndex.Offset = Packed & 0x1FFFFFFFu;
+        LSL.AbsElementIndex.bIsTriangle = (Packed & 0x30000000u) != 0;
         LSL.bIsEnvironment = ((Packed >> 30) & 0x1) != 0;
         LSL.bIsDirectional = ((Packed >> 31) & 0x1) != 0;
     }
@@ -131,10 +162,10 @@ void LightSampler_AddLightToSampler(inout LightSampler LS, float Weight, LightSa
 
 void LightSampler_AddListLightToSampler(
     inout LightSampler LS, float Weight,
-    MeshLightInstanceElementOffset ElementIndex
+    MeshLightInstanceElementOffset AbsElementIndex 
 ) {
     LightSamplerLight LSL = (LightSamplerLight)0;
-    LSL.ElementIndex   = ElementIndex;
+    LSL.AbsElementIndex   = AbsElementIndex;
     LSL.bIsEnvironment = false;
     LSL.bIsDirectional = false;
     LSL.bValid = true;
@@ -401,11 +432,16 @@ LightSample SampleOneLightSample_RIS (
         }
         LightGridLightListCdf = LightGrid_RWGridLightListCdfBuffer[GridIndex1];
         GridVisibility = GetGridLightVisibility(GridIndex1);
+
+        // Mark the grid as visited. The grid will be injected with lights in the next few frame.
+        InterlockedOr(LightGrid_RWActiveGridFlagBuffer[GridIndex1], );
     }
+
+    bool bHasGridLights = bInsideLightGrid && NumGridLights > 0;
 
     // Spawn candidate samples from the lights in the grid
     uint NumNonZeroGridLights = 0;
-    if (bInsideLightGrid) {
+    if (bHasGridLights) {
         bool bUniformGrid = WaveActiveAllEqual(GridIndex1);
         if (bUniformGrid || !bGroupedAccess) {
             // Assume one wave have locality regarding the grid index
@@ -547,7 +583,9 @@ LightSample SampleOneLightSample_RIS (
             } else {
                 // Sample area light    
                 MeshLightInstanceElementOffset Element = LSL.ElementIndex;
-                EvaluatedAreaLight Evaluated = LCH_SelectAndEvaluateLight(Element, u1);
+                EvaluatedAreaLight Evaluated = LCH_SampleAndEvaluateLight(
+                    Element, u1
+                );
                 Sample = SampleAreaLightDiffuseWithPreMultiplied(
                     WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2
                 );

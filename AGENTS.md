@@ -376,3 +376,39 @@ Use `RelWithDebInfo` build type for daily debugging - it has optimizations enabl
 - Resources are automatically copied to build directory via `add_resources()` CMake function
 - Runtime resource path resolution is handled by Infra layer
 - In Debug/RelWithDebInfo builds, `MI_PROJECT_ROOT` macro points to source directory
+
+## Agent Collaboration Notes
+
+These notes are intentionally brief and supplementary. They should not override the architectural guidance above.
+
+### Prefer Reading Real Implementations
+
+- Do not rely on this document alone when modifying the renderer. Read the relevant `.cpp` / `.hlsl` implementation files first.
+- Treat comments and high-level descriptions as guidance, but use the current code as the source of truth.
+
+### High-Risk Areas
+
+- Changes under `mi/rhi/`, `mi/rdg/`, `mi/renderer/renderer/`, and `mi/renderer/shaders/resources/` are high risk.
+- Before editing these areas, inspect the related headers, call sites, and resource bindings instead of making isolated local changes.
+- Prefer small, surgical changes over broad refactors in these areas unless explicitly requested.
+
+### Shader Change Checklist
+
+- When modifying shaders, also check shared structs, optional macros, resource declarations, and CPU-side parameter filling code.
+- For renderer shaders, verify the corresponding `RDGShader` parameter structs and render pass setup code.
+- If a shader uses history buffers, bindless resources, or packed encodings, preserve layout compatibility unless the user explicitly wants a format change.
+
+### Renderer Feature Integration
+
+- New rendering features usually require coordinated updates across `Renderer::Render()`, `RendererView` persistent state, RDG pass setup, shader parameters, and debug / console exposure.
+- Prefer tracing the full feature path before editing only one stage.
+
+### Naming And Historical Inconsistencies
+
+- Some names and spellings may reflect historical usage already referenced across the codebase.
+- Do not perform unrelated renames, spelling cleanups, or path reshuffles unless explicitly requested.
+
+### Testing Priorities
+
+- For algorithmic or data-structure changes, prefer adding or updating focused tests under `tests/renderer/` or `tests/core/` when possible.
+- For RHI / RDG changes, validate with the smallest relevant target first before assuming `3d_viewer` coverage is sufficient.

@@ -26,7 +26,6 @@ EvaluatedAreaLight EvaluateLight(AreaLight Light, out bool bActive) {
     uint DescriptionIndex = StaticMesh.DescriptionOffset + StaticMeshDescriptionOffset;
     uint2 GeometryMaterial = StaticMeshDescriptionBuffer[DescriptionIndex];
     uint PrimitiveIndex = Light.PrimitiveIndex;
-    uint LightFlags = Light.Flags;
     // TODO monitor light changes
     float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
     GeometryHeader Geometry = GeometryHeaderBuffer[GeometryMaterial.x];
