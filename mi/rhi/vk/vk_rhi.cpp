@@ -969,7 +969,7 @@ void VulkanRHI::CreateAccelerationStructureInstances(uint32_t count, const RHIAc
     // Convert instance flags
     for (uint32_t i = 0; i < count; i++) {
         out_instances[i].accelerationStructureReference = in_desc[i].acceleration_structure_reference;
-        out_instances[i].flags = (uint32_t)GetVulkanAccelerationStructureInstanceFlags(in_desc->flags);
+        out_instances[i].flags = (uint32_t)GetVulkanAccelerationStructureInstanceFlags(in_desc[i].flags);
         out_instances[i].instanceCustomIndex = in_desc[i].instance_custom_index;
         out_instances[i].instanceShaderBindingTableRecordOffset = in_desc[i].instance_shader_binding_table_record_offset;
         out_instances[i].mask = in_desc[i].mask;
