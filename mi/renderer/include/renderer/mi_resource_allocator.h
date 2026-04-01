@@ -111,7 +111,7 @@ public:
         return geometry_slots_.AllocateSlot();
     }
     FORCEINLINE void FreeGeometrySlot (uint32_t idx) {
-        assert(idx < kMaxNumMaterials);
+        assert(idx < kMaxNumGeometries);
         geometry_slots_.FreeSlot(idx);
     }
 
@@ -119,7 +119,7 @@ public:
         return static_mesh_slots_.AllocateSlot();
     }
     FORCEINLINE void FreeStaticMeshSlot (uint32_t idx) {
-        assert(idx < kMaxNumMaterials);
+        assert(idx < kMaxNumStaticMeshes);
         static_mesh_slots_.FreeSlot(idx);
     }
 
@@ -127,7 +127,7 @@ public:
         return volume_primitives_slots_.AllocateSlot();
     }
     FORCEINLINE void FreeVolumePrimitivesSlot (uint32_t idx) {
-        assert(idx < kMaxNumMaterials);
+        assert(idx < kMaxNumVolumePrimitiveGroups);
         volume_primitives_slots_.FreeSlot(idx);
     }
 
@@ -135,7 +135,7 @@ public:
         return volume_grid_slots_.AllocateSlot();
     }
     FORCEINLINE void FreeVolumeGridSlot (uint32_t idx) {
-        assert(idx < kMaxNumMaterials);
+        assert(idx < kMaxNumVolumeGrids);
         volume_grid_slots_.FreeSlot(idx);
     }
 

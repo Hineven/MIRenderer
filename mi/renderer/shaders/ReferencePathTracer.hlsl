@@ -486,47 +486,47 @@ void ReferencePathTracerRaygen() {
                         OverlappingVolumeGridsInstanceIndices[CurrentOverlappingVolumeGridCount] = InstanceIndex;
                         CurrentOverlappingVolumeGridCount++;
                     }
-                    else
+                }
+                else
+                {
+                    // Front hit: ray is leaving the volume.
+                    RemoveVolumeGrid(
+                        GridIndex,
+                        InstanceIndex,
+                        CurrentOverlappingVolumeGridCount,
+                        OverlappingVolumeGridIndices,
+                        OverlappingVolumeGridsInstanceIndices
+                    );
+                }
+            }
+            else
+            {
+                // --- Processing Volume Primitives ---
+                uint InstanceVolumePrimitiveIndex = Payload.HitPrimitiveIndex / 20;
+                VolumePrimitivesInstanceHeader Renderable = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
+                uint VolumePrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
+                uint PrimitiveIndex = VolumePrimitiveOffset + InstanceVolumePrimitiveIndex;
+
+                if (!Payload.bIsFrontFace)
+                {
+                    // Back hit: ray is entering the volume.
+                    if (CurrentOverlappingVolumePrimitiveCount < MAX_OVERLAPPING_VOLUME_PRIMITIVES)
                     {
-                        // Front hit: ray is leaving the volume.
-                        RemoveVolumeGrid(
-                            GridIndex,
-                            InstanceIndex,
-                            CurrentOverlappingVolumeGridCount,
-                            OverlappingVolumeGridIndices,
-                            OverlappingVolumeGridsInstanceIndices
-                        );
+                        OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
+                        OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
+                        CurrentOverlappingVolumePrimitiveCount++;
                     }
                 }
                 else
                 {
-                    // --- Processing Volume Primitives ---
-                    uint InstanceVolumePrimitiveIndex = Payload.HitPrimitiveIndex / 20;
-                    VolumePrimitivesInstanceHeader Renderable = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
-                    uint VolumePrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
-                    uint PrimitiveIndex = VolumePrimitiveOffset + InstanceVolumePrimitiveIndex;
-
-                    if (!Payload.bIsFrontFace)
-                    {
-                        // Back hit: ray is entering the volume.
-                        if (CurrentOverlappingVolumePrimitiveCount < MAX_OVERLAPPING_VOLUME_PRIMITIVES)
-                        {
-                            OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
-                            OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
-                            CurrentOverlappingVolumePrimitiveCount++;
-                        }
-                    }
-                    else
-                    {
-                        // Front hit: ray is leaving the volume.
-                        RemoveVolumePrimitive(
-                            PrimitiveIndex,
-                            InstanceIndex,
-                            CurrentOverlappingVolumePrimitiveCount,
-                            OverlappingVolumePrimitiveIndices,
-                            OverlappingVolumePrimitivesInstanceIndices
-                        );
-                    }
+                    // Front hit: ray is leaving the volume.
+                    RemoveVolumePrimitive(
+                        PrimitiveIndex,
+                        InstanceIndex,
+                        CurrentOverlappingVolumePrimitiveCount,
+                        OverlappingVolumePrimitiveIndices,
+                        OverlappingVolumePrimitivesInstanceIndices
+                    );
                 }
             }
 

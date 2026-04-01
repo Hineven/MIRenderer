@@ -156,15 +156,26 @@ void DecodeVisibility (uint2 DispatchID : SV_DispatchThreadID) {
     // Remove the jittering from current NDC
     CurrNDC.xy -= C.Jitter;
     float2 Motion = ValidHistory ? (CurrNDC - PrevNDC) : 0;
+    float3 ViewDirection = -NDC2ToCameraDirection(C, CurrNDC.xy);
 
     // Write to G-Buffers
     {
         // 25.10.21: Alpha should always be 1.
-        RWAlbedo[PixelCoords] = float4(Intersection.Albedo, 1.f);//Intersection.Opacity);
+        RWAlbedo[PixelCoords] = float4(Intersection.Albedo, 1.f);
+        float3 OutShadingNormal = Intersection.ShadingNormal;
+        float3 OutGeometryNormal = Intersection.GeometryNormal;
+        // Check for face flipping for all materials for maximum robustness.
+        if (true) {
+            bool bFaceFlipped = dot(Intersection.GeometryNormal, ViewDirection) < 0;
+            if (bFaceFlipped) {
+                OutShadingNormal = -Intersection.ShadingNormal;
+                OutGeometryNormal = -Intersection.GeometryNormal;
+            }
+        }
         // Squash normal to [0,1]
-        float3 GBufferShadingNormal = (Intersection.ShadingNormal.xyz * 0.5f) + 0.5f;
+        float3 GBufferShadingNormal = (OutShadingNormal * 0.5f) + 0.5f;
         RWNormal[PixelCoords] = float4(GBufferShadingNormal, 1);
-        RWGeometryNormal[PixelCoords] = PackGeometryNormal(Intersection.GeometryNormal);
+        RWGeometryNormal[PixelCoords] = PackGeometryNormal(OutGeometryNormal);
         RWEmission[PixelCoords] = float4(Intersection.Emission, 1);
         RWMetallicRoughness[PixelCoords] = Intersection.MetallicRoughness;
         RWMotionVector[PixelCoords] = Motion;

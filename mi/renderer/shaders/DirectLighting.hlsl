@@ -89,7 +89,6 @@ void DiffuseDirectLightingClearCounters () {
     RWRayToTraceCount[0] = 0;
     RWRayToTraceListAllocator[0] = 0;
 }
-
 Texture2D<float> G_DepthTexture;
 Texture2D<float4> G_NormalTexture;
 Texture2D<uint> G_GeometryNormalTexture;
