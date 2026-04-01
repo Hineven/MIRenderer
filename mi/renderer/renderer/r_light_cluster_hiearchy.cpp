@@ -118,6 +118,15 @@ FORCEINLINE float SafeLuminance(glm::vec3 emissive, bool has_emissive_map) {
     return luma;
 }
 
+FORCEINLINE uint32_t MixHash32(uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
 FORCEINLINE uint64_t BuildEdgeKey(uint32_t a, uint32_t b) {
     if (a > b) {
         std::swap(a, b);
@@ -735,7 +744,6 @@ std::optional<MeshLightClusterHierarchy> BuildMeshLightClusterHierarchy(
 
 
     while (active_clusters_by_intensity.size() > 1) {
-        auto remaining = active_clusters_by_intensity.size();
         uint32_t weakest = active_clusters_by_intensity.begin()->node_idx;
         auto best_opt = FindBestMergeForWeakestCluster(weakest, runtime_nodes, &cluster_kdtree, kFallbackKNN);
         if (!best_opt.has_value()) {
@@ -795,43 +803,27 @@ std::optional<MeshLightClusterHierarchy> BuildMeshLightClusterHierarchy(
         auto & rt_node = runtime_nodes[rt_node_idx];
         if (rt_node.IsLeaf()) {
             auto u = hierarchy.triangles.size();
-            rt_node_to_hierarchy_node[rt_node_idx] = {true, (uint32_t)u};
+            rt_node_to_hierarchy_node[rt_node_idx] = MakeMeshLightClusterChild(true, (uint32_t)u);
             auto tri_idx = rt_node.data.rt_triangle_idx;
             hierarchy.triangles.push_back({rt_triangles[tri_idx].primitive_index});
-            return MeshLightClusterChild{true, (uint32_t)u};
+            hierarchy.triangle_hashes.push_back({MixHash32(rt_triangles[tri_idx].primitive_index + 0x9e3779b9u)});
+            hierarchy.triangle_baked_data.push_back({rt_triangles[tri_idx].intensity / std::max(rt_triangles[tri_idx].Area(), 1e-8f)});
+            return MakeMeshLightClusterChild(true, (uint32_t)u);
         }
         auto lc = BuildFinalHierarchyNode(rt_node.data.childs.a);
         auto rc = BuildFinalHierarchyNode(rt_node.data.childs.b);
         auto u = hierarchy.nodes.size();
-        rt_node_to_hierarchy_node[rt_node_idx] = {false, (uint32_t)u};
+        rt_node_to_hierarchy_node[rt_node_idx] = MakeMeshLightClusterChild(false, (uint32_t)u);
         MeshLightClusterNode node {};
         MeshLightClusterHeader header {};
         node.L = lc;
         node.R = rc;
         // Statistics are calculated on runtime nodes each frame.
-
-        // float L_UnnormalizedWeight = runtime_nodes[rt_node.data.childs.a].total_intensity;
-        // float R_UnnormalizedWeight = runtime_nodes[rt_node.data.childs.b].total_intensity;
-        // float L_Scale = asdfasfsda
         hierarchy.nodes.push_back(node);
         header.Hash = rng32();
-        // header.LocalAABBMin = rt_node.position_aabb.min;
-        // header.LocalAABBMax = rt_node.position_aabb.max;
-        // header.TotalIntensity = rt_node.total_intensity;
-        // header.WeightedNormal = SafeNormalize(rt_node.weighted_normal_sum);
-        // if (rt_node.total_intensity > 1e-12f) {
-        //     float inv_total_intensity = 1.0f / rt_node.total_intensity;
-        //     glm::vec3 mean = rt_node.weighted_normal_sum * inv_total_intensity;
-        //     glm::vec3 mean2 = rt_node.weighted_normal_sum_2 * inv_total_intensity;
-        //     glm::vec3 diffs = glm::max(mean2 - (mean * mean), glm::vec3(0.0f));
-        //     header.WeightedNormalVariance = glm::dot(diffs, diffs);
-        // } else {
-        //     header.WeightedNormalVariance = 0.0f;
-        // }
-        // header.ScaleIntensityMultiplier = rt_node.scale_intensity_multiplier;
 
         hierarchy.headers.push_back(header);
-        return MeshLightClusterChild{false, (uint32_t)u};
+        return MakeMeshLightClusterChild(false, (uint32_t)u);
     };
 
     auto root = BuildFinalHierarchyNode((uint32_t)runtime_nodes.size() - 1);

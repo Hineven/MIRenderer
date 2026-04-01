@@ -10,6 +10,7 @@
 #include <span>
 #include <vector>
 
+#include "mi_buffer_heap.h"
 #include "mi_resource_allocator.h"
 #include "core/refcounted.h"
 #include "renderer/mi_renderable.h"
@@ -117,6 +118,14 @@ public:
         return mesh_light_instance_template_;
     }
 
+    FORCEINLINE const std::vector<MeshLight> & GetMeshLights() const {
+        return mesh_lights_;
+    }
+
+    FORCEINLINE const std::vector<MeshLightLevelHeader> & GetMeshLightLevelHeaders() const {
+        return mesh_light_level_headers_;
+    }
+
     FORCEINLINE DeviceStaticMesh * GetDeviceStaticMesh () const {
         return device_static_mesh_.Raw();
     }
@@ -161,13 +170,21 @@ protected:
 
     std::vector<MeshLightHierarchyRecord> light_hierarchy_records_;
 
+    // MeshLights
+    std::vector<MeshLightTriangle> mesh_light_triangles_;
+    std::vector<MeshLightTriangleHash> mesh_light_triangle_hashes_;
+    std::vector<MeshLightTriangleBakedData> mesh_light_triangle_baked_data_;
+    std::vector<MeshLightLevelHeader> mesh_light_level_headers_;
+    std::vector<MeshLight> mesh_lights_;
     // MeshLightInstance template generated from hierarchy records.
     // RenderableIndex is filled per-instance at upload time.
     std::vector<MeshLightInstance> mesh_light_instance_template_;
 
     // Persistent shared allocations owned by static mesh and reused by all instances.
-    TRef<DeviceUberBufferAllocation> light_cluster_headers_;
-    TRef<DeviceUberBufferAllocation> light_cluster_nodes_;
+    TRef<DeviceUberBufferArrayAllocation> light_triangle_streams_;
+    TRef<DeviceUberBufferArrayAllocation> light_cluster_streams_;
+    TRef<DeviceUberBufferAllocation> light_level_headers_;
+    TRef<DeviceUberBufferAllocation> lights_;
 
     DirtyTracker<StaticMesh> * tracker_ {};
 };
@@ -196,16 +213,28 @@ public:
 
     bool IsEmpty() const override;
 
+    FORCEINLINE const std::vector<MeshLightInstance> & GetMeshLightInstances() const {
+        return mesh_light_instances_;
+    }
+
+    FORCEINLINE DeviceUberBufferAllocation * GetMeshLightInstanceBufferAllocation() const {
+        return mli_buffer_.Raw();
+    }
+
 protected:
     StaticMeshInstance(Scene * world) ;
     ~StaticMeshInstance() override;
 
     // A buffer storing the lights for this static mesh, used for lighting calculations.
     // Leave empty for static meshes with no emissive materials.
-    TRef<DeviceUberBufferAllocation> lights_;
+    // TRef<DeviceUberBufferAllocation> lights_;
 
-    // Per-instance mesh-light hierarchy references uploaded from static mesh hierarchy template.
-    TRef<DeviceUberBufferAllocation> mesh_light_instances_;
+    // Per-instance mesh-light instance buffers templated from the underlying static mesh.
+    std::vector<MeshLightInstance> mesh_light_instances_;
+    TRef<DeviceUberBufferAllocation> mli_buffer_;
+    // Buffer allocations to hold the instance buffers alive.
+    std::vector<TRef<DeviceUberBufferArrayAllocation>> mli_cluster_buffers_;
+    std::vector<TRef<DeviceUberBufferAllocation>> mli_triangle_buffers_;
 
     TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to
 };

@@ -6,6 +6,7 @@
 #include "../headers/OctahedronMapping.hlsl"
 #include "../headers/Sampling.hlsl"
 #include "../headers/Scattering.hlsl"
+#include "../headers/Conventions.hlsl"
 #include "LightEvaluation.hlsl"
 #include "LightClusterHierarchyResources.hlsl"
 
@@ -52,11 +53,12 @@ uint2 LightGrid_UpdateGridPressure(LightGridPressureContext Context) {
 }
 
 // A list of currently active grids
-RWStructuredBuffer<uint> LightGrid_RWActiveGridCount;
+RWStructuredBuffer<uint> LightGrid_RWActiveGridAllocator;
 RWStructuredBuffer<uint> LightGrid_RWActiveGridIndicesBuffer;
 
 // Number of active mesh light instances. This is uploaded from CPU.
 RWStructuredBuffer<uint> LightGrid_RWActiveMeshLightInstanceCount;
+StructuredBuffer<uint> LightGrid_ActiveMeshLightInstanceIndexBuffer;
 
 // Allocator for the light list elements of each grid. 
 RWStructuredBuffer<uint>  LightGrid_RWListAllocator;
@@ -77,13 +79,11 @@ RWStructuredBuffer<uint2> LightGrid_RWBloomFilterBuffer;
 RWStructuredBuffer<uint2> LightGrid_RWNextBloomFilterBuffer;
 RWStructuredBuffer<uint>  LightGrid_RWNextEnvironmentVisibilityBuffer;
 
-
 static const uint LIGHT_SAMPLE_INDEX_DIRECTIONAL = INVALID_UINT - 1u;
 
 bool IsDirectionalLightSampleIndex(uint LightIndex) {
     return LightIndex == LIGHT_SAMPLE_INDEX_DIRECTIONAL;
 }
-
 
 struct LightSampler {
     uint NumResampledLights;
@@ -106,8 +106,10 @@ uint PackLightSamplerLight(LightSamplerLight LSL) {
         return INVALID_UINT;
     }
     uint Packed = 0;
-    Packed |= LSL.AbsElementIndex.Offset & 0x1FFFFFFFu;
-    Packed |= LSL.AbsElementIndex.bIsTriangle ? (0x30000000u) : 0u;
+    // We only have 29 bits for the element index. Anyway it will not be a problem since there're 
+    // usually much less than 512M triangles/clusters in the scene.
+    Packed |= LSL.AbsElementIndex.Packed & 0x1FFFFFFFu;
+    Packed |= LSL.AbsElementIndex.bIsTriangle() ? (0x20000000u) : 0u;
     Packed |= (LSL.bIsEnvironment ? 1u : 0u) << 30;
     Packed |= (LSL.bIsDirectional ? 1u : 0u) << 31;
     return Packed;
@@ -117,8 +119,7 @@ LightSamplerLight UnpackLightSamplerLight(uint Packed) {
     LightSamplerLight LSL = (LightSamplerLight)0;
     LSL.bValid = (Packed != INVALID_UINT);
     if (LSL.bValid) {
-        LSL.AbsElementIndex.Offset = Packed & 0x1FFFFFFFu;
-        LSL.AbsElementIndex.bIsTriangle = (Packed & 0x30000000u) != 0;
+        LSL.AbsElementIndex = MakeMeshLightInstanceElementOffset((Packed & 0x20000000u) != 0, Packed & 0x1FFFFFFFu);
         LSL.bIsEnvironment = ((Packed >> 30) & 0x1) != 0;
         LSL.bIsDirectional = ((Packed >> 31) & 0x1) != 0;
     }
@@ -209,6 +210,37 @@ struct LightSampleSrcLightRecord {
         return Packed != INVALID_UINT;
     }
 };
+
+LightSampleSrcLightRecord MakeInvalidLightSampleRecord() {
+    LightSampleSrcLightRecord Record = (LightSampleSrcLightRecord)0;
+    Record.Packed = INVALID_UINT;
+    return Record;
+}
+
+LightSampleSrcLightRecord MakeLightSampleRecord (uint Type, uint Index) {
+    LightSampleSrcLightRecord Record = (LightSampleSrcLightRecord)0;
+    Record.Packed = (Type << 30) | (Index & 0x3FFFFFFFu);
+    return Record;
+}
+
+LightSampleSrcLightRecord MakeEnvironmentLightSampleRecord() {
+    return MakeLightSampleRecord(LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_ENVIRONMENT, 0);
+}
+
+LightSampleSrcLightRecord MakeDirectionalLightSampleRecord() {
+    return MakeLightSampleRecord(LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_DIRECTIONAL, 0);
+}
+
+LightSampleSrcLightRecord MakeAreaLightSampleRecord(MeshLightInstanceElementOffset AbsElement) {
+    return MakeLightSampleRecord(
+        AbsElement.bIsTriangle() 
+        ? LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_MLI_TRIANGLE 
+        : LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_MLI_CLUSTER, 
+        AbsElement.Offset()
+    );
+}
+
+
 
 struct LightSample {
     // For area light: sampled position on the light
@@ -434,7 +466,7 @@ LightSample SampleOneLightSample_RIS (
         GridVisibility = GetGridLightVisibility(GridIndex1);
 
         // Mark the grid as visited. The grid will be injected with lights in the next few frame.
-        InterlockedOr(LightGrid_RWActiveGridFlagBuffer[GridIndex1], );
+        InterlockedOr(LightGrid_RWActiveGridFlagBuffer[GridIndex1], 1u);
     }
 
     bool bHasGridLights = bInsideLightGrid && NumGridLights > 0;
@@ -449,12 +481,12 @@ LightSample SampleOneLightSample_RIS (
                 MeshLightInstanceElementOffset Element = LightGrid_RWListMeshLightInstanceElementIndexBuffer[GridLightListOffset + LightListIndex];
                 float Weight = 0;
                 uint Hash = 0;
-                if(Element.bIsTriangle) {
-                    MeshLightInstanceTriangle L = LCH_MeshLightInstanceTriangleBuffer[Element.Offset];
+                if(Element.bIsTriangle()) {
+                    MeshLightInstanceTriangle L = LCH_MeshLightInstanceTriangleBuffer[Element.Offset()];
                     Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
                     Hash = L.Hash;
                 } else {
-                    MeshLightInstanceClusterHeader Cluster = LCH_MeshLightInstanceClusterHeaderBuffer[Element.Offset];
+                    MeshLightInstanceClusterHeader Cluster = LCH_MeshLightInstanceClusterHeaderBuffer[Element.Offset()];
                     Weight = EstimateLightContribution(Cluster, WorldPosition, WorldNormal, !bSurface);
                     Hash = Cluster.Hash;
                 }
@@ -462,7 +494,7 @@ LightSample SampleOneLightSample_RIS (
                 float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, Hash);
                 Weight *= VisibilityWeight;
                 if(Weight > 0.f) {
-                    LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
+                    LightSampler_AddListLightToSampler(LS, Weight, Element);
                     NumNonZeroGridLights ++;
                 }
             }
@@ -474,17 +506,17 @@ LightSample SampleOneLightSample_RIS (
             while(LightListIndex < NumGridLights && Iteration < 256) {
                 MeshLightInstanceElementOffset Element = (MeshLightInstanceElementOffset)INVALID_UINT;
                 Element = LightGrid_RWListMeshLightInstanceElementIndexBuffer[GridLightListOffset + LightListIndex];
-                uint WaveMinLightIndex = WaveActiveMin(Element.Packed());
-                if (WaveMinLightIndex == Element.Packed()) {
-                    PrecomputedLight L = UnpackPrecomputedLight(LightGrid_RWPrecomputedActiveLightBuffer[ActiveLightListIndex]);
+                uint WaveMinLightIndex = WaveActiveMin(Element.Packed);
+                if (WaveMinLightIndex == Element.Packed) {
+                    // PrecomputedLight L = UnpackPrecomputedLight(LightGrid_RWPrecomputedActiveLightBuffer[ActiveLightListIndex]);
                     float Weight = 0;
                     uint Hash = 0;
-                    if(Element.bIsTriangle) {
-                        MeshLightInstanceTriangle L = LCH_MeshLightInstanceTriangleBuffer[Element.Offset];
+                    if(Element.bIsTriangle()) {
+                        MeshLightInstanceTriangle L = LCH_MeshLightInstanceTriangleBuffer[Element.Offset()];
                         Weight = EstimateLightContribution(L, WorldPosition, WorldNormal, !bSurface);
                         Hash = L.Hash;
                     } else {
-                        MeshLightInstanceClusterHeader Cluster = LCH_MeshLightInstanceClusterHeaderBuffer[Element.Offset];
+                        MeshLightInstanceClusterHeader Cluster = LCH_MeshLightInstanceClusterHeaderBuffer[Element.Offset()];
                         Weight = EstimateLightContribution(Cluster, WorldPosition, WorldNormal, !bSurface);
                         Hash = Cluster.Hash;
                     }
@@ -493,7 +525,7 @@ LightSample SampleOneLightSample_RIS (
                     Weight *= VisibilityWeight;
                     if (Weight > 0.f) {
                         // Add the light to the sampler
-                        LightSampler_AddListLightToSampler(LS, Weight, ActiveLightListIndex);
+                        LightSampler_AddListLightToSampler(LS, Weight, Element);
                         NumNonZeroGridLights ++;
                     }
                     LightListIndex++;
@@ -582,7 +614,7 @@ LightSample SampleOneLightSample_RIS (
                 Sample.LightRecord = MakeDirectionalLightSampleRecord();
             } else {
                 // Sample area light    
-                MeshLightInstanceElementOffset Element = LSL.ElementIndex;
+                MeshLightInstanceElementOffset Element = LSL.AbsElementIndex;
                 EvaluatedAreaLight Evaluated = LCH_SampleAndEvaluateLight(
                     Element, u1
                 );
@@ -646,8 +678,15 @@ void LightGrid_UpdateVisibilityForLightRecord(
         // TODO
     } else if(LightRecord.IsMeshLightTriangle() || LightRecord.IsMeshLightCluster()) {
         uint LightIndex = LightRecord.Index();
-        AreaLight LightData = LightBuffer[LightIndex];
-        uint2 Hash64 = GetExpandedLightHash64(LightIndex, GetLightHash32(LightData));
+        uint Hash32 = 0;
+        if(LightRecord.IsMeshLightTriangle()) {
+            MeshLightInstanceTriangle Triangle = LCH_MeshLightInstanceTriangleBuffer[LightIndex];
+            Hash32 = GetLightHash32(Triangle);
+        } else {
+            MeshLightInstanceClusterHeader Cluster = LCH_MeshLightInstanceClusterHeaderBuffer[LightIndex];
+            Hash32 = GetLightHash32(Cluster);
+        }
+        uint2 Hash64 = GetExpandedLightHash64(Hash32);
         if(bWaveOp) {
             bool bWaveUniform = WaveActiveAllEqual(GridIndex1);
             if(bWaveUniform) {

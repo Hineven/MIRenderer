@@ -57,6 +57,8 @@ class DeviceBufferHeapInterface;
 class DeviceBufferHeapBuffer;
 class DeviceUberBufferAllocation;
 class DeviceUberBufferInterface;
+class DeviceUberBufferArrayAllocation;
+class DeviceUberBufferArrayInterface;
 
 struct ViewCommonShaderParameters;
 

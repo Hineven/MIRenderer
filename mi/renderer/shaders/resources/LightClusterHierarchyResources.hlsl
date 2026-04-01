@@ -308,27 +308,26 @@ EvaluatedAreaLight LCH_SampleAndEvaluateLight (
     }
     uint MLIClusterNodeOffset = MLI.MeshLightInstanceClusterOffset.Offset();
     float Pdf = 1.f;
-    while(!AbsElement.bIsTriangle()) {
-        uint LocalOffset = AbsElement.Offset() - MLIClusterNodeOffset;
-        MeshLightInstanceClusterNode ClusterNode = LCH_MeshLightInstanceClusterNodeBuffer[AbsElement.Offset()];
-        MeshLightClusterNode MLClusterNode = LCH_MeshLightClusterNodeBuffer[ML.ClusterOffset + LocalOffset];
+    MeshLightInstanceElementOffset RelElement = MakeMeshLightInstanceElementOffset(
+        AbsElement.bIsTriangle(), AbsElement.Offset() 
+        - (AbsElement.bIsTriangle() ? MLI.MeshLightInstanceTriangleOffset : MLIClusterNodeOffset)
+    );
+    while(!RelElement.bIsTriangle()) {
+        MeshLightInstanceClusterNode ClusterNode = LCH_MeshLightInstanceClusterNodeBuffer[MLIClusterNodeOffset + RelElement.Offset()];
+        MeshLightClusterNode MLClusterNode = LCH_MeshLightClusterNodeBuffer[ML.ClusterOffset + RelElement.Offset()];
         if(u < ClusterNode.L_Probability) {
             // Go to the left child
-            AbsElement = MakeMeshLightInstanceElementOffset(
-                MLClusterNode.L.bIsLeaf(), MLClusterNode.L.Index() + MLIClusterNodeOffset
-            );
+            RelElement = MakeMeshLightInstanceElementOffset(MLClusterNode.L.bIsLeaf(), MLClusterNode.L.Index());
             u = u / ClusterNode.L_Probability;
         } else {
             // Go to the right child
-            AbsElement = MakeMeshLightInstanceElementOffset(
-                MLClusterNode.R.bIsLeaf(), MLClusterNode.R.Index() + MLIClusterNodeOffset
-            );
+            RelElement = MakeMeshLightInstanceElementOffset(MLClusterNode.R.bIsLeaf(), MLClusterNode.R.Index());
             u = (u - ClusterNode.L_Probability) / (1.f - ClusterNode.L_Probability);
         }
     }
     // Extract and evaluate triangle
-    MeshLightTriangle MLTriangle = LCH_MeshLightInstanceTriangleBuffer[
-        AbsElement.Offset() - MLI.MeshLightInstanceTriangleOffset + ML.TriangleOffset
+    MeshLightTriangle MLTriangle = LCH_MeshLightTriangleBuffer[
+        RelElement.Offset() + ML.TriangleOffset
     ];
     return LCH_ExtractTriangleLight(ML, MLI, MLTriangle);
 }

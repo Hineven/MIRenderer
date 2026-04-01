@@ -36,6 +36,137 @@ CVar<int> CVar_MaxMeshLightsPerGeometry(
 namespace {
 
 constexpr float kOverlapEpsilon = 1e-6f;
+constexpr uint32_t kMeshLightTriangleStream_Triangle = 0;
+constexpr uint32_t kMeshLightTriangleStream_Hash = 1;
+constexpr uint32_t kMeshLightTriangleStream_BakedData = 2;
+constexpr uint32_t kMeshLightClusterStream_Header = 0;
+constexpr uint32_t kMeshLightClusterStream_Node = 1;
+constexpr uint32_t kMeshLightInstanceClusterStream_Header = 0;
+constexpr uint32_t kMeshLightInstanceClusterStream_Node = 1;
+
+template<typename T>
+bool ReallocateUberBufferIfNeeded(
+    RHICommandQueueGraphics & queue,
+    TRef<DeviceUberBufferAllocation> & allocation,
+    DeviceUberBufferInterface * uber_buffer,
+    size_t required_count,
+    const char * debug_name
+) {
+    size_t required_size = required_count * sizeof(T);
+    if (required_size == 0) {
+        if (allocation) {
+            Helpers::Clear_Async(queue, allocation->GetRHI());
+            allocation.SafeRelease();
+        }
+        return true;
+    }
+
+    bool need_reallocate = !allocation
+        || allocation->GetSize() < required_size
+        || allocation->GetSize() > required_size * 2;
+
+    if (!need_reallocate) {
+        return true;
+    }
+
+    if (allocation) {
+        Helpers::Clear_Async(queue, allocation->GetRHI());
+        allocation.SafeRelease();
+    }
+
+    auto alloc_res = uber_buffer->AllocateRefCounted<T>(required_count);
+    if (!alloc_res) {
+        MI_WARN("Failed to allocate {}.", debug_name);
+        return false;
+    }
+    allocation = alloc_res;
+    return true;
+}
+
+bool ReallocateUberBufferArrayIfNeeded(
+    RHICommandQueueGraphics & queue,
+    TRef<DeviceUberBufferArrayAllocation> & allocation,
+    DeviceUberBufferArrayInterface * uber_buffer_array,
+    size_t required_count,
+    const char * debug_name
+) {
+    if (required_count == 0) {
+        if (allocation) {
+            for (uint32_t i = 0; i < uber_buffer_array->GetNumStreams(); ++i) {
+                Helpers::Clear_Async(queue, allocation->GetRHI(i));
+            }
+            allocation.SafeRelease();
+        }
+        return true;
+    }
+
+    bool need_reallocate = !allocation
+        || allocation->GetElementCount() < required_count
+        || allocation->GetElementCount() > required_count * 2;
+
+    if (!need_reallocate) {
+        return true;
+    }
+
+    if (allocation) {
+        for (uint32_t i = 0; i < uber_buffer_array->GetNumStreams(); ++i) {
+            Helpers::Clear_Async(queue, allocation->GetRHI(i));
+        }
+        allocation.SafeRelease();
+    }
+
+    auto alloc_res = uber_buffer_array->AllocateRefCounted((uint32_t)required_count);
+    if (!alloc_res.first) {
+        MI_WARN("Failed to allocate {}.", debug_name);
+        return false;
+    }
+    allocation = alloc_res.first;
+    return true;
+}
+
+template<typename T>
+bool UploadPackedVector(
+    RHICommandQueueGraphics & queue,
+    TRef<DeviceUberBufferAllocation> & allocation,
+    DeviceUberBufferInterface * uber_buffer,
+    const std::vector<T> & data,
+    const char * debug_name
+) {
+    if (!ReallocateUberBufferIfNeeded<T>(queue, allocation, uber_buffer, data.size(), debug_name)) {
+        return false;
+    }
+    if (!data.empty()) {
+        Helpers::Upload_Async(queue, allocation->GetRHI(), data.data(), data.size() * sizeof(T));
+    }
+    return true;
+}
+
+void CollectMeshLightClusterDepthLevels(
+    const MeshLightClusterHierarchy & hierarchy,
+    std::vector<std::vector<uint32_t>> & out_levels
+) {
+    out_levels.clear();
+    if (hierarchy.root_node.bIsLeaf() || hierarchy.nodes.empty()) {
+        return;
+    }
+
+    std::vector<uint32_t> current_level {hierarchy.root_node.Index()};
+    while (!current_level.empty()) {
+        out_levels.push_back(current_level);
+        std::vector<uint32_t> next_level;
+        for (uint32_t cluster_idx : current_level) {
+            mi_check(cluster_idx < hierarchy.nodes.size(), "Cluster index out of bounds while collecting hierarchy levels.");
+            auto const & node = hierarchy.nodes[cluster_idx];
+            if (!node.L.bIsLeaf()) {
+                next_level.push_back(node.L.Index());
+            }
+            if (!node.R.bIsLeaf()) {
+                next_level.push_back(node.R.Index());
+            }
+        }
+        current_level = std::move(next_level);
+    }
+}
 
 FORCEINLINE float Cross2D(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
     glm::vec2 ab = b - a;
@@ -170,9 +301,16 @@ void StaticMesh::ClearMeshPrimitives() {
     device_static_mesh_ = {};
     aabb_ = {};
     light_hierarchy_records_.clear();
+    mesh_light_triangles_.clear();
+    mesh_light_triangle_hashes_.clear();
+    mesh_light_triangle_baked_data_.clear();
+    mesh_light_level_headers_.clear();
+    mesh_lights_.clear();
     mesh_light_instance_template_.clear();
-    light_cluster_headers_.SafeRelease();
-    light_cluster_nodes_.SafeRelease();
+    light_triangle_streams_.SafeRelease();
+    light_cluster_streams_.SafeRelease();
+    light_level_headers_.SafeRelease();
+    lights_.SafeRelease();
     SetDirty(true);
 }
 
@@ -359,123 +497,189 @@ void StaticMesh::UploadLightClusterHierarchy_Async(DeviceBindlessResourceAllocat
         return;
     }
 
-    // Clear buffers only if no longer needed (empty records)
     if (light_hierarchy_records_.empty()) {
-        if (light_cluster_headers_) {
-            Helpers::Clear_Async(queue, light_cluster_headers_->GetRHI());
-            light_cluster_headers_.SafeRelease();
-        }
-        if (light_cluster_nodes_) {
-            Helpers::Clear_Async(queue, light_cluster_nodes_->GetRHI());
-            light_cluster_nodes_.SafeRelease();
-        }
+        mesh_light_triangles_.clear();
+        mesh_light_triangle_hashes_.clear();
+        mesh_light_triangle_baked_data_.clear();
+        mesh_light_level_headers_.clear();
+        mesh_lights_.clear();
         mesh_light_instance_template_.clear();
+        light_triangle_streams_.SafeRelease();
+        light_cluster_streams_.SafeRelease();
+        if (light_level_headers_) {
+            Helpers::Clear_Async(queue, light_level_headers_->GetRHI());
+            light_level_headers_.SafeRelease();
+        }
+        if (lights_) {
+            Helpers::Clear_Async(queue, lights_->GetRHI());
+            lights_.SafeRelease();
+        }
         light_hierarchy_device_dirty_ = false;
         return;
     }
 
+    size_t total_triangles = 0;
     size_t total_headers = 0;
     size_t total_nodes = 0;
     for (const auto & record : light_hierarchy_records_) {
+        total_triangles += record.hierarchy.triangles.size();
         total_headers += record.hierarchy.headers.size();
         total_nodes += record.hierarchy.nodes.size();
     }
 
-    const size_t required_headers_size = total_headers * sizeof(MeshLightClusterHeader);
-    const size_t required_nodes_size = total_nodes * sizeof(MeshLightClusterNode);
-
+    std::vector<MeshLightTriangle> packed_triangles;
+    std::vector<MeshLightTriangleHash> packed_triangle_hashes;
+    std::vector<MeshLightTriangleBakedData> packed_triangle_baked_data;
     std::vector<MeshLightClusterHeader> packed_headers;
     std::vector<MeshLightClusterNode> packed_nodes;
+    std::vector<MeshLightLevelHeader> packed_level_headers;
+    std::vector<MeshLight> packed_mesh_lights;
+    std::vector<MeshLightInstance> packed_mli_template;
+    packed_triangles.reserve(total_triangles);
+    packed_triangle_hashes.reserve(total_triangles);
+    packed_triangle_baked_data.reserve(total_triangles);
     packed_headers.reserve(total_headers);
     packed_nodes.reserve(total_nodes);
-    mesh_light_instance_template_.clear();
-    mesh_light_instance_template_.reserve(light_hierarchy_records_.size());
+    packed_mesh_lights.reserve(light_hierarchy_records_.size());
+    packed_mli_template.reserve(light_hierarchy_records_.size());
 
     for (const auto & record : light_hierarchy_records_) {
-        uint32_t node_base = (uint32_t)packed_nodes.size();
-        packed_headers.insert(packed_headers.end(), record.hierarchy.headers.begin(), record.hierarchy.headers.end());
-        packed_nodes.insert(packed_nodes.end(), record.hierarchy.nodes.begin(), record.hierarchy.nodes.end());
+        auto const & hierarchy = record.hierarchy;
+        uint32_t mesh_light_index = (uint32_t)packed_mesh_lights.size();
+        uint32_t triangle_base = (uint32_t)packed_triangles.size();
+        uint32_t cluster_base = (uint32_t)packed_nodes.size();
 
-        MeshLightClusterChild root = record.hierarchy.root_node;
-        if (!root.bIsLeaf) {
-            root.Index += node_base;
+        packed_triangles.insert(packed_triangles.end(), hierarchy.triangles.begin(), hierarchy.triangles.end());
+        packed_triangle_hashes.insert(packed_triangle_hashes.end(), hierarchy.triangle_hashes.begin(), hierarchy.triangle_hashes.end());
+        packed_triangle_baked_data.insert(packed_triangle_baked_data.end(), hierarchy.triangle_baked_data.begin(), hierarchy.triangle_baked_data.end());
+
+        std::vector<std::vector<uint32_t>> cluster_levels;
+        CollectMeshLightClusterDepthLevels(hierarchy, cluster_levels);
+        uint32_t level_base = (uint32_t)packed_level_headers.size();
+        uint32_t remapped_cluster_cursor = 0;
+        std::vector<uint32_t> old_to_new_cluster(hierarchy.nodes.size(), UINT32_MAX);
+        for (auto const & level : cluster_levels) {
+            for (uint32_t old_cluster_idx : level) {
+                old_to_new_cluster[old_cluster_idx] = remapped_cluster_cursor++;
+            }
         }
 
+        std::vector<uint32_t> new_to_old_cluster(remapped_cluster_cursor, UINT32_MAX);
+        for (uint32_t old_cluster_idx = 0; old_cluster_idx < old_to_new_cluster.size(); ++old_cluster_idx) {
+            uint32_t new_cluster_idx = old_to_new_cluster[old_cluster_idx];
+            if (new_cluster_idx != UINT32_MAX) {
+                new_to_old_cluster[new_cluster_idx] = old_cluster_idx;
+            }
+        }
+
+        for (uint32_t new_cluster_idx = 0; new_cluster_idx < new_to_old_cluster.size(); ++new_cluster_idx) {
+            uint32_t old_cluster_idx = new_to_old_cluster[new_cluster_idx];
+            mi_check(old_cluster_idx != UINT32_MAX, "Missing remapped cluster index.");
+
+            auto header = hierarchy.headers[old_cluster_idx];
+            auto node = hierarchy.nodes[old_cluster_idx];
+            header.MeshLightIndex = mesh_light_index;
+            if (!node.L.bIsLeaf()) {
+                node.L.SetIndex(old_to_new_cluster[node.L.Index()]);
+            }
+            if (!node.R.bIsLeaf()) {
+                node.R.SetIndex(old_to_new_cluster[node.R.Index()]);
+            }
+            packed_headers.push_back(header);
+            packed_nodes.push_back(node);
+        }
+
+        uint32_t level_cluster_offset = 0;
+        for (auto const & level : cluster_levels) {
+            packed_level_headers.push_back(MeshLightLevelHeader {
+                (uint32_t)level.size(),
+                level_cluster_offset
+            });
+            level_cluster_offset += (uint32_t)level.size();
+        }
+
+        MeshLight ml {};
+        ml.ClusterOffset = cluster_base;
+        ml.TriangleOffset = triangle_base;
+        ml.LevelOffset = level_base;
+        ml.StaticMeshIndex = device_static_mesh_ ? device_static_mesh_->GetIndex() : UINT32_MAX;
+        ml.StaticMeshDescriptionIndex = record.static_mesh_local_geometry_index;
+        ml.NumLevels = (uint32_t)cluster_levels.size();
+        ml.NumClusters = (uint32_t)hierarchy.nodes.size();
+        ml.NumTriangles = (uint32_t)hierarchy.triangles.size();
+        packed_mesh_lights.push_back(ml);
+
         MeshLightInstance instance {};
+        instance.MeshLightIndex = mesh_light_index;
         instance.RenderableIndex = UINT32_MAX;
-        instance.StaticMeshDescriptionIndex = header_.DescriptionOffset + record.static_mesh_local_geometry_index;
-        instance.RootCluster = root;
-        mesh_light_instance_template_.push_back(instance);
+        instance.MeshLightInstanceClusterOffset = MakeMeshLightInstanceElementOffset(ml.NumLevels == 0, 0);
+        instance.MeshLightInstanceTriangleOffset = 0;
+        packed_mli_template.push_back(instance);
     }
 
     bool upload_ok = true;
+    upload_ok &= ReallocateUberBufferArrayIfNeeded(
+        queue, light_triangle_streams_, alloc->GetMeshLightTriangleUberBufferArray(), packed_triangles.size(), "mesh light triangle stream buffers"
+    );
+    upload_ok &= ReallocateUberBufferArrayIfNeeded(
+        queue, light_cluster_streams_, alloc->GetMeshLightClusterUberBufferArray(), packed_headers.size(), "mesh light cluster stream buffers"
+    );
+    upload_ok &= ReallocateUberBufferIfNeeded<MeshLightLevelHeader>(
+        queue, light_level_headers_, alloc->GetMeshLightLevelHeaderUberBuffer(), packed_level_headers.size(), "mesh light level header uber buffer"
+    );
+    upload_ok &= ReallocateUberBufferIfNeeded<MeshLight>(
+        queue, lights_, alloc->GetMeshLightUberBuffer(), packed_mesh_lights.size(), "mesh light uber buffer"
+    );
 
-    // Handle headers buffer: reuse if size is sufficient, otherwise reallocate
-    if (!packed_headers.empty()) {
-        bool need_reallocate = !light_cluster_headers_ || 
-            light_cluster_headers_->GetSize() < required_headers_size || light_cluster_headers_->GetSize() > required_headers_size * 2; // Avoid keeping too large buffer for long time
-        
-        if (need_reallocate) {
-            // Release old buffer and allocate new one
-            if (light_cluster_headers_) {
-                Helpers::Clear_Async(queue, light_cluster_headers_->GetRHI());
-                light_cluster_headers_.SafeRelease();
-            }
-            auto alloc_res = alloc->GetMeshLightClusterHeaderUberBuffer()->AllocateRefCounted(
-                (uint32_t)required_headers_size
-            );
-            if (alloc_res.second) {
-                light_cluster_headers_ = alloc_res.first;
-            } else {
-                MI_WARN("Failed to allocate mesh light cluster header uber buffer.");
-                upload_ok = false;
-            }
-        }
-        
-        if (upload_ok && light_cluster_headers_) {
-            Helpers::Upload_Async(queue, light_cluster_headers_->GetRHI(), 
-                packed_headers.data(), required_headers_size);
-        }
-    } else if (light_cluster_headers_) {
-        // No headers needed, release existing buffer
-        Helpers::Clear_Async(queue, light_cluster_headers_->GetRHI());
-        light_cluster_headers_.SafeRelease();
-    }
+    if (upload_ok) {
+        uint32_t mesh_light_base = lights_ ? (uint32_t)(lights_->GetRHI().offset / sizeof(MeshLight)) : 0;
+        uint32_t triangle_base = light_triangle_streams_ ? light_triangle_streams_->GetElementOffset() : 0;
+        uint32_t cluster_base = light_cluster_streams_ ? light_cluster_streams_->GetElementOffset() : 0;
+        uint32_t level_base = light_level_headers_ ? (uint32_t)(light_level_headers_->GetRHI().offset / sizeof(MeshLightLevelHeader)) : 0;
 
-    // Handle nodes buffer: reuse if size is sufficient, otherwise reallocate
-    if (!packed_nodes.empty() && upload_ok) {
-        bool need_reallocate = !light_cluster_nodes_ || 
-            light_cluster_nodes_->GetSize() < required_nodes_size || light_cluster_nodes_->GetSize() > required_nodes_size * 2; // Avoid keeping too large buffer for long time
-        
-        if (need_reallocate) {
-            // Release old buffer and allocate new one
-            if (light_cluster_nodes_) {
-                Helpers::Clear_Async(queue, light_cluster_nodes_->GetRHI());
-                light_cluster_nodes_.SafeRelease();
-            }
-            auto alloc_res = alloc->GetMeshLightClusterNodeUberBuffer()->AllocateRefCounted(
-                (uint32_t)required_nodes_size
-            );
-            if (alloc_res.second) {
-                light_cluster_nodes_ = alloc_res.first;
-            } else {
-                MI_WARN("Failed to allocate mesh light cluster node uber buffer.");
-                upload_ok = false;
-            }
+        for (auto & header : packed_headers) {
+            header.MeshLightIndex += mesh_light_base;
         }
-        
-        if (upload_ok && light_cluster_nodes_) {
-            Helpers::Upload_Async(queue, light_cluster_nodes_->GetRHI(), 
-                packed_nodes.data(), required_nodes_size);
+        for (auto & mesh_light : packed_mesh_lights) {
+            mesh_light.ClusterOffset += cluster_base;
+            mesh_light.TriangleOffset += triangle_base;
+            mesh_light.LevelOffset += level_base;
         }
-    } else if (light_cluster_nodes_) {
-        // No nodes needed, release existing buffer
-        Helpers::Clear_Async(queue, light_cluster_nodes_->GetRHI());
-        light_cluster_nodes_.SafeRelease();
+        for (auto & instance : packed_mli_template) {
+            instance.MeshLightIndex += mesh_light_base;
+        }
+
+        if (light_triangle_streams_) {
+            Helpers::Upload_Async(queue, light_triangle_streams_->GetRHI(kMeshLightTriangleStream_Triangle), packed_triangles.data(), packed_triangles.size() * sizeof(MeshLightTriangle));
+            Helpers::Upload_Async(queue, light_triangle_streams_->GetRHI(kMeshLightTriangleStream_Hash), packed_triangle_hashes.data(), packed_triangle_hashes.size() * sizeof(MeshLightTriangleHash));
+            Helpers::Upload_Async(queue, light_triangle_streams_->GetRHI(kMeshLightTriangleStream_BakedData), packed_triangle_baked_data.data(), packed_triangle_baked_data.size() * sizeof(MeshLightTriangleBakedData));
+        }
+        if (light_cluster_streams_) {
+            Helpers::Upload_Async(queue, light_cluster_streams_->GetRHI(kMeshLightClusterStream_Header), packed_headers.data(), packed_headers.size() * sizeof(MeshLightClusterHeader));
+            Helpers::Upload_Async(queue, light_cluster_streams_->GetRHI(kMeshLightClusterStream_Node), packed_nodes.data(), packed_nodes.size() * sizeof(MeshLightClusterNode));
+        }
+        upload_ok &= UploadPackedVector<MeshLightLevelHeader>(
+            queue, light_level_headers_, alloc->GetMeshLightLevelHeaderUberBuffer(), packed_level_headers, "mesh light level header uber buffer"
+        );
+        upload_ok &= UploadPackedVector<MeshLight>(
+            queue, lights_, alloc->GetMeshLightUberBuffer(), packed_mesh_lights, "mesh light uber buffer"
+        );
     }
 
     if (!upload_ok) {
+        mesh_light_triangles_.clear();
+        mesh_light_triangle_hashes_.clear();
+        mesh_light_triangle_baked_data_.clear();
+        mesh_light_level_headers_.clear();
+        mesh_lights_.clear();
         mesh_light_instance_template_.clear();
+    } else {
+        mesh_light_triangles_ = std::move(packed_triangles);
+        mesh_light_triangle_hashes_ = std::move(packed_triangle_hashes);
+        mesh_light_triangle_baked_data_ = std::move(packed_triangle_baked_data);
+        mesh_light_level_headers_ = std::move(packed_level_headers);
+        mesh_lights_ = std::move(packed_mesh_lights);
+        mesh_light_instance_template_ = std::move(packed_mli_template);
     }
     light_hierarchy_device_dirty_ = !upload_ok;
 }
@@ -498,14 +702,12 @@ void StaticMeshInstance::Update([[maybe_unused]] RendererView *view, [[maybe_unu
 }
 
 void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue) {
-    if (lights_) {
-        Helpers::Clear_Async(queue, lights_->GetRHI());
-        lights_.SafeRelease();
-    }
-    if (mesh_light_instances_) {
-        Helpers::Clear_Async(queue, mesh_light_instances_->GetRHI());
-        mesh_light_instances_.SafeRelease();
-    }
+    // Clear allocated buffers
+    mesh_light_instances_.clear();
+    mli_buffer_.SafeRelease();
+    mli_cluster_buffers_.clear();
+    mli_triangle_buffers_.clear();
+    // If no static mesh or empty static mesh, just return. No need to keep empty buffers for now.
     if (!static_mesh_ || static_mesh_->IsEmpty()) return ;
     if (!static_mesh_->GetDeviceStaticMesh()) {
         MI_WARN("Can not update lights for static mesh instance. static mesh is not updated on device.");
@@ -515,74 +717,58 @@ void StaticMeshInstance::UpdateLights_Async(DeviceBindlessResourceAllocator *all
     // New path: upload mesh-light hierarchy and instance entries.
     static_mesh_->UploadLightClusterHierarchy_Async(alloc, queue);
     auto const & hierarchy_instances_template = static_mesh_->GetMeshLightInstanceTemplate();
-    if (!hierarchy_instances_template.empty()) {
-        auto result = alloc->GetMeshLightInstanceUberBuffer()->AllocateRefCounted(
-            (uint32_t)(hierarchy_instances_template.size() * sizeof(MeshLightInstance))
-        );
-        if (result.second) {
-            mesh_light_instances_ = result.first;
-            auto hierarchy_instances = hierarchy_instances_template;
-            for (auto & inst : hierarchy_instances) {
-                inst.RenderableIndex = GetIndex();
-            }
-            Helpers::Upload_Async(
-                queue,
-                mesh_light_instances_->GetRHI(),
-                hierarchy_instances.data(),
-                hierarchy_instances.size() * sizeof(MeshLightInstance)
-            );
-        } else {
-            MI_WARN("Failed to allocate mesh light instance buffer for static mesh instance {}.", GetIndex());
-        }
+    if (hierarchy_instances_template.empty()) {
+        return;
     }
 
-    auto & geometries = static_mesh_->GetGeometries();
-    auto & materials = static_mesh_->GetMaterials();
-    std::vector<RawLight> lights;
-    auto rng32 = std::mt19937(std::random_device{}());
-    for (int i = 0; i < (int)geometries.size(); i++) {
-        if (materials[i]->IsEmissive()) {
-            // Emissive material found, insert all primitives as lights to the light buffer
-            // TODO Use light cluster hiearchy
-            // TODO classify low level lights and intense lights into different rendering paths
-            auto & geom = geometries[i];
-            auto * emissive_map = materials[i]->GetEmissiveTexture();
-            auto const & vertices = geom->GetVertexBuffer();
-            auto const & indices = geom->GetIndexBufferRef();
-            uint32_t triangle_count = geom->GetIndexCount() / 3;
-            for (uint32_t j = 0; j < triangle_count; j++) {
-                if (emissive_map) {
-                    uint32_t i0 = indices[j * 3 + 0];
-                    uint32_t i1 = indices[j * 3 + 1];
-                    uint32_t i2 = indices[j * 3 + 2];
-                    if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) {
-                        continue;
-                    }
-                    if (!HasAnyEmissiveTexelInTriangle(emissive_map, vertices[i0].UV, vertices[i1].UV, vertices[i2].UV)) {
-                        continue;
-                    }
-                }
-
-                RawLight light {};
-                light.Data0.x = GetIndex();
-                light.Data0.y = i; // Geometry index
-                light.Data0.z = j; // Primitive index
-                // Dirty + random seed for the light, 0 is invalid
-                light.Data0.w = std::max(0x80000000u | (rng32() & 0x7fffffffu), 1u);
-                lights.emplace_back(light);
-            }
-        }
-    }
-    if (lights.empty()) return ;
-    auto result = alloc->GetAreaLightsUberBuffer()->AllocateRefCounted(
-        (uint32_t)(lights.size() * sizeof(RawLight))
+    mesh_light_instances_ = hierarchy_instances_template;
+    auto const & mesh_lights = static_mesh_->GetMeshLights();
+    mi_check(
+        mesh_light_instances_.size() == mesh_lights.size(),
+        "Mesh light instance template count must match static mesh light count."
     );
-    if (result.second) {
-        lights_ = result.first;
-        Helpers::Upload_Async(queue, lights_->GetRHI(), lights.data(), lights.size() * sizeof(RawLight));
-    } else {
-        MI_WARN("Failed to allocate area lights buffer for static mesh instance {}. Maybe too many lights?", GetIndex());
-        lights_ = {};
+    bool upload_ok = true;
+    for (uint32_t local_mesh_light_index = 0; local_mesh_light_index < (uint32_t)mesh_light_instances_.size(); ++local_mesh_light_index) {
+        auto & mli = mesh_light_instances_[local_mesh_light_index];
+        mli.RenderableIndex = GetIndex();
+        auto const & ml = mesh_lights[local_mesh_light_index];
+
+        auto mli_triangles = alloc->GetMeshLightInstanceTriangleUberBuffer()->AllocateRefCounted<MeshLightInstanceTriangle>(ml.NumTriangles);
+        if (!mli_triangles) {
+            MI_WARN("Failed to allocate mesh light instance triangle buffer for static mesh instance {}.", GetIndex());
+            upload_ok = false;
+            break;
+        }
+        mli.MeshLightInstanceTriangleOffset = (uint32_t)(mli_triangles->GetRHI().offset / sizeof(MeshLightInstanceTriangle));
+        mli_triangle_buffers_.emplace_back(mli_triangles);
+
+        if (ml.NumLevels == 0) {
+            mli.MeshLightInstanceClusterOffset = MakeMeshLightInstanceElementOffset(true, mli.MeshLightInstanceTriangleOffset);
+            continue;
+        }
+
+        auto mli_cluster_buffer = alloc->GetMeshLightInstanceClusterUberBufferArray()->AllocateRefCounted(ml.NumClusters);
+        if (!mli_cluster_buffer.first) {
+            MI_WARN("Failed to allocate mesh light instance cluster buffers for static mesh instance {}.", GetIndex());
+            upload_ok = false;
+            break;
+        }
+        uint32_t cluster_offset = mli_cluster_buffer.first->GetElementOffset();
+        mli.MeshLightInstanceClusterOffset = MakeMeshLightInstanceElementOffset(false, cluster_offset);
+        mli_cluster_buffers_.emplace_back(mli_cluster_buffer.first);
+    }
+    if (upload_ok) {
+        mli_buffer_ = alloc->GetMeshLightInstanceUberBuffer()->AllocateRefCounted<MeshLightInstance>(mesh_light_instances_.size());
+        if (mli_buffer_) {
+            Helpers::Upload_Async(queue, mli_buffer_->GetRHI(), mesh_light_instances_.data(), mesh_light_instances_.size() * sizeof(MeshLightInstance));
+        } else upload_ok = false;
+    }
+    if (!upload_ok) {
+        mesh_light_instances_.clear();
+        mli_buffer_.SafeRelease();
+        mli_cluster_buffers_.clear();
+        mli_triangle_buffers_.clear();
+        MI_WARN("Failed to allocate buffers for mesh light instances of static mesh instance {}. Aborting light update.", GetIndex());
     }
 }
 

@@ -55,6 +55,7 @@ protected:
 
 
 class DeviceUberBufferInterface;
+class DeviceUberBufferArrayInterface;
 
 class DeviceUberBufferAllocation : public DelayedDestructionResource {
 public:
@@ -88,6 +89,37 @@ protected:
     DeviceBindlessResourceAllocator * allocator_ {};
 };
 
+struct DeviceUberBufferArrayDesc {
+    RHIBufferUsageFlags usage {};
+    uint32_t element_size {};
+    const char * name {};
+};
+
+class DeviceUberBufferArrayAllocation : public DelayedDestructionResource {
+public:
+    friend class DeviceUberBufferArrayInterface;
+    friend class DeviceBindlessResourceAllocator;
+
+    [[nodiscard]] FORCEINLINE uint32_t GetElementOffset() const {
+        return element_offset_;
+    }
+
+    [[nodiscard]] FORCEINLINE uint32_t GetElementCount() const {
+        return element_count_;
+    }
+
+    [[nodiscard]] RHIBufferSpan GetRHI(uint32_t stream_index) const;
+
+protected:
+    ~DeviceUberBufferArrayAllocation() override;
+    void QueueForDestruction() const override;
+
+    uint32_t element_offset_ {};
+    uint32_t element_count_ {};
+    DeviceUberBufferArrayInterface * uber_buffer_array_ {};
+    DeviceBindlessResourceAllocator * allocator_ {};
+};
+
 
 // A buffer heap assembled with only one buffer. Used for geometry buffers. May trigger expansion
 // when allocating a new buffer segment.
@@ -100,10 +132,15 @@ public:
     // Allocate a buffer segment from the uber buffer.
     // Be aware that the allocation may trigger an expansion of the uber buffer.
     virtual std::pair<size_t, bool> Allocate (uint32_t size, bool allow_expansion = true) = 0;
-    FORCEINLINE std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateRefCounted (uint32_t size, bool allow_expansion = true) {
+    std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateRefCounted (uint32_t size, bool allow_expansion = true) {
         auto result = Allocate(size, allow_expansion);
         if (result.first != SIZE_MAX) return {CreateAllocation(result.first, size), true};
         return {};
+    }
+    template<typename T>
+    TRef<DeviceUberBufferAllocation> AllocateRefCounted(size_t count, bool allow_expansion = true) {
+        auto result = AllocateRefCounted((uint32_t)(sizeof(T) * count), allow_expansion);
+        return result.first;
     }
     virtual void Free (size_t offset, size_t size) = 0;
     FORCEINLINE void Free (DeviceUberBufferAllocation * allocation) {
@@ -135,6 +172,63 @@ protected:
     std::string name_ {};
     RHIBufferUsageFlags usage_;
     uint32_t allocation_alignment {};
+};
+
+class DeviceUberBufferArrayInterface : public NonMovable, public NonCopyable, public RefCounted<> {
+public:
+    friend class DeviceUberBufferArrayAllocation;
+    friend class DeviceBindlessResourceAllocator;
+
+    DeviceUberBufferArrayInterface(
+        std::vector<DeviceUberBufferArrayDesc> descs,
+        uint32_t allocation_alignment_elements,
+        DeviceBindlessResourceAllocator * allocator
+    ): descs_(std::move(descs)), allocation_alignment_elements_(allocation_alignment_elements), allocator_(allocator) {}
+
+    virtual std::pair<uint32_t, bool> Allocate(uint32_t element_count, bool allow_expansion = true) = 0;
+
+    FORCEINLINE std::pair<TRef<DeviceUberBufferArrayAllocation>, bool> AllocateRefCounted(uint32_t element_count, bool allow_expansion = true) {
+        auto result = Allocate(element_count, allow_expansion);
+        if (result.first != UINT32_MAX) return {CreateAllocation(result.first, element_count), true};
+        return {};
+    }
+
+    virtual void Free(uint32_t element_offset, uint32_t element_count) = 0;
+
+    FORCEINLINE void Free(DeviceUberBufferArrayAllocation * allocation) {
+        Free(allocation->GetElementOffset(), allocation->GetElementCount());
+    }
+
+    [[nodiscard]] FORCEINLINE uint32_t GetNumStreams() const {
+        return (uint32_t)descs_.size();
+    }
+
+    [[nodiscard]] FORCEINLINE uint32_t GetElementSize(uint32_t stream_index) const {
+        mi_check(stream_index < descs_.size(), "Stream index out of range.");
+        return descs_[stream_index].element_size;
+    }
+
+    [[nodiscard]] FORCEINLINE uint32_t GetAllocationAlignmentElements() const {
+        return allocation_alignment_elements_;
+    }
+
+    virtual RHIBuffer * GetRHI(uint32_t stream_index) const = 0;
+    virtual uint32_t GetAllocationLimitElementOffset() const = 0;
+
+    virtual void SetName(const std::string & name);
+    FORCEINLINE const std::string & GetName() const {
+        return name_;
+    }
+
+    virtual ~DeviceUberBufferArrayInterface() = default;
+
+protected:
+    TRef<DeviceUberBufferArrayAllocation> CreateAllocation(uint32_t element_offset, uint32_t element_count);
+
+    std::vector<DeviceUberBufferArrayDesc> descs_;
+    uint32_t allocation_alignment_elements_ {1};
+    DeviceBindlessResourceAllocator * allocator_ {};
+    std::string name_ {};
 };
 
 class DeviceBufferHeapBuffer : public NonMovable, public NonCopyable, public RefCounted<> {
@@ -226,9 +320,48 @@ protected:
     SegmentAllocator segments_;
 };
 
+class SimpleDeviceUberBufferArray : public DeviceUberBufferArrayInterface {
+public:
+    SimpleDeviceUberBufferArray(
+        std::vector<DeviceUberBufferArrayDesc> descs,
+        uint32_t allocation_alignment_elements = 1,
+        uint32_t initial_num_elements = 1024,
+        DeviceBindlessResourceAllocator * allocator = nullptr
+    );
+    ~SimpleDeviceUberBufferArray() override;
+
+    std::pair<uint32_t, bool> Allocate(uint32_t element_count, bool allow_expansion = true) override;
+    void Free(uint32_t element_offset, uint32_t element_count) override;
+
+    RHIBuffer * GetRHI(uint32_t stream_index) const override;
+    uint32_t GetAllocationLimitElementOffset() const override;
+    void SetName(const std::string & name) override;
+
+    FORCEINLINE static TRef<SimpleDeviceUberBufferArray> Create(
+        std::vector<DeviceUberBufferArrayDesc> descs,
+        uint32_t allocation_alignment_elements = 1,
+        uint32_t initial_num_elements = 1024,
+        DeviceBindlessResourceAllocator * allocator = nullptr
+    ) {
+        return {new SimpleDeviceUberBufferArray(std::move(descs), allocation_alignment_elements, initial_num_elements, allocator)};
+    }
+
+protected:
+    struct StreamBuffer {
+        DeviceUberBufferArrayDesc desc {};
+        TRef<RHIBuffer> buffer;
+    };
+
+    void ResizeBuffers(uint32_t new_num_elements);
+
+    std::vector<StreamBuffer> buffers_;
+    SegmentAllocator segments_;
+};
+
 // TODO write a better implementation for buffer heaps.
 using DefaultDeviceBufferHeap = SimpleDeviceBufferHeap;
 using DefaultDeviceUberBuffer = SimpleDeviceUberBuffer;
+using DefaultDeviceUberBufferArray = SimpleDeviceUberBufferArray;
 
 
 MI_NAMESPACE_END

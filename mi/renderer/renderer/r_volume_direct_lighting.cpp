@@ -44,12 +44,8 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
-
-    // Light grid
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveLightListCount)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveLightListBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListActiveLightListIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridFlagBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListMeshLightInstanceElementIndexBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListLengthBuffer)
@@ -73,6 +69,13 @@ BEGIN_SHADER_PARAMETERS(VolumePrimitivesDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightTriangleBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
 
@@ -175,7 +178,6 @@ void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGrap
     volprims_params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     volprims_params->PointWrapSampler  = RHI::Get().GetGlobalSamplers().point_wrap;
 
-    volprims_params->LightBuffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
     auto num_screen_pixels = view->film_width_ * view->film_height_;
     auto volume_ray_to_trace_count = builder.CreateBuffer<uint32_t>();
     volume_ray_to_trace_count->SetName("VolumeRayToTraceCount");
@@ -206,6 +208,13 @@ void Renderer::Render_ComputeVolumeDirectLighting(RendererView *view, RenderGrap
     volprims_params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     volprims_params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     volprims_params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+    volprims_params->LCH_MeshLightTriangleBuffer = builder.Import(device_allocator_->GetMeshLightTriangleUberBufferArray()->GetRHI(0));
+    volprims_params->LCH_MeshLightClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightClusterUberBufferArray()->GetRHI(1));
+    volprims_params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
+    volprims_params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
+    volprims_params->LCH_MeshLightInstanceClusterHeaderBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(0));
+    volprims_params->LCH_MeshLightInstanceClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(1));
+    volprims_params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
 
     volprims_params->G_DepthTexture = view->g_buffer_->G_depth_.Raw();
 

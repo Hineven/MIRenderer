@@ -84,19 +84,6 @@ RayToTrace FetchRayToTraceWithScreenOrigin(uint RayIndex, float TMax) {
     return Ray;
 }
 
-[numthreads(THREAD_GROUP_SIZE, 1, 1)]
-void ClearLightGrid (uint DispatchID : SV_DispatchThreadID) {
-    if(DispatchID == 0) {
-        LightGrid_RWListAllocator[0] = 0;
-        LightGrid_RWActiveLightListCount[0] = 0;
-    }
-    uint Index = DispatchID;
-    if (Index >= LightStructure_UB.LightGridNumGrids) {
-        return;
-    }
-     LightGrid_RWGridLightListLengthBuffer[Index] = 0;
-}
-
 [numthreads(1, 1, 1)]
 void DiffuseDirectLightingClearCounters () {
     RWRayToTraceCount[0] = 0;
@@ -186,8 +173,8 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
         RWRayToTraceOriginScreenCoordBuffer[RayIndex] = PackUint2x16(PixelIndex);
         RWRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
         RWShadowRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
-        // Keep sampled light index for visibility update
-        RWShadowRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
+        // Keep sampled light record for visibility update.
+        RWShadowRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightRecord.Packed;
         
         RWDirectLightingRayIndexTexture[PixelIndex] = RayIndex;
     }
@@ -333,14 +320,9 @@ void RenderDiffuseDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
-            uint LightIndex = RWShadowRayToTraceSampledLightIndexBuffer[RayIndex];
-            if (IsInvalid(LightIndex)) {
-                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayToTrace.Direction);
-            } else if (IsDirectionalLightSampleIndex(LightIndex)) {
-                // Directional light does not use LightGrid visibility history/cache.
-            } else {
-                LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
-            }
+            LightSampleSrcLightRecord LightRecord = (LightSampleSrcLightRecord)0;
+            LightRecord.Packed = RWShadowRayToTraceSampledLightIndexBuffer[RayIndex];
+            LightGrid_UpdateVisibilityForLightRecord(WorldPosition, RayToTrace.Direction, LightRecord);
         }
     }
 #ifdef DEBUG_OUTPUT_TRACED_RAY
@@ -473,8 +455,8 @@ void VolumeDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2 Loc
         
         // Specify the pixel index for each transmittance ray
         RWVolumeRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
-        // Keep sampled light index for visibility update
-        RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
+        // Keep sampled light record for visibility update.
+        RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightRecord.Packed;
     }
     else {
         RWVolumeDirectLightingRadianceEstimateTexture[PixelIndex] = 0.f.xxxx;
@@ -524,14 +506,9 @@ void RenderVolumeDirectLighting(uint DispatchThreadID : SV_DispatchThreadID)
             float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, UV, 0).x;
             float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
             float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
-            uint LightIndex = RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex];
-            if (IsInvalid(LightIndex)) {
-                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayToTrace.Direction);
-            } else if (IsDirectionalLightSampleIndex(LightIndex)) {
-                // Directional light does not use LightGrid visibility history/cache.
-            } else {
-                LightGrid_UpdateVisibilityForAreaLight(WorldPosition, LightIndex);
-            }
+            LightSampleSrcLightRecord LightRecord = (LightSampleSrcLightRecord)0;
+            LightRecord.Packed = RWVolumeRayToTraceSampledLightIndexBuffer[RayIndex];
+            LightGrid_UpdateVisibilityForLightRecord(WorldPosition, RayToTrace.Direction, LightRecord);
         }
     }
 }
@@ -700,7 +677,7 @@ void VolumeGridDirectLightingSpawnLightSamples(uint2 GroupID : SV_GroupID, uint2
         RWVolumeGridTransmittanceRayToTraceDirectionBuffer[RayIndex] = TraceDirection;
         RWVolumeGridTransmittanceRayToTraceStateBuffer[RayIndex] = PackRayToTraceState(0.f, false);
         RWVolumeGridTransmittanceRayToTraceTMaxBuffer[RayIndex] = TraceDistance * DirectLighting_UB.ShadowRayLengthMultiplier;
-        RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightIndex;
+        RWVolumeGridTransmittanceRayToTraceSampledLightIndexBuffer[RayIndex] = ReservedSample.LightRecord.Packed;
 
         RWVolumeGridTransmittanceRayToTracePixelIndexBuffer[RayIndex] = PackUint2x16(PixelIndex);
     }

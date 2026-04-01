@@ -57,7 +57,7 @@ struct MeshLightClusterLevel {
 
 struct MeshLightClusterHierarchy {
     float total_intensity {};
-    MeshLightClusterChild root_node {true, UINT32_MAX}; // Root node reference. Can be a leaf triangle if the hierarchy degenerates to a single triangle.
+    MeshLightClusterChild root_node {UINT32_MAX}; // Root node reference. Can be a leaf triangle if the hierarchy degenerates to a single triangle.
 
     //       R <- root node (cluster, indexed within `headers` and `nodes`)
     //      / \
@@ -70,6 +70,8 @@ struct MeshLightClusterHierarchy {
 
     // Leaf triangle light data.
     std::vector<MeshLightTriangle> triangles;
+    std::vector<MeshLightTriangleHash> triangle_hashes;
+    std::vector<MeshLightTriangleBakedData> triangle_baked_data;
     // Headers for clusters (internal tree nodes).
     std::vector<MeshLightClusterHeader> headers;
     // Nodes for clusters (internal tree nodes).

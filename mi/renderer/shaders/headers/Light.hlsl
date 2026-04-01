@@ -28,6 +28,15 @@ uint2 GetExpandedLightHash64(uint LightIndex, uint LightHash32) {
     return uint2(HashLow, HashHigh);
 }
 
+uint2 GetExpandedLightHash64(uint LightHash32) {
+    // A simpler version when the LightIndex is not available & should not be hashed.
+    // This may cause more hash collision, but is good enough for some use cases.
+    uint Shift = (LightHash32 * 8) % 32;
+    uint HashLow = (LightHash32 << Shift);
+    uint HashHigh = (LightHash32 >> (32 - Shift));
+    return uint2(HashLow, HashHigh);
+}
+
 PackedPrecomputedLight PackPrecomputedLight(PrecomputedLight L) {
     PackedPrecomputedLight P = (PackedPrecomputedLight)0;
     if(L.Type == PRECOMPUTED_LIGHT_TYPE_TRIANGLE) {

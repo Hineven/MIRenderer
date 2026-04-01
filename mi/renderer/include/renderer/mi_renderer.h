@@ -104,6 +104,11 @@ protected:
     void Render_PrepareLightStructureHistory (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+    // Build light structure for light sampling
+    void Render_BuildLightStructure (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
     // Update light structure history for temporal reuse, usually at the end of frames
     void Render_UpdateLightStructureHistory (
         RendererView * view, RenderGraphBuilder & builder

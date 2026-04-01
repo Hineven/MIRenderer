@@ -34,7 +34,20 @@ TRef<DeviceUberBufferAllocation> DeviceUberBufferInterface::CreateAllocation(siz
      return TRef<DeviceUberBufferAllocation>(allocation);
 }
 
+TRef<DeviceUberBufferArrayAllocation> DeviceUberBufferArrayInterface::CreateAllocation(uint32_t element_offset, uint32_t element_count) {
+    auto allocation = new DeviceUberBufferArrayAllocation();
+    allocation->element_offset_ = element_offset;
+    allocation->element_count_ = element_count;
+    allocation->uber_buffer_array_ = this;
+    allocation->allocator_ = allocator_;
+    return TRef<DeviceUberBufferArrayAllocation>(allocation);
+}
+
 void DeviceUberBufferInterface::SetName(const std::string &name) {
+    name_ = name;
+}
+
+void DeviceUberBufferArrayInterface::SetName(const std::string &name) {
     name_ = name;
 }
 
@@ -175,6 +188,33 @@ RHIBufferSpan DeviceUberBufferAllocation::GetRHI() const {
     return uber_buffer_ ? uber_buffer_->GetRHI()->GetSpan(offset_, size_) : RHIBufferSpan{};
 }
 
+void DeviceUberBufferArrayAllocation::QueueForDestruction() const {
+    if (allocator_) {
+        allocator_->EnqueueForDelayedDestruction(const_cast<DeviceUberBufferArrayAllocation *>(this));
+    } else {
+        delete this;
+    }
+}
+
+DeviceUberBufferArrayAllocation::~DeviceUberBufferArrayAllocation() {
+    if (uber_buffer_array_) {
+        uber_buffer_array_->Free(element_offset_, element_count_);
+    }
+}
+
+RHIBufferSpan DeviceUberBufferArrayAllocation::GetRHI(uint32_t stream_index) const {
+    if (!uber_buffer_array_) {
+        return {};
+    }
+    auto * buffer = uber_buffer_array_->GetRHI(stream_index);
+    auto element_size = uber_buffer_array_->GetElementSize(stream_index);
+    return RHIBufferSpan{
+        buffer,
+        size_t(element_offset_) * element_size,
+        size_t(element_count_) * element_size
+    };
+}
+
 SimpleDeviceUberBuffer::SimpleDeviceUberBuffer(RHIBufferUsageFlags usage, uint32_t allocation_alignment, size_t initial_size, DeviceBindlessResourceAllocator * allocator):
 DeviceUberBufferInterface(usage, allocation_alignment, allocator), segments_(initial_size, allocation_alignment) {
     uber_buffer_ = RHI::Get().CreateBuffer(initial_size, usage);
@@ -256,6 +296,105 @@ void SimpleDeviceUberBuffer::SetName(const std::string &name) {
     DeviceUberBufferInterface::SetName(name);
     if (uber_buffer_) {
         uber_buffer_->SetName(name);
+    }
+}
+
+SimpleDeviceUberBufferArray::SimpleDeviceUberBufferArray(
+    std::vector<DeviceUberBufferArrayDesc> descs,
+    uint32_t allocation_alignment_elements,
+    uint32_t initial_num_elements,
+    DeviceBindlessResourceAllocator * allocator
+): DeviceUberBufferArrayInterface(std::move(descs), allocation_alignment_elements, allocator),
+   segments_(initial_num_elements, allocation_alignment_elements) {
+    mi_check(!descs_.empty(), "DeviceUberBufferArray must have at least one stream.");
+    buffers_.reserve(descs_.size());
+    for (auto const & desc : descs_) {
+        mi_check(desc.element_size > 0, "DeviceUberBufferArray stream element size must be positive.");
+        StreamBuffer stream {};
+        stream.desc = desc;
+        stream.buffer = RHI::Get().CreateBuffer(size_t(initial_num_elements) * desc.element_size, desc.usage);
+        if (desc.name && desc.name[0] != '\0') {
+            stream.buffer->SetName(desc.name);
+        }
+        buffers_.push_back(std::move(stream));
+    }
+}
+
+SimpleDeviceUberBufferArray::~SimpleDeviceUberBufferArray() {
+    uint32_t capacity = buffers_.empty() ? 0 : (uint32_t)(buffers_[0].buffer->GetBufferSize() / buffers_[0].desc.element_size);
+    if (segments_.GetFreeSegmentCount() != 1 || segments_.GetFreeSegmentSize(0) != capacity) {
+        MI_WARN("SimpleDeviceUberBufferArray: Not all segments were freed. Memory leak may occur.");
+    }
+}
+
+void SimpleDeviceUberBufferArray::ResizeBuffers(uint32_t new_num_elements) {
+    auto & queue = RHI::Get().GetGraphicsCommandQueue();
+    for (auto & stream : buffers_) {
+        size_t old_size = stream.buffer->GetBufferSize();
+        auto new_buffer = RHI::Get().CreateBuffer(size_t(new_num_elements) * stream.desc.element_size, stream.desc.usage);
+        if (!name_.empty()) {
+            std::string stream_name = name_ + " Stream " + std::to_string(&stream - buffers_.data());
+            new_buffer->SetName(stream_name);
+        } else if (stream.desc.name && stream.desc.name[0] != '\0') {
+            new_buffer->SetName(stream.desc.name);
+        }
+        queue.BufferBarrier(
+            stream.buffer->GetSpan(), RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kTransfer,
+            RHIGPUAccessFlagBits::kWrite, RHIGPUAccessFlagBits::kTransferRead
+        );
+        queue.CopyBuffer(
+            RHIBufferSpan{stream.buffer.Raw(), 0, old_size},
+            RHIBufferSpan{new_buffer.Raw(), 0, old_size}
+        );
+        queue.BufferBarrier(
+            new_buffer->GetSpan(), RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAll,
+            RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kAll
+        );
+        stream.buffer = new_buffer;
+    }
+    segments_.ExpandTo(new_num_elements);
+}
+
+std::pair<uint32_t, bool> SimpleDeviceUberBufferArray::Allocate(uint32_t element_count, bool allow_expansion) {
+    size_t offset = segments_.Allocate(element_count);
+    if (offset != SIZE_MAX) {
+        mi_check(offset <= UINT32_MAX, "SimpleDeviceUberBufferArray allocation offset exceeds uint32 range.");
+        return {(uint32_t)offset, true};
+    }
+    if (!allow_expansion) {
+        return {UINT32_MAX, false};
+    }
+
+    uint32_t current_num_elements = buffers_.empty() ? 0 : (uint32_t)(buffers_[0].buffer->GetBufferSize() / buffers_[0].desc.element_size);
+    uint32_t new_num_elements = std::max(
+        uint32_t(std::max<size_t>(size_t(current_num_elements * 3) / 2, size_t(current_num_elements) + element_count)),
+        current_num_elements + element_count
+    );
+    ResizeBuffers(new_num_elements);
+
+    offset = segments_.Allocate(element_count);
+    mi_assert(offset != SIZE_MAX, "SimpleDeviceUberBufferArray: Allocation should succeed after expansion.");
+    mi_check(offset <= UINT32_MAX, "SimpleDeviceUberBufferArray allocation offset exceeds uint32 range after expansion.");
+    return {(uint32_t)offset, true};
+}
+
+void SimpleDeviceUberBufferArray::Free(uint32_t element_offset, uint32_t element_count) {
+    segments_.Free(element_offset, element_count);
+}
+
+RHIBuffer * SimpleDeviceUberBufferArray::GetRHI(uint32_t stream_index) const {
+    mi_check(stream_index < buffers_.size(), "Stream index out of range.");
+    return buffers_[stream_index].buffer.Raw();
+}
+
+uint32_t SimpleDeviceUberBufferArray::GetAllocationLimitElementOffset() const {
+    return (uint32_t)segments_.GetMaxAllocationEndOffset();
+}
+
+void SimpleDeviceUberBufferArray::SetName(const std::string &name) {
+    DeviceUberBufferArrayInterface::SetName(name);
+    for (size_t i = 0; i < buffers_.size(); ++i) {
+        buffers_[i].buffer->SetName(name + " Stream " + std::to_string(i));
     }
 }
 

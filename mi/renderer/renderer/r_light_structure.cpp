@@ -10,15 +10,21 @@
 #include <renderer/mi_scene.h>
 #include <renderer/mi_texture.h>
 #include <renderer/mi_buffer_heap.h>
+#include <renderer/mi_static_mesh.h>
 
 #include "r_persistent.h"
 #include "r_light_structure.h"
 #include "../shaders/shared/SharedLight.hlsl"
+#include "../shaders/shared/SharedLightClusterHierarchy.hlsl"
 MI_NAMESPACE_BEGIN
+namespace {
+constexpr uint32_t kLightPrecomputationLevelsPerDispatch = 3;
+}
+
 CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
     "Maximum number of lights in each grid cell.",
-    48
+    12
 );
 CVar<int> CVar_MaxNumLightGridEntries(
     "r.lightgrid.max_num_entries",
@@ -34,6 +40,12 @@ static CVar<float> CVar_LightInjectionIntensityThreshold(
     "r.lightgrid.light_injection_intensity_threshold",
     "Threshold for light injection intensity. Lights with intensity below this value will not be injected into the grid.",
     0.001f
+);
+
+static CVar<int> CVar_MaxNumActiveLightGrids(
+    "r.lightgrid.max_num_active_grids",
+    "Maximum number of active light grids. Active grids are those that have lights injected and are considered for sampling.",
+    256 * 1024
 );
 
 CVar<int> CVar_NumLightSamplerSamples(
@@ -95,15 +107,27 @@ void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     auto max_num_lights = r.GetDeviceAllocator()->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(RawLight);
     auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
 
+    active_grid_count = builder.CreateBuffer<uint32_t>();
+    active_grid_count->SetName("LightGrid_RWActiveGridAllocator");
+    active_grid_indices_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
+    active_grid_indices_buffer->SetName("LightGrid_RWActiveGridIndicesBuffer");
+    active_grid_flag_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
+    active_grid_flag_buffer->SetName("LightGrid_RWActiveGridFlagBuffer");
+    grid_pressure_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids);
+    grid_pressure_buffer->SetName("LightGrid_RWGridPressureBuffer");
+    active_mesh_light_instance_count = builder.CreateBuffer<uint32_t>();
+    active_mesh_light_instance_count->SetName("LightGrid_RWActiveMeshLightInstanceCount");
     active_light_list_count = builder.CreateBuffer<uint32_t>();
     active_light_list_count->SetName("LightGrid_RWActiveLightListCount");
     active_light_list_buffer = builder.CreateBuffer<uint32_t>(max_num_lights);
     active_light_list_buffer->SetName("LightGrid_RWActiveLightListBuffer");
     auto max_num_light_grid_entries = CVar_MaxNumLightGridEntries.Get();
     list_active_light_list_index_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries);
+    list_mesh_light_instance_element_index_buffer = builder.CreateBuffer<uint32_t>(max_num_light_grid_entries);
     list_allocator = builder.CreateBuffer<uint32_t>();
     list_allocator->SetName("LightGrid_RWListAllocator");
     list_active_light_list_index_buffer->SetName("LightGrid_RWListActiveLightListIndexBuffer");
+    list_mesh_light_instance_element_index_buffer->SetName("LightGrid_RWListMeshLightInstanceElementIndexBuffer");
     grid_light_list_offset_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
     grid_light_list_offset_buffer->SetName("LightGrid_RWGridLightListOffsetBuffer");
     grid_light_list_cdf_buffer = builder.CreateBuffer<float>(num_light_grids);
@@ -160,13 +184,17 @@ void FillUniformBufferForLightStructure(RendererView *view, LightStructureUB *UB
 
     UB->EnvironmentLightMultiplier = glm::max(glm::vec3{0.f}, CVar_EnvironmentLightMultiplier.Get());
     UB->EnvironmentLightEvaluateLOD = CVar_EnvironmentLightEvaluateLOD.Get();
+    UB->NumMLIClusters = view->light_structure_ ? view->light_structure_->num_active_mesh_light_instance_clusters_ : 0;
+    UB->MaxNumActiveLightGrids = CVar_MaxNumActiveLightGrids.Get();
+    UB->padding = 0;
 }
 
 std::vector<std::string> GetLightStructureShaderMacros () {
     return {
         "MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()),
         "NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()),
-        "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories)
+        "LIGHT_GRID_NUM_HISTORY_FRAMES=" + std::to_string(kLightGridNumHistories),
+        "PROCESSING_LEVELS_PER_DISPATCH=" + std::to_string(kLightPrecomputationLevelsPerDispatch)
     };
 }
 
@@ -216,6 +244,167 @@ public:
 
 IMPLEMENT_RDG_COMPUTE_SHADER(UpdateLightStructureHistoryShader, "mi/renderer/shaders/LightStructure.hlsl", "UpdateLightStructureHistory");
 
+struct LightPrecomputationLevelUB {
+    uint32_t LevelIndex;
+    uint32_t padding[3];
+};
+
+BEGIN_SHADER_PARAMETERS(LightStructureParameters)
+    SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
+    SHADER_UNIFORM_BUFFER(LightPrecomputationLevelUB, LightPrecomputation_LevelUB)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridIndicesBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridFlagBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridPressureBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveMeshLightInstanceCount)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightGrid_ActiveMeshLightInstanceIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListAllocator)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListMeshLightInstanceElementIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListCdfBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWEnvironmentVisibilityHistoryBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextEnvironmentVisibilityBuffer)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
+
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightTriangleBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightTriangleHashBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightTriangleBakedDataBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightClusterHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightLevelHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LCH_RWMeshLightInstanceClusterHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LCH_RWMeshLightInstanceClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LCH_RWMeshLightInstanceTriangleBuffer)
+END_SHADER_PARAMETERS()
+IMPLEMENT_SHADER_PARAMETERS(LightStructureParameters)
+
+namespace {
+    class PrecomputeLightStructureShader : public RDGShader {
+    public:
+        using RDGShader::RDGShader;
+        RDG_SHADER_USE_PARAMETERS(LightStructureParameters)
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            return {
+                "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size)
+            };
+        }
+        static std::vector<std::string> GetShaderOptionalMacros() {
+            return GetLightStructureShaderMacros();
+        }
+    };
+
+    class ClearCountersShader : public PrecomputeLightStructureShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(LightStructureParameters)
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+        constexpr static uint32_t kThreadGroupSize = 128;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            auto macros = PrecomputeLightStructureShader::GetShaderDefaultMacros();
+            macros.push_back("THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize));
+            return macros;
+        }
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearCountersShader, "mi/renderer/shaders/LightPrecomputation.hlsl", "LightPrecomputation_ClearCounters");
+
+    class GatherActiveGridsShader : public PrecomputeLightStructureShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(LightStructureParameters)
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GatherActiveGridsShader, "mi/renderer/shaders/LightPrecomputation.hlsl", "LightPrecomputation_GatherActiveGrids");
+
+    class PrecomputeTrianglesShader : public PrecomputeLightStructureShader {
+    public:
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+        static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+            RDGShaderPipelineConfig cfg {};
+            cfg.depth_test_enabled = false;
+            cfg.depth_write_enabled = false;
+            cfg.rasterization_discard = true; // We only need the shader to run for its side effects on buffers, no actual rasterization output.
+            cfg.topology = RHIPrimitiveTopologyType::kPointList;
+            return cfg;
+        }
+    };
+
+    IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(
+        PrecomputeTrianglesShader,
+        "mi/renderer/shaders/LightPrecomputation.hlsl",
+        "LightPrecomputation_Triangle",
+        ""
+    );
+
+    class PrecomputeLevelShader : public PrecomputeLightStructureShader {
+    public:
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+        static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+            RDGShaderPipelineConfig cfg {};
+            cfg.depth_test_enabled = false;
+            cfg.depth_write_enabled = false;
+            cfg.rasterization_discard = true; // We only need the shader to run for its side effects on buffers, no actual rasterization output.
+            cfg.topology = RHIPrimitiveTopologyType::kPointList;
+            return cfg;
+        }
+    };
+
+    IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(
+        PrecomputeLevelShader,
+        "mi/renderer/shaders/LightPrecomputation.hlsl",
+        "LightPrecomputation_Level",
+        ""
+    );
+
+    class FinalizeMLIClustersShader : public PrecomputeLightStructureShader {
+    public:
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+        static RDGShaderPipelineConfig GetShaderPipelineConfig() {
+            RDGShaderPipelineConfig cfg {};
+            cfg.depth_test_enabled = false;
+            cfg.depth_write_enabled = false;
+            cfg.rasterization_discard = true;
+            cfg.topology = RHIPrimitiveTopologyType::kPointList;
+            return cfg;
+        }
+    };
+
+    IMPLEMENT_RDG_GRAPHICS_SHADER_SHADER_SHARED_PARAMETER(
+        FinalizeMLIClustersShader,
+        "mi/renderer/shaders/LightPrecomputation.hlsl",
+        "LightPrecomputation_FinalizeMLIClusters",
+        ""
+    );
+
+    class InjectLightsShader : public PrecomputeLightStructureShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(LightStructureParameters)
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        InjectLightsShader,
+        "mi/renderer/shaders/LightPrecomputation.hlsl",
+        "LightPrecomputation_InjectLights"
+    );
+}
+
 void Renderer::Render_PrepareLightStructureHistory(RendererView *view, RenderGraphBuilder &builder) {
     RDGSectionGuard section(builder, "Render_PrepareLightStructureHistory");
     // Clear light structure history if needed
@@ -241,6 +430,276 @@ void Renderer::Render_PrepareLightStructureHistory(RendererView *view, RenderGra
     {
         Helpers::Clear(builder, view->light_structure_->next_bloom_filter_buffer.Raw());
         Helpers::Clear(builder, view->light_structure_->next_environment_visibility_buffer.Raw());
+    }
+}
+
+void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuilder & builder) {
+    RDGSectionGuard section(builder, "Render_BuildLightStructure");
+    auto & lib = RDGShaderLibrary::Get();
+    auto * ls = view->light_structure_.Raw();
+    mi_check(ls, "Light structure data must exist before building the light structure.");
+
+    auto & queue = RHI::Get().GetGraphicsCommandQueue();
+
+    std::vector<uint32_t> active_mesh_light_instance_indices;
+    std::vector<RHIDrawIndirectCommand> triangle_draw_commands;
+    std::vector<RHIDrawIndirectCommand> finalize_cluster_draw_commands;
+    std::vector<std::vector<RHIDrawIndirectCommand>> level_draw_commands;
+    uint32_t num_active_mli_clusters = 0;
+    uint32_t max_active_mli_levels = 0;
+
+    for (auto renderable : ctx.visible_renderables) {
+        auto * mesh_instance = renderable ? renderable->As<StaticMeshInstance>() : nullptr;
+        if (!mesh_instance || mesh_instance->IsEmpty()) {
+            continue;
+        }
+
+        mesh_instance->UpdateLights_Async(device_allocator_.Raw(), queue);
+
+        auto * mli_alloc = mesh_instance->GetMeshLightInstanceBufferAllocation();
+        if (!mli_alloc) {
+            continue;
+        }
+
+        auto const & mesh_light_instances = mesh_instance->GetMeshLightInstances();
+        auto * static_mesh = mesh_instance->GetStaticMesh();
+        mi_check(static_mesh, "Visible static mesh instance must reference a static mesh.");
+        auto const & hierarchy_records = static_mesh->GetLightHierarchyRecords();
+        mi_check(
+            mesh_light_instances.size() == hierarchy_records.size(),
+            "Mesh light instance count must match light hierarchy record count while building light structure."
+        );
+
+        uint32_t mli_base_index = (uint32_t)(mli_alloc->GetRHI().offset / sizeof(MeshLightInstance));
+
+        for (uint32_t local_mli_index = 0; local_mli_index < (uint32_t)mesh_light_instances.size(); ++local_mli_index) {
+            auto const & hierarchy = hierarchy_records[local_mli_index].hierarchy;
+            auto const & mli = mesh_light_instances[local_mli_index];
+            uint32_t active_list_index = (uint32_t)active_mesh_light_instance_indices.size();
+            active_mesh_light_instance_indices.push_back(mli_base_index + local_mli_index);
+
+            num_active_mli_clusters += (uint32_t)hierarchy.nodes.size();
+            max_active_mli_levels = std::max(max_active_mli_levels, (uint32_t)hierarchy.levels.size());
+
+            if (!mli.MeshLightInstanceClusterOffset.bIsTriangle()) {
+                finalize_cluster_draw_commands.push_back(RHIDrawIndirectCommand {
+                    (uint32_t)hierarchy.nodes.size(),
+                    1,
+                    0,
+                    active_list_index
+                });
+            }
+
+            if (!hierarchy.triangles.empty()) {
+                triangle_draw_commands.push_back(RHIDrawIndirectCommand {
+                    (uint32_t)hierarchy.triangles.size(),
+                    1,
+                    0,
+                    active_list_index
+                });
+            }
+
+            uint32_t num_level_dispatches = DivideAndRoundUp((uint32_t)hierarchy.levels.size(), kLightPrecomputationLevelsPerDispatch);
+            if (level_draw_commands.size() < num_level_dispatches) {
+                level_draw_commands.resize(num_level_dispatches);
+            }
+            for (uint32_t level_dispatch_index = 0; level_dispatch_index < num_level_dispatches; ++level_dispatch_index) {
+                uint32_t level_index = level_dispatch_index * kLightPrecomputationLevelsPerDispatch;
+                auto const & level = hierarchy.levels[level_index];
+                if (level.level_node_indices.empty()) {
+                    continue;
+                }
+                level_draw_commands[level_dispatch_index].push_back(RHIDrawIndirectCommand {
+                    (uint32_t)level.level_node_indices.size(),
+                    1,
+                    0,
+                    active_list_index
+                });
+            }
+        }
+    }
+
+    ls->num_active_mesh_light_instances_ = (uint32_t)active_mesh_light_instance_indices.size();
+    ls->num_active_mesh_light_instance_clusters_ = num_active_mli_clusters;
+    ls->max_active_mesh_light_instance_levels_ = max_active_mli_levels;
+
+    ls->active_mesh_light_instance_index_buffer = builder.CreateBuffer<uint32_t>(std::max<size_t>(active_mesh_light_instance_indices.size(), 1));
+    ls->active_mesh_light_instance_index_buffer->SetName("LightGrid_ActiveMeshLightInstanceIndexBuffer");
+    if (!active_mesh_light_instance_indices.empty()) {
+        Helpers::UploadWithRDG(
+            builder,
+            ls->active_mesh_light_instance_index_buffer.Raw(),
+            active_mesh_light_instance_indices.data(),
+            active_mesh_light_instance_indices.size() * sizeof(uint32_t)
+        );
+    } else {
+        Helpers::Clear(builder, ls->active_mesh_light_instance_index_buffer.Raw());
+    }
+
+    uint32_t active_mli_count = ls->num_active_mesh_light_instances_;
+    Helpers::UploadWithRDG(builder, ls->active_mesh_light_instance_count.Raw(), &active_mli_count, sizeof(uint32_t));
+
+    ls->precompute_triangle_draw_command_buffer = builder.CreateBuffer<RHIDrawIndirectCommand>(std::max<size_t>(triangle_draw_commands.size(), 1), RHIBufferUsageFlagBits::kIndirect);
+    ls->precompute_triangle_draw_command_buffer->SetName("LightPrecomputationTriangleDrawCommandBuffer");
+    if (!triangle_draw_commands.empty()) {
+        Helpers::UploadWithRDG(
+            builder,
+            ls->precompute_triangle_draw_command_buffer.Raw(),
+            triangle_draw_commands.data(),
+            triangle_draw_commands.size() * sizeof(RHIDrawIndirectCommand)
+        );
+    } else {
+        Helpers::Clear(builder, ls->precompute_triangle_draw_command_buffer.Raw());
+    }
+
+    ls->precompute_finalize_cluster_draw_command_buffer = builder.CreateBuffer<RHIDrawIndirectCommand>(std::max<size_t>(finalize_cluster_draw_commands.size(), 1), RHIBufferUsageFlagBits::kIndirect);
+    ls->precompute_finalize_cluster_draw_command_buffer->SetName("LightPrecomputationFinalizeClusterDrawCommandBuffer");
+    if (!finalize_cluster_draw_commands.empty()) {
+        Helpers::UploadWithRDG(
+            builder,
+            ls->precompute_finalize_cluster_draw_command_buffer.Raw(),
+            finalize_cluster_draw_commands.data(),
+            finalize_cluster_draw_commands.size() * sizeof(RHIDrawIndirectCommand)
+        );
+    } else {
+        Helpers::Clear(builder, ls->precompute_finalize_cluster_draw_command_buffer.Raw());
+    }
+
+    ls->precompute_level_draw_command_buffers.clear();
+    ls->precompute_level_draw_command_buffers.reserve(level_draw_commands.size());
+    for (uint32_t level_index = 0; level_index < (uint32_t)level_draw_commands.size(); ++level_index) {
+        auto & commands = level_draw_commands[level_index];
+        auto cmd_buffer = builder.CreateBuffer<RHIDrawIndirectCommand>(std::max<size_t>(commands.size(), 1), RHIBufferUsageFlagBits::kIndirect);
+        cmd_buffer->SetName("LightPrecomputationLevelDrawCommandBuffer");
+        if (!commands.empty()) {
+            Helpers::UploadWithRDG(
+                builder,
+                cmd_buffer.Raw(),
+                commands.data(),
+                commands.size() * sizeof(RHIDrawIndirectCommand)
+            );
+        } else {
+            Helpers::Clear(builder, cmd_buffer.Raw());
+        }
+        ls->precompute_level_draw_command_buffers.push_back(std::move(cmd_buffer));
+    }
+
+    auto fill_common_params = [&](LightStructureParameters * params, uint32_t level_index) {
+        FillParametersForLightStructure(view, params);
+        auto * UB = builder.Allocate<LightStructureUB>();
+        FillUniformBufferForLightStructure(view, UB);
+        params->LightStructure_UB = UB;
+        auto * level_ub = builder.Allocate<LightPrecomputationLevelUB>();
+        level_ub->LevelIndex = level_index;
+        level_ub->padding[0] = level_ub->padding[1] = level_ub->padding[2] = 0;
+        params->LightPrecomputation_LevelUB = level_ub;
+
+        params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+        params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+        params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->GetStaticMeshHeaderBuffer());
+        params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
+        params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
+        params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
+        params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+        params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
+
+        params->LCH_MeshLightTriangleBuffer = builder.Import(device_allocator_->GetMeshLightTriangleUberBufferArray()->GetRHI(0));
+        params->LCH_MeshLightTriangleHashBuffer = builder.Import(device_allocator_->GetMeshLightTriangleUberBufferArray()->GetRHI(1));
+        params->LCH_MeshLightTriangleBakedDataBuffer = builder.Import(device_allocator_->GetMeshLightTriangleUberBufferArray()->GetRHI(2));
+        params->LCH_MeshLightClusterHeaderBuffer = builder.Import(device_allocator_->GetMeshLightClusterUberBufferArray()->GetRHI(0));
+        params->LCH_MeshLightClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightClusterUberBufferArray()->GetRHI(1));
+        params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
+        params->LCH_MeshLightLevelHeaderBuffer = builder.Import(device_allocator_->GetMeshLightLevelHeaderUberBuffer()->GetRHI());
+        params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
+        params->LCH_MeshLightInstanceClusterHeaderBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(0));
+        params->LCH_RWMeshLightInstanceClusterHeaderBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(0));
+        params->LCH_MeshLightInstanceClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(1));
+        params->LCH_RWMeshLightInstanceClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(1));
+        params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
+        params->LCH_RWMeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
+    };
+
+    auto ini_macros = GetLightStructureShaderMacros();
+    RDGShaderInitializationInfo ini;
+    ini.optional_macros = ini_macros;
+
+    auto * common_params = builder.Allocate<LightStructureParameters>();
+    fill_common_params(common_params, 0);
+
+    {
+        auto shader = lib.GetShader<ClearCountersShader>(ini);
+        auto num_groups = DivideAndRoundUp(kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize, ClearCountersShader::kThreadGroupSize);
+        Helpers::AddComputePass(builder, shader, common_params, num_groups);
+    }
+
+    if (ls->num_active_mesh_light_instances_ == 0) {
+        return;
+    }
+
+    {
+        auto shader = lib.GetShader<PrecomputeTrianglesShader>(ini);
+        builder.AddPass<PrecomputeTrianglesShader>({}, shader, common_params,
+            [shader, params = common_params, cmd = ls->precompute_triangle_draw_command_buffer.Raw(), draw_count = (uint32_t)triangle_draw_commands.size()]
+            (RDGPass * pass, RHICommandQueueGraphics & queue_inner) {
+                if (draw_count == 0) {
+                    return;
+                }
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<PrecomputeTrianglesShader>(queue_inner, pass, shader, params, false)) {
+                    queue_inner.BeginRendering();
+                    queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
+                    queue_inner.EndRendering();
+                }
+            }
+        )->AddBufferH(ls->precompute_triangle_draw_command_buffer.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
+
+    for (uint32_t level_dispatch_index = 0; level_dispatch_index < (uint32_t)ls->precompute_level_draw_command_buffers.size(); ++level_dispatch_index) {
+        auto const draw_count = (uint32_t)level_draw_commands[level_dispatch_index].size();
+        auto * params = builder.Allocate<LightStructureParameters>();
+        fill_common_params(params, level_dispatch_index * kLightPrecomputationLevelsPerDispatch);
+        auto shader = lib.GetShader<PrecomputeLevelShader>(ini);
+        builder.AddPass<PrecomputeLevelShader>({}, shader, params,
+            [shader, params, cmd = ls->precompute_level_draw_command_buffers[level_dispatch_index].Raw(), draw_count]
+            (RDGPass * pass, RHICommandQueueGraphics & queue_inner) {
+                if (draw_count == 0) {
+                    return;
+                }
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<PrecomputeLevelShader>(queue_inner, pass, shader, params, false)) {
+                    queue_inner.BeginRendering();
+                    queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
+                    queue_inner.EndRendering();
+                }
+            }
+        )->AddBufferH(ls->precompute_level_draw_command_buffers[level_dispatch_index].Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
+
+    {
+        auto shader = lib.GetShader<FinalizeMLIClustersShader>(ini);
+        builder.AddPass<FinalizeMLIClustersShader>({}, shader, common_params,
+            [shader, params = common_params, cmd = ls->precompute_finalize_cluster_draw_command_buffer.Raw(), draw_count = (uint32_t)finalize_cluster_draw_commands.size()]
+            (RDGPass * pass, RHICommandQueueGraphics & queue_inner) {
+                if (draw_count == 0) {
+                    return;
+                }
+                if (auto ctx = RDGCommandHelper::BindGraphicsShader<FinalizeMLIClustersShader>(queue_inner, pass, shader, params, false)) {
+                    queue_inner.BeginRendering();
+                    queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
+                    queue_inner.EndRendering();
+                }
+            }
+        )->AddBufferH(ls->precompute_finalize_cluster_draw_command_buffer.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
+    }
+
+    {
+        auto shader = lib.GetShader<GatherActiveGridsShader>(ini);
+        auto num_groups = DivideAndRoundUp(kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize, RHI::Get().GetDeviceProperties().wave_size * 8u);
+        Helpers::AddComputePass(builder, shader, common_params, num_groups);
+    }
+
+    {
+        auto shader = lib.GetShader<InjectLightsShader>(ini);
+        auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, ls->active_grid_count.Raw(), RHI::Get().GetDeviceProperties().wave_size);
+        Helpers::AddComputeIndirectPass(builder, shader, common_params, cmd.Raw());
     }
 }
 

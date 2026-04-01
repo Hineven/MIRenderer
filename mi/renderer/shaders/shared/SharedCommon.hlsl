@@ -50,6 +50,10 @@
 
     // Mark that this is a shader
     #define MI_SHADER
+
+
+    // Compiles to nothing
+    #define FORCEINLINE
 #endif
 
 #ifdef __cplusplus

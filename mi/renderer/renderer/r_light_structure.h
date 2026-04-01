@@ -48,7 +48,9 @@ struct LightStructureUB {
     glm::vec3   EnvironmentLightMultiplier;
 
     float EnvironmentLightEvaluateLOD;
-    uint32_t padding[3];
+    uint32_t NumMLIClusters;
+    uint32_t MaxNumActiveLightGrids;
+    uint32_t padding;
 };
 
 struct LightStructurePersistentData : RefCounted<> {
@@ -70,11 +72,24 @@ struct LightStructurePersistentData : RefCounted<> {
 };
 
 struct LightStructureData : RefCounted<> {
+    TRef<RDGBuffer> active_grid_count;
+    TRef<RDGBuffer> active_grid_indices_buffer;
+    TRef<RDGBuffer> active_grid_flag_buffer;
+    TRef<RDGBuffer> grid_pressure_buffer;
+    TRef<RDGBuffer> active_mesh_light_instance_count;
+    TRef<RDGBuffer> active_mesh_light_instance_index_buffer;
+    TRef<RDGBuffer> precompute_triangle_draw_command_buffer;
+    TRef<RDGBuffer> precompute_finalize_cluster_draw_command_buffer;
+    std::vector<TRef<RDGBuffer>> precompute_level_draw_command_buffers;
+    uint32_t num_active_mesh_light_instances_ {};
+    uint32_t num_active_mesh_light_instance_clusters_ {};
+    uint32_t max_active_mesh_light_instance_levels_ {};
     TRef<RDGBuffer> active_light_list_count;
     TRef<RDGBuffer> active_light_list_buffer;
     // List of light indices for each grid
     TRef<RDGBuffer> list_allocator;
     TRef<RDGBuffer> list_active_light_list_index_buffer; // stores a index to active light list
+    TRef<RDGBuffer> list_mesh_light_instance_element_index_buffer;
     TRef<RDGBuffer> grid_light_list_offset_buffer;
     TRef<RDGBuffer> grid_light_list_cdf_buffer;
     TRef<RDGBuffer> grid_light_list_length_buffer;
@@ -91,6 +106,24 @@ template<typename T>
 void FillParametersForLightStructure (RendererView * view, T * params) {
     auto ls = view->light_structure_;
 
+    if constexpr(requires{params->LightGrid_RWActiveGridAllocator;}) {
+        params->LightGrid_RWActiveGridAllocator = ls->active_grid_count.Raw();
+    }
+    if constexpr(requires{params->LightGrid_RWActiveGridIndicesBuffer;}) {
+        params->LightGrid_RWActiveGridIndicesBuffer = ls->active_grid_indices_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_RWActiveGridFlagBuffer;}) {
+        params->LightGrid_RWActiveGridFlagBuffer = ls->active_grid_flag_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_RWGridPressureBuffer;}) {
+        params->LightGrid_RWGridPressureBuffer = ls->grid_pressure_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_RWActiveMeshLightInstanceCount;}) {
+        params->LightGrid_RWActiveMeshLightInstanceCount = ls->active_mesh_light_instance_count.Raw();
+    }
+    if constexpr(requires{params->LightGrid_ActiveMeshLightInstanceIndexBuffer;}) {
+        params->LightGrid_ActiveMeshLightInstanceIndexBuffer = ls->active_mesh_light_instance_index_buffer.Raw();
+    }
     if constexpr(requires{params->LightGrid_RWActiveLightListCount;}) {
         params->LightGrid_RWActiveLightListCount = ls->active_light_list_count.Raw();
     }
@@ -102,6 +135,9 @@ void FillParametersForLightStructure (RendererView * view, T * params) {
     }
     if constexpr(requires{params->LightGrid_RWListActiveLightListIndexBuffer;}) {
         params->LightGrid_RWListActiveLightListIndexBuffer = ls->list_active_light_list_index_buffer.Raw();
+    }
+    if constexpr(requires{params->LightGrid_RWListMeshLightInstanceElementIndexBuffer;}) {
+        params->LightGrid_RWListMeshLightInstanceElementIndexBuffer = ls->list_mesh_light_instance_element_index_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_RWGridLightListOffsetBuffer;}) {
         params->LightGrid_RWGridLightListOffsetBuffer = ls->grid_light_list_offset_buffer.Raw();

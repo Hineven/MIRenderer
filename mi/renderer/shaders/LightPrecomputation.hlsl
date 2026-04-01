@@ -5,10 +5,19 @@
 #include "resources/LightClusterHierarchyResources.hlsl"
 #include "resources/LightGridSampling.hlsl"
 
-[numthreads(1, 1, 1)]
-void LightPrecomputation_ClearCounters () {
-    LightGrid_RWActiveGridCount[0] = 0;
+
+#ifndef THREAD_GROUP_SIZE
+#define THREAD_GROUP_SIZE 128
+#endif
+[numthreads(THREAD_GROUP_SIZE, 1, 1)]
+void LightPrecomputation_ClearCounters (uint DispatchID : SV_DispatchThreadID) {
+    LightGrid_RWActiveGridAllocator[0] = 0;
     LightGrid_RWListAllocator[0]   = 0;
+    uint Index = DispatchID;
+    if (Index >= LightStructure_UB.LightGridNumGrids) {
+        return;
+    }
+    LightGrid_RWGridLightListLengthBuffer[Index] = 0;
 }
 
 // Gather all active light grids for light injection
@@ -43,7 +52,7 @@ void LightPrecomputation_GatherActiveGrids(uint GroupID : SV_GroupID, uint Local
     uint GlobalOffset = 0;
     if(bIsLastLane) {
         uint TotalActiveGrids = TotalPrefixSumInclusive;
-        InterlockedAdd(LightGrid_RWActiveGridCount[0], TotalActiveGrids, GlobalOffset);
+        InterlockedAdd(LightGrid_RWActiveGridAllocator[0], TotalActiveGrids, GlobalOffset);
     }
     GlobalOffset = WaveReadLaneAt(GlobalOffset, WAVE_SIZE - 1);
     for(int i = 0; i < REPEAT_COUNT; i++) {
@@ -60,7 +69,7 @@ void LightPrecomputation_GatherActiveGrids(uint GroupID : SV_GroupID, uint Local
 // Precompute each instanced triangle in MLIs
 void LightPrecomputation_Triangle (uint VertexID : SV_VertexID, uint InstanceID : SV_InstanceID) {
     uint MeshLightLocalTriangleIndex = VertexID;
-    uint MeshLightInstanceIndex = InstanceID;
+    uint MeshLightInstanceIndex = LightGrid_ActiveMeshLightInstanceIndexBuffer[InstanceID];
     
     MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
     MeshLight ML = LCH_MeshLightBuffer[MLI.MeshLightIndex];
@@ -99,7 +108,9 @@ void LightPrecomputation_Triangle (uint VertexID : SV_VertexID, uint InstanceID 
 }
 
 // Each thread process 4 - 2 - 1 (PROCESSING_LEVELS_PER_DISPATCH) nodes in the hierarchy. The total number of dispatches is ceil(MaxDepth / PROCESSING_LEVELS_PER_DISPATCH).
+#ifndef PROCESSING_LEVELS_PER_DISPATCH
 #define PROCESSING_LEVELS_PER_DISPATCH 3
+#endif
 
 struct LightPrecomputationLevelUB {
     uint LevelIndex;
@@ -186,7 +197,7 @@ void AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External (
 // from bottom to the top. Duplicating them from ML cluster nodes to MLI cluster nodes with identical hierarchy and
 // recomputed headers based on different renderable transforms.
 void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : SV_InstanceID) {
-    uint MeshLightInstanceIndex = InstanceID;
+    uint MeshLightInstanceIndex = LightGrid_ActiveMeshLightInstanceIndexBuffer[InstanceID];
     uint MLLevelLocalRootClusterIndex = VertexID;
     MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
     MeshLight ML = LCH_MeshLightBuffer[MLI.MeshLightIndex];
@@ -214,8 +225,8 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
     MLLocalClusterNodeIndexBuffer[0] = MakeMeshLightClusterChild(false, MLLocalRootClusterIndex);
     // Fill local subtree ML cluster node indices (load N+1 levels).
     for(int CurrentSubtreeLevel = 0; CurrentSubtreeLevel < PROCESSING_LEVELS_PER_DISPATCH; CurrentSubtreeLevel++) {
-        int CurrentSubtreeLevelStart = (1 << CurrentSubtreeLevel) - 1;
-        int CurrentSubtreeLevelCount = 1 << CurrentSubtreeLevel;
+        int CurrentSubtreeLevelStart = (1u << CurrentSubtreeLevel) - 1;
+        int CurrentSubtreeLevelCount = 1u << CurrentSubtreeLevel;
         for(int i = 0; i < CurrentSubtreeLevelCount; i++) {
             int TreeIndex = CurrentSubtreeLevelStart + i;
             MeshLightClusterChild MLLocalClusterIndex = MLLocalClusterNodeIndexBuffer[TreeIndex];
@@ -234,8 +245,8 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
     MeshLightInstanceClusterHeader LocalMLIClusterHeaderBuffer[(1 << (PROCESSING_LEVELS_PER_DISPATCH-1))];
     // Bottom-top precomputation
     for(int CurrentSubtreeLevel = PROCESSING_LEVELS_PER_DISPATCH - 1; CurrentSubtreeLevel >= 0; CurrentSubtreeLevel--) {
-        int CurrentSubtreeLevelStart = (1 << CurrentSubtreeLevel) - 1;
-        int CurrentSubtreeLevelCount = 1 << CurrentSubtreeLevel;
+        int CurrentSubtreeLevelStart = (1u << CurrentSubtreeLevel) - 1;
+        int CurrentSubtreeLevelCount = 1u << CurrentSubtreeLevel;
 
         int CurrentTreeLevel = LightPrecomputation_LevelUB.LevelIndex + CurrentSubtreeLevel;
 
@@ -319,7 +330,7 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
 
                 // Build sampling probabilities
                 MeshLightInstanceClusterNode MLINode = (MeshLightInstanceClusterNode)0;
-                float eps = min(0.01 * (L_Weight + R_Weight), 1e-7f);
+                float eps = max(0.01 * (L_Weight + R_Weight), 1e-7f);
                 MLINode.L_Probability = (L_Weight + eps) / (L_Weight + R_Weight + 2 * eps);
                 LCH_RWMeshLightInstanceClusterNodeBuffer[MLIClusterIndex] = MLINode;
             }
@@ -327,13 +338,15 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
     }
 }
 
-[numthreads(THREAD_GROUP_SIZE, 1, 1)]
-void LightPrecomputation_FinalizeMLIClusters (uint DispatchID : SV_DispatchThreadID) {
-    if(DispatchID >= LightStructure_UB.NumMLIClusters) return;
+void LightPrecomputation_FinalizeMLIClusters (uint VertexID : SV_VertexID, uint InstanceID : SV_InstanceID) {
+    uint MeshLightInstanceIndex = LightGrid_ActiveMeshLightInstanceIndexBuffer[InstanceID];
+    MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
+    if(MLI.MeshLightInstanceClusterOffset.bIsTriangle()) return;
+    uint MeshLightInstanceClusterIndex = MLI.MeshLightInstanceClusterOffset.Offset() + VertexID;
     // Simply finalize the WeightedNormalVariance by performing sqrt(WeightedNormalVariance - WeightedNormal^2). This is based on the fact that we stored WeightedNormal^2 in the variance field before finalization.
-    MeshLightInstanceClusterHeader MLIClusterHeader = LCH_RWMeshLightInstanceClusterHeaderBuffer[DispatchID];
+    MeshLightInstanceClusterHeader MLIClusterHeader = LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex];
     float3 WeightedNormal = UnpackNormal(MLIClusterHeader.WeightedNormal) * MLIClusterHeader.TotalIntensity;
-    LCH_RWMeshLightInstanceClusterHeaderBuffer[DispatchID].WeightedNormalVariance 
+    LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex].WeightedNormalVariance 
         = sqrt(max(MLIClusterHeader.WeightedNormalVariance - dot(WeightedNormal, WeightedNormal), 0));
 }
 
@@ -354,7 +367,6 @@ struct SubdividedLightsForGrid {
 // drop some of the subtree. This can lead to better results than the current approach which 
 // performs subdivision first and then random dropping.
 SubdividedLightsForGrid SubdivideMLIForGridAndUpdateGridPressure (MeshLight ML, MeshLightInstance MLI, inout LightGridPressureContext PressureContext) {
-    uint SubdivisionLevel = 0;
     SubdividedLightsForGrid Subdivided = (SubdividedLightsForGrid)0;
     Subdivided.MLILocalElements[0] = MakeMeshLightInstanceElementOffset(
         MLI.MeshLightInstanceClusterOffset.bIsTriangle(),
@@ -394,7 +406,7 @@ SubdividedLightsForGrid SubdivideMLIForGridAndUpdateGridPressure (MeshLight ML, 
             PressureContext.CurrentNumLights ++;
             if(Subdivided.NumElements >= MAX_NUM_SUBDIVIDED_LIGHTS_PER_MLI) {
                 // Reached the maximum number of nodes we can process for this grid, stop subdivision
-                return SubdivisionLevel;
+                return Subdivided;
             }
         }
         if(!bSubdivided) {
@@ -402,7 +414,7 @@ SubdividedLightsForGrid SubdivideMLIForGridAndUpdateGridPressure (MeshLight ML, 
             break;
         }
     }
-    return SubdivisionLevel;
+    return Subdivided;
 }
 
 groupshared uint SharedListElementsRequired, SharedListOffsetBase;
@@ -437,10 +449,13 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     uint2 GridPressure = LightGrid_RWGridPressureBuffer[GridIndex1];
     LightGridPressureContext PressureContext = LightGridPressureContext_Init(GridPressure);
     SubdividedLightsForGrid Subdivided;
+    uint NumValidMLILights = 0;
     // TODO better injection strategy (subdivide first, then inject?)
-    for (uint MeshLightInstanceIndex = 0; MeshLightInstanceIndex < NumActiveLights; MeshLightInstanceIndex++) {
+    for (uint ActiveMeshLightInstanceIndex = 0; ActiveMeshLightInstanceIndex < NumActiveLights; ActiveMeshLightInstanceIndex++) {
+        uint MeshLightInstanceIndex = LightGrid_ActiveMeshLightInstanceIndexBuffer[ActiveMeshLightInstanceIndex];
         MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
         if(!IsValid(MLI.MeshLightInstanceClusterOffset)) continue ;
+        NumValidMLILights ++;
         MeshLight ML = LCH_MeshLightBuffer[MLI.MeshLightIndex];
         // For each MeshLightInstance, pick a good subdivision level based on its intensity and the density of lights (history).
         SubdividedLightsForGrid Subdivided = SubdivideMLIForGridAndUpdateGridPressure(ML, MLI, PressureContext);
@@ -502,7 +517,7 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     // Update light grid pressure info
     {
         // The number of subdivided lights equals to the number of injected lights. Almost no any subdivision is performed.
-        bool bNoSubdivision = PressureContext.CurrentNumLights == NumGridSubdividedActiveLights;
+        bool bNoSubdivision = NumValidMLILights == NumGridSubdividedActiveLights;
         bool bCanFurtherSubdivide = PressureContext.bCanFurtherSubdivide;
         if(!bNoSubdivision && NumGridSubdividedActiveLights >= MAX_NUM_GRID_LIGHTS) {
             // Increase the threshold for next time to reduce the subdivision and injection for this grid in the next frame,

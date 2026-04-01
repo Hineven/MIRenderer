@@ -46,10 +46,8 @@ BEGIN_SHADER_PARAMETERS(VolumeGridDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
 
     // Light grid
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveLightListCount)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveLightListBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListActiveLightListIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridFlagBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListMeshLightInstanceElementIndexBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListOffsetBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListCdfBuffer)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListLengthBuffer)
@@ -67,6 +65,13 @@ BEGIN_SHADER_PARAMETERS(VolumeGridDirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightTriangleBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
 
     // G_Buffer
@@ -101,7 +106,7 @@ namespace VolumeGridDirectLightingShaders {
         static std::vector<std::string> GetShaderDefaultMacros() {
             return {
                 "WAVE_SIZE=" + std::to_string(RHI::Get().GetDeviceProperties().wave_size),
-                "THREAD_GROUP_SIZE" + std::to_string(kThreadGroupSize)
+                "THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize)
             };
         }
         static std::vector<std::string> GetShaderOptionalMacros() {
@@ -177,7 +182,6 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     volume_grid_params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     volume_grid_params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
 
-    volume_grid_params->LightBuffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
     FillParametersForLightStructure(view, volume_grid_params);
 
     // Renderable Instance
@@ -189,6 +193,13 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     volume_grid_params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     volume_grid_params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     volume_grid_params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+    volume_grid_params->LCH_MeshLightTriangleBuffer = builder.Import(device_allocator_->GetMeshLightTriangleUberBufferArray()->GetRHI(0));
+    volume_grid_params->LCH_MeshLightClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightClusterUberBufferArray()->GetRHI(1));
+    volume_grid_params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
+    volume_grid_params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
+    volume_grid_params->LCH_MeshLightInstanceClusterHeaderBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(0));
+    volume_grid_params->LCH_MeshLightInstanceClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(1));
+    volume_grid_params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
     volume_grid_params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
 
     // G_Buffer

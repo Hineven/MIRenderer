@@ -165,16 +165,32 @@ public:
         return area_lights_uber_buffer_.Raw();
     }
 
-    FORCEINLINE DeviceUberBufferInterface * GetMeshLightClusterHeaderUberBuffer() const {
-        return mesh_light_cluster_header_uber_buffer_.Raw();
+    FORCEINLINE DeviceUberBufferArrayInterface * GetMeshLightTriangleUberBufferArray() const {
+        return mesh_light_triangle_uber_buffer_array_.Raw();
     }
 
-    FORCEINLINE DeviceUberBufferInterface * GetMeshLightClusterNodeUberBuffer() const {
-        return mesh_light_cluster_node_uber_buffer_.Raw();
+    FORCEINLINE DeviceUberBufferArrayInterface * GetMeshLightClusterUberBufferArray() const {
+        return mesh_light_cluster_uber_buffer_array_.Raw();
+    }
+
+    FORCEINLINE DeviceUberBufferInterface * GetMeshLightLevelHeaderUberBuffer() const {
+        return mesh_light_level_header_uber_buffer_.Raw();
+    }
+
+    FORCEINLINE DeviceUberBufferInterface * GetMeshLightUberBuffer() const {
+        return mesh_light_uber_buffer_.Raw();
     }
 
     FORCEINLINE DeviceUberBufferInterface * GetMeshLightInstanceUberBuffer() const {
         return mesh_light_instance_uber_buffer_.Raw();
+    }
+
+    FORCEINLINE DeviceUberBufferArrayInterface * GetMeshLightInstanceClusterUberBufferArray() const {
+        return mesh_light_instance_cluster_uber_buffer_array_.Raw();
+    }
+
+    FORCEINLINE DeviceUberBufferInterface * GetMeshLightInstanceTriangleUberBuffer() const {
+        return mesh_light_instance_triangle_uber_buffer_.Raw();
     }
 
     FORCEINLINE RHIBuffer * GetVolumePrimitivesHeaderBuffer() const {
@@ -248,9 +264,13 @@ protected:
     TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;
 
     // Mesh light hierarchy buffers.
-    TRef<DeviceUberBufferInterface> mesh_light_cluster_header_uber_buffer_;
-    TRef<DeviceUberBufferInterface> mesh_light_cluster_node_uber_buffer_;
+    TRef<DeviceUberBufferArrayInterface> mesh_light_triangle_uber_buffer_array_;
+    TRef<DeviceUberBufferArrayInterface> mesh_light_cluster_uber_buffer_array_;
+    TRef<DeviceUberBufferInterface> mesh_light_level_header_uber_buffer_;
+    TRef<DeviceUberBufferInterface> mesh_light_uber_buffer_;
     TRef<DeviceUberBufferInterface> mesh_light_instance_uber_buffer_;
+    TRef<DeviceUberBufferArrayInterface> mesh_light_instance_cluster_uber_buffer_array_;
+    TRef<DeviceUberBufferInterface> mesh_light_instance_triangle_uber_buffer_;
 
     // Custom buffer heaps for custom resources (e.g. custom renderable class)
     std::map<uint32_t, TRef<DeviceBufferHeapInterface>> custom_buffer_heaps_;

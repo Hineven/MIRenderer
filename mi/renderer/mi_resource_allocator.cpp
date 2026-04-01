@@ -85,21 +85,44 @@ volume_grid_slots_(kMaxNumVolumeGrids){
     );
     area_lights_uber_buffer_->SetName("AreaLightsUberBuffer");
 
-    mesh_light_cluster_header_uber_buffer_ = DefaultDeviceUberBuffer::Create(
-        RHIBufferUsageFlagBits::kStorage,
-        alignof(MeshLightClusterHeader),
+    mesh_light_triangle_uber_buffer_array_ = DefaultDeviceUberBufferArray::Create(
+        {
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightTriangle), "MeshLightTriangleUberBuffer"},
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightTriangleHash), "MeshLightTriangleHashUberBuffer"},
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightTriangleBakedData), "MeshLightTriangleBakedDataUberBuffer"}
+        },
+        1,
         16 * 1024,
         this
     );
-    mesh_light_cluster_header_uber_buffer_->SetName("MeshLightClusterHeaderUberBuffer");
+    mesh_light_triangle_uber_buffer_array_->SetName("MeshLightTriangleStreams");
 
-    mesh_light_cluster_node_uber_buffer_ = DefaultDeviceUberBuffer::Create(
-        RHIBufferUsageFlagBits::kStorage,
-        alignof(MeshLightClusterNode),
+    mesh_light_cluster_uber_buffer_array_ = DefaultDeviceUberBufferArray::Create(
+        {
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightClusterHeader), "MeshLightClusterHeaderUberBuffer"},
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightClusterNode), "MeshLightClusterNodeUberBuffer"}
+        },
+        1,
         16 * 1024,
         this
     );
-    mesh_light_cluster_node_uber_buffer_->SetName("MeshLightClusterNodeUberBuffer");
+    mesh_light_cluster_uber_buffer_array_->SetName("MeshLightClusterStreams");
+
+    mesh_light_level_header_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        alignof(MeshLightLevelHeader),
+        16 * 1024,
+        this
+    );
+    mesh_light_level_header_uber_buffer_->SetName("MeshLightLevelHeaderUberBuffer");
+
+    mesh_light_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        alignof(MeshLight),
+        16 * 1024,
+        this
+    );
+    mesh_light_uber_buffer_->SetName("MeshLightUberBuffer");
 
     mesh_light_instance_uber_buffer_ = DefaultDeviceUberBuffer::Create(
         RHIBufferUsageFlagBits::kStorage,
@@ -108,6 +131,25 @@ volume_grid_slots_(kMaxNumVolumeGrids){
         this
     );
     mesh_light_instance_uber_buffer_->SetName("MeshLightInstanceUberBuffer");
+
+    mesh_light_instance_cluster_uber_buffer_array_ = DefaultDeviceUberBufferArray::Create(
+        {
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightInstanceClusterHeader), "MeshLightInstanceClusterHeaderUberBuffer"},
+            {RHIBufferUsageFlagBits::kStorage, sizeof(MeshLightInstanceClusterNode), "MeshLightInstanceClusterNodeUberBuffer"}
+        },
+        1,
+        16 * 1024,
+        this
+    );
+    mesh_light_instance_cluster_uber_buffer_array_->SetName("MeshLightInstanceClusterStreams");
+
+    mesh_light_instance_triangle_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        alignof(MeshLightInstanceTriangle),
+        16 * 1024,
+        this
+    );
+    mesh_light_instance_triangle_uber_buffer_->SetName("MeshLightInstanceTriangleUberBuffer");
 
     volume_primitives_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(VolumePrimitivesHeader) * kMaxNumVolumePrimitiveGroups, RHIBufferUsageFlagBits::kStorage}
@@ -152,9 +194,19 @@ size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
     sum += index_uber_buffer_->GetRHI()->GetBufferSize();
     sum += static_mesh_description_uber_buffer_->GetRHI()->GetBufferSize();
     sum += area_lights_uber_buffer_->GetRHI()->GetBufferSize();
-    sum += mesh_light_cluster_header_uber_buffer_->GetRHI()->GetBufferSize();
-    sum += mesh_light_cluster_node_uber_buffer_->GetRHI()->GetBufferSize();
+    for (uint32_t i = 0; i < mesh_light_triangle_uber_buffer_array_->GetNumStreams(); ++i) {
+        sum += mesh_light_triangle_uber_buffer_array_->GetRHI(i)->GetBufferSize();
+    }
+    for (uint32_t i = 0; i < mesh_light_cluster_uber_buffer_array_->GetNumStreams(); ++i) {
+        sum += mesh_light_cluster_uber_buffer_array_->GetRHI(i)->GetBufferSize();
+    }
+    sum += mesh_light_level_header_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += mesh_light_uber_buffer_->GetRHI()->GetBufferSize();
     sum += mesh_light_instance_uber_buffer_->GetRHI()->GetBufferSize();
+    for (uint32_t i = 0; i < mesh_light_instance_cluster_uber_buffer_array_->GetNumStreams(); ++i) {
+        sum += mesh_light_instance_cluster_uber_buffer_array_->GetRHI(i)->GetBufferSize();
+    }
+    sum += mesh_light_instance_triangle_uber_buffer_->GetRHI()->GetBufferSize();
     sum += material_header_buffer_->GetBufferSize();
     sum += geometry_header_buffer_->GetBufferSize();
     sum += static_mesh_header_buffer_->GetBufferSize();

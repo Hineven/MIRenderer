@@ -24,27 +24,31 @@ struct MeshLightTriangleBakedData {
 struct MeshLightClusterChild {
     uint Packed;
     // Whether this child is a leaf node (triangle) or an inner node (cluster). If it's a leaf node, the index is the triangle index. If it's an inner node, the index is the cluster index.
-    bool bIsLeaf () {
+    bool bIsLeaf () CPPONLY(const) {
         return (Packed & 0x80000000u) != 0;
     }
     // Mesh light local indices
     // For leaf nodes, this is the index of the MeshLightTriangle. For internal nodes, this is the index of the cluster.
-    uint Index () {
+    uint Index () CPPONLY(const) {
         return Packed & 0x7FFFFFFFu;
+    }
+
+    void SetIndex(uint Index) {
+        Packed = (Packed & 0x80000000u) | (Index & 0x7FFFFFFFu);
     }
 };
 
-bool IsMeshLightClusterChildValid (MeshLightClusterChild Child) {
-    return !(Child.bIsLeaf && Child.Index == 0x7FFFFFFFu); 
+FORCEINLINE bool IsMeshLightClusterChildValid (MeshLightClusterChild Child) {
+    return Child.Packed != 0xFFFFFFFFu;
 }
 
-MeshLightClusterChild MakeInvalidMeshLightClusterChild() {
+FORCEINLINE MeshLightClusterChild MakeInvalidMeshLightClusterChild() {
     MeshLightClusterChild Child;
     Child.Packed = 0xFFFFFFFFu;
     return Child;
 }
 
-MeshLightClusterChild MakeMeshLightClusterChild(bool bIsLeaf, uint Index) {
+FORCEINLINE MeshLightClusterChild MakeMeshLightClusterChild(bool bIsLeaf, uint Index) {
     MeshLightClusterChild Child;
     Child.Packed = (bIsLeaf ? 0x80000000u : 0) | (Index & 0x7FFFFFFFu);
     return Child;
@@ -66,7 +70,7 @@ struct MeshLightInstanceTriangle {
     float3 V0, V1, V2;
     float Intensity;
     uint  MeshLightInstanceIndex;
-    uint  Hash;
+    uint  Hash; // Full 32 bit hash.
 };
 
 // Indexed by the instance cluster index.
@@ -87,7 +91,7 @@ struct MeshLightInstanceClusterHeader {
     uint   WeightedNormal;
     
     uint   MeshLightInstanceIndex;
-    uint   Hash;
+    uint   Hash; // Full 32 bit hash
     float  TotalIntensity;
     float  TotalArea;
 };
@@ -125,22 +129,22 @@ struct MeshLight {
 struct MeshLightInstanceElementOffset {
     uint Packed;
 
-    bool IsValid () {
+    bool IsValid () CPPONLY(const) {
         return Packed != 0xFFFFFFFFu;
     }
-    bool bIsTriangle() {
+    bool bIsTriangle() CPPONLY(const) {
         return (Packed & 0x80000000u) != 0;
     }
-    uint Offset() {
+    uint Offset() CPPONLY(const) {
         return Packed & 0x7FFFFFFFu;
     }
 };
 
-bool IsValid(MeshLightInstanceElementOffset Element) {
+FORCEINLINE bool IsValid(MeshLightInstanceElementOffset Element) {
     return Element.IsValid();
 }
 
-MeshLightInstanceElementOffset MakeMeshLightInstanceElementOffset(bool bIsTriangle, uint Offset) {
+FORCEINLINE MeshLightInstanceElementOffset MakeMeshLightInstanceElementOffset(bool bIsTriangle, uint Offset) {
     MeshLightInstanceElementOffset Element;
     Element.Packed = (bIsTriangle ? 0x80000000u : 0) | (Offset & 0x7FFFFFFFu);
     return Element;
@@ -151,10 +155,18 @@ struct MeshLightInstance {
     uint MeshLightIndex;
     uint RenderableIndex;
     // The offset to the first MLI cluster node of this instance in the MeshLightInstanceClusterNodeBuffer
-    // Possibly it is a triangle index if the mesh light has no cluster (NumLevels == 0 in MeshLight).
+    // Possibly it is a MLI triangle index if the mesh light has no cluster (NumLevels == 0 in MeshLight / MeshLightInstanceClusterOffset.bIsTriangle()).
     MeshLightInstanceElementOffset MeshLightInstanceClusterOffset;
     uint MeshLightInstanceTriangleOffset;
 };
+
+FORCEINLINE uint GetLightHash32(MeshLightInstanceTriangle Triangle) {
+    return Triangle.Hash;
+}
+
+FORCEINLINE uint GetLightHash32(MeshLightInstanceClusterHeader Cluster) {
+    return Cluster.Hash;
+}
 
 MI_SHARED_HLSL_END
 #endif

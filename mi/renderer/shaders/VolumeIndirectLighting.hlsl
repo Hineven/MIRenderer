@@ -898,8 +898,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
         RWShadePointTransmittanceRayTMaxBuffer[TransmittanceRayIndex]      = TransmittanceRayOcclusionThreshold;
         // Store the sample contribution for direct illumination (if it passed the visibility test)
         RWShadePointTransmittanceRayContributionBuffer[TransmittanceRayIndex] = PackFp16x4Safe(float4(ShadedRadiance, 1.f));
-        // Keep lighting indirection
-        RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex] = ReservedSample.LightIndex;
+        // Keep sampled light record packed into a single uint.
+        RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex] = ReservedSample.LightRecord.Packed;
     }
     // Trace results are used to shade the hit of a probe update ray (shade point). Store indirections
     RWShadePointToTransmittanceRayIndexBuffer[ShadePointIndex] = TransmittanceRayIndex;
@@ -930,19 +930,9 @@ void ResolveUpdateRayHitsDirectLightingFromTraceResult (uint DispatchID : SV_Dis
         float3 RayDirection  = RWShadePointTransmittanceRayDirectionBuffer[TransmittanceRayIndex];
         if(!bHit) {
             // Update light grid visibility for the sampled light
-            uint SampledLightIndex = RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex];
-            if(IsInvalid(SampledLightIndex)) {
-                // Environment light
-                LightGrid_UpdateVisibilityForEnvironmentLight(WorldPosition, RayDirection);
-            } else if (IsDirectionalLightSampleIndex(SampledLightIndex)) {
-                // Directional light does not use LightGrid visibility history/cache.
-            } else {
-                // Light grid area light
-                LightGrid_UpdateVisibilityForAreaLight(
-                    WorldPosition, 
-                    SampledLightIndex
-                );
-            }
+            LightSampleSrcLightRecord SampledLightRecord = (LightSampleSrcLightRecord)0;
+            SampledLightRecord.Packed = RWShadePointTransmittanceRaySampledLightIndexBuffer[TransmittanceRayIndex];
+            LightGrid_UpdateVisibilityForLightRecord(WorldPosition, RayDirection, SampledLightRecord);
         }
 	}
 

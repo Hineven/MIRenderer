@@ -53,21 +53,6 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointEdgeSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
     SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder1Sampler)
-    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
-
-    // Light grid
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveLightListCount)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveLightListBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListAllocator)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListActiveLightListIndexBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListOffsetBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListCdfBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListLengthBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWEnvironmentVisibilityHistoryBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWBloomFilterBuffer)
-
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextBloomFilterBuffer)
-    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextEnvironmentVisibilityBuffer)
 
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
@@ -77,6 +62,23 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightTriangleBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterHeaderBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceClusterNodeBuffer)
+    SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
+
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridFlagBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWListMeshLightInstanceElementIndexBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListOffsetBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListCdfBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWGridLightListLengthBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWEnvironmentVisibilityHistoryBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextBloomFilterBuffer)
+    SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWNextEnvironmentVisibilityBuffer)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceCount)
     SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceCount)
@@ -131,28 +133,6 @@ namespace DiffuseDirectLightingShaders {
         using RDGShader::RDGShader;
     };
 
-    class ClearLightGridShader : public DiffuseDirectLightingShader {
-    public:
-        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-        DECLARE_SHADER(DiffuseDirectLightingShader)
-    };
-
-    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(ClearLightGridShader, "mi/renderer/shaders/DirectLighting.hlsl", "ClearLightGrid");
-
-    class PrecomputeLightsShader : public DiffuseDirectLightingShader {
-    public:
-        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-        DECLARE_SHADER(DiffuseDirectLightingShader)
-    };
-
-    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(PrecomputeLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "PrecomputeLights");
-
-    class InjectLightsShader : public DiffuseDirectLightingShader {
-    public:
-        RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
-        DECLARE_SHADER(DiffuseDirectLightingShader)
-    };
-
     class DiffuseDirectLightingClearCountersShader : public DiffuseDirectLightingShader {
     public:
         RDG_SHADER_USE_PARAMETERS(DirectLightingShaderParameters)
@@ -160,9 +140,6 @@ namespace DiffuseDirectLightingShaders {
     };
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(DiffuseDirectLightingClearCountersShader, "mi/renderer/shaders/DirectLighting.hlsl", "DiffuseDirectLightingClearCounters");
-
-
-    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(InjectLightsShader, "mi/renderer/shaders/DirectLighting.hlsl", "InjectLights");
 
     class SpawnLightSamplesShader : public DiffuseDirectLightingShader {
     public:
@@ -214,9 +191,6 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
     ini.optional_macros = ini_macros;
 
     auto params = builder.Allocate<DirectLightingShaderParameters>();
-    auto light_buffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
-    auto max_num_lights = device_allocator_->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(RawLight);
-    auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
 
     uint32_t num_screen_pixels = view->film_width_ * view->film_height_;
 
@@ -268,7 +242,6 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         auto HT_UB = builder.Allocate<HybridTracingUB>();
         FillUniformBufferForHybridTracing(view, HT_UB);
         params->HybridTracing_UB = HT_UB;
-        params->LightBuffer = light_buffer;
 
         FillParametersForLightStructure(view, params);
 
@@ -280,6 +253,13 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
         params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
         params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
+        params->LCH_MeshLightTriangleBuffer = builder.Import(device_allocator_->GetMeshLightTriangleUberBufferArray()->GetRHI(0));
+        params->LCH_MeshLightClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightClusterUberBufferArray()->GetRHI(1));
+        params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
+        params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
+        params->LCH_MeshLightInstanceClusterHeaderBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(0));
+        params->LCH_MeshLightInstanceClusterNodeBuffer = builder.Import(device_allocator_->GetMeshLightInstanceClusterUberBufferArray()->GetRHI(1));
+        params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
 
         params->RWRayToTraceCount = ray_to_trace_count.Raw();
         params->RayToTraceCount = ray_to_trace_count.Raw();
@@ -328,29 +308,6 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         params->Debug = view->debug_common_params_;
     }
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
-    // Clear counters
-    {
-        auto shader = lib.GetShader<ClearLightGridShader>(ini);
-        auto num_groups = DivideAndRoundUp(num_light_grids, DiffuseDirectLightingShader::kThreadGroupSize);
-        Helpers::AddComputePass<ClearLightGridShader>(
-            builder, shader, params, num_groups
-        );
-    }
-    // Precompute lights
-    {
-        auto shader = lib.GetShader<PrecomputeLightsShader>(ini);
-        auto num_groups = DivideAndRoundUp(max_num_lights, DiffuseDirectLightingShader::kThreadGroupSize);
-        Helpers::AddComputePass<PrecomputeLightsShader>(
-            builder, shader, params, (uint32_t)num_groups
-        );
-    }
-    {
-        auto shader = lib.GetShader<InjectLightsShader>(ini);
-        auto num_groups = DivideAndRoundUp(num_light_grids, wave_size);
-        Helpers::AddComputePass<InjectLightsShader>(
-            builder, shader, params, num_groups
-        );
-    }
     {
         auto shader = lib.GetShader<DiffuseDirectLightingClearCountersShader>(ini);
         Helpers::AddComputePass(builder, shader, params);
