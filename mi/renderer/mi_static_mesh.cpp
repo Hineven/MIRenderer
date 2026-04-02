@@ -292,6 +292,7 @@ void StaticMesh::AddMeshPrimitive(TRef<Geometry> geom, TRef<Material> mat) {
     geometries_.push_back(geom);
     materials_.push_back(mat);
     aabb_ = AABB::Merge(aabb_, geom->GetAABB());
+    has_double_sided_material_ = has_double_sided_material_ || mat->IsDoubleSided();
     SetDirty(true);
 }
 
@@ -311,6 +312,7 @@ void StaticMesh::ClearMeshPrimitives() {
     light_cluster_streams_.SafeRelease();
     light_level_headers_.SafeRelease();
     lights_.SafeRelease();
+    has_double_sided_material_ = false;
     SetDirty(true);
 }
 
@@ -793,6 +795,14 @@ RenderableHeader StaticMeshInstance::GetDeviceRenderableHeader() const {
 RHIAccelerationStructure *StaticMeshInstance::GetBLAS() const {
     if (static_mesh_) return static_mesh_->GetDeviceStaticMesh()->GetBLAS();
     return nullptr;
+}
+
+RHIASGeometryInstanceFlags StaticMeshInstance::GetASGeometryInstanceFlags() const {
+    RHIASGeometryInstanceFlags flags = RHIASGeometryInstanceFlagBits::kNone;
+    if (static_mesh_) {
+        return static_mesh_->HasDoubleSidedMaterial() ? RHIASGeometryInstanceFlagBits::kDisableTriangleFaceCulling : RHIASGeometryInstanceFlagBits::kNone;
+    }
+    return flags;
 }
 
 uint32_t StaticMeshInstance::GetInstanceCustomIndex() const {

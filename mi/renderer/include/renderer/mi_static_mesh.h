@@ -55,6 +55,9 @@ public:
         MeshLightClusterHierarchy hierarchy {};
     };
 
+    friend class Material;
+    friend class StaticMeshInstance;
+
     FORCEINLINE const std::vector<TRef<Geometry>> & GetGeometries () const { return geometries_; }
     FORCEINLINE const std::vector<TRef<Material>> & GetMaterials () const { return materials_; }
 
@@ -143,6 +146,11 @@ public:
     // Visibility buffer reserved 8 bits for static mesh descriptor index. So the max number is 256.
     constexpr static uint32_t kMaxNumGeometries = 256;
 
+    FORCEINLINE bool HasDoubleSidedMaterial () const {
+        // Cached variable to check if we can use face-culling on this mesh.
+        return has_double_sided_material_;
+    }
+
 protected:
     std::vector<TRef<Geometry>> geometries_;
     std::vector<TRef<Material>> materials_;
@@ -167,6 +175,9 @@ protected:
 
     // Marked when hierarchy upload to GPU uber buffers is stale.
     bool light_hierarchy_device_dirty_ {true};
+
+    // Cached variable to check if we can use face-culling on this mesh.
+    bool has_double_sided_material_ {false};
 
     std::vector<MeshLightHierarchyRecord> light_hierarchy_records_;
 
@@ -209,6 +220,7 @@ public:
     void UpdateLights_Async (DeviceBindlessResourceAllocator *alloc, RHICommandQueueGraphics & queue);
 
     RHIAccelerationStructure * GetBLAS() const override ;
+    RHIASGeometryInstanceFlags GetASGeometryInstanceFlags() const override ;
     uint32_t GetInstanceCustomIndex() const override;
 
     bool IsEmpty() const override;

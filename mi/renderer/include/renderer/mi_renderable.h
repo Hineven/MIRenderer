@@ -12,12 +12,14 @@
 #include <core/infra.h>
 #include <core/refcounted.h>
 #include <rhi/rhi_fwd.h>
+#include <rhi/rhi_as_types.h>
 
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_renderer_types.h>
 #include <renderer/mi_transform.h>
 #include <renderer/mi_aabb.h>
 #include <renderer/mi_delayed_destruction.h>
+
 #include "../../shaders/shared/SharedRenderable.hlsl"
 
 MI_NAMESPACE_BEGIN
@@ -70,10 +72,12 @@ public:
 
     // Override the functions if the renderable can be ray-traced.
     virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
+    virtual RHIASGeometryInstanceFlags GetASGeometryInstanceFlags () const { return RHIASGeometryInstanceFlagBits::kNone; }
 
     constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
     // Note that the renderable index is at most 24 bits
     virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableIndex; }
+
     FORCEINLINE uint32_t GetHash() const { return hash_; }
 
     virtual bool IsEmpty () const ;

@@ -7,7 +7,8 @@
 #ifndef RHI_AS_TYPES_H
 #define RHI_AS_TYPES_H
 #include <vector>
-#include "core/common.h"
+#include <core/common.h>
+#include <rhi/rhi_desc.h>
 
 MI_NAMESPACE_BEGIN
 

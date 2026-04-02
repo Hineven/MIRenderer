@@ -281,8 +281,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 auto data = RHIAccelerationStructureInstanceDesc {};
                 data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
                 data.mask = 0xFF; // Visible to all rays
-                // TODO support double sided & one sided geometries.
-                data.flags = (uint32_t)RHIASGeometryInstanceFlagBits::kNone;
+                // Disable back face culling for renderables with double-sided materials.
+                data.flags = renderable->GetASGeometryInstanceFlags();
                 data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
                 // Row major
                 auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();

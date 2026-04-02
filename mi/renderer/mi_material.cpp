@@ -5,16 +5,14 @@
  */
 #include "renderer/mi_material.h"
 
+#include <rhi/rhi.h>
+#include <rhi/rhi_bindless.h>
+#include <rdg/rdg_helper.h>
+
 #include <renderer/mi_renderer.h>
 #include <renderer/mi_texture.h>
+#include <renderer/mi_resource_allocator.h>
 
-#include <rhi/rhi_bindless.h>
-
-#include "rdg/rdg_helper.h"
-#include "renderer/mi_resource_allocator.h"
-#include "rhi/rhi.h"
-#include "rhi/rhi_buffer.h"
-#include "rhi/rhi_texture.h"
 MI_NAMESPACE_BEGIN
 
 DeviceMaterial::DeviceMaterial(DeviceBindlessResourceAllocator *allocator) {
