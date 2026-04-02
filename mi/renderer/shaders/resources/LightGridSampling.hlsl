@@ -442,8 +442,8 @@ LightSample SampleOneLightSample_RIS (
     // Look up the light grid
     uint4 GridIndex = LightGrid_GetGridIndex(WorldPosition);
     LightSample Sample = (LightSample)0;
-    bool bInsideLightGrid = IsValid(GridIndex.x);
-    uint GridIndex1 = bInsideLightGrid ? LightGrid_GetGridIndex1(GridIndex) : 0;
+    bool bInsideLightGridBounds = IsValid(GridIndex.x);
+    uint GridIndex1 = bInsideLightGridBounds ? LightGrid_GetGridIndex1(GridIndex) : 0;
 
     LightSampler LS = InitLightSampler(R);
 
@@ -452,7 +452,7 @@ LightSample SampleOneLightSample_RIS (
     uint NumGridLights = 0;
     uint GridLightListOffset = 0;
     LightGrid_GridLightVisibility GridVisibility = (LightGrid_GridLightVisibility)0;
-    if (bInsideLightGrid) {
+    if (bInsideLightGridBounds) {
         GridMin = LightGrid_GetGridBounds(GridIndex, GridSize);
         NumGridLights = LightGrid_RWGridLightListLengthBuffer[GridIndex1];
         GridLightListOffset = LightGrid_RWGridLightListOffsetBuffer[GridIndex1];
@@ -469,7 +469,7 @@ LightSample SampleOneLightSample_RIS (
         InterlockedOr(LightGrid_RWActiveGridFlagBuffer[GridIndex1], 1u);
     }
 
-    bool bHasGridLights = bInsideLightGrid && NumGridLights > 0;
+    bool bHasGridLights = bInsideLightGridBounds && NumGridLights > 0;
 
     // Spawn candidate samples from the lights in the grid
     uint NumNonZeroGridLights = 0;
@@ -536,7 +536,7 @@ LightSample SampleOneLightSample_RIS (
     }
     // Specially, handle environment light
     LightGrid_CubicVisibility GridCubicVisibility = (LightGrid_CubicVisibility)0;
-    if (bInsideLightGrid) {
+    if (bInsideLightGridBounds) {
         GridCubicVisibility = LightGrid_FetchEnvironmentVisibility(GridIndex1);
     }
     if (bWithEnvironment) {

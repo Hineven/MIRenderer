@@ -104,9 +104,14 @@ float LightGrid_EstimateLightGridPerceptualContribution(MeshLightInstanceCluster
 
     float3 ToCluster = WorldCenter - GridCenter;
     float ToClusterLen = length(ToCluster);
-    float3 WorldWeightedNormal = normalize(UnpackNormal(MLICluster.WeightedNormal));
+    float WeightedNormalLenSq = dot(MLICluster.WeightedNormal, MLICluster.WeightedNormal);
+    float3 WorldWeightedNormal = WeightedNormalLenSq > 1e-9f
+        ? (MLICluster.WeightedNormal / sqrt(WeightedNormalLenSq))
+        : 0.f.xxx;
     float3 ToClusterDir = ToClusterLen > 1e-6f ? (ToCluster / ToClusterLen) : -WorldWeightedNormal;
-    float LightFacingCosineFactor = saturate(dot(WorldWeightedNormal, -ToClusterDir));
+    float LightFacingCosineFactor = WeightedNormalLenSq > 1e-9f
+        ? saturate(dot(WorldWeightedNormal, -ToClusterDir))
+        : 0.f;
 
     float LerpingFactor = LightGrid_EstimateLightGridPerceptualContribution_ClusterNormalVarianceToLerpFactor(MLICluster.WeightedNormalVariance);
     // Lerp the cosine factor to uniform distribution when MLICluster.WeightedNormalVariance is high
@@ -213,9 +218,14 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
     float ClosestDistanceSq = dot(ToClosestPoint, ToClosestPoint);
     float3 ToCluster = WorldCenter - Position;
     float ToClusterLen = length(ToCluster);
-    float3 WorldWeightedNormal = UnpackNormal(L.WeightedNormal);
+    float WeightedNormalLenSq = dot(L.WeightedNormal, L.WeightedNormal);
+    float3 WorldWeightedNormal = WeightedNormalLenSq > 1e-9f
+        ? (L.WeightedNormal / sqrt(WeightedNormalLenSq))
+        : 0.f.xxx;
     float3 ToClusterDir = ToClusterLen > 1e-6f ? (ToCluster / ToClusterLen) : WorldWeightedNormal;
-    float LightFacingCosineFactor = saturate(dot(WorldWeightedNormal, -ToClusterDir));
+    float LightFacingCosineFactor = WeightedNormalLenSq > 1e-9f
+        ? saturate(dot(WorldWeightedNormal, -ToClusterDir))
+        : 0.f;
 
     float LerpingFactor = LightGrid_EstimateLightGridPerceptualContribution_ClusterNormalVarianceToLerpFactor(L.WeightedNormalVariance);
     // Lerp the cosine factor to uniform distribution when L.WeightedNormalVariance is high

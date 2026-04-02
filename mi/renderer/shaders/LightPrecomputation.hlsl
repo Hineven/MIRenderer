@@ -66,6 +66,31 @@ void LightPrecomputation_GatherActiveGrids(uint GroupID : SV_GroupID, uint Local
     }
 }
 
+// Clip the number of active grids
+[numthreads(1, 1, 1)]
+void LightPrecomputation_ClipActiveGrids() {
+    uint NumActiveGrids = LightGrid_RWActiveGridAllocator[0];
+    if(NumActiveGrids > LightStructure_UB.MaxNumActiveLightGrids) {
+        LightGrid_RWActiveGridAllocator[0] = LightStructure_UB.MaxNumActiveLightGrids;
+    }
+}
+
+// Clear grid states for first frame
+[numthreads(THREAD_GROUP_SIZE, 1, 1)]
+void LightPrecomputation_ClearGridStates(uint DispatchID : SV_DispatchThreadID) {
+    uint Index = DispatchID;
+    if (Index >= LightStructure_UB.LightGridNumGrids) {
+        return;
+    }
+    LightGridPressureContext PressureContext = (LightGridPressureContext)0;
+    // A constant for all grids. 
+    PressureContext.IntensityThreshold = 0.5f;
+    PressureContext.CurrentNumLights = 0;
+    LightGrid_RWGridPressureBuffer[Index] = LightGrid_UpdateGridPressure(PressureContext);
+    // Also, clear grid flags for the first frame. 
+    LightGrid_RWActiveGridFlagBuffer[Index] = 0;
+}
+
 // Precompute each instanced triangle in MLIs
 void LightPrecomputation_Triangle (uint VertexID : SV_VertexID, uint InstanceID : SV_InstanceID) {
     uint MeshLightLocalTriangleIndex = VertexID;
@@ -160,9 +185,7 @@ void AccumulateMeshLightInstanceClusterNodeDataFromClusterChild (
     // Accumulate to cluster header
     MLIClusterHeader.AABBMin = min(MLIClusterHeader.AABBMin, MLIChildClusterHeader.AABBMin);
     MLIClusterHeader.AABBMax = max(MLIClusterHeader.AABBMax, MLIChildClusterHeader.AABBMax);
-    WeightedNormal += float3(
-        UnpackNormal(MLIChildClusterHeader.WeightedNormal)
-    ) * MLIChildClusterHeader.TotalIntensity;
+    WeightedNormal += MLIChildClusterHeader.WeightedNormal;
     MLIClusterHeader.TotalIntensity += MLIChildClusterHeader.TotalIntensity;
     MLIClusterHeader.TotalArea += MLIChildClusterHeader.TotalArea;
     // Store WeightedNormal ^ 2 first. A separate finalization will be performed later.
@@ -263,8 +286,10 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                 float3 WeightedNormal = 0;
                 MLIClusterHeader.MeshLightInstanceIndex = MeshLightInstanceIndex;
                 MLIClusterHeader.WeightedNormalVariance = 0;
+                MLIClusterHeader.Padding0 = 0;
                 MLIClusterHeader.TotalIntensity = 0;
                 MLIClusterHeader.TotalArea = 0;
+                MLIClusterHeader.Padding1 = 0;
                 MLIClusterHeader.Hash = MLClusterHeader.Hash; // Duplicate the hash from the ML cluster header
                 // Ready to accumulate data from children or triangles
                 MeshLightClusterChild LeftChild = MLLocalClusterNodeIndexBuffer[TreeIndex * 2 + 1];
@@ -318,8 +343,8 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                     }
                 }
                 // Finalize some of the the cluster header dataif
-                MLIClusterHeader.WeightedNormal = PackNormal(SafeNormalize(WeightedNormal));
-                // WeightedNormal ^ 2 is finalized in a separate shader. Not here.
+                MLIClusterHeader.WeightedNormal = WeightedNormal;
+                // WeightedNormalVariance is finalized in a separate shader. Not here.
 
                 // Write back to the instance cluster header buffer.
                 // (Duplicate the same tree hierarchy in ML cluster buffers to MLI cluster buffers for each instance.)
@@ -343,11 +368,10 @@ void LightPrecomputation_FinalizeMLIClusters (uint VertexID : SV_VertexID, uint 
     MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
     if(MLI.MeshLightInstanceClusterOffset.bIsTriangle()) return;
     uint MeshLightInstanceClusterIndex = MLI.MeshLightInstanceClusterOffset.Offset() + VertexID;
-    // Simply finalize the WeightedNormalVariance by performing sqrt(WeightedNormalVariance - WeightedNormal^2). This is based on the fact that we stored WeightedNormal^2 in the variance field before finalization.
+    // Finalize the variance from the accumulated weighted-normal L2 sum and weighted-normal sum.
     MeshLightInstanceClusterHeader MLIClusterHeader = LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex];
-    float3 WeightedNormal = UnpackNormal(MLIClusterHeader.WeightedNormal) * MLIClusterHeader.TotalIntensity;
     LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex].WeightedNormalVariance 
-        = sqrt(max(MLIClusterHeader.WeightedNormalVariance - dot(WeightedNormal, WeightedNormal), 0));
+        = sqrt(max(MLIClusterHeader.WeightedNormalVariance - dot(MLIClusterHeader.WeightedNormal, MLIClusterHeader.WeightedNormal), 0));
 }
 
 #ifndef MAX_NUM_GRID_LIGHTS
@@ -448,7 +472,6 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     float LocalGridLightWeights[MAX_NUM_GRID_LIGHTS * 2]; 
     uint2 GridPressure = LightGrid_RWGridPressureBuffer[GridIndex1];
     LightGridPressureContext PressureContext = LightGridPressureContext_Init(GridPressure);
-    SubdividedLightsForGrid Subdivided;
     uint NumValidMLILights = 0;
     // TODO better injection strategy (subdivide first, then inject?)
     for (uint ActiveMeshLightInstanceIndex = 0; ActiveMeshLightInstanceIndex < NumActiveLights; ActiveMeshLightInstanceIndex++) {

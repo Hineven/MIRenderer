@@ -393,9 +393,6 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Ready for rendering
 
-    // Try reset light structure history if needed
-    Render_PrepareLightStructureHistory(view, builder);
-
     // Build light structure for light sampling.
     Render_BuildLightStructure(view, builder);
 

@@ -56,6 +56,8 @@ struct LightStructureUB {
 struct LightStructurePersistentData : RefCounted<> {
     TRef<RDGBuffer> environment_visibility_history_buffer;
     TRef<RDGBuffer> bloom_filter_buffer;
+    TRef<RDGBuffer> active_grid_flag_buffer;
+    TRef<RDGBuffer> grid_pressure_buffer;
 
     // If the buffers need to be reset to initial state (possibly upon first start or buffer
     // reallocation)
@@ -74,8 +76,6 @@ struct LightStructurePersistentData : RefCounted<> {
 struct LightStructureData : RefCounted<> {
     TRef<RDGBuffer> active_grid_count;
     TRef<RDGBuffer> active_grid_indices_buffer;
-    TRef<RDGBuffer> active_grid_flag_buffer;
-    TRef<RDGBuffer> grid_pressure_buffer;
     TRef<RDGBuffer> active_mesh_light_instance_count;
     TRef<RDGBuffer> active_mesh_light_instance_index_buffer;
     TRef<RDGBuffer> precompute_triangle_draw_command_buffer;
@@ -105,6 +105,7 @@ struct LightStructureData : RefCounted<> {
 template<typename T>
 void FillParametersForLightStructure (RendererView * view, T * params) {
     auto ls = view->light_structure_;
+    auto persistent = view->persistent_data_->light_structure_persistent_data_;
 
     if constexpr(requires{params->LightGrid_RWActiveGridAllocator;}) {
         params->LightGrid_RWActiveGridAllocator = ls->active_grid_count.Raw();
@@ -113,10 +114,10 @@ void FillParametersForLightStructure (RendererView * view, T * params) {
         params->LightGrid_RWActiveGridIndicesBuffer = ls->active_grid_indices_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_RWActiveGridFlagBuffer;}) {
-        params->LightGrid_RWActiveGridFlagBuffer = ls->active_grid_flag_buffer.Raw();
+        params->LightGrid_RWActiveGridFlagBuffer = persistent->active_grid_flag_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_RWGridPressureBuffer;}) {
-        params->LightGrid_RWGridPressureBuffer = ls->grid_pressure_buffer.Raw();
+        params->LightGrid_RWGridPressureBuffer = persistent->grid_pressure_buffer.Raw();
     }
     if constexpr(requires{params->LightGrid_RWActiveMeshLightInstanceCount;}) {
         params->LightGrid_RWActiveMeshLightInstanceCount = ls->active_mesh_light_instance_count.Raw();
@@ -148,7 +149,6 @@ void FillParametersForLightStructure (RendererView * view, T * params) {
     if constexpr(requires{params->LightGrid_RWGridLightListLengthBuffer;}) {
         params->LightGrid_RWGridLightListLengthBuffer = ls->grid_light_list_length_buffer.Raw();
     }
-    auto persistent = view->persistent_data_->light_structure_persistent_data_;
     if constexpr(requires{params->LightGrid_RWEnvironmentVisibilityHistoryBuffer;}) {
         params->LightGrid_RWEnvironmentVisibilityHistoryBuffer = persistent->environment_visibility_history_buffer.Raw();
     }

@@ -93,6 +93,18 @@ bool LightStructurePersistentData::MakeSureExists([[maybe_unused]] RendererView 
         bloom_filter_buffer->SetExport();
         flag = true;
     }
+    if (!active_grid_flag_buffer) {
+        active_grid_flag_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
+        active_grid_flag_buffer->SetName("LightGrid_RWActiveGridFlagBuffer");
+        active_grid_flag_buffer->SetExport();
+        flag = true;
+    }
+    if (!grid_pressure_buffer) {
+        grid_pressure_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids);
+        grid_pressure_buffer->SetName("LightGrid_RWGridPressureBuffer");
+        grid_pressure_buffer->SetExport();
+        flag = true;
+    }
     need_reset_ |= flag;
     return flag;
 }
@@ -111,10 +123,6 @@ void LightStructureData::Allocate(RenderGraphBuilder &builder) {
     active_grid_count->SetName("LightGrid_RWActiveGridAllocator");
     active_grid_indices_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
     active_grid_indices_buffer->SetName("LightGrid_RWActiveGridIndicesBuffer");
-    active_grid_flag_buffer = builder.CreateBuffer<uint32_t>(num_light_grids);
-    active_grid_flag_buffer->SetName("LightGrid_RWActiveGridFlagBuffer");
-    grid_pressure_buffer = builder.CreateBuffer<glm::uvec2>(num_light_grids);
-    grid_pressure_buffer->SetName("LightGrid_RWGridPressureBuffer");
     active_mesh_light_instance_count = builder.CreateBuffer<uint32_t>();
     active_mesh_light_instance_count->SetName("LightGrid_RWActiveMeshLightInstanceCount");
     active_light_list_count = builder.CreateBuffer<uint32_t>();
@@ -332,6 +340,36 @@ namespace {
 
     IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(GatherActiveGridsShader, "mi/renderer/shaders/LightPrecomputation.hlsl", "LightPrecomputation_GatherActiveGrids");
 
+    class ClipActiveGridsShader : public PrecomputeLightStructureShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(LightStructureParameters)
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        ClipActiveGridsShader,
+        "mi/renderer/shaders/LightPrecomputation.hlsl",
+        "LightPrecomputation_ClipActiveGrids"
+    );
+
+    class ClearGridStatesShader : public PrecomputeLightStructureShader {
+    public:
+        RDG_SHADER_USE_PARAMETERS(LightStructureParameters)
+        DECLARE_SHADER(PrecomputeLightStructureShader)
+        constexpr static uint32_t kThreadGroupSize = 128;
+        static std::vector<std::string> GetShaderDefaultMacros() {
+            auto macros = PrecomputeLightStructureShader::GetShaderDefaultMacros();
+            macros.push_back("THREAD_GROUP_SIZE=" + std::to_string(kThreadGroupSize));
+            return macros;
+        }
+    };
+
+    IMPLEMENT_RDG_COMPUTE_SHADER_SHADER_SHARED_PARAMETER(
+        ClearGridStatesShader,
+        "mi/renderer/shaders/LightPrecomputation.hlsl",
+        "LightPrecomputation_ClearGridStates"
+    );
+
     class PrecomputeTrianglesShader : public PrecomputeLightStructureShader {
     public:
         DECLARE_SHADER(PrecomputeLightStructureShader)
@@ -405,39 +443,12 @@ namespace {
     );
 }
 
-void Renderer::Render_PrepareLightStructureHistory(RendererView *view, RenderGraphBuilder &builder) {
-    RDGSectionGuard section(builder, "Render_PrepareLightStructureHistory");
-    // Clear light structure history if needed
-    auto persistent = view->persistent_data_->light_structure_persistent_data_;
-    auto & lib = RDGShaderLibrary::Get();
-    auto num_light_grids = kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize;
-    auto ini_macros = GetLightStructureShaderMacros();
-    RDGShaderInitializationInfo ini;
-    ini.optional_macros = ini_macros;
-    if (persistent->need_reset_) {
-        auto shader = lib.GetShader<ClearLightStructureHistoryShader>(ini);
-        auto params = builder.Allocate<ClearLightStructureHistoryShader::Params>();
-        FillParametersForLightStructure(view, params);
-        auto UB = builder.Allocate<LightStructureUB>();
-        FillUniformBufferForLightStructure(view, UB);
-        params->LightStructure_UB = UB;
-        auto num_groups = DivideAndRoundUp(num_light_grids, ClearLightStructureHistoryShader::kThreadGroupSize);
-        Helpers::AddComputePass<ClearLightStructureHistoryShader>(
-            builder, shader, params, num_groups
-        );
-        persistent->need_reset_ = false;
-    }
-    {
-        Helpers::Clear(builder, view->light_structure_->next_bloom_filter_buffer.Raw());
-        Helpers::Clear(builder, view->light_structure_->next_environment_visibility_buffer.Raw());
-    }
-}
-
 void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuilder & builder) {
     RDGSectionGuard section(builder, "Render_BuildLightStructure");
     auto & lib = RDGShaderLibrary::Get();
     auto * ls = view->light_structure_.Raw();
     mi_check(ls, "Light structure data must exist before building the light structure.");
+    auto persistent = view->persistent_data_->light_structure_persistent_data_;
 
     auto & queue = RHI::Get().GetGraphicsCommandQueue();
 
@@ -627,6 +638,32 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     fill_common_params(common_params, 0);
 
     {
+        auto num_groups = DivideAndRoundUp(
+            kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize,
+            ClearLightStructureHistoryShader::kThreadGroupSize
+        );
+        if (persistent->need_reset_) {
+            auto history_shader = lib.GetShader<ClearLightStructureHistoryShader>(ini);
+            auto history_params = builder.Allocate<ClearLightStructureHistoryShader::Params>();
+            FillParametersForLightStructure(view, history_params);
+            history_params->LightStructure_UB = common_params->LightStructure_UB;
+            Helpers::AddComputePass<ClearLightStructureHistoryShader>(
+                builder, history_shader, history_params, num_groups
+            );
+
+            auto clear_grid_states_shader = lib.GetShader<ClearGridStatesShader>(ini);
+            Helpers::AddComputePass<ClearGridStatesShader>(
+                builder, clear_grid_states_shader, common_params, num_groups
+            );
+
+            persistent->need_reset_ = false;
+        }
+
+        Helpers::Clear(builder, ls->next_bloom_filter_buffer.Raw());
+        Helpers::Clear(builder, ls->next_environment_visibility_buffer.Raw());
+    }
+
+    {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
         auto num_groups = DivideAndRoundUp(kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize, ClearCountersShader::kThreadGroupSize);
         Helpers::AddComputePass(builder, shader, common_params, num_groups);
@@ -694,6 +731,11 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
         auto shader = lib.GetShader<GatherActiveGridsShader>(ini);
         auto num_groups = DivideAndRoundUp(kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize, RHI::Get().GetDeviceProperties().wave_size * 8u);
         Helpers::AddComputePass(builder, shader, common_params, num_groups);
+    }
+
+    {
+        auto shader = lib.GetShader<ClipActiveGridsShader>(ini);
+        Helpers::AddComputePass(builder, shader, common_params);
     }
 
     {

@@ -87,13 +87,16 @@ struct MeshLightInstanceClusterHeader {
     float  WeightedNormalVariance;
 
     float3 AABBMax;
-    // World space weighted normal. 
-    uint   WeightedNormal;
-    
+    float  Padding0;
+
+    // World space weighted normal sum (not normalized / packed).
+    float3 WeightedNormal;
     uint   MeshLightInstanceIndex;
+
     uint   Hash; // Full 32 bit hash
     float  TotalIntensity;
     float  TotalArea;
+    uint   Padding1;
 };
 
 struct MeshLightLevelHeader {
