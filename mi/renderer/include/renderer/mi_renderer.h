@@ -78,6 +78,7 @@ protected:
         uint32_t world_renderable_handle;
         RHIBuffer * vertex_buffer;
         RHIBuffer * index_buffer;
+        RHICullModeType cull_mode;
         RHIDrawIndexedIndirectCommand indirect_command;
     };
 

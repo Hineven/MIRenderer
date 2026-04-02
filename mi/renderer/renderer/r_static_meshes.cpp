@@ -100,6 +100,7 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
 
                     header.vertex_buffer = dev->GetDeviceVertexBuffer()->GetRHI().buffer;
                     header.index_buffer = dev->GetDeviceIndexBuffer()->GetRHI().buffer;
+                    header.cull_mode = mat->IsDoubleSided() ? RHICullModeType::kNone : RHICullModeType::kBack;
                     header.indirect_command = cmd;
 
                     data.draw_invocation_sorting_headers.push_back(header);
@@ -125,7 +126,8 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
             std::sort(data.draw_invocation_sorting_headers.begin(), data.draw_invocation_sorting_headers.end(),
                 [](const DrawInvocationSortingHeader & a, const DrawInvocationSortingHeader & b) {
                     if (a.vertex_buffer != b.vertex_buffer) return a.vertex_buffer < b.vertex_buffer;
-                    return a.index_buffer < b.index_buffer;
+                    if (a.index_buffer != b.index_buffer) return a.index_buffer < b.index_buffer;
+                    return a.cull_mode < b.cull_mode;
                 }
             );
             // Generate and upload indirect commands & extra buffers for draw
@@ -235,12 +237,18 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
                     queue, pass, shader, params, true
                 )) {
                     queue.BeginRendering();
-                    queue.SetCullMode(RHICullModeType::kBack);
+                    auto prev_cull_mode = RHICullModeType::kMax;
                     RHIBuffer * last_vertex_buffer {};
                     RHIBuffer * last_index_buffer {};
                     RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
                     for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
                         auto & hdr = data.draw_invocation_sorting_headers[i];
+                        auto curr_cull_mode = hdr.cull_mode;
+                        if (prev_cull_mode != curr_cull_mode) {
+                            queue.SetCullMode(curr_cull_mode);
+                            prev_cull_mode = curr_cull_mode;
+                        }
+                        // TODO Unify "state comparison" style on vertex / index buffers (similar to cull-mode)
                         if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
                             if (i > 0) {
                                 // Batch submit previous commands sharing the same vertex & index buffer settings.

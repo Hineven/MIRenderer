@@ -49,7 +49,8 @@ bool GLTFLoader::LoadGLTF(
     std::vector<TRef<Geometry> > &out_geometries,
     std::vector<TRef<Material> > &out_materials,
     std::vector<TRef<StaticMeshInstance> > &out_meshes,
-    std::vector<TRef<RenderableNode>> * out_nodes
+    std::vector<TRef<RenderableNode>> * out_nodes,
+    LoadOptions load_options
 ) {
     assert(!path.empty());
     if (default_material) default_material->UpdateOnDevice(&allocator);
@@ -166,7 +167,7 @@ bool GLTFLoader::LoadGLTF(
         if(emissiveFactor > 0.0f)
             emissive *= emissiveFactor;
         material_ref->SetEmissive(emissive);
-        if(gltf_material.double_sided) material_ref->SetDoubleSided(true);
+        material_ref->SetDoubleSided(gltf_material.double_sided || load_options.override_doublesided);
         cgltf_texture const *albedo_map_text = gltf_material_pbr.base_color_texture.texture;
         it = (albedo_map_text != nullptr ? images.find(albedo_map_text->basisu_image != nullptr ?
               albedo_map_text->basisu_image : albedo_map_text->image) : images.end());

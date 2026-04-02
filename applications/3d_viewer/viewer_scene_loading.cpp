@@ -67,6 +67,14 @@ static Transform ParseTransformOrDefault(const json& j) {
     return t;
 }
 
+static bool TryGetBool(const json& j, const char* key, bool& out_value) {
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_boolean()) {
+        return false;
+    }
+    out_value = j.at(key).get<bool>();
+    return true;
+}
+
 static std::filesystem::path ResolvePathForLoading(const std::string& path_str) {
     std::filesystem::path p(path_str);
     if (p.is_absolute()) {
@@ -323,6 +331,7 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
 
     auto load_gltf_object = [&](const std::filesystem::path& model_path,
                                 const Transform& object_transform,
+                                GLTFLoader::LoadOptions gltf_load_options,
                                 std::vector<TRef<RenderableNode>>& out_nodes) {
         std::vector<TRef<Geometry>> geometries;
         std::vector<TRef<Material>> materials;
@@ -334,7 +343,8 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
             *scene_,
             renderable_node_registry_.Raw(),
             default_material_.Raw(),
-            geometries, materials, new_meshes, &nodes
+            geometries, materials, new_meshes, &nodes,
+            gltf_load_options
         )) {
             MI_WARN("Failed to load GLTF model {}.", model_path.string());
             return;
@@ -405,6 +415,12 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         }
         loading_format = ToLower(loading_format);
 
+        GLTFLoader::LoadOptions gltf_load_options {};
+        TryGetBool(metadata, "override_doublesided", gltf_load_options.override_doublesided);
+        if (!gltf_load_options.override_doublesided) {
+            TryGetBool(object_j, "override_doublesided", gltf_load_options.override_doublesided);
+        }
+
         if (loading_format.empty()) {
             const auto ext = ToLower(object_path.extension().string());
             if (ext == ".gltf" || ext == ".glb") {
@@ -418,7 +434,7 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         }
 
         if (loading_format == "gltf") {
-            load_gltf_object(object_path, object_transform, scene_nodes);
+            load_gltf_object(object_path, object_transform, gltf_load_options, scene_nodes);
             return;
         }
 

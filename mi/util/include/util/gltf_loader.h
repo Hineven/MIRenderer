@@ -15,6 +15,10 @@ MI_NAMESPACE_BEGIN
 
 class GLTFLoader {
 public:
+    struct LoadOptions {
+        bool override_doublesided {false};
+    };
+
     static bool LoadGLTF (
         std::filesystem::path path, DeviceBindlessResourceAllocator & allocator,
         Scene & scene, RenderableNodeRegistry * reg,
@@ -22,7 +26,8 @@ public:
         std::vector<TRef<Geometry>> & out_geometries,
         std::vector<TRef<Material>> & out_materials,
         std::vector<TRef<StaticMeshInstance>> & out_meshes,
-        std::vector<TRef<RenderableNode>> * out_nodes = nullptr
+        std::vector<TRef<RenderableNode>> * out_nodes = nullptr,
+        LoadOptions load_options = {}
     );
     // Load SRV image
     // static TRef<Texture> LoadImage (std::string name, std::filesystem::path path);
