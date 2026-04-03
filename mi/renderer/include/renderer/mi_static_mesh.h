@@ -53,6 +53,8 @@ public:
     struct MeshLightHierarchyRecord {
         uint32_t static_mesh_local_geometry_index {};
         MeshLightClusterHierarchy hierarchy {};
+        // Number of clusters for each tree depth level. Level 0 is the root cluster level.
+        std::vector<uint32_t> depth_level_cluster_counts {};
     };
 
     friend class Material;

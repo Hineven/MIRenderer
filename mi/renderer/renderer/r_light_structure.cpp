@@ -17,36 +17,7 @@
 #include "../shaders/shared/SharedLight.hlsl"
 #include "../shaders/shared/SharedLightClusterHierarchy.hlsl"
 MI_NAMESPACE_BEGIN
-namespace {
 constexpr uint32_t kLightPrecomputationLevelsPerDispatch = 3;
-
-void CollectMeshLightClusterDepthLevels(
-    const MeshLightClusterHierarchy & hierarchy,
-    std::vector<std::vector<uint32_t>> & out_levels
-) {
-    out_levels.clear();
-    if (hierarchy.root_node.bIsLeaf() || hierarchy.nodes.empty()) {
-        return;
-    }
-
-    std::vector<uint32_t> current_level {hierarchy.root_node.Index()};
-    while (!current_level.empty()) {
-        out_levels.push_back(current_level);
-        std::vector<uint32_t> next_level;
-        for (uint32_t cluster_idx : current_level) {
-            mi_check(cluster_idx < hierarchy.nodes.size(), "Cluster index out of bounds while collecting hierarchy levels.");
-            auto const & node = hierarchy.nodes[cluster_idx];
-            if (!node.L.bIsLeaf()) {
-                next_level.push_back(node.L.Index());
-            }
-            if (!node.R.bIsLeaf()) {
-                next_level.push_back(node.R.Index());
-            }
-        }
-        current_level = std::move(next_level);
-    }
-}
-}
 
 CVar<int> CVar_MaxNumGridLights(
     "r.lightgrid.max_num_grid_lights",
@@ -512,14 +483,13 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
 
         for (uint32_t local_mli_index = 0; local_mli_index < (uint32_t)mesh_light_instances.size(); ++local_mli_index) {
             auto const & hierarchy = hierarchy_records[local_mli_index].hierarchy;
+            auto const & depth_level_cluster_counts = hierarchy_records[local_mli_index].depth_level_cluster_counts;
             auto const & mli = mesh_light_instances[local_mli_index];
-            std::vector<std::vector<uint32_t>> cluster_levels;
-            CollectMeshLightClusterDepthLevels(hierarchy, cluster_levels);
             uint32_t active_list_index = (uint32_t)active_mesh_light_instance_indices.size();
             active_mesh_light_instance_indices.push_back(mli_base_index + local_mli_index);
 
             num_active_mli_clusters += (uint32_t)hierarchy.nodes.size();
-            max_active_mli_levels = std::max(max_active_mli_levels, (uint32_t)cluster_levels.size());
+            max_active_mli_levels = std::max(max_active_mli_levels, (uint32_t)depth_level_cluster_counts.size());
 
             if (!mli.MeshLightInstanceClusterOffset.bIsTriangle()) {
                 finalize_cluster_draw_commands.push_back(RHIDrawIndirectCommand {
@@ -539,18 +509,18 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 });
             }
 
-            uint32_t num_level_dispatches = DivideAndRoundUp((uint32_t)cluster_levels.size(), kLightPrecomputationLevelsPerDispatch);
+            uint32_t num_level_dispatches = DivideAndRoundUp((uint32_t)depth_level_cluster_counts.size(), kLightPrecomputationLevelsPerDispatch);
             if (level_draw_commands.size() < num_level_dispatches) {
                 level_draw_commands.resize(num_level_dispatches);
             }
             for (uint32_t level_dispatch_index = 0; level_dispatch_index < num_level_dispatches; ++level_dispatch_index) {
                 uint32_t level_index = level_dispatch_index * kLightPrecomputationLevelsPerDispatch;
-                auto const & level = cluster_levels[level_index];
-                if (level.empty()) {
+                uint32_t level_cluster_count = depth_level_cluster_counts[level_index];
+                if (level_cluster_count == 0) {
                     continue;
                 }
                 level_draw_commands[level_dispatch_index].push_back(RHIDrawIndirectCommand {
-                    (uint32_t)level.size(),
+                    level_cluster_count,
                     1,
                     0,
                     active_list_index

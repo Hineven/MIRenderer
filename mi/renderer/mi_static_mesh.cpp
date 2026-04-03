@@ -483,9 +483,18 @@ void StaticMesh::RebuildLightClusterHierarchy_CPU(const MeshLightClusterBuildCon
             continue;
         }
 
+        std::vector<std::vector<uint32_t>> cluster_levels;
+        CollectMeshLightClusterDepthLevels(*hierarchy_opt, cluster_levels);
+        std::vector<uint32_t> depth_level_cluster_counts;
+        depth_level_cluster_counts.reserve(cluster_levels.size());
+        for (auto const & level : cluster_levels) {
+            depth_level_cluster_counts.push_back((uint32_t)level.size());
+        }
+
         light_hierarchy_records_.push_back(MeshLightHierarchyRecord{
             i,
-            std::move(hierarchy_opt.value())
+            std::move(hierarchy_opt.value()),
+            std::move(depth_level_cluster_counts)
         });
     }
 

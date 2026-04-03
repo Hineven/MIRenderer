@@ -494,8 +494,6 @@ LightSample SampleOneLightSample_RIS (
                 }
                 // Estimate history visibility weight
                 float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, Hash);
-                // FIXME
-                VisibilityWeight = 1;
                 Weight *= VisibilityWeight;
                 if(Weight > 0.f) {
                     LightSampler_AddListLightToSampler(LS, Weight, Element);
@@ -525,8 +523,6 @@ LightSample SampleOneLightSample_RIS (
                     }
                     // Estimate history visibility weight
                     float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, Hash);
-                    // FIXME
-                    VisibilityWeight = 1.f;
                     Weight *= VisibilityWeight;
                     if (Weight > 0.f) {
                         // Add the light to the sampler
