@@ -492,6 +492,8 @@ LightSample SampleOneLightSample_RIS (
                 }
                 // Estimate history visibility weight
                 float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, Hash);
+                // FIXME
+                VisibilityWeight = 1;
                 Weight *= VisibilityWeight;
                 if(Weight > 0.f) {
                     LightSampler_AddListLightToSampler(LS, Weight, Element);
@@ -508,7 +510,6 @@ LightSample SampleOneLightSample_RIS (
                 Element = LightGrid_RWListMeshLightInstanceElementIndexBuffer[GridLightListOffset + LightListIndex];
                 uint WaveMinLightIndex = WaveActiveMin(Element.Packed);
                 if (WaveMinLightIndex == Element.Packed) {
-                    // PrecomputedLight L = UnpackPrecomputedLight(LightGrid_RWPrecomputedActiveLightBuffer[ActiveLightListIndex]);
                     float Weight = 0;
                     uint Hash = 0;
                     if(Element.bIsTriangle()) {
@@ -522,6 +523,8 @@ LightSample SampleOneLightSample_RIS (
                     }
                     // Estimate history visibility weight
                     float VisibilityWeight = LightGrid_GridLightVisibilityWeight(GridVisibility, Hash);
+                    // FIXME
+                    VisibilityWeight = 1.f;
                     Weight *= VisibilityWeight;
                     if (Weight > 0.f) {
                         // Add the light to the sampler
@@ -572,6 +575,7 @@ LightSample SampleOneLightSample_RIS (
         }
     }
 
+    // Handle the directional light
     if (bWithDirectional && DirectionalLightEnabled()) {
         float3 Direction = GetDirectionalLightDirection();
         float Weight = RadianceToLuminance(GetDirectionalLightIrradiance());
@@ -615,12 +619,15 @@ LightSample SampleOneLightSample_RIS (
             } else {
                 // Sample area light    
                 MeshLightInstanceElementOffset Element = LSL.AbsElementIndex;
+                float TreePdf;
                 EvaluatedAreaLight Evaluated = LCH_SampleAndEvaluateLight(
-                    Element, u1
+                    Element, u1, TreePdf
                 );
                 Sample = SampleAreaLightDiffuseWithPreMultiplied(
                     WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2
                 );
+                // Contribution from the tree traversal sampling process
+                Sample.Pdf *= TreePdf;
                 // Account for overflowing lights that have not been injected into the grid.
                 if(LightGridLightListCdf > 0) Sample.Pdf *= LightGridLightListCdf;
                 // Keep the light index

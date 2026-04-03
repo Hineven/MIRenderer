@@ -151,7 +151,7 @@ void AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild (
     GeometryHeader MeshGeometry,
     float3x4 RenderableToWorld,
     inout MeshLightInstanceClusterHeader MLIClusterHeader,
-    inout float3 WeightedNormal, out float IntensityWeight
+    inout float3 WeightedNormal, inout float3 WeightedNormalSecondMoment, out float IntensityWeight
 ) {
     uint MeshLightLocalTriangleIndex = TriangleChild.Index();
     uint MLITriangleIndex = MLI.MeshLightInstanceTriangleOffset + MeshLightLocalTriangleIndex;
@@ -167,10 +167,9 @@ void AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild (
     float  Intensity = BakedData.AvgIntensity * Area; 
     float3 WeightedTriangleNormal = Normal * Intensity;
     WeightedNormal += WeightedTriangleNormal;
+    WeightedNormalSecondMoment += Intensity * (Normal * Normal);
     MLIClusterHeader.TotalIntensity += Intensity;
     MLIClusterHeader.TotalArea += Area;
-    // Store WeightedNormal ^ 2 first. A separate finalization will be performed later.
-    MLIClusterHeader.WeightedNormalVariance += dot(WeightedTriangleNormal, WeightedTriangleNormal);
     IntensityWeight = Intensity;
 }
 
@@ -180,16 +179,15 @@ void AccumulateMeshLightInstanceClusterNodeDataFromClusterChild (
     MeshLightInstanceClusterHeader MLIChildClusterHeader,
     float3x4 RenderableToWorld,
     inout MeshLightInstanceClusterHeader MLIClusterHeader,
-    inout float3 WeightedNormal, out float IntensityWeight
+    inout float3 WeightedNormal, inout float3 WeightedNormalSecondMoment, out float IntensityWeight
 ) {
     // Accumulate to cluster header
     MLIClusterHeader.AABBMin = min(MLIClusterHeader.AABBMin, MLIChildClusterHeader.AABBMin);
     MLIClusterHeader.AABBMax = max(MLIClusterHeader.AABBMax, MLIChildClusterHeader.AABBMax);
     WeightedNormal += MLIChildClusterHeader.WeightedNormal;
+    WeightedNormalSecondMoment += MLIChildClusterHeader.WeightedNormalSecondMoment;
     MLIClusterHeader.TotalIntensity += MLIChildClusterHeader.TotalIntensity;
     MLIClusterHeader.TotalArea += MLIChildClusterHeader.TotalArea;
-    // Store WeightedNormal ^ 2 first. A separate finalization will be performed later.
-    MLIClusterHeader.WeightedNormalVariance += MLIChildClusterHeader.WeightedNormalVariance;
     IntensityWeight = MLIChildClusterHeader.TotalIntensity;
 }
 
@@ -199,7 +197,7 @@ void AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External (
     uint MeshLightInstanceClusterNodeOffset,
     float3x4 RenderableToWorld,
     inout MeshLightInstanceClusterHeader MLIClusterHeader,
-    inout float3 WeightedNormal, out float IntensityWeight
+    inout float3 WeightedNormal, inout float3 WeightedNormalSecondMoment, out float IntensityWeight
 ) {
     uint MeshLightLocalClusterIndex = ClusterChild.Index();
     uint MeshLightClusterIndex = ML.ClusterOffset + MeshLightLocalClusterIndex;
@@ -209,7 +207,7 @@ void AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External (
     ];
     AccumulateMeshLightInstanceClusterNodeDataFromClusterChild(
         ClusterChild, ML, MLIChildClusterHeader, RenderableToWorld,
-        MLIClusterHeader, WeightedNormal, IntensityWeight
+        MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, IntensityWeight
     );
 }
 
@@ -253,11 +251,12 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
         for(int i = 0; i < CurrentSubtreeLevelCount; i++) {
             int TreeIndex = CurrentSubtreeLevelStart + i;
             MeshLightClusterChild MLLocalClusterIndex = MLLocalClusterNodeIndexBuffer[TreeIndex];
-            if(IsMeshLightClusterChildValid(MLLocalClusterIndex)) {
+            if(IsMeshLightClusterChildValid(MLLocalClusterIndex) && !MLLocalClusterIndex.bIsLeaf()) {
                 MeshLightClusterNode Node = LCH_MeshLightClusterNodeBuffer[MeshLightClusterOffset + MLLocalClusterIndex.Index()];
                 MLLocalClusterNodeIndexBuffer[TreeIndex * 2 + 1] = Node.L;
                 MLLocalClusterNodeIndexBuffer[TreeIndex * 2 + 2] = Node.R;
             } else {
+                // For leaf nodes & invalid nodes, their childs are set to invalid.
                 MLLocalClusterNodeIndexBuffer[TreeIndex * 2 + 1] = MakeInvalidMeshLightClusterChild();
                 MLLocalClusterNodeIndexBuffer[TreeIndex * 2 + 2] = MakeInvalidMeshLightClusterChild();
             }
@@ -276,20 +275,23 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
         for(int i = 0; i < CurrentSubtreeLevelCount; i++) {
             int TreeIndex = CurrentSubtreeLevelStart + i;
             MeshLightClusterChild MLLocalClusterIndex = MLLocalClusterNodeIndexBuffer[TreeIndex];
-            // Only process existing nodes.
-            if(IsMeshLightClusterChildValid(MLLocalClusterIndex)) {
+            // Only process existing non-leaf nodes.
+            if(IsMeshLightClusterChildValid(MLLocalClusterIndex) && !MLLocalClusterIndex.bIsLeaf()) {
                 float L_Weight = 0, R_Weight = 0;
                 MeshLightClusterHeader MLClusterHeader = LCH_MeshLightClusterHeaderBuffer[MeshLightClusterOffset + MLLocalClusterIndex.Index()];
                 MeshLightInstanceClusterHeader MLIClusterHeader = (MeshLightInstanceClusterHeader)0;
                 MLIClusterHeader.AABBMin = float3(FLT_MAX, FLT_MAX, FLT_MAX);
                 MLIClusterHeader.AABBMax = float3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
                 float3 WeightedNormal = 0;
+                float3 WeightedNormalSecondMoment = 0;
                 MLIClusterHeader.MeshLightInstanceIndex = MeshLightInstanceIndex;
                 MLIClusterHeader.WeightedNormalVariance = 0;
                 MLIClusterHeader.Padding0 = 0;
+                MLIClusterHeader.WeightedNormalSecondMoment = 0;
                 MLIClusterHeader.TotalIntensity = 0;
                 MLIClusterHeader.TotalArea = 0;
                 MLIClusterHeader.Padding1 = 0;
+                MLIClusterHeader.Padding2 = 0;
                 MLIClusterHeader.Hash = MLClusterHeader.Hash; // Duplicate the hash from the ML cluster header
                 // Ready to accumulate data from children or triangles
                 MeshLightClusterChild LeftChild = MLLocalClusterNodeIndexBuffer[TreeIndex * 2 + 1];
@@ -300,7 +302,7 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                         // Leaf node, interpret as triangle index
                         AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild(
                             LeftChild, ML, MLI, MeshGeometry, RenderableToWorld,
-                            MLIClusterHeader, WeightedNormal, L_Weight
+                            MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, L_Weight
                         );
                     } else {
                         // Inner node, interpret as cluster index
@@ -308,13 +310,13 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                             // Child is not present in the local buffer, load directly from the global cluster header buffer.
                             AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External(
                                 LeftChild, ML, MLI.MeshLightInstanceClusterOffset.Offset(),
-                                RenderableToWorld, MLIClusterHeader, WeightedNormal, L_Weight
+                                RenderableToWorld, MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, L_Weight
                             );
                         } else {
                             // Child is present in the local buffer, load from the local buffer
                             AccumulateMeshLightInstanceClusterNodeDataFromClusterChild(
                                 LeftChild, ML, LocalMLIClusterHeaderBuffer[i<<1], RenderableToWorld,
-                                MLIClusterHeader, WeightedNormal, L_Weight
+                                MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, L_Weight
                             );
                         }
                     }
@@ -325,25 +327,26 @@ void LightPrecomputation_Level (uint VertexID : SV_VertexID, uint InstanceID : S
                         // Leaf node, interpret as triangle index
                         AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild(
                             RightChild, ML, MLI, MeshGeometry, RenderableToWorld,
-                            MLIClusterHeader, WeightedNormal, R_Weight
+                            MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, R_Weight
                         );
                     } else {
                         // Inner node, interpret as cluster index
                         if(CurrentSubtreeLevel == PROCESSING_LEVELS_PER_DISPATCH - 1) {
                             AccumulateMeshLightInstanceClusterNodeDataFromClusterChild_External(
                                 RightChild, ML, MLI.MeshLightInstanceClusterOffset.Offset(),
-                                RenderableToWorld, MLIClusterHeader, WeightedNormal, R_Weight
+                                RenderableToWorld, MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, R_Weight
                             );
                         } else {
                             AccumulateMeshLightInstanceClusterNodeDataFromClusterChild(
                                 RightChild, ML, LocalMLIClusterHeaderBuffer[(i<<1) + 1],
-                                RenderableToWorld, MLIClusterHeader, WeightedNormal, R_Weight
+                                RenderableToWorld, MLIClusterHeader, WeightedNormal, WeightedNormalSecondMoment, R_Weight
                             );
                         }
                     }
                 }
                 // Finalize some of the the cluster header dataif
                 MLIClusterHeader.WeightedNormal = WeightedNormal;
+                MLIClusterHeader.WeightedNormalSecondMoment = WeightedNormalSecondMoment;
                 // WeightedNormalVariance is finalized in a separate shader. Not here.
 
                 // Write back to the instance cluster header buffer.
@@ -368,10 +371,14 @@ void LightPrecomputation_FinalizeMLIClusters (uint VertexID : SV_VertexID, uint 
     MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
     if(MLI.MeshLightInstanceClusterOffset.bIsTriangle()) return;
     uint MeshLightInstanceClusterIndex = MLI.MeshLightInstanceClusterOffset.Offset() + VertexID;
-    // Finalize the variance from the accumulated weighted-normal L2 sum and weighted-normal sum.
+    // Finalize the variance using the metric assumed by fit_lightgrid_cluster_normal_lerp.py:
+    // m1 = E[n], m2 = E[n*n] (component-wise), var = ||m2 - m1*m1||^2
     MeshLightInstanceClusterHeader MLIClusterHeader = LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex];
-    LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex].WeightedNormalVariance 
-        = sqrt(max(MLIClusterHeader.WeightedNormalVariance - dot(MLIClusterHeader.WeightedNormal, MLIClusterHeader.WeightedNormal), 0));
+    float InvTotalIntensity = 1.f / max(MLIClusterHeader.TotalIntensity, 1e-6f);
+    float3 M1 = MLIClusterHeader.WeightedNormal * InvTotalIntensity;
+    float3 M2 = MLIClusterHeader.WeightedNormalSecondMoment * InvTotalIntensity;
+    float3 Diff = M2 - M1 * M1;
+    LCH_RWMeshLightInstanceClusterHeaderBuffer[MeshLightInstanceClusterIndex].WeightedNormalVariance = dot(Diff, Diff);
 }
 
 #ifndef MAX_NUM_GRID_LIGHTS
@@ -465,7 +472,10 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     float SumFilteredWeights = 0.0f, SumSampledWeights = 0.f, SumCandidateWeights = 0.f;
     float SumFilteredOutWeights = 0.f;
 
-    float DynamicThreshold = LightStructure_UB.LightInjectionIntensityThreshold;
+    // Applying bernoulli thinning to trim small-contributing lights before the subset selection
+    // is pretty pricy if we want to maintain unbiasedness. So we will not perform that for now.
+    // TODO find a good strategy to filter out tiny instanced lights. (by sorting? whatever.)
+
     // Temporary buffer to store light list indices for the current grid.
     // The first half is for sampled lights, the second half is for candidate lights.
     MeshLightInstanceElementOffset LocalGridLightMLIClusterSelection[MAX_NUM_GRID_LIGHTS * 2]; // Absolute buffer offsets.
@@ -473,7 +483,6 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
     uint2 GridPressure = LightGrid_RWGridPressureBuffer[GridIndex1];
     LightGridPressureContext PressureContext = LightGridPressureContext_Init(GridPressure);
     uint NumValidMLILights = 0;
-    // TODO better injection strategy (subdivide first, then inject?)
     for (uint ActiveMeshLightInstanceIndex = 0; ActiveMeshLightInstanceIndex < NumActiveLights; ActiveMeshLightInstanceIndex++) {
         uint MeshLightInstanceIndex = LightGrid_ActiveMeshLightInstanceIndexBuffer[ActiveMeshLightInstanceIndex];
         MeshLightInstance MLI = LCH_MeshLightInstanceBuffer[MeshLightInstanceIndex];
@@ -498,10 +507,7 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
                 SelectedAbsolute = MakeMeshLightInstanceElementOffset(false, AbsoluteOffset);
                 Weight = LightGrid_EstimateLightGridPerceptualContribution(MLICluster, GridMin, GridSize);
             }
-            float LightCullingProbabilityMin = LightStructure_UB.LightCullingRate;
-            // Lights with lower contribution have higher probability to be culled.
-            float LightCullingProbability = LightCullingProbabilityMin + (1 - LightCullingProbabilityMin) * saturate(DynamicThreshold / max(Weight, 1e-6f));
-            bool bIsLightAlive = R.rand() > LightCullingProbability;
+            bool bIsLightAlive = true;
             if (bIsLightAlive) {
                 // Keep this light in the double buffer and accumulate weights depending on which
                 // group it is in
@@ -577,7 +583,7 @@ void LightPrecomputation_InjectLights(uint DispatchID: SV_DispatchThreadID, uint
 
     // Write to grid
     LightGrid_RWGridLightListLengthBuffer[GridIndex1] = NumSampledLights;
-    // Account for culled lights by normalizing the total weight, reducing bias.
+    // Account for lights outside of the selected subset by normalizing the total weight.
     // (Cdf does not involve in RIS process, but involves in the correction with the final lighting computation)
     float SumWeights = SumFilteredWeights + SumFilteredOutWeights;
     LightGrid_RWGridLightListCdfBuffer[GridIndex1] = SumSampledWeights / max(SumWeights, 1e-6f);

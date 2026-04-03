@@ -114,6 +114,9 @@ float LightGrid_EstimateLightGridPerceptualContribution(MeshLightInstanceCluster
         : 0.f;
 
     float LerpingFactor = LightGrid_EstimateLightGridPerceptualContribution_ClusterNormalVarianceToLerpFactor(MLICluster.WeightedNormalVariance);
+    float ClusterNearFieldRange = max(max(WorldExtent.x, max(WorldExtent.y, WorldExtent.z)) + GridSize, 1e-4f);
+    float CloseRangeWeight = saturate(1.f - Distance / ClusterNearFieldRange);
+    LerpingFactor = 1.f - (1.f - LerpingFactor) * (1.f - CloseRangeWeight);
     // Lerp the cosine factor to uniform distribution when MLICluster.WeightedNormalVariance is high
     {
         float Dst = 1 / LCH_PI; // PI is the integral of saturate(cosine) over the sphere. (distribute the integral uniformly on the sphere)
@@ -228,11 +231,6 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
         : 0.f;
 
     float LerpingFactor = LightGrid_EstimateLightGridPerceptualContribution_ClusterNormalVarianceToLerpFactor(L.WeightedNormalVariance);
-    // Lerp the cosine factor to uniform distribution when L.WeightedNormalVariance is high
-    {
-        float Dst = 1 / LCH_PI; // PI is the integral of saturate(cosine) over the sphere. (distribute the integral uniformly on the sphere)
-        LightFacingCosineFactor = lerp(LightFacingCosineFactor, Dst, LerpingFactor);
-    }
 
     // Conservative projected-area upper bound of an AABB for any direction.
     float3 Extent = max(ClusterMax - ClusterMin, float3(0, 0, 0));
@@ -281,6 +279,19 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
             return 0.0f;
         }
         ReceiverCosineFactor = MaxK;
+
+        // Close to the cluster, the weighted-normal proxy is too directional for large curved emitters.
+        // Relax it towards an isotropic emitter similarly to grid injection.
+        float ClusterNearFieldRange = max(max(WorldExtent.x, max(WorldExtent.y, WorldExtent.z)), 1e-4f);
+        float CloseRangeWeight = saturate(1.f - sqrt(ClosestDistanceSq) / ClusterNearFieldRange);
+        LerpingFactor = 1.f - (1.f - LerpingFactor) * (1.f - CloseRangeWeight);
+    }
+
+    // Lerp the cosine factor to uniform distribution when the cluster is sufficiently isotropic
+    // or when the shading point is close to its spatial extent.
+    {
+        float Dst = 1 / LCH_PI; // PI is the integral of saturate(cosine) over the sphere. (distribute the integral uniformly on the sphere)
+        LightFacingCosineFactor = lerp(LightFacingCosineFactor, Dst, LerpingFactor);
     }
 
     float SolidAngle = LightFacingCosineFactor * MaxProjectedArea / max(DistanceSq + MaxProjectedArea / LCH_PI, 1e-6f);
@@ -302,7 +313,7 @@ EvaluatedAreaLight LCH_ExtractTriangleLight (MeshLight ML, MeshLightInstance MLI
 
 EvaluatedAreaLight LCH_SampleAndEvaluateLight (
     // uint MLClusterOffset, uint MLIClusterNodeOffset,
-    MeshLightInstanceElementOffset AbsElement, float u
+    MeshLightInstanceElementOffset AbsElement, float u, out float Pdf
 ) {
     uint MLClusterOffset, MLIClusterOffset;
     MeshLight ML;
@@ -317,7 +328,7 @@ EvaluatedAreaLight LCH_SampleAndEvaluateLight (
         ML  = LCH_MeshLightBuffer[MLI.MeshLightIndex];
     }
     uint MLIClusterNodeOffset = MLI.MeshLightInstanceClusterOffset.Offset();
-    float Pdf = 1.f;
+    Pdf = 1.f;
     MeshLightInstanceElementOffset RelElement = MakeMeshLightInstanceElementOffset(
         AbsElement.bIsTriangle(), AbsElement.Offset() 
         - (AbsElement.bIsTriangle() ? MLI.MeshLightInstanceTriangleOffset : MLIClusterNodeOffset)
@@ -329,10 +340,12 @@ EvaluatedAreaLight LCH_SampleAndEvaluateLight (
             // Go to the left child
             RelElement = MakeMeshLightInstanceElementOffset(MLClusterNode.L.bIsLeaf(), MLClusterNode.L.Index());
             u = u / ClusterNode.L_Probability;
+            Pdf = Pdf * ClusterNode.L_Probability;
         } else {
             // Go to the right child
             RelElement = MakeMeshLightInstanceElementOffset(MLClusterNode.R.bIsLeaf(), MLClusterNode.R.Index());
             u = (u - ClusterNode.L_Probability) / (1.f - ClusterNode.L_Probability);
+            Pdf = Pdf * (1.f - ClusterNode.L_Probability);
         }
     }
     // Extract and evaluate triangle
