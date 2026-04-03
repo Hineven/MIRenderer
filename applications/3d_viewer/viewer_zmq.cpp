@@ -47,6 +47,8 @@ void ViewerZmqServer::Destroy() {
     ctx_.reset();
     has_pending_export_reply_ = false;
     pending_export_types_.clear();
+    has_pending_reload_reply_ = false;
+    reload_shaders_requested_ = false;
 }
 
 void ViewerZmqServer::BroadcastInfo(const std::string& info) {
@@ -55,6 +57,33 @@ void ViewerZmqServer::BroadcastInfo(const std::string& info) {
 
 static nlohmann::json ToJson (glm::vec3 v) {
     return nlohmann::json{ v.x, v.y, v.z };
+}
+
+static const char* ToConsoleLogTypeString(ViewerImGuiConsole::ConsoleLogType type) {
+    switch (type) {
+        case ViewerImGuiConsole::ConsoleLogType::kInfo:
+            return "info";
+        case ViewerImGuiConsole::ConsoleLogType::kWarning:
+            return "warning";
+        case ViewerImGuiConsole::ConsoleLogType::kError:
+            return "error";
+        case ViewerImGuiConsole::ConsoleLogType::kRaw:
+            return "raw";
+        default:
+            return "raw";
+    }
+}
+
+static nlohmann::json GetConsoleLogJson(const ViewerImGuiConsole::ConsoleLogEntry& entry) {
+    using namespace std::chrono;
+    const auto timestamp_ms = duration_cast<milliseconds>(entry.timestamp.time_since_epoch()).count();
+    return nlohmann::json{
+        {"text", entry.text},
+        {"location", entry.location},
+        {"type", ToConsoleLogTypeString(entry.type)},
+        {"count", entry.count},
+        {"timestamp_ms", timestamp_ms}
+    };
 }
 
 static nlohmann::json GetCVarJson(CVarBase* cvar) {
@@ -108,7 +137,7 @@ static nlohmann::json GetCVarJson(CVarBase* cvar) {
 std::vector<std::string> ViewerZmqServer::PollEvents() {
     using json = nlohmann::json;
     if (!rep_) return {};
-    if (has_pending_export_reply_) return {};
+    if (has_pending_export_reply_ || has_pending_reload_reply_) return {};
 
     std::vector<zmq::pollitem_t> items(1);
     items[0] = zmq::pollitem_t{};
@@ -189,6 +218,18 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
             } else {
                 reply = { {"ok", false}, {"err", "cvar_not_found"} };
             }
+        } else if (cmd == "get_recent_logs") {
+            if (!viewer_) {
+                reply = { {"ok", false}, {"err", "no_viewer"} };
+            } else {
+                auto max_count = j["args"].value("count", 20u);
+                auto logs = viewer_->GetLatestUniqueLogs(max_count);
+                nlohmann::json logs_json = nlohmann::json::array();
+                for (const auto& log : logs) {
+                    logs_json.push_back(GetConsoleLogJson(log));
+                }
+                reply = { {"ok", true}, {"logs", logs_json} };
+            }
         } else if (cmd == "render_and_export_current_frame") {
             auto args = j.value("args", json::object());
             auto types = args.value("types", std::vector<std::string>{"radiance"});
@@ -197,6 +238,14 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
             // Request one-frame rendering.
             viewer_->one_frame_rendering_requested_ = true;
             return pending_export_types_;
+        } else if (cmd == "reload_shaders") {
+            if (!viewer_) {
+                reply = { {"ok", false}, {"err", "no_viewer"} };
+            } else {
+                reload_shaders_requested_ = true;
+                has_pending_reload_reply_ = true;
+                return {};
+            }
         } else if (cmd == "load_gltf_abs_path") {
             auto path_str = j["args"].value("path", std::string{});
             if (!viewer_) {
@@ -320,6 +369,34 @@ void ViewerZmqServer::ReplyExportedFrame() {
 
     has_pending_export_reply_ = false;
     pending_export_types_.clear();
+}
+
+bool ViewerZmqServer::ConsumeReloadShadersRequest() {
+    if (!reload_shaders_requested_) {
+        return false;
+    }
+    reload_shaders_requested_ = false;
+    return true;
+}
+
+void ViewerZmqServer::ReplyReloadShaders(bool ok, const std::string& err) {
+    if (!rep_ || !has_pending_reload_reply_) return;
+
+    nlohmann::json reply = {
+        {"ok", ok}
+    };
+    if (!ok && !err.empty()) {
+        reply["err"] = err;
+    }
+
+    auto reply_str = reply.dump();
+    try {
+        rep_->send(zmq::buffer(reply_str), zmq::send_flags::none);
+    } catch (const zmq::error_t& e) {
+        MI_LOG(MIInfraLogType::kWarning, "ZMQ send error: {}", e.what());
+    }
+
+    has_pending_reload_reply_ = false;
 }
 
 MI_NAMESPACE_END

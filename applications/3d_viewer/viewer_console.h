@@ -8,6 +8,7 @@
 #define MI_VIEWER_CONSOLE_H
 
 #include <array>
+#include <cstddef>
 #include <chrono>
 #include <functional>
 #include <utility>
@@ -63,6 +64,7 @@ public:
         std::string text;
         std::string location;
         ConsoleLogType type;
+        uint32_t count {1};
         bool expanded {false};
         std::chrono::system_clock::time_point timestamp {std::chrono::system_clock::now()};
     };
@@ -80,6 +82,8 @@ public:
         }
     }
 
+    std::vector<ConsoleLogEntry> GetLatestUniqueLogs(size_t max_count) const;
+
     std::vector<ConsoleLogEntry> logs_;
     void ClearLog();
     void ClearHistory();
@@ -95,6 +99,7 @@ public:
     std::string last_suggestion_input_;
 
 private:
+    void AppendLogEntry(ConsoleLogEntry item);
 };
 
 MI_NAMESPACE_END

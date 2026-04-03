@@ -67,6 +67,7 @@ public:
 
     struct FrameInternalDelayedOps {
         bool should_reload_shaders {};
+        bool did_reload_shaders {};
         bool should_export_result {};
         bool should_start_baking {};
         bool should_process_click_select {};
@@ -115,6 +116,7 @@ public:
         bool is_suspended {};
     };
     ViewerStatus GetStatus () ;
+    std::vector<ViewerImGuiConsole::ConsoleLogEntry> GetLatestUniqueLogs(size_t max_count) const;
     struct ExportedRenderResult {
         std::vector<std::byte> bytes;
         uint32_t width, height;

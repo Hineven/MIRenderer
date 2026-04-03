@@ -63,6 +63,30 @@ void ViewerImGuiConsole::ClearLog() {
     logs_.clear();
 }
 
+void ViewerImGuiConsole::AppendLogEntry(ConsoleLogEntry item) {
+    if (!logs_.empty()) {
+        auto & last_item = logs_.back();
+        if (last_item.text == item.text
+            && last_item.location == item.location
+            && last_item.type == item.type) {
+            last_item.count += item.count;
+            last_item.timestamp = item.timestamp;
+            return;
+        }
+    }
+
+    logs_.push_back(std::move(item));
+}
+
+std::vector<ViewerImGuiConsole::ConsoleLogEntry> ViewerImGuiConsole::GetLatestUniqueLogs(size_t max_count) const {
+    if (max_count == 0 || logs_.empty()) {
+        return {};
+    }
+
+    const size_t begin_index = logs_.size() > max_count ? logs_.size() - max_count : 0;
+    return {logs_.begin() + static_cast<std::ptrdiff_t>(begin_index), logs_.end()};
+}
+
 void ViewerImGuiConsole::ClearHistory() {
 }
 
@@ -247,6 +271,10 @@ void ViewerImGuiConsole::DrawImGuiConsoleEmbedded(glm::vec2 size) {
 
             auto color = GetConsoleTextColor(item.type);
             ImGui::PushStyleColor(ImGuiCol_Text, color);
+            if (item.count > 1) {
+                ImGui::TextDisabled("[x%u]", item.count);
+                ImGui::SameLine();
+            }
 
             if (!item.expanded) {
                 // collapsed: single line with ellipsis if needed
@@ -273,6 +301,10 @@ void ViewerImGuiConsole::DrawImGuiConsoleEmbedded(glm::vec2 size) {
             ImGui::PopID();
         } else {
             // Raw log, no styling
+            if (item.count > 1) {
+                ImGui::TextDisabled("[repeat x%u]", item.count);
+                ImGui::SameLine();
+            }
             ImGui::TextUnformatted(item.text.c_str());
         }
     }
@@ -347,9 +379,10 @@ void ViewerImGuiConsole::PrintRaw(char const* fmt, ...)
     item.text = buf.data();
     item.location = {};
     item.type = ConsoleLogType::kRaw;
+    item.count = 1;
     item.expanded = true; // raw logs always expanded
     item.timestamp = std::chrono::system_clock::now();
-    logs_.push_back(item);
+    AppendLogEntry(std::move(item));
 }
 
 void ViewerImGuiConsole::Print(ConsoleLogType type, const std::string & location, char const* fmt, ...)
@@ -366,9 +399,10 @@ void ViewerImGuiConsole::Print(ConsoleLogType type, const std::string & location
     item.text = buf.data();
     item.location = location;
     item.type = type;
+    item.count = 1;
     item.expanded = false;
     item.timestamp = std::chrono::system_clock::now();
-    logs_.push_back(item);
+    AppendLogEntry(std::move(item));
 }
 
 // Copy-pasted from Donut ImGui console implementation

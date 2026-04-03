@@ -44,6 +44,8 @@ public:
 
     // Called by the viewer to reply with exported frame data for the last export request.
     void ReplyExportedFrame();
+    bool ConsumeReloadShadersRequest();
+    void ReplyReloadShaders(bool ok, const std::string& err = {});
 
     // Submit a one-shot notification to clients (best-effort). Optional.
     void BroadcastInfo(const std::string& info);
@@ -54,6 +56,8 @@ private:
 
     bool has_pending_export_reply_ = false;
     std::vector<std::string> pending_export_types_ {};
+    bool has_pending_reload_reply_ = false;
+    bool reload_shaders_requested_ = false;
 
     ViewerApp * viewer_ {};
 

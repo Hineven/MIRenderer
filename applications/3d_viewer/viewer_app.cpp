@@ -701,6 +701,7 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         RHI::Get().WaitForIdle();
         RDGShaderLibrary::Get().RecompileUpdatedCachedShaders();
         ops.should_reload_shaders = false;
+        ops.did_reload_shaders = true;
     }
 }
 
@@ -835,6 +836,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         // Process pending ZMQ messages
         auto frame_export_requests = zmq_server_->PollEvents();
+        if (zmq_server_ && zmq_server_->ConsumeReloadShadersRequest()) {
+            ops.should_reload_shaders = true;
+        }
         bool any_export_requests_pending = false;
 
         // RDG Execution!
@@ -955,6 +959,11 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
 
         ProcessDelayedOps(ops);
 
+        if (zmq_server_ && ops.did_reload_shaders) {
+            zmq_server_->ReplyReloadShaders(true);
+            ops.did_reload_shaders = false;
+        }
+
         // 必须在 selection 更新后判定拖拽
         ProcessAxisDragging();
 
@@ -1019,6 +1028,10 @@ ViewerApp::ViewerStatus ViewerApp::GetStatus() {
         s.camera = view_->camera_;
     }
     return s;
+}
+
+std::vector<ViewerImGuiConsole::ConsoleLogEntry> ViewerApp::GetLatestUniqueLogs(size_t max_count) const {
+    return console_.GetLatestUniqueLogs(max_count);
 }
 
 bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices) {
