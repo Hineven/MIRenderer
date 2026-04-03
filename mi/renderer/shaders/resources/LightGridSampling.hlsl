@@ -231,12 +231,12 @@ LightSampleSrcLightRecord MakeDirectionalLightSampleRecord() {
     return MakeLightSampleRecord(LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_DIRECTIONAL, 0);
 }
 
-LightSampleSrcLightRecord MakeAreaLightSampleRecord(MeshLightInstanceElementOffset AbsElement) {
+LightSampleSrcLightRecord MakeAreaLightSourceRecord(MeshLightInstanceElementOffset SourceElement) {
     return MakeLightSampleRecord(
-        AbsElement.bIsTriangle() 
+        SourceElement.bIsTriangle() 
         ? LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_MLI_TRIANGLE 
         : LIGHT_SAMPLE_SRC_LIGHT_RECORD_TYPE_MLI_CLUSTER, 
-        AbsElement.Offset()
+        SourceElement.Offset()
     );
 }
 
@@ -249,7 +249,9 @@ struct LightSample {
     // Pdf in solid angle domain. For area light, it is multiplied by LightGridLightListCdf to account for overflowing lights that are not injected into the grid
     float Pdf;
     float3 Radiance;
-    // Keep the hash record of the sampled light.
+    // Record the proposal source light element for history visibility updates.
+    // For mesh lights, this is the source MLI cluster / triangle that the proposal starts from,
+    // not necessarily the final bottom-level triangle sampled inside that subtree.
     LightSampleSrcLightRecord LightRecord;
     bool bIsEnvironmentLightSample;
     bool bIsDirectionalLightSample;
@@ -617,11 +619,11 @@ LightSample SampleOneLightSample_RIS (
                 );
                 Sample.LightRecord = MakeDirectionalLightSampleRecord();
             } else {
-                // Sample area light    
-                MeshLightInstanceElementOffset Element = LSL.AbsElementIndex;
+                // Sample an area light starting from the proposal source element.
+                MeshLightInstanceElementOffset SourceElement = LSL.AbsElementIndex;
                 float TreePdf;
                 EvaluatedAreaLight Evaluated = LCH_SampleAndEvaluateLight(
-                    Element, u1, TreePdf
+                    SourceElement, u1, TreePdf
                 );
                 Sample = SampleAreaLightDiffuseWithPreMultiplied(
                     WorldPosition, WorldNormal, ViewDirection, Evaluated, bSurface, g, u2
@@ -630,8 +632,8 @@ LightSample SampleOneLightSample_RIS (
                 Sample.Pdf *= TreePdf;
                 // Account for overflowing lights that have not been injected into the grid.
                 if(LightGridLightListCdf > 0) Sample.Pdf *= LightGridLightListCdf;
-                // Keep the light index
-                Sample.LightRecord = MakeAreaLightSampleRecord(Element);
+                // Keep the proposal source element for visibility history update/testing.
+                Sample.LightRecord = MakeAreaLightSourceRecord(SourceElement);
             }
             // 25.10.22: This must be placed OUTSIDE for unbiased normalization weight! 
             NumValidSamples ++;
