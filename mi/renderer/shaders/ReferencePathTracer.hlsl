@@ -439,7 +439,11 @@ void ReferencePathTracerRaygen() {
                 }
                 // 2. Sample outgoing ray direction (if pass alpha test)
                 ShadingMaterial M = GetShadingMaterial(Intersection);
-                // if(dot(M.Normal, Ray.Direction) > 0) M.Normal = -M.Normal;
+                float NormalFlipping = dot(Intersection.GeometryNormal, Ray.Direction) > 0 ? -1 : 1;
+                if(dot(Intersection.GeometryNormal, Ray.Direction) > 0) {
+                    // Invert the shading normal if the ray hit the back face, to make it consistent with the single-sided shading model.
+                    M.Normal = -M.Normal;
+                }
                 float3 SampledDirection;
                 // Sample BSDF
                 float BsdfPdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
@@ -458,7 +462,7 @@ void ReferencePathTracerRaygen() {
                 }
 
                 // Update ray origin
-                Ray.Origin = Intersection.WorldPosition + Intersection.GeometryNormal * 2e-5f;
+                Ray.Origin = Intersection.WorldPosition + NormalFlipping * Intersection.GeometryNormal * 2e-5f;
                 Ray.Direction = SampledDirection;
                 Ray.TMin = 1e-6f;
                 BounceIndex++;
