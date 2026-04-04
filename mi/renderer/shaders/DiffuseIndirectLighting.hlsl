@@ -1929,17 +1929,17 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
             if (abs(dot(ProbeWorldPosition - WorldPosition, Normal)) > SearchSize)
                 NearbyProbeWeights[i] = 0.0f;    // prevent probes ahead of pixel plane to leak radiance into occluded background
             else
-            {
-                NearbyProbeWeights[i]  = pow(saturate(1.0f - abs(ProbeLinearDepth - LinearDepth) / max(LinearDepth, 1e-5f)), 6.0f);
-                NearbyProbeWeights[i] *= saturate(dot(Normal, ProbeNormal));
-                NearbyProbeWeights[i]  = pow(NearbyProbeWeights[i], 4.0f);    // make it steep
+            {   
+                float RelativeDepthDifference = abs(ProbeLinearDepth - LinearDepth) / max(ProbeLinearDepth, LinearDepth);
+                float Weight = exp(-2000 * RelativeDepthDifference * RelativeDepthDifference); // From lumen
+                NearbyProbeWeights[i]  = Weight * pow(saturate(dot(Normal, ProbeNormal)), 8.f);
             }
         }
     }
 
     bool bUseBackup = false;
 
-    if (dot(NearbyProbeWeights, NearbyProbeWeights) < 0.02f)
+    if (dot(NearbyProbeWeights, NearbyProbeWeights) < 1e-8f)
     {
         NearbyProbeWeights = 
             float4(1.0f, 
