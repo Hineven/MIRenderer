@@ -145,8 +145,8 @@ static bool ParseSceneConfigJsonString(const std::string& scene_json_str, json& 
     return true;
 }
 
-static bool LoadSceneConfigFromFile(const std::filesystem::path& scene_config_path, json& out_scene_config, std::string* out_error) {
-    std::ifstream ifs(scene_config_path);
+static bool ReadTextFileToString(const std::filesystem::path& path, std::string& out_text, std::string* out_error) {
+    std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
         if (out_error) {
             *out_error = "scene_config_not_found";
@@ -154,16 +154,107 @@ static bool LoadSceneConfigFromFile(const std::filesystem::path& scene_config_pa
         return false;
     }
 
-    try {
-        ifs >> out_scene_config;
-        return true;
-    } catch (const std::exception& e) {
+    ifs.seekg(0, std::ios::end);
+    const auto end_pos = ifs.tellg();
+    if (end_pos < 0) {
         if (out_error) {
-            *out_error = std::string("json_parse_error: ") + e.what();
+            *out_error = "scene_config_read_failed";
         }
-        out_scene_config = json::object();
         return false;
     }
+
+    out_text.resize(static_cast<size_t>(end_pos));
+    ifs.seekg(0, std::ios::beg);
+    if (!out_text.empty()) {
+        ifs.read(out_text.data(), static_cast<std::streamsize>(out_text.size()));
+    }
+    if (!ifs.good() && !ifs.eof()) {
+        if (out_error) {
+            *out_error = "scene_config_read_failed";
+        }
+        out_text.clear();
+        return false;
+    }
+
+    return true;
+}
+
+static std::string StripJsonComments(const std::string& source) {
+    std::string out;
+    out.reserve(source.size());
+
+    bool in_string = false;
+    bool escaped = false;
+    bool in_line_comment = false;
+    bool in_block_comment = false;
+
+    for (size_t i = 0; i < source.size(); ++i) {
+        const char c = source[i];
+        const char next = (i + 1 < source.size()) ? source[i + 1] : '\0';
+
+        if (in_line_comment) {
+            if (c == '\n' || c == '\r') {
+                in_line_comment = false;
+                out.push_back(c);
+            }
+            continue;
+        }
+
+        if (in_block_comment) {
+            if (c == '\n' || c == '\r') {
+                out.push_back(c);
+                continue;
+            }
+            if (c == '*' && next == '/') {
+                in_block_comment = false;
+                ++i;
+            }
+            continue;
+        }
+
+        if (in_string) {
+            out.push_back(c);
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (c == '"') {
+            in_string = true;
+            out.push_back(c);
+            continue;
+        }
+
+        if (c == '/' && next == '/') {
+            in_line_comment = true;
+            ++i;
+            continue;
+        }
+
+        if (c == '/' && next == '*') {
+            in_block_comment = true;
+            ++i;
+            continue;
+        }
+
+        out.push_back(c);
+    }
+
+    return out;
+}
+
+static bool LoadSceneConfigFromFile(const std::filesystem::path& scene_config_path, json& out_scene_config, std::string* out_error) {
+    std::string scene_json_str;
+    if (!ReadTextFileToString(scene_config_path, scene_json_str, out_error)) {
+        return false;
+    }
+
+    return ParseSceneConfigJsonString(StripJsonComments(scene_json_str), out_scene_config, out_error);
 }
 
 } // namespace
