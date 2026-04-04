@@ -179,6 +179,7 @@ BEGIN_SHADER_PARAMETERS(DiffuseIndirectLightingParams)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
     SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, PreviousNormalTexture)
@@ -829,6 +830,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
 
         params->G_Depth = view->g_buffer_->G_depth_.Raw();
         params->G_Normal = view->g_buffer_->G_normal_.Raw();
+        params->G_GeometryNormal = view->g_buffer_->G_geometry_normal_.Raw();
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
         } else {

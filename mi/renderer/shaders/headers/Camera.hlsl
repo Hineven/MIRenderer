@@ -134,6 +134,26 @@ float2 GetPixelWorldSize(CameraParameters C, float LinearDepth)
     return C.FilmPixelWorldSize * LinearDepth;
 }
 
+// Recover a world position from a screen pixel and offset it along the geometry normal
+// while limiting the offset to a fraction of the pixel footprint in world space.
+float3 RecoverOffsetedWorldPositionFromScreenPixel(
+    CameraParameters C,
+    uint2 PixelCoords,
+    float LinearDepth,
+    float3 GeometryNormal,
+    float MaxPixelOffsetFraction)
+{
+    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelCoords, LinearDepth);
+    float MaxOffsetLength = LinearDepth * 2e-4f;
+    float2 PixelSize = GetPixelWorldSize(C, LinearDepth);
+    float ProjectionX = abs(dot(C.NormalizedRight, GeometryNormal));
+    float ProjectionY = abs(dot(C.NormalizedUp, GeometryNormal));
+    float MaxX = MaxPixelOffsetFraction * PixelSize.x / max(ProjectionX, 1e-4f);
+    float MaxY = MaxPixelOffsetFraction * PixelSize.y / max(ProjectionY, 1e-4f);
+    float OffsetLength = min(MaxOffsetLength, min(MaxX, MaxY));
+    return WorldPosition + OffsetLength * GeometryNormal;
+}
+
 float3 ReprojectToPreviousUVZFromUVZ(CameraParameters C, float3 UVZ) {
     float3 NDC = float3(UVToNDC2(UVZ.xy), UVZ.z);
     float3 ReprojectedNDC = TransformPoint(C.Reprojection, NDC);

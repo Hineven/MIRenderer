@@ -6,8 +6,10 @@ set(SOURCES
     viewer_console.cpp
     viewer_commands.cpp
     render_frame.cpp
+    viewer_export_channel.cpp
     viewer_zmq.cpp
     viewer_control.cpp
+    viewer_export_channel.h
     viewer_zmq.h
 )
 

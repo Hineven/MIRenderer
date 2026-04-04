@@ -91,7 +91,7 @@ void DiffuseDirectLightingClearCounters () {
 }
 Texture2D<float> G_DepthTexture;
 Texture2D<float4> G_NormalTexture;
-Texture2D<uint> G_GeometryNormalTexture;
+Texture2D<uint> G_GeometryNormal;
 
 RWStructuredBuffer<float> RWShadowRayToTraceTMaxBuffer;
 RWStructuredBuffer<uint>  RWShadowRayToTraceSampledLightIndexBuffer;
@@ -128,7 +128,7 @@ void SpawnLightSamples(uint2 GroupID: SV_GroupID, uint2 LocalID : SV_GroupThread
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
     float3 WorldNormal = normalize(G_NormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).xyz - 0.5f.xxx);
-    float3 WorldGeometryNormal = UnpackGeometryNormal(G_GeometryNormalTexture.Load(uint3(PixelIndex, 0)).x);
+    float3 WorldGeometryNormal = UnpackGeometryNormal(G_GeometryNormal.Load(uint3(PixelIndex, 0)).x);
     Random R = MakeRandom(32618420u + PixelIndex.x + PixelIndex.y * 5839, LightStructure_UB.FrameIndex);
     float SumResampleWeights = 0.f;
     uint NumValidSamples = 0;
@@ -206,21 +206,9 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
     float ReversedZDepth = G_DepthTexture.SampleLevel(PointEdgeSampler, PixelUV, 0);
     // Shadow ray trace
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-    float3 WorldPosition = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
-    
-    {
-        // Offset the origin a bit, but at most 0.45 pixel (45%)
-        float3 GeometryNormal = UnpackGeometryNormal(G_GeometryNormalTexture.SampleLevel(PointEdgeSampler, PixelUV, 0).x);
-        float MaxOffsetLength = LinearDepth * 1e-3f;
-        float2 PixelSize = GetPixelWorldSize(C, LinearDepth);
-        float ProjectionX = abs(dot(C.NormalizedRight, GeometryNormal));
-        float ProjectionY = abs(dot(C.NormalizedUp, GeometryNormal));
-        float Fraction = 0.45f;
-        float MaxX = Fraction * PixelSize.x / max(ProjectionX, 1e-4f);
-        float MaxY = Fraction * PixelSize.y / max(ProjectionY, 1e-4f);
-        float OffsetLength = min(MaxOffsetLength, min(MaxX, MaxY));
-        WorldPosition += OffsetLength * GeometryNormal;
-    }
+    float3 GeometryNormal = UnpackGeometryNormal(G_GeometryNormal.SampleLevel(PointEdgeSampler, PixelUV, 0).x);
+    // Recover an offseted world position to avoid self-intersection. The offset is adequate for trimming self-intersections and moves at most .45 pixel in screen space.
+    float3 WorldPosition = RecoverOffsetedWorldPositionFromScreenPixel(C, PixelIndex, LinearDepth, GeometryNormal, 0.45f);
 
     float3 TraceDirection = RayToTrace.Direction;
     float TraceTMax = RayToTrace.TMax;

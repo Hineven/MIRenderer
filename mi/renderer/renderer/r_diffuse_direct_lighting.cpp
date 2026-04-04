@@ -97,7 +97,7 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
 
     SHADER_RESOURCE_PARAMETER(Texture2D, G_DepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_NormalTexture)
-    SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormalTexture)
+    SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_HiZBuffer)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_HistoryDepthTexture)
     SHADER_RESOURCE_PARAMETER(Texture2D, G_FlagsTexture)
@@ -276,7 +276,7 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
 
         params->G_DepthTexture = view->g_buffer_->G_depth_.Raw();
         params->G_NormalTexture = view->g_buffer_->G_normal_.Raw();
-        params->G_GeometryNormalTexture = view->g_buffer_->G_geometry_normal_.Raw();
+        params->G_GeometryNormal = view->g_buffer_->G_geometry_normal_.Raw();
         params->G_HiZBuffer = view->hzb_.Raw();
         params->G_HistoryDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
         params->G_FlagsTexture = view->g_buffer_->G_flags_.Raw();

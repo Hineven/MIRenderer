@@ -30,11 +30,13 @@
 //   - RWRayToTraceStateBuffer (required, contains TMin packed)
 //   - RayToTraceTMaxBuffer (optional, when USE_RAY_TMAX_BUFFER is defined)
 //   - G_Depth (optional, required when USE_SCREEN_COORDS is defined)
+//   - G_GeometryNormal (optional, required when USE_SCREEN_COORDS is defined)
 //
 // Defines used:
 //   - USE_SCREEN_COORDS: If defined, ray origin is recovered from screen coordinates
 //   - USE_RAY_TMAX_BUFFER: If defined, use custom ray TMax from buffer, otherwise use camera far plane
 //
+
 void SetupRayDesc(uint RayIndex, out RayDesc OutRay)
 {
     OutRay = (RayDesc)0;
@@ -51,9 +53,10 @@ void SetupRayDesc(uint RayIndex, out RayDesc OutRay)
     float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
     float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-    float LinearDepthOffset = max(1e-7f, LinearDepth * 2e-5f); // Offset the origin a little to avoid self-intersection
-    LinearDepth = max(LinearDepth - LinearDepthOffset, LinearDepth * 0.95f);
-    OutRay.Origin = RecoverWorldPositionPixelCoords(C, PixelIndex, LinearDepth);
+    float3 GeometryNormal = UnpackGeometryNormal(G_GeometryNormal.SampleLevel(PointEdgeSampler, UV, 0).x);
+    // Recover an offseted world position to avoid self-intersection. The offset is adequate for trimming self-intersections and moves at most .45 pixel in screen space.
+    float3 WorldPosition = RecoverOffsetedWorldPositionFromScreenPixel(C, PixelIndex, LinearDepth, GeometryNormal, 0.45f);
+    OutRay.Origin = WorldPosition;
 #endif
     
     // Set ray direction

@@ -38,12 +38,97 @@
 #include "3d_viewer.h"
 #include "core/util/command_line.h"
 #include "viewer_zmq.h"
+#include "viewer_export_channel.h"
 #include "viewer_commands.h"
 #include "viewer_control.h"
 #include "renderer/mi_renderer_view.h"
 #include "core/pixel_format.h"
 
 MI_NAMESPACE_BEGIN
+
+static bool ReadbackRDGTextureToBytes(
+    RDGTexture* rdg_tex,
+    PixelFormatType fmt,
+    std::vector<std::byte>& out_bytes,
+    uint32_t& out_w,
+    uint32_t& out_h
+);
+
+namespace {
+
+static bool MarkRequestedFrameExport(ViewerApp& app, ViewerFrameExportChannel channel) {
+    switch (channel) {
+        case ViewerFrameExportChannel::kRadiance:
+            app.view_->radiance_->SetExport();
+            return true;
+        case ViewerFrameExportChannel::kOverlay:
+            app.view_->overlay_->SetExport();
+            return true;
+        case ViewerFrameExportChannel::kDepth:
+            app.view_->g_buffer_->G_depth_->SetExport();
+            return true;
+        case ViewerFrameExportChannel::kGrfDepth:
+            app.view_->grf_->stochastic_rendering_depth_->SetExport();
+            return true;
+        case ViewerFrameExportChannel::kGrfOpacity:
+            app.view_->grf_->stochastic_rendering_opacity_->SetExport();
+            return true;
+        case ViewerFrameExportChannel::kTransmittance:
+            app.view_->g_buffer_->G_transmittance_->SetExport();
+            return true;
+        case ViewerFrameExportChannel::kVisibility:
+            app.view_->g_buffer_->G_visibility_->SetExport();
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool PackRequestedFrameExport(
+    ViewerApp& app,
+    const std::string& name,
+    ViewerFrameExportChannel channel
+) {
+    auto PackOne = [&](RDGTexture* tex, PixelFormatType fmt) {
+        if (!tex) return false;
+        std::vector<std::byte> bytes;
+        uint32_t w = 0;
+        uint32_t h = 0;
+        if (!ReadbackRDGTextureToBytes(tex, fmt, bytes, w, h)) {
+            return false;
+        }
+
+        ViewerApp::ExportedRenderResult res;
+        res.bytes = std::move(bytes);
+        res.width = w;
+        res.height = h;
+        res.format = fmt;
+        res.name = name;
+        app.exported_render_results_.push_back(std::move(res));
+        return true;
+    };
+
+    switch (channel) {
+        case ViewerFrameExportChannel::kRadiance:
+            return PackOne(app.view_->radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
+        case ViewerFrameExportChannel::kOverlay:
+            return PackOne(app.view_->overlay_.Raw(), PixelFormatType::kR8G8B8A8_UNORM);
+        case ViewerFrameExportChannel::kDepth:
+            return PackOne(app.view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
+        case ViewerFrameExportChannel::kGrfDepth:
+            return PackOne(app.view_->grf_->stochastic_rendering_depth_.Raw(), PixelFormatType::kD32_FLOAT);
+        case ViewerFrameExportChannel::kGrfOpacity:
+            return PackOne(app.view_->grf_->stochastic_rendering_opacity_.Raw(), PixelFormatType::kR8_UNORM);
+        case ViewerFrameExportChannel::kTransmittance:
+            return PackOne(app.view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
+        case ViewerFrameExportChannel::kVisibility:
+            return PackOne(app.view_->g_buffer_->G_visibility_.Raw(), PixelFormatType::kR32G32B32A32_UINT);
+        default:
+            return false;
+    }
+}
+
+} // namespace
 
 // Generic helper: read back an RDG texture into CPU bytes.
 // Returns true on success and fills out parameters.
@@ -872,28 +957,13 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                 view_->radiance_->SetExport();
             }
 
-            for (auto e : frame_export_requests) {
-                if (e == "radiance") {
-                    any_export_requests_pending = true;
-                    view_->radiance_->SetExport();
+            for (const auto& e : frame_export_requests) {
+                ViewerFrameExportChannel channel;
+                if (!TryParseViewerFrameExportChannel(e, channel)) {
+                    MI_WARN("Unexpected unsupported export type '{}' reached render loop.", e.c_str());
+                    continue;
                 }
-                if (e == "overlay") {
-                    any_export_requests_pending = true;
-                    view_->overlay_->SetExport();
-                }
-                if (e == "depth") {
-                    any_export_requests_pending = true;
-                    view_->g_buffer_->G_depth_->SetExport();
-                }
-                if (e == "grf_depth") {
-                    any_export_requests_pending = true;
-                    view_->grf_->stochastic_rendering_depth_->SetExport();
-                }
-                if (e == "grf_opacity") {
-                    any_export_requests_pending = true;
-                    view_->grf_->stochastic_rendering_opacity_->SetExport();
-                }
-                // TODO more types...
+                any_export_requests_pending |= MarkRequestedFrameExport(*this, channel);
             }
 
             std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
@@ -914,40 +984,14 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                 exported_render_results_.clear();
             }
 
-            auto PackOne = [&](const std::string& type, RDGTexture* tex, PixelFormatType fmt) {
-                if (!tex) return;
-                std::vector<std::byte> bytes;
-                uint32_t w = 0, h = 0;
-                if (ReadbackRDGTextureToBytes(tex, fmt, bytes, w, h)) {
-                    ExportedRenderResult res;
-                    res.bytes = std::move(bytes);
-                    res.width = w;
-                    res.height = h;
-                    res.format = fmt;
-                    res.name = type;
-                    exported_render_results_.push_back(std::move(res));
-                } else {
-                    MI_WARN("Failed to read back '{}' texture", type.c_str());
-                }
-            };
-
             for (const auto &e : frame_export_requests) {
-                if (e == "radiance") {
-                    PackOne(e, view_->radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
-                } else if (e == "overlay") {
-                    PackOne(e, view_->overlay_.Raw(), PixelFormatType::kR8G8B8A8_UNORM);
-                } else if (e == "depth") {
-                    PackOne(e, view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
-                } else if (e == "grf_depth") {
-                    PackOne(e, view_->grf_->stochastic_rendering_depth_.Raw(), PixelFormatType::kD32_FLOAT);
-                } else if (e == "grf_opacity") {
-                    PackOne(e, view_->grf_->stochastic_rendering_opacity_.Raw(), PixelFormatType::kR8_UNORM);
-                } else if (e == "transmittance") {
-                    PackOne(e, view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
-                } else if (e == "visibility") {
-                    PackOne(e, view_->g_buffer_->G_visibility_.Raw(), PixelFormatType::kR32G32B32A32_UINT);
-                } else {
-                    MI_WARN("Unknown export type '{}', skipping", e.c_str());
+                ViewerFrameExportChannel channel;
+                if (!TryParseViewerFrameExportChannel(e, channel)) {
+                    MI_WARN("Unexpected unsupported export type '{}' reached readback stage.", e.c_str());
+                    continue;
+                }
+                if (!PackRequestedFrameExport(*this, e, channel)) {
+                    MI_WARN("Failed to read back '{}' texture", e.c_str());
                 }
             }
             // Reply to the waiting ZMQ client with the exported results.

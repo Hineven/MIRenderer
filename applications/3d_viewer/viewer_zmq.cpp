@@ -6,6 +6,7 @@
 #include "viewer_zmq.h"
 
 #include "viewer_app.h"
+#include "viewer_export_channel.h"
 #include "core/common.h"
 #include "core/util/command_line.h"
 #include "infra_impl/infra.h"
@@ -134,6 +135,24 @@ static nlohmann::json GetCVarJson(CVarBase* cvar) {
     return j;
 }
 
+static bool ValidateRequestedExportChannels(
+    const std::vector<std::string>& requested_types,
+    std::string& out_invalid_type
+) {
+    if (requested_types.empty()) {
+        out_invalid_type.clear();
+        return false;
+    }
+    ViewerFrameExportChannel channel;
+    for (const auto& type : requested_types) {
+        if (!TryParseViewerFrameExportChannel(type, channel)) {
+            out_invalid_type = type;
+            return false;
+        }
+    }
+    return true;
+}
+
 std::vector<std::string> ViewerZmqServer::PollEvents() {
     using json = nlohmann::json;
     if (!rep_) return {};
@@ -233,11 +252,29 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
         } else if (cmd == "render_and_export_current_frame") {
             auto args = j.value("args", json::object());
             auto types = args.value("types", std::vector<std::string>{"radiance"});
-            pending_export_types_ = types;
-            has_pending_export_reply_ = true;
-            // Request one-frame rendering.
-            viewer_->one_frame_rendering_requested_ = true;
-            return pending_export_types_;
+            std::string invalid_type;
+            if (!ValidateRequestedExportChannels(types, invalid_type)) {
+                if (types.empty()) {
+                    reply = {
+                        {"ok", false},
+                        {"err", "empty_export_types"},
+                        {"supported_types", GetSupportedViewerFrameExportChannelNames()}
+                    };
+                } else {
+                    reply = {
+                        {"ok", false},
+                        {"err", "unsupported_export_type"},
+                        {"type", invalid_type},
+                        {"supported_types", GetSupportedViewerFrameExportChannelNames()}
+                    };
+                }
+            } else {
+                pending_export_types_ = std::move(types);
+                has_pending_export_reply_ = true;
+                // Request one-frame rendering.
+                viewer_->one_frame_rendering_requested_ = true;
+                return pending_export_types_;
+            }
         } else if (cmd == "reload_shaders") {
             if (!viewer_) {
                 reply = { {"ok", false}, {"err", "no_viewer"} };

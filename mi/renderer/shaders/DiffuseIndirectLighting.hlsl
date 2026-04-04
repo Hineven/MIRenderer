@@ -144,6 +144,7 @@ RWStructuredBuffer<uint> RWDebugTracedRayStates;
 
 Texture2D<float> G_Depth;
 Texture2D<float3> G_Normal;
+Texture2D<uint> G_GeometryNormal;
 
 Texture2D<float> PreviousDepthTexture;
 Texture2D<float3> PreviousNormalTexture;
@@ -1024,15 +1025,15 @@ void ClipUpdateRayCount () {
 
 // The sampled rays are traced in separate shaders via hybrid tracing (no written here)
 // HWRT trace visibility rays (without indirection ray index list)
-
+// This MUST be consistent wit SetUpRayDesc() provided ray origin!
 float3 GetScreenProbeUpdateRayOrigin (int RayIndex) {
-    uint2 ScreenCoords = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex]);
-    float ReversedZDepth = G_Depth.Load(int3(ScreenCoords, 0)).x;
     CameraParameters C = GetActiveCamera();
-    float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
-    float2 UV = (ScreenCoords + 0.5f) * C.InvFilmDimensions;
-    float3 WorldPosition = RecoverWorldPositionNDC2(C, UVToNDC2(UV), LinearDepth);
-    return WorldPosition;
+    uint2 PixelIndex = UnpackUint2x16(RWScreenProbeUpdateRayOriginScreenCoordsBuffer[RayIndex]);
+    float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
+    float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
+    float  LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
+    float3 GeometryNormal = UnpackGeometryNormal(G_GeometryNormal.Load(uint3(PixelIndex, 0)).x);
+    return RecoverOffsetedWorldPositionFromScreenPixel(C, PixelIndex, LinearDepth, GeometryNormal, 0.45);
 }
 
 uint2 PackUpdateRayRadianceFlag (float3 Radiance, bool bBypass) {
@@ -1892,7 +1893,7 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
 
     uint4 NearbyProbes;   // locate nearby probes for interpolation
 
-    NearbyProbes.x = FindClosestScreenProbe(PixelCoords);
+        NearbyProbes.x = FindClosestScreenProbe(PixelCoords);
 
     if (IsInvalid(NearbyProbes.x))
     {
@@ -1929,16 +1930,16 @@ void ComputeDiffuseIndirectLighting(uint2 GroupID : SV_GroupID, uint2 LocalID : 
                 NearbyProbeWeights[i] = 0.0f;    // prevent probes ahead of pixel plane to leak radiance into occluded background
             else
             {
-                NearbyProbeWeights[i]  = saturate(1.0f - abs(ProbeLinearDepth - LinearDepth) / max(LinearDepth, 1e-5f));
+                NearbyProbeWeights[i]  = pow(saturate(1.0f - abs(ProbeLinearDepth - LinearDepth) / max(LinearDepth, 1e-5f)), 6.0f);
                 NearbyProbeWeights[i] *= saturate(dot(Normal, ProbeNormal));
-                NearbyProbeWeights[i]  = pow(NearbyProbeWeights[i], 8.0f);    // make it steep
+                NearbyProbeWeights[i]  = pow(NearbyProbeWeights[i], 4.0f);    // make it steep
             }
         }
     }
 
     bool bUseBackup = false;
 
-    if (dot(NearbyProbeWeights, NearbyProbeWeights) == 0.0f)
+    if (dot(NearbyProbeWeights, NearbyProbeWeights) < 0.02f)
     {
         NearbyProbeWeights = 
             float4(1.0f, 

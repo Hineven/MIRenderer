@@ -253,7 +253,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 if (renderable->ClearTransformDirty()) {
                     visible_rt_renderable_transform_dirty = true;
                 }
-            }
+                }
         }
     }
     for (const auto& e : all_renderables) {
@@ -418,7 +418,7 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     ->AddTextureH(view->g_buffer_->G_transmittance_.Raw(), RDGTextureUsageType::kTransferWrite)
     ->AddTextureH(view->shadow_map_moments_.Raw(), RDGTextureUsageType::kTransferWrite);
 
-	// Shadow map
+    // Shadow map
     Render_DrawShadowMap(view, builder);
 
     // Static meshes
@@ -486,6 +486,8 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     else if (type == 8) {
         Render_PathTracing(view, builder);
         Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+    } else if (type == 9) {
+        Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_->screen_probe_radiance_depth.Raw());
     } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());
 
     // Clear overlay

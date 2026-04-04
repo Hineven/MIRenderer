@@ -21,6 +21,7 @@ StructuredBuffer<uint> IndexBuffer;
 StructuredBuffer<MaterialHeader> MaterialHeaderBuffer;
 
 Texture2D<float> G_Depth;
+Texture2D<uint> G_GeometryNormal;
 
 StructuredBuffer<uint> RayToTraceListLengthBuffer;
 StructuredBuffer<uint> RayToTraceListBuffer;
