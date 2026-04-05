@@ -103,6 +103,10 @@ float3 UnpackNormal (uint Packed) {
     return normalize(Normal);
 }
 
+float2 SignNotZero2(float2 value) {
+    return select(value >= 0.0f.xx, 1.0f.xx, -1.0f.xx);
+}
+
 // Pack a unit vector with higher precision using octahedral coordinates
 uint PackTraceDirection (float3 Direction) {
     // Ensure unit length
@@ -112,7 +116,9 @@ uint PackTraceDirection (float3 Direction) {
     float denom = abs(Direction.x) + abs(Direction.y) + abs(Direction.z);
     float2 Oct = Direction.xy / max(denom, 1e-6f);
     if (Direction.z < 0.0f) {
-        Oct = (1.0f - abs(Oct.yx)) * sign(Oct);
+        // Use a non-zero sign on the folding seam so directions like (0, 0, -1)
+        // do not collapse to the same encoding as +Z.
+        Oct = (1.0f - abs(Oct.yx)) * SignNotZero2(Oct);
     }
 
     uint2 Packed = uint2(
@@ -131,7 +137,7 @@ float3 UnpackTraceDirection (uint Packed) {
     // Standard octahedral decoding
     float3 N = float3(Oct.x, Oct.y, 1.0f - abs(Oct.x) - abs(Oct.y));
     if (N.z < 0.0f) {
-        N.xy = (1.0f - abs(N.yx)) * sign(Oct);
+        N.xy = (1.0f - abs(N.yx)) * SignNotZero2(Oct);
     }
     return normalize(N);
 }
