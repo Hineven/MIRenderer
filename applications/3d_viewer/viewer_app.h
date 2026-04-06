@@ -127,6 +127,7 @@ public:
 
     bool LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>* out_renderable_indices = nullptr);
     bool LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices);
+    bool LoadEnvironmentMapAbsolute(const std::filesystem::path& path);
     bool RemoveRenderableNodeByIndex(uint32_t renderable_node_index);
     bool CleanAllRenderableNodes();
 

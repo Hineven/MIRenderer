@@ -393,7 +393,6 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
     }
 
     {
-        sky_cube_.SafeRelease();
         std::string environment_map_path;
         if (scene_config.contains("environment_map") && scene_config["environment_map"].is_string()) {
             environment_map_path = scene_config["environment_map"].get<std::string>();
@@ -401,21 +400,13 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
 
         if (!environment_map_path.empty()) {
             auto sky_file = ResolvePathForLoading(environment_map_path);
-            sky_cube_ = TextureLoader::LoadEnvironmentMap("Sky", sky_file);
-            if (sky_cube_) {
-                sky_cube_->UpdateOnDevice();
-                sky_cube_->ConvertToBindless();
-                if (!sky_cube_->IsBindless() || !sky_cube_->GetDeviceTexture()) {
-                    MI_WARN("Sky cubemap '{}' failed to become a valid bindless device texture (bindless={}, device_tex={}). Environment light sampling may be invalid.",
-                        sky_file.string(),
-                        sky_cube_->IsBindless() ? 1 : 0,
-                        sky_cube_->GetDeviceTexture() ? 1 : 0);
-                }
-            } else {
+            if (!LoadEnvironmentMapAbsolute(sky_file)) {
                 MI_WARN("Failed to load sky environment map from '{}'.", sky_file.string());
             }
+        } else {
+            sky_cube_.SafeRelease();
+            scene_->SetSkyCube(nullptr);
         }
-        scene_->SetSkyCube(sky_cube_.Raw());
     }
 
     auto & rhi = RHI::Get();
@@ -697,6 +688,51 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         }
     }
 
+    return true;
+}
+
+bool ViewerApp::LoadEnvironmentMapAbsolute(const std::filesystem::path& path) {
+    if (!scene_) {
+        return false;
+    }
+
+    WaitForSceneMutation();
+    FlushSceneDelayedDestruction();
+
+    if (path.empty() || !std::filesystem::exists(path)) {
+        MI_WARN("LoadEnvironmentMapAbsolute: file not found '{}'.", path.string());
+        return false;
+    }
+
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".exr") {
+        MI_WARN("LoadEnvironmentMapAbsolute: unsupported extension '{}' for '{}'.", ext, path.string());
+        return false;
+    }
+
+    auto new_sky_cube = TextureLoader::LoadEnvironmentMap("Sky", path);
+    if (!new_sky_cube) {
+        MI_WARN("LoadEnvironmentMapAbsolute: failed to create sky texture from '{}'.", path.string());
+        return false;
+    }
+
+    new_sky_cube->UpdateOnDevice();
+    new_sky_cube->ConvertToBindless();
+    if (!new_sky_cube->IsBindless() || !new_sky_cube->GetDeviceTexture()) {
+        MI_WARN(
+            "Sky cubemap '{}' failed to become a valid bindless device texture (bindless={}, device_tex={}).",
+            path.string(),
+            new_sky_cube->IsBindless() ? 1 : 0,
+            new_sky_cube->GetDeviceTexture() ? 1 : 0
+        );
+        return false;
+    }
+
+    scene_->SetSkyCube(new_sky_cube.Raw());
+    sky_cube_ = std::move(new_sky_cube);
     return true;
 }
 

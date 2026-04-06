@@ -326,6 +326,30 @@ void RegisterViewerCommands(ViewerApp& app) {
         }
     );
 
+    CommandRegistry::Get().MakeAndRegister(
+        "load_env",
+        {
+            CommandTokenSpec::KeywordSet({"load_env"}),
+            CommandTokenSpec::Free({}, "image_or_exr_abs_path"),
+        },
+        [&app](const CommandMatchResult &match) {
+            if (match.args.size() < 2) {
+                MI_WARN("ViewerApp: expected 'load_env <image_or_exr_abs_path>'");
+                return;
+            }
+            std::filesystem::path p(match.args[1]);
+            if (p.empty()) {
+                MI_WARN("ViewerApp: empty path for load_env");
+                return;
+            }
+            if (app.LoadEnvironmentMapAbsolute(p)) {
+                MI_LOG(MIInfraLogType::kInfo, "Loaded environment map {}", p.string());
+            } else {
+                MI_WARN("ViewerApp: failed to load environment map {}", p.string());
+            }
+        }
+    );
+
 
     CommandRegistry::Get().MakeAndRegister(
         "remove",

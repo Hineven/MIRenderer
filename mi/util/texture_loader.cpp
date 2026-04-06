@@ -45,6 +45,9 @@ IMPLEMENT_RDG_GRAPHICS_SHADER(MappingShader, "mi/util/shaders/texture_loader/Map
 
 TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &name, const std::string &mime_type, const void *ptr, size_t size) {
     auto env_texture = LoadFromBuffer(name + "_source", mime_type, ptr, size);
+    if (!env_texture) {
+        return nullptr;
+    }
     env_texture->UpdateOnDevice();
 
     glm::dvec3 const forward_vectors[] = {glm::dvec3(-1.0, 0.0, 0.0), glm::dvec3(1.0, 0.0, 0.0),
