@@ -17,14 +17,25 @@ struct ViewerFrameExportChannelDesc {
     ViewerFrameExportChannel channel;
 };
 
-constexpr std::array<ViewerFrameExportChannelDesc, 7> kViewerFrameExportChannels = {{
+constexpr std::array<ViewerFrameExportChannelDesc, 18> kViewerFrameExportChannels = {{
     {"radiance", ViewerFrameExportChannel::kRadiance},
+    {"color", ViewerFrameExportChannel::kColor},
     {"overlay", ViewerFrameExportChannel::kOverlay},
     {"depth", ViewerFrameExportChannel::kDepth},
     {"grf_depth", ViewerFrameExportChannel::kGrfDepth},
     {"grf_opacity", ViewerFrameExportChannel::kGrfOpacity},
     {"transmittance", ViewerFrameExportChannel::kTransmittance},
     {"visibility", ViewerFrameExportChannel::kVisibility},
+    {"normal", ViewerFrameExportChannel::kNormal},
+    {"geometry_normal", ViewerFrameExportChannel::kGeometryNormal},
+    {"albedo", ViewerFrameExportChannel::kAlbedo},
+    {"diffuse_direct", ViewerFrameExportChannel::kDiffuseDirect},
+    {"diffuse_indirect", ViewerFrameExportChannel::kDiffuseIndirect},
+    {"denoised_diffuse_direct", ViewerFrameExportChannel::kDenoisedDiffuseDirect},
+    {"denoised_diffuse_indirect", ViewerFrameExportChannel::kDenoisedDiffuseIndirect},
+    {"motion_vector", ViewerFrameExportChannel::kMotionVector},
+    {"pathtracing", ViewerFrameExportChannel::kPathTracing},
+    {"tonemapped_pathtracing", ViewerFrameExportChannel::kTonemappedPathTracing},
 }};
 
 } // namespace

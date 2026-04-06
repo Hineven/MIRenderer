@@ -1,7 +1,9 @@
 #include "viewer_app.h"
 
+#include <array>
 #include <fstream>
 #include <algorithm>
+#include <ranges>
 #include "vulkan/vulkan.hpp"
 #include <glfw/glfw3.h>
 #include <imgui.h>
@@ -20,14 +22,6 @@
 #include "renderer/mi_texture.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_cvar.h"
-#include "renderer/r_geometry_buffer.h"
-
-// Okay, some internal headers for the renderer. We need these for various tasks.
-#include "../../renderer/renderer/r_volume_direct_lighting.h"
-#include "../../renderer/renderer/r_volume_indirect_lighting.h"
-#include "../../renderer/renderer/r_volume_primitives.h"
-#include "../../renderer/renderer/r_persistent.h"
-#include "../../renderer/renderer/r_gaussian_radiance_field.h"
 
 #include "rdg/rdg_shader.h"
 #include "util/texture_loader.h"
@@ -56,32 +50,184 @@ static bool ReadbackRDGTextureToBytes(
 
 namespace {
 
-static bool MarkRequestedFrameExport(ViewerApp& app, ViewerFrameExportChannel channel) {
-    switch (channel) {
-        case ViewerFrameExportChannel::kRadiance:
-            app.view_->radiance_->SetExport();
-            return true;
-        case ViewerFrameExportChannel::kOverlay:
-            app.view_->overlay_->SetExport();
-            return true;
-        case ViewerFrameExportChannel::kDepth:
-            app.view_->g_buffer_->G_depth_->SetExport();
-            return true;
-        case ViewerFrameExportChannel::kGrfDepth:
-            app.view_->grf_->stochastic_rendering_depth_->SetExport();
-            return true;
-        case ViewerFrameExportChannel::kGrfOpacity:
-            app.view_->grf_->stochastic_rendering_opacity_->SetExport();
-            return true;
-        case ViewerFrameExportChannel::kTransmittance:
-            app.view_->g_buffer_->G_transmittance_->SetExport();
-            return true;
-        case ViewerFrameExportChannel::kVisibility:
-            app.view_->g_buffer_->G_visibility_->SetExport();
-            return true;
-        default:
-            return false;
+struct PendingViewerFrameExportRequest {
+    std::string name;
+    ViewerFrameExportChannel channel;
+};
+
+enum class ViewerFrameExportSourceType {
+    kRendererView,
+    kTonemappedColor,
+    kTonemappedPathTracing,
+};
+
+struct ViewerFrameExportBinding {
+    ViewerFrameExportChannel channel;
+    ViewerFrameExportSourceType source_type;
+    RendererViewFrameExportResource renderer_resource {RendererViewFrameExportResource::kRadiance};
+    PixelFormatType format {PixelFormatType::kUnknown};
+};
+
+constexpr std::array<ViewerFrameExportBinding, 18> kViewerFrameExportBindings = {{
+    {ViewerFrameExportChannel::kRadiance, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kRadiance},
+    {ViewerFrameExportChannel::kColor, ViewerFrameExportSourceType::kTonemappedColor, RendererViewFrameExportResource::kRadiance, PixelFormatType::kB8G8R8A8_SRGB},
+    {ViewerFrameExportChannel::kOverlay, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kOverlay},
+    {ViewerFrameExportChannel::kDepth, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kDepth},
+    {ViewerFrameExportChannel::kGrfDepth, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kGrfDepth},
+    {ViewerFrameExportChannel::kGrfOpacity, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kGrfOpacity},
+    {ViewerFrameExportChannel::kTransmittance, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kTransmittance},
+    {ViewerFrameExportChannel::kVisibility, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kVisibility},
+    {ViewerFrameExportChannel::kNormal, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kNormal},
+    {ViewerFrameExportChannel::kGeometryNormal, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kGeometryNormal},
+    {ViewerFrameExportChannel::kAlbedo, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kAlbedo},
+    {ViewerFrameExportChannel::kDiffuseDirect, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kDiffuseDirect},
+    {ViewerFrameExportChannel::kDiffuseIndirect, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kDiffuseIndirect},
+    {ViewerFrameExportChannel::kDenoisedDiffuseDirect, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kDenoisedDiffuseDirect},
+    {ViewerFrameExportChannel::kDenoisedDiffuseIndirect, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kDenoisedDiffuseIndirect},
+    {ViewerFrameExportChannel::kMotionVector, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kMotionVector},
+    {ViewerFrameExportChannel::kPathTracing, ViewerFrameExportSourceType::kRendererView, RendererViewFrameExportResource::kPathTracingFilm},
+    {ViewerFrameExportChannel::kTonemappedPathTracing, ViewerFrameExportSourceType::kTonemappedPathTracing, RendererViewFrameExportResource::kPathTracingFilm, PixelFormatType::kB8G8R8A8_SRGB},
+}};
+
+const ViewerFrameExportBinding* FindViewerFrameExportBinding(ViewerFrameExportChannel channel) {
+    for (const auto& binding : kViewerFrameExportBindings) {
+        if (binding.channel == channel) {
+            return &binding;
+        }
     }
+    return nullptr;
+}
+
+RendererViewFrameExportDesc GetRequestedFrameExportDesc(const ViewerApp& app, ViewerFrameExportChannel channel) {
+    if (!app.view_) {
+        return {};
+    }
+    const auto* binding = FindViewerFrameExportBinding(channel);
+    if (!binding) {
+        return {};
+    }
+    if (binding->source_type == ViewerFrameExportSourceType::kRendererView) {
+        return app.view_->GetFrameExportResource(binding->renderer_resource);
+    }
+    if (binding->source_type == ViewerFrameExportSourceType::kTonemappedColor) {
+        return {app.tonemapped_color_export_.Raw(), binding->format};
+    }
+    return {app.tonemapped_path_tracing_export_.Raw(), binding->format};
+}
+
+bool HasExportRequestForSourceType(
+    const std::vector<PendingViewerFrameExportRequest>& requests,
+    ViewerFrameExportSourceType source_type
+) {
+    return std::ranges::any_of(requests, [source_type](const PendingViewerFrameExportRequest& request) {
+        const auto* binding = FindViewerFrameExportBinding(request.channel);
+        return binding && binding->source_type == source_type;
+    });
+}
+
+bool HasPathTracingExportRequest(const std::vector<PendingViewerFrameExportRequest>& requests) {
+    return std::ranges::any_of(requests, [](const PendingViewerFrameExportRequest& request) {
+        return request.channel == ViewerFrameExportChannel::kPathTracing
+            || request.channel == ViewerFrameExportChannel::kTonemappedPathTracing;
+    });
+}
+
+void PrepareTonemappedExportTexture(
+    ViewerApp& app,
+    RenderGraphBuilder& builder,
+    RDGTexture * source_texture,
+    TRef<RDGTexture>& output_texture,
+    const char * output_name,
+    PostProcessingFlags post_processing_flags
+) {
+    output_texture = {};
+    if (!app.view_ || !source_texture) {
+        return;
+    }
+
+    output_texture = builder.CreateTexture2D(
+        app.view_->film_width_,
+        app.view_->film_height_,
+        PixelFormatType::kB8G8R8A8_SRGB,
+        RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kTransfer
+    );
+    output_texture->SetName(output_name);
+    output_texture->SetExport();
+
+    auto& renderer = Renderer::Get();
+    renderer.DrawTextureToOutput(
+        app.view_.get(),
+        builder,
+        source_texture,
+        Renderer::DrawToOutputMappingType::eRadianceToSRGB,
+        post_processing_flags,
+        output_texture.Raw(),
+        RHILoadOpType::kClear
+    );
+    renderer.DrawTextureToOutput(
+        app.view_.get(),
+        builder,
+        app.view_->overlay_.Raw(),
+        Renderer::DrawToOutputMappingType::eLinearToSRGB,
+        PostProcessingFlagBits::eNone,
+        output_texture.Raw(),
+        RHILoadOpType::kLoad
+    );
+}
+
+void PrepareSpecialFrameExports(
+    ViewerApp& app,
+    RenderGraphBuilder& builder,
+    const std::vector<PendingViewerFrameExportRequest>& requests
+) {
+    app.tonemapped_color_export_ = {};
+    app.tonemapped_path_tracing_export_ = {};
+    if (!app.view_) {
+        return;
+    }
+
+    auto& renderer = Renderer::Get();
+    PostProcessingFlags scene_color_flags = PostProcessingFlagBits::eNone;
+    if (auto* taa_cvar = CVarRegistry::GetInstance().GetCVar<bool>("r.postprocessing.enable_taa");
+        taa_cvar != nullptr && taa_cvar->Get()) {
+        scene_color_flags = scene_color_flags | PostProcessingFlagBits::eEnableTAA;
+    }
+
+    if (HasExportRequestForSourceType(requests, ViewerFrameExportSourceType::kTonemappedColor)) {
+        PrepareTonemappedExportTexture(
+            app,
+            builder,
+            app.view_->radiance_.Raw(),
+            app.tonemapped_color_export_,
+            "ViewerTonemappedColorExport",
+            scene_color_flags
+        );
+    }
+
+    if (HasPathTracingExportRequest(requests) && !app.view_->did_render_path_tracing_this_frame_) {
+        renderer.RenderPathTracingForExport(app.view_.get(), builder);
+    }
+
+    if (HasExportRequestForSourceType(requests, ViewerFrameExportSourceType::kTonemappedPathTracing)) {
+        auto path_tracing_desc = app.view_->GetFrameExportResource(RendererViewFrameExportResource::kPathTracingFilm);
+        PrepareTonemappedExportTexture(
+            app,
+            builder,
+            path_tracing_desc.texture,
+            app.tonemapped_path_tracing_export_,
+            "ViewerTonemappedPathTracingExport",
+            PostProcessingFlagBits::eNone
+        );
+    }
+}
+
+static bool MarkRequestedFrameExport(ViewerApp& app, ViewerFrameExportChannel channel) {
+    auto desc = GetRequestedFrameExportDesc(app, channel);
+    if (!desc.IsValid()) {
+        return false;
+    }
+    desc.texture->SetExport();
+    return true;
 }
 
 static bool PackRequestedFrameExport(
@@ -89,43 +235,26 @@ static bool PackRequestedFrameExport(
     const std::string& name,
     ViewerFrameExportChannel channel
 ) {
-    auto PackOne = [&](RDGTexture* tex, PixelFormatType fmt) {
-        if (!tex) return false;
-        std::vector<std::byte> bytes;
-        uint32_t w = 0;
-        uint32_t h = 0;
-        if (!ReadbackRDGTextureToBytes(tex, fmt, bytes, w, h)) {
-            return false;
-        }
-
-        ViewerApp::ExportedRenderResult res;
-        res.bytes = std::move(bytes);
-        res.width = w;
-        res.height = h;
-        res.format = fmt;
-        res.name = name;
-        app.exported_render_results_.push_back(std::move(res));
-        return true;
-    };
-
-    switch (channel) {
-        case ViewerFrameExportChannel::kRadiance:
-            return PackOne(app.view_->radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
-        case ViewerFrameExportChannel::kOverlay:
-            return PackOne(app.view_->overlay_.Raw(), PixelFormatType::kR8G8B8A8_UNORM);
-        case ViewerFrameExportChannel::kDepth:
-            return PackOne(app.view_->g_buffer_->G_depth_.Raw(), PixelFormatType::kD32_FLOAT);
-        case ViewerFrameExportChannel::kGrfDepth:
-            return PackOne(app.view_->grf_->stochastic_rendering_depth_.Raw(), PixelFormatType::kD32_FLOAT);
-        case ViewerFrameExportChannel::kGrfOpacity:
-            return PackOne(app.view_->grf_->stochastic_rendering_opacity_.Raw(), PixelFormatType::kR8_UNORM);
-        case ViewerFrameExportChannel::kTransmittance:
-            return PackOne(app.view_->g_buffer_->G_transmittance_.Raw(), PixelFormatType::kR8_UNORM);
-        case ViewerFrameExportChannel::kVisibility:
-            return PackOne(app.view_->g_buffer_->G_visibility_.Raw(), PixelFormatType::kR32G32B32A32_UINT);
-        default:
-            return false;
+    auto desc = GetRequestedFrameExportDesc(app, channel);
+    if (!desc.IsValid()) {
+        return false;
     }
+
+    std::vector<std::byte> bytes;
+    uint32_t w = 0;
+    uint32_t h = 0;
+    if (!ReadbackRDGTextureToBytes(desc.texture, desc.format, bytes, w, h)) {
+        return false;
+    }
+
+    ViewerApp::ExportedRenderResult res;
+    res.bytes = std::move(bytes);
+    res.width = w;
+    res.height = h;
+    res.format = desc.format;
+    res.name = name;
+    app.exported_render_results_.push_back(std::move(res));
+    return true;
 }
 
 } // namespace
@@ -613,33 +742,16 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         }
     }
 
-    auto& queue = RHI::Get().GetGraphicsCommandQueue();
-    auto ExportTexRaw = [&](const std::filesystem::path& dir, RDGTexture* rdgTex, const char* name, size_t bpp, std::string fmt) {
-        if (!rdgTex) return;
-        // Use the generic helper to read bytes
-        std::vector<std::byte> bytes;
-        uint32_t w = 0, h = 0;
-        // Try to deduce PixelFormatType from fmt string for bpp; if not recognized, fallback using bpp
-        PixelFormatType pf = PixelFormatType::kUnknown;
-        // Simple mapping for common cases used below
-        if (fmt == "r32f") pf = PixelFormatType::kR32_FLOAT;
-        else if (fmt == "r8") pf = PixelFormatType::kR8_UNORM;
-        else if (fmt == "rgba8") pf = PixelFormatType::kR8G8B8A8_UNORM;
-        else if (fmt == "rgba16f") pf = PixelFormatType::kR16G16B16A16_FLOAT;
-        else if (fmt == "r32u") pf = PixelFormatType::kR32_UINT;
-        else if (fmt == "rg32u") pf = PixelFormatType::kR32G32_UINT;
-        else if (fmt == "rgb32u") pf = PixelFormatType::kR32G32B32_UINT;
-        else if (fmt == "rgba32u") pf = PixelFormatType::kR32G32B32A32_UINT;
-        // If still unknown, approximate by channel count from bpp (assume 4 channels of 1 byte when bpp==4, etc.)
-        if (pf == PixelFormatType::kUnknown) {
-            if (bpp == 4) pf = PixelFormatType::kR8G8B8A8_UNORM;
-            else if (bpp == 1) pf = PixelFormatType::kR8_UNORM;
-            else if (bpp == 2) pf = PixelFormatType::kR16G16_FLOAT;
-            else if (bpp == 8) pf = PixelFormatType::kR16G16B16A16_FLOAT;
-            else if (bpp == 16) pf = PixelFormatType::kR32G32B32A32_FLOAT;
-        }
-        if (!ReadbackRDGTextureToBytes(rdgTex, pf, bytes, w, h)) return;
+    auto ExportViewResourceRaw = [&](const std::filesystem::path& dir, RendererViewFrameExportResource resource, const char* name) {
+        auto desc = view_->GetFrameExportResource(resource);
+        if (!desc.IsValid()) return;
 
+        std::vector<std::byte> bytes;
+        uint32_t w = 0;
+        uint32_t h = 0;
+        if (!ReadbackRDGTextureToBytes(desc.texture, desc.format, bytes, w, h)) return;
+
+        const auto bpp = GetPixelFormatBytesPerPixel(desc.format);
         auto bin_path = dir / std::format("{}_{}x{}_{}bpp.bin", name, w, h, bpp);
         std::ofstream ofs(bin_path, std::ios::binary);
         if (ofs && !bytes.empty()) {
@@ -650,7 +762,7 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         std::ofstream meta(meta_path, std::ios::out);
         if (meta) {
             meta << std::format("name={}, width={}, height={}, bytes_per_pixel={}, fmt={}\n",
-                name, w, h, bpp, fmt);
+                name, w, h, bpp, ToString(desc.format));
         }
     };
     if (ops.should_export_result) {
@@ -670,14 +782,14 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         std::error_code ec;
         std::filesystem::create_directories(out_dir, ec);
 
-        ExportTexRaw(out_dir, view_->g_buffer_->G_depth_.Raw(), "depth", sizeof(float), "r32f");
-        ExportTexRaw(out_dir, view_->g_buffer_->G_transmittance_.Raw(), "transmittance", sizeof(uint8_t), "r8");
-        ExportTexRaw(out_dir, view_->volume_primitives_->volume_sample_color_.Raw(), "vol_sample_color", sizeof(uint8_t) * 4, "rgba8");
-        ExportTexRaw(out_dir, view_->volume_primitives_->volume_sample_linear_depth_.Raw(), "vol_sample_linear_depth", sizeof(float), "r32f");
-        ExportTexRaw(out_dir, view_->volume_primitives_->G_volume_density_.Raw(), "vol_density", sizeof(float), "r32f");
-        ExportTexRaw(out_dir, view_->volume_primitives_->G_volume_color_.Raw(), "vol_color", sizeof(uint8_t) * 4, "rgba8");
-        ExportTexRaw(out_dir, view_->volume_direct_lighting_->radiance.Raw(), "vol_direct_lighting", sizeof(uint16_t) * 4, "rgba16f");
-        ExportTexRaw(out_dir, view_->volume_indirect_lighting_->radiance.Raw(), "vol_indirect_lighting", sizeof(uint16_t) * 4, "rgba16f");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kDepth, "depth");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kTransmittance, "transmittance");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kVolumeSampleColor, "vol_sample_color");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kVolumeSampleLinearDepth, "vol_sample_linear_depth");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kVolumeDensity, "vol_density");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kVolumeColor, "vol_color");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kVolumeDirect, "vol_direct_lighting");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kVolumeIndirect, "vol_indirect_lighting");
 
         MI_LOG(MIInfraLogType::kInfo, "Frame data exported to {}", out_dir.string());
         ops.should_export_result = false;
@@ -694,7 +806,7 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         auto out_dir = dir / (date_time + random_str);
         std::filesystem::create_directories(out_dir);
 
-        ExportTexRaw(out_dir, view_->persistent_data_->path_tracing_film_.Raw(), "baked_radiance", sizeof(uint16_t) * 4, "rgba32f");
+        ExportViewResourceRaw(out_dir, RendererViewFrameExportResource::kPathTracingFilm, "baked_radiance");
 
         if (baking_state_.baking_camera_index <= baking_state_.baking_camera_positions.size()) {
             auto& cam = baking_state_.baking_camera_positions[baking_state_.baking_camera_index];
@@ -707,78 +819,82 @@ void ViewerApp::ProcessDelayedOps(FrameInternalDelayedOps& ops) {
         ops.should_process_click_select = false;
         float mouse_x = io.MousePos.x;
         float mouse_y = io.MousePos.y;
-        auto rhi_visibility = view_->g_buffer_->G_visibility_->GetRHI();
-        auto rhi_fwd_depth = view_->forward_depth_->GetRHI();
-        auto readback_buffer_visibility = rhi.CreateBuffer(
-            rhi_visibility->GetWidth() * rhi_visibility->GetHeight() * sizeof(uint32_t) * 4,
-            RHIBufferUsageFlagBits::kReadback
-        );
-        auto readback_buffer_depth = rhi.CreateBuffer(
-            rhi_fwd_depth->GetWidth() * rhi_fwd_depth->GetHeight() * sizeof(float),
-            RHIBufferUsageFlagBits::kReadback
-        );
-        queue.MemoryBarrier();
-        queue.TextureBarrier(rhi_visibility, RHITextureLayoutType::kTransferSrcOptimal,
-            RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
-            RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
-        queue.TextureBarrier(rhi_fwd_depth, RHITextureLayoutType::kTransferSrcOptimal,
-            RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
-            RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
-        queue.CopyTextureToBuffer(rhi_visibility, readback_buffer_visibility.Raw());
-        queue.CopyTextureToBuffer(rhi_fwd_depth, readback_buffer_depth.Raw());
-        view_->g_buffer_->G_visibility_->Use(
-            RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
-            RHITextureLayoutType::kTransferSrcOptimal
-        );
-        view_->forward_depth_->Use(
-            RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
-            RHITextureLayoutType::kTransferSrcOptimal
-        );
-        queue.MemoryBarrier();
-        queue.WaitForIdle("Readback Buffers");
-        auto ptr = (glm::uvec4*)readback_buffer_visibility->Map();
-        glm::uvec4 pixel = ptr[(int(mouse_y) * rhi_visibility->GetWidth() + int(mouse_x))];
-        auto depth_ptr = (float*)readback_buffer_depth->Map();
-        input_state_.last_click_forward_depth_ = depth_ptr[(int(mouse_y) * rhi_fwd_depth->GetWidth() + int(mouse_x))];
-        readback_buffer_visibility->Unmap();
-        readback_buffer_depth->Unmap();
-        float uv_x = std::bit_cast<float>(pixel.z);
-        float uv_y = std::bit_cast<float>(pixel.w);
-        auto descriptor_rank = pixel.x >> 24;
-        auto renderable_index = pixel.x & 0xFFFFFF;
-        if (renderable_index == 0xFFFFFF) {
-            renderable_index = UINT32_MAX;
-        }
-        auto primitive_index = pixel.y;
-        glm::vec2 uv = {uv_x, uv_y};
-        if (selection_state_.selected_renderable_index != renderable_index) {
-            if (renderable_index == UINT32_MAX) {
-                arrow_mesh_x_instance_->SetVisible(false);
-                arrow_mesh_y_instance_->SetVisible(false);
-                arrow_mesh_z_instance_->SetVisible(false);
-                selection_state_.selected_deferred_renderable_index = UINT32_MAX;
-            } else if (renderable_index != arrow_mesh_x_instance_->GetIndex()
-                && renderable_index != arrow_mesh_y_instance_->GetIndex()
-                && renderable_index != arrow_mesh_z_instance_->GetIndex()
-            ) {
-                selection_state_.selected_deferred_renderable_index = renderable_index;
-                auto renderable = scene_->GetRenderableByIndex(renderable_index);
-                arrow_mesh_x_instance_->EditTransform().position = renderable->GetTransform().position;
-                arrow_mesh_x_instance_->SetVisible(true);
-                arrow_mesh_y_instance_->EditTransform().position = renderable->GetTransform().position;
-                arrow_mesh_y_instance_->SetVisible(true);
-                arrow_mesh_z_instance_->EditTransform().position = renderable->GetTransform().position;
-                arrow_mesh_z_instance_->SetVisible(true);
-            }
-        }
-        selection_state_.selected_descriptor_rank = descriptor_rank;
-        selection_state_.selected_renderable_index = renderable_index;
-        selection_state_.selected_primitive_index = primitive_index;
-        selection_state_.selected_uv = uv;
-        if (selection_state_.selected_renderable_index != UINT32_MAX) {
-            MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
-                selection_state_.selected_renderable_index, selection_state_.selected_primitive_index, selection_state_.selected_descriptor_rank, selection_state_.selected_uv.x, selection_state_.selected_uv.y
+        auto visibility_desc = view_->GetFrameExportResource(RendererViewFrameExportResource::kVisibility);
+        if (visibility_desc.IsValid()) {
+            auto rhi_visibility = visibility_desc.texture->GetRHI();
+            auto rhi_fwd_depth = view_->forward_depth_->GetRHI();
+            auto& queue = RHI::Get().GetGraphicsCommandQueue();
+            auto readback_buffer_visibility = rhi.CreateBuffer(
+                rhi_visibility->GetWidth() * rhi_visibility->GetHeight() * sizeof(uint32_t) * 4,
+                RHIBufferUsageFlagBits::kReadback
             );
+            auto readback_buffer_depth = rhi.CreateBuffer(
+                rhi_fwd_depth->GetWidth() * rhi_fwd_depth->GetHeight() * sizeof(float),
+                RHIBufferUsageFlagBits::kReadback
+            );
+            queue.MemoryBarrier();
+            queue.TextureBarrier(rhi_visibility, RHITextureLayoutType::kTransferSrcOptimal,
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+            queue.TextureBarrier(rhi_fwd_depth, RHITextureLayoutType::kTransferSrcOptimal,
+                RHIPipelineStageFlagBits::kAll, RHIPipelineStageFlagBits::kAll,
+                RHIGPUAccessFlagBits::kNone, RHIGPUAccessFlagBits::kRead);
+            queue.CopyTextureToBuffer(rhi_visibility, readback_buffer_visibility.Raw());
+            queue.CopyTextureToBuffer(rhi_fwd_depth, readback_buffer_depth.Raw());
+            visibility_desc.texture->Use(
+                RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
+                RHITextureLayoutType::kTransferSrcOptimal
+            );
+            view_->forward_depth_->Use(
+                RHIPipelineStageFlagBits::kTransfer, RHIGPUAccessFlagBits::kTransferRead,
+                RHITextureLayoutType::kTransferSrcOptimal
+            );
+            queue.MemoryBarrier();
+            queue.WaitForIdle("Readback Buffers");
+            auto ptr = (glm::uvec4*)readback_buffer_visibility->Map();
+            glm::uvec4 pixel = ptr[(int(mouse_y) * rhi_visibility->GetWidth() + int(mouse_x))];
+            auto depth_ptr = (float*)readback_buffer_depth->Map();
+            input_state_.last_click_forward_depth_ = depth_ptr[(int(mouse_y) * rhi_fwd_depth->GetWidth() + int(mouse_x))];
+            readback_buffer_visibility->Unmap();
+            readback_buffer_depth->Unmap();
+            float uv_x = std::bit_cast<float>(pixel.z);
+            float uv_y = std::bit_cast<float>(pixel.w);
+            auto descriptor_rank = pixel.x >> 24;
+            auto renderable_index = pixel.x & 0xFFFFFF;
+            if (renderable_index == 0xFFFFFF) {
+                renderable_index = UINT32_MAX;
+            }
+            auto primitive_index = pixel.y;
+            glm::vec2 uv = {uv_x, uv_y};
+            if (selection_state_.selected_renderable_index != renderable_index) {
+                if (renderable_index == UINT32_MAX) {
+                    arrow_mesh_x_instance_->SetVisible(false);
+                    arrow_mesh_y_instance_->SetVisible(false);
+                    arrow_mesh_z_instance_->SetVisible(false);
+                    selection_state_.selected_deferred_renderable_index = UINT32_MAX;
+                } else if (renderable_index != arrow_mesh_x_instance_->GetIndex()
+                    && renderable_index != arrow_mesh_y_instance_->GetIndex()
+                    && renderable_index != arrow_mesh_z_instance_->GetIndex()
+                ) {
+                    selection_state_.selected_deferred_renderable_index = renderable_index;
+                    auto renderable = scene_->GetRenderableByIndex(renderable_index);
+                    arrow_mesh_x_instance_->EditTransform().position = renderable->GetTransform().position;
+                    arrow_mesh_x_instance_->SetVisible(true);
+                    arrow_mesh_y_instance_->EditTransform().position = renderable->GetTransform().position;
+                    arrow_mesh_y_instance_->SetVisible(true);
+                    arrow_mesh_z_instance_->EditTransform().position = renderable->GetTransform().position;
+                    arrow_mesh_z_instance_->SetVisible(true);
+                }
+            }
+            selection_state_.selected_descriptor_rank = descriptor_rank;
+            selection_state_.selected_renderable_index = renderable_index;
+            selection_state_.selected_primitive_index = primitive_index;
+            selection_state_.selected_uv = uv;
+            if (selection_state_.selected_renderable_index != UINT32_MAX) {
+                MI_LOG(MIInfraLogType::kInfo, "Selected Renderable {}, Primitive {}, Descriptor Rank {}, UV ({}, {})",
+                    selection_state_.selected_renderable_index, selection_state_.selected_primitive_index, selection_state_.selected_descriptor_rank, selection_state_.selected_uv.x, selection_state_.selected_uv.y
+                );
+            }
         }
     }
 
@@ -920,7 +1036,18 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
         ProcessClickSelect(ops);
 
         // Process pending ZMQ messages
-        auto frame_export_requests = zmq_server_->PollEvents();
+        std::vector<PendingViewerFrameExportRequest> frame_export_requests;
+        tonemapped_color_export_ = {};
+        if (zmq_server_) {
+            for (const auto& export_name : zmq_server_->PollEvents()) {
+                ViewerFrameExportChannel channel;
+                if (!TryParseViewerFrameExportChannel(export_name, channel)) {
+                    MI_WARN("Unexpected unsupported export type '{}' reached render loop.", export_name.c_str());
+                    continue;
+                }
+                frame_export_requests.push_back({export_name, channel});
+            }
+        }
         if (zmq_server_ && zmq_server_->ConsumeReloadShadersRequest()) {
             ops.should_reload_shaders = true;
         }
@@ -939,31 +1066,36 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             // Mark export flags.
             if (ops.should_process_click_select && !io.WantCaptureMouse) {
                 view_->forward_depth_->SetExport();
-                view_->g_buffer_->G_visibility_->SetExport();
+                if (auto desc = view_->GetFrameExportResource(RendererViewFrameExportResource::kVisibility); desc.IsValid()) {
+                    desc.texture->SetExport();
+                }
             }
 
             if (ops.should_export_result) {
-                view_->g_buffer_->G_depth_->SetExport();
-                view_->g_buffer_->G_transmittance_->SetExport();
-                view_->volume_primitives_->volume_sample_color_->SetExport();
-                view_->volume_primitives_->volume_sample_linear_depth_->SetExport();
-                view_->volume_primitives_->G_volume_density_->SetExport();
-                view_->volume_primitives_->G_volume_color_->SetExport();
-                view_->volume_direct_lighting_->radiance->SetExport();
-                view_->volume_indirect_lighting_->radiance->SetExport();
+                for (auto resource : {
+                    RendererViewFrameExportResource::kDepth,
+                    RendererViewFrameExportResource::kTransmittance,
+                    RendererViewFrameExportResource::kVolumeSampleColor,
+                    RendererViewFrameExportResource::kVolumeSampleLinearDepth,
+                    RendererViewFrameExportResource::kVolumeDensity,
+                    RendererViewFrameExportResource::kVolumeColor,
+                    RendererViewFrameExportResource::kVolumeDirect,
+                    RendererViewFrameExportResource::kVolumeIndirect
+                }) {
+                    if (auto desc = view_->GetFrameExportResource(resource); desc.IsValid()) {
+                        desc.texture->SetExport();
+                    }
+                }
             }
 
             if (ops.should_export_baking_result) {
                 view_->radiance_->SetExport();
             }
 
-            for (const auto& e : frame_export_requests) {
-                ViewerFrameExportChannel channel;
-                if (!TryParseViewerFrameExportChannel(e, channel)) {
-                    MI_WARN("Unexpected unsupported export type '{}' reached render loop.", e.c_str());
-                    continue;
-                }
-                any_export_requests_pending |= MarkRequestedFrameExport(*this, channel);
+            PrepareSpecialFrameExports(*this, builder, frame_export_requests);
+
+            for (const auto& request : frame_export_requests) {
+                any_export_requests_pending |= MarkRequestedFrameExport(*this, request.channel);
             }
 
             std::string frame_name = "Frame " + std::to_string(GetFrameIndexForCurrentThread());
@@ -984,14 +1116,9 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
                 exported_render_results_.clear();
             }
 
-            for (const auto &e : frame_export_requests) {
-                ViewerFrameExportChannel channel;
-                if (!TryParseViewerFrameExportChannel(e, channel)) {
-                    MI_WARN("Unexpected unsupported export type '{}' reached readback stage.", e.c_str());
-                    continue;
-                }
-                if (!PackRequestedFrameExport(*this, e, channel)) {
-                    MI_WARN("Failed to read back '{}' texture", e.c_str());
+            for (const auto& request : frame_export_requests) {
+                if (!PackRequestedFrameExport(*this, request.name, request.channel)) {
+                    MI_WARN("Failed to read back '{}' texture", request.name.c_str());
                 }
             }
             // Reply to the waiting ZMQ client with the exported results.

@@ -665,9 +665,9 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
     }
 
     scene_->directional_light_.enabled = true;
-    scene_->directional_light_.direction = glm::normalize(glm::vec3(-5.5f, -4.4f, 5.5f));
-    scene_->directional_light_.color = glm::vec3(1.0f, 1.0f, 1.0f);
-    scene_->directional_light_.intensity = 1.0f;
+    scene_->directional_light_.direction = glm::normalize(glm::vec3(-6.5f, -3.7f, 7.5f));
+    scene_->directional_light_.color = glm::vec3(1.0f, 0.95f, 0.9f);
+    scene_->directional_light_.intensity = 7.0f;
 
     if (scene_config.contains("directional_light") && scene_config["directional_light"].is_object()) {
         const auto& light_j = scene_config["directional_light"];

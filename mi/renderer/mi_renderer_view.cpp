@@ -265,6 +265,64 @@ RendererView::~RendererView() {
     }
 }
 
+RendererViewFrameExportDesc RendererView::GetFrameExportResource(RendererViewFrameExportResource resource) const {
+    auto MakeDesc = [](RDGTexture * texture, PixelFormatType format) {
+        return RendererViewFrameExportDesc {texture, format};
+    };
+
+    switch (resource) {
+        case RendererViewFrameExportResource::kRadiance:
+            return MakeDesc(radiance_.Raw(), PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kOverlay:
+            return MakeDesc(overlay_.Raw(), PixelFormatType::kR8G8B8A8_UNORM);
+        case RendererViewFrameExportResource::kDepth:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_depth_.Raw() : nullptr, PixelFormatType::kD32_FLOAT);
+        case RendererViewFrameExportResource::kGrfDepth:
+            return MakeDesc(grf_ ? grf_->stochastic_rendering_depth_.Raw() : nullptr, PixelFormatType::kD32_FLOAT);
+        case RendererViewFrameExportResource::kGrfOpacity:
+            return MakeDesc(grf_ ? grf_->stochastic_rendering_opacity_.Raw() : nullptr, PixelFormatType::kR8_UNORM);
+        case RendererViewFrameExportResource::kTransmittance:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_transmittance_.Raw() : nullptr, PixelFormatType::kR8_UNORM);
+        case RendererViewFrameExportResource::kVisibility:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_visibility_.Raw() : nullptr, PixelFormatType::kR32G32B32A32_UINT);
+        case RendererViewFrameExportResource::kAlbedo:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_albedo_.Raw() : nullptr, PixelFormatType::kR8G8B8A8_UNORM);
+        case RendererViewFrameExportResource::kNormal:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_normal_.Raw() : nullptr, PixelFormatType::kR8G8B8A8_UNORM);
+        case RendererViewFrameExportResource::kGeometryNormal:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_geometry_normal_.Raw() : nullptr, PixelFormatType::kR32_UINT);
+        case RendererViewFrameExportResource::kMotionVector:
+            return MakeDesc(g_buffer_ ? g_buffer_->G_motion_vector_.Raw() : nullptr, PixelFormatType::kR32G32_FLOAT);
+        case RendererViewFrameExportResource::kDiffuseDirect:
+            return MakeDesc(diffuse_direct_lighting_ ? diffuse_direct_lighting_->radiance.Raw() : nullptr, PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kDiffuseIndirect:
+            return MakeDesc(diffuse_indirect_lighting_ ? diffuse_indirect_lighting_->radiance.Raw() : nullptr, PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kDenoisedDiffuseDirect:
+            return MakeDesc(denoiser_ ? denoiser_->denoised_diffuse_direct_lighting.Raw() : nullptr, PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kDenoisedDiffuseIndirect:
+            return MakeDesc(denoiser_ ? denoiser_->denoised_diffuse_indirect_lighting.Raw() : nullptr, PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kVolumeSampleColor:
+            return MakeDesc(volume_primitives_ ? volume_primitives_->volume_sample_color_.Raw() : nullptr, PixelFormatType::kR8G8B8A8_UNORM);
+        case RendererViewFrameExportResource::kVolumeSampleLinearDepth:
+            return MakeDesc(volume_primitives_ ? volume_primitives_->volume_sample_linear_depth_.Raw() : nullptr, PixelFormatType::kR32_FLOAT);
+        case RendererViewFrameExportResource::kVolumeDensity:
+            return MakeDesc(volume_primitives_ ? volume_primitives_->G_volume_density_.Raw() : nullptr, PixelFormatType::kR32_FLOAT);
+        case RendererViewFrameExportResource::kVolumeColor:
+            return MakeDesc(volume_primitives_ ? volume_primitives_->G_volume_color_.Raw() : nullptr, PixelFormatType::kR8G8B8A8_UNORM);
+        case RendererViewFrameExportResource::kVolumeDirect:
+            return MakeDesc(volume_direct_lighting_ ? volume_direct_lighting_->radiance.Raw() : nullptr, PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kVolumeIndirect:
+            return MakeDesc(volume_indirect_lighting_ ? volume_indirect_lighting_->radiance.Raw() : nullptr, PixelFormatType::kR16G16B16A16_FLOAT);
+        case RendererViewFrameExportResource::kPathTracingFilm:
+            return MakeDesc(
+                persistent_data_ ? persistent_data_->path_tracing_film_.Raw() : nullptr,
+                PixelFormatType::kR32G32B32A32_FLOAT
+            );
+        default:
+            return {};
+    }
+}
+
 
 void RendererViewPersistentData::Init() {
     *this = {};
@@ -378,6 +436,7 @@ void RendererView::InitFrame () {
     upload_context_.Init();
 
     temp_allocator_.Reset();
+    did_render_path_tracing_this_frame_ = false;
 }
 
 

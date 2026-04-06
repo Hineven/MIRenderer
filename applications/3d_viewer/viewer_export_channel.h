@@ -16,12 +16,23 @@ MI_NAMESPACE_BEGIN
 
 enum class ViewerFrameExportChannel {
     kRadiance,
+    kColor,
     kOverlay,
     kDepth,
     kGrfDepth,
     kGrfOpacity,
     kTransmittance,
     kVisibility,
+    kNormal,
+    kGeometryNormal,
+    kAlbedo,
+    kDiffuseDirect,
+    kDiffuseIndirect,
+    kDenoisedDiffuseDirect,
+    kDenoisedDiffuseIndirect,
+    kMotionVector,
+    kPathTracing,
+    kTonemappedPathTracing,
 };
 
 bool TryParseViewerFrameExportChannel(std::string_view name, ViewerFrameExportChannel& out_channel);

@@ -169,6 +169,8 @@ public:
 
     // Temporarily keep some of the exported results for ZMQ server to use.
     std::vector<ExportedRenderResult> exported_render_results_;
+    TRef<RDGTexture> tonemapped_color_export_;
+    TRef<RDGTexture> tonemapped_path_tracing_export_;
 
     // ZMQ server for Python integration
     std::unique_ptr<ViewerZmqServer> zmq_server_;

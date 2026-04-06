@@ -2,6 +2,7 @@
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedVertex.hlsl"
 #include "shared/SharedMaterial.hlsl"
+#include "shared/SharedDirectionalLight.hlsl"
 #include "shared/SharedLight.hlsl"
 #include "shared/SharedVolumeGrid.hlsl"
 #include "headers/Conventions.hlsl"
@@ -21,6 +22,7 @@
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/IntersectionEvaluationResources.hlsl"
 #include "resources/EnvironmentLightResource.hlsl"
+#include "resources/DirectionalLightResource.hlsl"
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
@@ -55,9 +57,11 @@ ConstantBuffer<ReferencePathTracerUB> UB;
 
 
 struct [raypayload] RayPayload {
-    bool bIsSurfaceHit; // True if hit a surface, false if miss or hit a volume
-    bool bIsVolumeGridHit; // True if hit a volume grid boundary
-    bool bIsFrontFace;
+    uint Mode; // 0: regular path ray, 1: directional shadow ray
+    uint ShadowVisible;
+    uint bIsSurfaceHit; // True if hit a surface, false if miss or hit a volume
+    uint bIsVolumeGridHit; // True if hit a volume grid boundary
+    uint bIsFrontFace;
     float TCurrent;
     uint HitInstanceCustomIndex;
     uint HitGeometryIndex;
@@ -70,6 +74,32 @@ RWTexture2D<float4> RWRadiance; // Output radiance (1spp)
 
 #define MAX_OVERLAPPING_VOLUME_PRIMITIVES 16
 #define MAX_OVERLAPPING_VOLUME_GRIDS 16
+
+bool TraceDirectionalLightVisibility(float3 Origin, float3 GeometryNormal, float3 ToLightDirection)
+{
+    RayDesc ShadowRay = (RayDesc)0;
+    float OffsetLength = max(2e-5f, dot(abs(Origin), 1.xxx) * 1e-5f);
+    ShadowRay.Origin = Origin + GeometryNormal * OffsetLength;
+    ShadowRay.Direction = ToLightDirection;
+    ShadowRay.TMin = 1e-4f;
+    ShadowRay.TMax = Infinity;
+
+    RayPayload Payload = (RayPayload)0;
+    Payload.Mode = 1;
+    Payload.ShadowVisible = 1;
+    Payload.TCurrent = ShadowRay.TMax;
+    TraceRay(
+        TLAS,
+        RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+        0xFF,
+        0,
+        0,
+        0,
+        ShadowRay,
+        Payload
+    );
+    return Payload.ShadowVisible != 0;
+}
 
 // Remove Volume Primitive from Overlapping Volume Primitive List.
 void RemoveVolumePrimitive(
@@ -386,6 +416,17 @@ void ReferencePathTracerRaygen() {
         // Case A: Overlapping Volume Primitives Scatter
         if (T_VolumeScatter < Infinity && Payload.TCurrent >= T_VolumeScatter)
         {
+            float3 ScatterPosition = Ray.Origin + Ray.Direction * T_VolumeScatter;
+
+            if (DirectionalLightEnabled())
+            {
+                float3 ToLightDirection = GetDirectionalLightDirection();
+                if (TraceDirectionalLightVisibility(ScatterPosition, ToLightDirection, ToLightDirection))
+                {
+                    float Phase = HenyeyGreensteinPhaseFunction(dot(ToLightDirection, -Ray.Direction), g);
+                    Radiance += Throughput * VolumeSampledColor * GetDirectionalLightIrradiance() * Phase;
+                }
+            }
 
             // 1. Update ray throughtput. Phase function cancelled out naturally due to perfect sampling
             Throughput *= VolumeSampledColor;
@@ -405,7 +446,7 @@ void ReferencePathTracerRaygen() {
             );
 
             // 3. Forward the ray ray origin to scatter position
-            Ray.Origin = Ray.Origin + Ray.Direction * T_VolumeScatter;
+            Ray.Origin = ScatterPosition;
             Ray.TMin = 1e-4f;
             // Add a bounce.
             BounceIndex++;
@@ -444,6 +485,25 @@ void ReferencePathTracerRaygen() {
                     // Invert the shading normal if the ray hit the back face, to make it consistent with the single-sided shading model.
                     M.Normal = -M.Normal;
                 }
+
+                if (DirectionalLightEnabled())
+                {
+                    float3 ToLightDirection = GetDirectionalLightDirection();
+                    float NoL = dot(M.Normal, ToLightDirection);
+                    if (NoL > 0.0f)
+                    {
+                        float NormalFlipping = dot(Intersection.GeometryNormal, Ray.Direction) > 0 ? -1 : 1;
+                        float3 ShadowOriginNormal = NormalFlipping * Intersection.GeometryNormal;
+                        if (TraceDirectionalLightVisibility(Intersection.WorldPosition, ShadowOriginNormal, ToLightDirection))
+                        {
+                            float3 DirectLighting = EvaluateBSDF(M, -Ray.Direction, ToLightDirection)
+                                * NoL
+                                * GetDirectionalLightIrradiance();
+                            Radiance += Throughput * DirectLighting;
+                        }
+                    }
+                }
+
                 float3 SampledDirection;
                 // Sample BSDF
                 float BsdfPdf = SampleBDSF(M, -Ray.Direction, rng.rand2(), SampledDirection);
@@ -562,18 +622,68 @@ void ReferencePathTracerRaygen() {
 
 [shader("miss")]
 void ReferencePathTracerMiss(inout RayPayload Payload: SV_RayPayload) {
+    if (Payload.Mode == 1) {
+        Payload.ShadowVisible = 1;
+        return;
+    }
     Payload.HitInstanceCustomIndex = 0xFFFFFFFF;
 }
 
 [shader("anyhit")]
 void ReferencePathTracerAnyHit(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    // Always hit.
+    if (Payload.Mode != 1) {
+        return;
+    }
+
+    uint Triangle            = PrimitiveIndex();
+    uint DescriptionIndex    = GeometryIndex();
+    uint InstanceCustomIndex = InstanceID();
+    uint InstanceFlags       = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
+    uint Instance            = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+
+    if (InstanceFlags != INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
+        IgnoreHit();
+        return;
+    }
+
+    StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+    uint GeometryIndex = GeometryMaterialPair.x;
+    uint MaterialIndex = GeometryMaterialPair.y;
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+    uint VertexOffset = Geometry.VertexOffset;
+
+    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+
+    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1.0f);
+    if (IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+    }
+    if (ColorOpacity.a < 0.1f) {
+        IgnoreHit();
+    }
 }
 
 [shader("closesthit")]
 void ReferencePathTracerClosestHit(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    if (Payload.Mode == 1) {
+        Payload.ShadowVisible = 0;
+        Payload.TCurrent = RayTCurrent();
+        return;
+    }
+
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
@@ -583,7 +693,7 @@ void ReferencePathTracerClosestHit(inout RayPayload Payload: SV_RayPayload,
     Payload.HitGeometryIndex = DescriptionIndex;
     Payload.HitPrimitiveIndex = Triangle;
     Payload.HitBarycentrics = Attributes.barycentrics;
-    Payload.bIsFrontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
-    Payload.bIsSurfaceHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK) == 0;
-    Payload.bIsVolumeGridHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID) != 0;
+    Payload.bIsFrontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE ? 1 : 0;
+    Payload.bIsSurfaceHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK) == 0 ? 1 : 0;
+    Payload.bIsVolumeGridHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID) != 0 ? 1 : 0;
 }
