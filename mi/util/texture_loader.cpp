@@ -16,7 +16,8 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#define TINYEXR_IMPLEMENTATION
+// TinyExr is statically linked (via vcpkg).
+// #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 #include "rdg/rdg_helper.h"
 
