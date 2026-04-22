@@ -68,40 +68,6 @@ public:
 
 };
 
-enum class RendererViewFrameExportResource {
-    kRadiance,
-    kOverlay,
-    kDepth,
-    kGrfDepth,
-    kGrfOpacity,
-    kTransmittance,
-    kVisibility,
-    kAlbedo,
-    kNormal,
-    kGeometryNormal,
-    kMotionVector,
-    kDiffuseDirect,
-    kDiffuseIndirect,
-    kDenoisedDiffuseDirect,
-    kDenoisedDiffuseIndirect,
-    kVolumeSampleColor,
-    kVolumeSampleLinearDepth,
-    kVolumeDensity,
-    kVolumeColor,
-    kVolumeDirect,
-    kVolumeIndirect,
-    kPathTracingFilm,
-};
-
-struct RendererViewFrameExportDesc {
-    RDGTexture * texture {};
-    PixelFormatType format {PixelFormatType::kUnknown};
-
-    FORCEINLINE bool IsValid() const {
-        return texture != nullptr && format != PixelFormatType::kUnknown;
-    }
-};
-
 // Holds all the states that a renderer uses to render a view of a frame.
 struct RendererView {
 
@@ -115,8 +81,6 @@ struct RendererView {
     void SetupViewCommonShaderParameters (RenderGraphBuilder & builder);
     // Update debug common shader parameters
     void SetupDebugCommonShaderParameters (RenderGraphBuilder & builder);
-
-    RendererViewFrameExportDesc GetFrameExportResource (RendererViewFrameExportResource resource) const;
 
     Camera camera_ {};
 

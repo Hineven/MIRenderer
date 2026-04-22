@@ -17,6 +17,7 @@
 #include "rdg/rdg_base.h"
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/mi_renderer_view.h"
+#include "renderer/mi_renderer_export.h"
 #include "renderer/mi_camera.h"
 #include "renderer/mi_console.h"
 MI_NAMESPACE_BEGIN
@@ -51,8 +52,8 @@ public:
 
     void Init (DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) ;
 
-    // Called each frame
-    void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
+    // Called each frame. Returns a registry of all exportable resources produced this frame.
+    TRef<RendererExports> Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
     FORCEINLINE DeviceBindlessResourceAllocator * GetDeviceAllocator () {
         return device_allocator_.Raw();

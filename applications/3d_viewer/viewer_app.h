@@ -96,7 +96,7 @@ public:
     void HandleControlUILogic(FrameInternalDelayedOps& ops, std::vector<RDGTimePeriod> time_periods, float cpu_duration);
 
     void ProcessClickSelect(FrameInternalDelayedOps& ops);
-    void ProcessDelayedOps(FrameInternalDelayedOps& ops);
+    void ProcessDelayedOps(FrameInternalDelayedOps& ops, const TRef<RendererExports>& exports);
     void ProcessAxisDragging();
     void SetSelectedRenderable(Renderable* renderable);
     void RegisterLoadedScene(const std::string& name, const std::vector<TRef<RenderableNode>>& roots);
@@ -187,6 +187,19 @@ public:
 // Entry point for running the 3d viewer main loop.
 void Run3DViewer(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopStartConfig& cfg);
 
+// Some helpers
+
+// Maps viewer export names to RendererExports string IDs.
+// For tonemapped exports, the source_texture_id identifies the source RDG texture
+// that will be fed into the tonemapping pass.
+struct ViewerFrameExportBinding {
+    const char* export_id;
+    const char* source_texture_id; // for tonemapped exports: source texture in RendererExports
+    PixelFormatType format {PixelFormatType::kUnknown};
+    bool is_tonemapped {false};
+};
+const ViewerFrameExportBinding* FindViewerFrameExportBinding(std::string_view name) ;
+const std::vector<std::string>& GetSupportedViewerFrameExportNames() ;
 
 MI_NAMESPACE_END
 

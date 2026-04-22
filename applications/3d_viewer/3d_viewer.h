@@ -10,8 +10,16 @@
 #include <rdg/rdg_pool.h>
 
 #include "rdg/rdg_builder.h"
-#include "renderer/mi_renderer_view.h"
+#include "renderer/mi_renderer_export.h"
 
-void RenderFrame (MI_NAMESPACE::RenderGraphBuilder & builder, MI_NAMESPACE::RendererView * view_state, bool render_scene);
+namespace MI_NAMESPACE {
+    struct RendererView;
+}
+
+MI_NAMESPACE::TRef<MI_NAMESPACE::RendererExports> RenderFrame (
+    MI_NAMESPACE::RenderGraphBuilder & builder,
+    MI_NAMESPACE::RendererView * view_state,
+    bool render_scene
+);
 
 #endif //INC_3D_VIEWER_H

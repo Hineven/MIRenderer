@@ -133,7 +133,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     })->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }
 
-void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state, bool render_scene) {
+TRef<RendererExports> RenderFrame(RenderGraphBuilder & builder, RendererView * view_state, bool render_scene) {
     DEBUG_PROFILE_SECTION(RenderFrameSection);
     auto backbuffer = builder.Import(RHI::Get().GetBackBuffer());
 
@@ -145,12 +145,15 @@ void RenderFrame(RenderGraphBuilder & builder, RendererView * view_state, bool r
         })->AddTextureH(backbuffer, RDGTextureUsageType::kTransferWrite);
     }
 
+    TRef<RendererExports> exports;
     if (render_scene) {
         auto & renderer = Renderer::Get();
-        renderer.Render(view_state, builder);
+        exports = renderer.Render(view_state, builder);
     }
 
     ImGui::Render();
     RenderImGui(builder, backbuffer);
+
+    return exports;
 }
 
