@@ -74,8 +74,8 @@ public:
 };
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(VisualizeRayTracingSceneShader, "mi/renderer/shaders/VisualizeRayTracingScene.hlsl",
-                                "VisualizeRayTracingSceneRaygen",
-                                 "VisualizeRayTracingSceneClosestHit", "VisualizeRayTracingSceneAnyHit", "VisualizeRayTracingSceneMiss")
+    "VisualizeRayTracingScene", "VisualizeRayTracingScene",
+    "VisualizeRayTracingSceneRaygen", "VisualizeRayTracingSceneMiss")
 
 class VisualizeTracedRaysShader : public RDGShader {
 public:

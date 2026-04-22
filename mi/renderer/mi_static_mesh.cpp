@@ -25,7 +25,11 @@
 
 #include "shaders/shared/SharedLight.hlsl"
 
+#include "rdg/rdg_ray_tracing_registry.h"
+
 MI_NAMESPACE_BEGIN
+
+static RayTracedRenderableClassRegistrator g_ray_traced_static_mesh_registrator("StaticMesh", "StaticMesh");
 
 CVar<int> CVar_MaxMeshLightsPerGeometry(
     "r.mesh_light.max_lights_per_geometry",

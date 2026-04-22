@@ -72,7 +72,8 @@ public:
 };
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(TraceShadowRaysShader, "mi/renderer/shaders/TraceShadowRays.hlsl",
-    "TraceShadowRaysRaygen", "TraceShadowRaysClosestHit", "TraceShadowRaysAnyHit", "TraceShadowRaysMiss");
+    "TraceShadowRays", "TraceShadowRays",
+    "TraceShadowRaysRaygen", "TraceShadowRaysMiss");
 
 void Renderer::Render_HardwareShadowRayTracing(
     RendererView *view, RenderGraphBuilder &builder,
@@ -178,7 +179,8 @@ public:
 };
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(TraceTransmittanceRaysShader, "mi/renderer/shaders/TraceTransmittanceRays.hlsl",
-    "TraceTransmittanceRaysRaygen", "TraceTransmittanceRaysClosestHit", "TraceTransmittanceRaysAnyHit", "TraceTransmittanceRaysMiss");
+    "TraceTransmittanceRays", "TraceTransmittanceRays",
+    "TraceTransmittanceRaysRaygen", "TraceTransmittanceRaysMiss");
 
 // More than shadow rays, transmittance rays can evaluate the transmittance from 0 and TMax.
 // NOTE: if the transmittance ray hits an opaque object and early terminates, the evaluated
@@ -306,7 +308,8 @@ public:
 };
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(TraceVisibilityRaysShader, "mi/renderer/shaders/TraceVisibilityRays.hlsl",
-    "TraceVisibilityRaysRaygen", "TraceVisibilityRaysClosestHit", "TraceVisibilityRaysAnyHit", "TraceVisibilityRaysMiss");
+    "TraceVisibilityRays", "TraceVisibilityRays",
+    "TraceVisibilityRaysRaygen", "TraceVisibilityRaysMiss");
 
 
 void Renderer::Render_HardwareVisibilityRayTracing(

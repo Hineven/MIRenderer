@@ -9,10 +9,12 @@
 
 #include <string>
 #include <functional>
+#include <array>
 #include <rhi/rhi_shader.h>
 
 #include "rdg/rdg_base.h"
 #include "rdg/rdg_param.h"
+#include "rdg/rdg_ray_tracing_registry.h"
 #include "rhi/rhi_pipeline.h"
 MI_NAMESPACE_BEGIN
     class RHIGraphicsPipeline;
@@ -52,9 +54,16 @@ struct RDGShaderClassRegistry {
     std::string geometry_entry_;
     std::string fragment_entry_;
     std::string raygen_entry_;
-    std::string closest_hit_entry_;
-    std::string any_hit_entry_;
     std::string miss_entry_;
+    // For ray tracing shaders with multi-hitgroup support:
+    // Template prefixes used to construct per-renderable-class entry point names.
+    // Closest-hit entry points: {closest_hit_template_}{suffix}
+    // Any-hit entry points:     {any_hit_template_}{suffix}
+    // where suffix comes from RayTracedRenderableClassRegistry (e.g., _0, _1, _2, _3).
+    // If an entry point is not found in the compiled SPIR-V, RDG emits a warning and treats it as no-op.
+    // If empty, the shader does not use multi-hitgroup mode (should not happen for ray tracing shaders).
+    std::string closest_hit_template_;
+    std::string any_hit_template_;
     RDGShader * (*Creator) (RDGShaderClassRegistry *);
     // Macros always present when compiling the shader
     std::vector<std::string> (*GetShaderDefaultMacros)();
@@ -224,8 +233,9 @@ protected:
         TRef<RHIShader> fragment {};
         TRef<RHIShader> raygen {};
         TRef<RHIShader> miss {};
-        TRef<RHIShader> closest_hit {};
-        TRef<RHIShader> any_hit {};
+        // Per-renderable-class hit shaders (indexed by RayTracedRenderableClassRegistry::GetClassIndex).
+        std::array<TRef<RHIShader>, RayTracedRenderableClassRegistry::kMaxRayTracingHitGroups> closest_hit {};
+        std::array<TRef<RHIShader>, RayTracedRenderableClassRegistry::kMaxRayTracingHitGroups> any_hit {};
         TRef<RHIShader> callable {};
     } shaders_;
     // SBT buffer only available for ray tracing shaders.
@@ -301,6 +311,8 @@ static const char * GetShaderTypeName ();
 #define DECLARE_SHADER(...) DECLARE_SHADER_SELECT(MI_PP_HAS_ARGS(__VA_ARGS__))(__VA_ARGS__)
 
 // Generic
+// Note: EntryPoint_ClosestHit and EntryPoint_AnyHit are repurposed as template prefixes for ray tracing shaders.
+// For compute/graphics shaders, these should be empty strings.
 #define INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, Type, EntryPoint_CS, EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
     static RDGShaderClassRegistrator<ClassName> ClassName##Registrator( \
         #ClassName, \
@@ -335,9 +347,19 @@ static const char * GetShaderTypeName ();
     INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, "", "", "", "") \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
-// Ray tracing
-#define IMPLEMENT_RDG_RAY_TRACING_SHADER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+// Ray tracing - Multi-hitgroup
+// ClosestHitTemplate: prefix for closest-hit entry points ({Template}ClosestHit_{ClassName})
+// AnyHitTemplate:     prefix for any-hit entry points ({Template}AnyHit_{ClassName})
+//   where {ClassName} comes from RayTracedRenderableClassRegistry (e.g., StaticMesh, VolumeGrid, ...).
+//   If an entry point is not found in the compiled SPIR-V, RDG emits a warning and treats it as no-op.
+// Example:
+//   ClosestHitTemplate = "TraceShadowRays", AnyHitTemplate = "TraceShadowRays"
+//   → TraceShadowRaysClosestHit_StaticMesh, TraceShadowRaysAnyHit_StaticMesh       (StaticMesh)
+//   → TraceShadowRaysClosestHit_VolumeGrid, TraceShadowRaysAnyHit_VolumeGrid       (VolumeGrid)
+//   → TraceShadowRaysClosestHit_VolumePrimitives, TraceShadowRaysAnyHit_VolumePrimitives  (VolumePrimitives)
+//   → TraceShadowRaysClosestHit_GaussianRadianceField, TraceShadowRaysAnyHit_GaussianRadianceField  (GaussianRadianceField)
+#define IMPLEMENT_RDG_RAY_TRACING_SHADER(ClassName, SourcePath, ClosestHitTemplate, AnyHitTemplate, EntryPoint_Raygen, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, #ClosestHitTemplate, #AnyHitTemplate, EntryPoint_Miss) \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
@@ -352,8 +374,10 @@ static const char * GetShaderTypeName ();
 INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics, "", EntryPoint_VS, EntryPoint_GS, EntryPoint_PS, "", "", "", "") \
 
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
-#define IMPLEMENT_RDG_RAY_TRACING_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, EntryPoint_ClosestHit, EntryPoint_AnyHit, EntryPoint_Miss) \
+// Multi-hitgroup variant
+#define IMPLEMENT_RDG_RAY_TRACING_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, ClosestHitTemplate, AnyHitTemplate, EntryPoint_Raygen, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, #ClosestHitTemplate, #AnyHitTemplate, EntryPoint_Miss) \
+
 
 
 #define RDG_SHADER_USE_PARAMETERS(Name) \
@@ -413,6 +437,9 @@ protected:
 template<typename T>
 class RDGShaderClassRegistrator {
 public:
+    // Unified constructor for all shader types.
+    // For ray tracing shaders, closest_hit_entry and any_hit_entry are template prefixes.
+    // For compute/graphics shaders, they should be empty strings.
     FORCEINLINE RDGShaderClassRegistrator (
         std::string name,
         RHIPipelineType type,
@@ -423,8 +450,8 @@ public:
         const std::string & geometry_entry,
         const std::string & fragment_entry,
         const std::string & raygen_entry,
-        const std::string & closest_hit_entry,
-        const std::string & any_hit_entry,
+        const std::string & closest_hit_template,
+        const std::string & any_hit_template,
         const std::string & miss_entry,
         const std::string & impl_macro_line_info
     ) {
@@ -439,9 +466,9 @@ public:
             geometry_entry,
             fragment_entry,
             raygen_entry,
-            closest_hit_entry,
-            any_hit_entry,
             miss_entry,
+            closest_hit_template,
+            any_hit_template,
             RDGShaderClassRegistrator<T>::zzShaderFactoryFunction,
             TGetShaderDefaultMacros<T>::value,
             TGetShaderOptionalMacros<T>::value,

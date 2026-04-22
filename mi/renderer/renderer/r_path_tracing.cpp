@@ -71,8 +71,8 @@ public:
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(ReferencePathTracerShader,
     "mi/renderer/shaders/ReferencePathTracer.hlsl",
-    "ReferencePathTracerRaygen",
-    "ReferencePathTracerClosestHit", "ReferencePathTracerAnyHit", "ReferencePathTracerMiss")
+    "ReferencePathTracer", "ReferencePathTracer",
+    "ReferencePathTracerRaygen", "ReferencePathTracerMiss")
 
 void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &builder) {
     // Standalone path tracing renderer

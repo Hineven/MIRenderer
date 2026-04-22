@@ -14,8 +14,11 @@
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_buffer_heap.h"
 #include "rhi/rhi_as.h"
+#include "rdg/rdg_ray_tracing_registry.h"
 
 MI_NAMESPACE_BEGIN
+
+static RayTracedRenderableClassRegistrator g_ray_traced_volume_grid_registrator("VolumeGrid", "VolumeGrid");
 
 // ------------------------------------------------------------------
 // DeviceVolumeGrid Implementation
