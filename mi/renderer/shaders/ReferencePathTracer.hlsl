@@ -93,7 +93,7 @@ bool TraceDirectionalLightVisibility(float3 Origin, float3 GeometryNormal, float
         RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
         0xFF,
         0,
-        0,
+        0, // SBT stride (per-instance offset only)
         0,
         ShadowRay,
         Payload
@@ -403,7 +403,7 @@ void ReferencePathTracerRaygen() {
             0,
             0xFF, // Ray mask
             0, // Suface ray
-            0, // SBT stride
+            0, // SBT stride (per-instance offset only)
             0, // Miss shader index
             Ray,
             Payload
@@ -629,8 +629,13 @@ void ReferencePathTracerMiss(inout RayPayload Payload: SV_RayPayload) {
     Payload.HitInstanceCustomIndex = 0xFFFFFFFF;
 }
 
+// ============================================================================
+// AnyHit shaders: only used for shadow rays (Payload.Mode == 1)
+// ============================================================================
+
+// StaticMesh anyhit: alpha test for shadow rays
 [shader("anyhit")]
-void ReferencePathTracerAnyHit(inout RayPayload Payload: SV_RayPayload,
+void ReferencePathTracerAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     if (Payload.Mode != 1) {
         return;
@@ -639,13 +644,7 @@ void ReferencePathTracerAnyHit(inout RayPayload Payload: SV_RayPayload,
     uint Triangle            = PrimitiveIndex();
     uint DescriptionIndex    = GeometryIndex();
     uint InstanceCustomIndex = InstanceID();
-    uint InstanceFlags       = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance            = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-
-    if (InstanceFlags != INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
-        IgnoreHit();
-        return;
-    }
 
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -675,8 +674,41 @@ void ReferencePathTracerAnyHit(inout RayPayload Payload: SV_RayPayload,
     }
 }
 
-[shader("closesthit")]
-void ReferencePathTracerClosestHit(inout RayPayload Payload: SV_RayPayload,
+// VolumePrimitives anyhit: shadow rays should not hit volume primitives
+[shader("anyhit")]
+void ReferencePathTracerAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    if (Payload.Mode != 1) {
+        return;
+    }
+    IgnoreHit();
+}
+
+// GaussianRadianceField anyhit: shadow rays should not hit gaussian RF
+[shader("anyhit")]
+void ReferencePathTracerAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    if (Payload.Mode != 1) {
+        return;
+    }
+    IgnoreHit();
+}
+
+// VolumeGrid anyhit: shadow rays should not hit volume grids
+[shader("anyhit")]
+void ReferencePathTracerAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    if (Payload.Mode != 1) {
+        return;
+    }
+    IgnoreHit();
+}
+
+// ============================================================================
+// ClosestHit shaders: record hit info for path tracing
+// ============================================================================
+
+void ReferencePathTracerRecordClosestHit(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     if (Payload.Mode == 1) {
         Payload.ShadowVisible = 0;
@@ -694,6 +726,31 @@ void ReferencePathTracerClosestHit(inout RayPayload Payload: SV_RayPayload,
     Payload.HitPrimitiveIndex = Triangle;
     Payload.HitBarycentrics = Attributes.barycentrics;
     Payload.bIsFrontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE ? 1 : 0;
-    Payload.bIsSurfaceHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK) == 0 ? 1 : 0;
-    Payload.bIsVolumeGridHit = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID) != 0 ? 1 : 0;
+    uint class_index = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_CLASS_MASK) >> INSTANCE_CUSTOM_INDEX_CLASS_SHIFT;
+    Payload.bIsSurfaceHit = (class_index == MI_RENDERABLE_TYPE_StaticMesh) ? 1 : 0;
+    Payload.bIsVolumeGridHit = (class_index == MI_RENDERABLE_TYPE_VolumeGrid) ? 1 : 0;
+}
+
+[shader("closesthit")]
+void ReferencePathTracerClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    ReferencePathTracerRecordClosestHit(Payload, Attributes);
+}
+
+[shader("closesthit")]
+void ReferencePathTracerClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    ReferencePathTracerRecordClosestHit(Payload, Attributes);
+}
+
+[shader("closesthit")]
+void ReferencePathTracerClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    ReferencePathTracerRecordClosestHit(Payload, Attributes);
+}
+
+[shader("closesthit")]
+void ReferencePathTracerClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    ReferencePathTracerRecordClosestHit(Payload, Attributes);
 }

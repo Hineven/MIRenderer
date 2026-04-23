@@ -64,7 +64,7 @@ void VisualizeRayTracingSceneRaygen() {
             RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
             0xFF, // Ray mask
             0,    // SBT offset
-            0,    // SBT stride
+            0,    // SBT stride (per-instance offset only)
             0,    // Miss shader index
             Ray,
             Payload
@@ -86,88 +86,120 @@ void VisualizeRayTracingSceneMiss(inout RayPayload Payload: SV_RayPayload) {
     Payload.Color = float4(EnvironmentColor, 1.0f);
 }
 
+// ============================================================================
+// StaticMesh anyhit: alpha test
+// ============================================================================
 [shader("anyhit")]
-void VisualizeRayTracingSceneAnyHit(inout RayPayload Payload: SV_RayPayload,
+void VisualizeRayTracingSceneAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
+    uint InstanceCustomIndex = InstanceID();
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    if(InstanceFlags == 0) {
-        StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
-        uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
-        uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
-        uint GeometryIndex = GeometryMaterialPair.x;
-        uint MaterialIndex = GeometryMaterialPair.y;
-        GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
-        uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
-        uint VertexOffset = Geometry.VertexOffset;
 
-        uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
-        uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
-        uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
-        DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
-        DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
-        DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+    StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+    uint GeometryIndex = GeometryMaterialPair.x;
+    uint MaterialIndex = GeometryMaterialPair.y;
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+    uint VertexOffset = Geometry.VertexOffset;
 
-        // Interpolate the vertex
-        DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
 
-        MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
-        float4 ColorOpacity = float4(Material.Albedo, 1);
-        if(IsValid(Material.AlbedoMap)) {
-            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
-        }
-        if(ColorOpacity.a < 0.01f) {
-            IgnoreHit();
-	    }
-    } else { // Just hit!
-        
+    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+
+    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1);
+    if(IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
+    }
+    if(ColorOpacity.a < 0.01f) {
+        IgnoreHit();
     }
 }
 
+// Non-StaticMesh anyhit: just pass through (shell geometry)
+[shader("anyhit")]
+void VisualizeRayTracingSceneAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+}
+
+[shader("anyhit")]
+void VisualizeRayTracingSceneAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+}
+
+[shader("anyhit")]
+void VisualizeRayTracingSceneAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+}
+
+// ============================================================================
+// StaticMesh closesthit: visualize material color
+// ============================================================================
 [shader("closesthit")]
-void VisualizeRayTracingSceneClosestHit(inout RayPayload Payload: SV_RayPayload,
+void VisualizeRayTracingSceneClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
+    uint InstanceCustomIndex = InstanceID();
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    if(InstanceFlags == 0) {
-        StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
-        uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
-        uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
-        uint GeometryIndex = GeometryMaterialPair.x;
-        uint MaterialIndex = GeometryMaterialPair.y;
-        GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
-        uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
-        uint VertexOffset = Geometry.VertexOffset;
 
-        uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
-        uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
-        uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
-        DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
-        DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
-        DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
+    StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
+    uint DescriptionOffset = StaticMeshHeaderBuffer[StaticMeshIndex].DescriptionOffset;
+    uint2 GeometryMaterialPair = StaticMeshDescriptionBuffer[DescriptionOffset + DescriptionIndex];
+    uint GeometryIndex = GeometryMaterialPair.x;
+    uint MaterialIndex = GeometryMaterialPair.y;
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryIndex];
+    uint IndexOffset = Geometry.IndexOffset + Triangle * 3;
+    uint VertexOffset = Geometry.VertexOffset;
 
-        // Interpolate the vertex
-        DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+    uint VertexAIndex = VertexOffset + IndexBuffer[IndexOffset + 0];
+    uint VertexBIndex = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint VertexCIndex = VertexOffset + IndexBuffer[IndexOffset + 2];
+    DefaultStaticMeshVertex VertexA = VertexBuffer[VertexAIndex];
+    DefaultStaticMeshVertex VertexB = VertexBuffer[VertexBIndex];
+    DefaultStaticMeshVertex VertexC = VertexBuffer[VertexCIndex];
 
-        MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
-        float4 ColorOpacity = float4(Material.Albedo, 1);
-        if(IsValid(Material.AlbedoMap)) {
-            ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
-        }
-        Payload.Color = ColorOpacity;
-        Payload.bSurfaceHit = true;
-    } else {
-        
-        // Simply reduce transmittance for shell geometry visualization
-        Payload.Transmittance *= 0.5f;
+    DefaultStaticMeshVertex InterpolatedVertex = InterpolateVertex(VertexA, VertexB, VertexC, Attributes.barycentrics);
+
+    MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
+    float4 ColorOpacity = float4(Material.Albedo, 1);
+    if(IsValid(Material.AlbedoMap)) {
+        ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
     }
+    Payload.Color = ColorOpacity;
+    Payload.bSurfaceHit = true;
+    Payload.THit = RayTCurrent();
+}
+
+// Non-StaticMesh closesthit: reduce transmittance for shell geometry visualization
+[shader("closesthit")]
+void VisualizeRayTracingSceneClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.Transmittance *= 0.5f;
+    Payload.THit = RayTCurrent();
+}
+
+[shader("closesthit")]
+void VisualizeRayTracingSceneClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.Transmittance *= 0.5f;
+    Payload.THit = RayTCurrent();
+}
+
+[shader("closesthit")]
+void VisualizeRayTracingSceneClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.Transmittance *= 0.5f;
     Payload.THit = RayTCurrent();
 }

@@ -139,6 +139,8 @@ public:
 
 
     // The following functions CAN be implemented by sub-classes to specify special shader attributes
+    // Base macros injected into ALL shaders (e.g., MI_RENDERABLE_TYPE_* from RayTracedRenderableClassRegistry).
+    static std::vector<std::string> GetBaseDefaultMacros ();
     // Default macros that are always present when compiling the shader.
     FORCEINLINE static std::vector<std::string> GetShaderDefaultMacros () {
         return {};

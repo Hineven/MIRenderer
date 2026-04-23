@@ -28,6 +28,7 @@
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
+#include "rdg/rdg_ray_tracing_registry.h"
 #include "renderer/r_denoiser.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
@@ -284,6 +285,18 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
                 auto data = RHIAccelerationStructureInstanceDesc {};
                 data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
                 data.mask = 0xFF; // Visible to all rays
+                // Set SBT record offset based on renderable class index.
+                // The offset is in bytes: class_index * hit_group_stride.
+                // Must match the SBT hit group spacing used in RDGShader SBT construction.
+                {
+                    auto props = RHI::Get().GetDeviceProperties();
+                    auto handle_size_aligned = RoundUp(
+                        props.shader_group_handle_size,
+                        props.shader_group_base_alignment
+                    );
+                    uint32_t class_index = renderable->GetRayTracedClassIndex();
+                    data.instance_shader_binding_table_record_offset = class_index * handle_size_aligned;
+                }
                 // Disable back face culling for renderables with double-sided materials.
                 data.flags = renderable->GetASGeometryInstanceFlags();
                 data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();

@@ -45,18 +45,18 @@ struct GaussianRadianceFieldInstanceHeader {
     uint Flags;
 };
 
-// The instance custom index is a 20-bit index and a 4-bit flag field.
-#define INSTANCE_CUSTOM_INDEX_INDEX_MASK 0x000FFFFFu
-// Flags marking the kind of the instance. defaults to static mesh instance (0).
-#define INSTANCE_CUSTOM_INDEX_FLAGS_MASK 0x00F00000u
-// The flag indicates that the instance is a static mesh instance.
-#define INSTANCE_CUSTOM_INDEX_FLAG_NONE 0x00000000u
-// The flag indicates that the instance is a volume primitives instance.
-#define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES 0x00100000u
-// The flag indicates that the instance is a 3D gaussian radiance field.
-#define INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD 0x00200000u
-// The flag indicates that the instance is a volume grid
-#define INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID 0x00400000u
+// Number of bits for the renderable index in InstanceCustomIndex.
+// Must match Renderable::kRenderableIndexNumBits on the C++ side.
+#define RENDERABLE_INDEX_NUM_BITS 20
+
+// The instance custom index layout: [class_index:4bits][renderable_index:RENDERABLE_INDEX_NUM_BITS bits]
+#define INSTANCE_CUSTOM_INDEX_INDEX_MASK  ((1u << RENDERABLE_INDEX_NUM_BITS) - 1u)
+#define INSTANCE_CUSTOM_INDEX_CLASS_SHIFT RENDERABLE_INDEX_NUM_BITS
+#define INSTANCE_CUSTOM_INDEX_CLASS_MASK  (0xFu << RENDERABLE_INDEX_NUM_BITS)
+
+// MI_RENDERABLE_TYPE_* macros are injected by RDGShader at compile time.
+// They map renderable class names to their runtime-assigned indices.
+// Examples: MI_RENDERABLE_TYPE_StaticMesh=0, MI_RENDERABLE_TYPE_VolumeGrid=1, etc.
 
 #ifdef MI_SHADER
 

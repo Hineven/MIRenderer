@@ -277,9 +277,15 @@ RHIAccelerationStructure * GaussianRadianceFieldInstance::GetBLAS() const {
     return nullptr;
 }
 
+RayTracedRenderableClassRegistrator<GaussianRadianceFieldInstance> GaussianRadianceFieldInstance::kClassRegistrator("GaussianRadianceField", "GaussianRadianceField");
+
+uint32_t GaussianRadianceFieldInstance::GetRayTracedClassIndex() const {
+    return kClassRegistrator.GetClassIndex();
+}
+
 uint32_t GaussianRadianceFieldInstance::GetInstanceCustomIndex() const {
     // Encode index with gaussian radiance field flag
-    return (GetIndex() & INSTANCE_CUSTOM_INDEX_INDEX_MASK) | INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD;
+    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
 bool GaussianRadianceFieldInstance::IsEmpty() const {

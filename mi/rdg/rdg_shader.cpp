@@ -430,6 +430,10 @@ std::vector<std::string> RDGShader::GetExtraDefines (const RDGShaderInitializati
     return extra_defines;
 }
 
+std::vector<std::string> RDGShader::GetBaseDefaultMacros() {
+    return RayTracedRenderableClassRegistry::GetRenderableTypeMacros();
+}
+
 void RDGShader::RemapResourceIndexToRHIResourceSlots() {
     // Clear the previous bindings
     for (auto & e : cpp_resource_index_to_slot_) e.clear();
@@ -552,7 +556,11 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
     }
     auto options = GetExtraCompilerOptions(ini_);
     auto extra_defines = GetExtraDefines(ini_);
-    auto defines = class_registry_->GetShaderDefaultMacros();
+    auto defines = GetBaseDefaultMacros();
+    auto class_defines = class_registry_->GetShaderDefaultMacros();
+    for (auto & def : class_defines) {
+        defines.emplace_back(def);
+    }
     for (auto & def : extra_defines) {
         defines.emplace_back(def);
     }
@@ -688,8 +696,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
 
     // Stack options
     auto options = GetExtraCompilerOptions(ini);
-    // Stack defines
-    auto defines = class_registry_->GetShaderDefaultMacros();
+    // Stack defines: base macros first, then class-specific, then extras
+    auto defines = GetBaseDefaultMacros();
+    auto class_defines = class_registry_->GetShaderDefaultMacros();
+    for (const auto & macro : class_defines) {
+        defines.emplace_back(macro);
+    }
     auto extra_defines = GetExtraDefines(ini);
     for (const auto & macro : extra_defines) {
         defines.emplace_back(macro);
@@ -1183,9 +1195,10 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         // Build SBT
         auto base_alignment = ray_tracing_pipeline_->GetShaderGroupBaseAlignment();
         auto handle_size = ray_tracing_pipeline_->GetShaderGroupHandleSize();
+        // Use base_alignment for stride to match GetHitSBTStride() / vkCmdTraceRaysKHR
         auto handle_size_aligned = RoundUp(
             handle_size,
-            ray_tracing_pipeline_->GetShaderGroupHandleAlignment()
+            base_alignment
             );
 
         auto raygen_section_size = RoundUp(handle_size_aligned, base_alignment);

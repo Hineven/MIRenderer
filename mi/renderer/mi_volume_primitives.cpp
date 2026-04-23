@@ -342,9 +342,15 @@ RHIAccelerationStructure *VolumePrimitivesInstance::GetBLAS() const {
     return nullptr;
 }
 
+RayTracedRenderableClassRegistrator<VolumePrimitivesInstance> VolumePrimitivesInstance::kClassRegistrator("VolumePrimitives", "VolumePrimitives");
+
+uint32_t VolumePrimitivesInstance::GetRayTracedClassIndex() const {
+    return kClassRegistrator.GetClassIndex();
+}
+
 uint32_t VolumePrimitivesInstance::GetInstanceCustomIndex() const {
     // Return the index of the instance with a custom flag indicating the type of renderable
-    return GetIndex() | INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES;
+    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
 bool VolumePrimitivesInstance::IsEmpty() const {

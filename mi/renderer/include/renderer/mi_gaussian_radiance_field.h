@@ -16,6 +16,7 @@
 #include <renderer/mi_cvar.h>
 #include <renderer/mi_dirty_tracker.h>
 #include <renderer/mi_resource_allocator_slot.h>
+#include <rdg/rdg_ray_tracing_registry.h>
 
 #include "../shaders/shared/SharedGaussianRadianceField.hlsl"
 
@@ -93,8 +94,11 @@ public:
     FORCEINLINE GaussianRadianceField * GetField() const { return field_.Raw(); }
     void Update(RendererView * view, RenderGraphBuilder & builder) override;
     RHIAccelerationStructure * GetBLAS() const override;
-    uint32_t GetInstanceCustomIndex() const override; // If ray traced one day, add a flag
+    uint32_t GetInstanceCustomIndex() const override;
+    uint32_t GetRayTracedClassIndex() const override;
     bool IsEmpty() const override;
+
+    static RayTracedRenderableClassRegistrator<GaussianRadianceFieldInstance> kClassRegistrator;
 protected:
     GaussianRadianceFieldInstance(Scene * scene);
     ~GaussianRadianceFieldInstance() override;

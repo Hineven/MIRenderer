@@ -15,6 +15,7 @@
 #include "renderer/mi_geometry.h"
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/mi_volume_texture.h"
+#include <rdg/rdg_ray_tracing_registry.h>
 
 #include "../shaders/shared/SharedVolumeGrid.hlsl"
 
@@ -139,6 +140,9 @@ public:
 
     RHIAccelerationStructure* GetBLAS() const override;
     uint32_t GetInstanceCustomIndex() const override;
+    uint32_t GetRayTracedClassIndex() const override;
+
+    static RayTracedRenderableClassRegistrator<VolumeGridInstance> kClassRegistrator;
 
     bool IsEmpty() const override;
 

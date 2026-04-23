@@ -109,7 +109,7 @@ void TraceVisibilityRaysRaygen() {
         RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
         0xFF, // Ray mask
         0,    // SBT offset
-        0,    // SBT stride
+        0,    // SBT stride (per-instance offset only)
         0,    // Miss shader index
         Ray,
         Payload
@@ -129,268 +129,269 @@ void TraceVisibilityRaysMiss(inout RayPayload Payload: SV_RayPayload) {
     // Leave unchanged is okay.
 }
 
-
+// ============================================================================
+// StaticMesh anyhit: alpha test for semi-transparent surfaces
+// ============================================================================
 [shader("anyhit")]
-void TraceVisibilityRaysAnyHit(inout RayPayload Payload: SV_RayPayload,
+void TraceVisibilityRaysAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionRank   = GeometryIndex();
     uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
     uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
-        // Static mesh instance
-        IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
-            Instance,
-            DescriptionRank,
-            Triangle,
-            Attributes.barycentrics,
-            ObjectToWorld3x4(),
-            transpose(To3x3(WorldToObject3x4()))
-        );
 
-	    if(Intersection.Opacity < Payload.U) {
-            Payload.U = (Payload.U - Intersection.Opacity) / (1.f - Intersection.Opacity);
-            // Semi-transparent surfaces, continue tracing
- 		    IgnoreHit();
-	    } else {
-            // There'll be systematically more 'transparent' volumes near surfaces
-            // with this tracing method. We just let that happen.
-            Payload.U = Payload.U / max(Intersection.Opacity, 1e-5f);
-        }
-    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
-        float3 RayOrigin = WorldRayOrigin();
-        float3 RayDirection = WorldRayDirection();
-        // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
-        uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
-        uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
-        VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
-        float3x4 ToObject = WorldToObject3x4();
-        float2 lr = 0;
-        float Dist = 0;
-        bool bShouldIgnoreHit = true;
-        bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
-        if(bIntersected) {
-            float TMin = RayTMin();
-            lr.x = max(lr.x, TMin);
-            lr.y = max(lr.y, TMin);
-            float Length = max(lr.y - lr.x, 0);
-            float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
-            
+    // Static mesh instance
+    IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
+        Instance,
+        DescriptionRank,
+        Triangle,
+        Attributes.barycentrics,
+        ObjectToWorld3x4(),
+        transpose(To3x3(WorldToObject3x4()))
+    );
+
+    if(Intersection.Opacity < Payload.U) {
+        Payload.U = (Payload.U - Intersection.Opacity) / (1.f - Intersection.Opacity);
+        // Semi-transparent surfaces, continue tracing
+        IgnoreHit();
+    } else {
+        // There'll be systematically more 'transparent' volumes near surfaces
+        // with this tracing method. We just let that happen.
+        Payload.U = Payload.U / max(Intersection.Opacity, 1e-5f);
+    }
+}
+
+// ============================================================================
+// VolumePrimitives anyhit: exact or coarse volume scattering
+// ============================================================================
+[shader("anyhit")]
+void TraceVisibilityRaysAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    float3 RayOrigin = WorldRayOrigin();
+    float3 RayDirection = WorldRayDirection();
+    uint InstanceCustomIndex = InstanceID();
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
+    uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
+    VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+    uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
+    uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
+    VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
+    float3x4 ToObject = WorldToObject3x4();
+    float2 lr = 0;
+    float Dist = 0;
+    bool bShouldIgnoreHit = true;
+    bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
+    if(bIntersected) {
+        float TMin = RayTMin();
+        lr.x = max(lr.x, TMin);
+        lr.y = max(lr.y, TMin);
+        float Length = max(lr.y - lr.x, 0);
+        float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
+        
 #if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
 // Full visibility
-            #error "not implemented yet"
+        #error "not implemented yet"
 #elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
 // Coarse visibility with precise intersection sampling
-            float Transmittance = IntegrateExponentialScatteringMedium(Opacity, Length);
-            if(Payload.U < 1.f - Transmittance) {
-                // Scatter: use the original U for free-path sampling (U < 1.f - Transmittance is required for correct sampling)
-                float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
-                // Check again, just in case
-                if(FlyDist < Length) {
-                    // Update the closest scattering event if needed
-                    if(Payload.HitDistance > lr.x + FlyDist) {
-                        Payload.HitDistance = lr.x + FlyDist;
-                        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME)); 
-                    }
+        float Transmittance = IntegrateExponentialScatteringMedium(Opacity, Length);
+        if(Payload.U < 1.f - Transmittance) {
+            // Scatter: use the original U for free-path sampling (U < 1.f - Transmittance is required for correct sampling)
+            float FlyDist = SampleExponentialScatteringMedium(Opacity, Payload.U);
+            // Check again, just in case
+            if(FlyDist < Length) {
+                // Update the closest scattering event if needed
+                if(Payload.HitDistance > lr.x + FlyDist) {
+                    Payload.HitDistance = lr.x + FlyDist;
+                    Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME)); 
                 }
-                // Generate a new random number from the scatter interval remainder
-                Payload.U = saturate(Payload.U / max(1e-6f, 1.f - Transmittance));
-            } else {
-                // The ray passed through the volume
-                Payload.U = saturate((Payload.U - (1 - Transmittance)) / max(1e-6f, Transmittance));
             }
-            // Report a hit event if the closer-volume boundary is further than the current hit distance
-            // with an adaptive bias. Thus we can cull volume primitives that are not likely to generate
-            // a scattering event before the current hit distance.
-            float Bias = UB.VolumeScatteringEventShellHitCullingBias;
-            if(Payload.HitDistance + Bias < lr.x) {
-                bShouldIgnoreHit = false;
-            }
+            // Generate a new random number from the scatter interval remainder
+            Payload.U = saturate(Payload.U / max(1e-6f, 1.f - Transmittance));
+        } else {
+            // The ray passed through the volume
+            Payload.U = saturate((Payload.U - (1 - Transmittance)) / max(1e-6f, Transmittance));
+        }
+        // Report a hit event if the closer-volume boundary is further than the current hit distance
+        // with an adaptive bias. Thus we can cull volume primitives that are not likely to generate
+        // a scattering event before the current hit distance.
+        float Bias = UB.VolumeScatteringEventShellHitCullingBias;
+        if(Payload.HitDistance + Bias < lr.x) {
+            bShouldIgnoreHit = false;
+        }
 #else
 // Coarse visibility
-            float Transmittance = exp(-Length * Opacity);
-            if(Transmittance < Payload.U) {
-                // The ray is absorbed in the volume
-                // ...assume the hit is on the primitive's proxy backface
-                Payload.U = (Payload.U - Transmittance) / (1.f - Transmittance);
-                bShouldIgnoreHit = false;
-            } else {
-                Payload.U = Payload.U / max(Transmittance, 1e-5f);
-            }
-#endif
-        }
-        if(bShouldIgnoreHit) {
-            IgnoreHit();
-        }
-    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
-#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
-// Full visibility
-            #error "not implemented yet"
-#else
-        // 3D gaussian radiance field instance
-        float3 RayOrigin = WorldRayOrigin();
-        float3 RayDirection = WorldRayDirection();
-        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
-        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
-        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
-        Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
-        RayDesc Ray = GetRayDesc();
-        float RayScaler = 1, RayT = 0;
-        float3x4 WorldToObject = WorldToObject3x4();
-        float3x3 WorldToObjectNormal = transpose(To3x3(WorldToObject3x4()));
-        float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
-        float3 RayTangent, RayBitangent;
-        GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);
-        float3 LocalRayDirection = TransformVector(WorldToObject, Ray.Direction);
-        float3 LocalRayTangent   = TransformVector(WorldToObjectNormal, RayTangent);
-        float3 LocalRayBitangent = TransformVector(WorldToObjectNormal, RayBitangent);
-        float3x3 RaySpace = float3x3(
-            LocalRayTangent / dot(LocalRayTangent, LocalRayTangent),
-            LocalRayBitangent / dot(LocalRayBitangent, LocalRayBitangent),
-            LocalRayDirection / dot(LocalRayDirection, LocalRayDirection)
-        );
-        float Alpha = 
-            EvaluateGaussianResponseRast(LocalRayOrigin, RaySpace, G, RayT);
-        // Stochastically ignore the hit according to the gaussian response (opacity along the ray)
-        bool bShouldIgnoreHit = Alpha < Payload.U;
-        if(bShouldIgnoreHit) {
-            Payload.U = (Payload.U - Alpha) / (1 - Alpha);
-        } else { // Hit
-            // Still, we have to roll out a new seed for the next possible anyhit
-            Payload.U = Payload.U / Alpha;
-            Payload.HitDistance = RayT / max(1e-6, RayScaler); // Use the max response T as reply
+        float Transmittance = exp(-Length * Opacity);
+        if(Transmittance < Payload.U) {
+            // The ray is absorbed in the volume
+            // ...assume the hit is on the primitive's proxy backface
+            Payload.U = (Payload.U - Transmittance) / (1.f - Transmittance);
+            bShouldIgnoreHit = false;
+        } else {
+            Payload.U = Payload.U / max(Transmittance, 1e-5f);
         }
 #endif
-    } else {
-        // Unknown instance type, just continue tracing
+    }
+    if(bShouldIgnoreHit) {
         IgnoreHit();
     }
 }
 
-[shader("closesthit")]
-void TraceVisibilityRaysClosestHit(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint Triangle          = PrimitiveIndex();
-    uint DescriptionRank   = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    uint InstanceFlags = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_FLAGS_MASK;
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+// ============================================================================
+// GaussianRadianceField anyhit: stochastic alpha test
+// ============================================================================
+[shader("anyhit")]
+void TraceVisibilityRaysAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
 #if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
-// Full visibility
-#error "not implemented yet"
-#elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
-// Coarse output, but precise intersection sampling is applied in volume primitives
-    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
-        // Mesh surface hit
-        // For mesh hits, we have the exact hit distance.
-        // (Otherwise, hit distance is computed in anyhit for volume primitives and 3d gaussians)
-        Payload.HitDistance = RayTCurrent();
-
-        IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
-            Instance,
-            DescriptionRank,
-            Triangle,
-            Attributes.barycentrics,
-            ObjectToWorld3x4(),
-            transpose(To3x3(WorldToObject3x4()))
-        );
-        float3 GeometryNormal = Intersection.GeometryNormal;
-        // Flip normal if needed
-        if(dot(GeometryNormal, WorldRayDirection()) > 0) {
-            GeometryNormal = -GeometryNormal;
-        }
-        // Prefer geometry normal for better light leaks prevention
-        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Intersection.Albedo, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, GeometryNormal);
-        Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
-    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
-        // Leaving the data coming from the any-hit shader unchanged is ok. 
-    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
-        // 3D gaussian radiance field instance
-        float3 RayOrigin = WorldRayOrigin();
-        float3 RayDirection = WorldRayDirection();
-        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
-        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
-        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
-        SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
-        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
-        float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
-        float3 Color = SH3Evaluate(LocalRayDirection, SH3);
-        Color = saturate(Color + 0.5f);
-        // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
-        GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
-        if(FieldHeader.SRGBColorSpace != 0) {
-            Color = SRGBColorToLinearColor(Color);
-        }
-        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
-    } else {
-        // Unknown instance type, do nothing
-    }
-#else // VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE
-// Coarse visibility
-    if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_NONE) {
-        // Mesh surface hit
-        // For mesh hits, we have the exact hit distance.
-        // (Otherwise, hit distance is computed in anyhit for volume primitives and 3d gaussians)
-        Payload.HitDistance = RayTCurrent();
-        IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
-            Instance,
-            DescriptionRank,
-            Triangle,
-            Attributes.barycentrics,
-            ObjectToWorld3x4(),
-            transpose(To3x3(WorldToObject3x4()))
-        );
-        float3 GeometryNormal = Intersection.GeometryNormal;
-        // Flip normal if needed
-        if(dot(GeometryNormal, WorldRayDirection()) > 0) {
-            GeometryNormal = -GeometryNormal;
-        }
-        // Prefer geometry normal for better light leaks prevention
-        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Intersection.Albedo, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, GeometryNormal);
-        Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
-    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES) {
-        uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-        VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
-        uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
-        uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
-        VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
-
-        CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME);
-        Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
-    } else if(InstanceFlags == INSTANCE_CUSTOM_INDEX_FLAG_GAUSSIAN_RADIANCE_FIELD) {
-        // 3D gaussian radiance field instance
-        float3 RayOrigin = WorldRayOrigin();
-        float3 RayDirection = WorldRayDirection();
-        // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
-        uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-        GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
-        uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
-        uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
-        uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
-        SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
-        float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
-        float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
-        float3 Color = SH3Evaluate(LocalRayDirection, SH3);
-        Color = saturate(Color + 0.5f);
-        // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
-        GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
-        if(FieldHeader.SRGBColorSpace != 0) {
-            Color = SRGBColorToLinearColor(Color);
-        }
-        Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
-    } else {
-        // Unknown instance type, do nothing
+    #error "not implemented yet"
+#else
+    // 3D gaussian radiance field instance
+    float3 RayOrigin = WorldRayOrigin();
+    float3 RayDirection = WorldRayDirection();
+    // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
+    uint InstanceCustomIndex = InstanceID();
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint InstanceGaussianIndex = PrimitiveIndex() / 20;
+    GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+    uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
+    uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
+    Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
+    RayDesc Ray = GetRayDesc();
+    float RayScaler = 1, RayT = 0;
+    float3x4 WorldToObject = WorldToObject3x4();
+    float3x3 WorldToObjectNormal = transpose(To3x3(WorldToObject3x4()));
+    float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
+    float3 RayTangent, RayBitangent;
+    GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);
+    float3 LocalRayDirection = TransformVector(WorldToObject, Ray.Direction);
+    float3 LocalRayTangent   = TransformVector(WorldToObjectNormal, RayTangent);
+    float3 LocalRayBitangent = TransformVector(WorldToObjectNormal, RayBitangent);
+    float3x3 RaySpace = float3x3(
+        LocalRayTangent / dot(LocalRayTangent, LocalRayTangent),
+        LocalRayBitangent / dot(LocalRayBitangent, LocalRayBitangent),
+        LocalRayDirection / dot(LocalRayDirection, LocalRayDirection)
+    );
+    float Alpha = 
+        EvaluateGaussianResponseRast(LocalRayOrigin, RaySpace, G, RayT);
+    // Stochastically ignore the hit according to the gaussian response (opacity along the ray)
+    bool bShouldIgnoreHit = Alpha < Payload.U;
+    if(bShouldIgnoreHit) {
+        Payload.U = (Payload.U - Alpha) / (1 - Alpha);
+    } else { // Hit
+        // Still, we have to roll out a new seed for the next possible anyhit
+        Payload.U = Payload.U / Alpha;
+        Payload.HitDistance = RayT / max(1e-6, RayScaler); // Use the max response T as reply
     }
 #endif
+}
+
+// ============================================================================
+// StaticMesh closesthit: record hit material
+// ============================================================================
+[shader("closesthit")]
+void TraceVisibilityRaysClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
+    #error "not implemented yet"
+#else
+    // Found a static mesh instance. Return the hit distance.
+    uint Triangle          = PrimitiveIndex();
+    uint DescriptionRank   = GeometryIndex();
+    uint InstanceCustomIndex = InstanceID();
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+
+    Payload.HitDistance = RayTCurrent();
+
+    IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
+        Instance,
+        DescriptionRank,
+        Triangle,
+        Attributes.barycentrics,
+        ObjectToWorld3x4(),
+        transpose(To3x3(WorldToObject3x4()))
+    );
+    float3 GeometryNormal = Intersection.GeometryNormal;
+    // Flip normal if needed
+    if(dot(GeometryNormal, WorldRayDirection()) > 0) {
+        GeometryNormal = -GeometryNormal;
+    }
+    // Prefer geometry normal for better light leaks prevention
+    CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Intersection.Albedo, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, GeometryNormal);
+    Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
+#endif
+}
+
+// ============================================================================
+// VolumePrimitives closesthit: pass through (data set in anyhit)
+// ============================================================================
+[shader("closesthit")]
+void TraceVisibilityRaysClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
+    #error "not implemented yet"
+#elif VISIBILITY_TRACE_TYPE==VISIBILITY_TRACE_TYPE_COARSE_WITH_EXACT_VOLUME_SCATTERING
+    // Leaving the data coming from the any-hit shader unchanged is ok. 
+#else
+    // Found a volume primitive instance. Return the hit distance.
+    uint InstanceCustomIndex = InstanceID();
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
+    uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
+    VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
+    uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
+    uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
+    VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
+
+    Payload.HitDistance = RayTCurrent();
+
+    CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Primitive.Color, CACHED_HIT_MATERIAL_HIT_TYPE_VOLUME);
+    Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
+#endif
+}
+
+// ============================================================================
+// GaussianRadianceField closesthit: evaluate SH color
+// ============================================================================
+[shader("closesthit")]
+void TraceVisibilityRaysClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+#if VISIBILITY_TRACE_TYPE == VISIBILITY_TRACE_TYPE_FULL
+    #error "not implemented yet"
+#else
+    // 3D gaussian radiance field instance
+    float3 RayOrigin = WorldRayOrigin();
+    float3 RayDirection = WorldRayDirection();
+    uint InstanceCustomIndex = InstanceID();
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint InstanceGaussianIndex = PrimitiveIndex() / 20;
+    GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
+    uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
+    uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
+    uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
+    SH3Coefficents SH3 = FetchGaussianSHCoefficients(GaussianIndex);
+    float3x3 NormalTransform = transpose(To3x3(WorldToObject3x4()));
+    float3 LocalRayDirection = TransformVector(NormalTransform, RayDirection);
+    float3 Color = SH3Evaluate(LocalRayDirection, SH3);
+    Color = saturate(Color + 0.5f);
+    // Inverse mapping SRGB to linear if input gaussian colors are stored in SRGB space
+    GaussianRadianceFieldHeader FieldHeader = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex];
+    if(FieldHeader.SRGBColorSpace != 0) {
+        Color = SRGBColorToLinearColor(Color);
+    }
+    Payload.PackedMaterial = PackCachedHitMaterial(MakeCachedHitMaterial(Color, CACHED_HIT_MATERIAL_HIT_TYPE_GAUSSIAN));
+#endif
+}
+
+// VolumeGrid no-op entry points for visibility rays
+[shader("anyhit")]
+void TraceVisibilityRaysAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+}
+[shader("closesthit")]
+void TraceVisibilityRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
+                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
 }

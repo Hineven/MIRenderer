@@ -9,6 +9,7 @@
 
 #include "core/common.h"
 #include <string>
+#include <vector>
 
 MI_NAMESPACE_BEGIN
 
@@ -19,8 +20,10 @@ struct RayTracedRenderableClassInfo {
 };
 
 // Registry for ray-traced renderable classes.
-// Defines the mapping between renderable class index and hitgroup info.
-// This is used by RDG to construct per-renderable-class hitgroup entry point names and SBT layouts.
+// Assigns class indices dynamically at startup via RegisterClass().
+// Both C++ code and shaders consume the same runtime indices:
+//   - C++: GetRayTracedClassIndex() returns the registered index
+//   - Shaders: RDGShader injects MI_RENDERABLE_TYPE_XXXX macros at compile time
 //
 // Entry point naming convention:
 //   Given a shader template prefix (e.g., "TraceShadowRays"), RDG constructs entry point names as:
@@ -50,13 +53,22 @@ public:
     // Returns the HLSL name for a given hitgroup index.
     static const char* GetHLSLName(uint32_t index);
 
+    // Query the registered index for a class by name.
+    // Returns kMaxRayTracingHitGroups if not found (should never happen for registered classes).
+    static uint32_t GetClassIndex(const char* name);
+
     // Constructs the full closest-hit entry point name from a template prefix and class index.
     static std::string MakeClosestHitEntryPoint(const std::string& template_prefix, uint32_t class_index);
 
     // Constructs the full any-hit entry point name from a template prefix and class index.
     static std::string MakeAnyHitEntryPoint(const std::string& template_prefix, uint32_t class_index);
 
+    // Generates MI_RENDERABLE_TYPE_XXXX=value macros for shader injection.
+    // Called by RDGShader::GetBaseDefaultMacros() to inject into all shaders.
+    static std::vector<std::string> GetRenderableTypeMacros();
+
     // Internal: called by RayTracedRenderableClassRegistrator to register a class.
+    // Returns the dynamically assigned index for this class.
     static uint32_t RegisterClass(const char* name, const char* hlsl_name);
 
 private:
@@ -65,14 +77,27 @@ private:
 };
 
 // Registrator for a ray-traced renderable class.
-// Usage: in a .cpp file, write:
-//   static RayTracedRenderableClassRegistrator g_reg_static_mesh("StaticMesh", "StaticMesh");
-// This registers the class at static initialization time.
+// Wraps the key information for a renderable class (name, hlsl_name, class_index).
+// Usage: declare as a static class member in the renderable header, define in the .cpp:
+//   // Header:
+//   static RayTracedRenderableClassRegistrator<MyRenderable> kClassRegistrator;
+//   // .cpp:
+//   RayTracedRenderableClassRegistrator<MyRenderable> MyRenderable::kClassRegistrator("MyRenderable", "MyRenderable");
+template<typename T>
 class RayTracedRenderableClassRegistrator {
 public:
-    FORCEINLINE RayTracedRenderableClassRegistrator(const char* name, const char* hlsl_name) {
-        RayTracedRenderableClassRegistry::RegisterClass(name, hlsl_name);
-    }
+    FORCEINLINE RayTracedRenderableClassRegistrator(const char* name, const char* hlsl_name)
+        : name_(name), hlsl_name_(hlsl_name),
+          class_index_(RayTracedRenderableClassRegistry::RegisterClass(name, hlsl_name)) {}
+
+    FORCEINLINE uint32_t GetClassIndex() const { return class_index_; }
+    FORCEINLINE const char* GetName() const { return name_; }
+    FORCEINLINE const char* GetHLSLName() const { return hlsl_name_; }
+
+private:
+    const char* name_;
+    const char* hlsl_name_;
+    uint32_t class_index_;
 };
 
 MI_NAMESPACE_END

@@ -16,6 +16,7 @@
 #include "renderer/mi_geometry.h"
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_fwd.h"
+#include <rdg/rdg_ray_tracing_registry.h>
 
 #include "../shaders/shared/SharedVolumePrimitives.hlsl"
 
@@ -139,6 +140,9 @@ public:
     RHIAccelerationStructure * GetBLAS () const override ;
 
     uint32_t GetInstanceCustomIndex () const override ;
+    uint32_t GetRayTracedClassIndex() const override;
+
+    static RayTracedRenderableClassRegistrator<VolumePrimitivesInstance> kClassRegistrator;
 
     bool IsEmpty() const override;
 

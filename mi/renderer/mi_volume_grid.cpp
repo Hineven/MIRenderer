@@ -228,9 +228,15 @@ RHIAccelerationStructure* VolumeGridInstance::GetBLAS() const {
     return nullptr;
 }
 
+RayTracedRenderableClassRegistrator<VolumeGridInstance> VolumeGridInstance::kClassRegistrator("VolumeGrid", "VolumeGrid");
+
+uint32_t VolumeGridInstance::GetRayTracedClassIndex() const {
+    return kClassRegistrator.GetClassIndex();
+}
+
 uint32_t VolumeGridInstance::GetInstanceCustomIndex() const {
     // 标记这是 VolumeGrid 类型，以便 Shader 通过 InstanceID 区分
-    return GetIndex() | INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID;
+    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
 bool VolumeGridInstance::IsEmpty() const {
