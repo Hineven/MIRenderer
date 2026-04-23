@@ -25,7 +25,7 @@
 #include "r_directional_light.h"
 
 MI_NAMESPACE_BEGIN
-    static CVar<float> CVar_ProbeSearchSize(
+static CVar<float> CVar_ProbeSearchSize(
     "r.diffuse_indirect_lighting.probe_reprojection_search_size",
     "Size (in pixels) of the search region when reprojecting probes from the previous frame.",
     2.f
@@ -585,7 +585,7 @@ bool DiffuseIndirectLightingPersistentData::MakeSureExists(RenderGraphBuilder & 
 
 void DiffuseIndirectLightingPersistentData::FinalUpdate(RendererView *view) {
     // Update persistent data
-    if (view->diffuse_direct_lighting_) {
+    if (view->diffuse_indirect_lighting_) {
         ScreenProbeRadianceDepthTexture = view->diffuse_indirect_lighting_->screen_probe_radiance_depth;
         ScreenProbeRadianceDepthTexture->SetExport();
         ScreenProbeCacheMRUQueueBuffer = view->diffuse_indirect_lighting_->screen_probe_cache_updated_mru_queue_buffer;

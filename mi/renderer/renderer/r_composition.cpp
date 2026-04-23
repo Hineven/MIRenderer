@@ -153,7 +153,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_->radiance.Raw();
         params->VolumeIndirectLightingTexture = view->volume_indirect_lighting_->radiance.Raw();
     }
-    if (view->scene_->GetSkyTexture()) {
+    if (view->scene_ && view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {
         params->EnvironmentMap = nullptr;

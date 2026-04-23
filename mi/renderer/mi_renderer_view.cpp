@@ -91,11 +91,11 @@ void BatchedUploadContext::Add(RDGBuffer *buffer, const void *data, size_t size,
 }
 
 void BatchedUploadContext::AddExtraBarrier(RDGBuffer *buffer) {
-    // Filter naive duplicates
     if (!extra_barriers_.empty() && buffer == extra_barriers_.back()) return;
-    extra_barriers_.push_back(buffer);
     // Validation
     mi_assert(buffer != nullptr, "Buffer is null.");
+    // Filter naive duplicates
+    extra_barriers_.push_back(buffer);
 }
 
 
