@@ -275,13 +275,13 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_camera_jitter_ = glm::vec2(view->view_common_params_->Camera.Jitter.x, view->view_common_params_->Camera.Jitter.y);
 
     prev_radiance_ = view->radiance_;
-    prev_radiance_->SetExport();
     prev_taa_radiance_ = view->taa_radiance_;
-    prev_taa_radiance_->SetExport();
     prev_shaded_radiance_no_emission_ = view->shaded_radiance_no_emission_;
-    prev_shaded_radiance_no_emission_->SetExport();
     prev_shaded_volume_radiance_ = view->shaded_volume_radiance_;
-    prev_shaded_volume_radiance_->SetExport();
+    if (prev_radiance_) prev_radiance_->SetExport();
+    if (prev_taa_radiance_) prev_taa_radiance_->SetExport();
+    if (prev_shaded_radiance_no_emission_) prev_shaded_radiance_no_emission_->SetExport();
+    if (prev_shaded_volume_radiance_) prev_shaded_volume_radiance_->SetExport();
 
     prev_scene_ = view->scene_;
 
