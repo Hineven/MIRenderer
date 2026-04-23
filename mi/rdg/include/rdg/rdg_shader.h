@@ -361,7 +361,7 @@ static const char * GetShaderTypeName ();
 //   → TraceShadowRaysClosestHit_VolumePrimitives, TraceShadowRaysAnyHit_VolumePrimitives  (VolumePrimitives)
 //   → TraceShadowRaysClosestHit_GaussianRadianceField, TraceShadowRaysAnyHit_GaussianRadianceField  (GaussianRadianceField)
 #define IMPLEMENT_RDG_RAY_TRACING_SHADER(ClassName, SourcePath, ClosestHitTemplate, AnyHitTemplate, EntryPoint_Raygen, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, #ClosestHitTemplate, #AnyHitTemplate, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, ClosestHitTemplate, AnyHitTemplate, EntryPoint_Miss) \
     IMPLEMENT_SHADER_PARAMETERS(ClassName::ShaderParameters)
 
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
@@ -378,7 +378,7 @@ INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kGraphics,
 // For shaders using shared parameter structs among multiple shaders, use this macro along with IMPLEMENT_SHADER_PARAMETERS(ParamStructName)
 // Multi-hitgroup variant
 #define IMPLEMENT_RDG_RAY_TRACING_SHADER_SHADER_SHARED_PARAMETER(ClassName, SourcePath, ClosestHitTemplate, AnyHitTemplate, EntryPoint_Raygen, EntryPoint_Miss) \
-    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, #ClosestHitTemplate, #AnyHitTemplate, EntryPoint_Miss) \
+    INTERNAL_IMPLEMENT_RDG_SHADER(ClassName, SourcePath, RHIPipelineType::kRayTracing, "", "", "", "", EntryPoint_Raygen, ClosestHitTemplate, AnyHitTemplate, EntryPoint_Miss) \
 
 
 

@@ -18,8 +18,6 @@
 
 MI_NAMESPACE_BEGIN
 
-static RayTracedRenderableClassRegistrator g_ray_traced_volume_grid_registrator("VolumeGrid", "VolumeGrid");
-
 // ------------------------------------------------------------------
 // DeviceVolumeGrid Implementation
 // ------------------------------------------------------------------

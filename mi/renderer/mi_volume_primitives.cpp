@@ -14,7 +14,6 @@
 
 MI_NAMESPACE_BEGIN
 
-static RayTracedRenderableClassRegistrator g_ray_traced_volume_primitives_registrator("VolumePrimitives", "VolumePrimitives");
 // DeviceVolumePrimitives implementation
 DeviceVolumePrimitives::DeviceVolumePrimitives(DeviceBindlessResourceAllocator * allocator) {
     slot_ = allocator->AllocateVolumePrimitivesSlotKeeper();

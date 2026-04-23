@@ -17,8 +17,6 @@
 
 MI_NAMESPACE_BEGIN
 
-static RayTracedRenderableClassRegistrator g_ray_traced_gaussian_rf_registrator("GaussianRadianceField", "GaussianRadianceField");
-
 // ---------------- DeviceGaussianRadianceField ----------------
 DeviceGaussianRadianceField::DeviceGaussianRadianceField(DeviceBindlessResourceAllocator * alloc) {
     slot_ = alloc->AllocateGaussianRadianceFieldSlotKeeper();
