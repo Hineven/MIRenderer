@@ -17,6 +17,7 @@
 #include "rdg/rdg_base.h"
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/mi_renderer_view.h"
+#include "renderer/mi_renderer_export.h"
 #include "renderer/mi_camera.h"
 #include "renderer/mi_console.h"
 MI_NAMESPACE_BEGIN
@@ -51,14 +52,33 @@ public:
 
     void Init (DeviceBindlessResourceAllocator * allocator, RDGResourcePool * pool) ;
 
-    // Called each frame
-    void Render (RendererView * view_state, RenderGraphBuilder & builder) ;
+    // Called each frame. Returns a registry of all exportable resources produced this frame.
+    TRef<RendererExports> Render (RendererView * view_state, RenderGraphBuilder & builder) ;
 
     FORCEINLINE DeviceBindlessResourceAllocator * GetDeviceAllocator () {
         return device_allocator_.Raw();
     }
 
     Console& GetConsole() { return console_; }
+
+    FORCEINLINE void DrawTextureToOutput (
+        RendererView * view,
+        RenderGraphBuilder & builder,
+        RDGTexture * texture,
+        DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB,
+        PostProcessingFlags post_processing_flags = PostProcessingFlagBits::eNone,
+        RDGTexture * output_texture = nullptr,
+        RHILoadOpType output_load_op = RHILoadOpType::kLoad
+    ) {
+        Render_DrawToOutput(view, builder, texture, mapping_type, post_processing_flags, output_texture, output_load_op);
+    }
+
+    FORCEINLINE void RenderPathTracingForExport (
+        RendererView * view,
+        RenderGraphBuilder & builder
+    ) {
+        Render_PathTracing(view, builder);
+    }
 
     // at most 4M
     constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
@@ -156,7 +176,9 @@ protected:
         RendererView * view, RenderGraphBuilder & builder,
         RDGTexture * texture,
         DrawToOutputMappingType mapping_type = DrawToOutputMappingType::eRadianceToSRGB,
-        PostProcessingFlags post_processing_flags = PostProcessingFlagBits::eNone
+        PostProcessingFlags post_processing_flags = PostProcessingFlagBits::eNone,
+        RDGTexture * output_texture = nullptr,
+        RHILoadOpType output_load_op = RHILoadOpType::kLoad
     ) ;
 
     void Render_DrawForwardStaticMeshes (

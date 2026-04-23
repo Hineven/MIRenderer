@@ -6,7 +6,6 @@
 #include "viewer_zmq.h"
 
 #include "viewer_app.h"
-#include "viewer_export_channel.h"
 #include "core/common.h"
 #include "core/util/command_line.h"
 #include "infra_impl/infra.h"
@@ -143,9 +142,8 @@ static bool ValidateRequestedExportChannels(
         out_invalid_type.clear();
         return false;
     }
-    ViewerFrameExportChannel channel;
     for (const auto& type : requested_types) {
-        if (!TryParseViewerFrameExportChannel(type, channel)) {
+        if (!FindViewerFrameExportBinding(type)) {
             out_invalid_type = type;
             return false;
         }
@@ -258,14 +256,14 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
                     reply = {
                         {"ok", false},
                         {"err", "empty_export_types"},
-                        {"supported_types", GetSupportedViewerFrameExportChannelNames()}
+                        {"supported_types", GetSupportedViewerFrameExportNames()}
                     };
                 } else {
                     reply = {
                         {"ok", false},
                         {"err", "unsupported_export_type"},
                         {"type", invalid_type},
-                        {"supported_types", GetSupportedViewerFrameExportChannelNames()}
+                        {"supported_types", GetSupportedViewerFrameExportNames()}
                     };
                 }
             } else {

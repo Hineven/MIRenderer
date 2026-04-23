@@ -430,6 +430,10 @@ std::vector<std::string> RDGShader::GetExtraDefines (const RDGShaderInitializati
     return extra_defines;
 }
 
+std::vector<std::string> RDGShader::GetBaseDefaultMacros() {
+    return RayTracedRenderableClassRegistry::GetRenderableTypeMacros();
+}
+
 void RDGShader::RemapResourceIndexToRHIResourceSlots() {
     // Clear the previous bindings
     for (auto & e : cpp_resource_index_to_slot_) e.clear();
@@ -552,7 +556,11 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
     }
     auto options = GetExtraCompilerOptions(ini_);
     auto extra_defines = GetExtraDefines(ini_);
-    auto defines = class_registry_->GetShaderDefaultMacros();
+    auto defines = GetBaseDefaultMacros();
+    auto class_defines = class_registry_->GetShaderDefaultMacros();
+    for (auto & def : class_defines) {
+        defines.emplace_back(def);
+    }
     for (auto & def : extra_defines) {
         defines.emplace_back(def);
     }
@@ -604,21 +612,27 @@ RDGShaderHash RDGShader::ComputeShaderHash() const {
             if (is_valid) shader_hash.AddUnordered("RaygenShader", result);
             else MI_WARN("Failed to compute raygen shader hash.");
         }
-        if (!class_registry_->closest_hit_entry_.empty()) {
-            bool is_valid {false};
-            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, class_registry_->closest_hit_entry_, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
-            );
-            if (is_valid) shader_hash.AddUnordered("ClosestHitShader", result);
-            else MI_WARN("Failed to compute closest hit shader hash.");
-        }
-        if (!class_registry_->any_hit_entry_.empty()) {
-            bool is_valid {false};
-            auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
-                class_registry_->source_location, class_registry_->any_hit_entry_, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
-            );
-            if (is_valid) shader_hash.AddUnordered("AnyHitShader", result);
-            else MI_WARN("Failed to compute any hit shader hash.");
+        // Per-renderable-class hit shader hashes
+        for (uint32_t i = 0; i < RayTracedRenderableClassRegistry::NumClasses(); ++i) {
+            auto class_info = RayTracedRenderableClassRegistry::GetClassInfo(i);
+            {
+                std::string chit_entry = RayTracedRenderableClassRegistry::MakeClosestHitEntryPoint(class_registry_->closest_hit_template_, i);
+                bool is_valid {false};
+                auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                    class_registry_->source_location, chit_entry, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
+                );
+                if (is_valid) shader_hash.AddUnordered((std::string("ClosestHitShader_") + class_info->name).c_str(), result);
+                else MI_WARN("Failed to compute closest hit shader hash for %s.", class_info->name);
+            }
+            {
+                std::string ahit_entry = RayTracedRenderableClassRegistry::MakeAnyHitEntryPoint(class_registry_->any_hit_template_, i);
+                bool is_valid {false};
+                auto result = GetInfra().GetShaderXXHashFromShaderResourcePath(
+                    class_registry_->source_location, ahit_entry, "lib" SHADER_MODEL_SUFFIX, defines, options, is_valid
+                );
+                if (is_valid) shader_hash.AddUnordered((std::string("AnyHitShader_") + class_info->name).c_str(), result);
+                else MI_WARN("Failed to compute any hit shader hash for %s.", class_info->name);
+            }
         }
         if (!class_registry_->miss_entry_.empty()) {
             bool is_valid {false};
@@ -644,8 +658,8 @@ void RDGShader::UpdateOwnerForRHIResources() {
     if (shaders_.fragment) shaders_.fragment->UpdateOwner();
 
     if (shaders_.raygen) shaders_.raygen->UpdateOwner();
-    if (shaders_.closest_hit) shaders_.closest_hit->UpdateOwner();
-    if (shaders_.any_hit) shaders_.any_hit->UpdateOwner();
+    for (auto& ch : shaders_.closest_hit) if (ch) ch->UpdateOwner();
+    for (auto& ah : shaders_.any_hit) if (ah) ah->UpdateOwner();
     if (shaders_.miss) shaders_.miss->UpdateOwner();
     if (shaders_.callable) shaders_.callable->UpdateOwner();
 
@@ -682,8 +696,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
 
     // Stack options
     auto options = GetExtraCompilerOptions(ini);
-    // Stack defines
-    auto defines = class_registry_->GetShaderDefaultMacros();
+    // Stack defines: base macros first, then class-specific, then extras
+    auto defines = GetBaseDefaultMacros();
+    auto class_defines = class_registry_->GetShaderDefaultMacros();
+    for (const auto & macro : class_defines) {
+        defines.emplace_back(macro);
+    }
     auto extra_defines = GetExtraDefines(ini);
     for (const auto & macro : extra_defines) {
         defines.emplace_back(macro);
@@ -829,9 +847,8 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
     }
 
     if(class_registry_->type == RHIPipelineType::kRayTracing) {
-        std::vector<uint32_t> raygen_result, chit_result, ahit_result, miss_result;
-        // For graphics pipeline, we need to compile vertex and fragment shaders
-        // First compile vertex shader
+        // Compile raygen shader
+        std::vector<uint32_t> raygen_result;
         {
             uint64_t raygen_hash = 0;
             std::wstring out_command;
@@ -846,38 +863,73 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             }
             shader_hash_.AddUnordered("RaygenShader", raygen_hash);
         }
-        if (!class_registry_->closest_hit_entry_.empty()) {
-            uint64_t chit_hash = 0;
-            std::wstring out_command;
-            chit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->closest_hit_entry_), "lib" SHADER_MODEL_SUFFIX,
-                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &chit_hash
-            );
-            if (chit_result.empty()) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile closest hit shader: {}", class_registry_->source_location, class_registry_->impl_macro_line_info, errmsg);
-                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
-                return false;
-            }
-            shader_hash_.AddUnordered("ClosestHitShader", chit_hash);
-        }
-        mi_check(!class_registry_->any_hit_entry_.empty(),
-            "Any hit shader should never be empty."
-            "Supply an any hit shader to make the pipeline valid on non-opaque geometries.");
 
-        {
-            uint64_t ahit_hash = 0;
-            std::wstring out_command;
-            ahit_result = GetInfra().CompileHLSLToSPIRV(
-                source_location_wstr.c_str(), std::string(class_registry_->any_hit_entry_), "lib" SHADER_MODEL_SUFFIX,
-                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &ahit_hash
+        // Compile per-renderable-class closest-hit and any-hit shaders
+        // Entry points are constructed from template prefixes + suffix from RayTracedRenderableClassRegistry
+        for (uint32_t i = 0; i < RayTracedRenderableClassRegistry::NumClasses(); ++i) {
+            auto class_info = RayTracedRenderableClassRegistry::GetClassInfo(i);
+
+            // Closest-hit
+            std::string chit_entry = RayTracedRenderableClassRegistry::MakeClosestHitEntryPoint(class_registry_->closest_hit_template_, i);
+            std::vector<uint32_t> chit_result;
+            uint64_t chit_hash = 0;
+            std::wstring chit_command;
+            chit_result = GetInfra().CompileHLSLToSPIRV(
+                source_location_wstr.c_str(), chit_entry, "lib" SHADER_MODEL_SUFFIX,
+                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &chit_command, &chit_hash
             );
-            if (ahit_result.empty()) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile any hit shader: {}", class_registry_->source_location, class_registry_->impl_macro_line_info, errmsg);
-                MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
-                return false;
+            if (!chit_result.empty()) {
+                shader_hash_.AddUnordered((std::string("ClosestHitShader_") + class_info->name).c_str(), chit_hash);
+                shaders_.closest_hit[i] = RHI::Get().CreateShader(
+                    RHIShaderFrequencyFlagBits::kClosestHit, chit_entry,
+                    RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(chit_result.data()), chit_result.size() * sizeof(uint32_t))
+                );
+                if (shaders_.closest_hit[i]) {
+                    if (!CheckShaderReflection(shaders_.closest_hit[i].Raw(), param_info)) {
+                        MI_LOG(MIInfraLogType::kWarning, "RDGShader %s (at %s): Closest hit shader reflection check failed for %s. Treating as no-op.",
+                            class_registry_->source_location.c_str(), class_registry_->impl_macro_line_info.c_str(), class_info->name);
+                        shaders_.closest_hit[i].SafeRelease();
+                    } else {
+                        shaders_.closest_hit[i]->SetSourceFilePath(class_registry_->source_location);
+                    }
+                }
+            } else {
+                MI_LOG(MIInfraLogType::kWarning, "RDGShader %s (at %s): Closest hit entry point '%s' not found for %s. Treating as no-op.",
+                    class_registry_->source_location.c_str(), class_registry_->impl_macro_line_info.c_str(), chit_entry.c_str(), class_info->name);
             }
-            shader_hash_.AddUnordered("AnyHitShader", ahit_hash);
+
+            // Any-hit
+            std::string ahit_entry = RayTracedRenderableClassRegistry::MakeAnyHitEntryPoint(class_registry_->any_hit_template_, i);
+            std::vector<uint32_t> ahit_result;
+            uint64_t ahit_hash = 0;
+            std::wstring ahit_command;
+            ahit_result = GetInfra().CompileHLSLToSPIRV(
+                source_location_wstr.c_str(), ahit_entry, "lib" SHADER_MODEL_SUFFIX,
+                std::span(source_code.data(), source_code.size()), defines, options, errmsg, &ahit_command, &ahit_hash
+            );
+            if (!ahit_result.empty()) {
+                shader_hash_.AddUnordered((std::string("AnyHitShader_") + class_info->name).c_str(), ahit_hash);
+                shaders_.any_hit[i] = RHI::Get().CreateShader(
+                    RHIShaderFrequencyFlagBits::kAnyHit, ahit_entry,
+                    RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(ahit_result.data()), ahit_result.size() * sizeof(uint32_t))
+                );
+                if (shaders_.any_hit[i]) {
+                    if (!CheckShaderReflection(shaders_.any_hit[i].Raw(), param_info)) {
+                        MI_LOG(MIInfraLogType::kWarning, "RDGShader %s (at %s): Any hit shader reflection check failed for %s. Treating as no-op.",
+                            class_registry_->source_location.c_str(), class_registry_->impl_macro_line_info.c_str(), class_info->name);
+                        shaders_.any_hit[i].SafeRelease();
+                    } else {
+                        shaders_.any_hit[i]->SetSourceFilePath(class_registry_->source_location);
+                    }
+                }
+            } else {
+                MI_LOG(MIInfraLogType::kWarning, "RDGShader %s (at %s): Any hit entry point '%s' not found for %s. Treating as no-op.",
+                    class_registry_->source_location.c_str(), class_registry_->impl_macro_line_info.c_str(), ahit_entry.c_str(), class_info->name);
+            }
         }
+
+        // Compile miss shader
+        std::vector<uint32_t> miss_result;
         {
             uint64_t miss_hash = 0;
             std::wstring out_command;
@@ -892,6 +944,8 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             }
             shader_hash_.AddUnordered("MissShader", miss_hash);
         }
+
+        // Create RHI shaders
         shaders_.raygen = RHI::Get().CreateShader(
             RHIShaderFrequencyFlagBits::kRaygen, class_registry_->raygen_entry_,
             RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(raygen_result.data()), raygen_result.size() * sizeof(uint32_t))
@@ -905,36 +959,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             return false;
         }
         shaders_.raygen->SetSourceFilePath(class_registry_->source_location);
-        if (!chit_result.empty()) {
-            shaders_.closest_hit = RHI::Get().CreateShader(
-                RHIShaderFrequencyFlagBits::kClosestHit, class_registry_->closest_hit_entry_,
-                RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(chit_result.data()), chit_result.size() * sizeof(uint32_t))
-            );
-            if (!shaders_.closest_hit) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create closest hit shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
-                return false;
-            }
-            if (!CheckShaderReflection(shaders_.closest_hit.Raw(), param_info)) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Closest hit shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
-                return false;
-            }
-            shaders_.closest_hit->SetSourceFilePath(class_registry_->source_location);
-        }
-        {
-            shaders_.any_hit = RHI::Get().CreateShader(
-                RHIShaderFrequencyFlagBits::kAnyHit, class_registry_->any_hit_entry_,
-                RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(ahit_result.data()), ahit_result.size() * sizeof(uint32_t))
-            );
-            if (!shaders_.any_hit) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create any hit shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
-                return false;
-            }
-            if (!CheckShaderReflection(shaders_.any_hit.Raw(), param_info)) {
-                MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Any hit shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
-                return false;
-            }
-            shaders_.any_hit->SetSourceFilePath(class_registry_->source_location);
-        }
+
         shaders_.miss = RHI::Get().CreateShader(
             RHIShaderFrequencyFlagBits::kMiss, class_registry_->miss_entry_,
             RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(miss_result.data()), miss_result.size() * sizeof(uint32_t))
@@ -1126,29 +1151,39 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         graphics_pipeline_ = pipeline;
     }
     if (class_registry_->type == RHIPipelineType::kRayTracing) {
-        // Create the ray tracing pipeline
+        // Create the ray tracing pipeline with multi-hitgroup support
         RHIRayTracingPipelineDesc desc {};
+
+        // RayGen (group 0)
         desc.shaders.push_back(shaders_.raygen.Raw());
         desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kRayGeneration, 0});
+
+        // Miss (group 1)
         desc.shaders.push_back(shaders_.miss.Raw());
         desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{RHIRayTracingShaderGroupType::kMiss, 1});
-        uint32_t closest_hit_idx = UINT32_MAX;
-        uint32_t any_hit_idx = UINT32_MAX;
+
+        // Per-renderable-class hitgroups (groups 2..2+NumClasses-1)
         uint32_t shader_idx_allocator = 2;
-        if (shaders_.closest_hit && shaders_.closest_hit.IsValid()) {
-            closest_hit_idx = shader_idx_allocator++;
-            desc.shaders.push_back(shaders_.closest_hit.Raw());
+        auto num_classes = RayTracedRenderableClassRegistry::NumClasses();
+        for (uint32_t i = 0; i < num_classes; ++i) {
+            uint32_t ch_idx = UINT32_MAX;
+            uint32_t ah_idx = UINT32_MAX;
+            if (shaders_.closest_hit[i] && shaders_.closest_hit[i].IsValid()) {
+                ch_idx = shader_idx_allocator++;
+                desc.shaders.push_back(shaders_.closest_hit[i].Raw());
+            }
+            if (shaders_.any_hit[i] && shaders_.any_hit[i].IsValid()) {
+                ah_idx = shader_idx_allocator++;
+                desc.shaders.push_back(shaders_.any_hit[i].Raw());
+            }
+            desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{
+                RHIRayTracingShaderGroupType::kTrianglesHitGroup,
+                UINT32_MAX,
+                ch_idx,
+                ah_idx
+            });
         }
-        if (shaders_.any_hit && shaders_.any_hit.IsValid()) {
-            any_hit_idx = shader_idx_allocator++;
-            desc.shaders.push_back(shaders_.any_hit.Raw());
-        }
-        desc.shader_groups.push_back(RHIRayTracingShaderGroupDesc{
-            RHIRayTracingShaderGroupType::kTrianglesHitGroup,
-            UINT32_MAX,
-            closest_hit_idx,
-            any_hit_idx
-        });
+
         desc.max_recursion_depth = pipeline_config.ray_tracing.max_recursion_depth;
         auto pipeline = RHI::Get().CreateRayTracingPipeline(desc);
         if (!pipeline) {
@@ -1157,43 +1192,47 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         }
         ray_tracing_pipeline_ = pipeline;
 
-        // Arranged in the order of raygen, miss, hit, ...
+        // Build SBT
         auto base_alignment = ray_tracing_pipeline_->GetShaderGroupBaseAlignment();
         auto handle_size = ray_tracing_pipeline_->GetShaderGroupHandleSize();
+        // Use base_alignment for stride to match GetHitSBTStride() / vkCmdTraceRaysKHR
         auto handle_size_aligned = RoundUp(
             handle_size,
-            ray_tracing_pipeline_->GetShaderGroupHandleAlignment()
+            base_alignment
             );
 
         auto raygen_section_size = RoundUp(handle_size_aligned, base_alignment);
         auto miss_section_size = RoundUp(handle_size_aligned, base_alignment);
-        auto hit_section_size = RoundUp(handle_size_aligned, base_alignment);
+        auto hit_section_size = RoundUp(handle_size_aligned * num_classes, base_alignment);
 
         auto all_size = raygen_section_size + miss_section_size + hit_section_size;
         sbt_.resize(all_size);
 
-        // Get all handles into a temporary buffer first
-        uint32_t handle_count = 3;
+        // Get all handles: raygen(1) + miss(1) + hitgroups(NumClasses)
+        uint32_t handle_count = 2 + num_classes;
         std::vector<uint8_t> shader_handles(handle_count * handle_size);
         ray_tracing_pipeline_->GetShaderGroupHandles(0, handle_count, shader_handles.data());
 
         // Copy handles to the correct locations in the SBT
-        // Order: raygen, miss, hit
         std::byte* sbt_data = sbt_.data();
         uint64_t current_offset = 0;
 
-        // RayGen
+        // RayGen (group 0)
         memcpy(sbt_data + current_offset, shader_handles.data(), handle_size);
         sbt_sections_.raygen = {current_offset, raygen_section_size};
         current_offset += raygen_section_size;
 
-        // Miss
+        // Miss (group 1)
         memcpy(sbt_data + current_offset, shader_handles.data() + handle_size, handle_size);
         sbt_sections_.miss = {current_offset, miss_section_size};
         current_offset += miss_section_size;
 
-        // Hit
-        memcpy(sbt_data + current_offset, shader_handles.data() + handle_size * 2, handle_size);
+        // HitGroups (groups 2..2+NumClasses-1)
+        for (uint32_t i = 0; i < num_classes; ++i) {
+            memcpy(sbt_data + current_offset + i * handle_size_aligned,
+                   shader_handles.data() + (2 + i) * handle_size,
+                   handle_size);
+        }
         sbt_sections_.hit = {current_offset, hit_section_size};
     }
 

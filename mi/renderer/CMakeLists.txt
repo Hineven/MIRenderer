@@ -1,4 +1,5 @@
 set(SOURCES
+        mi_renderer_export.cpp
         mi_console.cpp
         mi_resource_allocator.cpp
         mi_texture.cpp

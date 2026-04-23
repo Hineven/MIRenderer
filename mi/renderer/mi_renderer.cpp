@@ -28,6 +28,7 @@
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
 #include "renderer/mi_volume_primitives.h"
+#include "rdg/rdg_ray_tracing_registry.h"
 #include "renderer/r_denoiser.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
@@ -115,7 +116,8 @@ static std::pair<uint32_t, bool> ComputeRenderableStructureHashAndClearBLASUpdat
     return {h1, h2};
 }
 
-void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
+TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
+    TRef<RendererExports> exports(new RendererExports());
     struct RenderFunctionContext {
         Renderer * r_;
         RenderFunctionContext (Renderer * r): r_(r) {
@@ -128,14 +130,16 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     if (!view->scene_) {
         MI_WARN("World is not present in the view.");
-        return ;
+        return exports;
     }
     if (!view->scene_->GetDeviceScene()) {
         MI_WARN("Device scene is not present in the world.");
-        return ;
+        return exports;
     }
 
     view->InitFrame();
+    exports->RegisterResource("radiance", view->radiance_.Raw());
+    exports->RegisterResource("overlay", view->overlay_.Raw());
 
     // Stage history buffers for motion vectors (GPU-side copy before the current frame)
     {
@@ -281,6 +285,18 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
                 auto data = RHIAccelerationStructureInstanceDesc {};
                 data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
                 data.mask = 0xFF; // Visible to all rays
+                // Set SBT record offset based on renderable class index.
+                // The offset is in bytes: class_index * hit_group_stride.
+                // Must match the SBT hit group spacing used in RDGShader SBT construction.
+                {
+                    auto props = RHI::Get().GetDeviceProperties();
+                    auto handle_size_aligned = RoundUp(
+                        props.shader_group_handle_size,
+                        props.shader_group_base_alignment
+                    );
+                    uint32_t class_index = renderable->GetRayTracedClassIndex();
+                    data.instance_shader_binding_table_record_offset = class_index * handle_size_aligned;
+                }
                 // Disable back face culling for renderables with double-sided materials.
                 data.flags = renderable->GetASGeometryInstanceFlags();
                 data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
@@ -387,6 +403,15 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Pre-allocate RDG resources that may be used among multiple lighting stages
     view->CreateSharedResources(builder);
+    if (view->g_buffer_) {
+        exports->RegisterResource("depth", view->g_buffer_->G_depth_.Raw());
+        exports->RegisterResource("transmittance", view->g_buffer_->G_transmittance_.Raw());
+        exports->RegisterResource("visibility", view->g_buffer_->G_visibility_.Raw());
+        exports->RegisterResource("albedo", view->g_buffer_->G_albedo_.Raw());
+        exports->RegisterResource("normal", view->g_buffer_->G_normal_.Raw());
+        exports->RegisterResource("geometry_normal", view->g_buffer_->G_geometry_normal_.Raw());
+        exports->RegisterResource("motion_vector", view->g_buffer_->G_motion_vector_.Raw());
+    }
 
     // Pre-allocate shared view persistent data among multiple lighting stages
     view->MakeSurePersistentDataExists(builder);
@@ -426,6 +451,12 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Volume primitives
     Render_DrawVolumePrimitives(view, builder);
+    if (view->volume_primitives_) {
+        exports->RegisterResource("volume_sample_color", view->volume_primitives_->volume_sample_color_.Raw());
+        exports->RegisterResource("volume_sample_linear_depth", view->volume_primitives_->volume_sample_linear_depth_.Raw());
+        exports->RegisterResource("volume_density", view->volume_primitives_->G_volume_density_.Raw());
+        exports->RegisterResource("volume_color", view->volume_primitives_->G_volume_color_.Raw());
+    }
 
     // HiZ
     Render_ComputeHiZBuffer(view, builder);
@@ -460,6 +491,22 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
 
     // Denoising
     Render_DenoiseLighting(view, builder);
+    if (view->diffuse_direct_lighting_) {
+        exports->RegisterResource("diffuse_direct", view->diffuse_direct_lighting_->radiance.Raw());
+    }
+    if (view->diffuse_indirect_lighting_) {
+        exports->RegisterResource("diffuse_indirect", view->diffuse_indirect_lighting_->radiance.Raw());
+    }
+    if (view->volume_direct_lighting_) {
+        exports->RegisterResource("volume_direct", view->volume_direct_lighting_->radiance.Raw());
+    }
+    if (view->volume_indirect_lighting_) {
+        exports->RegisterResource("volume_indirect", view->volume_indirect_lighting_->radiance.Raw());
+    }
+    if (view->denoiser_) {
+        exports->RegisterResource("denoised_diffuse_direct", view->denoiser_->denoised_diffuse_direct_lighting.Raw());
+        exports->RegisterResource("denoised_diffuse_indirect", view->denoiser_->denoised_diffuse_indirect_lighting.Raw());
+    }
 
     // Final composition
     Render_LightingComposition(view, builder);
@@ -502,9 +549,18 @@ void Renderer::Render(RendererView * view, RenderGraphBuilder & builder) {
     // Composite overlay to backbuffer (sRGB conversion)
     Render_DrawToOutput(view, builder, view->overlay_.Raw(), DrawToOutputMappingType::eLinearToSRGB);
 
+    if (view->grf_) {
+        exports->RegisterResource("grf_depth", view->grf_->stochastic_rendering_depth_.Raw());
+        exports->RegisterResource("grf_opacity", view->grf_->stochastic_rendering_opacity_.Raw());
+    }
+    if (view->persistent_data_) {
+        exports->RegisterResource("path_tracing_film", view->persistent_data_->path_tracing_film_.Raw());
+    }
+
     // Update persistent data using current frame for next frame use
     view->persistent_data_->FinalUpdate(view);
 
+    return exports;
 }
 
 MI_NAMESPACE_END

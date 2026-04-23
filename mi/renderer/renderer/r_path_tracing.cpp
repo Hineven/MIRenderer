@@ -17,6 +17,7 @@
 #include "r_persistent.h"
 #include "r_diffuse_direct_lighting.h"
 #include "r_light_structure.h"
+#include "r_directional_light.h"
 
 MI_NAMESPACE_BEGIN
 static CVar CVar_PathTracingEnableAccumulation(
@@ -44,6 +45,7 @@ public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(ReferencePathTracerUB, UB)
+        SHADER_UNIFORM_BUFFER(DirectionalLightUniform, DirectionalLight_UB)
         SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
@@ -69,11 +71,12 @@ public:
 
 IMPLEMENT_RDG_RAY_TRACING_SHADER(ReferencePathTracerShader,
     "mi/renderer/shaders/ReferencePathTracer.hlsl",
-    "ReferencePathTracerRaygen",
-    "ReferencePathTracerClosestHit", "ReferencePathTracerAnyHit", "ReferencePathTracerMiss")
+    "ReferencePathTracer", "ReferencePathTracer",
+    "ReferencePathTracerRaygen", "ReferencePathTracerMiss")
 
 void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &builder) {
     // Standalone path tracing renderer
+    view->did_render_path_tracing_this_frame_ = true;
     auto ini = RDGShaderInitializationInfo {};
     ini.optional_macros.push_back("MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()));
     ini.optional_macros.push_back("NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()));
@@ -106,6 +109,9 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
 
     params->View = view->view_common_params_;
     params->UB = UB;
+    auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
+    FillUniformBufferForDirectionalLight(view, directional_light_ub);
+    params->DirectionalLight_UB = directional_light_ub;
     params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());

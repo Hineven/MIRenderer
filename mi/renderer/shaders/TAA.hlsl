@@ -30,7 +30,7 @@ float3 ReverseMap(float3 color) {
 }
 
 float4 ClampHistory(float4 hist, float2 uv) {
-    // Gather 3x3 neighborhoo statistics
+    // Gather 3x3 neighborhood statistics
     float3 m1 = 0, m2 = 0;
     float min_a = 1.0f, max_a = 0.0f; // Use Min/Max for Alpha (AABB)
 

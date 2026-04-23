@@ -25,7 +25,11 @@
 
 #include "shaders/shared/SharedLight.hlsl"
 
+#include "rdg/rdg_ray_tracing_registry.h"
+
 MI_NAMESPACE_BEGIN
+
+RayTracedRenderableClassRegistrator<StaticMeshInstance> StaticMeshInstance::kClassRegistrator("StaticMesh", "StaticMesh");
 
 CVar<int> CVar_MaxMeshLightsPerGeometry(
     "r.mesh_light.max_lights_per_geometry",
@@ -814,9 +818,13 @@ RHIASGeometryInstanceFlags StaticMeshInstance::GetASGeometryInstanceFlags() cons
     return flags;
 }
 
+uint32_t StaticMeshInstance::GetRayTracedClassIndex() const {
+    return kClassRegistrator.GetClassIndex();
+}
+
 uint32_t StaticMeshInstance::GetInstanceCustomIndex() const {
     // Simply return the index of the instance
-    return GetIndex();
+    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
 bool StaticMeshInstance::IsEmpty() const {

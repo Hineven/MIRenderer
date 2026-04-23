@@ -91,11 +91,11 @@ void BatchedUploadContext::Add(RDGBuffer *buffer, const void *data, size_t size,
 }
 
 void BatchedUploadContext::AddExtraBarrier(RDGBuffer *buffer) {
-    // Filter naive duplicates
     if (!extra_barriers_.empty() && buffer == extra_barriers_.back()) return;
-    extra_barriers_.push_back(buffer);
     // Validation
     mi_assert(buffer != nullptr, "Buffer is null.");
+    // Filter naive duplicates
+    extra_barriers_.push_back(buffer);
 }
 
 
@@ -265,7 +265,6 @@ RendererView::~RendererView() {
     }
 }
 
-
 void RendererViewPersistentData::Init() {
     *this = {};
 }
@@ -276,13 +275,13 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
     prev_camera_jitter_ = glm::vec2(view->view_common_params_->Camera.Jitter.x, view->view_common_params_->Camera.Jitter.y);
 
     prev_radiance_ = view->radiance_;
-    prev_radiance_->SetExport();
     prev_taa_radiance_ = view->taa_radiance_;
-    prev_taa_radiance_->SetExport();
     prev_shaded_radiance_no_emission_ = view->shaded_radiance_no_emission_;
-    prev_shaded_radiance_no_emission_->SetExport();
     prev_shaded_volume_radiance_ = view->shaded_volume_radiance_;
-    prev_shaded_volume_radiance_->SetExport();
+    if (prev_radiance_) prev_radiance_->SetExport();
+    if (prev_taa_radiance_) prev_taa_radiance_->SetExport();
+    if (prev_shaded_radiance_no_emission_) prev_shaded_radiance_no_emission_->SetExport();
+    if (prev_shaded_volume_radiance_) prev_shaded_volume_radiance_->SetExport();
 
     prev_scene_ = view->scene_;
 
@@ -378,6 +377,7 @@ void RendererView::InitFrame () {
     upload_context_.Init();
 
     temp_allocator_.Reset();
+    did_render_path_tracing_this_frame_ = false;
 }
 
 

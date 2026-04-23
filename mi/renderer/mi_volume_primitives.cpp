@@ -10,8 +10,10 @@
 #include "renderer/mi_buffer_heap.h"
 #include "renderer/mi_resource_allocator.h"
 #include "rhi/rhi_as.h"
+#include "rdg/rdg_ray_tracing_registry.h"
 
 MI_NAMESPACE_BEGIN
+
 // DeviceVolumePrimitives implementation
 DeviceVolumePrimitives::DeviceVolumePrimitives(DeviceBindlessResourceAllocator * allocator) {
     slot_ = allocator->AllocateVolumePrimitivesSlotKeeper();
@@ -339,9 +341,15 @@ RHIAccelerationStructure *VolumePrimitivesInstance::GetBLAS() const {
     return nullptr;
 }
 
+RayTracedRenderableClassRegistrator<VolumePrimitivesInstance> VolumePrimitivesInstance::kClassRegistrator("VolumePrimitives", "VolumePrimitives");
+
+uint32_t VolumePrimitivesInstance::GetRayTracedClassIndex() const {
+    return kClassRegistrator.GetClassIndex();
+}
+
 uint32_t VolumePrimitivesInstance::GetInstanceCustomIndex() const {
     // Return the index of the instance with a custom flag indicating the type of renderable
-    return GetIndex() | INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_PRIMITIVES;
+    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
 bool VolumePrimitivesInstance::IsEmpty() const {

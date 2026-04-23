@@ -75,8 +75,17 @@ public:
     virtual RHIASGeometryInstanceFlags GetASGeometryInstanceFlags () const { return RHIASGeometryInstanceFlagBits::kNone; }
 
     constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
+    // Number of bits used for the renderable index in InstanceCustomIndex.
+    // The remaining upper bits encode the ray-traced class index.
+    // Must match RENDERABLE_INDEX_NUM_BITS in SharedRenderable.hlsl.
+    constexpr static uint32_t kRenderableIndexNumBits = 20;
     // Note that the renderable index is at most 24 bits
     virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableIndex; }
+
+    // Returns the ray-traced renderable class index for SBT hit group selection.
+    // Must be overridden by all ray-traced renderable types. Returns the index
+    // matching RayTracedRenderableClassRegistry registration order.
+    virtual uint32_t GetRayTracedClassIndex () const { return kInvalidRenderableIndex; }
 
     FORCEINLINE uint32_t GetHash() const { return hash_; }
 

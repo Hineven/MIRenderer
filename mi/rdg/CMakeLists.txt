@@ -1,5 +1,6 @@
 set(SOURCE_FILES
     include/rdg/rdg.h
+    include/rdg/rdg_ray_tracing_registry.h
     rdg.cpp
     rdg_resource.cpp
     rdg_base.cpp
@@ -11,6 +12,7 @@ set(SOURCE_FILES
     rdg_cmd.cpp
     rdg_helper.cpp
     rdg_global_memory_collector.cpp
+    rdg_ray_tracing_registry.cpp
 )
 
 add_library(rdg STATIC ${SOURCE_FILES})

@@ -14,6 +14,7 @@
 #include "renderer/mi_resource_allocator.h"
 #include "renderer/mi_buffer_heap.h"
 #include "rhi/rhi_as.h"
+#include "rdg/rdg_ray_tracing_registry.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -225,9 +226,15 @@ RHIAccelerationStructure* VolumeGridInstance::GetBLAS() const {
     return nullptr;
 }
 
+RayTracedRenderableClassRegistrator<VolumeGridInstance> VolumeGridInstance::kClassRegistrator("VolumeGrid", "VolumeGrid");
+
+uint32_t VolumeGridInstance::GetRayTracedClassIndex() const {
+    return kClassRegistrator.GetClassIndex();
+}
+
 uint32_t VolumeGridInstance::GetInstanceCustomIndex() const {
     // 标记这是 VolumeGrid 类型，以便 Shader 通过 InstanceID 区分
-    return GetIndex() | INSTANCE_CUSTOM_INDEX_FLAG_VOLUME_GRID;
+    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
 bool VolumeGridInstance::IsEmpty() const {

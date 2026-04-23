@@ -37,6 +37,9 @@
 //   - USE_RAY_TMAX_BUFFER: If defined, use custom ray TMax from buffer, otherwise use camera far plane
 //
 
+#include "HybridTracing.hlsl"
+#include "Packing.hlsl"
+
 void SetupRayDesc(uint RayIndex, out RayDesc OutRay)
 {
     OutRay = (RayDesc)0;

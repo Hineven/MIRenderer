@@ -153,7 +153,7 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
         params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_->radiance.Raw();
         params->VolumeIndirectLightingTexture = view->volume_indirect_lighting_->radiance.Raw();
     }
-    if (view->scene_->GetSkyTexture()) {
+    if (view->scene_ && view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {
         params->EnvironmentMap = nullptr;
@@ -216,7 +216,9 @@ IMPLEMENT_RDG_COMPUTE_SHADER(TAAShader, "mi/renderer/shaders/TAA.hlsl", "TAA_Mai
 void Renderer::Render_DrawToOutput(
     [[maybe_unused]] RendererView * view, RenderGraphBuilder & builder,
     RDGTexture *texture, DrawToOutputMappingType mapping_type,
-    PostProcessingFlags flags
+    PostProcessingFlags flags,
+    RDGTexture * output_texture,
+    RHILoadOpType output_load_op
 ) {
     if (!texture) {
         return;
@@ -254,7 +256,9 @@ void Renderer::Render_DrawToOutput(
         params->UB->InTextureDimensions = glm::vec2(dims.width, dims.height);
         params->UB->Exposure = CVar_Exposure.Get();
         params->UB->MappingType = static_cast<uint>(mapping_type);
-        params->Output = builder.Import(RHI::Get().GetBackBuffer());
+        params->Output = output_texture ? output_texture : builder.Import(RHI::Get().GetBackBuffer());
+        params->Output.load_op = output_load_op;
+        params->Output.store_op = RHIStoreOpType::kStore;
         params->InTexture = texture;
         params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     }

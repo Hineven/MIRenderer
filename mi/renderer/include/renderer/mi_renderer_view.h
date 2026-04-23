@@ -191,6 +191,9 @@ struct RendererView {
 
     // Current frame jitter (NDC space per-axis)
     glm::vec2 camera_jitter_ {};
+
+    // Whether path tracing has already been scheduled for this frame.
+    bool did_render_path_tracing_this_frame_ {false};
 };
 
 // Used for setting cursor positions in debug uniform buffers

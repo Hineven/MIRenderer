@@ -18,6 +18,7 @@
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderer_fwd.h"
 #include "renderer/r_light_cluster_hiearchy.h"
+#include <rdg/rdg_ray_tracing_registry.h>
 MI_NAMESPACE_BEGIN
 
 // Device side of a static mesh. Holds BLAS & geometry buffers & placeholder
@@ -224,6 +225,9 @@ public:
     RHIAccelerationStructure * GetBLAS() const override ;
     RHIASGeometryInstanceFlags GetASGeometryInstanceFlags() const override ;
     uint32_t GetInstanceCustomIndex() const override;
+    uint32_t GetRayTracedClassIndex() const override;
+
+    static RayTracedRenderableClassRegistrator<StaticMeshInstance> kClassRegistrator;
 
     bool IsEmpty() const override;
 
