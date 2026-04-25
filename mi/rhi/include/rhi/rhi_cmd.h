@@ -511,20 +511,22 @@ public:
 
 class RHICommandBindGraphicsPipeline : public TRHICommand<RHICommandBindGraphicsPipeline> {
 public:
-    RHICommandBindGraphicsPipeline(RHIGraphicsPipeline * pipeline)
-        : pipeline_(pipeline) {}
+    RHICommandBindGraphicsPipeline(RHIGraphicsPipeline * pipeline, RHIPipelineRootSignature * root_signature)
+        : pipeline_(pipeline), root_signature_(root_signature) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHIGraphicsPipeline * pipeline_;
+    RHIPipelineRootSignature * root_signature_;
 };
 
 class RHICommandBindComputePipeline : public TRHICommand<RHICommandBindComputePipeline> {
 public:
-    RHICommandBindComputePipeline(RHIComputePipeline * pipeline)
-        : pipeline_(pipeline) {}
+    RHICommandBindComputePipeline(RHIComputePipeline * pipeline, RHIPipelineRootSignature * root_signature)
+        : pipeline_(pipeline), root_signature_(root_signature) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHIComputePipeline * pipeline_;
+    RHIPipelineRootSignature * root_signature_;
 };
 
 class RHICommandBindPipelineParameters : public TRHICommand<RHICommandBindPipelineParameters> {
@@ -678,11 +680,12 @@ public:
 
 class RHICommandBindRayTracingPipeline : public TRHICommand<RHICommandBindRayTracingPipeline> {
 public:
-    RHICommandBindRayTracingPipeline(RHIRayTracingPipeline * pipeline)
-        : pipeline_(pipeline) {}
+    RHICommandBindRayTracingPipeline(RHIRayTracingPipeline * pipeline, RHIPipelineRootSignature * root_signature)
+        : pipeline_(pipeline), root_signature_(root_signature) {}
     void Execute(RHICommandQueueBase & cmd) override ;
 
     RHIRayTracingPipeline * pipeline_;
+    RHIPipelineRootSignature * root_signature_;
 };
 
 class RHICommandBindShaderBindingTable : public TRHICommand<RHICommandBindShaderBindingTable> {
@@ -973,14 +976,14 @@ public:
         AddCommand(AllocateCommand<RHICommandAccelerationStructureBarrier>(acceleration_structure_count, acceleration_structures, src_stages, dst_stages, src_accesses, dst_accesses));
     }
 
-    FORCEINLINE void BindPipeline(RHIGraphicsPipeline * pipeline) {
-        AddCommand(AllocateCommand<RHICommandBindGraphicsPipeline>(pipeline));
+    FORCEINLINE void BindPipeline(RHIGraphicsPipeline * pipeline, RHIPipelineRootSignature * root_signature) {
+        AddCommand(AllocateCommand<RHICommandBindGraphicsPipeline>(pipeline, root_signature));
     }
-    FORCEINLINE void BindPipeline(RHIComputePipeline * pipeline) {
-        AddCommand(AllocateCommand<RHICommandBindComputePipeline>(pipeline));
+    FORCEINLINE void BindPipeline(RHIComputePipeline * pipeline, RHIPipelineRootSignature * root_signature) {
+        AddCommand(AllocateCommand<RHICommandBindComputePipeline>(pipeline, root_signature));
     }
-    FORCEINLINE void BindPipeline(RHIRayTracingPipeline * pipeline) {
-        AddCommand(AllocateCommand<RHICommandBindRayTracingPipeline>(pipeline));
+    FORCEINLINE void BindPipeline(RHIRayTracingPipeline * pipeline, RHIPipelineRootSignature * root_signature) {
+        AddCommand(AllocateCommand<RHICommandBindRayTracingPipeline>(pipeline, root_signature));
     }
 
     // Ray tracing commands

@@ -16,8 +16,10 @@
 #include "rdg/rdg_param.h"
 #include "rdg/rdg_ray_tracing_registry.h"
 #include "rhi/rhi_pipeline.h"
+#include "rhi/rhi_root_signature.h"
+#include "rdg/rdg_root_signature_cache.h"
 MI_NAMESPACE_BEGIN
-    class RHIGraphicsPipeline;
+class RHIGraphicsPipeline;
 class RHIComputePipeline;
 
 // Some configuration that can be used to configure the shader pipeline
@@ -228,6 +230,7 @@ protected:
     TRef<RHIComputePipeline> compute_pipeline_;
     TRef<RHIGraphicsPipeline> graphics_pipeline_;
     TRef<RHIRayTracingPipeline> ray_tracing_pipeline_;
+    TRef<RDGShaderRootSignatureKeeper> root_signature_;
     struct {
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};
@@ -235,6 +238,9 @@ protected:
         TRef<RHIShader> fragment {};
         TRef<RHIShader> raygen {};
         TRef<RHIShader> miss {};
+        // these two are not implemented for now.
+        TRef<RHIShader> task {};
+        TRef<RHIShader> mesh {};
         // Per-renderable-class hit shaders (indexed by RayTracedRenderableClassRegistry::GetClassIndex).
         std::array<TRef<RHIShader>, RayTracedRenderableClassRegistry::kMaxRayTracingHitGroups> closest_hit {};
         std::array<TRef<RHIShader>, RayTracedRenderableClassRegistry::kMaxRayTracingHitGroups> any_hit {};

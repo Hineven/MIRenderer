@@ -23,6 +23,7 @@
 #include "vk_bindless.h"
 #include "vk_cmd_exec.h"
 #include "vk_conversion.h"
+#include "vk_root_signature.h"
 #include "rhi/rhi_thread.h"
 
 #ifndef NDEBUG
@@ -606,7 +607,6 @@ VulkanRHI::~VulkanRHI() {
     delete this->bindless_manager_;
     delete this->command_executor_;
 
-    // Query pool
     if (timestamp_query_pool_)
         device_.destroy(timestamp_query_pool_);
 
@@ -863,30 +863,30 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
     return nullptr;
 }
 
-RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name) {
+RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name, RHIPipelineRootSignature * root) {
     auto pipeline = new VulkanGraphicsPipeline();
     pipeline->SetName(name);
-    pipeline->Compile(desc);
+    pipeline->Compile(desc, root);
     if(pipeline->IsValid()) return TRef<RHIGraphicsPipeline>(pipeline);
     pipeline->~VulkanGraphicsPipeline();
     delete pipeline;
     return nullptr;
 }
 
-RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const char * name) {
+RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const char * name, RHIPipelineRootSignature * root) {
     auto pipeline = new VulkanComputePipeline();
     pipeline->SetName(name);
-    pipeline->Compile(shader);
+    pipeline->Compile(shader, root);
     if(pipeline->IsValid()) return TRef<RHIComputePipeline>(pipeline);
     pipeline->~VulkanComputePipeline();
     delete pipeline;
     return nullptr;
 }
 
-RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name) {
+RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name, RHIPipelineRootSignature * root) {
     auto pipeline = new VulkanRayTracingPipeline();
     pipeline->SetName(name);
-    pipeline->Compile(desc);
+    pipeline->Compile(desc, root);
     if(pipeline->IsValid()) return TRef<RHIRayTracingPipeline>(pipeline);
     pipeline->~VulkanRayTracingPipeline();
     delete pipeline;
@@ -950,6 +950,12 @@ RHITextureRef VulkanRHI::ImportTexture(const void * raw_desc, RHITextureType typ
 
 const void *VulkanRHI::GetUnderlyingGraphicsAPIHandles() const {
     return & export_handles_;
+}
+
+RHIPipelineRootSignatureRef VulkanRHI::CreateRootSignature(const RHIPipelineRootSignatureDesc & desc) {
+    auto * rs = new VulkanRootSignature(desc, device_);
+    rs->SetName("root_signature");
+    return RHIPipelineRootSignatureRef(rs);
 }
 
 RHISyncPointRef VulkanRHI::CreateSyncPoint() {

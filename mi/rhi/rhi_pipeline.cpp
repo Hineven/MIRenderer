@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "rhi/rhi_pipeline.h"
+#include "rhi/rhi_root_signature.h"
 #include "core/crc.h"
 #include "core/infra.h"
 #include "rhi/rhi_type_helpers.h"
@@ -191,7 +192,44 @@ void RHIPipeline::BuildPipelineResourceIndex() {
     Register(RHIPipelineResourceType::kAccelerationStructure, acceleration_structures_);
 }
 
-void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
+bool RHIPipeline::ValidateRootSignatureCompatibility(RHIPipelineRootSignature * root) const {
+    if (!root) return true;
+
+    auto CheckResourceCount = [&](RHIPipelineResourceType type, const char * type_name, size_t pipeline_count) {
+        uint32_t root_count = root->GetNumResources(type);
+        if (pipeline_count > root_count) {
+            MI_LOG(MIInfraLogType::kError,
+                "Root signature compatibility error: pipeline has {} {} resources but root signature declares {}.",
+                pipeline_count, type_name, root_count);
+            return false;
+        }
+        return true;
+    };
+    if (!CheckResourceCount(RHIPipelineResourceType::kUniformBuffer, "UniformBuffer", uniform_buffers_.size())) return false;
+    if (!CheckResourceCount(RHIPipelineResourceType::kStorageBuffer, "StorageBuffer", storage_buffers_.size())) return false;
+    if (!CheckResourceCount(RHIPipelineResourceType::kUAV, "UAV", uavs_.size())) return false;
+    if (!CheckResourceCount(RHIPipelineResourceType::kSRV, "SRV", srvs_.size())) return false;
+    if (!CheckResourceCount(RHIPipelineResourceType::kSampler, "Sampler", samplers_.size())) return false;
+    if (!CheckResourceCount(RHIPipelineResourceType::kAccelerationStructure, "AccelerationStructure", acceleration_structures_.size())) return false;
+
+    auto CheckPushConstants = [&](const auto & pipeline_push_constants) {
+        if (!pipeline_push_constants.empty()) {
+            uint32_t pipeline_pc_size = pipeline_push_constants[0].size;
+            if (pipeline_pc_size != root->GetPushConstantSize()) {
+                MI_LOG(MIInfraLogType::kError,
+                    "Root signature compatibility error: pipeline push constant size={} but root signature declares size={}.",
+                    pipeline_pc_size, root->GetPushConstantSize());
+                return false;
+            }
+        }
+        return true;
+    };
+    if (!CheckPushConstants(command_constant_)) return false;
+
+    return true;
+}
+
+void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc, RHIPipelineRootSignature * root) {
     Reset();
     if(!CheckAndRemapShaderResources(desc.stages.vertex_shader)) return;
     if(!CheckAndRemapShaderResources(desc.stages.fragment_shader)) return;
@@ -232,7 +270,9 @@ void RHIGraphicsPipeline::Compile(const RHIGraphicsPipelineDesc & desc) {
         return ;
     }
 
-    if(!CompileRHI(desc)) {
+    if(!ValidateRootSignatureCompatibility(root)) return;
+
+    if(!CompileRHI(desc, root)) {
         MI_LOG(MIInfraLogType::kWarning, "Pipeline {} assemble failed.", GetName());
         return;
     }
@@ -247,13 +287,14 @@ void RHIGraphicsPipeline::Reset() {
     RHIPipeline::Reset();
 }
 
-void RHIComputePipeline::Compile(mi::RHIShader *compute_shader) {
+void RHIComputePipeline::Compile(mi::RHIShader *compute_shader, RHIPipelineRootSignature * root) {
     Reset();
     if(!CheckAndRemapShaderResources(compute_shader)) return;
     if(!CheckNoOverlappingNamesAmongDifferentTypes()) return;
     BuildPipelineResourceIndex();
     has_bindless_resources_ = compute_shader->HasBindlessResources();
-    if(!CompileRHI(compute_shader)) return;
+    if(!ValidateRootSignatureCompatibility(root)) return;
+    if(!CompileRHI(compute_shader, root)) return;
     is_valid_ = true;
 }
 
@@ -268,7 +309,7 @@ void RHIRayTracingPipeline::Reset() {
     callable_group_count_ = 0;
 }
 
-void RHIRayTracingPipeline::Compile(const RHIRayTracingPipelineDesc& desc) {
+void RHIRayTracingPipeline::Compile(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root) {
     Reset();
 
     // Check all shaders in the pipeline
@@ -351,7 +392,8 @@ void RHIRayTracingPipeline::Compile(const RHIRayTracingPipelineDesc& desc) {
     }
 
     // Compile the RHI-specific implementation
-    if (!CompileRHI(desc)) {
+    if(!ValidateRootSignatureCompatibility(root)) return;
+    if (!CompileRHI(desc, root)) {
         MI_LOG(MIInfraLogType::kWarning, "Ray tracing pipeline {} assemble failed.", GetName());
         return;
     }

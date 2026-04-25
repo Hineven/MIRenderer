@@ -170,6 +170,7 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::SetupShaderParams
         }
         ret.acceleration_structures = ret.acceleration_structures.first(num_active_acceleration_structures);
     }
+
     return ret;
 }
 
@@ -188,7 +189,7 @@ RDGShaderContext RDGCommandHelper::BindGraphicsShader (
             graphics_shader->class_registry_->name);
         return RDGShaderContext(queue, RHIBindPointType::kGraphics, false);
     }
-    queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw());
+    queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw(), graphics_shader->root_signature_->GetRootSignature());
     if (!info->vertex_buffers_.empty()) {
         for (auto e : info->vertex_buffers_) {
             auto ptr = (RDGBuffer*)*(void**)((uint8_t*)params + e.cpp_offset);
@@ -260,7 +261,7 @@ RDGShaderContext RDGCommandHelper::BindComputeShader (
         return RDGShaderContext(queue, RHIBindPointType::kCompute, false);
     }
 
-    queue.BindPipeline(compute_shader->compute_pipeline_.Raw());
+    queue.BindPipeline(compute_shader->compute_pipeline_.Raw(), compute_shader->root_signature_->GetRootSignature());
     queue.BindPipelineParameters(RHIBindPointType::kCompute, desc.value());
 
     return RDGShaderContext(queue, RHIBindPointType::kCompute, true);
@@ -279,7 +280,7 @@ RDGShaderContext RDGCommandHelper::BindRayTracingShader(RHICommandQueueGraphics 
         return RDGShaderContext(queue, RHIBindPointType::kRayTracing, false);
     }
 
-    queue.BindPipeline(ray_tracing_shader->ray_tracing_pipeline_.Raw());
+    queue.BindPipeline(ray_tracing_shader->ray_tracing_pipeline_.Raw(), ray_tracing_shader->root_signature_->GetRootSignature());
     queue.BindPipelineParameters(RHIBindPointType::kRayTracing, desc.value());
     auto sbt = ray_tracing_shader->GetSBTBuffers(queue);
     // Bind the shader binding table

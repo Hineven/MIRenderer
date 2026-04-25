@@ -13,6 +13,7 @@
 
 #include "rhi_device_shared.h"
 #include "vk_bindless.h"
+#include "vk_root_signature.h"
 #include "core/rounding.h"
 #include "vk_conversion.h"
 #include "vk_texture.h"
@@ -123,14 +124,62 @@ static auto GetResourceArraySize(T& obj) {
     else { return 0u; }
 }
 
-bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info, const RHIPipelineRootSignature * root_signature) {
+static bool BuildRemappingsFromRootSignature(
+    RHIPipelineRootSignature * root, VulkanPipelineBindingRemappings & remappings,
+    const auto & uniform_buffers, const auto & storage_buffers,
+    const auto & uavs, const auto & srvs, const auto & samplers,
+    const auto & acceleration_structures)
+{
+    auto BuildForType = [&](const auto & pipeline_resources, RHIPipelineResourceType type) -> bool {
+        auto & type_names = root->GetTypeNames((uint32_t)type);
+        for (int i = 0; i < (int)pipeline_resources.size(); i++) {
+            uint32_t param_idx = UINT32_MAX;
+            for (uint32_t j = 0; j < type_names.count; j++) {
+                if (pipeline_resources[i].name_crc == type_names.name_crcs[j]) {
+                    param_idx = j;
+                    break;
+                }
+            }
+            if (param_idx != UINT32_MAX) {
+                remappings.AddRemapping(type, i, 0, root->GetBinding(type, param_idx));
+            } else {
+                MI_LOG(MIInfraLogType::kError,
+                    "Pipeline resource '{}' (type {}) not found in root signature. "
+                    "Shader accesses a resource that does not exist in the pipeline layout.",
+                    pipeline_resources[i].name, (uint32_t)type);
+                return false;
+            }
+        }
+        return true;
+    };
+    if (!BuildForType(uniform_buffers, RHIPipelineResourceType::kUniformBuffer)) return false;
+    if (!BuildForType(storage_buffers, RHIPipelineResourceType::kStorageBuffer)) return false;
+    if (!BuildForType(uavs, RHIPipelineResourceType::kUAV)) return false;
+    if (!BuildForType(srvs, RHIPipelineResourceType::kSRV)) return false;
+    if (!BuildForType(samplers, RHIPipelineResourceType::kSampler)) return false;
+    if (!BuildForType(acceleration_structures, RHIPipelineResourceType::kAccelerationStructure)) return false;
+    return true;
+}
+
+bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline_info, RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
 
 
     // Gather pipeline layout, align descriptor bindings
-    if (!root_signature) {
+    if (root_signature) {
+        auto * vk_root = static_cast<VulkanRootSignature*>(root_signature);
+        root_signature_ = vk_root;
+        vk_pipeline_layout_ = vk_root->GetPipelineLayout();
+        vk_private_descriptor_set_layout_ = vk_root->GetDescriptorSetLayout();
+        push_constant_roundup_size_ = RoundUp(root_signature->GetPushConstantSize(), 128);
+        if (!BuildRemappingsFromRootSignature(root_signature, remappings_,
+            uniform_buffers_, storage_buffers_, uavs_, srvs_, samplers_, acceleration_structures_)) {
+            return false;
+        }
+    } else {
         std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
         std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
+        owns_layout_resources_ = true;
         // Take the first descriptor set for bindfull resources
         {
             int set_index = (int)descriptor_set_layouts.size();
@@ -172,7 +221,11 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                 descriptor_set_layouts.push_back(descriptor_set_layout);
                 vk_private_descriptor_set_layout_ = descriptor_set_layout;
             } else {
-                vk_private_descriptor_set_layout_ = nullptr;
+                auto descriptor_set_layout = device.createDescriptorSetLayout(
+                        vk::DescriptorSetLayoutCreateInfo()
+                );
+                descriptor_set_layouts.push_back(descriptor_set_layout);
+                vk_private_descriptor_set_layout_ = descriptor_set_layout;
             }
         }
         // If the pipeline contains bindless resources, take set 1 as bindless set.
@@ -199,9 +252,6 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
                         .setPPushConstantRanges(push_constant_range.size > 0
                             ? (&push_constant_range) : nullptr)
         );
-    } else {
-        // TODO
-        mi_check(false, "Not implemented");
     }
 
     // Specify creation configuration
@@ -380,10 +430,13 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
         auto result = device.createGraphicsPipeline(GetVulkanRHI()->GetPipelineCache(), pipeline_info_vk);
         if(result.result != vk::Result::eSuccess) {
             MI_LOG(MIInfraLogType::kWarning, "Failed to create graphics pipeline: %s. Error code: %s", GetName(), vk::to_string(result.result));
-            device.destroy(vk_pipeline_layout_);
-            device.destroy(vk_render_pass_);
+            if (owns_layout_resources_) {
+                device.destroy(vk_pipeline_layout_);
+                device.destroy(vk_private_descriptor_set_layout_);
+            }
             vk_pipeline_layout_ = nullptr;
-            vk_render_pass_ = nullptr;
+            vk_private_descriptor_set_layout_ = nullptr;
+            root_signature_ = nullptr;
             return false;
         }
         vk_pipeline_ = result.value;
@@ -397,13 +450,15 @@ bool VulkanGraphicsPipeline::CompileRHI(const RHIGraphicsPipelineDesc & pipeline
 void VulkanGraphicsPipeline::ResetRHI() {
     auto device = GetVulkanRHI()->GetDevice();
     device.destroy(vk_pipeline_);
-    device.destroy(vk_pipeline_layout_);
-    device.destroy(vk_render_pass_);
-    device.destroy(vk_private_descriptor_set_layout_);
+    if (owns_layout_resources_) {
+        device.destroy(vk_pipeline_layout_);
+        device.destroy(vk_private_descriptor_set_layout_);
+    }
     vk_pipeline_ = nullptr;
     vk_pipeline_layout_ = nullptr;
-    vk_render_pass_ = nullptr;
     vk_private_descriptor_set_layout_ = nullptr;
+    root_signature_ = nullptr;
+    owns_layout_resources_ = false;
     remappings_.Reset();
     push_constant_roundup_size_ = 0;
 }
@@ -423,13 +478,6 @@ void VulkanGraphicsPipeline::SetName(const std::string& name) {
             vk::ObjectType::ePipelineLayout,
             (uint64_t)(VkPipelineLayout)vk_pipeline_layout_,
             (GetName() + std::string("_layout")).c_str()
-        });
-    }
-    if (vk_render_pass_) {
-        GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
-            vk::ObjectType::eRenderPass,
-            (uint64_t)(VkRenderPass)vk_render_pass_,
-            (GetName() + std::string("_render_pass")).c_str()
         });
     }
     if (vk_private_descriptor_set_layout_) {
@@ -452,16 +500,26 @@ void *VulkanGraphicsPipeline::GetAPIHandle() const {
 
 
 // Called from parent's constructor
-bool VulkanComputePipeline::CompileRHI (RHIShader *shader, const RHIPipelineRootSignature * root_signature) {
+bool VulkanComputePipeline::CompileRHI (RHIShader *shader, RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
     auto compute_shader = static_cast<VulkanShader *>(shader);
 
     // Gather pipeline layout
-    std::vector<BindingRemappingInfo> remapping_infos;
     std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
     std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
     // Take the first descriptor set for bindfull resources
-    if (!root_signature) {
+    if (root_signature) {
+        auto * vk_root = static_cast<VulkanRootSignature*>(root_signature);
+        root_signature_ = vk_root;
+        vk_pipeline_layout_ = vk_root->GetPipelineLayout();
+        vk_private_descriptor_set_layout_ = vk_root->GetDescriptorSetLayout();
+        push_constant_roundup_size_ = RoundUp(root_signature->GetPushConstantSize(), 128);
+        if (!BuildRemappingsFromRootSignature(root_signature, remappings_,
+            uniform_buffers_, storage_buffers_, uavs_, srvs_, samplers_, acceleration_structures_)) {
+            return false;
+        }
+    } else {
+        owns_layout_resources_ = true;
         int set_index = (int)descriptor_set_layouts.size();
         int current_binding_index = 0;
 
@@ -499,40 +557,36 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader, const RHIPipelineRoot
             descriptor_set_layouts.push_back(descriptor_set_layout);
             vk_private_descriptor_set_layout_ = descriptor_set_layout;
         } else {
-            vk_private_descriptor_set_layout_ = nullptr;
+            auto descriptor_set_layout = device.createDescriptorSetLayout(
+                    vk::DescriptorSetLayoutCreateInfo()
+            );
+            descriptor_set_layouts.push_back(descriptor_set_layout);
+            vk_private_descriptor_set_layout_ = descriptor_set_layout;
         }
-    } else {
-        mi_check(false, "Not implemented");
     }
-    // If the pipeline contains bindless resources, take set 1 as bindless set.
-    if(HasBindlessResources()) {
-        // Use set 1 for bindless resources.
+    if(HasBindlessResources() && !root_signature_) {
         auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
         descriptor_set_layouts.push_back(bindless_descriptor_layout);
-        // No remapping required for bindless resources
     }
-    // Push constant
-    vk::PushConstantRange push_constant_range;
-    push_constant_range.setOffset(0);
-    push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
-    push_constant_range.setSize(push_constant_roundup_size_);
-    // TODO track push constant shader stages
-    push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
-    // Create pipeline layout
-    auto info = vk::PipelineLayoutCreateInfo{}
-        .setSetLayoutCount((int)descriptor_set_layouts.size())
-        .setPSetLayouts(descriptor_set_layouts.data());
-    if (push_constant_roundup_size_ > 0) {
-        info.setPushConstantRanges(push_constant_range);
+    if (!root_signature_) {
+        vk::PushConstantRange push_constant_range;
+        push_constant_range.setOffset(0);
+        push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
+        push_constant_range.setSize(push_constant_roundup_size_);
+        push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
+        auto info = vk::PipelineLayoutCreateInfo{}
+            .setSetLayoutCount((int)descriptor_set_layouts.size())
+            .setPSetLayouts(descriptor_set_layouts.data());
+        if (push_constant_roundup_size_ > 0) {
+            info.setPushConstantRanges(push_constant_range);
+        }
+        vk_pipeline_layout_ = device.createPipelineLayout(info);
     }
-    vk_pipeline_layout_ = device.createPipelineLayout(info);
 
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
     std::vector<VkShaderModuleKeeper> shader_module_keepers;
-    // Relocate shader resource bindings in IR, compile vk shader modules
     RelocateShaderResourceBindings(this, device, compute_shader, remappings_, shader_stages, shader_module_keepers);
 
-    // Create pipeline
     {
         auto guard = std::lock_guard(GetVulkanRHI()->GetPipelineCacheMutex());
         auto result = device.createComputePipeline(
@@ -544,7 +598,13 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader, const RHIPipelineRoot
 
         if(result.result != vk::Result::eSuccess) {
             MI_LOG(MIInfraLogType::kWarning, "Failed to create compute pipeline: %s.", GetName());
-            device.destroy(vk_pipeline_layout_);
+            if (owns_layout_resources_) {
+                device.destroy(vk_pipeline_layout_);
+                device.destroy(vk_private_descriptor_set_layout_);
+            }
+            vk_pipeline_layout_ = nullptr;
+            vk_private_descriptor_set_layout_ = nullptr;
+            root_signature_ = nullptr;
             return false;
         }
         vk_pipeline_ = result.value;
@@ -558,11 +618,15 @@ bool VulkanComputePipeline::CompileRHI (RHIShader *shader, const RHIPipelineRoot
 void VulkanComputePipeline::ResetRHI() {
     auto device = GetVulkanRHI()->GetDevice();
     device.destroy(vk_pipeline_);
-    device.destroy(vk_pipeline_layout_);
-    device.destroy(vk_private_descriptor_set_layout_);
+    if (owns_layout_resources_) {
+        device.destroy(vk_pipeline_layout_);
+        device.destroy(vk_private_descriptor_set_layout_);
+    }
     vk_pipeline_layout_ = nullptr;
     vk_pipeline_ = nullptr;
     vk_private_descriptor_set_layout_ = nullptr;
+    root_signature_ = nullptr;
+    owns_layout_resources_ = false;
     remappings_.Reset();
     push_constant_roundup_size_ = 0;
 }
@@ -677,7 +741,7 @@ void* VulkanRayTracingPipeline::GetAPIHandle() const {
     return (void*)vk_pipeline_;
 }
 
-bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc) {
+bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root_signature) {
     auto device = GetVulkanRHI()->GetDevice();
 
     // Get ray tracing properties from RHI device properties
@@ -687,81 +751,93 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
     shader_group_base_alignment_ = props.shader_group_base_alignment;
 
     // Create descriptor set layout and pipeline layout
-    // Following the same pattern as VulkanComputePipeline
-    std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
-    std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
+    if (root_signature) {
+        auto * vk_root = static_cast<VulkanRootSignature*>(root_signature);
+        root_signature_ = vk_root;
+        vk_pipeline_layout_ = vk_root->GetPipelineLayout();
+        vk_private_descriptor_set_layout_ = vk_root->GetDescriptorSetLayout();
+        push_constant_roundup_size_ = RoundUp(root_signature->GetPushConstantSize(), 128);
+        if (!BuildRemappingsFromRootSignature(root_signature, remappings_,
+            uniform_buffers_, storage_buffers_, uavs_, srvs_, samplers_, acceleration_structures_)) {
+            return false;
+        }
+    } else {
+        owns_layout_resources_ = true;
+        std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
+        std::vector<vk::DescriptorSetLayoutBinding> bindfull_bindings;
 
-    // Take the first descriptor set for bindfull resources
-    {
-        int set_index = (int)descriptor_set_layouts.size();
-        int current_binding_index = 0;
+        {
+            int set_index = (int)descriptor_set_layouts.size();
+            int current_binding_index = 0;
 
-        auto AddBindings = [&](const auto& resources, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
-            if (!resources.empty()) {
-                int i = 0;
-                for (auto const& res : resources) {
-                    // Keep behavior consistent with graphics/compute: bindfull doesn't support arrayed resources.
-                    mi_check(GetResourceArraySize(res) == 0,
-                             "Shaders must not contain any arrayed resources in bindfull mode (we do not support that).");
+            auto AddBindings = [&](const auto& resources, vk::DescriptorType type, RHIPipelineResourceType rhi_type) {
+                if (!resources.empty()) {
+                    int i = 0;
+                    for (auto const& res : resources) {
+                        mi_check(GetResourceArraySize(res) == 0,
+                                 "Shaders must not contain any arrayed resources in bindfull mode (we do not support that).");
 
-                    bindfull_bindings.emplace_back()
-                        .setBinding(current_binding_index)
-                        .setDescriptorType(type)
-                        .setDescriptorCount(std::max(GetResourceArraySize(res), 1u))
-                        .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
+                        bindfull_bindings.emplace_back()
+                            .setBinding(current_binding_index)
+                            .setDescriptorType(type)
+                            .setDescriptorCount(std::max(GetResourceArraySize(res), 1u))
+                            .setStageFlags(GetVulkanShaderStageFlags(res.frequency_bits));
 
-                    remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index);
-                    ++i;
-                    ++current_binding_index;
+                        remappings_.AddRemapping(rhi_type, i, set_index, current_binding_index);
+                        ++i;
+                        ++current_binding_index;
+                    }
                 }
+            };
+
+            AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
+            AddBindings(storage_buffers_, vk::DescriptorType::eStorageBuffer, RHIPipelineResourceType::kStorageBuffer);
+            AddBindings(uavs_, vk::DescriptorType::eStorageImage, RHIPipelineResourceType::kUAV);
+            AddBindings(srvs_, vk::DescriptorType::eSampledImage, RHIPipelineResourceType::kSRV);
+            AddBindings(samplers_, vk::DescriptorType::eSampler, RHIPipelineResourceType::kSampler);
+            AddBindings(acceleration_structures_, vk::DescriptorType::eAccelerationStructureKHR, RHIPipelineResourceType::kAccelerationStructure);
+
+            if(!immutable_samplers_.empty()) {
+                mi_assert(false, "Immutable samplers are not implemented currently.");
             }
-        };
 
-        AddBindings(uniform_buffers_, vk::DescriptorType::eUniformBuffer, RHIPipelineResourceType::kUniformBuffer);
-        AddBindings(storage_buffers_, vk::DescriptorType::eStorageBuffer, RHIPipelineResourceType::kStorageBuffer);
-        AddBindings(uavs_, vk::DescriptorType::eStorageImage, RHIPipelineResourceType::kUAV);
-        AddBindings(srvs_, vk::DescriptorType::eSampledImage, RHIPipelineResourceType::kSRV);
-        AddBindings(samplers_, vk::DescriptorType::eSampler, RHIPipelineResourceType::kSampler);
-        AddBindings(acceleration_structures_, vk::DescriptorType::eAccelerationStructureKHR, RHIPipelineResourceType::kAccelerationStructure);
-
-        if(!immutable_samplers_.empty()) {
-            mi_assert(false, "Immutable samplers are not implemented currently.");
+            if(!bindfull_bindings.empty()) {
+                auto descriptor_set_layout = device.createDescriptorSetLayout(
+                    vk::DescriptorSetLayoutCreateInfo()
+                        .setBindingCount((int)bindfull_bindings.size())
+                        .setPBindings(bindfull_bindings.data())
+                );
+                descriptor_set_layouts.push_back(descriptor_set_layout);
+                vk_private_descriptor_set_layout_ = descriptor_set_layout;
+            } else {
+                auto descriptor_set_layout = device.createDescriptorSetLayout(
+                    vk::DescriptorSetLayoutCreateInfo()
+                );
+                descriptor_set_layouts.push_back(descriptor_set_layout);
+                vk_private_descriptor_set_layout_ = descriptor_set_layout;
+            }
         }
 
-        if(!bindfull_bindings.empty()) {
-            auto descriptor_set_layout = device.createDescriptorSetLayout(
-                vk::DescriptorSetLayoutCreateInfo()
-                    .setBindingCount((int)bindfull_bindings.size())
-                    .setPBindings(bindfull_bindings.data())
-            );
-            descriptor_set_layouts.push_back(descriptor_set_layout);
-            vk_private_descriptor_set_layout_ = descriptor_set_layout;
-        } else {
-            vk_private_descriptor_set_layout_ = nullptr;
+        if(HasBindlessResources()) {
+            auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
+            descriptor_set_layouts.push_back(bindless_descriptor_layout);
         }
-    }
 
-    // If the pipeline contains bindless resources, take set 1 as bindless set
-    if(HasBindlessResources()) {
-        auto bindless_descriptor_layout = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSetLayout();
-        descriptor_set_layouts.push_back(bindless_descriptor_layout);
-    }
-
-    // Push constant
-    vk::PushConstantRange push_constant_range;
-    push_constant_range.setOffset(0);
-    push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
-    push_constant_range.setSize(push_constant_roundup_size_);
-    push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
-
-    // Create pipeline layout
-    auto info = vk::PipelineLayoutCreateInfo{}
-        .setSetLayoutCount((int)descriptor_set_layouts.size())
-        .setPSetLayouts(descriptor_set_layouts.data());
-    if (push_constant_roundup_size_ > 0) {
-        info.setPushConstantRanges(push_constant_range);
-    }
-    vk_pipeline_layout_ = device.createPipelineLayout(info);
+        {
+            vk::PushConstantRange push_constant_range;
+            push_constant_range.setOffset(0);
+            push_constant_roundup_size_ = RoundUp(command_constant_.size() > 0 ? command_constant_[0].size : 0, 128);
+            push_constant_range.setSize(push_constant_roundup_size_);
+            push_constant_range.setStageFlags(vk::ShaderStageFlagBits::eAll);
+            auto info = vk::PipelineLayoutCreateInfo{}
+                .setSetLayoutCount((int)descriptor_set_layouts.size())
+                .setPSetLayouts(descriptor_set_layouts.data());
+            if (push_constant_roundup_size_ > 0) {
+                info.setPushConstantRanges(push_constant_range);
+            }
+            vk_pipeline_layout_ = device.createPipelineLayout(info);
+        }
+    } // end else (non-cached path)
 
     // Create shader stages with resource binding relocation
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
@@ -830,8 +906,13 @@ bool VulkanRayTracingPipeline::CompileRHI(const RHIRayTracingPipelineDesc& desc)
         auto result = device.createRayTracingPipelineKHR(nullptr, nullptr, pipeline_info);
         if (result.result != vk::Result::eSuccess) {
             MI_LOG(MIInfraLogType::kWarning, "Failed to create Vulkan ray tracing pipeline: %s", vk::to_string(result.result));
-            device.destroy(vk_pipeline_layout_);
+            if (owns_layout_resources_) {
+                device.destroy(vk_pipeline_layout_);
+                device.destroy(vk_private_descriptor_set_layout_);
+            }
             vk_pipeline_layout_ = nullptr;
+            vk_private_descriptor_set_layout_ = nullptr;
+            root_signature_ = nullptr;
             return false;
         }
         vk_pipeline_ = result.value;
@@ -866,16 +947,23 @@ void VulkanRayTracingPipeline::ResetRHI() {
         vk_pipeline_ = nullptr;
     }
 
-    if (vk_pipeline_layout_) {
-        device.destroyPipelineLayout(vk_pipeline_layout_);
-        vk_pipeline_layout_ = nullptr;
-    }
+    if (owns_layout_resources_) {
+        if (vk_pipeline_layout_) {
+            device.destroyPipelineLayout(vk_pipeline_layout_);
+            vk_pipeline_layout_ = nullptr;
+        }
 
-    if (vk_private_descriptor_set_layout_) {
-        device.destroyDescriptorSetLayout(vk_private_descriptor_set_layout_);
+        if (vk_private_descriptor_set_layout_) {
+            device.destroyDescriptorSetLayout(vk_private_descriptor_set_layout_);
+            vk_private_descriptor_set_layout_ = nullptr;
+        }
+    } else {
+        vk_pipeline_layout_ = nullptr;
         vk_private_descriptor_set_layout_ = nullptr;
     }
 
+    root_signature_ = nullptr;
+    owns_layout_resources_ = false;
     remappings_.Reset();
     shader_group_handle_size_ = 0;
     shader_group_handle_alignment_ = 0;

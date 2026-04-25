@@ -13,6 +13,7 @@
 #include "rhi/rhi_fwd.h"
 #include "rhi/rhi_desc.h"
 #include "rhi/rhi_types.h"
+#include "rhi/rhi_root_signature.h"
 #include "core/pixel_format.h"
 #include "core/util/queue.h"
 #include "rhi_cmd.h"
@@ -114,11 +115,13 @@ public:
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                        RHIShaderIRType ir_type, std::span<const std::byte> ir) = 0;
 
-    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name = "unnamed") = 0;
-    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name = "unnamed") = 0;
+    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name = "unnamed", RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name = "unnamed", RHIPipelineRootSignature * root = nullptr) = 0;
     virtual RHIRayTracingPipelineRef CreateRayTracingPipeline (
-        const RHIRayTracingPipelineDesc & desc, const char * name = "unnamed"
+        const RHIRayTracingPipelineDesc & desc, const char * name = "unnamed", RHIPipelineRootSignature * root = nullptr
     ) = 0;
+
+    virtual RHIPipelineRootSignatureRef CreateRootSignature (const RHIPipelineRootSignatureDesc & desc) = 0;
 
     // Reset the pipeline cache if the cache size exceeds the given limit (bytes).
     virtual void ResetPipelineCache (uint32_t size_limit = 0) = 0;

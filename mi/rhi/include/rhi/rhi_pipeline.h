@@ -66,6 +66,10 @@ protected:
     // Set up pipeline_resource_index_ from resource lists
     void BuildPipelineResourceIndex ();
 
+    // Validate that the pipeline's reflected resources are compatible with the given root signature.
+    // Returns true if compatible (or if root is null), false and logs errors otherwise.
+    bool ValidateRootSignatureCompatibility (RHIPipelineRootSignature * root) const;
+
     // We're calling this function inside the base class destructor, so
     // it can not be pure virtual.
     virtual void ResetRHI () {};
@@ -123,7 +127,7 @@ class RHIGraphicsPipeline : public RHIPipeline {
 public:
 
     virtual void Reset () override;
-    void Compile (const RHIGraphicsPipelineDesc &) ;
+    void Compile (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root = nullptr) ;
 
     FORCEINLINE const std::vector<ShaderVertexInputDesc> & GetVertexInputDesc() const {
         return vertex_inputs_;
@@ -140,7 +144,7 @@ protected:
 
     FORCEINLINE RHIGraphicsPipeline (): RHIPipeline(RHIPipelineType::kGraphics) {}
 
-    virtual bool CompileRHI (const RHIGraphicsPipelineDesc &, const RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual bool CompileRHI (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root = nullptr) = 0;
 
     bool depth_test_enable_ {false};
 
@@ -150,16 +154,16 @@ protected:
 
 class RHIComputePipeline : public RHIPipeline {
 public:
-    void Compile (RHIShader * compute_shader) ;
+    void Compile (RHIShader * compute_shader, RHIPipelineRootSignature * root = nullptr) ;
 protected:
     FORCEINLINE RHIComputePipeline() : RHIPipeline(RHIPipelineType::kCompute) {}
     virtual ~RHIComputePipeline() = default;
-    virtual bool CompileRHI (RHIShader * compute_shader, const RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual bool CompileRHI (RHIShader * compute_shader, RHIPipelineRootSignature * root = nullptr) = 0;
 };
 
 class RHIRayTracingPipeline : public RHIPipeline {
 public:
-    void Compile(const RHIRayTracingPipelineDesc& desc);
+    void Compile(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root = nullptr);
 
     // Get shader group count
     uint32_t GetShaderGroupCount() const { return shader_group_count_; }
@@ -194,7 +198,7 @@ public:
 protected:
     FORCEINLINE RHIRayTracingPipeline() : RHIPipeline(RHIPipelineType::kRayTracing) {}
     virtual ~RHIRayTracingPipeline() = default;
-    virtual bool CompileRHI(const RHIRayTracingPipelineDesc& desc) = 0;
+    virtual bool CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root = nullptr) = 0;
 
     uint32_t shader_group_count_ = 0;
     uint32_t max_recursion_depth_ = 1;

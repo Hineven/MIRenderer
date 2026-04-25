@@ -45,6 +45,7 @@ void VulkanCommandExecutor::CommandQueueState::ResetStates() {
         point.bound_descriptor_dirty = true;
         point.bound_pipeline_dirty = true;
         point.parameter_table = {};
+        point.descriptor_reuse_cache_ = {};
         point.bind_point_type = (RHIBindPointType) i;
     }
 }
@@ -143,6 +144,7 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
         point.bound_descriptor_dirty = true;
         point.bound_pipeline_dirty = true;
         point.parameter_table = {};
+        point.descriptor_reuse_cache_ = {};
     }
     // Reset the temporary allocator
     allocator.Reset();

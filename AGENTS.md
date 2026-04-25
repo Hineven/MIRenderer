@@ -10,29 +10,11 @@ The project uses Chinese & English as primary documentation languages. All comme
 
 - **Language**: C++26 (requires GCC 14+ or MSVC)
 - **Build System**: CMake 3.27+
+- **External Dependency**: vcpkg(major) + submodules(assist) 
 - **Graphics API**: Vulkan 1.4.300+
 - **Shader Language**: HLSL (compiled to SPIR-V via DXC)
 - **GPU Requirements**: NVIDIA RTX cards only
 - **License**: The Unlicense (public domain)
-
-### Key Dependencies (via vcpkg)
-
-- `glm`: Math library
-- `glfw3`: Window creation and input handling
-- `imgui[glfw-binding]`: Immediate mode GUI
-- `stb`: Image loading
-- `gtest`: Unit testing
-- `cpptrace`: Stack trace printing
-- `xxhash`: Fast hashing
-- `cgltf`: glTF model loading
-- `happly`: PLY point cloud loading
-- `nlohmann-json`: JSON parsing
-- `openvdb`: Volumetric data loading
-- `tinyexr`: EXR image loading
-- `vulkan-memory-allocator`: GPU memory allocation
-- `directx-dxc`: HLSL to SPIR-V compiler
-- `argparse`: Command line parsing
-- `cppzmq`: ZeroMQ bindings for Python RPC
 
 ## Project Structure
 

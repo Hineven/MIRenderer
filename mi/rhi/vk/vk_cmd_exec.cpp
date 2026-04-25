@@ -11,9 +11,11 @@
 #include "vk_buffer.h"
 #include "vk_texture.h"
 #include "vk_pipeline.h"
+#include "vk_root_signature.h"
 #include "vk_conversion.h"
 #include "vk_bindless.h"
 #include "core/util/debug_prof.h"
+#include "core/util/unordered_hashing.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -823,6 +825,7 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
         buffer_info.offset = ubo.buffer.offset;
         buffer_info.range = ubo.buffer.size;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot);
+        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set)
@@ -832,8 +835,6 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
                 .setDescriptorType(vk::DescriptorType::eUniformBuffer)
                 .setPBufferInfo(&buffer_info);
             writes[write_index++] = write;
-        } else {
-            MI_WARN("Uniform buffer slot {} is not present in bound pipeline {}.", ubo.slot, bound_pipeline->GetName());
         }
     }
     for(auto storage : parameter_table.storages) {
@@ -844,17 +845,16 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
         buffer_info.offset = storage.buffer.offset;
         buffer_info.range = buffer_ptr ? storage.buffer.size : VK_WHOLE_SIZE;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
+        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
                     .setDstSet(descriptor_set)
-                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot).binding)
+                    .setDstBinding(destination.binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
                     .setDescriptorType(vk::DescriptorType::eStorageBuffer)
                     .setPBufferInfo(&buffer_info);
             writes[write_index++] = write;
-        } else {
-            MI_WARN("Storage buffer slot {} is not present in bound pipeline {}.", storage.slot, bound_pipeline->GetName());
         }
     }
     for(auto uav : parameter_table.uavs) {
@@ -867,17 +867,16 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
         ) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eGeneral;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
+        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
         if (UINT_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
                     .setDstSet(descriptor_set)
-                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot).binding)
+                    .setDstBinding(destination.binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
                     .setDescriptorType(vk::DescriptorType::eStorageImage)
                     .setPImageInfo(&image_info);
             writes[write_index++] = write;
-        } else {
-            MI_WARN("UAV slot {} is not present in bound pipeline {}.", uav.slot, bound_pipeline->GetName());
         }
     }
     for(auto srv : parameter_table.srvs) {
@@ -888,17 +887,16 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
         else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer, srv.mip_level) : nullptr;
         image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
+        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
                     .setDstSet(descriptor_set)
-                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot).binding)
+                    .setDstBinding(destination.binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
                     .setDescriptorType(vk::DescriptorType::eSampledImage)
                     .setPImageInfo(&image_info);
             writes[write_index++] = write;
-        } else {
-            MI_WARN("SRV slot {} is not present in bound pipeline {}.", srv.slot, bound_pipeline->GetName());
         }
     }
     for(auto sampler : parameter_table.samplers) {
@@ -906,27 +904,27 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
         assert(sampler.resource && "Sampler must not be null.");
         image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot);
+        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
                     .setDstSet(descriptor_set)
-                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot).binding)
+                    .setDstBinding(destination.binding)
                     .setDstArrayElement(0)
                     .setDescriptorCount(1)
                     .setDescriptorType(vk::DescriptorType::eSampler)
                     .setPImageInfo(&image_info);
             writes[write_index++] = write;
-        } else {
-            MI_WARN("Sampler slot {} is not present in bound pipeline {}.", sampler.slot, bound_pipeline->GetName());
         }
     }
     for(auto acc : parameter_table.acceleration_structures) {
         auto& write_khr = *state.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
         auto  p_ac = state.Allocate<vk::AccelerationStructureKHR>();
         auto destination = remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot);
+        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
                     .setDstSet(descriptor_set)
-                    .setDstBinding(remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot).binding)
+                    .setDstBinding(destination.binding)
                     .setDescriptorCount(1)
                     .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
                     .setPNext(&write_khr);
@@ -935,8 +933,6 @@ VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrit
             *p_ac = rhi_acc ? rhi_acc->GetAccelerationStructure() : nullptr;
             write_khr.pAccelerationStructures = p_ac;
             writes[write_index++] = write;
-        } else {
-            MI_WARN("Acceleration structure slot {} is not present in bound pipeline {}.", acc.slot, bound_pipeline->GetName());
         }
     }
 
@@ -965,6 +961,7 @@ void VulkanCommandExecutor::FlushBindPointState(
     vk::PipelineLayout vk_pipeline_layout {};
     vk::Pipeline vk_pipeline {};
     vk::DescriptorSetLayout vk_set_layout {};
+    VulkanRootSignature * root_sig = nullptr;
 
     if (point_t == RHIBindPointType::kGraphics) {
         auto g_pipeline = (VulkanGraphicsPipeline*)point.bound_pipeline;
@@ -972,33 +969,77 @@ void VulkanCommandExecutor::FlushBindPointState(
         vk_set_layout = g_pipeline->GetPrivateDescriptorSetLayout();
         vk_pipeline = g_pipeline->GetPipeline();
         vk_point = vk::PipelineBindPoint::eGraphics;
+        root_sig = g_pipeline->GetRootSignature();
     } else if (point_t == RHIBindPointType::kCompute) {
         auto c_pipeline = (VulkanComputePipeline*)point.bound_pipeline;
         vk_pipeline_layout = c_pipeline->GetPipelineLayout();
         vk_set_layout = c_pipeline->GetPrivateDescriptorSetLayout();
         vk_pipeline = c_pipeline->GetPipeline();
         vk_point = vk::PipelineBindPoint::eCompute;
+        root_sig = c_pipeline->GetRootSignature();
     } else {
         auto rt_pipeline = (VulkanRayTracingPipeline*)point.bound_pipeline;
         vk_point = vk::PipelineBindPoint::eRayTracingKHR;
         vk_pipeline_layout = rt_pipeline->GetPipelineLayout();
         vk_set_layout = rt_pipeline->GetPrivateDescriptorSetLayout();
         vk_pipeline = rt_pipeline->GetPipeline();
-        vk_point = vk::PipelineBindPoint::eRayTracingKHR;
+        root_sig = rt_pipeline->GetRootSignature();
     }
 
-    // Rebind pipeline if dirty
     bool should_bind_bindless_set = false;
     if (point.bound_pipeline_dirty) {
         point.bound_descriptor_dirty = true;
         state.cmd.bindPipeline(vk_point, vk_pipeline);
-        // Bind the bindless descriptor set upon pipeline binding (at set = 1)
         if (point.bound_pipeline->HasBindlessResources()) {
-            should_bind_bindless_set = true; // Batch this binding command after private descriptor set allocation
+            should_bind_bindless_set = true;
         }
     }
 
-    // Allocate descriptor set for new pipeline or modified descriptors
+    size_t param_hash = 0;
+    if (root_sig) {
+        ZobristSetHashing hasher;
+        auto & table = point.parameter_table;
+        auto HashBufferDesc = [&hasher](const RHIPipelineParameterBufferDesc & d) {
+            hasher.Add(&d.buffer.buffer, sizeof(d.buffer.buffer));
+            hasher.Add(&d.buffer.offset, sizeof(d.buffer.offset));
+            hasher.Add(&d.buffer.size, sizeof(d.buffer.size));
+            hasher.Add(&d.slot, sizeof(d.slot));
+        };
+        auto HashTextureDesc = [&hasher](const RHIPipelineParameterTextureDesc & d) {
+            hasher.Add(&d.texture, sizeof(d.texture));
+            hasher.Add(&d.slot, sizeof(d.slot));
+            hasher.Add(&d.array_layer, sizeof(d.array_layer));
+            hasher.Add(&d.mip_level, sizeof(d.mip_level));
+        };
+        auto HashResourceDesc = [&hasher](const RHIPipelineParameterResourceDesc & d) {
+            hasher.Add(&d.resource, sizeof(d.resource));
+            hasher.Add(&d.slot, sizeof(d.slot));
+        };
+        for (auto & u : table.uniforms) { HashBufferDesc(u); }
+        for (auto & s : table.storages) { HashBufferDesc(s); }
+        for (auto & u : table.uavs) { HashTextureDesc(u); }
+        for (auto & s : table.srvs) { HashTextureDesc(s); }
+        for (auto & s : table.samplers) { HashResourceDesc(s); }
+        for (auto & a : table.acceleration_structures) { HashResourceDesc(a); }
+        param_hash = hasher.GetResult();
+    }
+
+    if (root_sig
+        && point.descriptor_reuse_cache_.root_signature == root_sig
+        && param_hash == point.descriptor_reuse_cache_.param_hash
+        && point.bound_private_descriptor_set)
+    {
+        point.bound_pipeline_dirty = false;
+        point.bound_descriptor_dirty = false;
+        if(!point.parameter_table.push_constants.empty()) {
+            state.cmd.pushConstants(vk_pipeline_layout, use_shaders,
+                0, (uint32_t)point.parameter_table.push_constants.size() * sizeof(uint32_t),
+                point.parameter_table.push_constants.data());
+            point.parameter_table.push_constants = {};
+        }
+        return;
+    }
+
     if(point.bound_descriptor_dirty && vk_set_layout) {
         auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
                 vk::DescriptorSetAllocateInfo()
@@ -1048,6 +1089,12 @@ void VulkanCommandExecutor::FlushBindPointState(
                                          bindless_set, {});
         }
     }
+
+    if (root_sig) {
+        point.descriptor_reuse_cache_.root_signature = root_sig;
+        point.descriptor_reuse_cache_.param_hash = param_hash;
+    }
+
     point.bound_pipeline_dirty = false;
     point.bound_descriptor_dirty = false;
 

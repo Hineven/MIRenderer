@@ -61,13 +61,21 @@ struct RHIBindlessSupportInfo {
     // uint32_t descriptor_buffer_offset_alignment;
 };
 
-// A concept similar to D3D12 root signature / Vulkan pipeline layout
-// It groups all resources bound to a pipeline. As many pipelines may share
-// a portion of the same root signature / pipeline layout, to reduce redundant
-// resource binding setups.
-struct RHIPipelineRootSignature {
-    std::span<uint32_t> names_crc;
-    std::span<RHIPipelineResourceType> resources;
+// Describes the layout of a root signature (pipeline layout) to be created via RHI::CreateRootSignature.
+// This is the RHI-level contract: it specifies how many resources of each type the pipeline expects,
+// their name CRCs for binding remapping, whether bindless resources are used, and the push constant size.
+// The RHI backend (e.g. Vulkan) uses this to create the underlying pipeline layout and descriptor set layouts.
+// Multiple pipelines can share the same root signature if they declare compatible resource layouts.
+struct RHIPipelineRootSignatureDesc {
+    uint32_t push_constant_size {};
+
+    uint32_t num_resources[(uint32_t)RHIPipelineResourceType::kMax] {};
+
+    struct TypeNames {
+        const uint32_t * name_crcs {};
+        uint32_t count {};
+    };
+    TypeNames type_names[(uint32_t)RHIPipelineResourceType::kMax] {};
 };
 
 struct RHIVertexInputBindingDesc {

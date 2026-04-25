@@ -12,12 +12,14 @@
 #include "rhi/rhi_pipeline.h"
 #include "vk_constants.h"
 #include "vk_texture.h"
+#include <array>
 
 MI_NAMESPACE_BEGIN
 
 class VulkanBuffer;
 class VulkanGraphicsPipeline;
 class VulkanComputePipeline;
+class VulkanRootSignature;
 
 // Command executor translating recoreded commands into Vulkan API calls
 // Public functions are only invoked by the RHI thread
@@ -144,6 +146,12 @@ protected:
                 bool Merge (const RHIBindPipelineParametersDesc * desc);
                 void Clear ();
             } parameter_table;
+
+            struct DescriptorSetCacheEntry {
+                VulkanRootSignature * root_signature {};
+                size_t param_hash {};
+            };
+            DescriptorSetCacheEntry descriptor_reuse_cache_ {};
 
             // Install bind point states, Clear parameter table and launch descriptor writes.
             // Note: Only image layout transition barriers are placed automatically.

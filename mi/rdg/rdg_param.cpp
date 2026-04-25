@@ -6,6 +6,7 @@
 #include <ranges>
 #include "rdg/rdg_param.h"
 #include "rdg/rdg_global_memory_collector.h"
+#include "core/crc.h"
 
 MI_NAMESPACE_BEGIN
 

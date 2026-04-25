@@ -18,6 +18,7 @@
 #include "core/infra.h"
 #include "core/pixel_format.h"
 #include "rhi/rhi_param.h"
+#include "rhi/rhi_desc.h"
 #include "rhi/rhi_fwd.h"
 #include "rdg/rdg_base.h"
 #include "rdg/rdg_global_memory_collector.h"

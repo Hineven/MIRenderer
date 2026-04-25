@@ -26,6 +26,7 @@ set(SOURCE_FILES
     debug_prof.cpp
     command_line.cpp
     platform.cpp
+    unordered_hashing.cpp
 )
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})

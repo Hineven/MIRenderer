@@ -13,6 +13,8 @@
 
 MI_NAMESPACE_BEGIN
 
+class VulkanRootSignature;
+
 struct VulkanPipelineBindingRemappings {
     struct RemappedDestination {
         uint32_t set;
@@ -44,7 +46,7 @@ public:
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
     FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
-    FORCEINLINE vk::RenderPass GetRenderPass() const { return vk_render_pass_; }
+    FORCEINLINE VulkanRootSignature * GetRootSignature() const { return root_signature_; }
 
     FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
@@ -55,22 +57,19 @@ public:
 
 protected:
 
-    bool CompileRHI (const RHIGraphicsPipelineDesc &, const RHIPipelineRootSignature * root = nullptr) override;
+    bool CompileRHI (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root = nullptr) override;
     void ResetRHI () override;
 
     vk::Pipeline vk_pipeline_;
     vk::PipelineLayout vk_pipeline_layout_;
     vk::DescriptorSetLayout vk_private_descriptor_set_layout_;
-    vk::RenderPass vk_render_pass_;
 
-    // The remapping info for the "bindfull" resources
-    // map slot number (index of its kind) to the set and binding number
     VulkanPipelineBindingRemappings remappings_;
-    // Bindless resources are directly mapped via their identity indices within the bindless table uniform buffer.
-    // so no need to keep track of their mappings.
 
-    // Aligned size of the push constant range
     uint32_t push_constant_roundup_size_ {};
+
+    VulkanRootSignature * root_signature_ {};
+    bool owns_layout_resources_ {};
 };
 
 class VulkanComputePipeline : public RHIComputePipeline {
@@ -80,6 +79,7 @@ public:
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
     FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
+    FORCEINLINE VulkanRootSignature * GetRootSignature() const { return root_signature_; }
 
     FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
@@ -90,7 +90,7 @@ public:
 
 protected:
 
-    bool CompileRHI (RHIShader * , const RHIPipelineRootSignature * root = nullptr) override;
+    bool CompileRHI (RHIShader * , RHIPipelineRootSignature * root = nullptr) override;
     void ResetRHI () override;
 
     struct BindingRemappingInfo {
@@ -103,16 +103,14 @@ protected:
     vk::Pipeline vk_pipeline_;
     vk::PipelineLayout vk_pipeline_layout_;
 
-    // The private descriptor set layout for this pipeline
     vk::DescriptorSetLayout vk_private_descriptor_set_layout_;
 
-    // The remapping info for the "bindfull" resources
     VulkanPipelineBindingRemappings remappings_;
-    // Bindless resources are directly mapped via their identity indices within the bindless table uniform buffer.
-    // so no need to keep track of their mappings.
 
-    // Aligned size of the push constant range
     uint32_t push_constant_roundup_size_ {};
+
+    VulkanRootSignature * root_signature_ {};
+    bool owns_layout_resources_ {};
 };
 
 class VulkanRayTracingPipeline : public RHIRayTracingPipeline {
@@ -122,6 +120,7 @@ public:
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
     FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
+    FORCEINLINE VulkanRootSignature * GetRootSignature() const { return root_signature_; }
 
     FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
 
@@ -143,7 +142,7 @@ public:
     void* GetAPIHandle() const override;
 
 protected:
-    bool CompileRHI(const RHIRayTracingPipelineDesc& desc) override;
+    bool CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root = nullptr) override;
     void ResetRHI() override;
 
 private:
@@ -162,11 +161,12 @@ private:
     uint32_t hit_sbt_stride_ = 0;
     uint32_t callable_sbt_stride_ = 0;
 
-    // The remapping info for the "bindfull" resources
     VulkanPipelineBindingRemappings remappings_;
 
-    // Aligned size of the push constant range
     uint32_t push_constant_roundup_size_ = 0;
+
+    VulkanRootSignature * root_signature_ {};
+    bool owns_layout_resources_ {};
 };
 
 MI_NAMESPACE_END

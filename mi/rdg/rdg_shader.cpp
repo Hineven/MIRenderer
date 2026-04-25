@@ -19,6 +19,7 @@
 #include "core/task.h"
 #include "rhi/rhi_buffer.h"
 #include "rdg/rdg_global_memory_collector.h"
+#include "rdg/rdg_root_signature_cache.h"
 
 // Shader model 6.8
 #define SHADER_MODEL_SUFFIX "_6_8"
@@ -668,6 +669,8 @@ void RDGShader::UpdateOwnerForRHIResources() {
     if (graphics_pipeline_) graphics_pipeline_->UpdateOwner();
     if (compute_pipeline_) compute_pipeline_->UpdateOwner();
     if (ray_tracing_pipeline_) ray_tracing_pipeline_->UpdateOwner();
+
+    if (root_signature_) root_signature_->GetRootSignature()->UpdateOwner();
 }
 
 
@@ -1041,6 +1044,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     graphics_pipeline_ = {};
     compute_pipeline_ = {};
     ray_tracing_pipeline_ = {};
+    root_signature_ = {};
     shaders_ = {};
     // Clear SBT related resources
     sbt_sections_ = {};
@@ -1057,18 +1061,25 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     }
     if (!RecompileShaders(source_code, ini)) return false;
 
-
+    auto param_info = class_registry_->GetShaderParamStructInfo();
     auto pipeline_config = class_registry_->GetShaderPipelineConfig();
 
-    // Assemble the pipeline
+    auto & root_sig_cache = RDGShaderRootSignatureCache::Get();
+
     if (class_registry_->type == RHIPipelineType::kCompute) {
+        uint32_t push_constant_size = 0;
+        if (shaders_.compute->HasCommandConstant()) {
+            push_constant_size = shaders_.compute->GetCommandConstantDesc().size;
+        }
+        auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
         auto pipeline = RHI::Get().CreateComputePipeline(
-            shaders_.compute.Raw(), class_registry_->name.c_str()
+            shaders_.compute.Raw(), class_registry_->name.c_str(), root_sig_keeper->GetRootSignature()
         );
         if (!pipeline) {
             MI_LOG(MIInfraLogType::kError, "Failed to create compute pipeline");
             return false;
         }
+        root_signature_ = root_sig_keeper;
         compute_pipeline_ = pipeline;
     }
     if (class_registry_->type == RHIPipelineType::kGraphics) {
@@ -1141,13 +1152,22 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             }
         }
         desc.rasterization_discard = pipeline_config.rasterization_discard;
+        uint32_t push_constant_size = 0;
+        for (auto * s : {shaders_.vertex.Raw(), shaders_.fragment.Raw(),
+                         shaders_.geometry.Raw(), shaders_.task.Raw(), shaders_.mesh.Raw()}) {
+            if (s && s->HasCommandConstant()) {
+                push_constant_size = std::max(push_constant_size, s->GetCommandConstantDesc().size);
+            }
+        }
+        auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
-                desc, class_registry_->name.c_str()
+                desc, class_registry_->name.c_str(), root_sig_keeper->GetRootSignature()
         );
         if (!pipeline) {
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create graphics pipeline", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
+        root_signature_ = root_sig_keeper;
         graphics_pipeline_ = pipeline;
     }
     if (class_registry_->type == RHIPipelineType::kRayTracing) {
@@ -1185,11 +1205,19 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         }
 
         desc.max_recursion_depth = pipeline_config.ray_tracing.max_recursion_depth;
-        auto pipeline = RHI::Get().CreateRayTracingPipeline(desc);
+        uint32_t push_constant_size = 0;
+        for (auto* s : desc.shaders) {
+            if (s && s->HasCommandConstant()) {
+                push_constant_size = std::max(push_constant_size, s->GetCommandConstantDesc().size);
+            }
+        }
+        auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
+        auto pipeline = RHI::Get().CreateRayTracingPipeline(desc, class_registry_->name.c_str(), root_sig_keeper->GetRootSignature());
         if (!pipeline) {
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create ray tracing pipeline", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
+        root_signature_ = root_sig_keeper;
         ray_tracing_pipeline_ = pipeline;
 
         // Build SBT
@@ -1462,6 +1490,8 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
 
     TaskGraph::Get().WaitForTasks(tasks);
 
+    RDGShaderRootSignatureCache::Get().FlushUnused();
+
     for (auto &shader: shaders_to_recompile) {
         shader->UpdateOwnerForRHIResources();
     }
@@ -1507,6 +1537,7 @@ void RDGShaderLibrary::RegisterShaderClass(
 
 void RDGShaderLibrary::ReleaseCompiledShaders() {
     cached_shaders_.clear();
+    RDGShaderRootSignatureCache::Get().Clear();
 }
 
 

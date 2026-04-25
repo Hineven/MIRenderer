@@ -57,6 +57,7 @@ set(SOURCE_FILES
     rhi_as.cpp
     rhi.cpp
         vk/vk_pipeline.cpp
+        vk/vk_root_signature.cpp
         vk/vk_cmd_exec.cpp
         vk/vk_cmd_exec_common.cpp
         vk/vk_cmd_exec_rt.cpp
@@ -84,6 +85,7 @@ set(HEADER_FILES
         include/rhi/rhi_texture.h
         include/rhi/rhi_buffer.h
         include/rhi/rhi_param.h
+        include/rhi/rhi_root_signature.h
 )
 
 add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})
