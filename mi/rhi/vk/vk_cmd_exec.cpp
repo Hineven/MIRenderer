@@ -1024,20 +1024,33 @@ void VulkanCommandExecutor::FlushBindPointState(
         param_hash = hasher.GetResult();
     }
 
-    if (root_sig
-        && point.descriptor_reuse_cache_.root_signature == root_sig
-        && param_hash == point.descriptor_reuse_cache_.param_hash
-        && point.bound_private_descriptor_set)
-    {
-        point.bound_pipeline_dirty = false;
-        point.bound_descriptor_dirty = false;
-        if(!point.parameter_table.push_constants.empty()) {
-            state.cmd.pushConstants(vk_pipeline_layout, use_shaders,
-                0, (uint32_t)point.parameter_table.push_constants.size() * sizeof(uint32_t),
-                point.parameter_table.push_constants.data());
-            point.parameter_table.push_constants = {};
+    // Shortcut: checking for descriptor set cache hit.
+    if (root_sig) {
+        auto cache_it = point.descriptor_cache_.find({root_sig, param_hash});
+        if (cache_it != point.descriptor_cache_.end()) {
+            auto cached_ds = cache_it->second;
+            bool ds_changed = (point.bound_private_descriptor_set != cached_ds);
+            point.bound_private_descriptor_set = cached_ds;
+            point.bound_pipeline_dirty = false;
+            point.bound_descriptor_dirty = false;
+            if (ds_changed) {
+                if (point.bound_pipeline->HasBindlessResources()) {
+                    auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
+                    state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                                 {cached_ds, bindless_set}, {});
+                } else {
+                    state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
+                                                 {cached_ds}, {});
+                }
+            }
+            if(!point.parameter_table.push_constants.empty()) {
+                state.cmd.pushConstants(vk_pipeline_layout, use_shaders,
+                    0, (uint32_t)point.parameter_table.push_constants.size() * sizeof(uint32_t),
+                    point.parameter_table.push_constants.data());
+                point.parameter_table.push_constants = {};
+            }
+            return;
         }
-        return;
     }
 
     if(point.bound_descriptor_dirty && vk_set_layout) {
@@ -1090,9 +1103,8 @@ void VulkanCommandExecutor::FlushBindPointState(
         }
     }
 
-    if (root_sig) {
-        point.descriptor_reuse_cache_.root_signature = root_sig;
-        point.descriptor_reuse_cache_.param_hash = param_hash;
+    if (root_sig && point.bound_private_descriptor_set) {
+        point.descriptor_cache_[{root_sig, param_hash}] = point.bound_private_descriptor_set;
     }
 
     point.bound_pipeline_dirty = false;

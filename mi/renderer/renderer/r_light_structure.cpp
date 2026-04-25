@@ -463,8 +463,6 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
             continue;
         }
 
-        mesh_instance->UpdateLights_Async(device_allocator_.Raw(), queue);
-
         auto * mli_alloc = mesh_instance->GetMeshLightInstanceBufferAllocation();
         if (!mli_alloc) {
             continue;

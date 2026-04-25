@@ -147,11 +147,21 @@ protected:
                 void Clear ();
             } parameter_table;
 
-            struct DescriptorSetCacheEntry {
+            struct DescriptorSetCacheKey {
                 VulkanRootSignature * root_signature {};
                 size_t param_hash {};
+                FORCEINLINE bool operator==(const DescriptorSetCacheKey & o) const {
+                    return root_signature == o.root_signature && param_hash == o.param_hash;
+                }
             };
-            DescriptorSetCacheEntry descriptor_reuse_cache_ {};
+            struct DescriptorSetCacheKeyHash {
+                FORCEINLINE size_t operator()(const DescriptorSetCacheKey & k) const {
+                    size_t h = std::hash<void*>()(k.root_signature);
+                    h ^= k.param_hash + 0x9e3779b9 + (h << 6) + (h >> 2);
+                    return h;
+                }
+            };
+            std::unordered_map<DescriptorSetCacheKey, vk::DescriptorSet, DescriptorSetCacheKeyHash> descriptor_cache_;
 
             // Install bind point states, Clear parameter table and launch descriptor writes.
             // Note: Only image layout transition barriers are placed automatically.
