@@ -102,33 +102,63 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
     builder.AddPass<ImGuiRenderShader>({}, shader, params, [
         index_raw = index_buffer.Raw(), draw_cmds, params, shader
     ](RDGPass * pass, RHICommandQueueGraphics & cmd) {
-        if (auto ctx = RDGCommandHelper::BindGraphicsShader<ImGuiRenderShader>(cmd, pass, shader, params)) {
-            cmd.BeginRendering();
-            int vertex_offset = 0;
-            int index_offset = 0;
-            for (auto draw_cmd : draw_cmds) {
-                {
-                    // Bind sampled texture every time before draw
-                    auto texture = (RHITexture*)draw_cmd.GetTexID();
-                    RHIBindPipelineParametersDesc desc {};
-                    if (texture) {
-                        auto texture_descs = cmd.Allocate<RHIPipelineParameterTextureDesc[]>(1);
-                        texture_descs[0] = {texture, 0};
-                        desc.srvs = {texture_descs, 1};
-                    }
-                    cmd.BindPipelineParameters(RHIBindPointType::kGraphics, desc);
-                }
-                cmd.SetScissor(
-                    (int)draw_cmd.ClipRect.x, (int)draw_cmd.ClipRect.y,
-                    (uint32_t)(draw_cmd.ClipRect.z - draw_cmd.ClipRect.x),
-                    (uint32_t)(draw_cmd.ClipRect.w - draw_cmd.ClipRect.y)
-                );
-                cmd.DrawIndexed(index_raw->GetRHI(), draw_cmd.ElemCount, 1,
-                               index_offset, vertex_offset, 0, RHIIndexType::kUint16);
-                index_offset += draw_cmd.ElemCount;
-                vertex_offset += draw_cmd.UserCallbackDataOffset;
+        auto render_pass_info = &ImGuiRenderShader::GetShaderParamStructInfo()->render_pass_info_;
+        auto ub_slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>(0);
+        auto srv_slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>(0);
+        auto sampler_slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>(0);
+
+        RHITexture * last_texture = nullptr;
+
+        uint32_t tid = UINT32_MAX;
+        bool rendering = false;
+        int vertex_offset = 0;
+        int index_offset = 0;
+        for (auto draw_cmd : draw_cmds) {
+            auto texture = (RHITexture*)draw_cmd.GetTexID();
+            if (!rendering) {
+                params->ImGuiTexture = nullptr;
+                tid = RDGCommandHelper::CreateParameterTable(cmd, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(cmd, shader, tid, render_pass_info, params);
+                rendering = true;
+                last_texture = nullptr;
             }
-            cmd.EndRendering();
+            if (texture != last_texture) {
+                RHIBindPipelineParametersDesc desc {};
+                auto ub_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(params->UB);
+                if (ub_ptr.buffer && ub_slot != UINT32_MAX) {
+                    auto ub_descs = cmd.Allocate<RHIPipelineParameterBufferDesc[]>(1);
+                    auto span = ub_ptr.buffer->GetRHI();
+                    span.offset += ub_ptr.offset;
+                    ub_descs[0] = {span, ub_slot};
+                    desc.uniforms = {ub_descs, 1};
+                }
+                if (params->ImGuiSampler && sampler_slot != UINT32_MAX) {
+                    auto sampler_descs = cmd.Allocate<RHIPipelineParameterResourceDesc[]>(1);
+                    sampler_descs[0] = {params->ImGuiSampler, sampler_slot};
+                    desc.samplers = {sampler_descs, 1};
+                }
+                if (texture && srv_slot != UINT32_MAX) {
+                    auto srv_descs = cmd.Allocate<RHIPipelineParameterTextureDesc[]>(1);
+                    srv_descs[0] = {texture, srv_slot};
+                    desc.srvs = {srv_descs, 1};
+                }
+                tid =  RDGCommandHelper::AllocateParameterTableId();
+                cmd.CreateSignatureParameterTable(tid, shader->GetRootSignature(), desc);
+                cmd.BindSignatureParameterTable(tid, RHIBindPointType::kGraphics);
+                last_texture = texture;
+            }
+            cmd.SetScissor(
+                (int)draw_cmd.ClipRect.x, (int)draw_cmd.ClipRect.y,
+                (uint32_t)(draw_cmd.ClipRect.z - draw_cmd.ClipRect.x),
+                (uint32_t)(draw_cmd.ClipRect.w - draw_cmd.ClipRect.y)
+            );
+            cmd.DrawIndexed(index_raw->GetRHI(), draw_cmd.ElemCount, 1,
+                           index_offset, vertex_offset, 0, RHIIndexType::kUint16);
+            index_offset += draw_cmd.ElemCount;
+            vertex_offset += draw_cmd.UserCallbackDataOffset;
+        }
+        if (rendering) {
+            RDGCommandHelper::EndGraphicsRender(cmd);
         }
     })->AddBufferH(index_buffer.Raw(), RHIGPUAccessFlagBits::kIndexRead);
 }

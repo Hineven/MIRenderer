@@ -146,42 +146,37 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
     auto raster_pass = builder.AddPass<DrawShadowMapShader>({}, shader, params,
         [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-            if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawShadowMapShader>(
-                queue, pass, shader, params, true
-            )) {
-                queue.BeginRendering();
-                queue.SetCullMode(RHICullModeType::kBack);
-                RHIBuffer * last_vertex_buffer {};
-                RHIBuffer * last_index_buffer {};
-                RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
-                for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
-                    auto & hdr = data.draw_invocation_sorting_headers[i];
-                    if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
-                        if (i > 0) {
-                            // Batch submit previous commands sharing the same vertex & index buffer settings.
-                            auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                            queue.DrawIndexedIndirect(
-                                data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
-                                cmd_span,  i - first_cmd
-                            );
-                            cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
-                        }
-                        last_vertex_buffer = hdr.vertex_buffer;
-                        last_index_buffer = hdr.index_buffer;
-                        queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
+            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+            RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
+                &DrawShadowMapShader::GetShaderParamStructInfo()->render_pass_info_, params);
+            queue.SetCullMode(RHICullModeType::kBack);
+            RHIBuffer * last_vertex_buffer {};
+            RHIBuffer * last_index_buffer {};
+            RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
+            for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
+                auto & hdr = data.draw_invocation_sorting_headers[i];
+                if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
+                    if (i > 0) {
+                        auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                        queue.DrawIndexedIndirect(
+                            data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                            cmd_span,  i - first_cmd
+                        );
+                        cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                     }
+                    last_vertex_buffer = hdr.vertex_buffer;
+                    last_index_buffer = hdr.index_buffer;
+                    queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
                 }
-                // Submit last batch if not empty
-                if (!data.draw_indirect_commands.empty()) {
-                    int i = (int)data.draw_indirect_commands.size();
-                    // Batch submit previous commands sharing the same vertex & index buffer settings.
-                    auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                    queue.DrawIndexedIndirect(
-                        data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
-                        cmd_span,  i - first_cmd);
-                }
-                queue.EndRendering();
             }
+            if (!data.draw_indirect_commands.empty()) {
+                int i = (int)data.draw_indirect_commands.size();
+                auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                queue.DrawIndexedIndirect(
+                    data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                    cmd_span,  i - first_cmd);
+            }
+            RDGCommandHelper::EndGraphicsRender(queue);
         }
     );
 

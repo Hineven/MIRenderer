@@ -44,10 +44,9 @@ void VulkanCommandExecutor::CommandQueueState::ResetStates() {
         point.bound_pipeline = nullptr;
         point.bound_descriptor_dirty = true;
         point.bound_pipeline_dirty = true;
-        point.parameter_table = {};
-        point.descriptor_cache_.clear();
         point.bind_point_type = (RHIBindPointType) i;
     }
+    slot_table_.clear();
 }
 
 static vk::DescriptorPool CreateFrameTemporaryDescriptorPool() {
@@ -143,9 +142,8 @@ void VulkanCommandExecutor::CommandQueueState::Clear(bool return_resources_to_sy
         point.bound_pipeline = nullptr;
         point.bound_descriptor_dirty = true;
         point.bound_pipeline_dirty = true;
-        point.parameter_table = {};
-        point.descriptor_cache_.clear();
     }
+    slot_table_.clear();
     // Reset the temporary allocator
     allocator.Reset();
     // This should always be true as a frame should end with FrameEnd(), which contains a submit.

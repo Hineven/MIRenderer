@@ -13,6 +13,37 @@
 #include "rhi/rhi_texture.h"
 #include "rhi/rhi_param.h"
 #include "rhi/rhi_bindless.h"
+#include <algorithm>
+
+static mi::RHIPipelineRootSignatureRef CreateRootSignatureFromShaders(std::initializer_list<mi::RHIShader*> shaders) {
+    using namespace mi;
+    RHIPipelineRootSignatureDesc desc {};
+    std::vector<std::vector<uint32_t>> crc_storage((uint32_t)RHIPipelineResourceType::kMax);
+    for (auto * shader : shaders) {
+        if (!shader) continue;
+        auto Gather = [&] <typename T> (const std::vector<T> & descs, RHIPipelineResourceType type) {
+            for (auto & d : descs) {
+                auto & s = crc_storage[(uint32_t)type];
+                if (std::find(s.begin(), s.end(), d.name_crc) == s.end()) {
+                    s.push_back(d.name_crc);
+                }
+            }
+        };
+        Gather(shader->GetUniformBufferDesc(), RHIPipelineResourceType::kUniformBuffer);
+        Gather(shader->GetStorageBufferDesc(), RHIPipelineResourceType::kStorageBuffer);
+        Gather(shader->GetUAVDesc(), RHIPipelineResourceType::kUAV);
+        Gather(shader->GetSRVDesc(), RHIPipelineResourceType::kSRV);
+        Gather(shader->GetSamplerDesc(), RHIPipelineResourceType::kSampler);
+        Gather(shader->GetAccelerationStructureDesc(), RHIPipelineResourceType::kAccelerationStructure);
+    }
+    for (uint32_t t = 0; t < (uint32_t)RHIPipelineResourceType::kMax; t++) {
+        desc.num_resources[t] = (uint32_t)crc_storage[t].size();
+        desc.type_names[t].count = (uint32_t)crc_storage[t].size();
+        if (!crc_storage[t].empty())
+            desc.type_names[t].name_crcs = crc_storage[t].data();
+    }
+    return RHI::Get().CreateRootSignature(desc);
+}
 #include "rhi/rhi_bindlesskeeper.h"
 
 #include <exception>
@@ -107,7 +138,8 @@ TEST(RHITest, RHIRayTracedTriangle) {
                     },
                     .max_recursion_depth = 1,
             };
-            auto pipeline = RHI::Get().CreateRayTracingPipeline(pipeline_desc);
+            auto pipeline = RHI::Get().CreateRayTracingPipeline(pipeline_desc, "RHIRayTracedTriangle",
+                CreateRootSignatureFromShaders({raygen_shader.Raw(), closest_hit_shader.Raw(), miss_shader.Raw()}));
             EXPECT_TRUE(pipeline);
             EXPECT_TRUE(pipeline->IsValid());
 
@@ -422,7 +454,8 @@ TEST(RHITest, RHIRayTracedTriangle) {
             accel_structures[0].resource = tlas.Raw();
             accel_structures[0].slot = pipeline->ReflectResourceSlot("TLAS").slot_index;
             params.acceleration_structures = {accel_structures, 1};
-            queue.BindPipelineParameters(RHIBindPointType::kRayTracing, params);
+            queue.CreateSignatureParameterTable(0, pipeline->GetRootSignature(), params);
+            queue.BindSignatureParameterTable(0, RHIBindPointType::kRayTracing);
             queue.DispatchRays(1280, 720, 1);
 
             queue.TextureBarrier(

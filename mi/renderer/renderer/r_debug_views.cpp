@@ -240,11 +240,11 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         auto cmd = Helpers::SpawnDrawIndirectCommand(builder, 2, view->debug_buffers_.traced_ray_count.Raw());
         builder.AddPass<VisualizeTracedRaysShader>({}, shader, params,
             [shader, params, dcmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            if (auto ctx = RDGCommandHelper::BindGraphicsShader<VisualizeTracedRaysShader>(queue, pass, shader, params)) {
-                queue.BeginRendering();
-                queue.DrawIndirect(dcmd->GetRHI(), 1);
-                queue.EndRendering();
-            }
+            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+            RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
+                &VisualizeTracedRaysShader::GetShaderParamStructInfo()->render_pass_info_, params);
+            queue.DrawIndirect(dcmd->GetRHI(), 1);
+            RDGCommandHelper::EndGraphicsRender(queue);
         })->AddBufferH(cmd.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
     // Visualize world cache

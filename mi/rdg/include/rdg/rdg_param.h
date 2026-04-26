@@ -103,20 +103,24 @@ struct RDGShaderParameterLocation {
     uint32_t size;
 };
 
-struct RDGShaderParamStructAndSizeInfo: public RDGShaderParamStructInfo {
-    // Some other data to support fast reflection checking and parameter filling
+struct RDGShaderSignatureParamInfo : public RDGShaderParamStructInfo {
     std::span<RDGShaderParameterLocation> storage_buffers_;
     std::span<RDGShaderParameterLocation> uniform_buffers_;
     std::span<RDGShaderParameterLocation> uavs_;
     std::span<RDGShaderParameterLocation> srvs_;
     std::span<RDGShaderParameterLocation> samplers_;
     std::span<RDGShaderParameterLocation> acceleration_structures_;
-    // Fast reflection for graphics pipelines
+};
+
+struct RDGShaderRenderPassInfo {
     std::span<RDGShaderParameterLocation> vertex_buffers_;
     std::span<RDGShaderParameterLocation> vertex_attributes_;
     RDGShaderParameterLocation index_buffer_;
     std::span<RDGShaderParameterLocation> render_targets_;
-    RDGShaderParameterLocation dispatch_command_;
+};
+
+struct RDGShaderParamStructAndSizeInfo : public RDGShaderSignatureParamInfo {
+    RDGShaderRenderPassInfo render_pass_info_;
 };
 
 // Map type strings to C++ metadata and types

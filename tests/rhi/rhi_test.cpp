@@ -14,6 +14,7 @@
 #include "rhi/rhi_param.h"
 
 #include <exception>
+#include <algorithm>
 #include <cpptrace/from_current.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -22,6 +23,37 @@
 
 #include "stb_image.h"
 #include "stb_image_write.h"
+#include <algorithm>
+
+static mi::RHIPipelineRootSignatureRef CreateRootSignatureFromShaders(std::initializer_list<mi::RHIShader*> shaders) {
+    using namespace mi;
+    RHIPipelineRootSignatureDesc desc {};
+    std::vector<std::vector<uint32_t>> crc_storage((uint32_t)RHIPipelineResourceType::kMax);
+    for (auto * shader : shaders) {
+        if (!shader) continue;
+        auto Gather = [&] <typename T> (const std::vector<T> & descs, RHIPipelineResourceType type) {
+            for (auto & d : descs) {
+                auto & s = crc_storage[(uint32_t)type];
+                if (std::find(s.begin(), s.end(), d.name_crc) == s.end()) {
+                    s.push_back(d.name_crc);
+                }
+            }
+        };
+        Gather(shader->GetUniformBufferDesc(), RHIPipelineResourceType::kUniformBuffer);
+        Gather(shader->GetStorageBufferDesc(), RHIPipelineResourceType::kStorageBuffer);
+        Gather(shader->GetUAVDesc(), RHIPipelineResourceType::kUAV);
+        Gather(shader->GetSRVDesc(), RHIPipelineResourceType::kSRV);
+        Gather(shader->GetSamplerDesc(), RHIPipelineResourceType::kSampler);
+        Gather(shader->GetAccelerationStructureDesc(), RHIPipelineResourceType::kAccelerationStructure);
+    }
+    for (uint32_t t = 0; t < (uint32_t)RHIPipelineResourceType::kMax; t++) {
+        desc.num_resources[t] = (uint32_t)crc_storage[t].size();
+        desc.type_names[t].count = (uint32_t)crc_storage[t].size();
+        if (!crc_storage[t].empty())
+            desc.type_names[t].name_crcs = crc_storage[t].data();
+    }
+    return RHI::Get().CreateRootSignature(desc);
+}
 
 TEST(RHITest, RHIStart) {
     using namespace mi;
@@ -278,11 +310,10 @@ TEST(RHITest, RHITriangle) {
                             .format = PixelFormatType::kD32_FLOAT
                     },
             };
-            auto pipeline = RHI::Get().CreateGraphicsPipeline(pipeline_desc);
+            auto pipeline = RHI::Get().CreateGraphicsPipeline(pipeline_desc, "RHITriangle",
+                CreateRootSignatureFromShaders({v_shader.Raw(), f_shader.Raw()}));
             EXPECT_TRUE(pipeline);
             EXPECT_TRUE(pipeline->IsValid());
-
-            // Render texture
             auto texture0 = RHI::Get().CreateTexture(
                     RHITextureType::k2D, RHITextureDimensions{1280, 720}, PixelFormatType::kR16G16B16A16_FLOAT,
                     RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer
@@ -389,7 +420,8 @@ TEST(RHITest, RHITriangle) {
             auto storage_binding = pipeline->ReflectResourceSlot("someBuffer");
             storages[0].slot = storage_binding.slot_index;
             params.storages = {storages, 1};
-            queue.BindPipelineParameters(RHIBindPointType::kGraphics, params);
+            queue.CreateSignatureParameterTable(0, pipeline->GetRootSignature(), params);
+            queue.BindSignatureParameterTable(0, RHIBindPointType::kGraphics);
             queue.BeginRendering();
             queue.Draw(3, 1);
             queue.EndRendering();
@@ -622,7 +654,8 @@ TEST(RHITest, FragmentUint123Outputs) {
             }
         };
 
-        auto pipeline = RHI::Get().CreateGraphicsPipeline(pipeline_desc);
+        auto pipeline = RHI::Get().CreateGraphicsPipeline(pipeline_desc, "RHIMRT",
+            CreateRootSignatureFromShaders({v_shader.Raw(), f_shader.Raw()}));
         EXPECT_TRUE(pipeline);
         EXPECT_TRUE(pipeline->IsValid());
 

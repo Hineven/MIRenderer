@@ -183,10 +183,11 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortScanShader>(
                 {}, scan_shader, params,
                 [scan_shader, params, max_num_groups, count_buffer, cmd = dispatch_command.Raw()](RDGPass *pass, RHICommandQueueGraphics &queue) {
+                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, scan_shader, params);
                     if (!count_buffer) {
-                        RDGCommandHelper::Dispatch<RadixSortScanShader>(queue, pass, scan_shader, params, max_num_groups, 1, 1);
+                        RDGCommandHelper::Dispatch(queue, scan_shader, tid, max_num_groups, 1, 1);
                     } else {
-                        RDGCommandHelper::DispatchIndirect<RadixSortScanShader>(queue, pass, scan_shader, params, cmd);
+                        RDGCommandHelper::DispatchIndirect(queue, scan_shader, tid, cmd);
                     }
                 }
             )->AddBufferH(dispatch_command.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead)->SetName(radix_sort_pass_name + "_Scan");
@@ -200,7 +201,8 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortSumShader>(
             {}, sum_shader, params,
                 [sum_shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    RDGCommandHelper::Dispatch<RadixSortSumShader>(queue, pass, sum_shader, params, kBinsPerPass, 1, 1);
+                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, sum_shader, params);
+                    RDGCommandHelper::Dispatch(queue, sum_shader, tid, kBinsPerPass, 1, 1);
                 }
             )->SetName(radix_sort_pass_name + "_Sum");
         }
@@ -214,7 +216,8 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortSumBinsShader>(
             {}, sum_bins_shader, params,
                 [sum_bins_shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    RDGCommandHelper::Dispatch<RadixSortSumBinsShader>(queue, pass, sum_bins_shader, params, 1, 1, 1);
+                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, sum_bins_shader, params);
+                    RDGCommandHelper::Dispatch(queue, sum_bins_shader, tid, 1, 1, 1);
                 }
             )->SetName(radix_sort_pass_name + "_SumSums");
         }
@@ -232,10 +235,11 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortScatterShader>(
                 {}, scatter_shader, params,
                 [scatter_shader, params, max_num_groups, count_buffer, cmd = dispatch_command.Raw()](RDGPass *pass, RHICommandQueueGraphics &queue) {
+                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, scatter_shader, params);
                     if (!count_buffer) {
-                        RDGCommandHelper::Dispatch<RadixSortScatterShader>(queue, pass, scatter_shader, params, (uint32_t)max_num_groups, 1, 1);
+                        RDGCommandHelper::Dispatch(queue, scatter_shader, tid, (uint32_t)max_num_groups, 1, 1);
                     } else {
-                        RDGCommandHelper::DispatchIndirect<RadixSortScatterShader>(queue, pass, scatter_shader, params, cmd);
+                        RDGCommandHelper::DispatchIndirect(queue, scatter_shader, tid, cmd);
                     }
                 }
             )->AddBufferH(dispatch_command.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead)->SetName(radix_sort_pass_name + "_Scatter");

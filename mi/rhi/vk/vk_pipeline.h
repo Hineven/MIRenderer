@@ -10,34 +10,11 @@
 #include "vk_rhi.h"
 #include "rhi/rhi_pipeline.h"
 #include "rhi/rhi_desc.h"
+#include "vk_root_signature.h"
 
 MI_NAMESPACE_BEGIN
 
-class VulkanRootSignature;
-
-struct VulkanPipelineBindingRemappings {
-    struct RemappedDestination {
-        uint32_t set;
-        uint32_t binding;
-    };
-    FORCEINLINE void AddRemapping (RHIPipelineResourceType type, uint32_t src_slot, uint32_t dst_set, uint32_t dst_binding) {
-        auto & list = lists[(uint32_t)type];
-        list.insert(list.begin() + src_slot, {dst_set, dst_binding});
-    }
-    FORCEINLINE void Reset () {
-        for (auto & list : lists) {
-            list.clear();
-        }
-    }
-    FORCEINLINE RemappedDestination GetDestination (RHIPipelineResourceType type, uint32_t src_slot) const {
-        if (lists[(uint32_t)type].size() > src_slot) {
-            return lists[(uint32_t)type][src_slot];
-        }
-        return {UINT32_MAX, UINT32_MAX}; // Invalid destination
-    }
-
-    std::vector<RemappedDestination> lists[(uint32_t)RHIPipelineResourceType::kMax];
-};
+class RHIPipelineRootSignature;
 
 class VulkanGraphicsPipeline : public RHIGraphicsPipeline {
 public:
@@ -45,10 +22,7 @@ public:
 
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
-    FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
-    FORCEINLINE VulkanRootSignature * GetRootSignature() const { return root_signature_; }
-
-    FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
+    RHIPipelineRootSignature * GetRootSignature() const override { return root_signature_; }
 
     void SetName(const std::string &name) override;
     ~VulkanGraphicsPipeline();
@@ -57,19 +31,16 @@ public:
 
 protected:
 
-    bool CompileRHI (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root = nullptr) override;
+    bool CompileRHI (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root) override;
     void ResetRHI () override;
 
     vk::Pipeline vk_pipeline_;
     vk::PipelineLayout vk_pipeline_layout_;
     vk::DescriptorSetLayout vk_private_descriptor_set_layout_;
 
-    VulkanPipelineBindingRemappings remappings_;
-
     uint32_t push_constant_roundup_size_ {};
 
     VulkanRootSignature * root_signature_ {};
-    bool owns_layout_resources_ {};
 };
 
 class VulkanComputePipeline : public RHIComputePipeline {
@@ -78,10 +49,7 @@ public:
 
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
-    FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
-    FORCEINLINE VulkanRootSignature * GetRootSignature() const { return root_signature_; }
-
-    FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
+    RHIPipelineRootSignature * GetRootSignature() const override { return root_signature_; }
 
     void SetName (const std::string & name) override;
     ~VulkanComputePipeline();
@@ -90,7 +58,7 @@ public:
 
 protected:
 
-    bool CompileRHI (RHIShader * , RHIPipelineRootSignature * root = nullptr) override;
+    bool CompileRHI (RHIShader * , RHIPipelineRootSignature * root) override;
     void ResetRHI () override;
 
     struct BindingRemappingInfo {
@@ -105,12 +73,9 @@ protected:
 
     vk::DescriptorSetLayout vk_private_descriptor_set_layout_;
 
-    VulkanPipelineBindingRemappings remappings_;
-
     uint32_t push_constant_roundup_size_ {};
 
     VulkanRootSignature * root_signature_ {};
-    bool owns_layout_resources_ {};
 };
 
 class VulkanRayTracingPipeline : public RHIRayTracingPipeline {
@@ -119,10 +84,7 @@ public:
 
     FORCEINLINE vk::Pipeline GetPipeline() const { return vk_pipeline_; }
     FORCEINLINE vk::PipelineLayout GetPipelineLayout() const { return vk_pipeline_layout_; }
-    FORCEINLINE vk::DescriptorSetLayout GetPrivateDescriptorSetLayout() const { return vk_private_descriptor_set_layout_; }
-    FORCEINLINE VulkanRootSignature * GetRootSignature() const { return root_signature_; }
-
-    FORCEINLINE const VulkanPipelineBindingRemappings & GetRemappings() const { return remappings_; }
+    RHIPipelineRootSignature * GetRootSignature() const override { return root_signature_; }
 
     // RHIRayTracingPipeline interface
     uint32_t GetShaderGroupHandleSize() const override;
@@ -142,7 +104,7 @@ public:
     void* GetAPIHandle() const override;
 
 protected:
-    bool CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root = nullptr) override;
+    bool CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root) override;
     void ResetRHI() override;
 
 private:
@@ -161,12 +123,9 @@ private:
     uint32_t hit_sbt_stride_ = 0;
     uint32_t callable_sbt_stride_ = 0;
 
-    VulkanPipelineBindingRemappings remappings_;
-
     uint32_t push_constant_roundup_size_ = 0;
 
     VulkanRootSignature * root_signature_ {};
-    bool owns_layout_resources_ {};
 };
 
 MI_NAMESPACE_END

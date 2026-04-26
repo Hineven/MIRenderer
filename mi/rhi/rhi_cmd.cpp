@@ -177,19 +177,19 @@ void RHICommandBindComputePipeline::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindComputePipeline(&cmd, this);
 }
 
-void RHICommandBindPipelineParameters::Execute(RHICommandQueueBase &cmd) {
-    MI_RHI_CMD_STAT_INC(RHICmdStatId::kBindPipelineParameters);
-    RHI::Get().GetCommandExecutor()->RHIBindPipelineParameters(&cmd, this);
+void RHICommandCreateSignatureParameterTable::Execute(RHICommandQueueBase &cmd) {
+    MI_RHI_CMD_STAT_INC(RHICmdStatId::kCreateSignatureParameterTable);
+    RHI::Get().GetCommandExecutor()->RHICreateSignatureParameterTable(&cmd, this);
+}
+
+void RHICommandBindSignatureParameterTable::Execute(RHICommandQueueBase &cmd) {
+    MI_RHI_CMD_STAT_INC(RHICmdStatId::kBindSignatureParameterTable);
+    RHI::Get().GetCommandExecutor()->RHIBindSignatureParameterTable(&cmd, this);
 }
 
 void RHICommandBindVertexBuffer::Execute(RHICommandQueueBase &cmd) {
     MI_RHI_CMD_STAT_INC(RHICmdStatId::kBindVertexBuffer);
     RHI::Get().GetCommandExecutor()->RHIBindVertexBuffer(&cmd, this);
-}
-
-void RHICommandClearBoundState::Execute(RHICommandQueueBase &cmd) {
-    MI_RHI_CMD_STAT_INC(RHICmdStatId::kClearBoundState);
-    RHI::Get().GetCommandExecutor()->RHIClearBoundState(&cmd, this);
 }
 
 void RHICommandMemoryBarrier::Execute(RHICommandQueueBase &cmd) {

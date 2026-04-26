@@ -329,23 +329,22 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     // Check fragment outputs (RenderTarget vs fragment output reflected from SPIR-V, check format compatibility)
     // (Names can be different, but the location and format must match)
     if (shader->GetFragmentOutputDesc().size()) {
-        if (!info.render_targets_.size()) {
+        if (!info.render_pass_info_.render_targets_.size()) {
             MI_LOG(MIInfraLogType::kWarning, "Shader {} has fragment outputs but no render target is specified in C++.", class_registry_->source_location);
             passed_checking = false;
         } else {
-            if (info.render_targets_.size() < shader->GetFragmentOutputDesc().size()) {
+            if (info.render_pass_info_.render_targets_.size() < shader->GetFragmentOutputDesc().size()) {
                 MI_LOG(MIInfraLogType::kWarning,
                     "Shader {}:{} has {} fragment outputs but only {} is specified in C++, which is insufficient.",
-                    class_registry_->source_location, entry, shader->GetFragmentOutputDesc().size(), info.render_targets_.size());
+                    class_registry_->source_location, entry, shader->GetFragmentOutputDesc().size(), info.render_pass_info_.render_targets_.size());
                 passed_checking = false;
             }
         }
     }
-    // C++ side should be sufficient, but not necessarily 1-to-1 match. We adjust the compilation of pipeline based on the shader reflected outputs.
     for (const auto & [i, output] : std::views::enumerate(shader->GetFragmentOutputDesc())) {
         int index = (int)i;
-        if (index < info.render_targets_.size()) {
-            auto & member = *info.render_targets_[index].info;
+        if (index < info.render_pass_info_.render_targets_.size()) {
+            auto & member = *info.render_pass_info_.render_targets_[index].info;
             if (member.type != RHIParamType::kRenderTarget) {
                 MI_LOG(MIInfraLogType::kWarning,
                     "Shader '{}:{}' defines '{}' as fragment output but parameter has incompatible type."
@@ -436,7 +435,6 @@ std::vector<std::string> RDGShader::GetBaseDefaultMacros() {
 }
 
 void RDGShader::RemapResourceIndexToRHIResourceSlots() {
-    // Clear the previous bindings
     for (auto & e : cpp_resource_index_to_slot_) e.clear();
     assert(IsValid() && "Only with an assembled pipeline can we remap bindings");
     auto & info = *class_registry_->GetShaderParamStructInfo();
@@ -451,79 +449,62 @@ void RDGShader::RemapResourceIndexToRHIResourceSlots() {
         assert(false);
         return;
     }
-    auto FindSlotIndex = [&] <typename T> (const std::string & name, T & list) {
+    auto HasResource = [&] <typename T> (const std::string & name, T & list) {
         for (int i = 0; i < (int)list.size(); ++i) {
-            if (list[i].name == name) {
-                return i;
-            }
+            if (list[i].name == name) return true;
         }
-        return -1;
+        return false;
     };
-    // Remap uniform buffers
+    // The slot value is the root signature sequential index, which equals the C++ parameter
+    // declaration order within each type. The root signature descriptor set layout is built
+    // from the same C++ param struct info, so cpp_param_index == root_sig_sequential_index.
+    // We only need to check if the shader actually uses each resource.
     {
-        auto & ub = pipeline->GetUniformBufferDesc();
+        auto & list = pipeline->GetUniformBufferDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.uniform_buffers_)) {
-            auto index = FindSlotIndex(e.info->name, ub);
-            if (index != -1) {
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][i] = index;
-            }
-            // Potentially there are UBs declared in cpp but not present in shaders. Simply omit that case.
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][i] = (uint32_t)i;
         }
     }
-    // Remap storage buffers
     {
-        auto & sb = pipeline->GetStorageBufferDesc();
+        auto & list = pipeline->GetStorageBufferDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.storage_buffers_)) {
-            auto index = FindSlotIndex(e.info->name, sb);
-            if (index != -1) {
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer][i] = index;
-            }
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer][i] = (uint32_t)i;
         }
     }
-    // Remap uavs
     {
-        auto & uavs = pipeline->GetUAVDesc();
+        auto & list = pipeline->GetUAVDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture].resize(info.uavs_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.uavs_)) {
-            auto index = FindSlotIndex(e.info->name, uavs);
-            if (index != -1) {
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture][i] = index;
-            }
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture][i] = (uint32_t)i;
         }
     }
-    // Remap srvs
     {
-        auto & srvs = pipeline->GetSRVDesc();
+        auto & list = pipeline->GetSRVDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture].resize(info.srvs_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.srvs_)) {
-            auto index = FindSlotIndex(e.info->name, srvs);
-            if (index != -1) {
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture][i] = index;
-            }
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture][i] = (uint32_t)i;
         }
     }
-    // Remap samplers
     {
-        auto & samplers = pipeline->GetSamplerDesc();
+        auto & list = pipeline->GetSamplerDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler].resize(info.samplers_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.samplers_)) {
-            auto index = FindSlotIndex(e.info->name, samplers);
-            if (index != -1) {
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler][i] = index;
-            }
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler][i] = (uint32_t)i;
         }
     }
-    // Remap as
     {
-        auto & as = pipeline->GetAccelerationStructureDesc();
+        auto & list = pipeline->GetAccelerationStructureDesc();
         cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure].resize(info.acceleration_structures_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.acceleration_structures_)) {
-            auto index = FindSlotIndex(e.info->name, as);
-            if (index != -1) {
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = index;
-            }
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = (uint32_t)i;
         }
     }
 }
@@ -1114,8 +1095,8 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         if (shaders_.fragment) {
             auto fragment_outputs = shaders_.fragment->GetFragmentOutputDesc();
             // Gather color attachment configurations from shader param struct info
-            if (!params->render_targets_.empty()) {
-                for (auto & e : params->render_targets_) {
+            if (!params->render_pass_info_.render_targets_.empty()) {
+                for (auto & e : params->render_pass_info_.render_targets_) {
                     auto cpp_target_index = e.info->cpp_extra.render_targets_info->target_index;
                     if (cpp_target_index != UINT32_MAX) {
                         if (fragment_outputs.size() <= cpp_target_index) {

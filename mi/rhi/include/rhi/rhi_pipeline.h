@@ -36,14 +36,12 @@ public:
         return is_valid_;
     }
 
-    // Get the resource slot by the name of the resource reflected from shaders
     RHIPipelineResourceSlot ReflectResourceSlot (std::string_view name) const;
     RHIPipelineResourceSlot ReflectResourceSlot (uint32_t name_crc) const;
 
     bool HasResourceSlot (std::string_view name) const;
     bool HasResourceSlot (uint32_t name_crc) const;
 
-    // If the pipeline has access to bindless resources, this function will return true.
     FORCEINLINE bool HasBindlessResources() const {return has_bindless_resources_;}
 
     inline virtual ~RHIPipeline() {Reset();}
@@ -53,6 +51,8 @@ public:
     FORCEINLINE RHIPipelineType GetType() const {
         return type_;
     }
+
+    virtual RHIPipelineRootSignature * GetRootSignature() const = 0;
 
 protected:
     FORCEINLINE RHIPipeline(RHIPipelineType type) : type_(type) {}
@@ -127,7 +127,7 @@ class RHIGraphicsPipeline : public RHIPipeline {
 public:
 
     virtual void Reset () override;
-    void Compile (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root = nullptr) ;
+    void Compile (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root) ;
 
     FORCEINLINE const std::vector<ShaderVertexInputDesc> & GetVertexInputDesc() const {
         return vertex_inputs_;
@@ -144,7 +144,7 @@ protected:
 
     FORCEINLINE RHIGraphicsPipeline (): RHIPipeline(RHIPipelineType::kGraphics) {}
 
-    virtual bool CompileRHI (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual bool CompileRHI (const RHIGraphicsPipelineDesc &, RHIPipelineRootSignature * root) = 0;
 
     bool depth_test_enable_ {false};
 
@@ -154,16 +154,16 @@ protected:
 
 class RHIComputePipeline : public RHIPipeline {
 public:
-    void Compile (RHIShader * compute_shader, RHIPipelineRootSignature * root = nullptr) ;
+    void Compile (RHIShader * compute_shader, RHIPipelineRootSignature * root) ;
 protected:
     FORCEINLINE RHIComputePipeline() : RHIPipeline(RHIPipelineType::kCompute) {}
     virtual ~RHIComputePipeline() = default;
-    virtual bool CompileRHI (RHIShader * compute_shader, RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual bool CompileRHI (RHIShader * compute_shader, RHIPipelineRootSignature * root) = 0;
 };
 
 class RHIRayTracingPipeline : public RHIPipeline {
 public:
-    void Compile(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root = nullptr);
+    void Compile(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root);
 
     // Get shader group count
     uint32_t GetShaderGroupCount() const { return shader_group_count_; }
@@ -198,7 +198,7 @@ public:
 protected:
     FORCEINLINE RHIRayTracingPipeline() : RHIPipeline(RHIPipelineType::kRayTracing) {}
     virtual ~RHIRayTracingPipeline() = default;
-    virtual bool CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual bool CompileRHI(const RHIRayTracingPipelineDesc& desc, RHIPipelineRootSignature * root) = 0;
 
     uint32_t shader_group_count_ = 0;
     uint32_t max_recursion_depth_ = 1;

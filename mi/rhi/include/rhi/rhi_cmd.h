@@ -529,14 +529,30 @@ public:
     RHIPipelineRootSignature * root_signature_;
 };
 
-class RHICommandBindPipelineParameters : public TRHICommand<RHICommandBindPipelineParameters> {
+class RHICommandCreateSignatureParameterTable : public TRHICommand<RHICommandCreateSignatureParameterTable> {
 public:
-    RHICommandBindPipelineParameters(RHIBindPointType point, RHIBindPipelineParametersDesc table)
-        : point_(point), table_(table) {}
-    void Execute(RHICommandQueueBase & cmd) override ;
+    RHICommandCreateSignatureParameterTable(
+        uint32_t table_id,
+        RHIPipelineRootSignature * root_signature,
+        RHIBindPipelineParametersDesc desc)
+        : table_id_(table_id), root_signature_(root_signature), desc_(desc) {}
+    void Execute(RHICommandQueueBase & cmd) override;
 
+    uint32_t table_id_;
+    RHIPipelineRootSignature * root_signature_;
+    RHIBindPipelineParametersDesc desc_;
+};
+
+class RHICommandBindSignatureParameterTable : public TRHICommand<RHICommandBindSignatureParameterTable> {
+public:
+    RHICommandBindSignatureParameterTable(
+        uint32_t table_id,
+        RHIBindPointType point)
+        : table_id_(table_id), point_(point) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    uint32_t table_id_;
     RHIBindPointType point_;
-    RHIBindPipelineParametersDesc table_;
 };
 
 class RHICommandBindVertexBuffer : public TRHICommand<RHICommandBindVertexBuffer> {
@@ -546,14 +562,6 @@ public:
     void Execute(RHICommandQueueBase & cmd) override ;
     RHIBufferSpan buffer_;
     uint32_t binding_;
-};
-
-class RHICommandClearBoundState : public TRHICommand<RHICommandClearBoundState> {
-public:
-    RHICommandClearBoundState (RHIBindPointType point)
-        : point_(point) {}
-    void Execute(RHICommandQueueBase & cmd) override ;
-    RHIBindPointType point_{};
 };
 
 class RHICommandMemoryBarrier : public TRHICommand<RHICommandMemoryBarrier> {
@@ -873,18 +881,19 @@ public:
     FORCEINLINE void DispatchIndirect (RHIBuffer * dispatch_command_buffer, uint32_t offset) {
         AddCommand(AllocateCommand<RHICommandDispatchIndirect>(dispatch_command_buffer, offset));
     }
-    // Allocate RHIBindPipelineParameterDesc with the command buffer allocator.
-    FORCEINLINE void BindPipelineParameters (RHIBindPointType point, RHIBindPipelineParametersDesc table) {
-        AddCommand(AllocateCommand<RHICommandBindPipelineParameters>(point, table));
+    FORCEINLINE void CreateSignatureParameterTable(
+        uint32_t table_id,
+        RHIPipelineRootSignature * root_signature,
+        RHIBindPipelineParametersDesc desc) {
+        AddCommand(AllocateCommand<RHICommandCreateSignatureParameterTable>(table_id, root_signature, desc));
+    }
+    FORCEINLINE void BindSignatureParameterTable(uint32_t table_id, RHIBindPointType point) {
+        AddCommand(AllocateCommand<RHICommandBindSignatureParameterTable>(table_id, point));
     }
 
     FORCEINLINE void BindVertexBuffer (uint32_t binding, RHIBufferSpan buffer) {
         // TODO switch to batched binding (bind vertex buffers)
         AddCommand(AllocateCommand<RHICommandBindVertexBuffer>(binding, buffer));
-    }
-
-    FORCEINLINE void ClearBoundState (RHIBindPointType point) {
-        AddCommand(AllocateCommand<RHICommandClearBoundState>(point));
     }
 
     FORCEINLINE void MemoryBarrier (

@@ -131,8 +131,8 @@ public:
         return class_registry_->type;
     }
 
-    // Convert the parameter resource index (within its kind) to pipeline slot used for RHI resource binding
-    // Returns UINT32_MAX if the index is invalid (e.g. not used in the shader).
+    // Convert the parameter resource index (within its kind) to the root signature sequential index
+    // used for RHI resource binding. Returns UINT32_MAX if the index is invalid (not used in shader).
     template<RHIParamType type>
     FORCEINLINE uint32_t ConvertParamResourceIndexToResourceSlot (int index) {
         if (index >= (int)cpp_resource_index_to_slot_[(uint32_t)type].size()) return UINT32_MAX;
@@ -186,6 +186,8 @@ public:
         return class_registry_->name;
     }
 
+    FORCEINLINE RHIPipelineRootSignature * GetRootSignature() const { return root_signature_ ? root_signature_->GetRootSignature() : nullptr; }
+
 protected:
 
     // Shader initialization info (default, given in constructor)
@@ -231,6 +233,7 @@ protected:
     TRef<RHIGraphicsPipeline> graphics_pipeline_;
     TRef<RHIRayTracingPipeline> ray_tracing_pipeline_;
     TRef<RDGShaderRootSignatureKeeper> root_signature_;
+
     struct {
         TRef<RHIShader> compute {};
         TRef<RHIShader> vertex {};

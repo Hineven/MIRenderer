@@ -36,10 +36,10 @@ static const char* g_rhi_cmd_stat_names[] = {
 
     "BindGraphicsPipeline",
     "BindComputePipeline",
-    "BindPipelineParameters",
+    "CreateSignatureParameterTable",
+    "BindSignatureParameterTable",
     "BindVertexBuffer",
 
-    "ClearBoundState",
     "MemoryBarrier",
     "TextureBarrier",
     "BufferBarrier",

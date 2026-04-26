@@ -678,11 +678,11 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (draw_count == 0) {
                     return;
                 }
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<PrecomputeTrianglesShader>(queue_inner, pass, shader, params, false)) {
-                    queue_inner.BeginRendering();
-                    queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
-                    queue_inner.EndRendering();
-                }
+                auto tid = RDGCommandHelper::CreateParameterTable(queue_inner, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
+                    &PrecomputeTrianglesShader::GetShaderParamStructInfo()->render_pass_info_, params);
+                queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
+                RDGCommandHelper::EndGraphicsRender(queue_inner);
             }
         )->AddBufferH(ls->precompute_triangle_draw_command_buffer.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
@@ -698,11 +698,11 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (draw_count == 0) {
                     return;
                 }
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<PrecomputeLevelShader>(queue_inner, pass, shader, params, false)) {
-                    queue_inner.BeginRendering();
-                    queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
-                    queue_inner.EndRendering();
-                }
+                auto tid = RDGCommandHelper::CreateParameterTable(queue_inner, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
+                    &PrecomputeLevelShader::GetShaderParamStructInfo()->render_pass_info_, params);
+                queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
+                RDGCommandHelper::EndGraphicsRender(queue_inner);
             }
         )->AddBufferH(ls->precompute_level_draw_command_buffers[level_dispatch_index].Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
@@ -715,11 +715,11 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (draw_count == 0) {
                     return;
                 }
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<FinalizeMLIClustersShader>(queue_inner, pass, shader, params, false)) {
-                    queue_inner.BeginRendering();
-                    queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
-                    queue_inner.EndRendering();
-                }
+                auto tid = RDGCommandHelper::CreateParameterTable(queue_inner, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
+                    &FinalizeMLIClustersShader::GetShaderParamStructInfo()->render_pass_info_, params);
+                queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
+                RDGCommandHelper::EndGraphicsRender(queue_inner);
             }
         )->AddBufferH(ls->precompute_finalize_cluster_draw_command_buffer.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }

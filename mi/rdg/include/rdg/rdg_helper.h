@@ -40,7 +40,8 @@ public:
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported in DispatchComputePass.");
         return builder.AddPass<T>(flags, shader, params,
             [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                RDGCommandHelper::Dispatch<T>(queue, pass, shader, params, x, y, z);
+                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                RDGCommandHelper::Dispatch(queue, shader, tid, x, y, z);
             }
         );
     }
@@ -51,7 +52,8 @@ public:
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported in DispatchIndirectComputePass.");
         return builder.AddPass<T>({}, shader, params,
             [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                RDGCommandHelper::DispatchIndirect<T>(queue, pass, shader, params, indirect_buffer);
+                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                RDGCommandHelper::DispatchIndirect(queue, shader, tid, indirect_buffer);
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
@@ -62,11 +64,11 @@ public:
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kGraphics, "Only graphics shaders are supported in DrawIndirectPass.");
         return builder.AddPass<T>({}, shader, params,
             [shader, params, indirect_buffer, draw_count=count](RDGPass* pass, RHICommandQueueGraphics &q){
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<T>(q, pass, shader, params, false)) {
-                    q.BeginRendering();
-                    q.DrawIndirect(indirect_buffer->GetRHI());
-                    q.EndRendering();
-                }
+                auto tid = RDGCommandHelper::CreateParameterTable(q, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(q, shader, tid,
+                    &T::GetShaderParamStructInfo()->render_pass_info_, params);
+                q.DrawIndirect(indirect_buffer->GetRHI());
+                RDGCommandHelper::EndGraphicsRender(q);
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
@@ -78,7 +80,8 @@ public:
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchRayTracingPass.");
         return builder.AddPass<T>(flags, shader, params,
             [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                RDGCommandHelper::DispatchRays<T>(queue, pass, shader, params, x, y, z);
+                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                RDGCommandHelper::DispatchRays(queue, shader, tid, x, y, z);
             }
         );
     }
@@ -89,7 +92,8 @@ public:
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchIndirectRayTracingPass.");
         return builder.AddPass<T>({}, shader, params,
             [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                RDGCommandHelper::DispatchRaysIndirect<T>(queue, pass, shader, params, indirect_buffer);
+                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                RDGCommandHelper::DispatchRaysIndirect(queue, shader, tid, indirect_buffer);
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }

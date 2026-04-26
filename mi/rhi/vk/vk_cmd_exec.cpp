@@ -15,7 +15,6 @@
 #include "vk_conversion.h"
 #include "vk_bindless.h"
 #include "core/util/debug_prof.h"
-#include "core/util/unordered_hashing.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -447,13 +446,161 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     }
 }
 
-void VulkanCommandExecutor::RHIBindPipelineParameters(
-        RHICommandQueueBase *cmd, RHICommandBindPipelineParameters *bind_pipeline_parameters) {
+void VulkanCommandExecutor::RHICreateSignatureParameterTable(
+        RHICommandQueueBase *cmd, RHICommandCreateSignatureParameterTable *create_table) {
     CHECK_RHI_THREAD();
     auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
-    auto table = bind_pipeline_parameters->table_;
-    auto & point = state.points[(uint32_t)bind_pipeline_parameters->point_];
-    point.bound_descriptor_dirty |= point.parameter_table.Merge(&table);
+    auto & desc = create_table->desc_;
+    auto * root_sig = static_cast<VulkanRootSignature*>(create_table->root_signature_);
+    if (!root_sig) return;
+
+    vk::DescriptorSetLayout set_layout = root_sig->GetDescriptorSetLayout();
+
+    auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
+        vk::DescriptorSetAllocateInfo()
+            .setDescriptorPool(state.descriptor_pool)
+            .setDescriptorSetCount(1)
+            .setSetLayouts(set_layout)
+    );
+    state.allocated_descriptor_sets.emplace_back(descriptor_set[0]);
+    mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
+
+    auto & remappings = root_sig->GetRemappings();
+
+    size_t write_count = desc.uniforms.size() + desc.storages.size() + desc.uavs.size()
+        + desc.srvs.size() + desc.samplers.size() + desc.acceleration_structures.size();
+    auto writes = state.Allocate<vk::WriteDescriptorSet[]>(write_count);
+    size_t write_index = 0;
+
+    for(auto ubo : desc.uniforms) {
+        auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
+        assert(ubo.buffer.buffer && "Uniform buffer must not be null.");
+        buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer();
+        buffer_info.offset = ubo.buffer.offset;
+        buffer_info.range = ubo.buffer.size;
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot);
+        if (UINT32_MAX != destination.binding) {
+            writes[write_index++] = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set[0])
+                .setDstBinding(destination.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                .setPBufferInfo(&buffer_info);
+        }
+    }
+    for(auto storage : desc.storages) {
+        auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
+        auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer);
+        auto buffer_ptr = buffer ? buffer->GetBuffer() : nullptr;
+        buffer_info.buffer = buffer_ptr;
+        buffer_info.offset = storage.buffer.offset;
+        buffer_info.range = buffer_ptr ? storage.buffer.size : VK_WHOLE_SIZE;
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
+        if (UINT32_MAX != destination.binding) {
+            writes[write_index++] = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set[0])
+                .setDstBinding(destination.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+                .setPBufferInfo(&buffer_info);
+        }
+    }
+    for(auto uav : desc.uavs) {
+        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
+        auto image = static_cast<VulkanTexture*>(uav.texture);
+        if (uav.array_layer == UINT_MAX && uav.mip_level == 0)
+            image_info.imageView = image ? image->GetImageView() : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(
+            uav.array_layer == UINT_MAX ? 0 : uav.array_layer, uav.mip_level
+        ) : nullptr;
+        image_info.imageLayout = vk::ImageLayout::eGeneral;
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
+        if (UINT_MAX != destination.binding) {
+            writes[write_index++] = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set[0])
+                .setDstBinding(destination.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eStorageImage)
+                .setPImageInfo(&image_info);
+        }
+    }
+    for(auto srv : desc.srvs) {
+        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
+        auto image = static_cast<VulkanTexture*>(srv.texture);
+        if (srv.array_layer == UINT_MAX)
+            image_info.imageView = image ? image->GetImageView() : nullptr;
+        else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer, srv.mip_level) : nullptr;
+        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
+        if (UINT32_MAX != destination.binding) {
+            writes[write_index++] = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set[0])
+                .setDstBinding(destination.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eSampledImage)
+                .setPImageInfo(&image_info);
+        }
+    }
+    for(auto sampler : desc.samplers) {
+        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
+        assert(sampler.resource && "Sampler must not be null.");
+        image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler();
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kSampler, sampler.slot);
+        if (UINT32_MAX != destination.binding) {
+            writes[write_index++] = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set[0])
+                .setDstBinding(destination.binding)
+                .setDstArrayElement(0)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eSampler)
+                .setPImageInfo(&image_info);
+        }
+    }
+    for(auto acc : desc.acceleration_structures) {
+        auto& write_khr = *state.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
+        auto p_ac = state.Allocate<vk::AccelerationStructureKHR>();
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                .setDstSet(descriptor_set[0])
+                .setDstBinding(destination.binding)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+                .setPNext(&write_khr);
+            write_khr.accelerationStructureCount = 1;
+            auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
+            *p_ac = rhi_acc ? rhi_acc->GetAccelerationStructure() : nullptr;
+            write_khr.pAccelerationStructures = p_ac;
+            writes[write_index++] = write;
+        }
+    }
+
+    if (write_index > 0) {
+        GetVulkanRHI()->GetDevice().updateDescriptorSets(write_index, writes, 0, nullptr);
+    }
+
+    mi_assert(state.slot_table_.find(create_table->table_id_) == state.slot_table_.end(),
+        "CreateSignatureParameterTable: table_id already used this frame");
+    state.slot_table_[create_table->table_id_] = descriptor_set[0];
+}
+
+void VulkanCommandExecutor::RHIBindSignatureParameterTable(
+        RHICommandQueueBase *cmd, RHICommandBindSignatureParameterTable *bind_table) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
+    auto & point = state.points[(uint32_t)bind_table->point_];
+
+    auto it = state.slot_table_.find(bind_table->table_id_);
+    if (it == state.slot_table_.end()) {
+        MI_LOG(MIInfraLogType::kError, "BindSignatureParameterTable: table_id {} not found", bind_table->table_id_);
+        return;
+    }
+    point.bound_private_descriptor_set = it->second;
+    point.bound_descriptor_dirty = true;
 }
 
 void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
@@ -467,13 +614,6 @@ void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
     state.bound_vertex_buffers[bind_vertex_buffer->binding_] = vb;
 }
 
-void VulkanCommandExecutor::RHIClearBoundState(RHICommandQueueBase *buffer, RHICommandClearBoundState *cmd) {
-    auto & state = state_chains_[(uint32_t)buffer->GetCommandQueueType()].Current(false);
-    auto & point = state.points[(uint32_t)cmd->point_];
-    // Simply clearing the parameter table is enough.
-    point.parameter_table.Clear();
-    // There's nothing more to do for different points.
-}
 
 void VulkanCommandExecutor::RHIFrameEnd(RHICommandQueueBase *cmd, RHISyncPoint * sync) {
     CHECK_RHI_THREAD();
@@ -726,231 +866,7 @@ void VulkanCommandExecutor::CommandQueueState::InstallDrawState(vk::CommandBuffe
     cmdb.setLineWidth(draw_state_.line_width);
 }
 
-bool VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Merge (const RHIBindPipelineParametersDesc * desc) {
-    CHECK_RHI_THREAD();
-    auto CompareAndInsert = [&] <typename T>  (std::vector<T> & dst, std::span<T> src) {
-        bool dirty = false;
-        for (const auto & e : src) {
-            auto it = std::find_if(dst.begin(), dst.end(), [&](const auto & a) {
-                return a.slot == e.slot;
-            });
-            if (it == dst.end()) {
-                dst.push_back(e);
-                dirty = true;
-            } else {
-                if constexpr (std::is_same_v<T, RHIPipelineParameterBufferDesc>) {
-                    if (it->buffer.buffer != e.buffer.buffer || it->buffer.offset != e.buffer.offset || it->buffer.size != e.buffer.size) {
-                        *it = e;
-                        dirty = true;
-                    }
-                }
-                if constexpr (std::is_same_v<T, RHIPipelineParameterTextureDesc>) {
-                    if (it->texture != e.texture || it->array_layer != e.array_layer) {
-                        *it = e;
-                        dirty = true;
-                    }
-                }
-                if constexpr (std::is_same_v<T, RHIPipelineParameterResourceDesc>) {
-                    if (it->resource != e.resource) {
-                        *it = e;
-                        dirty = true;
-                    }
-                }
-            }
-        }
-        return dirty;
-    };
-    bool dirty = false;
-    dirty |= CompareAndInsert(uniforms, desc->uniforms);
-    dirty |= CompareAndInsert(storages, desc->storages);
-    dirty |= CompareAndInsert(uavs, desc->uavs);
-    dirty |= CompareAndInsert(srvs, desc->srvs);
-    dirty |= CompareAndInsert(samplers, desc->samplers);
-    dirty |= CompareAndInsert(acceleration_structures, desc->acceleration_structures);
-    // Overwrite push constants if any (and it does not affect the dirty flag)
-    if(!desc->constants.empty()) {
-        push_constants = desc->constants;
-    }
-    return dirty;
-}
 
-VulkanCommandExecutor::DescriptorWrites
-VulkanCommandExecutor::CommandQueueState::BindPoint::CompileShaderDescriptorWrites(
-    CommandQueueState & state, [[maybe_unused]] vk::Device device,
-    vk::DescriptorSet descriptor_set,
-    [[maybe_unused]] vk::CommandBuffer cmdb
-) {
-    CHECK_RHI_THREAD();
-
-    // Sort and merge all recorded slot bindings
-    auto SortUnique = [&](auto & arr) {
-        std::stable_sort(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
-            return a.slot < b.slot;
-        });
-        std::reverse(arr.begin(), arr.end());
-        auto tail = std::unique(arr.begin(), arr.end(), [](const auto & a, const auto & b) {
-            return a.slot == b.slot;
-        });
-        arr.erase(tail, arr.end());
-    };
-    SortUnique(parameter_table.uniforms);
-    SortUnique(parameter_table.storages);
-    SortUnique(parameter_table.uavs);
-    SortUnique(parameter_table.srvs);
-    SortUnique(parameter_table.samplers);
-    SortUnique(parameter_table.acceleration_structures);
-
-    const VulkanPipelineBindingRemappings * remapping = nullptr;
-    assert(bound_pipeline);
-    if (bind_point_type == RHIBindPointType::kGraphics) {
-        remapping = &((VulkanGraphicsPipeline*)bound_pipeline)->GetRemappings();
-    } else if (bind_point_type == RHIBindPointType::kCompute) {
-        remapping = &((VulkanComputePipeline*)bound_pipeline)->GetRemappings();
-    } else if (bind_point_type == RHIBindPointType::kRayTracing) {
-        remapping = &((VulkanRayTracingPipeline*)bound_pipeline)->GetRemappings();
-    } else {
-        assert(false && "Not implemented");
-    }
-
-    // Count all writes that needed to allocate a WriteDescriptorSet array
-    auto write_count = (uint32_t)
-            (parameter_table.uniforms.size() + parameter_table.storages.size() + parameter_table.uavs.size()
-                + parameter_table.srvs.size() + parameter_table.samplers.size() + parameter_table.acceleration_structures.size());
-    vk::WriteDescriptorSet * writes = state.Allocate<vk::WriteDescriptorSet[]>(write_count);
-    size_t write_index = 0;
-    for(auto ubo : parameter_table.uniforms) {
-        auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
-        assert(ubo.buffer.buffer && "Uniform buffer must not be null.");
-        buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer(); // NOLINT its safe
-        buffer_info.offset = ubo.buffer.offset;
-        buffer_info.range = ubo.buffer.size;
-        auto destination = remapping->GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot);
-        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
-        if (UINT32_MAX != destination.binding) {
-            auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set)
-                .setDstBinding(destination.binding)
-                .setDstArrayElement(0)
-                .setDescriptorCount(1)
-                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-                .setPBufferInfo(&buffer_info);
-            writes[write_index++] = write;
-        }
-    }
-    for(auto storage : parameter_table.storages) {
-        auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
-        auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer); // NOLINT its safe
-        auto buffer_ptr = buffer ? buffer->GetBuffer() : nullptr;
-        buffer_info.buffer = buffer_ptr;
-        buffer_info.offset = storage.buffer.offset;
-        buffer_info.range = buffer_ptr ? storage.buffer.size : VK_WHOLE_SIZE;
-        auto destination = remapping->GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
-        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
-        if (UINT32_MAX != destination.binding) {
-            auto write = vk::WriteDescriptorSet()
-                    .setDstSet(descriptor_set)
-                    .setDstBinding(destination.binding)
-                    .setDstArrayElement(0)
-                    .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-                    .setPBufferInfo(&buffer_info);
-            writes[write_index++] = write;
-        }
-    }
-    for(auto uav : parameter_table.uavs) {
-        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
-        auto image = static_cast<VulkanTexture*>(uav.texture);
-        if (uav.array_layer == UINT_MAX && uav.mip_level == 0)
-            image_info.imageView = image ? image->GetImageView() : nullptr;
-        else image_info.imageView = image ? image->GetImageViewForLayer(
-            uav.array_layer == UINT_MAX ? 0 : uav.array_layer, uav.mip_level
-        ) : nullptr;
-        image_info.imageLayout = vk::ImageLayout::eGeneral;
-        auto destination = remapping->GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
-        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
-        if (UINT_MAX != destination.binding) {
-            auto write = vk::WriteDescriptorSet()
-                    .setDstSet(descriptor_set)
-                    .setDstBinding(destination.binding)
-                    .setDstArrayElement(0)
-                    .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eStorageImage)
-                    .setPImageInfo(&image_info);
-            writes[write_index++] = write;
-        }
-    }
-    for(auto srv : parameter_table.srvs) {
-        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
-        auto image = static_cast<VulkanTexture*>(srv.texture);
-        if (srv.array_layer == UINT_MAX)
-            image_info.imageView = image ? image->GetImageView() : nullptr;
-        else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer, srv.mip_level) : nullptr;
-        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        auto destination = remapping->GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
-        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
-        if (UINT32_MAX != destination.binding) {
-            auto write = vk::WriteDescriptorSet()
-                    .setDstSet(descriptor_set)
-                    .setDstBinding(destination.binding)
-                    .setDstArrayElement(0)
-                    .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eSampledImage)
-                    .setPImageInfo(&image_info);
-            writes[write_index++] = write;
-        }
-    }
-    for(auto sampler : parameter_table.samplers) {
-        auto& image_info = *state.Allocate<vk::DescriptorImageInfo>();
-        assert(sampler.resource && "Sampler must not be null.");
-        image_info.sampler = static_cast<VulkanSampler*>(sampler.resource)->GetSampler(); // NOLINT its safe
-        auto destination = remapping->GetDestination(RHIPipelineResourceType::kSampler, sampler.slot);
-        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
-        if (UINT32_MAX != destination.binding) {
-            auto write = vk::WriteDescriptorSet()
-                    .setDstSet(descriptor_set)
-                    .setDstBinding(destination.binding)
-                    .setDstArrayElement(0)
-                    .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eSampler)
-                    .setPImageInfo(&image_info);
-            writes[write_index++] = write;
-        }
-    }
-    for(auto acc : parameter_table.acceleration_structures) {
-        auto& write_khr = *state.Allocate<vk::WriteDescriptorSetAccelerationStructureKHR>();
-        auto  p_ac = state.Allocate<vk::AccelerationStructureKHR>();
-        auto destination = remapping->GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot);
-        mi_assert(destination.binding != UINT32_MAX, "Invalid binding");
-        if (UINT32_MAX != destination.binding) {
-            auto write = vk::WriteDescriptorSet()
-                    .setDstSet(descriptor_set)
-                    .setDstBinding(destination.binding)
-                    .setDescriptorCount(1)
-                    .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-                    .setPNext(&write_khr);
-            write_khr.accelerationStructureCount = 1;
-            auto rhi_acc = static_cast<VulkanAccelerationStructure*>(acc.resource);
-            *p_ac = rhi_acc ? rhi_acc->GetAccelerationStructure() : nullptr;
-            write_khr.pAccelerationStructures = p_ac;
-            writes[write_index++] = write;
-        }
-    }
-
-    return {writes, write_index};
-}
-
-void VulkanCommandExecutor::CommandQueueState::BindPoint::ParameterTable::Clear() {
-    // Clear all bindings
-    uniforms.clear();
-    storages.clear();
-    uavs.clear();
-    srvs.clear();
-    samplers.clear();
-    acceleration_structures.clear();
-    push_constants = {};
-}
-
-// Bind pipeline, descriptor set and flush descriptor writes.
 void VulkanCommandExecutor::FlushBindPointState(
         RHICommandQueueBase * cmd, RHIBindPointType point_t, vk::ShaderStageFlags use_shaders) {
     CHECK_RHI_THREAD();
@@ -960,162 +876,39 @@ void VulkanCommandExecutor::FlushBindPointState(
     vk::PipelineBindPoint vk_point {};
     vk::PipelineLayout vk_pipeline_layout {};
     vk::Pipeline vk_pipeline {};
-    vk::DescriptorSetLayout vk_set_layout {};
-    VulkanRootSignature * root_sig = nullptr;
 
     if (point_t == RHIBindPointType::kGraphics) {
         auto g_pipeline = (VulkanGraphicsPipeline*)point.bound_pipeline;
         vk_pipeline_layout = g_pipeline->GetPipelineLayout();
-        vk_set_layout = g_pipeline->GetPrivateDescriptorSetLayout();
         vk_pipeline = g_pipeline->GetPipeline();
         vk_point = vk::PipelineBindPoint::eGraphics;
-        root_sig = g_pipeline->GetRootSignature();
     } else if (point_t == RHIBindPointType::kCompute) {
         auto c_pipeline = (VulkanComputePipeline*)point.bound_pipeline;
         vk_pipeline_layout = c_pipeline->GetPipelineLayout();
-        vk_set_layout = c_pipeline->GetPrivateDescriptorSetLayout();
         vk_pipeline = c_pipeline->GetPipeline();
         vk_point = vk::PipelineBindPoint::eCompute;
-        root_sig = c_pipeline->GetRootSignature();
     } else {
         auto rt_pipeline = (VulkanRayTracingPipeline*)point.bound_pipeline;
         vk_point = vk::PipelineBindPoint::eRayTracingKHR;
         vk_pipeline_layout = rt_pipeline->GetPipelineLayout();
-        vk_set_layout = rt_pipeline->GetPrivateDescriptorSetLayout();
         vk_pipeline = rt_pipeline->GetPipeline();
-        root_sig = rt_pipeline->GetRootSignature();
     }
 
-    bool should_bind_bindless_set = false;
+    // Flush bound pipeline state
     if (point.bound_pipeline_dirty) {
-        point.bound_descriptor_dirty = true;
         state.cmd.bindPipeline(vk_point, vk_pipeline);
-        if (point.bound_pipeline->HasBindlessResources()) {
-            should_bind_bindless_set = true;
-        }
+        point.bound_pipeline_dirty = false;
     }
 
-    size_t param_hash = 0;
-    if (root_sig) {
-        ZobristSetHashing hasher;
-        auto & table = point.parameter_table;
-        auto HashBufferDesc = [&hasher](const RHIPipelineParameterBufferDesc & d) {
-            hasher.Add(&d.buffer.buffer, sizeof(d.buffer.buffer));
-            hasher.Add(&d.buffer.offset, sizeof(d.buffer.offset));
-            hasher.Add(&d.buffer.size, sizeof(d.buffer.size));
-            hasher.Add(&d.slot, sizeof(d.slot));
-        };
-        auto HashTextureDesc = [&hasher](const RHIPipelineParameterTextureDesc & d) {
-            hasher.Add(&d.texture, sizeof(d.texture));
-            hasher.Add(&d.slot, sizeof(d.slot));
-            hasher.Add(&d.array_layer, sizeof(d.array_layer));
-            hasher.Add(&d.mip_level, sizeof(d.mip_level));
-        };
-        auto HashResourceDesc = [&hasher](const RHIPipelineParameterResourceDesc & d) {
-            hasher.Add(&d.resource, sizeof(d.resource));
-            hasher.Add(&d.slot, sizeof(d.slot));
-        };
-        for (auto & u : table.uniforms) { HashBufferDesc(u); }
-        for (auto & s : table.storages) { HashBufferDesc(s); }
-        for (auto & u : table.uavs) { HashTextureDesc(u); }
-        for (auto & s : table.srvs) { HashTextureDesc(s); }
-        for (auto & s : table.samplers) { HashResourceDesc(s); }
-        for (auto & a : table.acceleration_structures) { HashResourceDesc(a); }
-        param_hash = hasher.GetResult();
-    }
-
-    // Shortcut: checking for descriptor set cache hit.
-    if (root_sig) {
-        auto cache_it = point.descriptor_cache_.find({root_sig, param_hash});
-        if (cache_it != point.descriptor_cache_.end()) {
-            auto cached_ds = cache_it->second;
-            bool ds_changed = (point.bound_private_descriptor_set != cached_ds);
-            point.bound_private_descriptor_set = cached_ds;
-            point.bound_pipeline_dirty = false;
-            point.bound_descriptor_dirty = false;
-            if (ds_changed) {
-                if (point.bound_pipeline->HasBindlessResources()) {
-                    auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
-                    state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                                 {cached_ds, bindless_set}, {});
-                } else {
-                    state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                                 {cached_ds}, {});
-                }
-            }
-            if(!point.parameter_table.push_constants.empty()) {
-                state.cmd.pushConstants(vk_pipeline_layout, use_shaders,
-                    0, (uint32_t)point.parameter_table.push_constants.size() * sizeof(uint32_t),
-                    point.parameter_table.push_constants.data());
-                point.parameter_table.push_constants = {};
-            }
-            return;
-        }
-    }
-
-    if(point.bound_descriptor_dirty && vk_set_layout) {
-        auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
-                vk::DescriptorSetAllocateInfo()
-                        .setDescriptorPool(state.descriptor_pool)
-                        .setDescriptorSetCount(1)
-                        .setSetLayouts(vk_set_layout)
-        );
-        state.allocated_descriptor_sets.emplace_back(descriptor_set[0]);
-        mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
-        point.bound_private_descriptor_set = descriptor_set[0];
-    }
-
-    auto descriptor_writes = point.CompileShaderDescriptorWrites(
-            state, GetVulkanRHI()->GetDevice(), point.bound_private_descriptor_set,
-            state.cmd
-    );
-    // Only write the descriptor set if it's dirty
-    if(!descriptor_writes.empty() && point.bound_descriptor_dirty) {
-        if(!point.bound_private_descriptor_set) {
-            if(!point.bound_pipeline) {
-                MI_LOG(MIInfraLogType::kWarning, "Flushed resources to null pipeline.");
-            } else {
-                MI_LOG(MIInfraLogType::kWarning, "Resources bound to fully bindless pipeline.");
-            }
-        }
-        GetVulkanRHI()->GetDevice().updateDescriptorSets(descriptor_writes, {});
-    }
-
-    // Bind descriptor set
-    // Non-bindless descriptor sets doesn't support update-after-bind. So we bind them at last.
-    if(point.bound_descriptor_dirty && point.bound_private_descriptor_set) {
-        if (should_bind_bindless_set) {
-            // Bind private set at set = 0, bindless set at set = 1
+    if (point.bound_descriptor_dirty) {
+        mi_assert(point.bound_private_descriptor_set,
+            "BindSignatureParameterTable must be called before any draw/dispatch command");
+        if (point.bound_private_descriptor_set) {
             auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
             state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                         {point.bound_private_descriptor_set, bindless_set}, {});
-        } else {
-            // Only bind private set at set = 0
-            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 0,
-                                         {point.bound_private_descriptor_set}, {});
+                                            {point.bound_private_descriptor_set, bindless_set}, {});
         }
-    } else {
-        // Still need to bind the bindless set if needed
-        if (should_bind_bindless_set) {
-            auto bindless_set = GetVulkanRHI()->GetVulkanBindlessManager()->GetBindlessDescriptorSet();
-            state.cmd.bindDescriptorSets(vk_point, vk_pipeline_layout, 1,
-                                         bindless_set, {});
-        }
-    }
-
-    if (root_sig && point.bound_private_descriptor_set) {
-        point.descriptor_cache_[{root_sig, param_hash}] = point.bound_private_descriptor_set;
-    }
-
-    point.bound_pipeline_dirty = false;
-    point.bound_descriptor_dirty = false;
-
-    // Push constants
-    if(!point.parameter_table.push_constants.empty()) {
-        state.cmd.pushConstants(vk_pipeline_layout, use_shaders,
-            0, (uint32_t)point.parameter_table.push_constants.size() * sizeof(uint32_t),
-            point.parameter_table.push_constants.data());
-        point.parameter_table.push_constants = {};
+        point.bound_descriptor_dirty = false;
     }
 }
 

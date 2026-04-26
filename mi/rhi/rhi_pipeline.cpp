@@ -193,8 +193,6 @@ void RHIPipeline::BuildPipelineResourceIndex() {
 }
 
 bool RHIPipeline::ValidateRootSignatureCompatibility(RHIPipelineRootSignature * root) const {
-    if (!root) return true;
-
     auto CheckResourceCount = [&](RHIPipelineResourceType type, const char * type_name, size_t pipeline_count) {
         uint32_t root_count = root->GetNumResources(type);
         if (pipeline_count > root_count) {

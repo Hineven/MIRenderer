@@ -58,10 +58,10 @@ enum class RHICmdStatId : uint16_t {
 
     kBindGraphicsPipeline,
     kBindComputePipeline,
-    kBindPipelineParameters,
+    kCreateSignatureParameterTable,
+    kBindSignatureParameterTable,
     kBindVertexBuffer,
 
-    kClearBoundState,
     kMemoryBarrier,
     kTextureBarrier,
     kBufferBarrier,

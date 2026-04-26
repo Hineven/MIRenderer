@@ -43,6 +43,7 @@ VulkanRootSignature::VulkanRootSignature(const RHIPipelineRootSignatureDesc & de
                 .setDescriptorType(td.vk_type)
                 .setDescriptorCount(1)
                 .setStageFlags(vk::ShaderStageFlagBits::eAll);
+            remappings_.AddRemapping(td.rhi_type, i, 0, current_binding);
             current_binding++;
         }
     }

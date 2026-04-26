@@ -68,11 +68,11 @@ public:
     RHIShaderRef CreateShader(RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                               RHIShaderIRType ir_type, std::span<const std::byte> ir) override;
 
-    RHIGraphicsPipelineRef CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name, RHIPipelineRootSignature * root = nullptr) override;
+    RHIGraphicsPipelineRef CreateGraphicsPipeline(const RHIGraphicsPipelineDesc &desc, const char * name, RHIPipelineRootSignature * root) override;
 
-    RHIComputePipelineRef CreateComputePipeline(RHIShader *shader, const char * name, RHIPipelineRootSignature * root = nullptr) override;
+    RHIComputePipelineRef CreateComputePipeline(RHIShader *shader, const char * name, RHIPipelineRootSignature * root) override;
 
-    RHIRayTracingPipelineRef CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name, RHIPipelineRootSignature * root = nullptr) override;
+    RHIRayTracingPipelineRef CreateRayTracingPipeline(const RHIRayTracingPipelineDesc &desc, const char *name, RHIPipelineRootSignature * root) override;
 
     RHIPipelineRootSignatureRef CreateRootSignature(const RHIPipelineRootSignatureDesc & desc) override;
 

@@ -69,7 +69,7 @@ namespace details {
         std::vector<RDGShaderParameterLocation> storage_buffers, uniform_buffers,
             uavs, srvs, samplers, acceleration_structures, vertex_buffers, vertex_attributes,
             render_targets;
-        RDGShaderParameterLocation index_buffer {}, dispatch_command {};
+        RDGShaderParameterLocation index_buffer {};
         {
             for (auto & e : info->cpp_members) {
                 uint32_t cpp_offset = e.cpp_offset;
@@ -89,8 +89,6 @@ namespace details {
                     index_buffer = {&e, cpp_offset, 0};
                 } else if (e.type == RHIParamType::kRenderTarget) {
                     render_targets.emplace_back(&e, cpp_offset, 0);
-                } else if (e.type == RHIParamType::kDispatchCommand) {
-                    dispatch_command = {&e, cpp_offset, 0};
                 } else if (e.type == RHIParamType::kAccelerationStructure){
                     acceleration_structures.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kSampler) {
@@ -126,31 +124,28 @@ namespace details {
                 std::copy(acceleration_structures.begin(), acceleration_structures.end(), info->acceleration_structures_.begin());
             } else info->acceleration_structures_ = {};
             if (!vertex_buffers.empty()) {
-                info->vertex_buffers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_buffers.size()), vertex_buffers.size());
-                std::copy(vertex_buffers.begin(), vertex_buffers.end(), info->vertex_buffers_.begin());
-            } else info->vertex_buffers_ = {};
+                info->render_pass_info_.vertex_buffers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_buffers.size()), vertex_buffers.size());
+                std::copy(vertex_buffers.begin(), vertex_buffers.end(), info->render_pass_info_.vertex_buffers_.begin());
+            } else info->render_pass_info_.vertex_buffers_ = {};
             if (!vertex_attributes.empty()) {
-                info->vertex_attributes_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_attributes.size()), vertex_attributes.size());
-                std::copy(vertex_attributes.begin(), vertex_attributes.end(), info->vertex_attributes_.begin());
-            } else info->vertex_attributes_ = {};
+                info->render_pass_info_.vertex_attributes_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_attributes.size()), vertex_attributes.size());
+                std::copy(vertex_attributes.begin(), vertex_attributes.end(), info->render_pass_info_.vertex_attributes_.begin());
+            } else info->render_pass_info_.vertex_attributes_ = {};
             if (!render_targets.empty()) {
-                info->render_targets_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(render_targets.size()), render_targets.size());
-                std::copy(render_targets.begin(), render_targets.end(), info->render_targets_.begin());
-            } else info->render_targets_ = {};
+                info->render_pass_info_.render_targets_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(render_targets.size()), render_targets.size());
+                std::copy(render_targets.begin(), render_targets.end(), info->render_pass_info_.render_targets_.begin());
+            } else info->render_pass_info_.render_targets_ = {};
             if (index_buffer.info) {
-                info->index_buffer_ = index_buffer;
-            } else info->index_buffer_ = {};
-            if (dispatch_command.info) {
-                info->dispatch_command_ = dispatch_command;
-            } else info->dispatch_command_ = {};
+                info->render_pass_info_.index_buffer_ = index_buffer;
+            } else info->render_pass_info_.index_buffer_ = {};
         }
         // Some late validations
         {
-            for (auto [i, e] : std::views::enumerate(info->vertex_attributes_)) {
+            for (auto [i, e] : std::views::enumerate(info->render_pass_info_.vertex_attributes_)) {
                 auto component_size = GetVertexAttributeFormatSize(e.info->cpp_extra.vertex_attribute_info->format);
                 uint32_t end_offset = e.info->cpp_extra.vertex_attribute_info->offset + component_size;
                 auto vbuf_index = e.info->cpp_extra.vertex_attribute_info->buffer_index;
-                auto vbuf_stride = info->vertex_buffers_[vbuf_index].info->cpp_extra.vertex_buffer_info->stride;
+                auto vbuf_stride = info->render_pass_info_.vertex_buffers_[vbuf_index].info->cpp_extra.vertex_buffer_info->stride;
                 if (end_offset > vbuf_stride) {
                     MI_LOG(MIInfraLogType::kWarning,
                         "Vertex attribute {} have end offset {}, which exceeds the "

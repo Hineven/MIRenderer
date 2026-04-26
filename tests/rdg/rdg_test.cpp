@@ -169,7 +169,8 @@ TEST(RDGTest, RDGSimpleComputeShader) {
             builder.AddPass("SimpleShader", RDGPassType::kCompute, {},
                 TestShader1::GetShaderParamStructInfo(), params,
                 [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                    RDGCommandHelper::Dispatch<TestShader1>(queue, pass, shader, params);
+                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                    RDGCommandHelper::Dispatch(queue, shader, tid);
                 });
             auto out_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kReadback, 1024 * 1024 * 16);
             out_buffer->SetExport();
@@ -298,7 +299,9 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
             builder.AddPass("SimpleShader", RDGPassType::kGraphics, {},
                 TestShader2::GetShaderParamStructInfo(), params,
                 [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                    RDGCommandHelper::Draw<TestShader2>(queue, pass, shader, params, 3);
+                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                    RDGCommandHelper::Draw(queue, shader, tid,
+                        &TestShader2::GetShaderParamStructInfo()->render_pass_info_, params, 3);
                 });
             // Readback
             auto readback_buffer = RDGBuffer::Create(RHIBufferUsageFlagBits::kReadback, 1024 * 1024 * 16, false, true);

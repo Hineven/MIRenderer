@@ -115,10 +115,10 @@ public:
     virtual RHIShaderRef CreateShader (RHIShaderFrequencyFlagBits frequency, std::string_view entry_name,
                                        RHIShaderIRType ir_type, std::span<const std::byte> ir) = 0;
 
-    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name = "unnamed", RHIPipelineRootSignature * root = nullptr) = 0;
-    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name = "unnamed", RHIPipelineRootSignature * root = nullptr) = 0;
+    virtual RHIGraphicsPipelineRef CreateGraphicsPipeline (const RHIGraphicsPipelineDesc & desc, const char * name, RHIPipelineRootSignature * root) = 0;
+    virtual RHIComputePipelineRef CreateComputePipeline (RHIShader * shader, const char * name, RHIPipelineRootSignature * root) = 0;
     virtual RHIRayTracingPipelineRef CreateRayTracingPipeline (
-        const RHIRayTracingPipelineDesc & desc, const char * name = "unnamed", RHIPipelineRootSignature * root = nullptr
+        const RHIRayTracingPipelineDesc & desc, const char * name, RHIPipelineRootSignature * root
     ) = 0;
 
     virtual RHIPipelineRootSignatureRef CreateRootSignature (const RHIPipelineRootSignatureDesc & desc) = 0;

@@ -233,48 +233,42 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
         auto raster_pass = builder.AddPass<DrawDeferredStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawDeferredStaticMeshesShader>(
-                    queue, pass, shader, params, true
-                )) {
-                    queue.BeginRendering();
-                    auto prev_cull_mode = RHICullModeType::kMax;
-                    RHIBuffer * last_vertex_buffer {};
-                    RHIBuffer * last_index_buffer {};
-                    RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
-                    for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
-                        auto & hdr = data.draw_invocation_sorting_headers[i];
-                        auto curr_cull_mode = hdr.cull_mode;
-                        if (prev_cull_mode != curr_cull_mode) {
-                            queue.SetCullMode(curr_cull_mode);
-                            prev_cull_mode = curr_cull_mode;
-                        }
-                        // TODO Unify "state comparison" style on vertex / index buffers (similar to cull-mode)
-                        if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
-                            if (i > 0) {
-                                // Batch submit previous commands sharing the same vertex & index buffer settings.
-                                auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                                queue.DrawIndexedIndirect(
-                                    data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
-                                    cmd_span,  i - first_cmd
-                                );
-                                cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
-                            }
-                            last_vertex_buffer = hdr.vertex_buffer;
-                            last_index_buffer = hdr.index_buffer;
-                            queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
-                        }
+                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
+                    &DrawDeferredStaticMeshesShader::GetShaderParamStructInfo()->render_pass_info_, params);
+                auto prev_cull_mode = RHICullModeType::kMax;
+                RHIBuffer * last_vertex_buffer {};
+                RHIBuffer * last_index_buffer {};
+                RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
+                for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
+                    auto & hdr = data.draw_invocation_sorting_headers[i];
+                    auto curr_cull_mode = hdr.cull_mode;
+                    if (prev_cull_mode != curr_cull_mode) {
+                        queue.SetCullMode(curr_cull_mode);
+                        prev_cull_mode = curr_cull_mode;
                     }
-                    // Submit last batch if not empty
-                    if (!data.draw_indirect_commands.empty()) {
-                        int i = (int)data.draw_indirect_commands.size();
-                        // Batch submit previous commands sharing the same vertex & index buffer settings.
-                        auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                        queue.DrawIndexedIndirect(
-                            data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
-                            cmd_span,  i - first_cmd);
+                    if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
+                        if (i > 0) {
+                            auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                            queue.DrawIndexedIndirect(
+                                data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                                cmd_span,  i - first_cmd
+                            );
+                            cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
+                        }
+                        last_vertex_buffer = hdr.vertex_buffer;
+                        last_index_buffer = hdr.index_buffer;
+                        queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
                     }
-                    queue.EndRendering();
                 }
+                if (!data.draw_indirect_commands.empty()) {
+                    int i = (int)data.draw_indirect_commands.size();
+                    auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                    queue.DrawIndexedIndirect(
+                        data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                        cmd_span,  i - first_cmd);
+                }
+                RDGCommandHelper::EndGraphicsRender(queue);
             }
         );
 
@@ -415,42 +409,37 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         auto raster_pass = builder.AddPass<DrawForwardStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.forward_static_meshes, rdg_draw_cmd = ctx.forward_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (auto ctx = RDGCommandHelper::BindGraphicsShader<DrawForwardStaticMeshesShader>(
-                    queue, pass, shader, params, true
-                )) {
-                    queue.BeginRendering();
-                    queue.SetCullMode(RHICullModeType::kBack);
-                    RHIBuffer * last_vertex_buffer {};
-                    RHIBuffer * last_index_buffer {};
-                    RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
-                    for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
-                        auto & hdr = data.draw_invocation_sorting_headers[i];
-                        if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
-                            if (i > 0) {
-                                // Batch submit previous commands sharing the same vertex & index buffer settings.
-                                auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                                queue.DrawIndexedIndirect(
-                                    data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
-                                    cmd_span,  i - first_cmd
-                                );
-                                cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
-                            }
-                            last_vertex_buffer = hdr.vertex_buffer;
-                            last_index_buffer = hdr.index_buffer;
-                            queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
+                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
+                    &DrawForwardStaticMeshesShader::GetShaderParamStructInfo()->render_pass_info_, params);
+                queue.SetCullMode(RHICullModeType::kBack);
+                RHIBuffer * last_vertex_buffer {};
+                RHIBuffer * last_index_buffer {};
+                RHIBufferSpan cmd_span = rdg_draw_cmd->GetRHI();
+                for (int i = 0; i < (int)data.draw_indirect_commands.size(); i++) {
+                    auto & hdr = data.draw_invocation_sorting_headers[i];
+                    if (last_vertex_buffer != hdr.vertex_buffer || last_index_buffer != hdr.index_buffer) {
+                        if (i > 0) {
+                            auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                            queue.DrawIndexedIndirect(
+                                data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                                cmd_span,  i - first_cmd
+                            );
+                            cmd_span.offset = i * sizeof(RHIDrawIndexedIndirectCommand);
                         }
+                        last_vertex_buffer = hdr.vertex_buffer;
+                        last_index_buffer = hdr.index_buffer;
+                        queue.BindVertexBuffer(0, hdr.vertex_buffer->GetSpan());
                     }
-                    // Submit last batch if not empty
-                    if (!data.draw_indirect_commands.empty()) {
-                        int i = (int)data.draw_indirect_commands.size();
-                        // Batch submit previous commands sharing the same vertex & index buffer settings.
-                        auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
-                        queue.DrawIndexedIndirect(
-                            data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
-                            cmd_span,  i - first_cmd);
-                    }
-                    queue.EndRendering();
                 }
+                if (!data.draw_indirect_commands.empty()) {
+                    int i = (int)data.draw_indirect_commands.size();
+                    auto first_cmd = (uint32_t)(cmd_span.offset / sizeof(RHIDrawIndexedIndirectCommand));
+                    queue.DrawIndexedIndirect(
+                        data.draw_invocation_sorting_headers[i-1].index_buffer->GetSpan(),
+                        cmd_span,  i - first_cmd);
+                }
+                RDGCommandHelper::EndGraphicsRender(queue);
             }
         );
 
