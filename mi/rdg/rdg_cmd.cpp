@@ -21,7 +21,8 @@ static uint32_t tl_next_table_id = 0;
 
 std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
     RDGPass * pass, RDGShader * shader, RHICommandQueueGraphics & queue,
-    const RDGShaderSignatureParamInfo * info, const void * params) {
+    const RDGShaderSignatureParamInfo * info, const void * params,
+    bool populate_all) {
     RHIBindPipelineParametersDesc ret = {};
     int num_ref_uniform_buffers = (int)info->uniform_buffers_.size();
     int num_uniform_buffers = 0;
@@ -29,18 +30,22 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
         ret.uniforms = std::span(queue.Allocate<RHIPipelineParameterBufferDesc[]>(num_ref_uniform_buffers), num_ref_uniform_buffers);
         for (int i = 0; i < num_ref_uniform_buffers; i++) {
             auto struct_ptr = *(void**)((uint8_t*)params + info->uniform_buffers_[i].cpp_offset);
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>((int)i);
+            uint32_t slot = populate_all ? (uint32_t)i
+                : shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUniformBuffer>((int)i);
             if (slot != UINT32_MAX) {
                 if (!struct_ptr || RDGParameter_IsUnsetPointer(struct_ptr)) {
-                    MI_WARN("Shader {}: Referenced uniform buffer pointer {} is null/unset.",
-                        shader->GetShaderClassRegistry()->name,
-                        info->uniform_buffers_[i].info->name);
-                    return std::nullopt;
+                    if (!populate_all) {
+                        MI_WARN("Shader {}: Referenced uniform buffer pointer {} is null/unset.",
+                            shader->GetShaderClassRegistry()->name,
+                            info->uniform_buffers_[i].info->name);
+                        return std::nullopt;
+                    }
+                    continue;
                 }
                 auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
                 if (!buffer_ptr.buffer) {
 #ifndef NDEBUG
-                    if (pass->shader_ && pass->shader_->QueryShaderAccess(info->uniform_buffers_[i].info->name).access
+                    if (!populate_all && pass->shader_ && pass->shader_->QueryShaderAccess(info->uniform_buffers_[i].info->name).access
                         != RHIGPUAccessFlagBits::kNone) {
                             MI_WARN("Shader {}: Can not find pre-allocated uniform buffer {}.",
                                 shader->GetShaderClassRegistry()->name,
@@ -62,16 +67,21 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
         ret.storages = std::span(queue.Allocate<RHIPipelineParameterBufferDesc[]>(info->storage_buffers_.size()), info->storage_buffers_.size());
         for (const auto& [i, e] : std::views::enumerate(info->storage_buffers_)) {
             auto buffer_ptr = *static_cast<RDGBuffer**>((void*)((uint8_t*)params + e.cpp_offset));
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kStorageBuffer>((int)i);
-            // Ignore those parameters set in params but not used in the shader.
+            uint32_t slot = populate_all ? (uint32_t)i
+                : shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kStorageBuffer>((int)i);
             if (slot != UINT32_MAX) {
                 if (RDGParameter_IsUnsetPointer(buffer_ptr)) {
-                    MI_WARN("Shader {}: Referenced storage buffer pointer {} is unset.",
-                        shader->GetName(), e.info->name);
-                    return std::nullopt;
+                    if (!populate_all) {
+                        MI_WARN("Shader {}: Referenced storage buffer pointer {} is unset.",
+                            shader->GetName(), e.info->name);
+                        return std::nullopt;
+                    }
+                    continue;
                 }
-                ret.storages[num_active_storages ++] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
-            } // Otherwise potentially the shader is not using this storage buffer. Silently ignore it.
+                if (buffer_ptr) {
+                    ret.storages[num_active_storages ++] = {buffer_ptr->GetRHI(), slot};
+                }
+            }
         }
         ret.storages = ret.storages.first(num_active_storages);
     }
@@ -80,15 +90,20 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
         ret.uavs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(info->uavs_.size()), info->uavs_.size());
         for (const auto& [i, e] : std::views::enumerate(info->uavs_)) {
             auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
-            // Ignore those parameters set in params but not used in the shader.
+            uint32_t slot = populate_all ? (uint32_t)i
+                : shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kUAVTexture>((int)i);
             if (slot != UINT32_MAX) {
                 if (RDGParameter_IsUnsetPointer(texture_desc.texture)) {
-                    MI_WARN("Shader {}: Referenced UAV texture pointer {} is unset.",
-                        shader->GetName(), e.info->name);
-                    return std::nullopt;
+                    if (!populate_all) {
+                        MI_WARN("Shader {}: Referenced UAV texture pointer {} is unset.",
+                            shader->GetName(), e.info->name);
+                        return std::nullopt;
+                    }
+                    continue;
                 }
-                ret.uavs[num_active_uavs ++] = {texture_desc.texture ? texture_desc.texture->GetRHI() : nullptr, slot, texture_desc.array_layer, texture_desc.mip_level};
+                if (texture_desc.texture) {
+                    ret.uavs[num_active_uavs ++] = {texture_desc.texture->GetRHI(), slot, texture_desc.array_layer, texture_desc.mip_level};
+                }
             }
         }
         ret.uavs = ret.uavs.first(num_active_uavs);
@@ -98,14 +113,20 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
         ret.srvs = std::span(queue.Allocate<RHIPipelineParameterTextureDesc[]>(info->srvs_.size()), info->srvs_.size());
         for (const auto& [i, e] : std::views::enumerate(info->srvs_)) {
             auto texture_desc = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params + e.cpp_offset));
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
+            uint32_t slot = populate_all ? (uint32_t)i
+                : shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSRVTexture>((int)i);
             if (slot != UINT32_MAX) {
                 if (RDGParameter_IsUnsetPointer(texture_desc.texture)) {
-                    MI_WARN("Shader {}: Referenced SRV texture pointer {} is unset.",
-                        shader->GetName(), e.info->name);
-                    return std::nullopt;
+                    if (!populate_all) {
+                        MI_WARN("Shader {}: Referenced SRV texture pointer {} is unset.",
+                            shader->GetName(), e.info->name);
+                        return std::nullopt;
+                    }
+                    continue;
                 }
-                ret.srvs[num_active_srvs ++] = {texture_desc.texture ? texture_desc.texture->GetRHI() : nullptr, slot, texture_desc.array_layer, texture_desc.mip_level};
+                if (texture_desc.texture) {
+                    ret.srvs[num_active_srvs ++] = {texture_desc.texture->GetRHI(), slot, texture_desc.array_layer, texture_desc.mip_level};
+                }
             }
         }
         ret.srvs = ret.srvs.first(num_active_srvs);
@@ -115,11 +136,15 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
         ret.samplers = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(info->samplers_.size()), info->samplers_.size());
         for (const auto& [i, e] : std::views::enumerate(info->samplers_)) {
             auto sampler_ptr = *static_cast<RHISampler**>((void*)((uint8_t*)params + e.cpp_offset));
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>((int)i);
+            uint32_t slot = populate_all ? (uint32_t)i
+                : shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kSampler>((int)i);
             if (slot != UINT32_MAX) {
                 if (!sampler_ptr || RDGParameter_IsUnsetPointer(sampler_ptr)) {
-                    MI_WARN("Shader {}: Referenced sampler pointer {} is null/unset.", shader->GetName(), e.info->name);
-                    return std::nullopt;
+                    if (!populate_all) {
+                        MI_WARN("Shader {}: Referenced sampler pointer {} is null/unset.", shader->GetName(), e.info->name);
+                        return std::nullopt;
+                    }
+                    continue;
                 }
                 ret.samplers[num_active_samplers ++] = {sampler_ptr, slot};
             }
@@ -131,12 +156,16 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
         ret.acceleration_structures = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(info->acceleration_structures_.size()), info->acceleration_structures_.size());
         for (const auto& [i, e] : std::views::enumerate(info->acceleration_structures_)) {
             auto as_ptr = *static_cast<RHIAccelerationStructure**>((void*)((uint8_t*)params + e.cpp_offset));
-            uint32_t slot = shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kAccelerationStructure>((int)i);
+            uint32_t slot = populate_all ? (uint32_t)i
+                : shader->ConvertParamResourceIndexToResourceSlot<RHIParamType::kAccelerationStructure>((int)i);
             if (slot != UINT32_MAX) {
                 if (RDGParameter_IsUnsetPointer(as_ptr)) {
-                    MI_WARN("Shader {}: Referenced AS pointer {} is unset.",
-                        shader->GetName(), e.info->name);
-                    return std::nullopt;
+                    if (!populate_all) {
+                        MI_WARN("Shader {}: Referenced AS pointer {} is unset.",
+                            shader->GetName(), e.info->name);
+                        return std::nullopt;
+                    }
+                    continue;
                 }
                 ret.acceleration_structures[num_active_acceleration_structures ++] = {as_ptr, slot};
             }
@@ -154,9 +183,10 @@ uint32_t RDGCommandHelper::AllocateParameterTableId() {
 
 uint32_t RDGCommandHelper::CreateParameterTable(
     RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
-    const RDGShaderSignatureParamInfo * info, const void * params) {
+    const RDGShaderSignatureParamInfo * info, const void * params,
+    bool populate_all) {
     uint32_t table_id = tl_next_table_id;
-    auto desc = BuildParameterDesc(pass, shader, queue, info, params);
+    auto desc = BuildParameterDesc(pass, shader, queue, info, params, populate_all);
     if (!desc.has_value()) {
         return UINT32_MAX;
     }

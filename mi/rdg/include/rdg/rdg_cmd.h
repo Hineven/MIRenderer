@@ -24,14 +24,17 @@ public:
 
     static uint32_t CreateParameterTable(
         RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
-        const RDGShaderSignatureParamInfo * info, const void * params);
+        const RDGShaderSignatureParamInfo * info, const void * params,
+        bool populate_all = true);
 
     template <CShaderType T>
     FORCEINLINE static uint32_t CreateParameterTable(
         RHICommandQueueGraphics & queue, RDGPass * pass, T * shader,
-        const typename T::ShaderParameters * params) {
+        const typename T::ShaderParameters * params,
+        bool populate_all = true) {
         return CreateParameterTable(queue, pass, shader,
-            static_cast<const RDGShaderSignatureParamInfo*>(T::GetShaderParamStructInfo()), params);
+            static_cast<const RDGShaderSignatureParamInfo*>(T::GetShaderParamStructInfo()), params,
+            populate_all);
     }
 
     static void Dispatch (RHICommandQueueGraphics & queue, RDGShader * compute_shader,

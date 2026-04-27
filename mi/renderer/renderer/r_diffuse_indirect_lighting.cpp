@@ -935,54 +935,53 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
     }
 
     view->diffuse_indirect_lighting_->shader_params = params;
+    auto shared_table = builder.Allocate<SharedParameterTableId>();
 
     {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
-        Helpers::AddComputePass<ClearCountersShader>(builder, shader, params);
+        Helpers::AddComputePass<ClearCountersShader>(builder, shader, params, shared_table);
     }
     {
         auto shader = lib.GetShader<ClearTileScreenProbeCacheIndexListLengthsShader>(ini);
         Helpers::AddComputePass<ClearTileScreenProbeCacheIndexListLengthsShader>(
-            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     if (need_reset) {
         auto shader = lib.GetShader<InitializeScreenProbeCacheShader>(ini);
         Helpers::AddComputePass<InitializeScreenProbeCacheShader>(
-            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
         auto shader = lib.GetShader<ReprojectScreenProbesShader>(ini);
         Helpers::AddComputePass<ReprojectScreenProbesShader>(
-            builder, shader, params, tile_dimensions.x, tile_dimensions.y
+            builder, shader, params, shared_table, tile_dimensions.x, tile_dimensions.y
         );
     }
     {
         auto shader = lib.GetShader<ReprojectCachedProbesShader>(ini);
         Helpers::AddComputePass<ReprojectCachedProbesShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
         auto shader = lib.GetShader<AllocateTileCachedScreenProbeListsShader>(ini);
         Helpers::AddComputePass<AllocateTileCachedScreenProbeListsShader>(
-            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
-        // Actual num of threads required: ScreenProbeCacheIndexReprojectionCount.
-        // Anyway num_tiles won't be a big overestimate.
         auto shader = lib.GetShader<ScatterReprojectedCachedProbesToTileListShader>(ini);
         Helpers::AddComputePass<ScatterReprojectedCachedProbesToTileListShader>(
-            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
         auto shader = lib.GetShader<SpawnScreenProbesShader>(ini);
         Helpers::AddComputePass<SpawnScreenProbesShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             DivideAndRoundUp(num_tiles, wave_size)
         );
     }
@@ -992,13 +991,13 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
         );
         auto shader = lib.GetShader<SubstituteScreenProbesShader>(ini);
         Helpers::AddComputeIndirectPass<SubstituteScreenProbesShader>(
-            builder, shader, params, command.Raw()
+            builder, shader, params, shared_table, command.Raw()
         );
     }
     {
         auto shader = lib.GetShader<UpdateScreenProbeSpawnCountShader>(ini);
         Helpers::AddComputePass<UpdateScreenProbeSpawnCountShader>(
-            builder, shader, params
+            builder, shader, params, shared_table
         );
     }
     view->diffuse_indirect_lighting_->spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
@@ -1007,13 +1006,13 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
     {
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader>(ini);
         Helpers::AddComputeIndirectPass<ReconstructRadiance_SampleSpawnScreenProbeUpdateRays_LocateCacheEntries_Shader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             view->diffuse_indirect_lighting_->spawn_list_command.Raw()
         );
     }
     {
         auto shader = lib.GetShader<ClipUpdateRayCountShader>(ini);
-        Helpers::AddComputePass<ClipUpdateRayCountShader>(builder, shader, params);
+        Helpers::AddComputePass<ClipUpdateRayCountShader>(builder, shader, params, shared_table);
     }
 
     // Ray tracing...
@@ -1038,7 +1037,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
             builder, screen_probe_update_ray_allocator.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(
-            builder, shader, params, cmd.Raw()
+            builder, shader, params, shared_table, cmd.Raw()
         );
     }
 
@@ -1048,7 +1047,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
     {
         auto shader = lib.GetShader<SampleLightRaysForUpdateRayHitsShader>(ini);
         Helpers::AddComputeIndirectPass<SampleLightRaysForUpdateRayHitsShader>(
-            builder, shader, params, view->diffuse_indirect_lighting_->shading_point_command.Raw()
+            builder, shader, params, shared_table, view->diffuse_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -1070,7 +1069,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
             builder, screen_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(
-            builder, shader, params, cmd.Raw()
+            builder, shader, params, shared_table, cmd.Raw()
         );
     }
 
@@ -1081,10 +1080,11 @@ void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderG
     auto & lib = RDGShaderLibrary::Get();
     auto ini = GetDiffuseIndirectLightingShaderInitializationInfo();
     auto params = view->diffuse_indirect_lighting_->shader_params;
+    auto shared_table = builder.Allocate<SharedParameterTableId>();
     {
         auto shader = lib.GetShader<ResolveProbeUpdateRayRadianceFromCellsShader>(ini);
         Helpers::AddComputeIndirectPass<ResolveProbeUpdateRayRadianceFromCellsShader>(
-            builder, shader, params, view->diffuse_indirect_lighting_->shading_point_command.Raw()
+            builder, shader, params, shared_table, view->diffuse_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -1093,26 +1093,26 @@ void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderG
         if (CVar_Debug_OutputProbeUpdateRays.Get()) ini_s.optional_macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
         auto shader = lib.GetShader<UpdateScreenProbesAndCacheShader>(ini_s);
         Helpers::AddComputeIndirectPass<UpdateScreenProbesAndCacheShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             view->diffuse_indirect_lighting_->spawn_list_command.Raw()
         );
     }
 
-    // Filter probes
+    // Filter probes (separable 2-pass: vertical then horizontal)
     auto tile_dimensions = GetTileDimensions(view);
     {
         auto ini_s = ini;
         ini_s.optional_macros.push_back("FIRST_PASS_VERTICAL_FILTER_DIRECTION");
         auto shader  = lib.GetShader<FilterScreenProbesShader>(ini_s);
         Helpers::AddComputePass<FilterScreenProbesShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             tile_dimensions.x, tile_dimensions.y
         );
     }
     {
         auto shader  = lib.GetShader<FilterScreenProbesShader>(ini);
         Helpers::AddComputePass<FilterScreenProbesShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             tile_dimensions.x, tile_dimensions.y
         );
     }
@@ -1121,7 +1121,7 @@ void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderG
     {
         auto shader = lib.GetShader<WriteBackFilteredScreenProbesShader>(ini);
         Helpers::AddComputePass<WriteBackFilteredScreenProbesShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             tile_dimensions.x, tile_dimensions.y
         );
     }
@@ -1137,7 +1137,7 @@ void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderG
     {
         auto shader = lib.GetShader<UpdateScreenProbeCacheMRUQueueShader>(ini);
         Helpers::AddComputePass<UpdateScreenProbeCacheMRUQueueShader>(
-            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     // MakeTileScreenProbeHeaderIndex
@@ -1169,14 +1169,14 @@ void Renderer::Render_FinishDiffuseIndirectLighting(RendererView * view, RenderG
     {
         auto shader = lib.GetShader<ComputeScreenProbeSHCoefficientsShader>(ini);
         Helpers::AddComputePass<ComputeScreenProbeSHCoefficientsShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             tile_dimensions.x, tile_dimensions.y
         );
     }
     {
         auto shader = lib.GetShader<ComputeDiffuseIndirectLightingShader>(ini);
         Helpers::AddComputePass<ComputeDiffuseIndirectLightingShader>(
-            builder, shader, params,
+            builder, shader, params, shared_table,
             DivideAndRoundUp(view->film_width_, DiffuseIndirectLightingShader::kTileSize),
             DivideAndRoundUp(view->film_height_, DiffuseIndirectLightingShader::kTileSize)
         );

@@ -371,10 +371,11 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         params->PointEdgeSampler = RHI::Get().GetGlobalSamplers().point_edge;
     }
     auto & lib = RDGShaderLibrary::Get();
+    auto shared_table = builder.Allocate<SharedParameterTableId>();
     {
         auto shader = lib.GetShader<VolumePrimitivesClearCountersShader>();
         auto groups = DivideAndRoundUp(num_tiles, VolumePrimitivesClearCountersShader::kThreadGroupSize);
-        Helpers::AddComputePass(builder, shader, params, groups);
+        Helpers::AddComputePass(builder, shader, params, shared_table, groups);
     }
     {
         auto shader = lib.GetShader<CollectVolumePrimitivesShader>();
@@ -405,11 +406,11 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
     {
         auto shader = lib.GetShader<ProjectVolumePrimitivesShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_primitive_count.Raw(), ProjectVolumePrimitivesShader::kThreadGroupSize);
-        Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, shared_table, cmd.Raw());
     }
     {
         auto shader = lib.GetShader<ClampPrimitiveInstanceCountShader>();
-        Helpers::AddComputePass(builder, shader, params);
+        Helpers::AddComputePass(builder, shader, params, shared_table);
     }
     DeviceRadixSort::AddRadixSort32BitsPass(builder, kMaxNumVolumePrimitiveInstances,
         primitive_instance_list_key.Raw(), primitive_instance_key_sorted.Raw(),
@@ -420,12 +421,12 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
         builder, primitive_instance_count.Raw(), CollectTileInstanceOffsetsShader::kThreadGroupSize);
     {
         auto shader = lib.GetShader<CollectTileInstanceOffsetsShader>();
-        Helpers::AddComputeIndirectPass(builder, shader, params, instance_indirect_buffer.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, shared_table, instance_indirect_buffer.Raw());
     }
 
     {
         auto shader = lib.GetShader<CountTileInstancesShader>();
-        Helpers::AddComputePass(builder, shader, params, DivideAndRoundUp(num_tiles, CountTileInstancesShader::kThreadGroupSize));
+        Helpers::AddComputePass(builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, CountTileInstancesShader::kThreadGroupSize));
     }
 
     {
@@ -434,7 +435,7 @@ void Renderer::Render_DrawVolumePrimitives(RendererView *view, RenderGraphBuilde
             ini.optional_macros.push_back("ENABLE_FOURIER_VOLUME_RENDERING");
         }
         auto shader = lib.GetShader<DrawVolumePrimitivesShader>(ini);
-        Helpers::AddComputePass(builder, shader, params, tile_dimensions.x, tile_dimensions.y);
+        Helpers::AddComputePass(builder, shader, params, shared_table, tile_dimensions.x, tile_dimensions.y);
     }
 }
 MI_NAMESPACE_END

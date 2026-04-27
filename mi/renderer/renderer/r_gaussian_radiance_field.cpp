@@ -602,8 +602,9 @@ void Renderer::Render_DrawGaussianRadianceFields(
         stochastic_large_gaussian_ini.optional_macros.push_back("LARGE_GAUSSIAN_HALF_RESOLUTION_PATH");
     }
     // Pass 1: ClearCounters
+    auto shared_table = builder.Allocate<SharedParameterTableId>();
     auto clear_shader = lib.GetShader<GRF_ClearCountersShader>(stochastic_large_gaussian_ini);
-    Helpers::AddComputePass(builder, clear_shader, params);
+    Helpers::AddComputePass(builder, clear_shader, params, shared_table);
     // Pass 2: FilterActiveGaussians
     if (ctx.gaussian_radiance_fields.d_filter_draw_commands) {
         auto shader = lib.GetShader<GRF_FilterShader>();
@@ -615,7 +616,7 @@ void Renderer::Render_DrawGaussianRadianceFields(
     {
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, active_gaussian_count_buffer.Raw(), wave_size);
         auto shader = lib.GetShader<GRF_ProjectShader>(stochastic_large_gaussian_ini);
-        Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, shared_table, cmd.Raw());
     }
     if (!CVar_GRF_StochasticRendering.Get()) {
         // Pass 4: Radix Sort active gaussians by linear depth
