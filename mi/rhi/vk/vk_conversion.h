@@ -685,9 +685,6 @@ FORCEINLINE vk::AccessFlags2 GetVulkanAccessFlags (RHIGPUAccessFlags flags) {
     if(flags & RHIGPUAccessFlagBits::kTransferWrite) {
         vk_flags |= vk::AccessFlagBits2::eTransferWrite;
     }
-    if (flags & RHIGPUAccessFlagBits::kShaderBindingTableRead) {
-        vk_flags |= vk::AccessFlagBits2::eShaderBindingTableReadKHR;
-    }
     return vk_flags;
 }
 
