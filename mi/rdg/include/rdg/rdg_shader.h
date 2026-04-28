@@ -135,8 +135,8 @@ public:
     // used for RHI resource binding. Returns UINT32_MAX if the index is invalid (not used in shader).
     template<RHIParamType type>
     FORCEINLINE uint32_t ConvertParamResourceIndexToResourceSlot (int index) {
-        if (index >= (int)cpp_resource_index_to_slot_[(uint32_t)type].size()) return UINT32_MAX;
-        return cpp_resource_index_to_slot_[(uint32_t)type][index];
+        if (index >= (int)cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)type].size()) return UINT32_MAX;
+        return cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)type][index];
     }
 
 
@@ -198,10 +198,10 @@ protected:
     const RDGShaderClassRegistry * class_registry_;
 
     // Mapping resource indices in cpp declaration (essentially the index of the resource in the top level cpp info struct)
-    // to pipeline slot numbers (used for resource binding) reflected via pipeline compilation.
+    // to pipeline root signature slot numbers (used for RHI resource binding).
     // Note: special case, global uniform buffer have index ref_uniform_buffers.size() in the kUniformBuffer vector.
     // (the last element in the vector)
-    std::vector<uint32_t> cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kMax];
+    std::vector<uint32_t> cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kMax];
 
     // Shortcut
     // Get the resource slot by the name of the resource reflected from shaders
@@ -215,7 +215,7 @@ protected:
     std::vector<std::string> GetExtraDefines (const RDGShaderInitializationInfo & ini) const;
 
     // Clear and rebuild the mapping between cpp resource indices and pipeline slots
-    void RemapResourceIndexToRHIResourceSlots ();
+    void RemapResourceIndexToRootSigResourceIndex ();
 
     std::string LoadSource () const ;
     // Helper function, re-compile shaders only.

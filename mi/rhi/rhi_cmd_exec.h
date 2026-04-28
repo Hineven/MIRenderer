@@ -47,6 +47,7 @@ public:
     virtual void RHIMemoryBarrier (RHICommandQueueBase * buffer, RHICommandMemoryBarrier * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
     virtual void RHIBufferBarriers (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;
+    virtual void RHICombinedBarriers (RHICommandQueueBase * buffer, RHICommandBarriers * cmd) = 0;
     virtual void RHIDebugMarkerBegin (RHICommandQueueBase * buffer, RHICommandDebugMarkerBegin * cmd) = 0;
     virtual void RHIDebugMarkerEnd (RHICommandQueueBase * buffer, RHICommandDebugMarkerEnd * cmd) = 0;
     virtual void RHIDebugMarkerInsert (RHICommandQueueBase * buffer, RHICommandDebugMarkerInsert * cmd) = 0;

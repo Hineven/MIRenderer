@@ -207,6 +207,11 @@ void RHICommandBufferBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBufferBarriers(&cmd, this);
 }
 
+void RHICommandBarriers::Execute(RHICommandQueueBase &cmd) {
+    MI_RHI_CMD_STAT_INC(RHICmdStatId::kCombinedBarriers);
+    RHI::Get().GetCommandExecutor()->RHICombinedBarriers(&cmd, this);
+}
+
 void RHICommandAccelerationStructureBarrier::Execute(RHICommandQueueBase &cmd) {
     MI_RHI_CMD_STAT_INC(RHICmdStatId::kAccelerationStructureBarrier);
     RHI::Get().GetCommandExecutor()->RHIAcclerationStructureBarriers(&cmd, this);

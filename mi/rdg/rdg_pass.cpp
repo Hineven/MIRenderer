@@ -135,13 +135,12 @@ RDGPass * RDGPass::AddTextureH(RDGTexture *texture, RDGTextureUsageType usage, R
 
 RDGPass * RDGPass::AddTexture(RDGTexture *texture, RHITextureLayoutType layout,
 RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
-    // Reference the rdg resource no matter how it is used to prevent some free-after-use cases.
-    // (because shader parameter struct does not keep the references. They can be reused across
-    // multiple passes. If we do not keep references here some buffers may be freed too early.)
     if (texture) AddResourceReference(texture);
-    if (!texture) return this; // Do nothing if the texture is null
-    if (stages == RHIPipelineStageFlagBits::kNone || access == RHIGPUAccessFlagBits::kNone)
-        return this; // If no access or stages are specified, do not add the texture.
+    if (!texture) return this;
+    if (stages == RHIPipelineStageFlagBits::kNone || access == RHIGPUAccessFlagBits::kNone) {
+        used_textures.emplace_back(layout, access, stages, texture);
+        return this;
+    }
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_textures.emplace_back(texture);
     if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_textures.emplace_back(texture);
     used_textures.emplace_back(layout, access, stages, texture);
@@ -196,12 +195,9 @@ RDGPass * RDGPass::AddBufferH(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPi
 }
 
 RDGPass *RDGPass::AddBuffer(RDGBuffer *buffer, RHIGPUAccessFlags access, RHIPipelineStageFlags stages) {
-    // Reference the rdg resource no matter how it is used to prevent some free-after-use cases.
-    // (because shader parameter struct does not keep the references. They can be reused across
-    // multiple passes. If we do not keep references here some buffers may be freed too early.)
     if (buffer) AddResourceReference(buffer);
     if (access == RHIGPUAccessFlagBits::kNone || stages == RHIPipelineStageFlagBits::kNone) {
-        // If the access is kNone, we don't care about the buffer.
+        used_buffers.emplace_back(access, stages, buffer);
         return this;
     }
     if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_buffers.emplace_back(buffer);
@@ -288,8 +284,7 @@ void RDGPass::PreCompile() {
                 }
                 AddTexture(texture,
                     RHITextureLayoutType::kShaderReadOnlyOptimal,
-                    // Sometimes there are storage read access (texture.Load())
-                    RHIGPUAccessFlagBits::kShaderSampledRead | access,
+                    access == RHIGPUAccessFlagBits::kNone ? access : (RHIGPUAccessFlagBits::kShaderSampledRead | access),
                     stages
                 );
             }

@@ -65,6 +65,7 @@ enum class RHICmdStatId : uint16_t {
     kMemoryBarrier,
     kTextureBarrier,
     kBufferBarrier,
+    kCombinedBarriers,
     kAccelerationStructureBarrier,
 
     kDebugMarkerBegin,

@@ -151,7 +151,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     };
 
     // Check and remap referenced uniform buffers
-    cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
+    cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
     for (auto const & [i, e] : std::views::enumerate(shader->GetUniformBufferDesc())) {
         // find corresponding uniform buffer in cpp reflection
         int cpp_ub_idx = FindIndex(info.uniform_buffers_, e.name);
@@ -182,7 +182,7 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     }
 
     // Check storage buffers
-    cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
+    cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
     for (const auto& sb : shader->GetStorageBufferDesc()) {
         int index = FindIndex(info.storage_buffers_, sb.name);
         if (index == -1) {
@@ -434,8 +434,8 @@ std::vector<std::string> RDGShader::GetBaseDefaultMacros() {
     return RayTracedRenderableClassRegistry::GetRenderableTypeMacros();
 }
 
-void RDGShader::RemapResourceIndexToRHIResourceSlots() {
-    for (auto & e : cpp_resource_index_to_slot_) e.clear();
+void RDGShader::RemapResourceIndexToRootSigResourceIndex() {
+    for (auto & e : cpp_resource_index_to_root_sig_resource_slot_) e.clear();
     assert(IsValid() && "Only with an assembled pipeline can we remap bindings");
     auto & info = *class_registry_->GetShaderParamStructInfo();
     RHIPipeline * pipeline = nullptr;
@@ -460,51 +460,51 @@ void RDGShader::RemapResourceIndexToRHIResourceSlots() {
     // from the same C++ param struct info, so cpp_param_index == root_sig_sequential_index.
     // We only need to check if the shader actually uses each resource.
     {
-        auto & list = pipeline->GetUniformBufferDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
-        for (const auto& [i, e] : std::views::enumerate(info.uniform_buffers_)) {
+        auto & list = pipeline->GetStorageBufferDesc();
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
+        for (const auto& [i, e] : std::views::enumerate(info.storage_buffers_)) {
             if (HasResource(e.info->name, list))
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUniformBuffer][i] = (uint32_t)i;
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kStorageBuffer][i] = (uint32_t)i;
         }
     }
     {
-        auto & list = pipeline->GetStorageBufferDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer].resize(info.storage_buffers_.size(), UINT32_MAX);
-        for (const auto& [i, e] : std::views::enumerate(info.storage_buffers_)) {
+        auto & list = pipeline->GetUniformBufferDesc();
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kUniformBuffer].resize(info.uniform_buffers_.size(), UINT32_MAX);
+        for (const auto& [i, e] : std::views::enumerate(info.uniform_buffers_)) {
             if (HasResource(e.info->name, list))
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kStorageBuffer][i] = (uint32_t)i;
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kUniformBuffer][i] = (uint32_t)i;
         }
     }
     {
         auto & list = pipeline->GetUAVDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture].resize(info.uavs_.size(), UINT32_MAX);
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kUAVTexture].resize(info.uavs_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.uavs_)) {
             if (HasResource(e.info->name, list))
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kUAVTexture][i] = (uint32_t)i;
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kUAVTexture][i] = (uint32_t)i;
         }
     }
     {
         auto & list = pipeline->GetSRVDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture].resize(info.srvs_.size(), UINT32_MAX);
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kSRVTexture].resize(info.srvs_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.srvs_)) {
             if (HasResource(e.info->name, list))
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSRVTexture][i] = (uint32_t)i;
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kSRVTexture][i] = (uint32_t)i;
         }
     }
     {
         auto & list = pipeline->GetSamplerDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler].resize(info.samplers_.size(), UINT32_MAX);
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kSampler].resize(info.samplers_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.samplers_)) {
             if (HasResource(e.info->name, list))
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kSampler][i] = (uint32_t)i;
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kSampler][i] = (uint32_t)i;
         }
     }
     {
         auto & list = pipeline->GetAccelerationStructureDesc();
-        cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure].resize(info.acceleration_structures_.size(), UINT32_MAX);
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kAccelerationStructure].resize(info.acceleration_structures_.size(), UINT32_MAX);
         for (const auto& [i, e] : std::views::enumerate(info.acceleration_structures_)) {
             if (HasResource(e.info->name, list))
-                cpp_resource_index_to_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = (uint32_t)i;
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = (uint32_t)i;
         }
     }
 }
@@ -1249,7 +1249,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     is_valid_ = true;
 
     // Remap bindings, so we can actually associate the shader parameters with RHI pipeline binding slots
-    RemapResourceIndexToRHIResourceSlots();
+    RemapResourceIndexToRootSigResourceIndex();
 
     return true;
 }

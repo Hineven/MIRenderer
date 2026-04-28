@@ -292,19 +292,20 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         // Mark incoming commands.
         sync_active_period(pass.get(), cmd);
 
-        // Place resource barriers.
-        // RHIPipelineStageFlags current_stages = pass->GetStageFlags();
+        // Place resource barriers (combined textures + buffers).
         {
-            auto num_barriers = pass->compiled_.textures.size();
-            uint32_t num_barriers_used = 0;
-            auto textures = cmd.Allocate<RHITexture*[]>(num_barriers);
-            auto layouts = cmd.Allocate<RHITextureLayoutType[]>(num_barriers);
-            auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
-            auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+            // Gather texture barriers
+            auto num_tex = pass->compiled_.textures.size();
+            uint32_t num_tex_used = 0;
+            auto textures = cmd.Allocate<RHITexture*[]>(num_tex);
+            auto layouts = cmd.Allocate<RHITextureLayoutType[]>(num_tex);
+            auto tex_src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_tex);
+            auto tex_dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_tex);
+            auto tex_src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_tex);
+            auto tex_dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_tex);
             for (const auto & texture_use : pass->compiled_.textures) {
                 if (texture_use.texture->GetRHI()) {
+                    if (texture_use.access == RHIGPUAccessFlagBits::kNone) continue;
                     auto prev_stages = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
                     auto curr_stages = texture_use.stages;
                     auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
@@ -314,50 +315,54 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     if (prev_layout != curr_layout || (prev_stages && (
                         curr_usage & RHIGPUAccessFlagBits::kWrite
                         || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite))))) {
-                        textures[num_barriers_used] = texture_use.texture->GetRHI();
-                        src_accesses[num_barriers_used] = prev_usage;
-                        src_stages[num_barriers_used] = prev_stages;
-                        dst_accesses[num_barriers_used] = curr_usage;
-                        dst_stages[num_barriers_used] = curr_stages;
-                        layouts[num_barriers_used] = curr_layout;
-                        num_barriers_used ++;
+                        textures[num_tex_used] = texture_use.texture->GetRHI();
+                        tex_src_accesses[num_tex_used] = prev_usage;
+                        tex_src_stages[num_tex_used] = prev_stages;
+                        tex_dst_accesses[num_tex_used] = curr_usage;
+                        tex_dst_stages[num_tex_used] = curr_stages;
+                        layouts[num_tex_used] = curr_layout;
+                        num_tex_used ++;
                     }
                     texture_use.texture->Use(texture_use.stages, curr_usage, curr_layout);
                 }
             }
-            if (num_barriers_used) cmd.TextureBarriers(num_barriers_used, textures, layouts, src_stages, dst_stages, src_accesses, dst_accesses);
-        }
-        {
-            auto num_barriers = pass->compiled_.buffers.size();
-            auto num_barriers_used = 0;
-            auto buffers = cmd.Allocate<RHIBufferSpan[]>(num_barriers);
-            auto src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
-            auto dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_barriers);
-            auto src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
-            auto dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_barriers);
+
+            // Gather buffer barriers
+            auto num_buf = pass->compiled_.buffers.size();
+            auto num_buf_used = 0;
+            auto buffers = cmd.Allocate<RHIBufferSpan[]>(num_buf);
+            auto buf_src_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_buf);
+            auto buf_dst_stages = cmd.Allocate<RHIPipelineStageFlags[]>(num_buf);
+            auto buf_src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_buf);
+            auto buf_dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_buf);
             for (const auto & buffer_use: pass->compiled_.buffers) {
-                // printf("Barrier (RDG): %s\n", buffer_use.buffer->GetName().c_str());
                 if (buffer_use.buffer->GetRHI()) {
+                    if (buffer_use.access == RHIGPUAccessFlagBits::kNone) continue;
                     auto prev_stages = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
                     auto curr_stages = buffer_use.stages;
                     auto prev_usage = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
                     auto curr_usage = buffer_use.access;
-                    // printf("Barrrier buffer %s: %x %x\n", buffer_use.buffer->GetRHI().buffer->GetName(), (unsigned)prev_usage, (unsigned)curr_usage);
                     if (prev_stages && (
                         (curr_usage & RHIGPUAccessFlagBits::kWrite)
                         || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite)))) {
-                        // printf("Actual barrier: %s %s %s %s\n", ToString(prev_stages).c_str(), ToString(curr_stages).c_str(), ToString(prev_usage).c_str(), ToString(curr_usage).c_str());
-                        buffers[num_barriers_used] = buffer_use.buffer->GetRHI();
-                        src_stages[num_barriers_used] = prev_stages;
-                        dst_stages[num_barriers_used] = curr_stages;
-                        src_accesses[num_barriers_used] = prev_usage;
-                        dst_accesses[num_barriers_used] = curr_usage;
-                        num_barriers_used ++;
+                        buffers[num_buf_used] = buffer_use.buffer->GetRHI();
+                        buf_src_stages[num_buf_used] = prev_stages;
+                        buf_dst_stages[num_buf_used] = curr_stages;
+                        buf_src_accesses[num_buf_used] = prev_usage;
+                        buf_dst_accesses[num_buf_used] = curr_usage;
+                        num_buf_used ++;
                     }
                     buffer_use.buffer->Use(curr_stages, curr_usage);
                 }
             }
-            if (num_barriers_used) cmd.BufferBarriers(num_barriers_used, buffers, src_stages, dst_stages, src_accesses, dst_accesses);
+
+            // Emit combined barriers
+            if (num_tex_used || num_buf_used) {
+                cmd.Barriers(
+                    num_tex_used, textures, layouts, tex_src_stages, tex_dst_stages, tex_src_accesses, tex_dst_accesses,
+                    num_buf_used, buffers, buf_src_stages, buf_dst_stages, buf_src_accesses, buf_dst_accesses
+                );
+            }
         }
         // Execute the pass
         pass->pass_(pass.get(), cmd);

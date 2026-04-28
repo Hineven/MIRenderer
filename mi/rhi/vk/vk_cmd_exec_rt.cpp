@@ -187,7 +187,6 @@ void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, 
     auto pipeline = static_cast<VulkanRayTracingPipeline*>(bind_ray_tracing_pipeline->pipeline_);
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
-        point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = pipeline;
     }
 }

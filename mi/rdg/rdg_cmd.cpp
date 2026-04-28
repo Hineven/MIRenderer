@@ -78,9 +78,7 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
                     }
                     continue;
                 }
-                if (buffer_ptr) {
-                    ret.storages[num_active_storages ++] = {buffer_ptr->GetRHI(), slot};
-                }
+                ret.storages[num_active_storages ++] = {buffer_ptr ? buffer_ptr->GetRHI() : RHIBufferSpan{}, slot};
             }
         }
         ret.storages = ret.storages.first(num_active_storages);
@@ -101,9 +99,7 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
                     }
                     continue;
                 }
-                if (texture_desc.texture) {
-                    ret.uavs[num_active_uavs ++] = {texture_desc.texture->GetRHI(), slot, texture_desc.array_layer, texture_desc.mip_level};
-                }
+                ret.uavs[num_active_uavs ++] = {texture_desc.texture ? texture_desc.texture->GetRHI() : nullptr, slot, texture_desc.array_layer, texture_desc.mip_level};
             }
         }
         ret.uavs = ret.uavs.first(num_active_uavs);
@@ -124,9 +120,7 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
                     }
                     continue;
                 }
-                if (texture_desc.texture) {
-                    ret.srvs[num_active_srvs ++] = {texture_desc.texture->GetRHI(), slot, texture_desc.array_layer, texture_desc.mip_level};
-                }
+                ret.srvs[num_active_srvs ++] = {texture_desc.texture ? texture_desc.texture->GetRHI() : nullptr, slot, texture_desc.array_layer, texture_desc.mip_level};
             }
         }
         ret.srvs = ret.srvs.first(num_active_srvs);

@@ -68,9 +68,18 @@ Key concepts:
 - **Render Thread**: Single thread that records rendering commands and interacts with RHI
 - **Frame Index**: Monotonically increasing counter for frame-based resource management
 
+Implicit regulations:
+- RHIResource are refcounted by TRef, and are destructed in a delayed destruction queue once they are no longer referenced.
+  - This arrangement makes it safe to free any RHIResource when the GPU is still using them in the current / last frame.
+- RHI implementation rarely / never hold a TRef to any RHIResource for clear layered lifetime control.
+- It is suggested to insert necessary debug build validation in the RHI layer but not the underlying implementation layer.
+- RHI layer has only vulkan implementation for now.
+- Among RHI resource types, UAV maps to storage images (usually RWTexture2D or Texture2D accessed with .Load()). SRV maps to shader sampled images (usually Texture2D accessed with samplers). StorageBuffer maps to (RW)StructuredBuffer.
+
 Key classes:
 - `RHI`: Singleton graphics API interface
 - `RHITexture` / `RHIBuffer`: GPU resource abstractions
+- `RHIRootSignature`: A root signature identifying a shared layout (parameter sets) of a set of pipelines.
 - `RHIShader` / `RHIGraphicsPipeline` / `RHIComputePipeline` / `RHIRayTracingPipeline`: Pipeline objects
 - `RHICommandQueueGraphics`: Graphics command submission
 
@@ -82,11 +91,21 @@ High-level rendering pass organization:
 - Uniform buffer management
 - Profiling timestamp queries
 
+Implicit regulations:
+- An allocation of a parameter struct identifies a unchangable set of shader parameters.
+  - The assigned parameters in the struct are assumed to be the same among all dispatches across a frame.
+
 Key classes:
 - `RenderGraph`: Encapsulates a frame's rendering passes
 - `RenderGraphBuilder`: Builder pattern for constructing render graphs
 - `RDGPass`: Base class for render passes
 - `RDGTexture` / `RDGBuffer`: Graph-managed resource handles
+
+Notes:
+- The complete process of RDGShader compilation is a follows:
+  - RDGShader create/reuse a root signature from the RDGRootSignatureCache, mapping parameter struct members to bindings within the root signature.
+  - RDGShader compile pipeline shaders into SPIR-V bytecode, relocate the bytecode to pair shader descriptor binding numbers with the root signature bindings.
+  - 
 
 ### 4. Renderer (`mi/renderer`)
 

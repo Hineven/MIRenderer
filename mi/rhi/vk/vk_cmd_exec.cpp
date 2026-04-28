@@ -400,7 +400,6 @@ void VulkanCommandExecutor::RHIBindGraphicsPipeline(RHICommandQueueBase *cmd,
     auto & point = state.points[(uint32_t)RHIBindPointType::kGraphics];
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
-        point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = pipeline;
     }
 }
@@ -441,7 +440,6 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     auto & point = state.points[(uint32_t)RHIBindPointType::kCompute];
     if(point.bound_pipeline != pipeline) {
         point.bound_pipeline_dirty = true;
-        point.bound_private_descriptor_set = nullptr;
         point.bound_pipeline = pipeline;
     }
 }
@@ -599,8 +597,10 @@ void VulkanCommandExecutor::RHIBindSignatureParameterTable(
         MI_LOG(MIInfraLogType::kError, "BindSignatureParameterTable: table_id {} not found", bind_table->table_id_);
         return;
     }
-    point.bound_private_descriptor_set = it->second;
-    point.bound_descriptor_dirty = true;
+    if (point.bound_private_descriptor_set != it->second) {
+        point.bound_private_descriptor_set = it->second;
+        point.bound_descriptor_dirty = true;
+    }
 }
 
 void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
@@ -986,6 +986,57 @@ VulkanCommandExecutor::RHIBufferBarriers(RHICommandQueueBase *cmd, RHICommandBuf
     state.cmd.pipelineBarrier2(vk::DependencyInfo{
         {}, 0, nullptr, barrier->num_buffers_,
         vk_barriers, 0, nullptr
+    });
+}
+
+void VulkanCommandExecutor::RHICombinedBarriers(RHICommandQueueBase *cmd, RHICommandBarriers *barrier) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    auto image_barriers = state.Allocate<vk::ImageMemoryBarrier2[]>(barrier->num_textures_);
+    for (uint32_t i = 0; i < barrier->num_textures_; i++) {
+        auto texture = static_cast<VulkanTexture*>(barrier->textures_[i]);
+        auto dst_vk_layout = GetVulkanImageLayout(barrier->layouts_[i]);
+        image_barriers[i] = vk::ImageMemoryBarrier2()
+                .setSrcStageMask(GetVulkanPipelineStageFlags(barrier->tex_src_stages_[i]))
+                .setDstStageMask(GetVulkanPipelineStageFlags(barrier->tex_dst_stages_[i]))
+                .setSrcAccessMask(GetVulkanAccessFlags(barrier->tex_src_accesses_[i]))
+                .setDstAccessMask(GetVulkanAccessFlags(barrier->tex_dst_accesses_[i]))
+                .setOldLayout(texture->vk_image_layout_)
+                .setNewLayout(dst_vk_layout)
+                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setImage(texture->GetImage())
+                .setSubresourceRange(vk::ImageSubresourceRange()
+                        .setAspectMask(texture->GetImageAspect())
+                        .setBaseMipLevel(0)
+                        .setLevelCount(texture->GetMipLevels())
+                        .setBaseArrayLayer(0)
+                        .setLayerCount(texture->GetArrayLayers())
+                );
+        texture->layout_ = barrier->layouts_[i];
+        texture->vk_image_layout_ = dst_vk_layout;
+    }
+
+    auto buffer_barriers = state.Allocate<vk::BufferMemoryBarrier2[]>(barrier->num_buffers_);
+    for (uint32_t i = 0; i < barrier->num_buffers_; i++) {
+        buffer_barriers[i].srcStageMask = GetVulkanPipelineStageFlags(barrier->buf_src_stages_[i]);
+        buffer_barriers[i].dstStageMask = GetVulkanPipelineStageFlags(barrier->buf_dst_stages_[i]);
+        buffer_barriers[i].srcAccessMask = (barrier->buf_src_stages_[i] == RHIPipelineStageFlagBits::kNone)
+            ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->buf_src_accesses_[i]);
+        buffer_barriers[i].dstAccessMask = (barrier->buf_dst_stages_[i] == RHIPipelineStageFlagBits::kNone)
+            ? vk::AccessFlags2{} : GetVulkanAccessFlags(barrier->buf_dst_accesses_[i]);
+        buffer_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        buffer_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        buffer_barriers[i].buffer = ((VulkanBuffer*)barrier->buffers_[i].buffer)->GetBuffer();
+        buffer_barriers[i].offset = barrier->buffers_[i].offset;
+        buffer_barriers[i].size = barrier->buffers_[i].size;
+    }
+
+    state.cmd.pipelineBarrier2(vk::DependencyInfo{
+        {}, 0, nullptr,
+        barrier->num_buffers_, buffer_barriers,
+        barrier->num_textures_, image_barriers
     });
 }
 

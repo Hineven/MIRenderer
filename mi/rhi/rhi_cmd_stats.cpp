@@ -43,6 +43,7 @@ static const char* g_rhi_cmd_stat_names[] = {
     "MemoryBarrier",
     "TextureBarrier",
     "BufferBarrier",
+    "CombinedBarriers",
     "AccelerationStructureBarrier",
 
     "DebugMarkerBegin",

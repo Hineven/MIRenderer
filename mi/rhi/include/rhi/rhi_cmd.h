@@ -617,6 +617,40 @@ public:
     RHIGPUAccessFlags * dst_accesses_;
 };
 
+class RHICommandBarriers : public TRHICommand<RHICommandBarriers> {
+public:
+    RHICommandBarriers(
+        uint32_t num_textures,
+        RHITexture ** textures, RHITextureLayoutType * layouts,
+        RHIPipelineStageFlags * tex_src_stages, RHIPipelineStageFlags * tex_dst_stages,
+        RHIGPUAccessFlags * tex_src_accesses, RHIGPUAccessFlags * tex_dst_accesses,
+        uint32_t num_buffers,
+        RHIBufferSpan * buffers,
+        RHIPipelineStageFlags * buf_src_stages, RHIPipelineStageFlags * buf_dst_stages,
+        RHIGPUAccessFlags * buf_src_accesses, RHIGPUAccessFlags * buf_dst_accesses
+    ): num_textures_(num_textures),
+        textures_(textures), layouts_(layouts),
+        tex_src_stages_(tex_src_stages), tex_dst_stages_(tex_dst_stages),
+        tex_src_accesses_(tex_src_accesses), tex_dst_accesses_(tex_dst_accesses),
+        num_buffers_(num_buffers), buffers_(buffers),
+        buf_src_stages_(buf_src_stages), buf_dst_stages_(buf_dst_stages),
+        buf_src_accesses_(buf_src_accesses), buf_dst_accesses_(buf_dst_accesses) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    uint32_t num_textures_;
+    RHITexture ** textures_;
+    RHITextureLayoutType * layouts_;
+    RHIPipelineStageFlags * tex_src_stages_;
+    RHIPipelineStageFlags * tex_dst_stages_;
+    RHIGPUAccessFlags * tex_src_accesses_;
+    RHIGPUAccessFlags * tex_dst_accesses_;
+    uint32_t num_buffers_;
+    RHIBufferSpan * buffers_;
+    RHIPipelineStageFlags * buf_src_stages_;
+    RHIPipelineStageFlags * buf_dst_stages_;
+    RHIGPUAccessFlags * buf_src_accesses_;
+    RHIGPUAccessFlags * buf_dst_accesses_;
+};
+
 class RHICommandAccelerationStructureBarrier : public TRHICommand<RHICommandAccelerationStructureBarrier> {
 public:
     RHICommandAccelerationStructureBarrier(
@@ -957,6 +991,20 @@ public:
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ) {
         AddCommand(AllocateCommand<RHICommandBufferBarrier>(buffer_count, buffers, src_stages, dst_stages, src_accesses, dst_accesses));
+    }
+
+    FORCEINLINE void Barriers (
+            uint32_t texture_count, RHITexture ** textures, RHITextureLayoutType * layouts,
+            RHIPipelineStageFlags * tex_src_stages, RHIPipelineStageFlags * tex_dst_stages,
+            RHIGPUAccessFlags * tex_src_accesses, RHIGPUAccessFlags * tex_dst_accesses,
+            uint32_t buffer_count, RHIBufferSpan * buffers,
+            RHIPipelineStageFlags * buf_src_stages, RHIPipelineStageFlags * buf_dst_stages,
+            RHIGPUAccessFlags * buf_src_accesses, RHIGPUAccessFlags * buf_dst_accesses
+    ) {
+        AddCommand(AllocateCommand<RHICommandBarriers>(
+            texture_count, textures, layouts, tex_src_stages, tex_dst_stages, tex_src_accesses, tex_dst_accesses,
+            buffer_count, buffers, buf_src_stages, buf_dst_stages, buf_src_accesses, buf_dst_accesses
+        ));
     }
 
     FORCEINLINE void AccelerationStructureBarrier (

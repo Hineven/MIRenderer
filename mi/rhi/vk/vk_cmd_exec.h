@@ -55,6 +55,7 @@ public:
     void RHIMemoryBarrier (RHICommandQueueBase * buffer, RHICommandMemoryBarrier * cmd) override ;
     void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandTextureBarrier * barrier) override ;
     void RHIBufferBarriers(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;
+    void RHICombinedBarriers(RHICommandQueueBase * cmd, RHICommandBarriers * barrier) override ;
     void RHIDebugMarkerBegin(RHICommandQueueBase *buffer, RHICommandDebugMarkerBegin *cmd) override;
     void RHIDebugMarkerEnd(RHICommandQueueBase *buffer, RHICommandDebugMarkerEnd *cmd) override;
     void RHIDebugMarkerInsert(RHICommandQueueBase *buffer, RHICommandDebugMarkerInsert *cmd) override;
