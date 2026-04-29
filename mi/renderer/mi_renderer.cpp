@@ -93,6 +93,7 @@ void Renderer::FrameContext::Deinit() {
     visible_renderables.clear();
     deferred_static_meshes = {};
     forward_static_meshes = {};
+    light_structure = {};
 }
 
 // A: An unordered hash of renderable TLAS handles & TLAS configurations. (Rebuild required)
@@ -328,6 +329,14 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     // Prepare gaussian radiance fields (instance offsets/counts, renderable list, filter draw commands)
     Render_PrepareGaussianRadianceFields(view, builder);
 
+    // Pre-allocate RDG resources that may be used among multiple lighting stages
+    view->CreateSharedResources(builder);
+    // Pre-allocate shared view persistent data among multiple lighting stages
+    view->MakeSurePersistentDataExists(builder);
+
+    // Prepare light structure upload data (per-frame buffers for mesh light instances)
+    Render_PrepareLightStructure(view, builder);
+
     // Fire batched uploads to the RDG
     view->upload_context_.Fire(builder);
 
@@ -401,8 +410,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
-    // Pre-allocate RDG resources that may be used among multiple lighting stages
-    view->CreateSharedResources(builder);
     if (view->g_buffer_) {
         exports->RegisterResource("depth", view->g_buffer_->G_depth_.Raw());
         exports->RegisterResource("transmittance", view->g_buffer_->G_transmittance_.Raw());
@@ -412,11 +419,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         exports->RegisterResource("geometry_normal", view->g_buffer_->G_geometry_normal_.Raw());
         exports->RegisterResource("motion_vector", view->g_buffer_->G_motion_vector_.Raw());
     }
-
-    // Pre-allocate shared view persistent data among multiple lighting stages
-    view->MakeSurePersistentDataExists(builder);
-
-    // Ready for rendering
 
     // Build light structure for light sampling.
     Render_BuildLightStructure(view, builder);

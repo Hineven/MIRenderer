@@ -84,6 +84,9 @@ struct LightStructureData : RefCounted<> {
     uint32_t num_active_mesh_light_instances_ {};
     uint32_t num_active_mesh_light_instance_clusters_ {};
     uint32_t max_active_mesh_light_instance_levels_ {};
+    uint32_t triangle_draw_count {};
+    uint32_t finalize_cluster_draw_count {};
+    std::vector<uint32_t> level_draw_counts;
     TRef<RDGBuffer> active_light_list_count;
     TRef<RDGBuffer> active_light_list_buffer;
     // List of light indices for each grid

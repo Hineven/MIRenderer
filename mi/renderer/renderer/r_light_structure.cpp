@@ -441,19 +441,15 @@ namespace {
     );
 }
 
-void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuilder & builder) {
-    RDGSectionGuard section(builder, "Render_BuildLightStructure");
-    auto & lib = RDGShaderLibrary::Get();
+void Renderer::Render_PrepareLightStructure(RendererView *view, [[maybe_unused]] RenderGraphBuilder &builder) {
     auto * ls = view->light_structure_.Raw();
-    mi_check(ls, "Light structure data must exist before building the light structure.");
-    auto persistent = view->persistent_data_->light_structure_persistent_data_;
+    mi_check(ls, "Light structure data must exist before preparing the light structure.");
 
-    auto & queue = RHI::Get().GetGraphicsCommandQueue();
-
-    std::vector<uint32_t> active_mesh_light_instance_indices;
-    std::vector<RHIDrawIndirectCommand> triangle_draw_commands;
-    std::vector<RHIDrawIndirectCommand> finalize_cluster_draw_commands;
-    std::vector<std::vector<RHIDrawIndirectCommand>> level_draw_commands;
+    auto & ls_ctx = ctx.light_structure;
+    ls_ctx.active_mesh_light_instance_indices.clear();
+    ls_ctx.triangle_draw_commands.clear();
+    ls_ctx.finalize_cluster_draw_commands.clear();
+    ls_ctx.level_draw_commands.clear();
     uint32_t num_active_mli_clusters = 0;
     uint32_t max_active_mli_levels = 0;
 
@@ -483,14 +479,14 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
             auto const & hierarchy = hierarchy_records[local_mli_index].hierarchy;
             auto const & depth_level_cluster_counts = hierarchy_records[local_mli_index].depth_level_cluster_counts;
             auto const & mli = mesh_light_instances[local_mli_index];
-            uint32_t active_list_index = (uint32_t)active_mesh_light_instance_indices.size();
-            active_mesh_light_instance_indices.push_back(mli_base_index + local_mli_index);
+            uint32_t active_list_index = (uint32_t)ls_ctx.active_mesh_light_instance_indices.size();
+            ls_ctx.active_mesh_light_instance_indices.push_back(mli_base_index + local_mli_index);
 
             num_active_mli_clusters += (uint32_t)hierarchy.nodes.size();
             max_active_mli_levels = std::max(max_active_mli_levels, (uint32_t)depth_level_cluster_counts.size());
 
             if (!mli.MeshLightInstanceClusterOffset.bIsTriangle()) {
-                finalize_cluster_draw_commands.push_back(RHIDrawIndirectCommand {
+                ls_ctx.finalize_cluster_draw_commands.push_back(RHIDrawIndirectCommand {
                     (uint32_t)hierarchy.nodes.size(),
                     1,
                     0,
@@ -499,7 +495,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
             }
 
             if (!hierarchy.triangles.empty()) {
-                triangle_draw_commands.push_back(RHIDrawIndirectCommand {
+                ls_ctx.triangle_draw_commands.push_back(RHIDrawIndirectCommand {
                     (uint32_t)hierarchy.triangles.size(),
                     1,
                     0,
@@ -508,8 +504,8 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
             }
 
             uint32_t num_level_dispatches = DivideAndRoundUp((uint32_t)depth_level_cluster_counts.size(), kLightPrecomputationLevelsPerDispatch);
-            if (level_draw_commands.size() < num_level_dispatches) {
-                level_draw_commands.resize(num_level_dispatches);
+            if (ls_ctx.level_draw_commands.size() < num_level_dispatches) {
+                ls_ctx.level_draw_commands.resize(num_level_dispatches);
             }
             for (uint32_t level_dispatch_index = 0; level_dispatch_index < num_level_dispatches; ++level_dispatch_index) {
                 uint32_t level_index = level_dispatch_index * kLightPrecomputationLevelsPerDispatch;
@@ -517,7 +513,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (level_cluster_count == 0) {
                     continue;
                 }
-                level_draw_commands[level_dispatch_index].push_back(RHIDrawIndirectCommand {
+                ls_ctx.level_draw_commands[level_dispatch_index].push_back(RHIDrawIndirectCommand {
                     level_cluster_count,
                     1,
                     0,
@@ -527,70 +523,95 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
         }
     }
 
-    ls->num_active_mesh_light_instances_ = (uint32_t)active_mesh_light_instance_indices.size();
+    ls->num_active_mesh_light_instances_ = (uint32_t)ls_ctx.active_mesh_light_instance_indices.size();
     ls->num_active_mesh_light_instance_clusters_ = num_active_mli_clusters;
     ls->max_active_mesh_light_instance_levels_ = max_active_mli_levels;
 
-    ls->active_mesh_light_instance_index_buffer = builder.CreateBuffer<uint32_t>(std::max<size_t>(active_mesh_light_instance_indices.size(), 1));
+    ls->triangle_draw_count = (uint32_t)ls_ctx.triangle_draw_commands.size();
+    ls->finalize_cluster_draw_count = (uint32_t)ls_ctx.finalize_cluster_draw_commands.size();
+    ls->level_draw_counts.clear();
+    ls->level_draw_counts.reserve(ls_ctx.level_draw_commands.size());
+    for (auto & cmds : ls_ctx.level_draw_commands) {
+        ls->level_draw_counts.push_back((uint32_t)cmds.size());
+    }
+
+    // Upload active mesh light instance index buffer
+    ls->active_mesh_light_instance_index_buffer = RDGBuffer::Create(
+        RHIBufferUsageFlagBits::kStorage,
+        (uint32_t)(std::max<size_t>(ls_ctx.active_mesh_light_instance_indices.size(), 1) * sizeof(uint32_t))
+    );
     ls->active_mesh_light_instance_index_buffer->SetName("LightGrid_ActiveMeshLightInstanceIndexBuffer");
-    if (!active_mesh_light_instance_indices.empty()) {
-        Helpers::UploadWithRDG(
-            builder,
+    if (!ls_ctx.active_mesh_light_instance_indices.empty()) {
+        view->upload_context_.Add(
             ls->active_mesh_light_instance_index_buffer.Raw(),
-            active_mesh_light_instance_indices.data(),
-            active_mesh_light_instance_indices.size() * sizeof(uint32_t)
+            ls_ctx.active_mesh_light_instance_indices.data(),
+            ls_ctx.active_mesh_light_instance_indices.size() * sizeof(uint32_t)
         );
-    } else {
-        Helpers::Clear(builder, ls->active_mesh_light_instance_index_buffer.Raw());
     }
+    view->upload_context_.AddExtraBarrier(ls->active_mesh_light_instance_index_buffer.Raw());
 
-    uint32_t active_mli_count = ls->num_active_mesh_light_instances_;
-    Helpers::UploadWithRDG(builder, ls->active_mesh_light_instance_count.Raw(), &active_mli_count, sizeof(uint32_t));
+    // Upload active mesh light instance count
+    view->upload_context_.Add(ls->active_mesh_light_instance_count.Raw(), &ls->num_active_mesh_light_instances_, sizeof(uint32_t));
+    view->upload_context_.AddExtraBarrier(ls->active_mesh_light_instance_count.Raw());
 
-    ls->precompute_triangle_draw_command_buffer = builder.CreateBuffer<RHIDrawIndirectCommand>(std::max<size_t>(triangle_draw_commands.size(), 1), RHIBufferUsageFlagBits::kIndirect);
+    // Upload triangle precompute draw commands
+    ls->precompute_triangle_draw_command_buffer = RDGBuffer::Create(
+        RHIBufferUsageFlagBits::kIndirect,
+        (uint32_t)(std::max<size_t>(ls_ctx.triangle_draw_commands.size(), 1) * sizeof(RHIDrawIndirectCommand))
+    );
     ls->precompute_triangle_draw_command_buffer->SetName("LightPrecomputationTriangleDrawCommandBuffer");
-    if (!triangle_draw_commands.empty()) {
-        Helpers::UploadWithRDG(
-            builder,
+    if (!ls_ctx.triangle_draw_commands.empty()) {
+        view->upload_context_.Add(
             ls->precompute_triangle_draw_command_buffer.Raw(),
-            triangle_draw_commands.data(),
-            triangle_draw_commands.size() * sizeof(RHIDrawIndirectCommand)
+            ls_ctx.triangle_draw_commands.data(),
+            ls_ctx.triangle_draw_commands.size() * sizeof(RHIDrawIndirectCommand)
         );
-    } else {
-        Helpers::Clear(builder, ls->precompute_triangle_draw_command_buffer.Raw());
     }
+    view->upload_context_.AddExtraBarrier(ls->precompute_triangle_draw_command_buffer.Raw());
 
-    ls->precompute_finalize_cluster_draw_command_buffer = builder.CreateBuffer<RHIDrawIndirectCommand>(std::max<size_t>(finalize_cluster_draw_commands.size(), 1), RHIBufferUsageFlagBits::kIndirect);
+    // Upload finalize cluster draw commands
+    ls->precompute_finalize_cluster_draw_command_buffer = RDGBuffer::Create(
+        RHIBufferUsageFlagBits::kIndirect,
+        (uint32_t)(std::max<size_t>(ls_ctx.finalize_cluster_draw_commands.size(), 1) * sizeof(RHIDrawIndirectCommand))
+    );
     ls->precompute_finalize_cluster_draw_command_buffer->SetName("LightPrecomputationFinalizeClusterDrawCommandBuffer");
-    if (!finalize_cluster_draw_commands.empty()) {
-        Helpers::UploadWithRDG(
-            builder,
+    if (!ls_ctx.finalize_cluster_draw_commands.empty()) {
+        view->upload_context_.Add(
             ls->precompute_finalize_cluster_draw_command_buffer.Raw(),
-            finalize_cluster_draw_commands.data(),
-            finalize_cluster_draw_commands.size() * sizeof(RHIDrawIndirectCommand)
+            ls_ctx.finalize_cluster_draw_commands.data(),
+            ls_ctx.finalize_cluster_draw_commands.size() * sizeof(RHIDrawIndirectCommand)
         );
-    } else {
-        Helpers::Clear(builder, ls->precompute_finalize_cluster_draw_command_buffer.Raw());
     }
+    view->upload_context_.AddExtraBarrier(ls->precompute_finalize_cluster_draw_command_buffer.Raw());
 
+    // Upload level draw commands
     ls->precompute_level_draw_command_buffers.clear();
-    ls->precompute_level_draw_command_buffers.reserve(level_draw_commands.size());
-    for (uint32_t level_index = 0; level_index < (uint32_t)level_draw_commands.size(); ++level_index) {
-        auto & commands = level_draw_commands[level_index];
-        auto cmd_buffer = builder.CreateBuffer<RHIDrawIndirectCommand>(std::max<size_t>(commands.size(), 1), RHIBufferUsageFlagBits::kIndirect);
+    ls->precompute_level_draw_command_buffers.reserve(ls_ctx.level_draw_commands.size());
+    for (uint32_t level_index = 0; level_index < (uint32_t)ls_ctx.level_draw_commands.size(); ++level_index) {
+        auto & commands = ls_ctx.level_draw_commands[level_index];
+        auto cmd_buffer = RDGBuffer::Create(
+            RHIBufferUsageFlagBits::kIndirect,
+            (uint32_t)(std::max<size_t>(commands.size(), 1) * sizeof(RHIDrawIndirectCommand))
+        );
         cmd_buffer->SetName("LightPrecomputationLevelDrawCommandBuffer");
         if (!commands.empty()) {
-            Helpers::UploadWithRDG(
-                builder,
+            view->upload_context_.Add(
                 cmd_buffer.Raw(),
                 commands.data(),
                 commands.size() * sizeof(RHIDrawIndirectCommand)
             );
-        } else {
-            Helpers::Clear(builder, cmd_buffer.Raw());
         }
+        view->upload_context_.AddExtraBarrier(cmd_buffer.Raw());
         ls->precompute_level_draw_command_buffers.push_back(std::move(cmd_buffer));
     }
+}
+
+void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuilder & builder) {
+    RDGSectionGuard section(builder, "Render_BuildLightStructure");
+    auto & lib = RDGShaderLibrary::Get();
+    auto * ls = view->light_structure_.Raw();
+    mi_check(ls, "Light structure data must exist before building the light structure.");
+    auto persistent = view->persistent_data_->light_structure_persistent_data_;
 
     auto fill_common_params = [&](LightStructureParameters * params, uint32_t level_index) {
         FillParametersForLightStructure(view, params);
@@ -674,7 +695,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     {
         auto shader = lib.GetShader<PrecomputeTrianglesShader>(ini);
         builder.AddPass<PrecomputeTrianglesShader>({}, shader, common_params,
-            [shader, params = common_params, cmd = ls->precompute_triangle_draw_command_buffer.Raw(), draw_count = (uint32_t)triangle_draw_commands.size()]
+            [shader, params = common_params, cmd = ls->precompute_triangle_draw_command_buffer.Raw(), draw_count = ls->triangle_draw_count]
             (RDGPass * pass, RHICommandQueueGraphics & queue_inner) {
                 if (draw_count == 0) {
                     return;
@@ -689,7 +710,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     }
 
     for (int32_t level_dispatch_index = (int32_t)ls->precompute_level_draw_command_buffers.size() - 1; level_dispatch_index >= 0; --level_dispatch_index) {
-        auto const draw_count = (uint32_t)level_draw_commands[level_dispatch_index].size();
+        auto const draw_count = ls->level_draw_counts[level_dispatch_index];
         auto * params = builder.Allocate<LightStructureParameters>();
         fill_common_params(params, (uint32_t)level_dispatch_index * kLightPrecomputationLevelsPerDispatch);
         auto shader = lib.GetShader<PrecomputeLevelShader>(ini);
@@ -711,7 +732,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     {
         auto shader = lib.GetShader<FinalizeMLIClustersShader>(ini);
         builder.AddPass<FinalizeMLIClustersShader>({}, shader, common_params,
-            [shader, params = common_params, cmd = ls->precompute_finalize_cluster_draw_command_buffer.Raw(), draw_count = (uint32_t)finalize_cluster_draw_commands.size()]
+            [shader, params = common_params, cmd = ls->precompute_finalize_cluster_draw_command_buffer.Raw(), draw_count = ls->finalize_cluster_draw_count]
             (RDGPass * pass, RHICommandQueueGraphics & queue_inner) {
                 if (draw_count == 0) {
                     return;

@@ -125,6 +125,10 @@ protected:
     void Render_PrepareLightStructureHistory (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+    // Prepare light structure upload data (called before upload_context_.Fire)
+    void Render_PrepareLightStructure (
+        RendererView * view, RenderGraphBuilder & builder
+    );
     // Build light structure for light sampling
     void Render_BuildLightStructure (
         RendererView * view, RenderGraphBuilder & builder
@@ -279,6 +283,13 @@ protected:
             std::vector<uint32_t> active_renderable_indices; // host side copy for preparing active lists
             uint32_t active_renderable_count;
         } gaussian_radiance_fields;
+
+        struct LightStructure {
+            std::vector<uint32_t> active_mesh_light_instance_indices;
+            std::vector<RHIDrawIndirectCommand> triangle_draw_commands;
+            std::vector<RHIDrawIndirectCommand> finalize_cluster_draw_commands;
+            std::vector<std::vector<RHIDrawIndirectCommand>> level_draw_commands;
+        } light_structure;
 
         void Init ();
         void Deinit ();
