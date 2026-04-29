@@ -422,8 +422,8 @@ void RendererView::SetupViewCommonShaderParameters(RenderGraphBuilder &builder) 
     camera.HZBDimensions = glm::uvec2(hzb_size);
     float FilmViewportWorldHeight = 1;
     float FilmViewportWorldWidth = FilmViewportWorldHeight * aspect_ratio;
-    camera.FilmPixelWorldSize = {1.0f / (FilmViewportWorldWidth * film_width_),
-        1.0f / (FilmViewportWorldHeight * film_height_)};
+    camera.FilmPixelWorldSize = {FilmViewportWorldWidth / float(film_width_),
+        FilmViewportWorldHeight / float(film_height_)};
 
     camera.InvFilmDimensions = {1.0f / float(film_width_), 1.0f / float(film_height_)};
     camera.UVToHZBScale = {
