@@ -9,6 +9,7 @@
 #include "rdg/rdg_pool.h"
 #include <rdg/rdg_resource.h>
 #include "core/infra.h"
+#include <algorithm>
 MI_NAMESPACE_BEGIN
 
 
@@ -19,146 +20,243 @@ RDGResourcePool::RDGResourcePool() {
 RDGResourcePool::~RDGResourcePool() {
     if (num_active_buffers_ + num_active_textures_ != 0)
         MI_LOG(MIInfraLogType::kError, "RDGResourcePool is destroyed with {} / {} active allocations left!", num_active_buffers_, num_active_textures_);
+    for (auto & [hash, allocs] : free_buffer_allocations_) {
+        for (auto * alloc : allocs) delete alloc;
+    }
+    for (auto & [hash, allocs] : free_texture_allocations_) {
+        for (auto * alloc : allocs) delete alloc;
+    }
 }
 
 TRef<RDGResourcePool> RDGResourcePool::Create() {
     return {new RDGResourcePool()};
 }
 
-RDGResourcePool::RDGPoolFreeBufferRecord RDGResourcePool::AllocateBufferBlock (RHIBufferDesc for_buffer_desc) {
-    // Allocate a new buffer
-    auto rhi_buffer = RHI::Get().CreateBuffer(for_buffer_desc);
+// --- Buffer allocation ---
+
+RDGPoolBufferAllocation * RDGResourcePool::AllocateNewBufferBlock(RHIBufferDesc desc) {
+    auto rhi_buffer = RHI::Get().CreateBuffer(desc);
 #if MI_ENABLE_RHI_OBJECT_NAMING
     rhi_buffer->SetName("Unnamed RDG pool buffer #" + std::to_string(rhi_buffer_references_.size()));
 #endif
-    RDGPoolFreeBufferRecord allocated = {
-        rhi_buffer.Raw(), for_buffer_desc.size, {}, {}, {}
-    };
+    auto * alloc = new RDGPoolBufferAllocation();
+    alloc->buffer = rhi_buffer.Raw();
+    alloc->allocation_size = desc.size;
     rhi_buffer_references_.emplace_back(std::move(rhi_buffer));
-
-    total_device_memory_usage_ += for_buffer_desc.size;
-
-    return allocated;
+    total_device_memory_usage_ += desc.size;
+    return alloc;
 }
 
-void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
-    // printf("AllocateResource size %llu\n", buffer->GetRequestedSize());
-    assert(!buffer->IsImported() && "Imported buffer should not be allocated by the pool.");
-    // TODO better strategy. Now I'll only implement a simple one
-    assert(!buffer->IsAllocated() && "This buffer should not be allocated already.");
-    assert(buffer->requested_size_ > 0 && "Buffer size should be greater than 0.");
-    RDGPoolFreeBufferRecord allocated = {};
+RDGPoolBufferAllocation * RDGResourcePool::FindOrCreateBufferAllocation(RDGBuffer *buffer) {
     size_t requested_size = buffer->GetRequestedSize();
     if (buffer->dedicated_) {
-        // Allocate a new buffer
-        allocated = AllocateBufferBlock(buffer->GetDesc());
-    } else {
-        auto & desc = buffer->desc_;
-        desc.size = RDGBuffer::GetBestAllocationSizeFromRequestedSize(requested_size);
-        if (desc.size <= kBufferBlockSize) {
-            while (true) {
-                auto hash = RDGBuffer::GetResourceClassHash(desc, false);
-                auto & slot = rhi_free_buffer_map_[hash];
-                if (!slot.empty()) {
+        // Allocate a new buffer for dedicated resources
+        auto * alloc = AllocateNewBufferBlock(buffer->GetDesc());
+        alloc->resource_class_hash = buffer->GetResourceClassHash();
+        return alloc;
+    }
+    auto & desc = buffer->desc_;
+    desc.size = RDGBuffer::GetBestAllocationSizeFromRequestedSize(requested_size);
+    if (desc.size <= kBufferBlockSize) {
+        while (true) {
+            auto hash = RDGBuffer::GetResourceClassHash(desc, false);
+            auto & slot = free_buffer_allocations_[hash];
+            if (!slot.empty()) {
                     // Found one, allocate it
                     allocated = slot.back();
-                    slot.pop_back();
-                    break;
-                }
-                if (log2(desc.size / requested_size) >= kBufferReusingThresholdLog2
-                    || desc.size > kBufferReusingAbsoluteThreshold) {
-                    // Too large to reuse, stop searching and allocate a new buffer block
-                    break;
-                }
-                desc.size *= 2;
+                slot.pop_back();
+                return alloc;
             }
-            // Pool memory ran out, allocate a new buffer block
-            if (!allocated.buffer)
-                allocated = AllocateBufferBlock(desc);
-        } else {
-            // use dedicated allocation for large buffers
-            allocated = AllocateBufferBlock(desc);
+            if (log2(desc.size / requested_size) >= kBufferReusingThresholdLog2
+                || desc.size > kBufferReusingAbsoluteThreshold) {
+                    // Too large to reuse, stop searching and allocate a new buffer block
+                break;
+            }
+            desc.size *= 2;
         }
     }
-    if (!buffer->name_.empty() && buffer->dedicated_) {
-        allocated.buffer->SetName(buffer->name_);
-    }
-    buffer->rhi_buffer_span_ = {allocated.buffer, 0, requested_size};
-    buffer->read_stages_ = allocated.last_read_stages;
-    buffer->write_stages_ = allocated.last_write_stages;
-    buffer->read_access_ = allocated.last_access & RHIGPUAccessFlagBits::kRead;
-    buffer->write_access_ = allocated.last_access & RHIGPUAccessFlagBits::kWrite;
+    // Allocate a new buffer block if no reusable buffer is found or the requested size is larger than the block size.
+    auto * alloc = AllocateNewBufferBlock(desc);
+    alloc->resource_class_hash = buffer->GetResourceClassHash();
+    return alloc;
+}
 
-    num_active_buffers_ ++;
+// --- Texture allocation ---
+
+RDGPoolTextureAllocation * RDGResourcePool::AllocateNewTextureBlock(RHITextureDesc desc, uint32_t hash) {
+    auto rhi_texture = RHI::Get().CreateTexture(desc);
+#if MI_ENABLE_RHI_OBJECT_NAMING
+    rhi_texture->SetName("RDGResourcePoolTexture #" + std::to_string(rhi_texture_references_.size()));
+#endif
+    auto * alloc = new RDGPoolTextureAllocation();
+    alloc->texture = rhi_texture.Raw();
+    alloc->resource_class_hash = hash;
+    total_device_memory_usage_ += rhi_texture->GetSize();
+    rhi_texture_references_.emplace_back(std::move(rhi_texture));
+    return alloc;
+}
+
+// --- Attach ---
+
+void RDGResourcePool::AttachAllocation(RDGBuffer *buffer, RDGPoolBufferAllocation *alloc) {
+    if (!buffer->name_.empty() && buffer->dedicated_) {
+        alloc->buffer->SetName(buffer->name_);
+    }
+    alloc->Acquire();
+    buffer->allocation_ = alloc;
+    buffer->pool_ = this;
+    num_active_buffers_++;
+}
+
+void RDGResourcePool::AttachAllocation(RDGTexture *texture, RDGPoolTextureAllocation *alloc) {
+    alloc->Acquire();
+    texture->allocation_ = alloc;
+    texture->pool_ = this;
+    texture->current_layout_ = RHITextureLayoutType::kUndefined;
+    num_active_textures_++;
+}
+
+// --- Allocate / Recycle ---
+
+void RDGResourcePool::AllocateResource(RDGBuffer *buffer) {
+    assert(!buffer->IsImported() && "Imported buffer should not be allocated by the pool.");
+    assert(!buffer->IsAllocated() && "This buffer should not be allocated already.");
+    assert(buffer->requested_size_ > 0 && "Buffer size should be greater than 0.");
+    AttachAllocation(buffer, FindOrCreateBufferAllocation(buffer));
 }
 
 void RDGResourcePool::RecycleResource(RDGBuffer *buffer) {
-    // printf("RecycleBuffer %s size %llu\n", buffer->GetName().c_str(), buffer->GetAllocationSize());
-    auto hash = buffer->GetResourceClassHash();
-    rhi_free_buffer_map_[hash].emplace_back(
-        buffer->rhi_buffer_span_.buffer,
-        buffer->desc_.size,
-        buffer->read_stages_,
-        buffer->write_stages_,
-        buffer->read_access_ | buffer->write_access_
-    );
-    // printf("Recycle %s with access: %x %x\n", buffer->GetRHI().buffer->GetName(), buffer->read_access_, buffer->write_access_);
-    buffer->rhi_buffer_span_ = {};
+    auto * alloc = buffer->allocation_;
+    assert(alloc && "RecycleResource called on unallocated buffer");
+    alloc->last_read_stages = buffer->read_stages_;
+    alloc->last_write_stages = buffer->write_stages_;
+    alloc->last_access = buffer->read_access_ | buffer->write_access_;
+    if (alloc->Release()) {
+        free_buffer_allocations_[alloc->resource_class_hash].push_back(alloc);
+    }
+    buffer->allocation_ = nullptr;
     buffer->read_access_ = {};
     buffer->write_access_ = {};
     buffer->read_stages_ = {};
     buffer->write_stages_ = {};
     buffer->desc_.size = 0;
-
-    num_active_buffers_ --;
+    num_active_buffers_--;
 }
 
 void RDGResourcePool::AllocateResource(RDGTexture *texture) {
     assert(!texture->IsImported() && "Imported texture should not be allocated by the pool.");
     assert(!texture->IsAllocated() && "This texture should not be allocated already.");
-    auto & RHI = RHI::Get();
     auto hash = texture->GetResourceClassHash();
-    auto & slot = rhi_free_texture_map_[hash];
-    RDGPoolFreeTextureRecord allocated = {};
+    auto & slot = free_texture_allocations_[hash];
+    RDGPoolTextureAllocation * alloc = nullptr;
     if (slot.empty()) {
-        // Allocate a new texture
-        auto desc = texture->GetDesc();
-        auto rhi_texture = RHI.CreateTexture(desc);
-        rhi_texture->SetName("RDGResourcePoolTexture #" + std::to_string(rhi_texture_references_.size()));
-        allocated = {rhi_texture.Raw(), {}, {}, {}};
-        total_device_memory_usage_ += rhi_texture->GetSize();
-        rhi_texture_references_.emplace_back(std::move(rhi_texture));
-    }
-    else {
-        allocated = slot.back();
+        alloc = AllocateNewTextureBlock(texture->GetDesc(), hash);
+    } else {
+        alloc = slot.back();
         slot.pop_back();
     }
-    
-    texture->rhi_texture_ = allocated.texture;
-    texture->read_access_ = allocated.last_access & RHIGPUAccessFlagBits::kRead;
-    texture->write_access_ = allocated.last_access & RHIGPUAccessFlagBits::kWrite;
-    texture->read_stages_ = allocated.last_read_stages;
-    texture->write_stages_ = allocated.last_write_stages;
-    texture->current_layout_ = RHITextureLayoutType::kUndefined;
-
-    num_active_textures_ ++;
+    AttachAllocation(texture, alloc);
 }
 
 void RDGResourcePool::RecycleResource(RDGTexture *texture) {
-    assert(texture->IsAllocated() && "This texture should be allocated.");
-    auto hash = texture->GetResourceClassHash();
-    rhi_free_texture_map_[hash].emplace_back(texture->rhi_texture_,
-        texture->read_stages_, texture->write_stages_,
-        texture->read_access_ | texture->write_access_);
-    texture->rhi_texture_ = nullptr;
+    auto * alloc = texture->allocation_;
+    assert(alloc && "RecycleResource called on unallocated texture");
+    alloc->last_read_stages = texture->read_stages_;
+    alloc->last_write_stages = texture->write_stages_;
+    alloc->last_access = texture->read_access_ | texture->write_access_;
+    if (alloc->Release()) {
+        free_texture_allocations_[alloc->resource_class_hash].push_back(alloc);
+    }
+    texture->allocation_ = nullptr;
     texture->read_access_ = {};
     texture->write_access_ = {};
     texture->read_stages_ = {};
     texture->write_stages_ = {};
     texture->current_layout_ = RHITextureLayoutType::kUndefined;
+    num_active_textures_--;
+}
 
-    num_active_textures_ --;
+// --- Two-phase allocation ---
+
+void RDGResourcePool::RequestAllocation(RDGBuffer *buffer, uint32_t first_pass, uint32_t last_pass) {
+    assert(!buffer->IsImported() && "Imported buffer should not request allocation.");
+    assert(!buffer->IsAllocated() && "Buffer already allocated.");
+    if (buffer->GetFlags() & RDGResourceFlagBits::kExport) {
+        AllocateResource(buffer);
+        return;
+    }
+    pending_buffer_allocations_.push_back({buffer, first_pass, last_pass});
+}
+
+void RDGResourcePool::RequestAllocation(RDGTexture *texture, uint32_t first_pass, uint32_t last_pass) {
+    assert(!texture->IsImported() && "Imported texture should not request allocation.");
+    assert(!texture->IsAllocated() && "Texture already allocated.");
+    if (texture->GetFlags() & RDGResourceFlagBits::kExport) {
+        AllocateResource(texture);
+        return;
+    }
+    pending_texture_allocations_.push_back({texture, first_pass, last_pass});
+}
+
+void RDGResourcePool::CommitAllocations() {
+    // --- Buffer aliasing ---
+    std::stable_sort(pending_buffer_allocations_.begin(), pending_buffer_allocations_.end(),
+        [](const PendingBufferAllocation & a, const PendingBufferAllocation & b) {
+            return a.buffer->GetResourceClassHash() < b.buffer->GetResourceClassHash();
+        });
+
+    struct AliasedSlot {
+        RDGPoolBufferAllocation * allocation;
+        uint32_t last_pass;
+    };
+
+    size_t i = 0;
+    while (i < pending_buffer_allocations_.size()) {
+        uint32_t group_hash = pending_buffer_allocations_[i].buffer->GetResourceClassHash();
+        size_t group_start = i;
+        while (i < pending_buffer_allocations_.size() && pending_buffer_allocations_[i].buffer->GetResourceClassHash() == group_hash) {
+            i++;
+        }
+        size_t group_end = i;
+
+        std::sort(pending_buffer_allocations_.begin() + group_start, pending_buffer_allocations_.begin() + group_end,
+            [](const PendingBufferAllocation & a, const PendingBufferAllocation & b) {
+                return a.first_pass < b.first_pass;
+            });
+
+        std::vector<AliasedSlot> aliased_slots;
+
+        for (size_t j = group_start; j < group_end; j++) {
+            auto & pending = pending_buffer_allocations_[j];
+            auto * buffer = pending.buffer;
+
+            AliasedSlot * best = nullptr;
+            for (auto & slot : aliased_slots) {
+                if (slot.allocation && slot.last_pass < pending.first_pass) {
+                    if (!best || slot.last_pass > best->last_pass) {
+                        best = &slot;
+                    }
+                }
+            }
+
+            if (best) {
+                AttachAllocation(buffer, best->allocation);
+                best->last_pass = pending.last_pass;
+            } else {
+                auto * alloc = FindOrCreateBufferAllocation(buffer);
+                AttachAllocation(buffer, alloc);
+                aliased_slots.push_back({alloc, pending.last_pass});
+            }
+        }
+    }
+
+    // --- Textures: no aliasing yet ---
+    for (auto & pending : pending_texture_allocations_) {
+        AllocateResource(pending.texture);
+    }
+
+    pending_buffer_allocations_.clear();
+    pending_texture_allocations_.clear();
 }
 
 MI_NAMESPACE_END
-

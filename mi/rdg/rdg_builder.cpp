@@ -100,7 +100,10 @@ RDGBuffer * RenderGraphBuilder::Import(RHIBuffer *resource, RHIGPUAccessFlags pr
     auto desc = resource->GetDesc();
     auto buffer_raw_ptr = new RDGBuffer(desc.size, desc);
     auto buffer = TRef<RDGBuffer>(buffer_raw_ptr);
-    buffer->rhi_buffer_span_ = resource->GetSpan();
+    buffer->allocation_ = new RDGPoolBufferAllocation();
+    buffer->allocation_->buffer = resource;
+    buffer->allocation_->allocation_size = resource->GetDesc().size;
+    buffer->allocation_->Acquire();
     buffer->read_access_ = prev_access & RHIGPUAccessFlagBits::kRead;
     buffer->write_access_ = prev_access & RHIGPUAccessFlagBits::kWrite;
     buffer->read_stages_ = (prev_access & RHIGPUAccessFlagBits::kRead) ? prev_stages : RHIPipelineStageFlagBits::kNone;
@@ -124,7 +127,9 @@ RDGTexture * RenderGraphBuilder::Import(RHITexture * resource, RHITextureLayoutT
     mi_assert(resource != nullptr, "Cannot import a null texture.");
     auto texture_raw_ptr = new RDGTexture(resource->GetDesc());
     auto texture = TRef<RDGTexture>(texture_raw_ptr);
-    texture->rhi_texture_ = resource;
+    texture->allocation_ = new RDGPoolTextureAllocation();
+    texture->allocation_->texture = resource;
+    texture->allocation_->Acquire();
     texture->read_access_ = prev_access & RHIGPUAccessFlagBits::kRead;
     texture->write_access_ = prev_access & RHIGPUAccessFlagBits::kWrite;
     texture->read_stages_ = (prev_access & RHIGPUAccessFlagBits::kRead) ? prev_stages : RHIPipelineStageFlagBits::kNone;

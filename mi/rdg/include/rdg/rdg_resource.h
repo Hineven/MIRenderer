@@ -13,6 +13,7 @@
 #include "rdg_pool.h"
 #include "rhi/rhi.h"
 #include "rdg/rdg_base.h"
+#include "rhi/rhi_desc.h"
 #include "rhi/rhi_texture.h"
 #include "core/pixel_format.h"
 
@@ -28,8 +29,8 @@ public:
     uint32_t GetResourceClassHash () const override;
     void RequestRHI(RDGResourcePool * pool) override;
     void ReleaseRHI() override;
-    FORCEINLINE bool IsAllocated () const { return rhi_texture_ != nullptr; }
-    FORCEINLINE RHITexture * GetRHI () const { return rhi_texture_; }
+    FORCEINLINE bool IsAllocated () const { return allocation_ != nullptr; }
+    FORCEINLINE RHITexture * GetRHI () const { return allocation_ ? allocation_->texture : nullptr; }
 
     FORCEINLINE RHIPipelineStageFlags GetReadStages () const { return read_stages_; }
     FORCEINLINE RHIPipelineStageFlags GetWriteStages () const {return write_stages_;}
@@ -49,7 +50,7 @@ public:
 
     FORCEINLINE bool IsImportedFrom (RHITexture * texture) {
         mi_assert(IsImported(), "This should be an imported texture to call RDGTexture::IsImportedFrom().");
-        return rhi_texture_ == texture;
+        return GetRHI() == texture;
     }
 
     FORCEINLINE const std::string & GetName () const {
@@ -99,9 +100,8 @@ public:
 protected:
 
     RHITextureDesc desc_ {};
-    // Underlying RHI texture, can be null if not allocated.
-    // The reference is kept by RDG resource pool, we'll just use plain pointer here.
-    RHITexture * rhi_texture_ {};
+    // Underlying RDG pool allocation, can be null if not allocated.
+    RDGPoolTextureAllocation * allocation_ {};
     // Current layout of the texture, used for barrier placement.
     RHITextureLayoutType current_layout_ {RHITextureLayoutType::kUndefined};
 
@@ -142,7 +142,7 @@ public:
     }
 
     FORCEINLINE void SetDedicated (bool value = true) {
-        assert(!rhi_buffer_span_.buffer && "Cannot set dedicated flag after buffer allocation.");
+        assert(!allocation_ && "Cannot set dedicated flag after buffer allocation.");
         dedicated_ = value;
     }
     ~RDGBuffer () override ;
@@ -153,12 +153,12 @@ public:
     FORCEINLINE RHIBufferDesc GetDesc () const { return desc_; }
     void RequestRHI(RDGResourcePool * pool) override;
     void ReleaseRHI() override;
-    FORCEINLINE bool IsAllocated () const { return rhi_buffer_span_.buffer != nullptr; }
-    FORCEINLINE RHIBufferSpan GetRHI () const { return rhi_buffer_span_; }
+    FORCEINLINE bool IsAllocated () const { return allocation_ != nullptr; }
+    FORCEINLINE RHIBufferSpan GetRHI () const { return allocation_ ? RHIBufferSpan{allocation_->buffer, 0, requested_size_} : RHIBufferSpan{}; }
 
     FORCEINLINE bool IsImportedFrom (RHIBufferSpan buffer) {
         mi_assert(IsImported(), "This should be an imported buffer to call RDGBuffer::IsImportedFrom().");
-        return rhi_buffer_span_ == buffer;
+        return GetRHI() == buffer;
     }
 
     // Short hand for (std::byte*)GetRHI().buffer->Map() + GetRHI().offset
@@ -178,9 +178,8 @@ protected:
     size_t requested_size_;
     // Real info for potential allocation.
     RHIBufferDesc desc_ {};
-    // Underlying RHI buffer, can be null if not allocated.
-    // The reference is kept by RDG resource pool, we'll just use plain pointer here.
-    RHIBufferSpan rhi_buffer_span_ {};
+    // Underlying RDG pool allocation, can be null if not allocated.
+    RDGPoolBufferAllocation * allocation_ {};
 
     // Name of the buffer, used for debug tracking
     std::string name_ {};

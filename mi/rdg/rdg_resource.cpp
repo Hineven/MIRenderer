@@ -29,7 +29,7 @@ RDGBuffer::~RDGBuffer() {
 
 void RDGTexture::RequestRHI(RDGResourcePool * pool) {
     if (!IsImported()) {
-        if (!rhi_texture_) {
+        if (!allocation_) {
             pool_ = pool;
             pool_->AllocateResource(this);
         } else {
@@ -38,15 +38,18 @@ void RDGTexture::RequestRHI(RDGResourcePool * pool) {
     }
 }
 void RDGTexture::ReleaseRHI() {
-    if (!IsImported() && rhi_texture_) {
+    if (!IsImported() && allocation_) {
         pool_->RecycleResource(this);
-        rhi_texture_ = nullptr;
+        allocation_ = nullptr;
         pool_ = nullptr;
+    } else if (IsImported() && allocation_) {
+        delete allocation_;
+        allocation_ = nullptr;
     }
 }
 void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
     if (!IsImported()) {
-        if (!rhi_buffer_span_.buffer && requested_size_ > 0) {
+        if (!allocation_ && requested_size_ > 0) {
             pool_ = pool;
             pool_->AllocateResource(this);
         } else {
@@ -55,16 +58,20 @@ void RDGBuffer::RequestRHI(RDGResourcePool * pool) {
     }
 }
 void RDGBuffer::ReleaseRHI() {
-    if (!IsImported() && rhi_buffer_span_.buffer) {
+    if (!IsImported() && allocation_) {
         pool_->RecycleResource(this);
-        rhi_buffer_span_ = {};
+        allocation_ = nullptr;
+    } else if (IsImported() && allocation_) {
+        delete allocation_;
+        allocation_ = nullptr;
     }
     pool_ = nullptr;
 }
 
 void *RDGBuffer::Map() const {
     assert(IsAllocated() && "Buffer must be allocated before mapping.");
-    return (std::byte*)rhi_buffer_span_.buffer->Map() + rhi_buffer_span_.offset;
+    auto span = GetRHI();
+    return (std::byte*)span.buffer->Map() + span.offset;
 }
 
 uint32_t RDGBuffer::GetResourceClassHash () const {

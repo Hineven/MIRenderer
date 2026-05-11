@@ -6,6 +6,7 @@
 #include <ranges>
 //#include <corecrt_io.h>
 #include <map>
+#include <unordered_map>
 #include <queue>
 #include "rdg/rdg.h"
 
@@ -108,17 +109,43 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
 
     std::set<RDGResource*> rdg_resources;
 
-    // Prepare resource counters
-    for (auto & e : passes_) {
+    // Prepare resource counters and compute lifetimes (first_pass / last_pass)
+    // lifetime_map: RDGResource -> {first_pass, last_pass}
+    struct ResourceLifetime { uint32_t first = UINT32_MAX; uint32_t last = 0; };
+    std::unordered_map<RDGResource*, ResourceLifetime> lifetime_map;
+    for (uint32_t pass_idx = 0; pass_idx < (uint32_t)passes_.size(); pass_idx++) {
+        auto & e = passes_[pass_idx];
         for (auto & texture : e->compiled_.textures) {
             rdg_resources.insert(texture.texture.Raw());
             texture.texture->execution_ref_counter ++;
+            auto & lf = lifetime_map[texture.texture.Raw()];
+            if (lf.first == UINT32_MAX) lf.first = pass_idx;
+            lf.last = pass_idx;
         }
         for (auto & buffer : e->compiled_.buffers) {
             rdg_resources.insert(buffer.buffer.Raw());
             buffer.buffer->execution_ref_counter ++;
+            auto & lf = lifetime_map[buffer.buffer.Raw()];
+            if (lf.first == UINT32_MAX) lf.first = pass_idx;
+            lf.last = pass_idx;
         }
     }
+
+    // Phase 1: Request allocations with lifetime info (dry run)
+    for (auto & [resource, lf] : lifetime_map) {
+        if (auto * texture = dynamic_cast<RDGTexture*>(resource)) {
+            if (!texture->IsImported() && !texture->IsAllocated()) {
+                pool->RequestAllocation(texture, lf.first, lf.last);
+            }
+        } else if (auto * buffer = dynamic_cast<RDGBuffer*>(resource)) {
+            if (!buffer->IsImported() && !buffer->IsAllocated()) {
+                pool->RequestAllocation(buffer, lf.first, lf.last);
+            }
+        }
+    }
+
+    // Phase 2: Commit all allocations (aliasing analysis + physical RHI allocation)
+    pool->CommitAllocations();
 
     // Directly use the graphics queue.
     auto & RHI = RHI::Get();
@@ -281,14 +308,6 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         int pass_index = ready_passes.front();
         ready_passes.pop();
         auto &pass = passes_[pass_index];
-        // printf("================ Pass ================: %s\n", pass->name_.c_str());
-        // Get resources ready in the pool
-        for (const auto& texture_use : pass->compiled_.textures) {
-            texture_use.texture->RequestRHI(pool);
-        }
-        for (const auto & buffer_use : pass->compiled_.buffers) {
-            buffer_use.buffer->RequestRHI(pool);
-        }
         // Mark incoming commands.
         sync_active_period(pass.get(), cmd);
 
@@ -310,6 +329,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     auto curr_stages = texture_use.stages;
                     auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
                     auto curr_usage = texture_use.access;
+                    if (!prev_stages && texture_use.texture->allocation_) {
+                        prev_stages = texture_use.texture->allocation_->last_read_stages | texture_use.texture->allocation_->last_write_stages;
+                        prev_usage = texture_use.texture->allocation_->last_access;
+                    }
                     auto prev_layout = texture_use.texture->GetCurrentLayout();
                     auto curr_layout = texture_use.layout;
                     if (prev_layout != curr_layout || (prev_stages && (
@@ -341,6 +364,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     auto prev_stages = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
                     auto curr_stages = buffer_use.stages;
                     auto prev_usage = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
+                    if (!prev_stages && buffer_use.buffer->allocation_) {
+                        prev_stages = buffer_use.buffer->allocation_->last_read_stages | buffer_use.buffer->allocation_->last_write_stages;
+                        prev_usage = buffer_use.buffer->allocation_->last_access;
+                    }
                     auto curr_usage = buffer_use.access;
                     if (prev_stages && (
                         (curr_usage & RHIGPUAccessFlagBits::kWrite)
