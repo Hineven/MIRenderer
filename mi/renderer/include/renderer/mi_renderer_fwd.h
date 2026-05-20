@@ -76,5 +76,8 @@ struct GaussianRadianceFieldPersistentData;
 class GaussianRadianceField;
 class GaussianRadianceFieldInstance;
 
+class NGXContext;
+class DLSSRRContext;
+
 MI_NAMESPACE_END
 #endif //MI_RENDERER_FWD_H

@@ -43,6 +43,9 @@
 #include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 
+#include "dlss/ngx_context.h"
+#include "dlss/dlss_rr_context.h"
+
 MI_NAMESPACE_BEGIN
 static CVar<int> CVar_FinalOutputType(
     "r.debug.final_output_type",

@@ -9,6 +9,8 @@
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_volume_primitives.h>
 #include <renderer/mi_gaussian_radiance_field.h>
+#include "dlss/ngx_context.h"
+#include "dlss/dlss_rr_context.h"
 #include "sobol_samples.h"
 #include "rhi/rhi_buffer.h"
 
@@ -43,6 +45,19 @@ void Renderer::Init(DeviceBindlessResourceAllocator * allocator, RDGResourcePool
     }
     // Register console commands for the renderer
     Console::RegisterCommands();
+
+    // Initialize DLSS Ray Reconstruction as optional component
+    if (NGXContext::ProbeAvailability()) {
+        ngx_context_ = TRef<NGXContext>(new NGXContext());
+        if (!ngx_context_->Initialize()) {
+            MI_LOG(MIInfraLogType::kWarning, "NGX initialization failed, DLSS Ray Reconstruction disabled.");
+            ngx_context_ = nullptr;
+        } else {
+            MI_LOG(MIInfraLogType::kInfo, "NGX initialized successfully.");
+        }
+    } else {
+        MI_LOG(MIInfraLogType::kInfo, "DLSS Ray Reconstruction not available (non-RTX GPU or NGX not found).");
+    }
 }
 
 MI_NAMESPACE_END

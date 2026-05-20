@@ -262,6 +262,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     };
 #endif
 
+
     while (!ready_passes.empty()) {
 #ifdef RDG_DEBUG_VALIDATION
         for (auto & validating_pass : passes_) {
@@ -304,27 +305,42 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto tex_src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_tex);
             auto tex_dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_tex);
             for (const auto & texture_use : pass->compiled_.textures) {
-                if (texture_use.texture->GetRHI()) {
-                    if (texture_use.access == RHIGPUAccessFlagBits::kNone) continue;
-                    auto prev_stages = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
-                    auto curr_stages = texture_use.stages;
-                    auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
-                    auto curr_usage = texture_use.access;
-                    auto prev_layout = texture_use.texture->GetCurrentLayout();
-                    auto curr_layout = texture_use.layout;
-                    if (prev_layout != curr_layout || (prev_stages && (
-                        curr_usage & RHIGPUAccessFlagBits::kWrite
-                        || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite))))) {
-                        textures[num_tex_used] = texture_use.texture->GetRHI();
-                        tex_src_accesses[num_tex_used] = prev_usage;
-                        tex_src_stages[num_tex_used] = prev_stages;
-                        tex_dst_accesses[num_tex_used] = curr_usage;
-                        tex_dst_stages[num_tex_used] = curr_stages;
-                        layouts[num_tex_used] = curr_layout;
-                        num_tex_used ++;
-                    }
-                    texture_use.texture->Use(texture_use.stages, curr_usage, curr_layout);
+                if (!texture_use.texture->GetRHI()) continue;
+
+                auto prev_stages = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
+                auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
+                auto prev_layout = texture_use.texture->GetCurrentLayout();
+
+                // Determine the target layout for this texture in the current pass.
+                RHITextureLayoutType target_layout = texture_use.layout;
+                RHIGPUAccessFlags target_usage = texture_use.access;
+                RHIPipelineStageFlags target_stages = texture_use.stages;
+
+                if (texture_use.access == RHIGPUAccessFlagBits::kNone) continue ;
+
+                // Emit barrier if:
+                // 1) Layout mismatch (includes Undefined -> target for fresh allocations), OR
+                // 2) Actual access dependency exists (read-after-write / write-after-anything)
+                bool needs_barrier = (prev_layout != target_layout);
+                if (!needs_barrier && target_usage != RHIGPUAccessFlagBits::kNone) {
+                    needs_barrier = prev_stages && (
+                        (target_usage & RHIGPUAccessFlagBits::kWrite)
+                        || ((target_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite))
+                    );
                 }
+
+                if (needs_barrier) {
+                    textures[num_tex_used] = texture_use.texture->GetRHI();
+                    tex_src_accesses[num_tex_used] = prev_usage;
+                    tex_src_stages[num_tex_used] = prev_stages;
+                    tex_dst_accesses[num_tex_used] = target_usage;
+                    tex_dst_stages[num_tex_used] = target_stages;
+                    layouts[num_tex_used] = target_layout;
+                    num_tex_used ++;
+                }
+                
+                texture_use.texture->Use(target_stages, target_usage, target_layout);
+                
             }
 
             // Gather buffer barriers

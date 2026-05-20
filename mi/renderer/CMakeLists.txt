@@ -42,6 +42,8 @@ set(SOURCES
         renderer/r_light_structure.cpp
         renderer/r_light_cluster_hiearchy.cpp
         renderer/r_gaussian_radiance_field.cpp
+        dlss/ngx_context.cpp
+        dlss/dlss_rr_context.cpp
         util/radix_sort.cpp
         util/scan_sum.cpp
 )
@@ -50,5 +52,22 @@ add_library(renderer ${SOURCES})
 
 add_resources(renderer shaders "shaders/*.hlsl")
 
-target_include_directories(renderer PUBLIC include)
+target_include_directories(renderer PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(renderer PUBLIC infra core rhi rdg)
+
+# DLSS / NGX SDK
+set(NGX_SDK_ROOT ${CMAKE_SOURCE_DIR}/external/DLSS)
+target_include_directories(renderer PRIVATE ${NGX_SDK_ROOT}/include)
+if(WIN32)
+    set(NGX_LIB_DEBUG ${NGX_SDK_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib)
+    set(NGX_LIB_RELEASE ${NGX_SDK_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib)
+    target_link_libraries(renderer PRIVATE
+        $<$<CONFIG:Debug>:${NGX_LIB_DEBUG}>
+        $<$<CONFIG:RelWithDebInfo>:${NGX_LIB_RELEASE}>
+        $<$<CONFIG:Release>:${NGX_LIB_RELEASE}>
+        $<$<CONFIG:MinSizeRel>:${NGX_LIB_RELEASE}>
+    )
+else()
+    set(NGX_LIB ${NGX_SDK_ROOT}/lib/Linux_x86_64/libnvsdk_ngx.a)
+    target_link_libraries(renderer PRIVATE ${NGX_LIB})
+endif()

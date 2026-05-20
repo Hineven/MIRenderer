@@ -50,7 +50,7 @@ struct ReferencePathTracerUB {
     uint MaxNumBounces;
     float EnvironmentMapLOD;
     float3 EnvironmentMapMultiplier;
-    uint Padding; // Padding to make the size of the struct a multiple of 16 bytes
+    uint Padding;
 };
 
 ConstantBuffer<ReferencePathTracerUB> UB;
@@ -71,6 +71,22 @@ struct [raypayload] RayPayload {
 
 [[vk::image_format("rgba32f")]]
 RWTexture2D<float4> RWRadiance; // Output radiance (1spp)
+
+// DLSS Ray Reconstruction auxiliary outputs (enabled when ENABLE_DLSS_RR is defined)
+#ifdef ENABLE_DLSS_RR
+[[vk::image_format("r32f")]]
+RWTexture2D<float> RWDepth;
+[[vk::image_format("rgba8")]]
+RWTexture2D<float4> RWNormal;
+[[vk::image_format("rg16f")]]
+RWTexture2D<float2> RWMotionVector;
+[[vk::image_format("rgba8")]]
+RWTexture2D<float4> RWAlbedo;
+[[vk::image_format("r8")]]
+RWTexture2D<float> RWRoughness;
+[[vk::image_format("r8")]]
+RWTexture2D<float> RWAlpha;
+#endif
 
 #define MAX_OVERLAPPING_VOLUME_PRIMITIVES 16
 #define MAX_OVERLAPPING_VOLUME_GRIDS 16
@@ -328,6 +344,15 @@ void ReferencePathTracerRaygen() {
     float3 Throughput = 1;
     uint BounceIndex = 0;
 
+#ifdef ENABLE_DLSS_RR
+    // Track primary ray hit info for DLSS auxiliary buffers
+    float  PrimaryRayT = 0;
+    float3 PrimaryHitNormal = 0;
+    float3 PrimaryHitAlbedo = 0;
+    float  PrimaryHitRoughness = 0;
+    bool   PrimaryHitSurface = false;
+#endif
+
     // --- State: Primitives ---
     uint OverlappingVolumePrimitivesInstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
     uint OverlappingVolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
@@ -350,6 +375,7 @@ void ReferencePathTracerRaygen() {
         float T_VolumeScatter = Infinity;
         float3 TempColor = float3(0, 0, 0);
 
+#ifndef ENABLE_DLSS_RR
         // 1. Sample Volume Primitives
         if (CurrentOverlappingVolumePrimitiveCount > 0)
         {
@@ -385,6 +411,7 @@ void ReferencePathTracerRaygen() {
                 VolumeSampledColor = TempColor;
             }
         }
+#endif
 
         // --------------------------
         // Step 2: Geometry Trace
@@ -463,6 +490,21 @@ void ReferencePathTracerRaygen() {
                 0
             );
 
+#ifdef ENABLE_DLSS_RR
+            if (BounceIndex == 0) {
+                PrimaryHitSurface = true;
+                PrimaryRayT = Payload.TCurrent;
+                ShadingMaterial M0 = GetShadingMaterial(Intersection);
+                float NormalFlipping0 = dot(Intersection.GeometryNormal, Ray.Direction) > 0 ? -1 : 1;
+                PrimaryHitNormal = NormalFlipping0 * Intersection.GeometryNormal;
+                if(dot(Intersection.GeometryNormal, Ray.Direction) > 0) {
+                    M0.Normal = -M0.Normal;
+                }
+                PrimaryHitAlbedo = M0.Albedo;
+                PrimaryHitRoughness = M0.Roughness;
+            }
+#endif
+
 
             // Simple alpha test
             if (rng.rand() > Intersection.Opacity)
@@ -531,6 +573,7 @@ void ReferencePathTracerRaygen() {
         // Case C: Volume Boundary Crossing (bIsSurfaceHit == false, Primitive or Grid)
         else if (Payload.TCurrent < T_VolumeScatter && !Payload.bIsSurfaceHit)
         {
+#ifndef ENABLE_DLSS_RR
             // Now we hit a proxy box. Update processing volume list and forward.
             uint InstanceIndex = Payload.HitInstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
 
@@ -593,7 +636,7 @@ void ReferencePathTracerRaygen() {
                     );
                 }
             }
-
+#endif
             // Forward a bit.
             Ray.TMin = Payload.TCurrent + 1e-6f;
         }
@@ -618,6 +661,45 @@ void ReferencePathTracerRaygen() {
     } else {
         RWRadiance[RayIndex] = float4(Radiance, 1.0f);
     }
+
+#ifdef ENABLE_DLSS_RR
+    // Compute motion vector from primary hit world position reprojected to previous frame NDC.
+    // If no surface hit was made (miss or volume), we fall back to camera reprojection.
+    float2 MotionVector = 0;
+    {
+        CameraParameters PrevC = GetPreviousCamera();
+        float2 UV = ((float2)RayIndex + 0.5f.xx) / (float2)DispatchSize;
+        float2 NDC2 = UVToNDC2(UV);
+        // Re-project from current NDC to previous NDC using the reprojection matrix.
+        // For pixels that hit a surface at the first bounce, the motion vector uses the
+        // reprojection matrix which accounts for camera motion.
+        // For DLSS-RR, motion vectors should be in pixel-space (or NDC delta).
+        float3 Reprojected = ReprojectToPreviousNDCFromNDC(C, float3(NDC2, 1));
+        float2 PrevNDC2 = Reprojected.xy;
+        // Remove jitter from both frames to get pure camera/object motion
+        MotionVector = (NDC2 - C.Jitter) - (PrevNDC2 - PrevC.PrevJitter);
+    }
+    RWMotionVector[RayIndex] = MotionVector;
+
+    // Write depth: linear depth from primary ray hit distance
+    // For perspective camera, linear depth = T * dot(RayDirection, CameraForward)
+    float LinearDepth = PrimaryHitSurface
+        ? PrimaryRayT * dot(normalize(Ray.Direction), C.Direction)
+        : 0;
+    RWDepth[RayIndex] = LinearDepth;
+
+    // Write normal: world-space shading normal packed to [0,1]
+    RWNormal[RayIndex] = float4(PrimaryHitNormal * 0.5 + 0.5, 1);
+
+    // Write albedo
+    RWAlbedo[RayIndex] = float4(PrimaryHitAlbedo, 1);
+
+    // Write roughness
+    RWRoughness[RayIndex] = PrimaryHitRoughness;
+
+    // Write alpha: 1 if primary ray hit a surface, 0 if miss/volume
+    RWAlpha[RayIndex] = PrimaryHitSurface ? 1.0f : 0.0f;
+#endif
 }
 
 [shader("miss")]

@@ -531,7 +531,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         if (srv.array_layer == UINT_MAX)
             image_info.imageView = image ? image->GetImageView() : nullptr;
         else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer, srv.mip_level) : nullptr;
-        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        image_info.imageLayout = image ? image->GetImageLayout() : vk::ImageLayout::eUndefined;
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
         if (UINT32_MAX != destination.binding) {
             writes[write_index++] = vk::WriteDescriptorSet()

@@ -8,6 +8,7 @@
 #define MI_R_PERSISTENT_H
 
 #include <renderer/mi_renderer.h>
+#include "dlss/dlss_rr_context.h"
 #include "r_view_common.h"
 
 MI_NAMESPACE_BEGIN
@@ -54,6 +55,8 @@ struct RendererViewPersistentData {
     TRef<VolumeIndirectLightingPersistentData> volume_indirect_lighting_persistent_data_;
     TRef<LightStructurePersistentData> light_structure_persistent_data_;
     TRef<HashGridPersistentData> hash_grid_persistent_data_;
+
+    TRef<DLSSRRContext> dlss_rr_context_;
 
     Scene * prev_scene_ {};
 };

@@ -5,7 +5,7 @@
  */
 
 #include "rhi/rhi.h"
-#include "rhi_cmd_exec.h"
+#include "rhi/rhi_cmd_exec.h"
 #include "rhi/rhi_cmd.h"
 #include "include/rhi/rhi_bindless.h"
 #include "rhi/rhi_texture.h"

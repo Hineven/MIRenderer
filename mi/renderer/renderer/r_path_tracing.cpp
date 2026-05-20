@@ -18,6 +18,8 @@
 #include "r_diffuse_direct_lighting.h"
 #include "r_light_structure.h"
 #include "r_directional_light.h"
+#include "dlss/ngx_context.h"
+#include "dlss/dlss_rr_context.h"
 
 MI_NAMESPACE_BEGIN
 static CVar CVar_PathTracingEnableAccumulation(
@@ -25,10 +27,15 @@ static CVar CVar_PathTracingEnableAccumulation(
     "Enable accumulation for path tracing.",
     false
 );
-static CVar CVar_MaxNumBounces(
+static CVar<int> CVar_MaxNumBounces(
     "r.pathtracing.max_num_bounces",
     "Maximum number of bounces for path tracing.",
     8
+);
+static CVar<bool> CVar_EnableDLSSRR(
+    "r.pathtracing.dlss_rr",
+    "Enable DLSS Ray Reconstruction for path tracing (requires RTX GPU + NGX).",
+    true
 );
 
 struct ReferencePathTracerUB {
@@ -39,6 +46,8 @@ struct ReferencePathTracerUB {
     glm::vec3 EnvironmentMapMultiplier;
     uint Padding;
 };
+
+// --- Standard path tracer (accumulation mode, no DLSS auxiliary outputs) ---
 
 class ReferencePathTracerShader : public RDGShader {
 public:
@@ -61,6 +70,12 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDepth)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWNormal)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWMotionVector)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWAlbedo)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRoughness)
+        SHADER_RESOURCE_PARAMETER(RWTexture2D, RWAlpha)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
@@ -74,41 +89,13 @@ IMPLEMENT_RDG_RAY_TRACING_SHADER(ReferencePathTracerShader,
     "ReferencePathTracer", "ReferencePathTracer",
     "ReferencePathTracerRaygen", "ReferencePathTracerMiss")
 
-void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &builder) {
-    // Standalone path tracing renderer
-    view->did_render_path_tracing_this_frame_ = true;
-    auto ini = RDGShaderInitializationInfo {};
-    ini.optional_macros.push_back("MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()));
-    ini.optional_macros.push_back("NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()));
-    auto shader = RDGShaderLibrary::Get().GetShader<ReferencePathTracerShader>(ini);
-
-    if (!view->persistent_data_->path_tracing_film_) {
-        // Use 32bit floats for accumulating a large number of samples
-        view->persistent_data_->path_tracing_film_ = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR32G32B32A32_FLOAT);
-        // Make sure the film is accumulated across frames
-        view->persistent_data_->path_tracing_film_->SetExport();
-    }
-    auto params = builder.Allocate<ReferencePathTracerShader::ShaderParameters>();
-
-    auto UB = builder.Allocate<ReferencePathTracerUB>();
-    {
-        UB->FrameIndex = view->persistent_data_->frame_index_;
-        UB->EnableAccumulation = CVar_PathTracingEnableAccumulation.Get() ? 1 : 0;
-        UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
-        UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
-        UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
-        bool camera_dirty = false;
-        if (view->camera_ != view->persistent_data_->prev_camera) {
-            camera_dirty = true;
-        }
-        if (CVar_MaxNumBounces.IsDirty() || camera_dirty) {
-            UB->EnableAccumulation = 0;
-            CVar_MaxNumBounces.ClearDirty();
-        }
-    }
-
+template<typename ShaderParams>
+void Renderer::FillPathTracerCommonParams(
+    ShaderParams * params,
+    RendererView * view,
+    RenderGraphBuilder & builder)
+{
     params->View = view->view_common_params_;
-    params->UB = UB;
     auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
     FillUniformBufferForDirectionalLight(view, directional_light_ub);
     params->DirectionalLight_UB = directional_light_ub;
@@ -128,7 +115,6 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
         device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
     );
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
-    params->RWRadiance = view->persistent_data_->path_tracing_film_.Raw();
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {
@@ -136,8 +122,158 @@ void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &build
     }
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
+}
+
+void Renderer::Render_PathTracing (RendererView *view, RenderGraphBuilder &builder) {
+    view->did_render_path_tracing_this_frame_ = true;
+
+    bool use_dlss = CVar_EnableDLSSRR.Get() && ngx_context_ && ngx_context_->IsInitialized();
+
+    if (use_dlss) {
+        Render_PathTracingDLSS(view, builder);
+    } else {
+        Render_PathTracingAccumulation(view, builder);
+    }
+}
+
+void Renderer::Render_PathTracingAccumulation (RendererView *view, RenderGraphBuilder &builder) {
+    auto ini = RDGShaderInitializationInfo {};
+    ini.optional_macros.push_back("MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()));
+    ini.optional_macros.push_back("NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()));
+    auto shader = RDGShaderLibrary::Get().GetShader<ReferencePathTracerShader>(ini);
+
+    if (!view->persistent_data_->path_tracing_film_) {
+        view->persistent_data_->path_tracing_film_ = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR32G32B32A32_FLOAT);
+        view->persistent_data_->path_tracing_film_->SetExport();
+    }
+    auto params = builder.Allocate<ReferencePathTracerShader::ShaderParameters>();
+
+    auto UB = builder.Allocate<ReferencePathTracerUB>();
+    {
+        UB->FrameIndex = view->persistent_data_->frame_index_;
+        UB->EnableAccumulation = CVar_PathTracingEnableAccumulation.Get() ? 1 : 0;
+        UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
+        UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
+        UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
+        bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
+        if (CVar_MaxNumBounces.IsDirty() || camera_dirty) {
+            UB->EnableAccumulation = 0;
+            CVar_MaxNumBounces.ClearDirty();
+        }
+    }
+
+    FillPathTracerCommonParams(params, view, builder);
+    params->UB = UB;
+    params->RWRadiance = view->persistent_data_->path_tracing_film_.Raw();
+    params->RWDepth = nullptr;
+    params->RWNormal = nullptr;
+    params->RWMotionVector = nullptr;
+    params->RWAlbedo = nullptr;
+    params->RWRoughness = nullptr;
+    params->RWAlpha = nullptr;
 
     Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
+}
+
+void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &builder) {
+    // Ensure per-view DLSS-RR context exists
+    if (!view->persistent_data_->dlss_rr_context_) {
+        view->persistent_data_->dlss_rr_context_ = TRef<DLSSRRContext>(new DLSSRRContext());
+        if (!view->persistent_data_->dlss_rr_context_->Initialize(ngx_context_.Raw(), view->film_width_, view->film_height_)) {
+            MI_LOG(MIInfraLogType::kWarning, "DLSS-RR: Failed to initialize for view, falling back to accumulation.");
+            view->persistent_data_->dlss_rr_context_ = nullptr;
+            Render_PathTracingAccumulation(view, builder);
+            return;
+        }
+    }
+
+    auto ini = RDGShaderInitializationInfo {};
+    ini.optional_macros.push_back("MAX_NUM_GRID_LIGHTS=" + std::to_string(CVar_MaxNumGridLights.Get()));
+    ini.optional_macros.push_back("NUM_LIGHT_SAMPLER_SAMPLES=" + std::to_string(CVar_NumLightSamplerSamples.Get()));
+    ini.optional_macros.push_back("ENABLE_DLSS_RR=1");
+    auto shader = RDGShaderLibrary::Get().GetShader<ReferencePathTracerShader>(ini);
+
+    if (!view->persistent_data_->path_tracing_film_) {
+        view->persistent_data_->path_tracing_film_ = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
+        view->persistent_data_->path_tracing_film_->SetExport();
+    }
+
+    view->persistent_data_->dlss_rr_context_->OnResolutionChanged(view->film_width_, view->film_height_);
+
+    auto params = builder.Allocate<ReferencePathTracerShader::ShaderParameters>();
+
+    auto UB = builder.Allocate<ReferencePathTracerUB>();
+    {
+        UB->FrameIndex = view->persistent_data_->frame_index_;
+        UB->EnableAccumulation = 0;
+        UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
+        UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
+        UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
+        CVar_MaxNumBounces.ClearDirty();
+    }
+
+    FillPathTracerCommonParams(params, view, builder);
+    params->UB = UB;
+    params->RWRadiance = view->persistent_data_->path_tracing_film_.Raw();
+
+    auto * dlss_rr = view->persistent_data_->dlss_rr_context_.Raw();
+    params->RWDepth = dlss_rr->GetDepthBuffer();
+    params->RWNormal = dlss_rr->GetNormalBuffer();
+    params->RWMotionVector = dlss_rr->GetMotionVectorBuffer();
+    params->RWAlbedo = dlss_rr->GetAlbedoBuffer();
+    params->RWRoughness = dlss_rr->GetRoughnessBuffer();
+    params->RWAlpha = dlss_rr->GetAlphaBuffer();
+
+    Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
+
+    bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
+    bool reset_history = camera_dirty || view->persistent_data_->frame_index_ == 0;
+
+    auto * dlss_output = dlss_rr->GetDLSSOutput();
+    auto * noisy_radiance = view->persistent_data_->path_tracing_film_.Raw();
+    auto * depth = dlss_rr->GetDepthBuffer();
+    auto * normal = dlss_rr->GetNormalBuffer();
+    auto * motion_vector = dlss_rr->GetMotionVectorBuffer();
+    auto * albedo = dlss_rr->GetAlbedoBuffer();
+    auto * roughness = dlss_rr->GetRoughnessBuffer();
+    auto * alpha = dlss_rr->GetAlphaBuffer();
+    auto jitter = view->camera_jitter_;
+
+    // Grab view matrices for DLSS-RR (column-major 4x4, matches HLSL float4x4)
+    const float * world_to_view = &view->view_common_params_->Camera.WorldToView[0][0];
+    const float * view_to_clip   = &view->view_common_params_->Camera.ViewToNDC[0][0];
+
+    builder.AddPass("DLSS Ray Reconstruction", RDGPassFlagBits::kNeverCull,
+        [dlss_rr, noisy_radiance, depth, normal, motion_vector, albedo, roughness, alpha, dlss_output, jitter, reset_history, world_to_view, view_to_clip]
+        ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            queue.RHIExecute([=]([[maybe_unused]] RHICommandQueueBase & q) {
+                dlss_rr->Evaluate(
+                    noisy_radiance,
+                    depth,
+                    normal,
+                    motion_vector,
+                    albedo,
+                    roughness,
+                    alpha,
+                    dlss_output,
+                    jitter.x, jitter.y,
+                    reset_history,
+                    world_to_view,
+                    view_to_clip
+                );
+            });
+        })
+        ->AddTextureH(noisy_radiance, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(depth, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(normal, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(motion_vector, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(albedo, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(roughness, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(alpha, RDGTextureUsageType::kShaderRead)
+        ->AddTextureH(dlss_output, RDGTextureUsageType::kShaderReadWrite);
+
+    // Copy DLSS output to the path tracing film for downstream DrawToOutput
+    Helpers::CopyTexture(builder, dlss_output, view->persistent_data_->path_tracing_film_.Raw());
 }
 
 MI_NAMESPACE_END

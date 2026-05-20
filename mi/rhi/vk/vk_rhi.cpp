@@ -228,7 +228,7 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         std::array queue_priorities = {1.0f};
         vk::DeviceQueueCreateInfo queue_info({}, graphics_queue_family_index, queue_priorities);
 
-        std::array enabled_extension_names = {
+        std::vector enabled_extension_names = {
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
             // Support hw ray tracing
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -274,6 +274,12 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             // VK_EXT_DEBUG_MARKER_EXTENSION_NAME // Promoted to VK_EXT_debug_utils extension
             // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME // This extension has been promoted to Vulkan Core in 1.2
         };
+        // Append extra device extensions
+        if(extra) {
+            for(uint32_t i = 0; i < extra->extra_device_extension_count; i++) {
+                enabled_extension_names.push_back(extra->extra_device_extensions[i]);
+            }
+        }
         // Check if the required extensions are supported
         auto supported_extensions = physical_device_.enumerateDeviceExtensionProperties();
         std::string failure_log = "";
@@ -1005,6 +1011,18 @@ VulkanRHI * CreateVulkanRHI (const VulkanRHICreateInfo * extra) {
     return new VulkanRHI(extra);
 }
 
-
+bool RHIGetVulkanTextureInfo(RHITexture* texture, VulkanTextureNativeInfo* out) {
+    auto* vk_tex = dynamic_cast<VulkanTexture*>(texture);
+    if (!vk_tex || !out) return false;
+    out->image = vk_tex->GetImage();
+    out->image_view = vk_tex->GetImageView();
+    out->format = GetVulkanPixelFormat(vk_tex->GetDesc().format);
+    out->subresource_range = vk::ImageSubresourceRange{
+        vk_tex->GetImageAspect(), 0, vk_tex->GetMipLevels(), 0, vk_tex->GetArrayLayers()
+    };
+    out->width = vk_tex->GetDesc().dimensions.width;
+    out->height = vk_tex->GetDesc().dimensions.height;
+    return true;
+}
 
 MI_NAMESPACE_END

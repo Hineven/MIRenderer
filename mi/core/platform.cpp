@@ -8,6 +8,7 @@
 #include "core/thr.h"
 
 #ifdef _WIN32
+#include <windows.h>
 #include "combaseapi.h"
 #endif
 
@@ -59,5 +60,11 @@ void DestroyPlatformMainThreadContext() {
         CoUninitialize();
         g_com_initialized = false;
     }
+#endif
+}
+
+void RenameThread(const wchar_t* name) {
+#ifdef _WIN32
+    SetThreadDescription(GetCurrentThread(), name);
 #endif
 }

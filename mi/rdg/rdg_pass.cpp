@@ -404,6 +404,18 @@ void RDGPass::PreCompile() {
 
 void RDGPass::Compile() {
     assert(!is_compiled_);
+
+    // Clear any previous compiled data. Compile() is the single authority for generating compiled_.
+    compiled_.in_textures.clear();
+    compiled_.out_textures.clear();
+    compiled_.in_buffers.clear();
+    compiled_.out_buffers.clear();
+    compiled_.in_acceleration_structures.clear();
+    compiled_.out_acceleration_structures.clear();
+    compiled_.textures.clear();
+    compiled_.buffers.clear();
+    compiled_.acceleration_structures.clear();
+
     // Detect resource aliasing for textures and spawn final relations
     // Textures
     {
@@ -414,10 +426,13 @@ void RDGPass::Compile() {
                 // If the texture is already in the map, merge the usage
                 it->second->access |= e.access;
                 it->second->stages |= e.stages;
-                // Detect layout.
+                // Detect layout conflicts. If layouts differ, downgrade to kGeneral.
+                if (it->second->layout != e.layout) {
+                    it->second->layout = RHITextureLayoutType::kGeneral;
+                }
+                // Also handle the specific sampled-read + storage-rw case
                 if (it->second->access & RHIGPUAccessFlagBits::kShaderSampledRead
                 && it->second->access & RHIGPUAccessFlagBits::kShaderStorageRW) {
-                    // Downgrade to general layout to keep compatible with sampled read and storage rw
                     it->second->layout = RHITextureLayoutType::kGeneral;
                 }
             } else {

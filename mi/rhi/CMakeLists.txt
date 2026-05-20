@@ -82,6 +82,7 @@ set(HEADER_FILES
         include/rhi/rhi_types.h
         include/rhi/rhi_types_string.h
         include/rhi/rhi_cmd.h
+        include/rhi/rhi_cmd_exec.h
         include/rhi/rhi_texture.h
         include/rhi/rhi_buffer.h
         include/rhi/rhi_param.h

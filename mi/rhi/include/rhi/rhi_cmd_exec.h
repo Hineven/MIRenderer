@@ -68,6 +68,10 @@ public:
     // End the frame, enqueue a present command.
     virtual void RHIFrameEnd (RHICommandQueueBase * buffer, RHISyncPoint * sync) = 0;
 
+    // Get the current native command buffer handle for the given queue type.
+    // Returns nullptr if the backend does not support this or no command buffer is currently being recorded.
+    virtual void * GetCurrentNativeCommandBuffer (RHICommandQueueType type) { return nullptr; }
+
 };
 
 MI_NAMESPACE_END

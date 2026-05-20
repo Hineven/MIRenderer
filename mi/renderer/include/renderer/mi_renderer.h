@@ -20,6 +20,8 @@
 #include "renderer/mi_renderer_export.h"
 #include "renderer/mi_camera.h"
 #include "renderer/mi_console.h"
+#include "renderer/mi_renderer_fwd.h"
+
 MI_NAMESPACE_BEGIN
 class RHIBuffer;
 class RenderGraphBuilder;
@@ -192,6 +194,19 @@ protected:
     void Render_PathTracing (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+    void Render_PathTracingAccumulation (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+    void Render_PathTracingDLSS (
+        RendererView * view, RenderGraphBuilder & builder
+    ) ;
+
+    template<typename ShaderParams>
+    void FillPathTracerCommonParams(
+        ShaderParams * params,
+        RendererView * view,
+        RenderGraphBuilder & builder
+    );
 
     void Render_DebugView (
         RendererView * view, RenderGraphBuilder & builder
@@ -304,6 +319,8 @@ protected:
     TRef<RHIBuffer> sobol_scrambling_tile_256x256x8_;
 
     Console console_;
+
+    TRef<NGXContext> ngx_context_;
 };
 
 
