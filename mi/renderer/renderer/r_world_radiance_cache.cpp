@@ -245,22 +245,21 @@ void Renderer::Render_PrepareHashGridCache(RendererView *view, RenderGraphBuilde
     }
     auto & lib = RDGShaderLibrary::Get();
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
-    auto shared_table = builder.Allocate<SharedParameterTableId>();
     if (need_reset) {
         auto shader = lib.GetShader<ResetHashGridsShader>();
-        Helpers::AddComputePass(builder, shader, params, shared_table, DivideAndRoundUp(max_num_tiles, wave_size));
+        Helpers::AddComputePass(builder, shader, params, DivideAndRoundUp(max_num_tiles, wave_size));
         Helpers::Clear(builder, view->persistent_data_->hash_grid_persistent_data_->update_cell_value_x_buffer.Raw());
     }
 
     {
         auto shader = lib.GetShader<ClearCountersShader>();
-        Helpers::AddComputePass(builder, shader, params, shared_table);
+        Helpers::AddComputePass(builder, shader, params);
     }
     {
         Helpers::Clear(builder, view->world_cache_->bucket_hash_buffer.Raw());
         auto shader = lib.GetShader<ReInsertHashGridTilesShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, persistent->active_tile_count.Raw(), wave_size);
-        Helpers::AddComputeIndirectPass(builder, shader, params, shared_table, cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
 
     auto w = view->world_cache_;
@@ -284,7 +283,6 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
     }
     auto & lib = RDGShaderLibrary::Get();
     auto persistent = view->persistent_data_->hash_grid_persistent_data_;
-    auto shared_table = builder.Allocate<SharedParameterTableId>();
     {
         auto shader = lib.GetShader<PrepareDispatchCommandForClearNewHashGridTileCellsShader>();
         auto prepare_params = builder.Allocate<PrepareDispatchCommandForClearNewHashGridTileCellsShader::Params>();
@@ -298,13 +296,13 @@ void Renderer::Render_UpdateHashGridCache(RendererView *view, RenderGraphBuilder
     }
     {
         auto shader = lib.GetShader<ClearNewHashGridTileCellsShader>();
-        Helpers::AddComputeIndirectPass(builder, shader, params, shared_table, clear_cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, clear_cmd.Raw());
     }
     auto w = view->world_cache_;
     {
         auto shader = lib.GetShader<FilterHashGridsShader>();
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, w->active_tile_count.Raw());
-        Helpers::AddComputeIndirectPass(builder, shader, params, shared_table, cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, params, cmd.Raw());
     }
 }
 

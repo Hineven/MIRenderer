@@ -10,6 +10,8 @@
 #include "rdg/rdg.h"
 
 #include <rdg/rdg_param.h>
+#include <rdg/rdg_cmd.h>
+#include <rdg/rdg_pass_param_table.h>
 #include <rhi/rhi_buffer.h>
 
 #include "core/util/debug_prof.h"
@@ -143,6 +145,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
                     auto struct_ptr = *(void**)((std::byte*)pass->shader_param_data_ + ref.cpp_offset);
                     if (struct_ptr == nullptr || RDGParameter_IsUnsetPointer(struct_ptr)) {
+                        MI_WARN("RDG: Unset / null UniformBuffer detected within pass {}, {}", pass->GetName(), ref.info->name);
                         continue ;
                     }
                     // Reflect from shader and make sure that the UB is statically used.
@@ -202,6 +205,83 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             );
         }
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
+    }
+
+    // Global parameter table creation: group passes by params_ptr, merge texture layouts across the group,
+    // and create one shared parameter table per group.
+    std::vector<RDGPassParameterTable> param_tables;
+    {
+        std::map<const void*, std::vector<RDGPass*>> param_groups;
+        for (auto & pass : passes_) {
+            if (pass->shader_ && pass->shader_param_data_) {
+                param_groups[pass->shader_param_data_].push_back(pass.get());
+            }
+        }
+        param_tables.reserve(param_groups.size());
+
+        for (auto & [params_ptr, group_passes] : param_groups) {
+            if (group_passes.empty()) continue;
+            auto * representative_pass = group_passes[0];
+            auto * shader = representative_pass->shader_;
+            auto * info = representative_pass->shader_param_struct_info_;
+            if (!shader || !info) continue;
+
+            auto & table = param_tables.emplace_back();
+            table.params_ptr_ = params_ptr;
+            table.root_signature_ = shader->GetRootSignature();
+            table.info_ = info;
+
+            if (shader->GetName().substr(0, 6) == "Decode") {
+                puts("qwq");
+            }
+
+            // TODO optimize performance.
+            // Merge texture layouts per binding slot across all passes in the group.
+            auto MergeSlotLayout = [&](RHIPipelineResourceType type, auto & param_array) {
+                for (const auto & [i, e] : std::views::enumerate(param_array)) {
+                    auto tex = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params_ptr + e.cpp_offset));
+                    if (RDGParameter_IsUnsetPointer(tex.texture)) continue;
+
+                    RHITextureLayoutType layout = RHITextureLayoutType::kUndefined;
+                    for (auto * p : group_passes) {
+                        for (auto & usage : p->compiled_.textures) {
+                            if (usage.texture.Raw() == tex.texture) {
+                                if(layout == RHITextureLayoutType::kUndefined) {
+                                    layout = usage.layout;
+                                } else if (layout != usage.layout) {
+                                    // Conflicting layouts for the same binding slot across passes.
+                                    // Regress to general layout when writing the descriptor.
+                                    layout = RHITextureLayoutType::kGeneral;
+                                    // FIXME overwrite pass usages to general layout as well for correct barrier placement.
+                                    mi_assert(false, "Not implemented");
+                                    break ;
+                                } else layout = usage.layout;
+                            }
+                        }
+                    }
+
+                    auto key = RDGPassParameterTable::TextureSlotKey{type, (uint32_t)i};
+                    auto it = table.merged_layouts_.find(key);
+                    if (it != table.merged_layouts_.end()) {
+                        if (it->second != layout) it->second = RHITextureLayoutType::kGeneral;
+                    } else {
+                        table.merged_layouts_[key] = layout;
+                    }
+                }
+            };
+            MergeSlotLayout(RHIPipelineResourceType::kUAV, info->uavs_);
+            MergeSlotLayout(RHIPipelineResourceType::kSRV, info->srvs_);
+
+            // Build parameter desc using the merged layouts.
+            auto desc = RDGCommandHelper::BuildParameterDesc(cmd, table, this);
+            if (desc) {
+                table.table_id_ = RDGCommandHelper::AllocateParameterTableId();
+                cmd.CreateSignatureParameterTable(table.table_id_, table.root_signature_, *desc);
+                for (auto * pass : group_passes) {
+                    pass->parameter_table_ = &table;
+                }
+            }
+        }
     }
 
     std::vector<RHITimestampRef> marker_timestamps;

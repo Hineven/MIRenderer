@@ -248,10 +248,9 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     volume_grid_params->RWVolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
 
     // Volume Grid Direct Lighting
-    auto shared_table = builder.Allocate<SharedParameterTableId>();
     {
         auto shader = lib.GetShader<VolumeGridDirectLightingClearCounters>(ini);
-        Helpers::AddComputePass<VolumeGridDirectLightingClearCounters>(builder, shader, volume_grid_params, shared_table);
+        Helpers::AddComputePass<VolumeGridDirectLightingClearCounters>(builder, shader, volume_grid_params);
     }
     {
         auto shader = lib.GetShader<VolumeGridDirectLightingSpawnLightSamplesShader>(ini);
@@ -259,7 +258,7 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
         auto num_group_x = DivideAndRoundUp(view->film_width_, tile_size);
         auto num_group_y = DivideAndRoundUp(view->film_height_, tile_size);
         Helpers::AddComputePass<VolumeGridDirectLightingSpawnLightSamplesShader>(
-            builder, shader, volume_grid_params, shared_table, num_group_x, num_group_y
+            builder, shader, volume_grid_params, num_group_x, num_group_y
         );
     }
 
@@ -283,7 +282,7 @@ void Renderer::Render_ComputeVolumeGridDirectLighting(RendererView *view, Render
     {
         auto shader = lib.GetShader<RenderVolumeGridDirectLightingShader>(ini);
         Helpers::AddComputeIndirectPass<RenderVolumeGridDirectLightingShader>(
-            builder, shader, volume_grid_params, shared_table, cmd.Raw()
+            builder, shader, volume_grid_params, cmd.Raw()
         );
     }
 }

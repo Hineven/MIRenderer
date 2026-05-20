@@ -472,10 +472,11 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
 
     for(auto ubo : desc.uniforms) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
-        assert(ubo.buffer.buffer && "Uniform buffer must not be null.");
-        buffer_info.buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer)->GetBuffer();
-        buffer_info.offset = ubo.buffer.offset;
-        buffer_info.range = ubo.buffer.size;
+        auto buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer);
+        auto buffer_ptr = buffer ? buffer->GetBuffer() : nullptr;
+        buffer_info.buffer = buffer_ptr;
+        buffer_info.offset = buffer_ptr ? ubo.buffer.offset : 0;
+        buffer_info.range = buffer_ptr ? ubo.buffer.size : VK_WHOLE_SIZE;
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot);
         if (UINT32_MAX != destination.binding) {
             writes[write_index++] = vk::WriteDescriptorSet()
@@ -492,7 +493,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         auto buffer = static_cast<VulkanBuffer*>(storage.buffer.buffer);
         auto buffer_ptr = buffer ? buffer->GetBuffer() : nullptr;
         buffer_info.buffer = buffer_ptr;
-        buffer_info.offset = storage.buffer.offset;
+        buffer_info.offset = buffer_ptr ? storage.buffer.offset : 0;
         buffer_info.range = buffer_ptr ? storage.buffer.size : VK_WHOLE_SIZE;
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
         if (UINT32_MAX != destination.binding) {
@@ -513,9 +514,10 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         else image_info.imageView = image ? image->GetImageViewForLayer(
             uav.array_layer == UINT_MAX ? 0 : uav.array_layer, uav.mip_level
         ) : nullptr;
-        image_info.imageLayout = vk::ImageLayout::eGeneral;
+        image_info.imageLayout = GetVulkanImageLayout(uav.layout);
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kUAV, uav.slot);
         if (UINT_MAX != destination.binding) {
+            assert((!uav.texture || uav.layout != RHITextureLayoutType::kUndefined) && "UAV layout must be explicitly specified.");
             writes[write_index++] = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set[0])
                 .setDstBinding(destination.binding)
@@ -531,9 +533,10 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         if (srv.array_layer == UINT_MAX)
             image_info.imageView = image ? image->GetImageView() : nullptr;
         else image_info.imageView = image ? image->GetImageViewForLayer(srv.array_layer, srv.mip_level) : nullptr;
-        image_info.imageLayout = image ? image->GetImageLayout() : vk::ImageLayout::eUndefined;
+        image_info.imageLayout = GetVulkanImageLayout(srv.layout);
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kSRV, srv.slot);
         if (UINT32_MAX != destination.binding) {
+            assert((!srv.texture || srv.layout != RHITextureLayoutType::kUndefined) && "SRV layout must be explicitly specified.");
             writes[write_index++] = vk::WriteDescriptorSet()
                 .setDstSet(descriptor_set[0])
                 .setDstBinding(destination.binding)

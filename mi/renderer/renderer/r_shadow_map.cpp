@@ -146,7 +146,7 @@ void Renderer::Render_DrawShadowMap(RendererView* view, RenderGraphBuilder& buil
     auto raster_pass = builder.AddPass<DrawShadowMapShader>({}, shader, params,
         [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+            auto tid = pass->GetParameterTableId();
             RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
                 &DrawShadowMapShader::GetShaderParamStructInfo()->render_pass_info_, params);
             queue.SetCullMode(RHICullModeType::kBack);

@@ -41,7 +41,7 @@ void Renderer::Render_DrawSky(RendererView *view, RenderGraphBuilder &builder) {
     builder.AddPass<SkyShader>(
         {}, shader, params,
         [shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+            auto tid = pass->GetParameterTableId();
             RDGCommandHelper::Draw(queue, shader, tid,
                 &SkyShader::GetShaderParamStructInfo()->render_pass_info_, params, 3);
         }

@@ -16,26 +16,20 @@ struct RDGShaderRenderPassInfo;
 template<typename T>
 concept CShaderType = std::is_base_of<RDGShader, std::remove_cvref_t<T>>::value;
 
+class RDGPassParameterTable;
+class RenderGraph;
+
 class RDGCommandHelper {
 public:
 
-    // Allocate a parameter table id (unique). 
+    // Allocate a parameter table id (unique).
     static uint32_t AllocateParameterTableId();
 
-    static uint32_t CreateParameterTable(
-        RHICommandQueueGraphics & queue, RDGPass * pass, RDGShader * shader,
-        const RDGShaderSignatureParamInfo * info, const void * params,
-        bool populate_all = true);
-
-    template <CShaderType T>
-    FORCEINLINE static uint32_t CreateParameterTable(
-        RHICommandQueueGraphics & queue, RDGPass * pass, T * shader,
-        const typename T::ShaderParameters * params,
-        bool populate_all = true) {
-        return CreateParameterTable(queue, pass, shader,
-            static_cast<const RDGShaderSignatureParamInfo*>(T::GetShaderParamStructInfo()), params,
-            populate_all);
-    }
+    // Build a pipeline parameter descriptor from a shared parameter table.
+    static std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
+        RHICommandQueueGraphics & queue,
+        const RDGPassParameterTable & table,
+        RenderGraph * graph);
 
     static void Dispatch (RHICommandQueueGraphics & queue, RDGShader * compute_shader,
         uint32_t table_id, uint32_t x = 1, uint32_t y = 1, uint32_t z = 1) ;

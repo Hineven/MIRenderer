@@ -59,7 +59,7 @@ target_link_libraries(renderer PUBLIC infra core rhi rdg)
 set(NGX_SDK_ROOT ${CMAKE_SOURCE_DIR}/external/DLSS)
 target_include_directories(renderer PRIVATE ${NGX_SDK_ROOT}/include)
 if(WIN32)
-    set(NGX_LIB_DEBUG ${NGX_SDK_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib)
+    set(NGX_LIB_DEBUG ${NGX_SDK_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d_dbg.lib)
     set(NGX_LIB_RELEASE ${NGX_SDK_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib)
     target_link_libraries(renderer PRIVATE
         $<$<CONFIG:Debug>:${NGX_LIB_DEBUG}>

@@ -183,7 +183,7 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortScanShader>(
                 {}, scan_shader, params,
                 [scan_shader, params, max_num_groups, count_buffer, cmd = dispatch_command.Raw()](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, scan_shader, params);
+                    auto tid = pass->GetParameterTableId();
                     if (!count_buffer) {
                         RDGCommandHelper::Dispatch(queue, scan_shader, tid, max_num_groups, 1, 1);
                     } else {
@@ -201,7 +201,7 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortSumShader>(
             {}, sum_shader, params,
                 [sum_shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, sum_shader, params);
+                    auto tid = pass->GetParameterTableId();
                     RDGCommandHelper::Dispatch(queue, sum_shader, tid, kBinsPerPass, 1, 1);
                 }
             )->SetName(radix_sort_pass_name + "_Sum");
@@ -216,7 +216,7 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortSumBinsShader>(
             {}, sum_bins_shader, params,
                 [sum_bins_shader, params](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, sum_bins_shader, params);
+                    auto tid = pass->GetParameterTableId();
                     RDGCommandHelper::Dispatch(queue, sum_bins_shader, tid, 1, 1, 1);
                 }
             )->SetName(radix_sort_pass_name + "_SumSums");
@@ -235,7 +235,7 @@ void DeviceRadixSort::AddRadixSort32BitsPass(
             builder.AddPass<RadixSortScatterShader>(
                 {}, scatter_shader, params,
                 [scatter_shader, params, max_num_groups, count_buffer, cmd = dispatch_command.Raw()](RDGPass *pass, RHICommandQueueGraphics &queue) {
-                    auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, scatter_shader, params);
+                    auto tid = pass->GetParameterTableId();
                     if (!count_buffer) {
                         RDGCommandHelper::Dispatch(queue, scatter_shader, tid, (uint32_t)max_num_groups, 1, 1);
                     } else {

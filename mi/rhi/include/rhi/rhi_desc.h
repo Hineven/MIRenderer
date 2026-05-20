@@ -211,6 +211,9 @@ struct RHIPipelineParameterTextureDesc {
     uint32_t array_layer {UINT_MAX};
     // Mip level (if the texture is mipmapped)
     uint32_t mip_level {0};
+    // Explicit image layout for the descriptor write.
+    // If kUndefined, the backend will use its default behavior.
+    RHITextureLayoutType layout {RHITextureLayoutType::kUndefined};
 };
 struct RHIPipelineParameterResourceDesc {
     RHIResource * resource;
