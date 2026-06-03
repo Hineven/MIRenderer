@@ -242,6 +242,9 @@ void RDGPass::AddResourceReference(RDGResource *resource) {
     rdg_resource_keepers_.emplace_back(resource);
 }
 
+const RDGShader *RDGPass::GetShader() {
+    return shader_;
+}
 
 void RDGPass::PreCompile() {
     DEBUG_PROFILE_SECTION(RDGPass_PreCompile);

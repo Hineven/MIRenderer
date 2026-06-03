@@ -45,7 +45,7 @@ std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(
                 auto buffer_ptr = pass->GetGraph()->GetUniformBufferForParameterStruct(struct_ptr);
                 if (!buffer_ptr.buffer) {
 #ifndef NDEBUG
-                    if (!populate_all && pass->shader_ && pass->shader_->QueryShaderAccess(info->uniform_buffers_[i].info->name).access
+                    if (!populate_all && pass->GetShader() && pass->GetShader()->QueryShaderAccess(info->uniform_buffers_[i].info->name).access
                         != RHIGPUAccessFlagBits::kNone) {
                             MI_WARN("Shader {}: Can not find pre-allocated uniform buffer {}.",
                                 shader->GetShaderClassRegistry()->name,

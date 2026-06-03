@@ -10,6 +10,7 @@
 #include <map>
 #include "core/util/alloc.h"
 #include "rdg/rdg_base.h"
+#include "rhi/rhi_desc.h"
 
 MI_NAMESPACE_BEGIN
 

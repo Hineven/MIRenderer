@@ -63,7 +63,7 @@ RDGPoolBufferAllocation * RDGResourcePool::FindOrCreateBufferAllocation(RDGBuffe
             auto & slot = free_buffer_allocations_[hash];
             if (!slot.empty()) {
                     // Found one, allocate it
-                    allocated = slot.back();
+                auto alloc = slot.back();
                 slot.pop_back();
                 return alloc;
             }

@@ -24,6 +24,7 @@ class RDGTexture : public RDGResource {
 public:
     friend class RDGResourcePool;
     friend class RenderGraphBuilder;
+    friend class RenderGraph;
     ~RDGTexture () override ;
     FORCEINLINE RHITextureDesc GetDesc () const { return desc_; }
     uint32_t GetResourceClassHash () const override;
@@ -123,6 +124,7 @@ protected:
 public:
     friend class RDGResourcePool;
     friend class RenderGraphBuilder;
+    friend class RenderGraph;
 
     FORCEINLINE void SetName (const std::string & name) {name_ = name;}
     FORCEINLINE std::string GetName () const { return name_;}

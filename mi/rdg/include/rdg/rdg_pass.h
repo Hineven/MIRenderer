@@ -63,6 +63,9 @@ public:
     // Add a reference to a resource to extend its lifetime until the pass is destroyed.
     void AddResourceReference(RDGResource * resource) ;
 
+    // Get the shader corresponding to the pass (if present)
+    const RDGShader * GetShader ();
+
     FORCEINLINE void SetName (std::string name) {
         name_ = std::move(name);
     }
