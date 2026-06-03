@@ -222,6 +222,20 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
     params->RWRadiance = noisy_radiance;
 
     auto * dlss_rr = view->persistent_data_->dlss_rr_context_.Raw();
+    params->RWDepth = dlss_rr->GetDepthBuffer();
+    params->RWNormal = dlss_rr->GetNormalBuffer();
+    params->RWMotionVector = dlss_rr->GetMotionVectorBuffer();
+    params->RWAlbedo = dlss_rr->GetAlbedoBuffer();
+    params->RWSpecularAlbedo = dlss_rr->GetSpecularAlbedoBuffer();
+    params->RWRoughness = dlss_rr->GetRoughnessBuffer();
+    params->RWAlpha = dlss_rr->GetAlphaBuffer();
+
+    Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
+
+    bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
+    bool reset_history = camera_dirty || view->persistent_data_->frame_index_ == 0;
+
+    auto * dlss_output = dlss_rr->GetDLSSOutput();
     auto * depth = dlss_rr->GetDepthBuffer();
     auto * normal = dlss_rr->GetNormalBuffer();
     auto * motion_vector = dlss_rr->GetMotionVectorBuffer();
@@ -229,29 +243,6 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
     auto * specular_albedo = dlss_rr->GetSpecularAlbedoBuffer();
     auto * roughness = dlss_rr->GetRoughnessBuffer();
     auto * alpha = dlss_rr->GetAlphaBuffer();
-    params->RWDepth = depth;
-    params->RWNormal = normal;
-    params->RWMotionVector = motion_vector;
-    params->RWAlbedo = albedo;
-    params->RWSpecularAlbedo = specular_albedo;
-    params->RWRoughness = roughness;
-    params->RWAlpha = alpha;
-
-    // PT TraceRays pass: declare all UAV writes so the RDG inserts proper barriers
-    Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_)
-        ->AddTextureH(noisy_radiance, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(depth, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(normal, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(motion_vector, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(albedo, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(specular_albedo, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(roughness, RDGTextureUsageType::kShaderReadWrite)
-        ->AddTextureH(alpha, RDGTextureUsageType::kShaderReadWrite);
-
-    bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
-    bool reset_history = camera_dirty || view->persistent_data_->frame_index_ == 0;
-
-    auto * dlss_output = dlss_rr->GetDLSSOutput();
     auto jitter = view->camera_jitter_;
 
     // Grab view matrices for DLSS-RR (column-major 4x4, matches HLSL float4x4)
