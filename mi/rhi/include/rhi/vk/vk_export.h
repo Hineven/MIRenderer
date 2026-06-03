@@ -28,7 +28,23 @@ struct VulkanRHIHandles {
 struct VulkanRHICreateInfo {
   	const char ** extra_instance_extensions;
     uint32_t extra_instance_extension_count;
+    const char ** extra_device_extensions;
+    uint32_t extra_device_extension_count;
 };
+
+// Native Vulkan texture info for external libraries (e.g. NGX / DLSS)
+struct VulkanTextureNativeInfo {
+    vk::Image image;
+    vk::ImageView image_view;
+    vk::Format format;
+    vk::ImageSubresourceRange subresource_range;
+    uint32_t width;
+    uint32_t height;
+};
+
+// Query native Vulkan handles from an RHITexture.
+// Returns false if the texture is not backed by Vulkan or arguments are invalid.
+bool RHIGetVulkanTextureInfo(class RHITexture* texture, VulkanTextureNativeInfo* out);
 
 MI_NAMESPACE_END
 #endif //VK_PROPS_H

@@ -137,8 +137,7 @@ TRef<RDGBuffer> Helpers::SpawnDrawIndirectCommand(RenderGraphBuilder &builder, B
     auto shader = RDGShaderLibrary::Get().GetShader<SpawnDrawIndirectCommandShader>(ini);
     builder.AddPass<SpawnDrawIndirectCommandShader>({}, shader, params,
         [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-            RDGCommandHelper::Dispatch(queue, shader, tid);
+            RDGCommandHelper::Dispatch(queue, shader, pass->GetParameterTableId());
         }
     );
     return command;
@@ -177,8 +176,7 @@ TRef<RDGBuffer> Helpers::SpawnDispatchIndirectCommand1D(RenderGraphBuilder &buil
     auto shader = RDGShaderLibrary::Get().GetShader<SpawnDispatchIndirectCommand1DShader>();
     builder.AddPass<SpawnDispatchIndirectCommand1DShader>({}, shader, params,
         [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-            RDGCommandHelper::Dispatch(queue, shader, tid);
+            RDGCommandHelper::Dispatch(queue, shader, pass->GetParameterTableId());
         }
     );
     return command;
@@ -254,8 +252,7 @@ TRef<RDGBuffer> Helpers::SpawnTraceRaysIndirectCommand1D(RenderGraphBuilder &bui
     }
     builder.AddPass<SpawnTraceRaysIndirectCommand1DShader>({}, shader, params,
         [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-            RDGCommandHelper::Dispatch(queue, shader, tid);
+            RDGCommandHelper::Dispatch(queue, shader, pass->GetParameterTableId());
         }
     );
     return command;

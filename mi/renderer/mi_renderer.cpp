@@ -43,6 +43,9 @@
 #include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 
+#include "dlss/ngx_context.h"
+#include "dlss/dlss_rr_context.h"
+
 MI_NAMESPACE_BEGIN
 static CVar<int> CVar_FinalOutputType(
     "r.debug.final_output_type",
@@ -534,7 +537,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_->radiance.Raw());
     else if (type == 8) {
         Render_PathTracing(view, builder);
-        Render_DrawToOutput(view, builder, view->persistent_data_->path_tracing_film_.Raw());
+        Render_DrawToOutput(view, builder, view->debug_output_.Raw());
     } else if (type == 9) {
         Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_->screen_probe_radiance_depth.Raw());
     } else Render_DrawToOutput(view, builder, view->debug_output_.Raw());
@@ -555,7 +558,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         exports->RegisterResource("grf_depth", view->grf_->stochastic_rendering_depth_.Raw());
         exports->RegisterResource("grf_opacity", view->grf_->stochastic_rendering_opacity_.Raw());
     }
-    if (view->persistent_data_) {
+    if (view->persistent_data_ && view->persistent_data_->path_tracing_film_) {
         exports->RegisterResource("path_tracing_film", view->persistent_data_->path_tracing_film_.Raw());
     }
 

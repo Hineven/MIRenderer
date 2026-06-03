@@ -89,7 +89,7 @@ void Renderer::Render_ComputeHiZBuffer(
         builder.AddPass<ComputeHiZBufferShader>(
             {}, shader, params,
             [shader, params, groups](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::Dispatch(queue, shader, tid, groups.x, groups.y);
             }
         )->SetName("ComputeHiZBuffer Level " + std::to_string(level));

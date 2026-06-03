@@ -654,7 +654,6 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
 
     auto * common_params = builder.Allocate<LightStructureParameters>();
     fill_common_params(common_params, 0);
-    auto common_table = builder.Allocate<SharedParameterTableId>();
 
     {
         auto num_groups = DivideAndRoundUp(
@@ -672,7 +671,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
 
             auto clear_grid_states_shader = lib.GetShader<ClearGridStatesShader>(ini);
             Helpers::AddComputePass<ClearGridStatesShader>(
-                builder, clear_grid_states_shader, common_params, common_table, num_groups
+                builder, clear_grid_states_shader, common_params, num_groups
             );
 
             persistent->need_reset_ = false;
@@ -685,7 +684,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
         auto num_groups = DivideAndRoundUp(kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize, ClearCountersShader::kThreadGroupSize);
-        Helpers::AddComputePass(builder, shader, common_params, common_table, num_groups);
+        Helpers::AddComputePass(builder, shader, common_params, num_groups);
     }
 
     if (ls->num_active_mesh_light_instances_ == 0) {
@@ -700,7 +699,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (draw_count == 0) {
                     return;
                 }
-                auto tid = RDGCommandHelper::CreateParameterTable(queue_inner, pass, shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
                     &PrecomputeTrianglesShader::GetShaderParamStructInfo()->render_pass_info_, params);
                 queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
@@ -720,7 +719,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (draw_count == 0) {
                     return;
                 }
-                auto tid = RDGCommandHelper::CreateParameterTable(queue_inner, pass, shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
                     &PrecomputeLevelShader::GetShaderParamStructInfo()->render_pass_info_, params);
                 queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
@@ -737,7 +736,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
                 if (draw_count == 0) {
                     return;
                 }
-                auto tid = RDGCommandHelper::CreateParameterTable(queue_inner, pass, shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
                     &FinalizeMLIClustersShader::GetShaderParamStructInfo()->render_pass_info_, params);
                 queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
@@ -749,18 +748,18 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     {
         auto shader = lib.GetShader<GatherActiveGridsShader>(ini);
         auto num_groups = DivideAndRoundUp(kLightGridNumCascades * kLightGridSize * kLightGridSize * kLightGridSize, RHI::Get().GetDeviceProperties().wave_size * 8u);
-        Helpers::AddComputePass(builder, shader, common_params, common_table, num_groups);
+        Helpers::AddComputePass(builder, shader, common_params, num_groups);
     }
 
     {
         auto shader = lib.GetShader<ClipActiveGridsShader>(ini);
-        Helpers::AddComputePass(builder, shader, common_params, common_table);
+        Helpers::AddComputePass(builder, shader, common_params);
     }
 
     {
         auto shader = lib.GetShader<InjectLightsShader>(ini);
         auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, ls->active_grid_count.Raw(), RHI::Get().GetDeviceProperties().wave_size);
-        Helpers::AddComputeIndirectPass(builder, shader, common_params, common_table, cmd.Raw());
+        Helpers::AddComputeIndirectPass(builder, shader, common_params, cmd.Raw());
     }
 }
 

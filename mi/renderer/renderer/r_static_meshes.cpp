@@ -233,7 +233,7 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
         auto raster_pass = builder.AddPass<DrawDeferredStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.deferred_static_meshes, rdg_draw_cmd = ctx.deferred_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
                     &DrawDeferredStaticMeshesShader::GetShaderParamStructInfo()->render_pass_info_, params);
                 auto prev_cull_mode = RHICullModeType::kMax;
@@ -409,7 +409,7 @@ void Renderer::Render_DrawForwardStaticMeshes(RendererView *view, RenderGraphBui
         auto raster_pass = builder.AddPass<DrawForwardStaticMeshesShader>({}, shader, params,
             [params, shader, data = ctx.forward_static_meshes, rdg_draw_cmd = ctx.forward_static_meshes.d_static_draw_commands.Raw()]
             ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
                     &DrawForwardStaticMeshesShader::GetShaderParamStructInfo()->render_pass_info_, params);
                 queue.SetCullMode(RHICullModeType::kBack);

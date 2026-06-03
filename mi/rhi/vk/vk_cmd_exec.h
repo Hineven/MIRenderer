@@ -8,7 +8,7 @@
 #define MI_VK_CMD_EXEC_H
 
 #include "rhi/rhi_cmd.h"
-#include "../rhi_cmd_exec.h"
+#include "rhi/rhi_cmd_exec.h"
 #include "rhi/rhi_pipeline.h"
 #include "vk_constants.h"
 #include "vk_texture.h"
@@ -74,6 +74,8 @@ public:
 
     void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync,
         const std::string & submit_prefix, bool release_resources) override ;
+
+    void * GetCurrentNativeCommandBuffer (RHICommandQueueType type) override ;
 protected:
 
     void CheckDrawReadyness (RHICommandQueueBase * ) ;

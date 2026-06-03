@@ -6,7 +6,7 @@
 #include <semaphore>
 #include "rhi/rhi_thread.h"
 #include "rhi/rhi_cmd.h"
-#include "rhi_cmd_exec.h"
+#include "rhi/rhi_cmd_exec.h"
 #include "rhi/rhi.h"
 #include "rhi/rhi_cmd_stats.h"
 
@@ -118,6 +118,7 @@ void EnqueueRHIThreadIdleTask () {
 
 void StartAndRunRHIWorkerThread() {
     rhi_worker_thread_.reset(new RHIWorkerThread());
+    RenameThread(L"RHI Thread");
     rhi_worker_thread_->Run();
 }
 

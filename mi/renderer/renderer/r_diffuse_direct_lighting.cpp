@@ -308,10 +308,9 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         params->Debug = view->debug_common_params_;
     }
     auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
-    auto shared_table = builder.Allocate<SharedParameterTableId>();
     {
         auto shader = lib.GetShader<DiffuseDirectLightingClearCountersShader>(ini);
-        Helpers::AddComputePass(builder, shader, params, shared_table);
+        Helpers::AddComputePass(builder, shader, params);
     }
     {
         auto shader = lib.GetShader<SpawnLightSamplesShader>(ini);
@@ -319,14 +318,14 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         auto num_groups_x = DivideAndRoundUp(view->film_width_, tile_size);
         auto num_groups_y = DivideAndRoundUp(view->film_height_, tile_size);
         Helpers::AddComputePass<SpawnLightSamplesShader>(
-            builder, shader, params, shared_table, num_groups_x, num_groups_y
+            builder, shader, params, num_groups_x, num_groups_y
         );
     }
     auto cmd = Helpers::SpawnDispatchIndirectCommand1D(builder, ray_to_trace_count.Raw(), wave_size);
     {
         auto shader = lib.GetShader<ScreenSpaceTraceForDirectLightingShader>(ini);
         Helpers::AddComputeIndirectPass<ScreenSpaceTraceForDirectLightingShader>(
-            builder, shader, params, shared_table, cmd.Raw()
+            builder, shader, params, cmd.Raw()
         );
     }
 
@@ -354,7 +353,7 @@ void Renderer::Render_ComputeDiffuseDirectLighting(RendererView *view, RenderGra
         auto shader = lib.GetShader<RenderDiffuseDirectLightingShader>(ini_t);
         Helpers::Clear(builder, view->diffuse_direct_lighting_->radiance.Raw());
         Helpers::AddComputeIndirectPass<RenderDiffuseDirectLightingShader>(
-            builder, shader, params, shared_table, cmd.Raw()
+            builder, shader, params, cmd.Raw()
         );
     }
 

@@ -105,7 +105,7 @@ TRef<Texture> TextureLoader::LoadEnvironmentMapFromBuffer(const std::string &nam
             builder.AddPass<MappingShader>(RDGPassFlagBits::kNeverCull, mapping_shader, params, [
                 params, mapping_shader
             ](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, mapping_shader, params);
+                auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::Draw(queue, mapping_shader, tid,
                     &MappingShader::GetShaderParamStructInfo()->render_pass_info_, params, 3);
             });

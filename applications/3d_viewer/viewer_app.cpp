@@ -18,6 +18,7 @@
 #include "core/task.h"
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
+#include "dlss/ngx_context.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_static_mesh.h"
@@ -481,17 +482,23 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
     glfwInit();
 
     {
-        uint32_t extension_count = 0;
-        auto extra_extensions = glfwGetRequiredInstanceExtensions(&extension_count);
-        if (extension_count != 0) {
-            VulkanRHICreateInfo info {};
-            info.extra_instance_extension_count = extension_count;
-            info.extra_instance_extensions = extra_extensions;
-            RHI::InitializeSingleton(RHIType::kVulkan, &info);
-            RHI::Get().ResetPipelineCache(4 * 1024 * 1024);
-        } else {
-            throw std::runtime_error("Failed to get required instance extensions");
+        std::vector<const char *> inst_extensions;
+        std::vector<const char *> dev_extensions;
+        uint32_t extension_count_glfw = 0;
+        auto extra_inst_extensions_glfw = glfwGetRequiredInstanceExtensions(&extension_count_glfw);
+        for (int i = 0; i < (int)extension_count_glfw; ++i) {
+            inst_extensions.push_back(extra_inst_extensions_glfw[i]);
         }
+        // Query NGX-required Vulkan extensions (instance + device)
+        NGXContext::GetRequiredVulkanExtensions(inst_extensions, dev_extensions);
+
+        VulkanRHICreateInfo info {};
+        info.extra_instance_extension_count = inst_extensions.size();
+        info.extra_instance_extensions = inst_extensions.data();
+        info.extra_device_extension_count = dev_extensions.size();
+        info.extra_device_extensions = dev_extensions.data();
+        RHI::InitializeSingleton(RHIType::kVulkan, &info);
+        RHI::Get().ResetPipelineCache(4 * 1024 * 1024);
     }
 
     auto limits = GetInfra().GetResourceLimits();

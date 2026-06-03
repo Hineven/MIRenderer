@@ -39,4 +39,7 @@ void DestroyPlatformBackgroundThreadContext_Worker ();
 void InitializePlatformMainThreadContext ();
 void DestroyPlatformMainThreadContext ();
 
+// Set the name of a thread
+void RenameThread (const wchar_t* name);
+
 #endif //MIRENDERER_CORE_PLATFORM_H

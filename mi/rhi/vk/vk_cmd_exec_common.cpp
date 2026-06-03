@@ -231,4 +231,13 @@ void VulkanCommandExecutor::CommandQueueState::SetupDefaultDynamicStates() const
     cmd.setPolygonModeEXT(vk::PolygonMode::eFill);
 }
 
+void * VulkanCommandExecutor::GetCurrentNativeCommandBuffer (RHICommandQueueType type) {
+    auto & chain = state_chains_[(uint32_t)type];
+    auto & state = chain.states[chain.state_index];
+    if (!state.cmd_recording_started) {
+        state.BeginCmd();
+    }
+    return reinterpret_cast<void *>(static_cast<VkCommandBuffer>(state.cmd));
+}
+
 MI_NAMESPACE_END

@@ -879,37 +879,36 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     }
 
     view->volume_indirect_lighting_->shader_params = params; // Save for further use
-    auto shared_table = builder.Allocate<SharedParameterTableId>();
 
     {
         auto shader = lib.GetShader<ClearCountersShader>(ini);
-        Helpers::AddComputePass(builder, shader, params, shared_table);
+        Helpers::AddComputePass(builder, shader, params);
     }
     // Clear per-tile lists before reuse (avoid reading garbage causing OOB)
     {
         auto shader = lib.GetShader<ClearTileVolumeProbeIndexListsShader>(ini);
         Helpers::AddComputePass<ClearTileVolumeProbeIndexListsShader>(
-            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
 
     if (need_reset) {
         auto shader = lib.GetShader<InitializeVolumeProbeCacheShader>(ini);
         Helpers::AddComputePass<InitializeVolumeProbeCacheShader>(
-            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
 
     {
         auto shader = lib.GetShader<InjectVolumeProbesShader>(ini);
         Helpers::AddComputePass<InjectVolumeProbesShader>(
-            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
         auto shader = lib.GetShader<AllocateTileVolumeProbeListsShader>(ini);
         Helpers::AddComputePass<AllocateTileVolumeProbeListsShader>(
-            builder, shader, params, shared_table,
+            builder, shader, params,
             DivideAndRoundUp(num_tiles, wave_size)
         );
     }
@@ -919,19 +918,19 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
         );
         auto shader = lib.GetShader<ScatterReprojectedVolumeProbesToTileListShader>(ini);
         Helpers::AddComputeIndirectPass<ScatterReprojectedVolumeProbesToTileListShader>(
-            builder, shader, params, shared_table, cmd.Raw()
+            builder, shader, params, cmd.Raw()
         );
     }
     {
         auto shader = lib.GetShader<SpawnVolumeProbesShader>(ini);
         Helpers::AddComputePass<SpawnVolumeProbesShader>(
-            builder, shader, params, shared_table,
+            builder, shader, params,
             DivideAndRoundUp(num_tiles, wave_size)
         );
     }
     {
         auto shader = lib.GetShader<ClipVolumeProbeSpawnAllocatorShader>(ini);
-        Helpers::AddComputePass<ClipVolumeProbeSpawnAllocatorShader>(builder, shader, params, shared_table);
+        Helpers::AddComputePass<ClipVolumeProbeSpawnAllocatorShader>(builder, shader, params);
     }
 
     view->volume_indirect_lighting_->spawn_list_command = Helpers::SpawnDispatchIndirectCommand1D(
@@ -940,13 +939,13 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     {
         auto shader = lib.GetShader<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(ini);
         Helpers::AddComputeIndirectPass<ReconstructRadiance_SampleSpawnVolumeProbeUpdateRaysShader>(
-            builder, shader, params, shared_table,
+            builder, shader, params,
             view->volume_indirect_lighting_->spawn_list_command.Raw()
         );
     }
     {
         auto shader = lib.GetShader<ClipUpdateRayCountShader>(ini);
-        Helpers::AddComputePass<ClipUpdateRayCountShader>(builder, shader, params, shared_table);
+        Helpers::AddComputePass<ClipUpdateRayCountShader>(builder, shader, params);
     }
 
     // Ray tracing...
@@ -971,7 +970,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             builder, volume_probe_update_ray_allocator.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<ResolveHitLightingFromScreenHistoryAndSpecialEmitterShader>(
-            builder, shader, params, shared_table, cmd.Raw()
+            builder, shader, params, cmd.Raw()
         );
     }
 
@@ -981,7 +980,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
     {
         auto shader = lib.GetShader<SampleLightRaysForUpdateRayHitsShader>(ini);
         Helpers::AddComputeIndirectPass<SampleLightRaysForUpdateRayHitsShader>(
-            builder, shader, params, shared_table, view->volume_indirect_lighting_->shading_point_command.Raw()
+            builder, shader, params, view->volume_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -1003,7 +1002,7 @@ void Renderer::Render_UpdateVolumeIndirectLighting(RendererView * view, RenderGr
             builder, volume_probe_update_ray_hit_shading_point_allocator.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<ResolveUpdateRayHitsDirectLightingFromTraceResultShader>(
-            builder, shader, params, shared_table, cmd.Raw()
+            builder, shader, params, cmd.Raw()
         );
     }
 }
@@ -1012,12 +1011,11 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
     RDGSectionGuard section(builder, "Render_FinishVolumeIndirectLighting");
     auto & lib = RDGShaderLibrary::Get();
     auto params = view->volume_indirect_lighting_->shader_params;
-    auto shared_table = builder.Allocate<SharedParameterTableId>();
     auto ini = GetVolumeIndirectLightingShaderInitializationInfo();
     {
         auto shader = lib.GetShader<ResolveProbeUpdateRayRadianceFromCellsShader>(ini);
         Helpers::AddComputeIndirectPass<ResolveProbeUpdateRayRadianceFromCellsShader>(
-            builder, shader, params, shared_table, view->volume_indirect_lighting_->shading_point_command.Raw()
+            builder, shader, params, view->volume_indirect_lighting_->shading_point_command.Raw()
         );
     }
 
@@ -1026,7 +1024,7 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
         if (CVar_Debug_OutputProbeUpdateRays.Get()) ini_s.optional_macros.push_back("DEBUG_OUTPUT_TRACED_RAY");
         auto shader = lib.GetShader<UpdateVolumeProbesAndCacheShader>(ini_s);
         Helpers::AddComputeIndirectPass<UpdateVolumeProbesAndCacheShader>(
-            builder, shader, params, shared_table,
+            builder, shader, params,
             view->volume_indirect_lighting_->spawn_list_command.Raw()
         );
     }
@@ -1037,14 +1035,14 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
         auto wave_size = RHI::Get().GetDeviceProperties().wave_size;
         auto shader = lib.GetShader<UpdateVolumeProbeCacheMRUQueueShader>(ini);
         Helpers::AddComputePass<UpdateVolumeProbeCacheMRUQueueShader>(
-            builder, shader, params, shared_table, DivideAndRoundUp(num_tiles, wave_size)
+            builder, shader, params, DivideAndRoundUp(num_tiles, wave_size)
         );
     }
 
     {
         auto shader = lib.GetShader<ComputeVolumeProbeSHCoefficientsShader>(ini);
         Helpers::AddComputePass<ComputeVolumeProbeSHCoefficientsShader>(
-            builder, shader, params, shared_table,
+            builder, shader, params,
             tile_dimensions.x, tile_dimensions.y
         );
     }
@@ -1052,7 +1050,7 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
     {
         auto shader = lib.GetShader<ComputeVolumeIndirectLightingShader>(ini);
         Helpers::AddComputePass<ComputeVolumeIndirectLightingShader>(
-            builder, shader, params, shared_table,
+            builder, shader, params,
             tile_dimensions.x,
             tile_dimensions.y
         );
@@ -1065,7 +1063,7 @@ void Renderer::Render_FinishVolumeIndirectLighting(RendererView *view, RenderGra
             builder, view->volume_indirect_lighting_->active_volume_probe_count.Raw(), wave_size
         );
         Helpers::AddComputeIndirectPass<DebugOutputVolumeProbePositionsShader>(
-            builder, shader, params, shared_table, cmd.Raw()
+            builder, shader, params, cmd.Raw()
         );
     }
 }

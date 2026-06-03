@@ -12,12 +12,6 @@
 #include "rdg/rdg_cmd.h"
 MI_NAMESPACE_BEGIN
 
-// Keeps an identifier to a created shader parameter table.
-// The parameter table is automatically allocated and created upon first use in a pass.
-struct SharedParameterTableId {
-    uint32_t id = UINT32_MAX;
-};
-
 // Simple helpers for easily adding commonly used RDG passes. As well as invoking raw RHI commands.
 class Helpers {
 public:
@@ -45,9 +39,8 @@ public:
         if (!shader) return nullptr;
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported in DispatchComputePass.");
         return builder.AddPass<T>(flags, shader, params,
-            [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params, false);
-                RDGCommandHelper::Dispatch(queue, shader, tid, x, y, z);
+            [shader, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::Dispatch(queue, shader, pass->GetParameterTableId(), x, y, z);
             }
         );
     }
@@ -57,9 +50,8 @@ public:
         if (!shader || !indirect_buffer) return nullptr;
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported in DispatchIndirectComputePass.");
         return builder.AddPass<T>({}, shader, params,
-            [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params, false);
-                RDGCommandHelper::DispatchIndirect(queue, shader, tid, indirect_buffer);
+            [shader, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::DispatchIndirect(queue, shader, pass->GetParameterTableId(), indirect_buffer);
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
@@ -70,8 +62,7 @@ public:
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kGraphics, "Only graphics shaders are supported in DrawIndirectPass.");
         return builder.AddPass<T>({}, shader, params,
             [shader, params, indirect_buffer, draw_count=count](RDGPass* pass, RHICommandQueueGraphics &q){
-                auto tid = RDGCommandHelper::CreateParameterTable(q, pass, shader, params, false);
-                RDGCommandHelper::BeginGraphicsRender(q, shader, tid,
+                RDGCommandHelper::BeginGraphicsRender(q, shader, pass->GetParameterTableId(),
                     &T::GetShaderParamStructInfo()->render_pass_info_, params);
                 q.DrawIndirect(indirect_buffer->GetRHI());
                 RDGCommandHelper::EndGraphicsRender(q);
@@ -85,9 +76,8 @@ public:
         if (!shader) return nullptr;
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchRayTracingPass.");
         return builder.AddPass<T>(flags, shader, params,
-            [shader, params, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params, false);
-                RDGCommandHelper::DispatchRays(queue, shader, tid, x, y, z);
+            [shader, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::DispatchRays(queue, shader, pass->GetParameterTableId(), x, y, z);
             }
         );
     }
@@ -97,76 +87,11 @@ public:
         if (!shader || !indirect_buffer) return nullptr;
         mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported in DispatchIndirectRayTracingPass.");
         return builder.AddPass<T>({}, shader, params,
-            [shader, params, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params, false);
-                RDGCommandHelper::DispatchRaysIndirect(queue, shader, tid, indirect_buffer);
+            [shader, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
+                RDGCommandHelper::DispatchRaysIndirect(queue, shader, pass->GetParameterTableId(), indirect_buffer);
             }
         )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
-
-
-    template<CShaderType T>
-    FORCEINLINE static RDGPass * AddComputePass(RenderGraphBuilder & builder, T * shader,
-        typename T::ShaderParameters * params, SharedParameterTableId * table,
-        uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
-        if (!shader) return nullptr;
-        mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported.");
-        return builder.AddPass<T>(flags, shader, params,
-            [shader, params, table, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (table->id == UINT32_MAX) {
-                    table->id = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-                }
-                RDGCommandHelper::Dispatch(queue, shader, table->id, x, y, z);
-            }
-        );
-    }
-
-    template<CShaderType T>
-    FORCEINLINE static RDGPass * AddComputeIndirectPass(RenderGraphBuilder & builder, T * shader,
-        typename T::ShaderParameters * params, SharedParameterTableId * table, RDGBuffer * indirect_buffer) {
-        if (!shader || !indirect_buffer) return nullptr;
-        mi_assert(shader->GetPipelineType() == RHIPipelineType::kCompute, "Only compute shaders are supported.");
-        return builder.AddPass<T>({}, shader, params,
-            [shader, params, table, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (table->id == UINT32_MAX) {
-                    table->id = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-                }
-                RDGCommandHelper::DispatchIndirect(queue, shader, table->id, indirect_buffer);
-            }
-        )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
-    }
-
-    template<CShaderType T>
-    FORCEINLINE static RDGPass * AddTraceRaysPass(RenderGraphBuilder & builder, T * shader,
-        typename T::ShaderParameters * params, SharedParameterTableId * table,
-        uint32_t x = 1, uint32_t y = 1, uint32_t z = 1, RDGPassFlags flags = {}) {
-        if (!shader) return nullptr;
-        mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported.");
-        return builder.AddPass<T>(flags, shader, params,
-            [shader, params, table, x, y, z](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (table->id == UINT32_MAX) {
-                    table->id = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-                }
-                RDGCommandHelper::DispatchRays(queue, shader, table->id, x, y, z);
-            }
-        );
-    }
-
-    template<CShaderType T>
-    FORCEINLINE static RDGPass * AddTraceRaysIndirectPass(RenderGraphBuilder & builder, T * shader,
-        typename T::ShaderParameters * params, SharedParameterTableId * table, RDGBuffer * indirect_buffer) {
-        if (!shader || !indirect_buffer) return nullptr;
-        mi_assert(shader->GetPipelineType() == RHIPipelineType::kRayTracing, "Only ray tracing shaders are supported.");
-        return builder.AddPass<T>({}, shader, params,
-            [shader, params, table, indirect_buffer](RDGPass * pass, RHICommandQueueGraphics & queue) {
-                if (table->id == UINT32_MAX) {
-                    table->id = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
-                }
-                RDGCommandHelper::DispatchRaysIndirect(queue, shader, table->id, indirect_buffer);
-            }
-        )->AddBuffer(indirect_buffer, RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
-    }
-
 
     // Enqueue upload commands to the RHI graphics command queue and place barriers.
     // If you want that happen immediately, launch a submit on the queue and wait idle.

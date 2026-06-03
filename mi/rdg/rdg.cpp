@@ -11,6 +11,8 @@
 #include "rdg/rdg.h"
 
 #include <rdg/rdg_param.h>
+#include <rdg/rdg_cmd.h>
+#include <rdg/rdg_pass_param_table.h>
 #include <rhi/rhi_buffer.h>
 
 #include "core/util/debug_prof.h"
@@ -170,6 +172,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 for (auto ref : pass->shader_param_struct_info_->uniform_buffers_) {
                     auto struct_ptr = *(void**)((std::byte*)pass->shader_param_data_ + ref.cpp_offset);
                     if (struct_ptr == nullptr || RDGParameter_IsUnsetPointer(struct_ptr)) {
+                        MI_WARN("RDG: Unset / null UniformBuffer detected within pass {}, {}", pass->GetName(), ref.info->name);
                         continue ;
                     }
                     // Reflect from shader and make sure that the UB is statically used.
@@ -231,6 +234,83 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         // No need for further adding the uniform buffer access to passes. 1 single barrier is enough.
     }
 
+    // Global parameter table creation: group passes by params_ptr, merge texture layouts across the group,
+    // and create one shared parameter table per group.
+    std::vector<RDGPassParameterTable> param_tables;
+    {
+        std::map<const void*, std::vector<RDGPass*>> param_groups;
+        for (auto & pass : passes_) {
+            if (pass->shader_ && pass->shader_param_data_) {
+                param_groups[pass->shader_param_data_].push_back(pass.get());
+            }
+        }
+        param_tables.reserve(param_groups.size());
+
+        for (auto & [params_ptr, group_passes] : param_groups) {
+            if (group_passes.empty()) continue;
+            auto * representative_pass = group_passes[0];
+            auto * shader = representative_pass->shader_;
+            auto * info = representative_pass->shader_param_struct_info_;
+            if (!shader || !info) continue;
+
+            auto & table = param_tables.emplace_back();
+            table.params_ptr_ = params_ptr;
+            table.root_signature_ = shader->GetRootSignature();
+            table.info_ = info;
+
+            if (shader->GetName().substr(0, 6) == "Decode") {
+                puts("qwq");
+            }
+
+            // TODO optimize performance.
+            // Merge texture layouts per binding slot across all passes in the group.
+            auto MergeSlotLayout = [&](RHIPipelineResourceType type, auto & param_array) {
+                for (const auto & [i, e] : std::views::enumerate(param_array)) {
+                    auto tex = *static_cast<RDGShaderTextureParameter*>((void*)((uint8_t*)params_ptr + e.cpp_offset));
+                    if (RDGParameter_IsUnsetPointer(tex.texture)) continue;
+
+                    RHITextureLayoutType layout = RHITextureLayoutType::kUndefined;
+                    for (auto * p : group_passes) {
+                        for (auto & usage : p->compiled_.textures) {
+                            if (usage.texture.Raw() == tex.texture) {
+                                if(layout == RHITextureLayoutType::kUndefined) {
+                                    layout = usage.layout;
+                                } else if (layout != usage.layout) {
+                                    // Conflicting layouts for the same binding slot across passes.
+                                    // Regress to general layout when writing the descriptor.
+                                    layout = RHITextureLayoutType::kGeneral;
+                                    // FIXME overwrite pass usages to general layout as well for correct barrier placement.
+                                    mi_assert(false, "Not implemented");
+                                    break ;
+                                } else layout = usage.layout;
+                            }
+                        }
+                    }
+
+                    auto key = RDGPassParameterTable::TextureSlotKey{type, (uint32_t)i};
+                    auto it = table.merged_layouts_.find(key);
+                    if (it != table.merged_layouts_.end()) {
+                        if (it->second != layout) it->second = RHITextureLayoutType::kGeneral;
+                    } else {
+                        table.merged_layouts_[key] = layout;
+                    }
+                }
+            };
+            MergeSlotLayout(RHIPipelineResourceType::kUAV, info->uavs_);
+            MergeSlotLayout(RHIPipelineResourceType::kSRV, info->srvs_);
+
+            // Build parameter desc using the merged layouts.
+            auto desc = RDGCommandHelper::BuildParameterDesc(cmd, table, this);
+            if (desc) {
+                table.table_id_ = RDGCommandHelper::AllocateParameterTableId();
+                cmd.CreateSignatureParameterTable(table.table_id_, table.root_signature_, *desc);
+                for (auto * pass : group_passes) {
+                    pass->parameter_table_ = &table;
+                }
+            }
+        }
+    }
+
     std::vector<RHITimestampRef> marker_timestamps;
     std::vector<RDGTimePeriod> marker_periods;
     RDGTimePeriod active_period;
@@ -289,6 +369,7 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
     };
 #endif
 
+
     while (!ready_passes.empty()) {
 #ifdef RDG_DEBUG_VALIDATION
         for (auto & validating_pass : passes_) {
@@ -323,31 +404,44 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             auto tex_src_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_tex);
             auto tex_dst_accesses = cmd.Allocate<RHIGPUAccessFlags[]>(num_tex);
             for (const auto & texture_use : pass->compiled_.textures) {
-                if (texture_use.texture->GetRHI()) {
-                    if (texture_use.access == RHIGPUAccessFlagBits::kNone) continue;
-                    auto prev_stages = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
-                    auto curr_stages = texture_use.stages;
-                    auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
-                    auto curr_usage = texture_use.access;
-                    if (!prev_stages && texture_use.texture->allocation_) {
-                        prev_stages = texture_use.texture->allocation_->last_read_stages | texture_use.texture->allocation_->last_write_stages;
-                        prev_usage = texture_use.texture->allocation_->last_access;
-                    }
-                    auto prev_layout = texture_use.texture->GetCurrentLayout();
-                    auto curr_layout = texture_use.layout;
-                    if (prev_layout != curr_layout || (prev_stages && (
-                        curr_usage & RHIGPUAccessFlagBits::kWrite
-                        || ((curr_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite))))) {
-                        textures[num_tex_used] = texture_use.texture->GetRHI();
-                        tex_src_accesses[num_tex_used] = prev_usage;
-                        tex_src_stages[num_tex_used] = prev_stages;
-                        tex_dst_accesses[num_tex_used] = curr_usage;
-                        tex_dst_stages[num_tex_used] = curr_stages;
-                        layouts[num_tex_used] = curr_layout;
-                        num_tex_used ++;
-                    }
-                    texture_use.texture->Use(texture_use.stages, curr_usage, curr_layout);
+                if (!texture_use.texture->GetRHI()) continue;
+
+                auto prev_stages = texture_use.texture->GetReadStages() | texture_use.texture->GetWriteStages();
+                auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
+                auto prev_layout = texture_use.texture->GetCurrentLayout();
+
+                // For aliasing: if this is the first use after allocation, inherit last access from the allocation.
+                if (!prev_stages && texture_use.texture->allocation_) {
+                    prev_stages = texture_use.texture->allocation_->last_read_stages | texture_use.texture->allocation_->last_write_stages;
+                    prev_usage = texture_use.texture->allocation_->last_access;
                 }
+
+                RHITextureLayoutType target_layout = texture_use.layout;
+                RHIGPUAccessFlags target_usage = texture_use.access;
+                RHIPipelineStageFlags target_stages = texture_use.stages;
+
+                if (texture_use.access == RHIGPUAccessFlagBits::kNone) continue ;
+
+                bool needs_barrier = (prev_layout != target_layout);
+                if (!needs_barrier && target_usage != RHIGPUAccessFlagBits::kNone) {
+                    needs_barrier = prev_stages && (
+                        (target_usage & RHIGPUAccessFlagBits::kWrite)
+                        || ((target_usage & RHIGPUAccessFlagBits::kRead) && (prev_usage & RHIGPUAccessFlagBits::kWrite))
+                    );
+                }
+
+                if (needs_barrier) {
+                    textures[num_tex_used] = texture_use.texture->GetRHI();
+                    tex_src_accesses[num_tex_used] = prev_usage;
+                    tex_src_stages[num_tex_used] = prev_stages;
+                    tex_dst_accesses[num_tex_used] = target_usage;
+                    tex_dst_stages[num_tex_used] = target_stages;
+                    layouts[num_tex_used] = target_layout;
+                    num_tex_used ++;
+                }
+                
+                texture_use.texture->Use(target_stages, target_usage, target_layout);
+                
             }
 
             // Gather buffer barriers

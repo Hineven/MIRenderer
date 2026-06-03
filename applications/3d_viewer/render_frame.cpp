@@ -117,7 +117,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
             auto texture = (RHITexture*)draw_cmd.GetTexID();
             if (!rendering) {
                 params->ImGuiTexture = nullptr;
-                tid = RDGCommandHelper::CreateParameterTable(cmd, pass, shader, params);
+                tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(cmd, shader, tid, render_pass_info, params);
                 rendering = true;
                 last_texture = nullptr;
@@ -140,6 +140,7 @@ void RenderImGui (RenderGraphBuilder & builder, RDGTexture * backbuffer) {
                 if (texture && srv_slot != UINT32_MAX) {
                     auto srv_descs = cmd.Allocate<RHIPipelineParameterTextureDesc[]>(1);
                     srv_descs[0] = {texture, srv_slot};
+                    srv_descs[0].layout = RHITextureLayoutType::kShaderReadOnlyOptimal;
                     desc.srvs = {srv_descs, 1};
                 }
                 tid =  RDGCommandHelper::AllocateParameterTableId();

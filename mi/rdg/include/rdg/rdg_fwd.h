@@ -78,7 +78,7 @@ class RenderGraphBuilder;
 // Some pointer-based shader parameters that can be set to null are initialized to this value
 // to indicate that they are not set by the user.
 // This is used to check if the user has set the parameter (setting to nullptr also counts).
-constexpr static uint64_t RDGParameter_UnsetPointer = 0xffffffffffffffffull;
+inline constexpr uint64_t RDGParameter_UnsetPointer = ~uint64_t{0};
 template<typename T> concept CPointerType = std::is_pointer_v<T>;
 
 // Check if the render thread is in a rdg pass lambda.

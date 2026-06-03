@@ -265,7 +265,7 @@ void Renderer::Render_DrawToOutput(
     builder.AddPass<DrawToOutputShader>(
         {}, shader, params,
         [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+            auto tid = pass->GetParameterTableId();
             RDGCommandHelper::Draw(queue, shader, tid,
                 &DrawToOutputShader::GetShaderParamStructInfo()->render_pass_info_, params, 3);
         }

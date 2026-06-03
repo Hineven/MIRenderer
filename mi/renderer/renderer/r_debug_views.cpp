@@ -240,7 +240,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         auto cmd = Helpers::SpawnDrawIndirectCommand(builder, 2, view->debug_buffers_.traced_ray_count.Raw());
         builder.AddPass<VisualizeTracedRaysShader>({}, shader, params,
             [shader, params, dcmd = cmd.Raw()](RDGPass * pass, RHICommandQueueGraphics & queue) {
-            auto tid = RDGCommandHelper::CreateParameterTable(queue, pass, shader, params);
+            auto tid = pass->GetParameterTableId();
             RDGCommandHelper::BeginGraphicsRender(queue, shader, tid,
                 &VisualizeTracedRaysShader::GetShaderParamStructInfo()->render_pass_info_, params);
             queue.DrawIndirect(dcmd->GetRHI(), 1);

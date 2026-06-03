@@ -8,6 +8,8 @@
 #define RDG_PASS_H
 #include "rdg_resource.h"
 #include "rdg/rdg_fwd.h"
+#include "rdg/rdg_pass_param_table.h"
+
 MI_NAMESPACE_BEGIN
 struct RDGShaderParamStructAndSizeInfo;
 
@@ -99,6 +101,10 @@ public:
 
     FORCEINLINE std::vector<std::string> GetClassPath () const {return class_path_;}
 
+    FORCEINLINE uint32_t GetParameterTableId () const {
+        return parameter_table_ ? parameter_table_->table_id_ : UINT32_MAX;
+    }
+
 protected:
 
     bool is_pre_compiled_ {};
@@ -144,7 +150,7 @@ protected:
 
 
     // Keep references for resources used in the pass prior to compilation. May contain duplicates.
-    std::vector<RDGTextureUsage> used_textures;
+    std::vector<RDGTextureUsage> used_textures; 
     // Keep references for resources used in the pass prior to compilation. May contain duplicates.
     std::vector<RDGBufferUsage> used_buffers;
     // Keep references for resources used in the pass prior to compilation. May contain duplicates.
@@ -157,11 +163,16 @@ protected:
 
     RenderGraph * graph_ {};
 
+    // Associated parameter table (shared among passes with the same params_ptr).
+    RDGPassParameterTable* parameter_table_ = nullptr;
+
     // Keep references to resources to extend their lifetimes until the pass is destroyed.
     // Note: this is not overlapping with used_textures / used_buffers. All resources here
     // should be kept (even if they may not be actually used in the pass) to prevent corruption.
     // Because shader parameter structs does not keep references to resources.
     std::vector<TRef<RDGResource>> rdg_resource_keepers_;
+
+    friend class RenderGraph;
 };
 
 MI_NAMESPACE_END
