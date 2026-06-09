@@ -167,7 +167,7 @@ TEST(RDGTest, RDGSimpleComputeShader) {
             );
             params->TestTexture = test_texture.Raw();
             builder.AddPass("SimpleShader", RDGPassType::kCompute, {},
-                TestShader1::GetShaderParamStructInfo(), params,
+                shader, TestShader1::GetShaderParamStructInfo(), params,
                 [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
                     auto tid = pass->GetParameterTableId();
                     RDGCommandHelper::Dispatch(queue, shader, tid);
@@ -297,7 +297,7 @@ TEST(RDGTest, RDGSimpleGraphicsShader) {
             })->AddBufferH(vertex_buffer.Raw(), RHIGPUAccessFlagBits::kWrite);
             // Draw
             builder.AddPass("SimpleShader", RDGPassType::kGraphics, {},
-                TestShader2::GetShaderParamStructInfo(), params,
+                shader, TestShader2::GetShaderParamStructInfo(), params,
                 [shader, params](RDGPass * pass, RHICommandQueueGraphics & queue) {
                     auto tid = pass->GetParameterTableId();
                     RDGCommandHelper::Draw(queue, shader, tid,

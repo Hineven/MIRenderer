@@ -203,8 +203,6 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
     auto noisy_radiance_ref = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
     auto * noisy_radiance = noisy_radiance_ref.Raw();
 
-    view->persistent_data_->dlss_rr_context_->OnResolutionChanged(view->film_width_, view->film_height_);
-
     auto params = builder.Allocate<ReferencePathTracerShader::ShaderParameters>();
 
     auto UB = builder.Allocate<ReferencePathTracerUB>();
@@ -232,8 +230,11 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
 
     Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
 
-    bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
-    bool reset_history = camera_dirty || view->persistent_data_->frame_index_ == 0;
+    // Only reset DLSS-RR history on first frame or resolution change.
+    // Camera movement is handled by DLSS internally via motion vectors — do NOT reset on camera dirty.
+    bool resolution_changed = dlss_rr->IsResolutionChanged(view->film_width_, view->film_height_);
+    bool reset_history = view->persistent_data_->frame_index_ == 0 || resolution_changed;
+    dlss_rr->OnResolutionChanged(view->film_width_, view->film_height_);
 
     auto * dlss_output = dlss_rr->GetDLSSOutput();
     auto * depth = dlss_rr->GetDepthBuffer();
@@ -252,17 +253,15 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
     builder.AddPass("DLSS Ray Reconstruction", RDGPassFlagBits::kNeverCull,
         [dlss_rr, noisy_radiance, depth, normal, motion_vector, albedo, specular_albedo, roughness, alpha, dlss_output, jitter, reset_history, world_to_view, view_to_clip]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            // Extract Vulkan resource handles on the Render Thread before entering the RHI thread lambda.
+            // RDG resource access (GetRHI, RHIGetVulkanTextureInfo) is only valid on the Render Thread.
+            auto res_snapshot = dlss_rr->BuildResourceSnapshot(
+                noisy_radiance, depth, normal, motion_vector,
+                albedo, specular_albedo, roughness, alpha, dlss_output);
+
             queue.RHIExecute([=]([[maybe_unused]] RHICommandQueueBase & q) {
-                dlss_rr->Evaluate(
-                    noisy_radiance,
-                    depth,
-                    normal,
-                    motion_vector,
-                    albedo,
-                    specular_albedo,
-                    roughness,
-                    alpha,
-                    dlss_output,
+                dlss_rr->Evaluate_RHI(
+                    res_snapshot,
                     jitter.x, jitter.y,
                     reset_history,
                     world_to_view,
@@ -270,15 +269,27 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
                 );
             });
         })
-        ->AddTextureH(noisy_radiance, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(depth, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(normal, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(motion_vector, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(albedo, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(specular_albedo, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(roughness, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(alpha, RDGTextureUsageType::kShaderRead)
-        ->AddTextureH(dlss_output, RDGTextureUsageType::kShaderReadWrite);
+        // Use precise storage access flags (not kShaderRead which includes kShaderSampledRead).
+        // DLSS-RR reads all inputs as UAV (storage read via Load), not as sampled textures.
+        // This avoids false "sampled read + storage RW" warnings and prevents kGeneral layout fallback.
+        ->AddTexture(noisy_radiance, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(depth, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(normal, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(motion_vector, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(albedo, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(specular_albedo, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(roughness, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(alpha, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+        ->AddTexture(dlss_output, RHITextureLayoutType::kGeneral,
+            RHIGPUAccessFlagBits::kShaderStorageRW, RHIPipelineStageFlagBits::kNone);
 
     // Copy DLSS denoised result to debug_output_ for downstream DrawToOutput
     Helpers::CopyTexture(builder, dlss_output, view->debug_output_.Raw());

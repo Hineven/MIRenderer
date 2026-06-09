@@ -179,7 +179,7 @@ void RHIWorkerThread::Run() {
     rhi_thread_started.compare_exchange_strong(expected, true);
     if(expected) {
         MI_LOG(MIInfraLogType::kWarning, "There are more than one started RHI threads. Exiting.");
-        return ;
+        return ;    
     }
     is_running_ = true;
     MI_LOG(MIInfraLogType::kInfo, "RHI thread started.");

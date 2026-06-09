@@ -258,10 +258,6 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             table.root_signature_ = shader->GetRootSignature();
             table.info_ = info;
 
-            if (shader->GetName().substr(0, 6) == "Decode") {
-                puts("qwq");
-            }
-
             // TODO optimize performance.
             // Merge texture layouts per binding slot across all passes in the group.
             auto MergeSlotLayout = [&](RHIPipelineResourceType type, auto & param_array) {

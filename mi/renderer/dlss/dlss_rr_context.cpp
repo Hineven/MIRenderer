@@ -23,24 +23,35 @@
 
 MI_NAMESPACE_BEGIN
 
-static NVSDK_NGX_Resource_VK MakeNGXResource(RDGTexture * tex, bool read_write) {
-    NVSDK_NGX_Resource_VK res {};
-    if (!tex) return res;
-
+// Extract Vulkan resource info from an RDGTexture on the Render Thread.
+static DLSSRRResourceSnapshot::Res SnapshotRes(RDGTexture * tex) {
+    DLSSRRResourceSnapshot::Res r {};
+    if (!tex) return r;
     auto * rhi_tex = tex->GetRHI();
-    if (!rhi_tex) return res;
-
+    if (!rhi_tex) return r;
     VulkanTextureNativeInfo info {};
-    if (!RHIGetVulkanTextureInfo(rhi_tex, &info)) return res;
+    if (!RHIGetVulkanTextureInfo(rhi_tex, &info)) return r;
+    r.image_view = info.image_view;
+    r.image      = info.image;
+    r.format     = static_cast<VkFormat>(info.format);
+    r.width      = info.width;
+    r.height     = info.height;
+    return r;
+}
 
+// Reconstruct NVSDK_NGX_Resource_VK from a pre-extracted snapshot.
+static NVSDK_NGX_Resource_VK ToNGXResource(const DLSSRRResourceSnapshot::Res & r, bool read_write) {
+    NVSDK_NGX_Resource_VK res {};
+    if (!r.image_view) return res;
     res.Type = NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW;
     res.ReadWrite = read_write;
-    res.Resource.ImageViewInfo.ImageView = info.image_view;
-    res.Resource.ImageViewInfo.Image = info.image;
-    res.Resource.ImageViewInfo.SubresourceRange = info.subresource_range;
-    res.Resource.ImageViewInfo.Format = static_cast<VkFormat>(info.format);
-    res.Resource.ImageViewInfo.Width  = info.width;
-    res.Resource.ImageViewInfo.Height = info.height;
+    res.Resource.ImageViewInfo.ImageView = static_cast<VkImageView>(r.image_view);
+    res.Resource.ImageViewInfo.Image     = static_cast<VkImage>(r.image);
+    res.Resource.ImageViewInfo.SubresourceRange = vk::ImageSubresourceRange{
+        vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    res.Resource.ImageViewInfo.Format = static_cast<VkFormat>(r.format);
+    res.Resource.ImageViewInfo.Width  = r.width;
+    res.Resource.ImageViewInfo.Height = r.height;
     return res;
 }
 
@@ -62,6 +73,7 @@ DLSSRRContext::~DLSSRRContext() {
 
 void DLSSRRContext::CreateAuxiliaryTextures(uint32_t width, uint32_t height) {
     auto usage = RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess;
+    auto usage_with_transfer_src = usage | RHITextureUsageFlagBits::kTransferSrc;
 
     pt_depth_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32_FLOAT, usage);
     pt_depth_->SetName("PT Depth (DLSS)");
@@ -79,6 +91,10 @@ void DLSSRRContext::CreateAuxiliaryTextures(uint32_t width, uint32_t height) {
     pt_albedo_->SetName("PT Albedo (DLSS)");
     pt_albedo_->SetExport();
 
+    pt_specular_albedo_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8G8B8A8_UNORM, usage);
+    pt_specular_albedo_->SetName("PT SpecularAlbedo (DLSS)");
+    pt_specular_albedo_->SetExport();
+
     pt_roughness_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8_UNORM, usage);
     pt_roughness_->SetName("PT Roughness (DLSS)");
     pt_roughness_->SetExport();
@@ -87,7 +103,7 @@ void DLSSRRContext::CreateAuxiliaryTextures(uint32_t width, uint32_t height) {
     pt_alpha_->SetName("PT Alpha (DLSS)");
     pt_alpha_->SetExport();
 
-    dlss_output_ = RDGTexture::Create2D(width, height, PixelFormatType::kR16G16B16A16_FLOAT, usage);
+    dlss_output_ = RDGTexture::Create2D(width, height, PixelFormatType::kR16G16B16A16_FLOAT, usage_with_transfer_src);
     dlss_output_->SetName("DLSS Output");
     dlss_output_->SetExport();
 }
@@ -122,6 +138,7 @@ void DLSSRRContext::ReleaseResolution() {
     pt_normal_          = nullptr;
     pt_motion_vector_   = nullptr;
     pt_albedo_          = nullptr;
+    pt_specular_albedo_ = nullptr;
     pt_roughness_       = nullptr;
     pt_alpha_           = nullptr;
 
@@ -156,8 +173,26 @@ bool DLSSRRContext::SetResolution(uint32_t width, uint32_t height) {
                 return;
             }
 
-            void * native_cmd = RHI::Get().GetCommandExecutor()->GetCurrentNativeCommandBuffer(RHICommandQueueType::kGraphics);
-            VkCommandBuffer vk_cmd = static_cast<VkCommandBuffer>(native_cmd);
+            // --- Transient command buffer approach (matching NVIDIA sample pattern) ---
+            // Create a dedicated transient cmd buffer for CreateFeature,
+            // submit it, wait for GPU completion, then destroy the pool.
+            // This ensures the DLL never sees a recycled/shared cmd buffer.
+            vk::Device dev = handles->device;
+            vk::CommandPool transient_pool = dev.createCommandPool(
+                vk::CommandPoolCreateInfo{}
+                    .setQueueFamilyIndex(handles->graphics_queue_family_index)
+                    .setFlags(vk::CommandPoolCreateFlagBits::eTransient)
+            );
+            vk::CommandBuffer transient_cmd = dev.allocateCommandBuffers(
+                vk::CommandBufferAllocateInfo{}
+                    .setCommandPool(transient_pool)
+                    .setLevel(vk::CommandBufferLevel::ePrimary)
+                    .setCommandBufferCount(1)
+            )[0];
+            transient_cmd.begin(vk::CommandBufferBeginInfo{}
+                .setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+            VkCommandBuffer vk_cmd = static_cast<VkCommandBuffer>(transient_cmd);
 
             NVSDK_NGX_DLSSD_Create_Params create_params {};
             create_params.InDenoiseMode      = NVSDK_NGX_DLSS_Denoise_Mode_DLUnified;
@@ -182,6 +217,15 @@ bool DLSSRRContext::SetResolution(uint32_t width, uint32_t height) {
             );
 
             if (NVSDK_NGX_SUCCEED(r)) {
+                // End recording and submit the transient cmd buffer
+                transient_cmd.end();
+                vk::SubmitInfo submit_info {};
+                submit_info.setCommandBufferCount(1);
+                submit_info.setPCommandBuffers(&transient_cmd);
+                handles->graphics_queue.submit(submit_info, nullptr);
+                // Wait for GPU to finish processing CreateFeature
+                handles->graphics_queue.waitIdle();
+
                 ngx_feature_    = handle;
                 ngx_parameters_ = params;
                 init_promise.set_value(true);
@@ -190,11 +234,19 @@ bool DLSSRRContext::SetResolution(uint32_t width, uint32_t height) {
                 NVSDK_NGX_VULKAN_DestroyParameters(params);
                 init_promise.set_value(false);
             }
+
+            // Destroy the transient pool (frees the cmd buffer)
+            dev.destroyCommandPool(transient_pool);
         });
 
     rhi_fut.wait();
     bool success = init_future.get();
     if (!success) return false;
+
+    // Ensure the RHI thread has finished all pending tasks before proceeding.
+    // Note: CreateFeature's transient cmd buffer was already submitted and waited on
+    // inside the lambda above. This WaitForIdle drains any remaining RHI thread work.
+    RHI::Get().WaitForIdle();
 
     render_width_   = width;
     render_height_  = height;
@@ -209,15 +261,33 @@ void DLSSRRContext::OnResolutionChanged(uint32_t width, uint32_t height) {
     SetResolution(width, height);
 }
 
-void DLSSRRContext::Evaluate(
+DLSSRRResourceSnapshot DLSSRRContext::BuildResourceSnapshot(
     RDGTexture * noisy_radiance,
     RDGTexture * depth,
     RDGTexture * normal,
     RDGTexture * motion_vector,
     RDGTexture * albedo,
+    RDGTexture * specular_albedo,
     RDGTexture * roughness,
     RDGTexture * alpha,
-    RDGTexture * output,
+    RDGTexture * output)
+{
+    // This method must be called on the Render Thread where RDG resources are accessible.
+    DLSSRRResourceSnapshot snap {};
+    snap.color        = SnapshotRes(noisy_radiance);
+    snap.depth        = SnapshotRes(depth);
+    snap.mv           = SnapshotRes(motion_vector);
+    snap.albedo       = SnapshotRes(albedo);
+    snap.spec_albedo  = SnapshotRes(specular_albedo);
+    snap.normal       = SnapshotRes(normal);
+    snap.roughness    = SnapshotRes(roughness);
+    snap.alpha        = SnapshotRes(alpha);
+    snap.output       = SnapshotRes(output);
+    return snap;
+}
+
+void DLSSRRContext::Evaluate_RHI(
+    const DLSSRRResourceSnapshot & resources,
     float camera_jitter_x,
     float camera_jitter_y,
     bool reset_history,
@@ -226,9 +296,6 @@ void DLSSRRContext::Evaluate(
 {
     if (!is_available_) return;
 
-    auto * handles = static_cast<const VulkanRHIHandles *>(RHI::Get().GetUnderlyingGraphicsAPIHandles());
-    if (!handles) return;
-
     auto * feature = static_cast<NVSDK_NGX_Handle *>(ngx_feature_);
     auto * params  = static_cast<NVSDK_NGX_Parameter *>(ngx_parameters_);
     if (!feature || !params) return;
@@ -236,21 +303,23 @@ void DLSSRRContext::Evaluate(
     void * native_cmd = RHI::Get().GetCommandExecutor()->GetCurrentNativeCommandBuffer(RHICommandQueueType::kGraphics);
     VkCommandBuffer vk_cmd = static_cast<VkCommandBuffer>(native_cmd);
 
-    NVSDK_NGX_Resource_VK res_color         = MakeNGXResource(noisy_radiance, false);
-    NVSDK_NGX_Resource_VK res_depth         = MakeNGXResource(depth, false);
-    NVSDK_NGX_Resource_VK res_mv            = MakeNGXResource(motion_vector, false);
-    NVSDK_NGX_Resource_VK res_albedo        = MakeNGXResource(albedo, false);
-    NVSDK_NGX_Resource_VK res_normal        = MakeNGXResource(normal, false);
-    NVSDK_NGX_Resource_VK res_roughness     = MakeNGXResource(roughness, false);
-    NVSDK_NGX_Resource_VK res_alpha         = MakeNGXResource(alpha, false);
-    NVSDK_NGX_Resource_VK res_output        = MakeNGXResource(output, true);
+    // Reconstruct NGX resource structs from the pre-extracted snapshot (safe on RHI thread).
+    NVSDK_NGX_Resource_VK res_color         = ToNGXResource(resources.color, false);
+    NVSDK_NGX_Resource_VK res_depth         = ToNGXResource(resources.depth, false);
+    NVSDK_NGX_Resource_VK res_mv            = ToNGXResource(resources.mv, false);
+    NVSDK_NGX_Resource_VK res_albedo        = ToNGXResource(resources.albedo, false);
+    NVSDK_NGX_Resource_VK res_spec_albedo   = ToNGXResource(resources.spec_albedo, false);
+    NVSDK_NGX_Resource_VK res_normal        = ToNGXResource(resources.normal, false);
+    NVSDK_NGX_Resource_VK res_roughness     = ToNGXResource(resources.roughness, false);
+    NVSDK_NGX_Resource_VK res_alpha         = ToNGXResource(resources.alpha, false);
+    NVSDK_NGX_Resource_VK res_output        = ToNGXResource(resources.output, true);
 
     NVSDK_NGX_VK_DLSSD_Eval_Params eval_params {};
     eval_params.pInColor         = res_color.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_color : nullptr;
     eval_params.pInDepth         = res_depth.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_depth : nullptr;
     eval_params.pInMotionVectors = res_mv.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_mv : nullptr;
     eval_params.pInDiffuseAlbedo = res_albedo.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_albedo : nullptr;
-    eval_params.pInSpecularAlbedo= nullptr;
+    eval_params.pInSpecularAlbedo= res_spec_albedo.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_spec_albedo : nullptr;
     eval_params.pInNormals       = res_normal.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_normal : nullptr;
     eval_params.pInRoughness     = res_roughness.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_roughness : nullptr;
     eval_params.pInOutput        = res_output.Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW ? &res_output : nullptr;
@@ -261,18 +330,16 @@ void DLSSRRContext::Evaluate(
     eval_params.InJitterOffsetX = camera_jitter_x * render_width_ * 0.5f;
     eval_params.InJitterOffsetY = camera_jitter_y * render_height_ * 0.5f;
 
-    // Our motion vectors are NDC deltas (CurrNDC - PrevNDC) with jitter removed.
-    // DLSS expects pixel-space motion vectors pointing from current to previous frame (PrevPixel - CurrPixel).
-    // Using negative scale converts both units and direction.
-    eval_params.InMVScaleX = -2.0f / render_width_;
-    eval_params.InMVScaleY = -2.0f / render_height_;
+    // Motion vectors from the path tracer are in NDC space, computed as (curr - prev).
+    // DLSS expects pixel-space MVs. X is negated because our shader convention is (curr - prev)
+    // while DLSS expects (prev - curr) for X. Y follows the standard NDC-to-pixel scaling.
+    eval_params.InMVScaleX = static_cast<float>(render_width_) * -0.5f;
+    eval_params.InMVScaleY = static_cast<float>(render_height_) * 0.5f;
 
     eval_params.InRenderSubrectDimensions.Width  = render_width_;
     eval_params.InRenderSubrectDimensions.Height = render_height_;
 
     eval_params.InReset = reset_history ? 1 : 0;
-    eval_params.InMVScaleX = 1.0f;
-    eval_params.InMVScaleY = 1.0f;
     eval_params.InPreExposure = 1.0f;
     eval_params.InExposureScale = 1.0f;
 
@@ -281,7 +348,7 @@ void DLSSRRContext::Evaluate(
 
     NVSDK_NGX_Result result = NGX_VULKAN_EVALUATE_DLSSD_EXT(vk_cmd, feature, params, &eval_params);
     if (NVSDK_NGX_FAILED(result)) {
-        MI_LOG(MIInfraLogType::kWarning, "DLSS Ray Reconstruction evaluate failed.");
+        MI_LOG(MIInfraLogType::kWarning, "DLSS Ray Reconstruction evaluate failed: {}.", NGXResultToString(result));
     }
 }
 

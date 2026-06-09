@@ -44,38 +44,38 @@ void GeometryBufferData::Allocate([[maybe_unused]] RenderGraphBuilder &builder, 
 
     G_normal_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8G8B8A8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_normal_->SetName("GBuffer Normal");
 
     G_geometry_normal_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_geometry_normal_->SetName("GBuffer GeometryNormal");
 
     G_emission_ = RDGTexture::Create2D(width, height, PixelFormatType::kR16G16B16A16_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_emission_->SetName("GBuffer Emission");
 
     G_metallic_roughness_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8G8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_metallic_roughness_->SetName("GBuffer Metallic Roughness");
 
     G_motion_vector_ = RDGTexture::Create2D(width, height, PixelFormatType::kR32G32_FLOAT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        | RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_motion_vector_->SetName("GBuffer MotionVector");
 
     G_flags_ = RDGTexture::Create2D(width, height, PixelFormatType::kR8_UINT,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransferDst);
+        |RHITextureUsageFlagBits::kRenderTarget | RHITextureUsageFlagBits::kTransfer);
     G_flags_->SetName("GBuffer Flags");
 
     G_transmittance_ = RDGTexture::Create2D(
         width, height, PixelFormatType::kR8_UNORM,
         RHITextureUsageFlagBits::kShaderResource | RHITextureUsageFlagBits::kUnorderedAccess
-        | RHITextureUsageFlagBits::kTransferDst);
+        | RHITextureUsageFlagBits::kTransfer);
     G_transmittance_->SetName("GBuffer Transmittance");
 }
 

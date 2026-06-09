@@ -22,6 +22,8 @@ struct VulkanRHIHandles {
     vk::Instance instance;
     vk::Device device;
     vk::PhysicalDevice physical_device;
+    vk::Queue graphics_queue;
+    uint32_t graphics_queue_family_index {};
 };
 
 // Used to supply extra information to the Vulkan RHI upon creation

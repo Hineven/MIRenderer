@@ -543,7 +543,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     export_handles_ = {
         instance_,
         device_,
-        physical_device_
+        physical_device_,
+        queue_,
+        graphics_queue_family_index_
     };
 }
 

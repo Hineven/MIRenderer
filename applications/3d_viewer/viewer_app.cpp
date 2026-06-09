@@ -299,6 +299,10 @@ static bool ReadbackRDGTextureToBytes(
     if (!rdg_tex) return false;
     auto tex = rdg_tex->GetRHI();
     if (!tex) return false;
+    if (!(tex->GetUsage() & RHITextureUsageFlagBits::kTransferSrc)) {
+        MI_WARN("ReadbackRDGTextureToBytes: texture does not have kTransferSrc usage, cannot read back.");
+        return false;
+    }
 
     auto& rhi = RHI::Get();
     auto& queue = rhi.GetGraphicsCommandQueue();

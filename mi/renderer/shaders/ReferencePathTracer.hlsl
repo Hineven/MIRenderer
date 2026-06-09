@@ -82,6 +82,8 @@ RWTexture2D<float4> RWNormal;
 RWTexture2D<float2> RWMotionVector;
 [[vk::image_format("rgba8")]]
 RWTexture2D<float4> RWAlbedo;
+[[vk::image_format("rgba8")]]
+RWTexture2D<float4> RWSpecularAlbedo;
 [[vk::image_format("r8")]]
 RWTexture2D<float> RWRoughness;
 [[vk::image_format("r8")]]
@@ -347,8 +349,10 @@ void ReferencePathTracerRaygen() {
 #ifdef ENABLE_DLSS_RR
     // Track primary ray hit info for DLSS auxiliary buffers
     float  PrimaryRayT = 0;
+    float3 PrimaryRayDir = Ray.Direction; // Save before bounce loop modifies Ray.Direction
     float3 PrimaryHitNormal = 0;
     float3 PrimaryHitAlbedo = 0;
+    float3 PrimaryHitSpecularAlbedo = 0;
     float  PrimaryHitRoughness = 0;
     bool   PrimaryHitSurface = false;
 #endif
@@ -501,6 +505,7 @@ void ReferencePathTracerRaygen() {
                     M0.Normal = -M0.Normal;
                 }
                 PrimaryHitAlbedo = M0.Albedo;
+                PrimaryHitSpecularAlbedo = lerp(float3(0.04, 0.04, 0.04), M0.Albedo, M0.Metallic);
                 PrimaryHitRoughness = M0.Roughness;
             }
 #endif
@@ -663,18 +668,25 @@ void ReferencePathTracerRaygen() {
     }
 
 #ifdef ENABLE_DLSS_RR
+    // Compute linear depth from primary ray hit (also used for DLSS depth output).
+    // IMPORTANT: Use PrimaryRayDir (saved before bounce loop), not Ray.Direction (modified by bounces).
+    float LinearDepth = PrimaryHitSurface
+        ? PrimaryRayT * dot(PrimaryRayDir, C.Direction)
+        : 0;
+
     // Compute motion vector from primary hit world position reprojected to previous frame NDC.
-    // If no surface hit was made (miss or volume), we fall back to camera reprojection.
+    // If no surface hit was made (miss or volume), we fall back to far-plane reprojection.
     float2 MotionVector = 0;
     {
         CameraParameters PrevC = GetPreviousCamera();
         float2 UV = ((float2)RayIndex + 0.5f.xx) / (float2)DispatchSize;
         float2 NDC2 = UVToNDC2(UV);
-        // Re-project from current NDC to previous NDC using the reprojection matrix.
-        // For pixels that hit a surface at the first bounce, the motion vector uses the
-        // reprojection matrix which accounts for camera motion.
-        // For DLSS-RR, motion vectors should be in pixel-space (or NDC delta).
-        float3 Reprojected = ReprojectToPreviousNDCFromNDC(C, float3(NDC2, 1));
+        // Use actual perspective Z depth for reprojection. The Reprojection matrix is built with
+        // normal-Z (perspectiveRH_ZO), so we convert linear depth to perspective Z [0=near, 1=far].
+        // For miss pixels (LinearDepth=0), use Z=1 (far plane) to avoid division by zero
+        // in LinearDepthToZDepth and get a stable far-plane reprojection.
+        float NDC_Z = PrimaryHitSurface ? LinearDepthToZDepth(C, LinearDepth) : 1.0f;
+        float3 Reprojected = ReprojectToPreviousNDCFromNDC(C, float3(NDC2, NDC_Z));
         float2 PrevNDC2 = Reprojected.xy;
         // Remove jitter from both frames to get pure camera/object motion
         MotionVector = (NDC2 - C.Jitter) - (PrevNDC2 - PrevC.PrevJitter);
@@ -682,10 +694,6 @@ void ReferencePathTracerRaygen() {
     RWMotionVector[RayIndex] = MotionVector;
 
     // Write depth: linear depth from primary ray hit distance
-    // For perspective camera, linear depth = T * dot(RayDirection, CameraForward)
-    float LinearDepth = PrimaryHitSurface
-        ? PrimaryRayT * dot(normalize(Ray.Direction), C.Direction)
-        : 0;
     RWDepth[RayIndex] = LinearDepth;
 
     // Write normal: world-space shading normal packed to [0,1]
@@ -693,6 +701,9 @@ void ReferencePathTracerRaygen() {
 
     // Write albedo
     RWAlbedo[RayIndex] = float4(PrimaryHitAlbedo, 1);
+
+    // Write specular albedo (F0)
+    RWSpecularAlbedo[RayIndex] = float4(PrimaryHitSpecularAlbedo, 1);
 
     // Write roughness
     RWRoughness[RayIndex] = PrimaryHitRoughness;
