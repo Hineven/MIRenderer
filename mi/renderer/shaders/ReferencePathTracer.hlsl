@@ -23,19 +23,14 @@
 #include "resources/IntersectionEvaluationResources.hlsl"
 #include "resources/EnvironmentLightResource.hlsl"
 #include "resources/DirectionalLightResource.hlsl"
+#include "shared/SharedLightClusterHierarchy.hlsl"
 
 // All area lights
 StructuredBuffer<AreaLight> LightBuffer;
 
-StructuredBuffer<uint> LightGrid_RWActiveLightListCount;
-StructuredBuffer<uint> LightGrid_RWActiveLightListBuffer;
-
-StructuredBuffer<uint> LightGrid_ListLightIndexBuffer;
-StructuredBuffer<uint> LightGrid_RWGridLightListOffsetBuffer;
-StructuredBuffer<float> LightGrid_RWGridLightListCdfBuffer;
-StructuredBuffer<uint> LightGrid_RWGridLightListLengthBuffer;
-// Record the combination of light encodings that successfully illuminated geometries in the grid
-StructuredBuffer<uint4> LightGrid_RWBloomFilterBuffer;
+// LCH buffers for NEE light evaluation
+StructuredBuffer<MeshLightInstance> LCH_MeshLightInstanceBuffer;
+StructuredBuffer<MeshLight> LCH_MeshLightBuffer;
 
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
@@ -50,6 +45,9 @@ struct ReferencePathTracerUB {
     uint MaxNumBounces;
     float EnvironmentMapLOD;
     float3 EnvironmentMapMultiplier;
+    uint NEEEnabled;                    // 0=off, 1=uniform
+    uint NumMeshLightInstanceTriangles; // total triangles in MLI triangle buffer
+    uint NumAreaLights;                 // total AreaLight entries in LightBuffer
     uint Padding;
 };
 
@@ -316,6 +314,110 @@ float ResampleVolumeGrids(
     return SampledDistance;
 }
 
+// ============================================================================
+// NEE (Next Event Estimation) - Uniform Area Light Sampling
+// ============================================================================
+
+// Evaluate an area light triangle to world-space vertices and emission.
+// Inline version of EvaluateLight() to avoid heavy LightEvaluation.hlsl include.
+EvaluatedAreaLight NEE_EvaluateAreaLight(AreaLight Light, out bool bActive)
+{
+    EvaluatedAreaLight E = (EvaluatedAreaLight)0;
+    uint RenderableIndex = Light.RenderableIndex;
+    uint StaticMeshDescriptionOffset = Light.StaticMeshDescriptionIndex;
+    StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[RenderableIndex]);
+    bActive = (InstanceHeader.Flags & RENDERABLE_VISIBLE_FLAG_BIT) != 0;
+    StaticMeshHeader StaticMesh = StaticMeshHeaderBuffer[InstanceHeader.StaticMeshIndex];
+    uint DescriptionIndex = StaticMesh.DescriptionOffset + StaticMeshDescriptionOffset;
+    uint2 GeometryMaterial = StaticMeshDescriptionBuffer[DescriptionIndex];
+    uint PrimitiveIndex = Light.PrimitiveIndex;
+    float3x4 ToWorldTransform = RenderableTransformBuffer[RenderableIndex];
+    GeometryHeader Geometry = GeometryHeaderBuffer[GeometryMaterial.x];
+    uint VertexOffset = Geometry.VertexOffset;
+    uint IndexOffset = Geometry.IndexOffset + PrimitiveIndex * 3;
+    uint I0 = VertexOffset + IndexBuffer[IndexOffset];
+    uint I1 = VertexOffset + IndexBuffer[IndexOffset + 1];
+    uint I2 = VertexOffset + IndexBuffer[IndexOffset + 2];
+    E.V0 = TransformPoint(ToWorldTransform, VertexBuffer[I0].Position);
+    E.V1 = TransformPoint(ToWorldTransform, VertexBuffer[I1].Position);
+    E.V2 = TransformPoint(ToWorldTransform, VertexBuffer[I2].Position);
+    E.UV0 = VertexBuffer[I0].UV;
+    E.UV1 = VertexBuffer[I1].UV;
+    E.UV2 = VertexBuffer[I2].UV;
+    MaterialHeader Material = MaterialHeaderBuffer[GeometryMaterial.y];
+    E.Emission = Material.Emissive;
+    E.EmissionTextureIndex = Material.EmissiveMap;
+    if (Material.EmissiveMap != INVALID_UINT)
+        E.EstimatedAverageEmission = GetBindlessSRV(Material.EmissiveMap).SampleLevel(LinearWrapSampler, (E.UV0 + E.UV1 + E.UV2) / 3.0f, 0).rgb;
+    E.EstimatedAverageEmission += Material.Emissive;
+    return E;
+}
+
+// Uniform NEE: sample one area light uniformly, evaluate BSDF, trace shadow ray.
+// Returns the direct lighting contribution (to be multiplied by Throughput externally).
+float3 NEESampleUniformAreaLight(
+    float3 Position, float3 ShadingNormal, float3 ViewDirection,
+    ShadingMaterial Mat,
+    inout Random rng
+)
+{
+    float3 DirectLighting = 0;
+    uint NumLights = UB.NumAreaLights;
+    if (NumLights == 0) return 0;
+
+    // Uniformly pick a light
+    uint LightIndex = min(uint(rng.rand() * NumLights), NumLights - 1u);
+    bool bActive;
+    EvaluatedAreaLight E = NEE_EvaluateAreaLight(LightBuffer[LightIndex], bActive);
+    if (!bActive) return 0;
+
+    // Sample a point on the triangle using uniform barycentric coordinates
+    float2 u = rng.rand2();
+    if (u.x + u.y > 1.0f) u = 1.0f - u;
+    float3 LightPoint = E.V0 + u.x * (E.V1 - E.V0) + u.y * (E.V2 - E.V0);
+    float TriangleArea = length(cross(E.V1 - E.V0, E.V2 - E.V0)) * 0.5f;
+    if (TriangleArea < 1e-8f) return 0;
+
+    float3 ToLight = LightPoint - Position;
+    float DistanceSq = dot(ToLight, ToLight);
+    float Distance = sqrt(DistanceSq);
+    float3 LightDirection = ToLight / max(Distance, 1e-6f);
+
+    // Receiver normal check
+    float NoL = dot(ShadingNormal, LightDirection);
+    if (NoL <= 0.0f) return 0;
+
+    // Light normal check
+    float3 LightNormal = normalize(cross(E.V1 - E.V0, E.V2 - E.V0));
+    float LightNoL = dot(LightNormal, -LightDirection);
+    if (LightNoL <= 0.0f) return 0;
+
+    // Shadow ray
+    if (!TraceDirectionalLightVisibility(Position, ShadingNormal, LightDirection)) return 0;
+
+    // Evaluate emission
+    float3 Emission = E.Emission;
+    if (E.EmissionTextureIndex != INVALID_UINT)
+    {
+        float2 UV = InterpolateBarycentrics(E.UV0, E.UV1, E.UV2, u);
+        Emission += GetBindlessSRV(E.EmissionTextureIndex).SampleLevel(LinearWrapSampler, UV, 0).rgb;
+    }
+
+    // Evaluate BSDF
+    float3 BSDF = EvaluateBSDF(Mat, ViewDirection, LightDirection);
+
+    // PDF: uniform selection * area-to-solid-angle conversion
+    float SelectionPdf = 1.0f / float(NumLights);
+    float SolidAnglePdf = DistanceSq / max(abs(LightNoL) * TriangleArea, 1e-6f);
+    float TotalPdf = SelectionPdf * SolidAnglePdf;
+
+    if (TotalPdf > 1e-6f)
+    {
+        DirectLighting = BSDF * Emission * NoL * LightNoL / TotalPdf;
+    }
+    return DirectLighting;
+}
+
 [shader("raygeneration")]
 void ReferencePathTracerRaygen() {
 
@@ -520,8 +622,8 @@ void ReferencePathTracerRaygen() {
             else
             {
                 // A new bounce
-                // 1. Add emission radiance
-                if (Payload.bIsFrontFace)
+                // 1. Add emission radiance (only when NEE is OFF to avoid double-counting)
+                if (!UB.NEEEnabled && Payload.bIsFrontFace)
                 {
                     Radiance += Intersection.Emission * Throughput;
                 }
@@ -549,6 +651,15 @@ void ReferencePathTracerRaygen() {
                             Radiance += Throughput * DirectLighting;
                         }
                     }
+                }
+
+                // 3. NEE: Uniform area light sampling for direct lighting
+                if (UB.NEEEnabled)
+                {
+                    float3 NEERadiance = NEESampleUniformAreaLight(
+                        Intersection.WorldPosition, M.Normal, -Ray.Direction, M, rng
+                    );
+                    Radiance += Throughput * NEERadiance;
                 }
 
                 float3 SampledDirection;
@@ -759,7 +870,7 @@ void ReferencePathTracerAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayloa
 
     MaterialHeader Material = MaterialHeaderBuffer[MaterialIndex];
     float4 ColorOpacity = float4(Material.Albedo, 1.0f);
-    if (IsValid(Material.AlbedoMap)) {
+    if (Material.AlbedoMap != INVALID_UINT) {
         ColorOpacity = GetBindlessSRV(Material.AlbedoMap).SampleLevel(LinearWrapSampler, InterpolatedVertex.UV, 0);
     }
     if (ColorOpacity.a < 0.1f) {

@@ -44,6 +44,9 @@ void Helpers::Clear(RenderGraphBuilder &builder, RDGTexture *texture, glm::vec4 
 void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTexture *dst,
     uint32_t src_mip_level, uint32_t src_base_layer, uint32_t src_layer_count,
     uint32_t dst_mip_level, uint32_t dst_base_layer, uint32_t dst_layer_count) {
+    mi_assert(src->GetDesc().format == dst->GetDesc().format,
+        "CopyTexture requires src and dst to have the same pixel format. "
+        "Use BlitTexture for format conversion.");
     builder.AddPass("CopyTexture", RDGPassType::kGeneric, {}, {}, {}, {},
         [src, dst, src_mip_level, src_base_layer, src_layer_count, dst_mip_level, dst_base_layer, dst_layer_count]
         ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
@@ -54,6 +57,30 @@ void Helpers::CopyTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTextu
                 src_mip_level, dst_mip_level,
                 src_base_layer, src_layer_count,
                 dst_base_layer, dst_layer_count
+            );
+        }
+    )->AddTexture(src, RHITextureLayoutType::kTransferSrcOptimal, RHIGPUAccessFlagBits::kTransferRead, RHIPipelineStageFlagBits::kTransfer)
+     ->AddTexture(dst, RHITextureLayoutType::kTransferDstOptimal, RHIGPUAccessFlagBits::kTransferWrite, RHIPipelineStageFlagBits::kTransfer);
+}
+
+void Helpers::BlitTexture(RenderGraphBuilder &builder, RDGTexture *src, RDGTexture *dst,
+    uint32_t src_mip_level, uint32_t src_base_layer, uint32_t src_layer_count,
+    uint32_t dst_mip_level, uint32_t dst_base_layer, uint32_t dst_layer_count,
+    RHISamplerFilterType filter) {
+    builder.AddPass("BlitTexture", RDGPassType::kGeneric, {}, {}, {}, {},
+        [src, dst, src_mip_level, src_base_layer, src_layer_count, dst_mip_level, dst_base_layer, dst_layer_count, filter]
+        ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
+            auto src_w = src->GetDesc().dimensions.width >> src_mip_level;
+            auto src_h = src->GetDesc().dimensions.height >> src_mip_level;
+            auto dst_w = dst->GetDesc().dimensions.width >> dst_mip_level;
+            auto dst_h = dst->GetDesc().dimensions.height >> dst_mip_level;
+            queue.BlitTexture(src->GetRHI(), dst->GetRHI(),
+                0, 0, 0, (int)src_w, (int)src_h, 1,
+                0, 0, 0, (int)dst_w, (int)dst_h, 1,
+                src_mip_level, dst_mip_level,
+                src_base_layer, src_layer_count,
+                dst_base_layer, dst_layer_count,
+                filter
             );
         }
     )->AddTexture(src, RHITextureLayoutType::kTransferSrcOptimal, RHIGPUAccessFlagBits::kTransferRead, RHIPipelineStageFlagBits::kTransfer)

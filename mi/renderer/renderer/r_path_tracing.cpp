@@ -18,6 +18,8 @@
 #include "r_diffuse_direct_lighting.h"
 #include "r_light_structure.h"
 #include "r_directional_light.h"
+#include "r_light_cluster_hiearchy.h"
+#include "../shaders/shared/SharedLight.hlsl"
 #include "dlss/ngx_context.h"
 #include "dlss/dlss_rr_context.h"
 
@@ -37,6 +39,11 @@ static CVar<bool> CVar_EnableDLSSRR(
     "Enable DLSS Ray Reconstruction for path tracing (requires RTX GPU + NGX).",
     true
 );
+static CVar<int> CVar_NEE_Mode(
+    "r.pathtracing.nee_mode",
+    "NEE mode: 0=off, 1=uniform, 2=LCH (not yet implemented).",
+    0
+);
 
 struct ReferencePathTracerUB {
     uint FrameIndex;
@@ -44,6 +51,9 @@ struct ReferencePathTracerUB {
     uint MaxNumBounces;
     float EnvironmentMapLOD;
     glm::vec3 EnvironmentMapMultiplier;
+    uint NEEEnabled;                    // 0=off, 1=uniform
+    uint NumMeshLightInstanceTriangles; // total triangles in MLI triangle buffer
+    uint NumAreaLights;                 // total AreaLight entries in LightBuffer
     uint Padding;
 };
 
@@ -69,6 +79,10 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDepth)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWNormal)
@@ -116,6 +130,10 @@ void Renderer::FillPathTracerCommonParams(
         device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
     );
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
+    params->LightBuffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
+    params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
+    params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
+    params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
     if (view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());
     } else {
@@ -157,6 +175,11 @@ void Renderer::Render_PathTracingAccumulation (RendererView *view, RenderGraphBu
         UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
         UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
         UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
+        int nee_mode = CVar_NEE_Mode.Get();
+        UB->NEEEnabled = (nee_mode == 1) ? 1u : 0u;
+        UB->NumMeshLightInstanceTriangles = (uint)(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetAllocationLimitByteOffset() / sizeof(MeshLightInstanceTriangle));
+        UB->NumAreaLights = (uint)(device_allocator_->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(AreaLight));
+        UB->Padding = 0;
         bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
         if (CVar_MaxNumBounces.IsDirty() || camera_dirty) {
             UB->EnableAccumulation = 0;
@@ -177,8 +200,9 @@ void Renderer::Render_PathTracingAccumulation (RendererView *view, RenderGraphBu
 
     Helpers::AddTraceRaysPass(builder, shader, params, view->film_width_, view->film_height_);
 
-    // Copy accumulated result to debug_output_ for downstream DrawToOutput
-    Helpers::CopyTexture(builder, view->persistent_data_->path_tracing_film_.Raw(), view->debug_output_.Raw());
+    // Blit accumulated result to debug_output_ for downstream DrawToOutput
+    // Uses Blit instead of Copy because path_tracing_film_ is R32F while debug_output_ is R16F
+    Helpers::BlitTexture(builder, view->persistent_data_->path_tracing_film_.Raw(), view->debug_output_.Raw());
 }
 
 void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &builder) {
@@ -212,6 +236,11 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
         UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
         UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
         UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
+        int nee_mode = CVar_NEE_Mode.Get();
+        UB->NEEEnabled = (nee_mode == 1) ? 1u : 0u;
+        UB->NumMeshLightInstanceTriangles = (uint)(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetAllocationLimitByteOffset() / sizeof(MeshLightInstanceTriangle));
+        UB->NumAreaLights = (uint)(device_allocator_->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(AreaLight));
+        UB->Padding = 0;
         CVar_MaxNumBounces.ClearDirty();
     }
 
