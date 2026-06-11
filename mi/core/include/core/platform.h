@@ -42,4 +42,23 @@ void DestroyPlatformMainThreadContext ();
 // Set the name of a thread
 void RenameThread (const wchar_t* name);
 
+// Result of a blocking popup dialog
+enum class PlatformPopupResult {
+    kRetry,
+    kCancel,
+    kOpenInEditor,  // Open the error source file in the default editor
+};
+
+// Show a blocking system dialog with Retry / Open in Editor / Cancel buttons.
+// Blocks the calling thread until the user responds.
+// file_path / line_number: if non-null / > 0, enables the "Open in Editor" button.
+// Windows: TaskDialogIndirect (comctl32 v6)
+// Linux:   stderr prompt + stdin input (r/o/c)
+PlatformPopupResult ShowPlatformBlockingPopup (
+    const char* title, const char* message,
+    const char* file_path = nullptr, int line_number = 0);
+
+// Terminate the program immediately with an error message.
+[[noreturn]] void PlatformFatalAbort (const char* message);
+
 #endif //MIRENDERER_CORE_PLATFORM_H

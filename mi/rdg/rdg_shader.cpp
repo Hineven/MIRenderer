@@ -15,6 +15,7 @@
 #include "rhi/rhi.h"
 #include "rhi/rhi_pipeline.h"
 #include "core/infra.h"
+#include "core/platform.h"
 
 #include "core/task.h"
 #include "rhi/rhi_buffer.h"
@@ -659,11 +660,22 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
     // Re-compile the shader
     shaders_ = {};
     shader_hash_.Reset();
+    last_compile_error_.clear();
+    last_compile_command_.clear();
 
     // Also reset the sbt buffer
     sbt_buffer_.SafeRelease();
     sbt_.clear();
     sbt_sections_ = {};
+
+    // Helper to record compilation error info for popup reporting
+    auto RecordError = [this](const std::string & error, const std::wstring & command) {
+        last_compile_error_ = error;
+        last_compile_command_ = wstring_to_utf8(command);
+    };
+    auto RecordErrorSimple = [this](const std::string & error) {
+        last_compile_error_ = error;
+    };
 
     if (source_code.empty()) {
         MI_LOG(MIInfraLogType::kError, "RDGShader {}: Empty shader source: {}", class_registry_->name, class_registry_->source_location);
@@ -699,6 +711,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &cs_hash
         );
         if (result.empty()) {
+            RecordError(errmsg, out_command);
             MI_LOG(MIInfraLogType::kError, "RDGShader {}: Failed to compile compute shader for entry {}: {}", class_registry_->name, class_registry_->compute_entry_, errmsg);
             MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
             return false;
@@ -711,10 +724,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 RHIShaderIRType::kSPIRV, bytecode_span
         );
         if (!shader) {
+            RecordErrorSimple("Failed to create compute shader from compiled SPIR-V");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
         if (!CheckShaderReflection(shader.Raw(), param_info)) {
+            RecordErrorSimple("Compute shader reflection check failed");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Compute shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
@@ -733,6 +748,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                     std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &vs_hash
             );
             if (vs_result.empty()) {
+                RecordError(errmsg, out_command);
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile vertex shader: {}", class_registry_->name, class_registry_->impl_macro_line_info, errmsg);
                 MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
@@ -749,6 +765,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                         std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &gs_hash
                 );
                 if (gs_result.empty()) {
+                    RecordError(errmsg, out_command);
                     MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile geometry shader: {}", class_registry_->name, class_registry_->impl_macro_line_info, errmsg);
                     MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                     return false;
@@ -766,6 +783,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                         std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &fs_hash
                 );
                 if (fs_result.empty()) {
+                    RecordError(errmsg, out_command);
                     MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile fragment shader: {}", class_registry_->name, class_registry_->impl_macro_line_info, errmsg);
                     MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                     return false;
@@ -781,10 +799,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 RHIShaderIRType::kSPIRV, vs_bytecode_span
         );
         if (!vertex_shader) {
+            RecordErrorSimple("Failed to create vertex shader from compiled SPIR-V");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create vertex shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
         if (!CheckShaderReflection(vertex_shader.Raw(), param_info)) {
+            RecordErrorSimple("Vertex shader reflection check failed");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Vertex shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
@@ -799,10 +819,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                     RHIShaderIRType::kSPIRV, gs_bytecode_span
             );
             if (!geometry_shader) {
+                RecordErrorSimple("Failed to create geometry shader from compiled SPIR-V");
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create geometry shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
                 return false;
             }
             if (!CheckShaderReflection(geometry_shader.Raw(), param_info)) {
+                RecordErrorSimple("Geometry shader reflection check failed");
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Geometry shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
                 return false;
             }
@@ -818,10 +840,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                     RHIShaderIRType::kSPIRV, fs_bytecode_span
             );
             if (!fragment_shader) {
+                RecordErrorSimple("Failed to create fragment shader from compiled SPIR-V");
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create fragment shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
                 return false;
             }
             if (!CheckShaderReflection(fragment_shader.Raw(), param_info)) {
+                RecordErrorSimple("Fragment shader reflection check failed");
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Fragment shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
                 return false;
             }
@@ -841,6 +865,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                     std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &raygen_hash
             );
             if (raygen_result.empty()) {
+                RecordError(errmsg, out_command);
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile raygen shader: {}", class_registry_->source_location, class_registry_->impl_macro_line_info, errmsg);
                 MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
@@ -922,6 +947,7 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
                 std::span(source_code.data(), source_code.size()), defines, options, errmsg, &out_command, &miss_hash
             );
             if (miss_result.empty()) {
+                RecordError(errmsg, out_command);
                 MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to compile miss shader: {}", class_registry_->source_location, class_registry_->impl_macro_line_info, errmsg);
                 MI_LOG(MIInfraLogType::kError, "Equivalent compile command: {}", wstring_to_utf8(out_command));
                 return false;
@@ -935,10 +961,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(raygen_result.data()), raygen_result.size() * sizeof(uint32_t))
         );
         if (!shaders_.raygen) {
+            RecordErrorSimple("Failed to create raygen shader from compiled SPIR-V");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create raygen shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
         if (!CheckShaderReflection(shaders_.raygen.Raw(), param_info)) {
+            RecordErrorSimple("Raygen shader reflection check failed");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Raygen shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
@@ -949,10 +977,12 @@ bool RDGShader::RecompileShaders(const std::string & source_code, const RDGShade
             RHIShaderIRType::kSPIRV, std::span(reinterpret_cast<const std::byte*>(miss_result.data()), miss_result.size() * sizeof(uint32_t))
         );
         if (!shaders_.miss) {
+            RecordErrorSimple("Failed to create miss shader from compiled SPIR-V");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create miss shader", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
         if (!CheckShaderReflection(shaders_.miss.Raw(), param_info)) {
+            RecordErrorSimple("Miss shader reflection check failed");
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Miss shader reflection check failed", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
@@ -1037,6 +1067,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
 
     auto source_code = LoadSource();
     if (source_code.empty()) {
+        last_compile_error_ = "Failed to load shader source: " + class_registry_->source_location;
         MI_LOG(MIInfraLogType::kError, "Failed to load shader source: {}", class_registry_->source_location);
         return false;
     }
@@ -1057,6 +1088,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             shaders_.compute.Raw(), class_registry_->name.c_str(), root_sig_keeper->GetRootSignature()
         );
         if (!pipeline) {
+            last_compile_error_ = "Failed to create compute pipeline";
             MI_LOG(MIInfraLogType::kError, "Failed to create compute pipeline");
             return false;
         }
@@ -1145,6 +1177,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
                 desc, class_registry_->name.c_str(), root_sig_keeper->GetRootSignature()
         );
         if (!pipeline) {
+            last_compile_error_ = "Failed to create graphics pipeline";
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create graphics pipeline", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
@@ -1195,6 +1228,7 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
         auto pipeline = RHI::Get().CreateRayTracingPipeline(desc, class_registry_->name.c_str(), root_sig_keeper->GetRootSignature());
         if (!pipeline) {
+            last_compile_error_ = "Failed to create ray tracing pipeline";
             MI_LOG(MIInfraLogType::kError, "RDGShader {} (at {}): Failed to create ray tracing pipeline", class_registry_->source_location, class_registry_->impl_macro_line_info);
             return false;
         }
@@ -1409,10 +1443,15 @@ void RDGShaderLibrary::Init() {
     compile_tasks.reserve(shaders_to_compile.size());
     std::mutex cache_mutex; // Ensure thread safety when updating the cache
 
+    error_context_.Reset();
+
     std::atomic<uint32_t> num_shaders_compiled = 0;
     auto num_all_shaders = shaders_to_compile.size();
     for (auto & shader : shaders_to_compile) {
         auto task = TaskGraph::Get().CreateSimpleTask([this, &shader, &cache_mutex, &num_shaders_compiled, num_all_shaders]() {
+            // Early exit if another worker already failed
+            if (error_context_.cancel_requested.load(std::memory_order_acquire)) return;
+
             RDGShaderInitializationInfo ini;
             ini.optional_macros = shader.macro_decls;
             auto new_shader = shader.shader_class->Creator(shader.shader_class);
@@ -1424,6 +1463,11 @@ void RDGShaderLibrary::Init() {
                 }
                 MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} (at {}) with optional macros: {}",
                        shader.shader_class->name, shader.shader_class->impl_macro_line_info, macro_decl);
+                error_context_.ReportError(
+                    shader.shader_class->name, shader.shader_class->source_location,
+                    new_shader->last_compile_error_, new_shader->last_compile_command_,
+                    shader.shader_class->type_hash, ini);
+                error_context_.cancel_requested.store(true, std::memory_order_release);
             }
             {
                 std::lock_guard<std::mutex> lock(cache_mutex);
@@ -1437,6 +1481,21 @@ void RDGShaderLibrary::Init() {
 
     TaskGraph::Get().WaitForTasks(compile_tasks);
     putchar('\n');
+
+    // Handle compilation errors: popup + retry loop (Init: cancel = abort)
+    while (error_context_.has_error.load(std::memory_order_acquire)) {
+        std::string err_file; int err_line = 0;
+        auto msg = error_context_.BuildPopupMessage(&err_file, &err_line);
+        MI_LOG(MIInfraLogType::kError, "Shader compilation failed:\n{}", msg);
+        auto result = ShowPlatformBlockingPopup("Shader Compilation Error", msg.c_str(),
+                                                err_file.empty() ? nullptr : err_file.c_str(), err_line);
+        if (result == PlatformPopupResult::kCancel) {
+            PlatformFatalAbort("Shader compilation failed during initialization, aborting.");
+        }
+        // kOpenInEditor: the editor was launched in the popup callback; stay in the loop to retry.
+        RetryFailedShaders();
+    }
+
     // Transfer the ownership of underlying RHI resources to the render thread (current thread)
     for (auto & shader : cached_shaders_) {
         shader.second->UpdateOwnerForRHIResources();
@@ -1464,9 +1523,22 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
             shaders_to_recompile.push_back(shader.get());
         }
     }
+
+    if (shaders_to_recompile.empty()) return;
+
+    error_context_.Reset();
+
     // Recompile all shaders that need to be recompiled
-    auto tasks = TaskGraph::Get().ForEach(shaders_to_recompile, [](RDGShader * shader) {
-        shader->Recompile(shader->ini_);
+    auto tasks = TaskGraph::Get().ForEach(shaders_to_recompile, [this](RDGShader * shader) {
+        if (error_context_.cancel_requested.load(std::memory_order_acquire)) return;
+        if (!shader->Recompile(shader->ini_)) {
+            auto* reg = shader->GetShaderClassRegistry();
+            error_context_.ReportError(
+                reg->name, reg->source_location,
+                shader->last_compile_error_, shader->last_compile_command_,
+                reg->type_hash, shader->ini_);
+            error_context_.cancel_requested.store(true, std::memory_order_release);
+        }
     });
 
     TaskGraph::Get().WaitForTasks(tasks);
@@ -1476,6 +1548,26 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
     for (auto &shader: shaders_to_recompile) {
         shader->UpdateOwnerForRHIResources();
     }
+
+    // Handle compilation errors: popup + retry loop (hot-reload: cancel = continue, shaders stay invalid)
+    while (error_context_.has_error.load(std::memory_order_acquire)) {
+        std::string err_file; int err_line = 0;
+        auto msg = error_context_.BuildPopupMessage(&err_file, &err_line);
+        MI_LOG(MIInfraLogType::kError, "Hot-reload shader compilation failed:\n{}", msg);
+        auto result = ShowPlatformBlockingPopup("Shader Hot-Reload Error", msg.c_str(),
+                                                err_file.empty() ? nullptr : err_file.c_str(), err_line);
+        if (result == PlatformPopupResult::kCancel) {
+            MI_LOG(MIInfraLogType::kWarning, "Hot-reload shader compilation cancelled, shaders remain invalid.");
+            break;
+        }
+        // kOpenInEditor: the editor was launched in the popup callback; stay in the loop to retry.
+        RetryFailedShaders();
+        // Transfer ownership for any successfully retried shaders
+        for (auto & shader : shaders_to_recompile) {
+            shader->UpdateOwnerForRHIResources();
+        }
+    }
+
     MI_INFO("RDGShaderLibrary: {} shaders recompiled.", shaders_to_recompile.size());
 }
 
@@ -1493,9 +1585,50 @@ RDGShader *RDGShaderLibrary::GetShader(size_t type_hash, RDGShaderInitialization
         MI_INFO("Missing shader {} with hash {}. Creating it.", reg->second->name, shader_hash);
         auto new_shader = reg->second->Creator(reg->second.get());
         if (!new_shader->Recompile(ini)) {
-            MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} (at {}) with hash {}",
-                   reg->second->name, reg->second->impl_macro_line_info, shader_hash);
-            return nullptr;
+            // Popup + retry loop (GetShader: cancel = abort)
+            ShaderCompileErrorInfo info;
+            info.shader_name = reg->second->name;
+            info.source_location = reg->second->source_location;
+            info.error_message = new_shader->last_compile_error_;
+            info.compile_command = new_shader->last_compile_command_;
+            info.type_hash = type_hash;
+            info.ini = ini;
+            while (true) {
+                // Build truncated popup message (full detail goes to console)
+                std::string popup_msg = "Name: " + info.shader_name + "\n";
+                std::string err_file;
+                int err_line = 0;
+                if (!info.error_message.empty()) {
+                    constexpr size_t kMaxErr = 300;
+                    std::string truncated = info.error_message;
+                    if (truncated.size() > kMaxErr)
+                        truncated = truncated.substr(0, kMaxErr) + "\n... (truncated, see console)";
+                    popup_msg += truncated + "\n";
+                    // Extract first file:line from error
+                    auto c1 = info.error_message.find(':');
+                    if (c1 != std::string::npos && c1 > 0) {
+                        std::string pf = info.error_message.substr(0, c1);
+                        if (pf.find_first_of("/\\") != std::string::npos) {
+                            err_file = pf;
+                            auto c2 = info.error_message.find(':', c1 + 1);
+                            if (c2 != std::string::npos) {
+                                try { err_line = std::stoi(info.error_message.substr(c1 + 1, c2 - c1 - 1)); } catch (...) {}
+                            }
+                        }
+                    }
+                }
+                MI_LOG(MIInfraLogType::kError, "Failed to compile shader {} (at {}):\n{}",
+                       info.shader_name, reg->second->impl_macro_line_info, info.error_message);
+                auto result = ShowPlatformBlockingPopup("Shader Compilation Error", popup_msg.c_str(),
+                                                        err_file.empty() ? nullptr : err_file.c_str(), err_line);
+                if (result == PlatformPopupResult::kCancel) {
+                    PlatformFatalAbort(("Shader compilation failed for '" + info.shader_name + "', aborting.").c_str());
+                }
+                // kOpenInEditor / kRetry: (re)compile
+                if (new_shader->Recompile(ini)) break;
+                info.error_message = new_shader->last_compile_error_;
+                info.compile_command = new_shader->last_compile_command_;
+            }
         }
         cached_shaders_[shader_hash].reset(new_shader);
         return new_shader;
@@ -1519,6 +1652,112 @@ void RDGShaderLibrary::RegisterShaderClass(
 void RDGShaderLibrary::ReleaseCompiledShaders() {
     cached_shaders_.clear();
     RDGShaderRootSignatureCache::Get().Clear();
+}
+
+
+// ============================================================================
+// ShaderCompileErrorContext
+// ============================================================================
+
+void RDGShaderLibrary::ShaderCompileErrorContext::Reset() {
+    has_error.store(false, std::memory_order_release);
+    cancel_requested.store(false, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(error_mutex);
+    errors.clear();
+}
+
+void RDGShaderLibrary::ShaderCompileErrorContext::ReportError(
+    const std::string& name, const std::string& source,
+    const std::string& error, const std::string& command,
+    size_t type_hash, const RDGShaderInitializationInfo& ini)
+{
+    std::lock_guard<std::mutex> lock(error_mutex);
+    errors.push_back({name, source, error, command, type_hash, ini});
+    has_error.store(true, std::memory_order_release);
+}
+
+std::string RDGShaderLibrary::ShaderCompileErrorContext::BuildPopupMessage(
+    std::string* out_file, int* out_line) const {
+    std::string msg;
+    const size_t max_errors = 2;
+
+    for (size_t i = 0; i < errors.size() && i < max_errors; ++i) {
+        const auto& e = errors[i];
+        if (errors.size() > 1)
+            msg += "--- Shader #" + std::to_string(i + 1) + " ---\n";
+        msg += "Name: " + e.shader_name + "\n";
+
+        if (!e.error_message.empty()) {
+            // Truncate error to keep popup compact (full detail is in console)
+            constexpr size_t kMaxErrorLen = 300;
+            std::string truncated_error = e.error_message;
+            if (truncated_error.size() > kMaxErrorLen) {
+                truncated_error = truncated_error.substr(0, kMaxErrorLen) + "\n... (truncated, see console for full output)";
+            }
+
+            // Extract first file:line occurrence for editor integration
+            if (i == 0 && out_file) {
+                auto colon1 = e.error_message.find(':');
+                if (colon1 != std::string::npos && colon1 > 0) {
+                    std::string potential_file = e.error_message.substr(0, colon1);
+                    // Heuristic: valid file path contains '/' or '\'
+                    if (potential_file.find_first_of("/\\") != std::string::npos) {
+                        *out_file = potential_file;
+                        if (out_line) {
+                            auto colon2 = e.error_message.find(':', colon1 + 1);
+                            if (colon2 != std::string::npos) {
+                                std::string line_str = e.error_message.substr(colon1 + 1, colon2 - colon1 - 1);
+                                try { *out_line = std::stoi(line_str); } catch (...) {}
+                            }
+                        }
+                    }
+                }
+            }
+            msg += truncated_error + "\n";
+        }
+        msg += "\n";
+    }
+
+    if (errors.size() > max_errors) {
+        msg += "... and " + std::to_string(errors.size() - max_errors) + " more error(s). See console for full output.\n";
+    }
+
+    return msg;
+}
+
+// ============================================================================
+// RetryFailedShaders
+// ============================================================================
+
+void RDGShaderLibrary::RetryFailedShaders() {
+    // Recompile each failed shader. Remove from the list on success, update on failure.
+    std::vector<ShaderCompileErrorInfo> still_failed;
+    for (auto& info : error_context_.errors) {
+        auto reg_it = registered_shader_classes_.find(info.type_hash);
+        if (reg_it == registered_shader_classes_.end()) continue;
+
+        auto hash = HashCompiledShader(info.type_hash, info.ini);
+        auto cache_it = cached_shaders_.find(hash);
+        if (cache_it == cached_shaders_.end()) continue;
+
+        RDGShader* shader = cache_it->second.get();
+        if (shader->Recompile(info.ini)) {
+            // Success: transfer ownership to render thread
+            shader->UpdateOwnerForRHIResources();
+            MI_INFO("Shader {} recompiled successfully on retry.", info.shader_name);
+        } else {
+            // Still failed: update error info
+            info.error_message = shader->last_compile_error_;
+            info.compile_command = shader->last_compile_command_;
+            still_failed.push_back(std::move(info));
+        }
+    }
+
+    error_context_.Reset();
+    if (!still_failed.empty()) {
+        error_context_.errors = std::move(still_failed);
+        error_context_.has_error.store(true, std::memory_order_release);
+    }
 }
 
 

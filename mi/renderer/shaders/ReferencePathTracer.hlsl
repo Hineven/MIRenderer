@@ -482,7 +482,6 @@ void ReferencePathTracerRaygen() {
     float  PrimaryHitRoughness = 0;
     bool   PrimaryHitSurface = false;
 #endif
-
     // --- State: Primitives ---
     uint OverlappingVolumePrimitivesInstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
     uint OverlappingVolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];

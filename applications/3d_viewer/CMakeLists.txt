@@ -12,6 +12,7 @@ set(SOURCES
 )
 
 add_executable(3d_viewer ${SOURCES})
+mi_apply_app_manifest(3d_viewer)
 
 
 # ImGUI

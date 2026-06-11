@@ -10,6 +10,8 @@
 #include <string>
 #include <functional>
 #include <array>
+#include <atomic>
+#include <mutex>
 #include <rhi/rhi_shader.h>
 
 #include "rdg/rdg_base.h"
@@ -229,6 +231,9 @@ protected:
 
     // Resource path (infra)
     bool is_valid_ {false};
+    // Last compilation error info, used by RDGShaderLibrary for popup reporting.
+    std::string last_compile_error_;
+    std::string last_compile_command_;
     TRef<RHIComputePipeline> compute_pipeline_;
     TRef<RHIGraphicsPipeline> graphics_pipeline_;
     TRef<RHIRayTracingPipeline> ray_tracing_pipeline_;
@@ -442,6 +447,35 @@ protected:
     // Compiled shaders
     // REMEMBER to delete shaders when removing them.
     std::map<size_t, std::unique_ptr<RDGShader, DeleteShaderType>> cached_shaders_ {};
+
+    // --- Shader compilation error reporting ---
+
+    struct ShaderCompileErrorInfo {
+        std::string shader_name;
+        std::string source_location;
+        std::string error_message;
+        std::string compile_command;
+        size_t type_hash; // for RetryFailedShaders lookup
+        RDGShaderInitializationInfo ini;
+    };
+
+    struct ShaderCompileErrorContext {
+        std::atomic<bool> has_error {false};
+        std::atomic<bool> cancel_requested {false};
+        std::mutex error_mutex;
+        std::vector<ShaderCompileErrorInfo> errors;
+
+        void Reset();
+        void ReportError(const std::string& name, const std::string& source,
+                         const std::string& error, const std::string& command,
+                         size_t type_hash, const RDGShaderInitializationInfo& ini);
+        // Build a truncated popup message (full details go to console via MI_LOG).
+        // Optionally extracts the first error's source file and line number.
+        std::string BuildPopupMessage(std::string* out_file = nullptr, int* out_line = nullptr) const;
+    } error_context_;
+
+    // Retry compilation for failed shaders. Updates the error context.
+    void RetryFailedShaders();
 };
 
 // Registrator for a class of shaders

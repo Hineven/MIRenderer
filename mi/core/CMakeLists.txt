@@ -31,7 +31,19 @@ set(SOURCE_FILES
 
 add_library(core STATIC ${HEADER_FILES} ${SOURCE_FILES})
 target_link_libraries(core PUBLIC glm::glm)
+if(WIN32)
+    target_link_libraries(core PRIVATE Comctl32.lib)
+endif()
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# Provide a helper function for executables that need the application manifest.
+# On Windows, this embeds the comctl32 v6 manifest (required by TaskDialogIndirect).
+set(_MI_CORE_MANIFEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/app.manifest" CACHE INTERNAL "")
+function(mi_apply_app_manifest target)
+    if(WIN32)
+        target_sources(${target} PRIVATE ${_MI_CORE_MANIFEST_PATH})
+    endif()
+endfunction()
 
 # Output an identity file to specify the root path of the project for executables
 set(IDENTITY_FILE "${CMAKE_BINARY_DIR}/mi_renderer_identity")
