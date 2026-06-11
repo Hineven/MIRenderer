@@ -19,7 +19,6 @@
 #include "r_light_structure.h"
 #include "r_directional_light.h"
 #include "r_light_cluster_hiearchy.h"
-#include "../shaders/shared/SharedLight.hlsl"
 #include "dlss/ngx_context.h"
 #include "dlss/dlss_rr_context.h"
 
@@ -39,11 +38,6 @@ static CVar<bool> CVar_EnableDLSSRR(
     "Enable DLSS Ray Reconstruction for path tracing (requires RTX GPU + NGX).",
     true
 );
-static CVar<int> CVar_NEE_Mode(
-    "r.pathtracing.nee_mode",
-    "NEE mode: 0=off, 1=uniform, 2=LCH (not yet implemented).",
-    0
-);
 
 struct ReferencePathTracerUB {
     uint FrameIndex;
@@ -51,10 +45,8 @@ struct ReferencePathTracerUB {
     uint MaxNumBounces;
     float EnvironmentMapLOD;
     glm::vec3 EnvironmentMapMultiplier;
-    uint NEEEnabled;                    // 0=off, 1=uniform
-    uint NumMeshLightInstanceTriangles; // total triangles in MLI triangle buffer
-    uint NumAreaLights;                 // total AreaLight entries in LightBuffer
-    uint Padding;
+    uint NumMeshLightInstances; // total mesh light instances
+    uint3 Padding;
 };
 
 // --- Standard path tracer (accumulation mode, no DLSS auxiliary outputs) ---
@@ -79,7 +71,6 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, LightBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
@@ -130,7 +121,6 @@ void Renderer::FillPathTracerCommonParams(
         device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
     );
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
-    params->LightBuffer = builder.Import(device_allocator_->GetAreaLightsUberBuffer()->GetRHI());
     params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
     params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
     params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
@@ -175,11 +165,8 @@ void Renderer::Render_PathTracingAccumulation (RendererView *view, RenderGraphBu
         UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
         UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
         UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
-        int nee_mode = CVar_NEE_Mode.Get();
-        UB->NEEEnabled = (nee_mode == 1) ? 1u : 0u;
-        UB->NumMeshLightInstanceTriangles = (uint)(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetAllocationLimitByteOffset() / sizeof(MeshLightInstanceTriangle));
-        UB->NumAreaLights = (uint)(device_allocator_->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(AreaLight));
-        UB->Padding = 0;
+        UB->NumMeshLightInstances = (uint)(device_allocator_->GetMeshLightInstanceUberBuffer()->GetAllocationLimitByteOffset() / sizeof(MeshLightInstance));
+        UB->Padding = {0, 0, 0};
         bool camera_dirty = view->camera_ != view->persistent_data_->prev_camera;
         if (CVar_MaxNumBounces.IsDirty() || camera_dirty) {
             UB->EnableAccumulation = 0;
@@ -236,11 +223,8 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
         UB->MaxNumBounces = glm::clamp(CVar_MaxNumBounces.Get(), 1, 256);
         UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
         UB->EnvironmentMapMultiplier = CVar_EnvironmentLightMultiplier.Get();
-        int nee_mode = CVar_NEE_Mode.Get();
-        UB->NEEEnabled = (nee_mode == 1) ? 1u : 0u;
-        UB->NumMeshLightInstanceTriangles = (uint)(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetAllocationLimitByteOffset() / sizeof(MeshLightInstanceTriangle));
-        UB->NumAreaLights = (uint)(device_allocator_->GetAreaLightsUberBuffer()->GetAllocationLimitByteOffset() / sizeof(AreaLight));
-        UB->Padding = 0;
+        UB->NumMeshLightInstances = (uint)(device_allocator_->GetMeshLightInstanceUberBuffer()->GetAllocationLimitByteOffset() / sizeof(MeshLightInstance));
+        UB->Padding = {0, 0, 0};
         CVar_MaxNumBounces.ClearDirty();
     }
 
@@ -300,25 +284,25 @@ void Renderer::Render_PathTracingDLSS (RendererView *view, RenderGraphBuilder &b
         })
         // Use precise storage access flags (not kShaderRead which includes kShaderSampledRead).
         // DLSS-RR reads all inputs as UAV (storage read via Load), not as sampled textures.
-        // This avoids false "sampled read + storage RW" warnings and prevents kGeneral layout fallback.
+        // DLSS-RR internally dispatches compute shaders, so kCompute is the correct stage mask.
         ->AddTexture(noisy_radiance, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(depth, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(normal, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(motion_vector, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(albedo, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(specular_albedo, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(roughness, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(alpha, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kNone)
+            RHIGPUAccessFlagBits::kShaderStorageRead, RHIPipelineStageFlagBits::kCompute)
         ->AddTexture(dlss_output, RHITextureLayoutType::kGeneral,
-            RHIGPUAccessFlagBits::kShaderStorageRW, RHIPipelineStageFlagBits::kNone);
+            RHIGPUAccessFlagBits::kShaderStorageRW, RHIPipelineStageFlagBits::kCompute);
 
     // Copy DLSS denoised result to debug_output_ for downstream DrawToOutput
     Helpers::CopyTexture(builder, dlss_output, view->debug_output_.Raw());

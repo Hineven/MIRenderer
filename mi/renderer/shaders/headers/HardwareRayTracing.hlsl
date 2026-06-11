@@ -51,13 +51,15 @@ void SetupRayDesc(uint RayIndex, out RayDesc OutRay)
     // Ray origin in world space from buffer
     OutRay.Origin = RayToTraceOriginBuffer[RayIndex];
 #else
-    // Ray origin recovered from screen coordinates and depth buffer
+    // Ray origin recovered from screen coordinates and depth buffer.
+    // RecoverOffsetedWorldPositionFromScreenPixel is preferred here over OffsetRayOrigin (RTG Ch.6)
+    // because position is recovered from linear depth (g-buffer) which has its own precision error.
+    // This function computes an adaptive offset based on pixel footprint and depth scale.
     uint2 PixelIndex = UnpackUint2x16(RayToTraceOriginScreenCoordBuffer[RayIndex]);
     float2 UV = (PixelIndex + 0.5f) * C.InvFilmDimensions;
     float ReversedZDepth = G_Depth.SampleLevel(PointEdgeSampler, UV, 0);
     float LinearDepth = ReversedZDepthToLinearDepth(C, ReversedZDepth);
     float3 GeometryNormal = UnpackGeometryNormal(G_GeometryNormal.SampleLevel(PointEdgeSampler, UV, 0).x);
-    // Recover an offseted world position to avoid self-intersection. The offset is adequate for trimming self-intersections and moves at most .45 pixel in screen space.
     float3 WorldPosition = RecoverOffsetedWorldPositionFromScreenPixel(C, PixelIndex, LinearDepth, GeometryNormal, 0.45f);
     OutRay.Origin = WorldPosition;
 #endif

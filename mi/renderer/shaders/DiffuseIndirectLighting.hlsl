@@ -10,6 +10,7 @@
 #include "headers/Sampling.hlsl"
 #include "headers/SphericalHarmonics.hlsl"
 #include "headers/HybridTracing.hlsl"
+#include "headers/RayTracingHelpers.hlsl"
 #include "headers/MaterialEvaluation.hlsl"
 #include "headers/CommonIndirectLighting.hlsl"
 #include "resources/HashGridCacheResources.hlsl"
@@ -1187,9 +1188,8 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 	float3 ShadeNormal     = ShadeMaterial.Normal;
     CameraParameters C     = GetActiveCamera();
 
-	// Offset the hit position to avoid self-intersection
-    float ShadePositionOffsetLength = max(2e-5f, dot(abs(ShadePosition), 1.xxx) * 1e-5f);
-	if(ShadeMaterial.IsSurface()) ShadePosition += ShadeNormal * ShadePositionOffsetLength;
+	// Offset the hit position to avoid self-intersection (RTG Ch.6)
+	if(ShadeMaterial.IsSurface()) ShadePosition = OffsetRayOrigin(ShadePosition, ShadeNormal);
 
     Random R = MakeRandom(
         // Make random numbers consistent when freezing update ray seeds.
