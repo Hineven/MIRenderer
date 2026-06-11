@@ -269,6 +269,8 @@ void TraceVisibilityRaysAnyHit_GaussianRadianceField(inout RayPayload Payload: S
     float3 LocalRayDirection = TransformVector(WorldToObject, Ray.Direction);
     float3 LocalRayTangent   = TransformVector(WorldToObjectNormal, RayTangent);
     float3 LocalRayBitangent = TransformVector(WorldToObjectNormal, RayBitangent);
+    // Ray space basis vectors are not normalized. Thus it can correctly capture the non-uniform scaling in
+    // the transformation, which is important for correct evaluation of the Gaussian response.
     float3x3 RaySpace = float3x3(
         LocalRayTangent / dot(LocalRayTangent, LocalRayTangent),
         LocalRayBitangent / dot(LocalRayBitangent, LocalRayBitangent),

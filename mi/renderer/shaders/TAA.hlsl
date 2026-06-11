@@ -154,9 +154,8 @@ void TAA_Main(uint2 tid: SV_DispatchThreadID)
     // is 0 for static pixels even with camera jittering, which allows better use of history and less ghosting.
     float2 mv = GetClosestDepthMotionVector(int2(tid)); // NDC space motion vector
     
-    // Standard TAA reprojection
-    // TODO: LLMs say that using Jitter - PrevJitter will be more stable
-    float2 DeltaJitter = 0; // Reproject in non-jittered space
+    // (Not so standard) TAA reprojection (in non-jittered space)
+    float2 DeltaJitter = 0; 
     float2 PrevUV = UV - 0.5f * float2(mv.x, -mv.y) - 0.5f * float2(DeltaJitter.x, -DeltaJitter.y);
 
     // Reject if history is off-screen
