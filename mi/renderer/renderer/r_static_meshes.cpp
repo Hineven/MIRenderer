@@ -84,6 +84,7 @@ void Renderer::Render_PrepareStaticMeshes (RendererView *view, [[maybe_unused]] 
                     auto mat = std::get<1>(tup);
                     if (forward != mat->IsForward()) continue;
                     auto dev = geom->GetDeviceGeometry();
+                    mi_assert(dev, "Device geometry should be created for visible static mesh geometries!"); 
                     RHIDrawIndexedIndirectCommand cmd {};
                     cmd.first_instance = 0; // Filled after sorting
                     // The offset within its index uber buffer
