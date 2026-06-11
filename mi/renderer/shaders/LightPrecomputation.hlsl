@@ -137,11 +137,17 @@ void LightPrecomputation_Triangle (uint VertexID : SV_VertexID, uint InstanceID 
 #define PROCESSING_LEVELS_PER_DISPATCH 3
 #endif
 
+// The per-dispatch level index is passed as a push constant instead of a uniform buffer,
+// so all level dispatches can share a single shader parameter table.
+// 4 separate uints (rather than uint + uint3) make the layout unambiguous: the struct is
+// exactly 16 bytes under any packing rule (scalar / std140 / std430), matching the C++ side.
 struct LightPrecomputationLevelUB {
     uint LevelIndex;
-    uint3 Padding;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
 };
-ConstantBuffer<LightPrecomputationLevelUB> LightPrecomputation_LevelUB;
+[[vk::push_constant]] LightPrecomputationLevelUB LightPrecomputation_LevelUB;
 
 // TODO modify this function to use the data from MeshLightInstanceTriangleBuffer
 void AccumulateMeshLightInstanceClusterNodeDataFromTriangleChild (

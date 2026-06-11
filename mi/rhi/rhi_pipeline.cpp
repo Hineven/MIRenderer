@@ -95,11 +95,11 @@ bool RHIPipeline::CheckAndRemapShaderResources(RHIShader *shader) {
         return false;
 
     // Check command constants
-    if (shader->HasCommandConstant()) {
-        if(command_constant_.empty()) {
-            command_constant_.push_back(shader->GetCommandConstantDesc().ToPipelineDesc());
+    if (shader->HasPushConstant()) {
+        if(push_constant_.empty()) {
+            push_constant_.push_back(shader->GetPushConstantDesc().ToPipelineDesc());
         } else {
-            if(command_constant_[0].size != shader->GetCommandConstantDesc().size) {
+            if(push_constant_[0].size != shader->GetPushConstantDesc().size) {
                 MI_LOG(MIInfraLogType::kWarning, "Command constant sizes mismatch");
                 return false;
             }
@@ -146,7 +146,7 @@ void RHIPipeline::Reset() {
     samplers_.clear();
     immutable_samplers_.clear();
     acceleration_structures_.clear();
-    command_constant_.clear();
+    push_constant_.clear();
     has_bindless_resources_ = false;
     is_valid_ = false;
     ResetRHI();
@@ -222,7 +222,7 @@ bool RHIPipeline::ValidateRootSignatureCompatibility(RHIPipelineRootSignature * 
         }
         return true;
     };
-    if (!CheckPushConstants(command_constant_)) return false;
+    if (!CheckPushConstants(push_constant_)) return false;
 
     return true;
 }

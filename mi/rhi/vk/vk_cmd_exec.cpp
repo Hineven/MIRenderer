@@ -606,6 +606,35 @@ void VulkanCommandExecutor::RHIBindSignatureParameterTable(
     }
 }
 
+void VulkanCommandExecutor::RHIPushConstants(
+        RHICommandQueueBase *cmd, RHICommandPushConstants *push_constants) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & point = state.points[(uint32_t)push_constants->point_];
+
+    mi_assert(point.bound_pipeline, "PushConstants: no pipeline bound on this bind point. "
+        "BindPipeline must be called before PushConstants.");
+
+    vk::PipelineLayout vk_pipeline_layout {};
+    if (push_constants->point_ == RHIBindPointType::kGraphics) {
+        vk_pipeline_layout = static_cast<VulkanGraphicsPipeline*>(point.bound_pipeline)->GetPipelineLayout();
+    } else if (push_constants->point_ == RHIBindPointType::kCompute) {
+        vk_pipeline_layout = static_cast<VulkanComputePipeline*>(point.bound_pipeline)->GetPipelineLayout();
+    } else {
+        vk_pipeline_layout = static_cast<VulkanRayTracingPipeline*>(point.bound_pipeline)->GetPipelineLayout();
+    }
+
+    if (vk_pipeline_layout && !push_constants->data_.empty()) {
+        state.cmd.pushConstants(
+            vk_pipeline_layout,
+            GetVulkanShaderStageFlags(push_constants->stages_),
+            0,
+            (uint32_t)push_constants->data_.size(),
+            push_constants->data_.data()
+        );
+    }
+}
+
 void VulkanCommandExecutor::RHIBindVertexBuffer(RHICommandQueueBase *cmd,
                                                RHICommandBindVertexBuffer *bind_vertex_buffer) {
     CHECK_RHI_THREAD();

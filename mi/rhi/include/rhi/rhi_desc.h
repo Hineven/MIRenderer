@@ -300,7 +300,7 @@ namespace PipelineReflection {
         // Array size of an array of resources. 0 if not an array. UINT32_MAX for array ofunspecified length.
         uint32_t array_size;
     };
-    struct CommandConstantDesc {
+    struct PushConstantDesc {
         uint32_t size;
         // Stages in which the resource is available
         RHIShaderFrequencyFlags frequency_bits;
@@ -373,11 +373,11 @@ namespace ShaderReflection {
             return {name_crc, 0, name, array_size};
         }
     };
-    struct CommandConstantDesc {
+    struct PushConstantDesc {
         IRBindingDecorationLocation locations;
         uint32_t size;
         std::string name;
-        FORCEINLINE PipelineReflection::CommandConstantDesc ToPipelineDesc() const {
+        FORCEINLINE PipelineReflection::PushConstantDesc ToPipelineDesc() const {
             return {size, 0, name};
         }
     };
@@ -489,7 +489,7 @@ using SRVDesc = ShaderReflection::SRVDesc;                                      
 using SamplerDesc = ShaderReflection::SamplerDesc;                                                   \
 using ImmutableSamplerDesc = ShaderReflection::ImmutableSamplerDesc;                                 \
 using AccelerationStructureDesc = ShaderReflection::AccelerationStructureDesc;                       \
-using CommandConstantDesc = ShaderReflection::CommandConstantDesc;
+using PushConstantDesc = ShaderReflection::PushConstantDesc;
 
 #define USE_PIPELINE_REFLECTION_STRUCTS using UniformBufferDesc = PipelineReflection::UniformBufferDesc; \
 using StorageBufferDesc = PipelineReflection::StorageBufferDesc;                                       \
@@ -498,7 +498,7 @@ using SRVDesc = PipelineReflection::SRVDesc;                                    
 using SamplerDesc = PipelineReflection::SamplerDesc;                                                   \
 using ImmutableSamplerDesc = PipelineReflection::ImmutableSamplerDesc;                                 \
 using AccelerationStructureDesc = PipelineReflection::AccelerationStructureDesc;                       \
-using CommandConstantDesc = PipelineReflection::CommandConstantDesc;
+using PushConstantDesc = PipelineReflection::PushConstantDesc;
 
 
 struct RHIDrawIndirectCommand {

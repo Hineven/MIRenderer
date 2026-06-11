@@ -44,6 +44,7 @@ public:
     virtual void RHICreateSignatureParameterTable (RHICommandQueueBase * buffer, RHICommandCreateSignatureParameterTable * cmd) = 0;
     virtual void RHIBindSignatureParameterTable (RHICommandQueueBase * buffer, RHICommandBindSignatureParameterTable * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
+    virtual void RHIPushConstants (RHICommandQueueBase * buffer, RHICommandPushConstants * cmd) = 0;
     virtual void RHIMemoryBarrier (RHICommandQueueBase * buffer, RHICommandMemoryBarrier * cmd) = 0;
     virtual void RHITextureBarrier (RHICommandQueueBase * buffer, RHICommandTextureBarrier * cmd) = 0;
     virtual void RHIBufferBarriers (RHICommandQueueBase * buffer, RHICommandBufferBarrier * cmd) = 0;

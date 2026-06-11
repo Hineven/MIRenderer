@@ -372,6 +372,35 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
     }
 
     // TODO check immutable samplers, ...
+
+    // Check push constant compatibility between C++ declaration and shader reflection.
+    // The shader side size comes from [[vk::push_constant]] reflection; the C++ side size comes
+    // from the SHADER_PUSH_CONSTANT macro. They must agree (C++ may be larger due to trailing padding).
+    // NOTE: this check is per-shader-stage. For multi-stage pipelines, the push constant block may be
+    // declared in only some stages. So a stage with no push constant while C++ declares one is valid
+    // (another stage uses it). Only the two real mismatches are flagged.
+    {
+        bool shader_has_pc = shader->HasPushConstant();
+        if (shader_has_pc) {
+            if (!info.push_constant_.info) {
+                MI_LOG(MIInfraLogType::kWarning,
+                    "Shader '{}:{}' declares a push constant '{}' but the C++ shader params have no SHADER_PUSH_CONSTANT.",
+                    class_registry_->source_location, entry, shader->GetPushConstantDesc().name);
+                passed_checking = false;
+            } else {
+                uint32_t shader_pc_size = shader->GetPushConstantDesc().size;
+                uint32_t cpp_pc_size = info.push_constant_.size;
+                if (shader_pc_size > cpp_pc_size) {
+                    MI_LOG(MIInfraLogType::kWarning,
+                        "Shader '{}:{}' push constant size ({}) exceeds C++ SHADER_PUSH_CONSTANT size ({}). "
+                        "The C++ struct must be at least as large as the shader expects.",
+                        class_registry_->source_location, entry, shader_pc_size, cpp_pc_size);
+                    passed_checking = false;
+                }
+            }
+        }
+    }
+
     return passed_checking;
 }
 
@@ -1079,10 +1108,10 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
     auto & root_sig_cache = RDGShaderRootSignatureCache::Get();
 
     if (class_registry_->type == RHIPipelineType::kCompute) {
-        uint32_t push_constant_size = 0;
-        if (shaders_.compute->HasCommandConstant()) {
-            push_constant_size = shaders_.compute->GetCommandConstantDesc().size;
-        }
+        // Push constant size is authoritative from the C++ param struct declaration
+        // (SHADER_PUSH_CONSTANT). Shader reflection only validates that no stage declares a
+        // larger push constant than the C++ side (see CheckShaderReflection).
+        uint32_t push_constant_size = param_info->push_constant_.info ? param_info->push_constant_.size : 0;
         auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
         auto pipeline = RHI::Get().CreateComputePipeline(
             shaders_.compute.Raw(), class_registry_->name.c_str(), root_sig_keeper->GetRootSignature()
@@ -1165,13 +1194,9 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
             }
         }
         desc.rasterization_discard = pipeline_config.rasterization_discard;
-        uint32_t push_constant_size = 0;
-        for (auto * s : {shaders_.vertex.Raw(), shaders_.fragment.Raw(),
-                         shaders_.geometry.Raw(), shaders_.task.Raw(), shaders_.mesh.Raw()}) {
-            if (s && s->HasCommandConstant()) {
-                push_constant_size = std::max(push_constant_size, s->GetCommandConstantDesc().size);
-            }
-        }
+        // Push constant size is authoritative from the C++ param struct declaration
+        // (SHADER_PUSH_CONSTANT). Shader reflection only validates (see CheckShaderReflection).
+        uint32_t push_constant_size = param_info->push_constant_.info ? param_info->push_constant_.size : 0;
         auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
         auto pipeline = RHI::Get().CreateGraphicsPipeline(
                 desc, class_registry_->name.c_str(), root_sig_keeper->GetRootSignature()
@@ -1219,12 +1244,9 @@ bool RDGShader::Recompile(RDGShaderInitializationInfo ini) {
         }
 
         desc.max_recursion_depth = pipeline_config.ray_tracing.max_recursion_depth;
-        uint32_t push_constant_size = 0;
-        for (auto* s : desc.shaders) {
-            if (s && s->HasCommandConstant()) {
-                push_constant_size = std::max(push_constant_size, s->GetCommandConstantDesc().size);
-            }
-        }
+        // Push constant size is authoritative from the C++ param struct declaration
+        // (SHADER_PUSH_CONSTANT). Shader reflection only validates (see CheckShaderReflection).
+        uint32_t push_constant_size = param_info->push_constant_.info ? param_info->push_constant_.size : 0;
         auto root_sig_keeper = root_sig_cache.GetOrCreate(param_info, push_constant_size);
         auto pipeline = RHI::Get().CreateRayTracingPipeline(desc, class_registry_->name.c_str(), root_sig_keeper->GetRootSignature());
         if (!pipeline) {

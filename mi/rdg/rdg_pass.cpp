@@ -339,6 +339,9 @@ void RDGPass::PreCompile() {
                 // The field value is actually a pointer to a UB struct.
                 // Device ub is allocated when the graph is executed. And dependencies are
                 // generated at runtime. So, do nothing here.
+            } else if (field.type == RHIParamType::kPushConstant) {
+                // Push constants declare no member in the param struct; their VALUE is supplied
+                // per-dispatch (dynamic, lightweight). There is nothing to track at PreCompile time.
             } else if (field.type == RHIParamType::kAccelerationStructure) {
                 auto as = *static_cast<RHIAccelerationStructure* const*>(field_data);
                 if (!as) continue;

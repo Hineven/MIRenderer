@@ -37,6 +37,7 @@ enum class RHIParamType : uint32_t {
     kVertexBuffer,
     kIndexBuffer,
     kDispatchCommand, // TODO remove this
+    kPushConstant,
     kMax,
 };
 
@@ -56,6 +57,7 @@ FORCEINLINE std::string ToString (RHIParamType type) {
         case RHIParamType::kVertexBuffer: return "VertexBuffer";
         case RHIParamType::kIndexBuffer: return "IndexBuffer";
         case RHIParamType::kDispatchCommand: return "DispatchCommand";
+        case RHIParamType::kPushConstant: return "PushConstant";
         default: return "Unknown";
     }
 }
@@ -83,6 +85,7 @@ FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "VertexBuffer") return RHIParamType::kVertexBuffer;
     if(type == "IndexBuffer") return RHIParamType::kIndexBuffer;
     if(type == "DispatchCommand") return RHIParamType::kDispatchCommand;
+    if(type == "PushConstant") return RHIParamType::kPushConstant;
     assert(false);
     return RHIParamType::kMax;
 }
@@ -112,6 +115,10 @@ FORCEINLINE RHIGPUAccessFlags TypeNameStringToRHIAccessFlags (std::string_view t
     }
     if (view == "ConstantBuffer") {
         return RHIGPUAccessFlagBits::kUniformRead;
+    }
+    if (view == "PushConstant") {
+        // Push constants are inline data, not backed by a descriptor. No GPU access tracking needed.
+        return RHIGPUAccessFlagBits::kNone;
     }
     assert(false && "Unknown type for RHIAccessFlags conversion");
     return RHIGPUAccessFlagBits::kNone;

@@ -195,10 +195,10 @@ bool RHIShader::ReflectShaderResourcesSPIRV() {
     ReflectResources.operator()<AccelerationStructureDesc>( shader_resources.acceleration_structures, acceleration_structures_);
     ReflectResources.operator()<SamplerDesc>(shader_resources.separate_samplers, samplers_);
     for (auto & resource : shader_resources.push_constant_buffers) {
-        CommandConstantDesc desc;
+        PushConstantDesc desc;
         desc.name = resource.name;
         desc.size = (uint32_t)compiler_hlsl.get_declared_struct_size(compiler_hlsl.get_type(resource.base_type_id));
-        command_constant_.push_back(desc);
+        push_constant_.push_back(desc);
     }
     // Strip bindless resource arrays
     {
@@ -408,7 +408,7 @@ void RHIShader::Reset () {
     uavs_.clear();
     srvs_.clear();
     samplers_.clear();
-    command_constant_.clear();
+    push_constant_.clear();
     acceleration_structures_.clear();
     bindless_ = {};
     has_bindless_resources_ = false;

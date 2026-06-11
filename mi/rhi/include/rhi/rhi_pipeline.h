@@ -90,7 +90,7 @@ protected:
     std::vector<SamplerDesc> samplers_;
     std::vector<ImmutableSamplerDesc> immutable_samplers_;
     std::vector<AccelerationStructureDesc> acceleration_structures_;
-    std::vector<CommandConstantDesc> command_constant_;
+    std::vector<PushConstantDesc> push_constant_;
 
 
     // This should be set by the derived class implementation upon compilation
@@ -118,8 +118,8 @@ public:
     FORCEINLINE const std::vector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const {
         return acceleration_structures_;
     }
-    FORCEINLINE const CommandConstantDesc & GetCommandConstantDesc() const {
-        return command_constant_[0];
+    FORCEINLINE const PushConstantDesc & GetPushConstantDesc() const {
+        return push_constant_[0];
     }
 };
 

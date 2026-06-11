@@ -257,7 +257,7 @@ struct LightPrecomputationLevelUB {
 
 BEGIN_SHADER_PARAMETERS(LightStructureParameters)
     SHADER_UNIFORM_BUFFER(LightStructureUB, LightStructure_UB)
-    SHADER_UNIFORM_BUFFER(LightPrecomputationLevelUB, LightPrecomputation_LevelUB)
+    SHADER_PUSH_CONSTANT(LightPrecomputationLevelUB)
 
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridAllocator)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, LightGrid_RWActiveGridIndicesBuffer)
@@ -613,15 +613,11 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     mi_check(ls, "Light structure data must exist before building the light structure.");
     auto persistent = view->persistent_data_->light_structure_persistent_data_;
 
-    auto fill_common_params = [&](LightStructureParameters * params, uint32_t level_index) {
+    auto fill_common_params = [&](LightStructureParameters * params) {
         FillParametersForLightStructure(view, params);
         auto * UB = builder.Allocate<LightStructureUB>();
         FillUniformBufferForLightStructure(view, UB);
         params->LightStructure_UB = UB;
-        auto * level_ub = builder.Allocate<LightPrecomputationLevelUB>();
-        level_ub->LevelIndex = level_index;
-        level_ub->padding[0] = level_ub->padding[1] = level_ub->padding[2] = 0;
-        params->LightPrecomputation_LevelUB = level_ub;
 
         params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
@@ -653,7 +649,7 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
     ini.optional_macros = ini_macros;
 
     auto * common_params = builder.Allocate<LightStructureParameters>();
-    fill_common_params(common_params, 0);
+    fill_common_params(common_params);
 
     {
         auto num_groups = DivideAndRoundUp(
@@ -708,20 +704,26 @@ void Renderer::Render_BuildLightStructure (RendererView * view, RenderGraphBuild
         )->AddBufferH(ls->precompute_triangle_draw_command_buffer.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead, RHIPipelineStageFlagBits::kIndirect);
     }
 
+    auto level_shader = lib.GetShader<PrecomputeLevelShader>(ini);
     for (int32_t level_dispatch_index = (int32_t)ls->precompute_level_draw_command_buffers.size() - 1; level_dispatch_index >= 0; --level_dispatch_index) {
         auto const draw_count = ls->level_draw_counts[level_dispatch_index];
-        auto * params = builder.Allocate<LightStructureParameters>();
-        fill_common_params(params, (uint32_t)level_dispatch_index * kLightPrecomputationLevelsPerDispatch);
-        auto shader = lib.GetShader<PrecomputeLevelShader>(ini);
-        builder.AddPass<PrecomputeLevelShader>({}, shader, params,
-            [shader, params, cmd = ls->precompute_level_draw_command_buffers[level_dispatch_index].Raw(), draw_count]
+        // All level dispatches share common_params (and thus one parameter table); the only
+        // per-dispatch value is the level index, now carried by a push constant instead of a
+        // dedicated per-level uniform buffer / parameter table.
+        LightPrecomputationLevelUB level_pc {};
+        level_pc.LevelIndex = (uint32_t)level_dispatch_index * kLightPrecomputationLevelsPerDispatch;
+        builder.AddPass<PrecomputeLevelShader>({}, level_shader, common_params,
+            [shader = level_shader, params = common_params,
+             cmd = ls->precompute_level_draw_command_buffers[level_dispatch_index].Raw(),
+             draw_count, level_pc]
             (RDGPass * pass, RHICommandQueueGraphics & queue_inner) {
                 if (draw_count == 0) {
                     return;
                 }
                 auto tid = pass->GetParameterTableId();
                 RDGCommandHelper::BeginGraphicsRender(queue_inner, shader, tid,
-                    &PrecomputeLevelShader::GetShaderParamStructInfo()->render_pass_info_, params);
+                    &PrecomputeLevelShader::GetShaderParamStructInfo()->render_pass_info_, params,
+                    std::span<std::byte>((std::byte*)&level_pc, sizeof(level_pc)));
                 queue_inner.DrawIndirect(cmd->GetRHI(), draw_count);
                 RDGCommandHelper::EndGraphicsRender(queue_inner);
             }

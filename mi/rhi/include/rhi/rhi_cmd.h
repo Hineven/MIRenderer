@@ -560,8 +560,25 @@ public:
     RHICommandBindVertexBuffer(uint32_t binding, RHIBufferSpan buffer)
         : binding_(binding), buffer_(buffer) {}
     void Execute(RHICommandQueueBase & cmd) override ;
+
     RHIBufferSpan buffer_;
     uint32_t binding_;
+};
+
+// Push a block of push constant data to the currently bound pipeline on the given bind point.
+// BindPipeline must have been called for that bind point before this command executes.
+// The data span backing memory is owned by the command (copied at recording time).
+// stages narrows which shader stages receive the data (avoids the cost of pushing to all stages).
+// It must be a subset of the stages declared in the pipeline layout's push constant range.
+class RHICommandPushConstants : public TRHICommand<RHICommandPushConstants> {
+public:
+    RHICommandPushConstants(std::span<std::byte> data, RHIBindPointType point, RHIShaderFrequencyFlags stages)
+        : data_(data), point_(point), stages_(stages) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    std::span<std::byte> data_;
+    RHIBindPointType point_;
+    RHIShaderFrequencyFlags stages_;
 };
 
 class RHICommandMemoryBarrier : public TRHICommand<RHICommandMemoryBarrier> {
@@ -923,6 +940,22 @@ public:
     }
     FORCEINLINE void BindSignatureParameterTable(uint32_t table_id, RHIBindPointType point) {
         AddCommand(AllocateCommand<RHICommandBindSignatureParameterTable>(table_id, point));
+    }
+
+    // Push a block of push constant data to the pipeline currently bound on the given bind point.
+    // BindPipeline must be called for that bind point before the dispatch/draw that consumes it.
+    // @param data push constant bytes. A copy is made into frame-local memory, so the caller may pass a stack struct.
+    // @param point which bind point (graphics/compute/ray tracing) the pipeline is bound on.
+    // @param stages which shader stages receive the data. Narrow this to the stages that actually
+    //               read the push constant (e.g. kCompute for a compute pipeline) to avoid pushing
+    //               to unused stages. Must be a subset of the pipeline layout's push constant range.
+    FORCEINLINE void PushConstants(std::span<std::byte> data, RHIBindPointType point,
+                                   RHIShaderFrequencyFlags stages = RHIShaderFrequencyFlagBits::kAll) {
+        if (data.empty()) return;
+        auto * copy = static_cast<std::byte*>(AllocateRaw(data.size()));
+        memcpy(copy, data.data(), data.size());
+        AddCommand(AllocateCommand<RHICommandPushConstants>(
+            std::span<std::byte>(copy, data.size()), point, stages));
     }
 
     FORCEINLINE void BindVertexBuffer (uint32_t binding, RHIBufferSpan buffer) {

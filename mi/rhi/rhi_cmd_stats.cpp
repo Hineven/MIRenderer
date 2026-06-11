@@ -39,6 +39,7 @@ static const char* g_rhi_cmd_stat_names[] = {
     "CreateSignatureParameterTable",
     "BindSignatureParameterTable",
     "BindVertexBuffer",
+    "PushConstants",
 
     "MemoryBarrier",
     "TextureBarrier",

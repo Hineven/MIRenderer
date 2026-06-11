@@ -110,6 +110,10 @@ struct RDGShaderSignatureParamInfo : public RDGShaderParamStructInfo {
     std::span<RDGShaderParameterLocation> srvs_;
     std::span<RDGShaderParameterLocation> samplers_;
     std::span<RDGShaderParameterLocation> acceleration_structures_;
+    // At most one push constant per shader parameter struct. Zero-init (info == nullptr) means none.
+    // Note: this only records the declared push constant SIZE for reflection/validation and root
+    // signature sizing. The actual push constant VALUE is supplied per-dispatch (dynamic, lightweight).
+    RDGShaderParameterLocation push_constant_ {};
 };
 
 struct RDGShaderRenderPassInfo {
@@ -195,7 +199,7 @@ FORCEINLINE RDGShaderParamInfo RDGMakeShaderParamInfo (
     } else if (type_name == "RenderTarget" || type_name == "VertexAttribute") {
         // RenderTarget is a special type, it has no access flags.
     } else info.access_flags = TypeNameStringToRHIAccessFlags(type_name);
-    if (info.type == RHIParamType::kUniformBuffer) {
+    if (info.type == RHIParamType::kUniformBuffer || info.type == RHIParamType::kPushConstant) {
         info.size = size;
     } else info.size = 0;
     info.cpp_offset = cpp_offset;
@@ -366,6 +370,27 @@ private: \
         return (zzFuncPtr)PrevFunc; \
     } \
     typedef zz##Name##_TypeID
+
+// Declare that this shader parameter struct uses a push constant of the given struct type.
+// At most one push constant per struct. This macro does NOT create a member: it only records the
+// push constant SIZE for root signature sizing and reflection validation. The actual push constant
+// VALUE is supplied per-dispatch via queue.PushConstants / the dispatch helper's push_constants arg.
+// Corresponding HLSL: [[vk::push_constant]] Type PC;
+#define SHADER_PUSH_CONSTANT(Type) \
+    zzPushConstant_PrevTypeID; \
+    static_assert(CMemTrivial<Type>, "Push constant struct type must be CMemTrivial"); \
+private: \
+    struct zzPushConstant_TypeInfo { \
+        static constexpr const char * name = "PushConstant"; \
+        static constexpr const char * type_name = "PushConstant"; \
+    }; \
+    static zzFuncPtr zz_AppendParamAndGetPrevFuncPtr(zzPushConstant_TypeInfo, std::vector<RDGShaderParamInfo> * params) { \
+        zzFuncPtr (*PrevFunc)(zzPushConstant_PrevTypeID, std::vector<RDGShaderParamInfo> *); \
+        params->emplace_back(RDGMakeShaderParamInfo("PushConstant", "PushConstant", (uint32_t)sizeof(Type), 0)); \
+        PrevFunc = zz_AppendParamAndGetPrevFuncPtr; \
+        return (zzFuncPtr)PrevFunc; \
+    } \
+    typedef zzPushConstant_TypeInfo
 
 #define END_SHADER_PARAMETERS() \
     zzzLastParam_PrevTypeID; \

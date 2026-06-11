@@ -17,8 +17,43 @@ MI_NAMESPACE_BEGIN
 
 // A simple implementation of parameter table id allocation.
 // Only the renderer thread will allocate parameter table ids, so no synchronization is needed.
-// Recycling is not necessary as rhi will manage the lifecycle of parameter tables. 
+// Recycling is not necessary as rhi will manage the lifecycle of parameter tables.
 static uint32_t tl_next_table_id = 0;
+
+// Derive the narrowest shader stage mask for a push constant by inspecting each stage shader's
+// reflection. Only stages whose reflection reports a push constant (HasPushConstant) are added,
+// so vkCmdPushConstants writes only to stages that actually read the data. The mask is always a
+// subset of the pipeline layout's push constant range (declared with eAll), so any subset is valid.
+RHIShaderFrequencyFlags RDGCommandHelper::PushConstantStagesFor(const RDGShader * shader) {
+    if (!shader) return RHIShaderFrequencyFlagBits::kAll;
+    const auto & s = shader->shaders_;
+    RHIShaderFrequencyFlags flags = RHIShaderFrequencyFlagBits::kNone;
+    switch (shader->GetPipelineType()) {
+        case RHIPipelineType::kCompute:
+            // Single stage; if the compute shader has no push constant the dispatch helper won't
+            // call PushConstants at all, so kCompute is always correct here.
+            return RHIShaderFrequencyFlagBits::kCompute;
+        case RHIPipelineType::kGraphics:
+            if (s.vertex   && s.vertex->HasPushConstant())   flags |= RHIShaderFrequencyFlagBits::kVertex;
+            if (s.fragment && s.fragment->HasPushConstant()) flags |= RHIShaderFrequencyFlagBits::kFragment;
+            if (s.geometry && s.geometry->HasPushConstant()) flags |= RHIShaderFrequencyFlagBits::kGeometry;
+            if (s.task     && s.task->HasPushConstant())     flags |= RHIShaderFrequencyFlagBits::kTask;
+            if (s.mesh     && s.mesh->HasPushConstant())     flags |= RHIShaderFrequencyFlagBits::kMesh;
+            break;
+        case RHIPipelineType::kRayTracing:
+            if (s.raygen   && s.raygen->HasPushConstant())   flags |= RHIShaderFrequencyFlagBits::kRaygen;
+            if (s.miss     && s.miss->HasPushConstant())     flags |= RHIShaderFrequencyFlagBits::kMiss;
+            if (s.callable && s.callable->HasPushConstant()) flags |= RHIShaderFrequencyFlagBits::kCallable;
+            for (const auto & ch : s.closest_hit)
+                if (ch && ch->HasPushConstant()) { flags |= RHIShaderFrequencyFlagBits::kClosestHit; break; }
+            for (const auto & ah : s.any_hit)
+                if (ah && ah->HasPushConstant()) { flags |= RHIShaderFrequencyFlagBits::kAnyHit; break; }
+            break;
+    }
+    // Safe fallback: if no stage reported a push constant (e.g. shaders not yet compiled, or the
+    // shader genuinely has none), fall back to kAll rather than emitting an invalid empty stage mask.
+    return flags ? flags : RHIShaderFrequencyFlagBits::kAll;
+}
 
 std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::BuildParameterDesc(
     RHICommandQueueGraphics & queue,
@@ -139,36 +174,41 @@ uint32_t RDGCommandHelper::AllocateParameterTableId() {
 }
 
 void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGShader * shader,
-    uint32_t table_id, uint32_t x, uint32_t y, uint32_t z) {
+    uint32_t table_id, uint32_t x, uint32_t y, uint32_t z,
+    std::span<std::byte> push_constants) {
     if (!shader || !shader->IsValid()) {
         MI_WARN("Invalid compute shader. Dispatch cancelled.");
         return;
     }
     queue.BindPipeline(shader->compute_pipeline_.Raw(), shader->root_signature_->GetRootSignature());
     queue.BindSignatureParameterTable(table_id, RHIBindPointType::kCompute);
+    if (!push_constants.empty()) queue.PushConstants(push_constants, RHIBindPointType::kCompute, PushConstantStagesFor(shader));
     queue.Dispatch(x, y, z);
 }
 
 void RDGCommandHelper::DispatchIndirect(RHICommandQueueGraphics & queue, RDGShader * compute_shader,
-    uint32_t table_id, RDGBuffer * indirect_buffer, uint32_t offset) {
+    uint32_t table_id, RDGBuffer * indirect_buffer, uint32_t offset,
+    std::span<std::byte> push_constants) {
     if (!compute_shader || !compute_shader->IsValid()) {
         MI_WARN("Invalid compute shader. DispatchIndirect cancelled.");
         return;
     }
     queue.BindPipeline(compute_shader->compute_pipeline_.Raw(), compute_shader->root_signature_->GetRootSignature());
     queue.BindSignatureParameterTable(table_id, RHIBindPointType::kCompute);
+    if (!push_constants.empty()) queue.PushConstants(push_constants, RHIBindPointType::kCompute, PushConstantStagesFor(compute_shader));
     queue.DispatchIndirect(indirect_buffer->GetRHI().buffer, uint32_t(indirect_buffer->GetRHI().offset + offset));
 }
 
 void RDGCommandHelper::BeginGraphicsRender(RHICommandQueueGraphics & queue, RDGShader * graphics_shader,
     uint32_t table_id, const RDGShaderRenderPassInfo * render_pass_info,
-    const void * params) {
+    const void * params, std::span<std::byte> push_constants) {
     if (!graphics_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid shader. BeginGraphicsRender cancelled.", graphics_shader->class_registry_->name);
         return;
     }
     queue.BindPipeline(graphics_shader->graphics_pipeline_.Raw(), graphics_shader->root_signature_->GetRootSignature());
     queue.BindSignatureParameterTable(table_id, RHIBindPointType::kGraphics);
+    if (!push_constants.empty()) queue.PushConstants(push_constants, RHIBindPointType::kGraphics, PushConstantStagesFor(graphics_shader));
 
     if (render_pass_info && !render_pass_info->vertex_buffers_.empty()) {
         for (auto e : render_pass_info->vertex_buffers_) {
@@ -220,14 +260,16 @@ void RDGCommandHelper::EndGraphicsRender(RHICommandQueueGraphics & queue) {
 
 void RDGCommandHelper::Draw(RHICommandQueueGraphics & queue, RDGShader * graphics_shader,
     uint32_t table_id, const RDGShaderRenderPassInfo * render_pass_info,
-    const void * params, int vertex_count, int instance_count, int first_vertex, int first_instance) {
-    BeginGraphicsRender(queue, graphics_shader, table_id, render_pass_info, params);
+    const void * params, int vertex_count, int instance_count, int first_vertex, int first_instance,
+    std::span<std::byte> push_constants) {
+    BeginGraphicsRender(queue, graphics_shader, table_id, render_pass_info, params, push_constants);
     queue.Draw(vertex_count, instance_count, first_vertex, first_instance);
     EndGraphicsRender(queue);
 }
 
 void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics & queue, RDGShader * ray_tracing_shader,
-    uint32_t table_id, uint32_t width, uint32_t height, uint32_t depth) {
+    uint32_t table_id, uint32_t width, uint32_t height, uint32_t depth,
+    std::span<std::byte> push_constants) {
     if (!ray_tracing_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid raytracing shader. Dispatch cancelled.",
             ray_tracing_shader->class_registry_->name);
@@ -235,6 +277,7 @@ void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics & queue, RDGShader *
     }
     queue.BindPipeline(ray_tracing_shader->ray_tracing_pipeline_.Raw(), ray_tracing_shader->root_signature_->GetRootSignature());
     queue.BindSignatureParameterTable(table_id, RHIBindPointType::kRayTracing);
+    if (!push_constants.empty()) queue.PushConstants(push_constants, RHIBindPointType::kRayTracing, PushConstantStagesFor(ray_tracing_shader));
     auto sbt = ray_tracing_shader->GetSBTBuffers(queue);
     if (sbt.raygen && sbt.miss && sbt.hit) {
         queue.BindShaderBindingTable(sbt.raygen, sbt.miss, sbt.hit);
@@ -247,7 +290,7 @@ void RDGCommandHelper::DispatchRays(RHICommandQueueGraphics & queue, RDGShader *
 }
 
 void RDGCommandHelper::DispatchRaysIndirect(RHICommandQueueGraphics & queue, RDGShader * ray_tracing_shader,
-    uint32_t table_id, RDGBuffer * indirect_buffer) {
+    uint32_t table_id, RDGBuffer * indirect_buffer, std::span<std::byte> push_constants) {
     if (!ray_tracing_shader->IsValid()) {
         MI_WARN("Shader {}: Invalid raytracing shader. DispatchRaysIndirect cancelled.",
             ray_tracing_shader->class_registry_->name);
@@ -255,6 +298,7 @@ void RDGCommandHelper::DispatchRaysIndirect(RHICommandQueueGraphics & queue, RDG
     }
     queue.BindPipeline(ray_tracing_shader->ray_tracing_pipeline_.Raw(), ray_tracing_shader->root_signature_->GetRootSignature());
     queue.BindSignatureParameterTable(table_id, RHIBindPointType::kRayTracing);
+    if (!push_constants.empty()) queue.PushConstants(push_constants, RHIBindPointType::kRayTracing, PushConstantStagesFor(ray_tracing_shader));
     auto sbt = ray_tracing_shader->GetSBTBuffers(queue);
     queue.DispatchRaysIndirect(sbt.raygen, sbt.miss, sbt.miss_stride, sbt.hit, sbt.hit_stride, indirect_buffer->GetRHI());
 }

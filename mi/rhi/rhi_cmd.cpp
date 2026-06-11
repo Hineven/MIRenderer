@@ -192,6 +192,11 @@ void RHICommandBindVertexBuffer::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindVertexBuffer(&cmd, this);
 }
 
+void RHICommandPushConstants::Execute(RHICommandQueueBase &cmd) {
+    MI_RHI_CMD_STAT_INC(RHICmdStatId::kPushConstants);
+    RHI::Get().GetCommandExecutor()->RHIPushConstants(&cmd, this);
+}
+
 void RHICommandMemoryBarrier::Execute(RHICommandQueueBase &cmd) {
     MI_RHI_CMD_STAT_INC(RHICmdStatId::kMemoryBarrier);
     RHI::Get().GetCommandExecutor()->RHIMemoryBarrier(&cmd, this);

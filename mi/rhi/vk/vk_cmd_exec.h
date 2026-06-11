@@ -52,6 +52,7 @@ public:
     void RHICreateSignatureParameterTable(RHICommandQueueBase * cmd, RHICommandCreateSignatureParameterTable * create_table) override ;
     void RHIBindSignatureParameterTable(RHICommandQueueBase * cmd, RHICommandBindSignatureParameterTable * bind_table) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
+    void RHIPushConstants(RHICommandQueueBase * cmd, RHICommandPushConstants * push_constants) override ;
     void RHIMemoryBarrier (RHICommandQueueBase * buffer, RHICommandMemoryBarrier * cmd) override ;
     void RHITextureBarrier(RHICommandQueueBase * cmd, RHICommandTextureBarrier * barrier) override ;
     void RHIBufferBarriers(RHICommandQueueBase * cmd, RHICommandBufferBarrier * barrier) override ;

@@ -61,6 +61,7 @@ enum class RHICmdStatId : uint16_t {
     kCreateSignatureParameterTable,
     kBindSignatureParameterTable,
     kBindVertexBuffer,
+    kPushConstants,
 
     kMemoryBarrier,
     kTextureBarrier,

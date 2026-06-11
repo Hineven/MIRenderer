@@ -93,6 +93,12 @@ namespace details {
                     acceleration_structures.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kSampler) {
                     samplers.emplace_back(&e, cpp_offset, 0);
+                } else if (e.type == RHIParamType::kPushConstant) {
+                    // At most one push constant per struct. Only its SIZE matters (for root signature
+                    // sizing and reflection validation); the VALUE is supplied per-dispatch.
+                    mi_assert(!info->push_constant_.info,
+                        "Only one push constant per shader parameter struct is allowed");
+                    info->push_constant_ = {&e, cpp_offset, e.size};
                 } else {
                     assert(false && "Unimplemented");
                 }

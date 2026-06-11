@@ -47,8 +47,8 @@ public:
     FORCEINLINE const std::vector<SRVDesc> & GetSRVDesc() const { return srvs_; }
     FORCEINLINE const std::vector<SamplerDesc> & GetSamplerDesc() const { return samplers_; }
     FORCEINLINE const std::vector<AccelerationStructureDesc> & GetAccelerationStructureDesc() const { return acceleration_structures_; }
-    FORCEINLINE const CommandConstantDesc & GetCommandConstantDesc() const { return command_constant_[0]; }
-    FORCEINLINE bool  HasCommandConstant() const { return !command_constant_.empty(); }
+    FORCEINLINE const PushConstantDesc & GetPushConstantDesc() const { return push_constant_[0]; }
+    FORCEINLINE bool  HasPushConstant() const { return !push_constant_.empty(); }
     FORCEINLINE const std::vector<ShaderVertexInputDesc> & GetVertexInputDesc() const { return vertex_inputs_; }
     FORCEINLINE const std::vector<ShaderFragmentOutputDesc> & GetFragmentOutputDesc() const { return fragment_outputs_; }
 
@@ -91,7 +91,7 @@ protected:
     std::vector<SamplerDesc> samplers_;
     std::vector<AccelerationStructureDesc> acceleration_structures_;
     // The vector should be of length 1.
-    std::vector<CommandConstantDesc> command_constant_;
+    std::vector<PushConstantDesc> push_constant_;
 
     struct BindlessArrayDescs {
         StorageBufferDesc storage_buffer;
