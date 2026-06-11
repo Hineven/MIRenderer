@@ -866,7 +866,6 @@ RHIShaderRef VulkanRHI::CreateShader(RHIShaderFrequencyFlagBits frequency, std::
     auto shader = new VulkanShader(frequency, entry_name, ir_type, ir);
     shader->Compile();
     if(shader->IsValid()) return TRef<RHIShader>(shader);
-    shader->~VulkanShader();
     delete shader;
     return nullptr;
 }
@@ -876,7 +875,6 @@ RHIGraphicsPipelineRef VulkanRHI::CreateGraphicsPipeline(const RHIGraphicsPipeli
     pipeline->SetName(name);
     pipeline->Compile(desc, root);
     if(pipeline->IsValid()) return TRef<RHIGraphicsPipeline>(pipeline);
-    pipeline->~VulkanGraphicsPipeline();
     delete pipeline;
     return nullptr;
 }
@@ -886,7 +884,6 @@ RHIComputePipelineRef VulkanRHI::CreateComputePipeline(RHIShader *shader, const 
     pipeline->SetName(name);
     pipeline->Compile(shader, root);
     if(pipeline->IsValid()) return TRef<RHIComputePipeline>(pipeline);
-    pipeline->~VulkanComputePipeline();
     delete pipeline;
     return nullptr;
 }
@@ -896,7 +893,6 @@ RHIRayTracingPipelineRef VulkanRHI::CreateRayTracingPipeline(const RHIRayTracing
     pipeline->SetName(name);
     pipeline->Compile(desc, root);
     if(pipeline->IsValid()) return TRef<RHIRayTracingPipeline>(pipeline);
-    pipeline->~VulkanRayTracingPipeline();
     delete pipeline;
     return nullptr;
 }
