@@ -46,8 +46,7 @@ void *VulkanBuffer::Map() {
         auto result = GetVulkanRHI()->GetVmaAllocator().mapMemory(allocation_, &mapped_ptr_);
         if(result != vk::Result::eSuccess) {
             mi_assert(false, "Failed to map buffer memory!");
-        }
-        is_mapped_ = true;
+        } else is_mapped_ = true;
     }
     return mapped_ptr_;
 }
