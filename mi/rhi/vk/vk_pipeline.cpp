@@ -549,7 +549,7 @@ uint32_t VulkanRayTracingPipeline::GetCallableSBTStride() const {
 
 void VulkanRayTracingPipeline::SetName(const std::string& name) {
     RHIPipeline::SetName(name);
-#ifdef MI_DEBUG
+#ifdef MI_ENABLE_RHI_OBJECT_NAMING
     if (vk_pipeline_) {
         GetVulkanRHI()->GetDevice().setDebugUtilsObjectNameEXT({
             vk::ObjectType::ePipeline,
