@@ -41,7 +41,7 @@ public:
     virtual void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandSetCullMode * set_cull_mode) = 0;
     virtual void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandUpdateDrawState * update_draw_state) = 0;
     virtual void RHIBindComputePipeline (RHICommandQueueBase * buffer, RHICommandBindComputePipeline * cmd) = 0;
-    virtual void RHICreateSignatureParameterTable (RHICommandQueueBase * buffer, RHICommandCreateSignatureParameterTable * cmd) = 0;
+    virtual void RHICreateSignatureParameterTables (RHICommandQueueBase * buffer, RHICommandCreateSignatureParameterTables * cmd) = 0;
     virtual void RHIBindSignatureParameterTable (RHICommandQueueBase * buffer, RHICommandBindSignatureParameterTable * cmd) = 0;
     virtual void RHIBindVertexBuffer (RHICommandQueueBase * buffer, RHICommandBindVertexBuffer * cmd) = 0;
     virtual void RHIPushConstants (RHICommandQueueBase * buffer, RHICommandPushConstants * cmd) = 0;

@@ -529,18 +529,27 @@ public:
     RHIPipelineRootSignature * root_signature_;
 };
 
-class RHICommandCreateSignatureParameterTable : public TRHICommand<RHICommandCreateSignatureParameterTable> {
+// Create-info for one signature parameter table. The descriptor arrays inside `desc` point into
+// frame-local storage allocated by the command buffer; this struct is trivially copyable.
+struct RHISignatureParameterTableCreateInfo {
+    RHIPipelineRootSignature * root_signature;
+    RHIBindPipelineParametersDesc desc;
+};
+
+// Batch-create N signature parameter tables whose ids are contiguous: base, base+1, ..., base+N-1.
+// Mirrors the barrier batch command idiom (RHICommandBufferBarrier): count + raw pointer to a
+// frame-local array of create-infos. On the Vulkan backend the per-table descriptor set allocations
+// and descriptor writes are amortized into a single vkAllocateDescriptorSets + vkUpdateDescriptorSets.
+class RHICommandCreateSignatureParameterTables : public TRHICommand<RHICommandCreateSignatureParameterTables> {
 public:
-    RHICommandCreateSignatureParameterTable(
-        uint32_t table_id,
-        RHIPipelineRootSignature * root_signature,
-        RHIBindPipelineParametersDesc desc)
-        : table_id_(table_id), root_signature_(root_signature), desc_(desc) {}
+    RHICommandCreateSignatureParameterTables(
+        uint32_t base_table_id, uint32_t count, RHISignatureParameterTableCreateInfo * tables)
+        : base_table_id_(base_table_id), count_(count), tables_(tables) {}
     void Execute(RHICommandQueueBase & cmd) override;
 
-    uint32_t table_id_;
-    RHIPipelineRootSignature * root_signature_;
-    RHIBindPipelineParametersDesc desc_;
+    uint32_t base_table_id_;
+    uint32_t count_;
+    RHISignatureParameterTableCreateInfo * tables_;
 };
 
 class RHICommandBindSignatureParameterTable : public TRHICommand<RHICommandBindSignatureParameterTable> {
@@ -932,11 +941,22 @@ public:
     FORCEINLINE void DispatchIndirect (RHIBuffer * dispatch_command_buffer, uint32_t offset) {
         AddCommand(AllocateCommand<RHICommandDispatchIndirect>(dispatch_command_buffer, offset));
     }
+    // Create a single signature parameter table. This is a batch-of-1 shortcut around the batch
+    // command below (mirrors BufferBarrier vs BufferBarriers). Signature unchanged for callers.
     FORCEINLINE void CreateSignatureParameterTable(
         uint32_t table_id,
         RHIPipelineRootSignature * root_signature,
         RHIBindPipelineParametersDesc desc) {
-        AddCommand(AllocateCommand<RHICommandCreateSignatureParameterTable>(table_id, root_signature, desc));
+        auto * entry = Allocate<RHISignatureParameterTableCreateInfo[]>(1);
+        entry[0] = { root_signature, desc };
+        AddCommand(AllocateCommand<RHICommandCreateSignatureParameterTables>(table_id, 1, entry));
+    }
+    // Batch-create `count` signature parameter tables with contiguous ids
+    // [base_table_id, base_table_id + count). `tables` points to frame-local storage the caller
+    // allocated via the command buffer and must remain valid until the command executes.
+    FORCEINLINE void CreateSignatureParameterTables(
+        uint32_t base_table_id, uint32_t count, RHISignatureParameterTableCreateInfo * tables) {
+        AddCommand(AllocateCommand<RHICommandCreateSignatureParameterTables>(base_table_id, count, tables));
     }
     FORCEINLINE void BindSignatureParameterTable(uint32_t table_id, RHIBindPointType point) {
         AddCommand(AllocateCommand<RHICommandBindSignatureParameterTable>(table_id, point));

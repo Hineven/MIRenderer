@@ -186,7 +186,7 @@ struct RendererView {
 
     // Persistent data
     RendererViewPersistentData * persistent_data_ {};
-    void CreateSharedResources (RenderGraphBuilder & builder);
+    void CreateSharedResources (RenderGraphBuilder & builder, bool should_render_volume_lighting = true);
     void MakeSurePersistentDataExists (RenderGraphBuilder & builder);
 
     // Current frame jitter (NDC space per-axis)

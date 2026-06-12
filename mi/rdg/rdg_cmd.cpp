@@ -173,6 +173,12 @@ uint32_t RDGCommandHelper::AllocateParameterTableId() {
     return ret;
 }
 
+uint32_t RDGCommandHelper::AllocateParameterTableIds(uint32_t count) {
+    uint32_t base = tl_next_table_id;
+    tl_next_table_id += count;
+    return base;
+}
+
 void RDGCommandHelper::Dispatch(RHICommandQueueGraphics & queue, RDGShader * shader,
     uint32_t table_id, uint32_t x, uint32_t y, uint32_t z,
     std::span<std::byte> push_constants) {

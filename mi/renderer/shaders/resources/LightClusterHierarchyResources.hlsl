@@ -271,9 +271,27 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
             0.5f * LerpingFactor
         );
     } else {
-        // Select larger coordinates if the normal is facing towards the positive direction, otherwise select smaller coordinates.
-        float3 SelectedVertex = select(Normal > 0, L.AABBMax, L.AABBMin);
-        float MaxK = saturate(dot(Normal, normalize(SelectedVertex - Position)));
+        // Use the closest point on the cluster AABB for the receiver cosine check.
+        // This is more robust than the far-corner (SelectedVertex) approach, which can place
+        // the reference point behind the surface when the shading point is near or just outside
+        // the AABB boundary (common for large clusters like light spheres close to geometry).
+        float3 ToClosest = ClosestPoint - Position;
+        float ClosestDist = length(ToClosest);
+        float MaxK;
+        if (ClosestDist > 1e-6f) {
+            MaxK = saturate(dot(Normal, ToClosest / ClosestDist));
+        } else {
+            // Position is inside or on the AABB surface — every direction sees part of the cluster.
+            MaxK = 1.0f;
+        }
+
+        // Near-field relaxation: when the surface is close to the cluster extent, the AABB proxy
+        // becomes less directional. Relax the receiver cosine toward uniform, analogous to the
+        // CosineBias in the triangle version and the CloseRangeWeight used for LightFacingCosineFactor.
+        float ClusterNearFieldRange = max(max(WorldExtent.x, max(WorldExtent.y, WorldExtent.z)), 1e-4f);
+        float CloseRangeWeight = saturate(1.f - ClosestDist / ClusterNearFieldRange);
+        MaxK = lerp(MaxK, 1.0f, CloseRangeWeight);
+
         // the sampled surface is not facing the light. Cull it out.
         if (MaxK <= 0.0f) {
             return 0.0f;
@@ -282,8 +300,6 @@ float EstimateLightContribution(MeshLightInstanceClusterHeader L, float3 Positio
 
         // Close to the cluster, the weighted-normal proxy is too directional for large curved emitters.
         // Relax it towards an isotropic emitter similarly to grid injection.
-        float ClusterNearFieldRange = max(max(WorldExtent.x, max(WorldExtent.y, WorldExtent.z)), 1e-4f);
-        float CloseRangeWeight = saturate(1.f - sqrt(ClosestDistanceSq) / ClusterNearFieldRange);
         LerpingFactor = 1.f - (1.f - LerpingFactor) * (1.f - CloseRangeWeight);
     }
 

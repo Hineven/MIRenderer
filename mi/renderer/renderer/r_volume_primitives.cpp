@@ -92,22 +92,24 @@ bool VolumePrimitivesViewPersistentData::MakeSureExists([[maybe_unused]] Rendere
 }
 
 void VolumePrimitivesViewPersistentData::FinalUpdate(RendererView *view) {
-    prev_volume_representative_depth_and_variation_ =
-        view->volume_primitives_->volume_representative_depth_and_variation_;
-    prev_volume_representative_depth_and_variation_->SetName("PrevVolumeRepresentativeDepthAndVariation");
-    prev_volume_representative_depth_and_variation_->SetExport();
-
-    prev_volume_min_max_ = view->volume_primitives_->G_volume_min_max_;
-    prev_volume_min_max_->SetName("PrevVolumeMinMax");
-    prev_volume_min_max_->SetExport();
-
-    prev_volume_density_ = view->volume_primitives_->G_volume_density_;
-    prev_volume_density_->SetName("PrevVolumeDensity");
-    prev_volume_density_->SetExport();
-
-    prev_volume_color_ = view->volume_primitives_->G_volume_color_;
-    prev_volume_color_->SetName("PrevVolumeColor");
-    prev_volume_color_->SetExport();
+    // volume_primitives_ may be null when the scene has no volume data.
+    auto vol = view->volume_primitives_;
+    if (vol) {
+        prev_volume_representative_depth_and_variation_ = vol->volume_representative_depth_and_variation_;
+        if (prev_volume_representative_depth_and_variation_) {
+            prev_volume_representative_depth_and_variation_->SetName("PrevVolumeRepresentativeDepthAndVariation");
+            prev_volume_representative_depth_and_variation_->SetExport();
+        }
+        prev_volume_min_max_ = vol->G_volume_min_max_;
+        prev_volume_min_max_->SetName("PrevVolumeMinMax");
+        prev_volume_min_max_->SetExport();
+        prev_volume_density_ = vol->G_volume_density_;
+        prev_volume_density_->SetName("PrevVolumeDensity");
+        prev_volume_density_->SetExport();
+        prev_volume_color_ = vol->G_volume_color_;
+        prev_volume_color_->SetName("PrevVolumeColor");
+        prev_volume_color_->SetExport();
+    }
 }
 
 

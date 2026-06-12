@@ -177,9 +177,9 @@ void RHICommandBindComputePipeline::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBindComputePipeline(&cmd, this);
 }
 
-void RHICommandCreateSignatureParameterTable::Execute(RHICommandQueueBase &cmd) {
+void RHICommandCreateSignatureParameterTables::Execute(RHICommandQueueBase &cmd) {
     MI_RHI_CMD_STAT_INC(RHICmdStatId::kCreateSignatureParameterTable);
-    RHI::Get().GetCommandExecutor()->RHICreateSignatureParameterTable(&cmd, this);
+    RHI::Get().GetCommandExecutor()->RHICreateSignatureParameterTables(&cmd, this);
 }
 
 void RHICommandBindSignatureParameterTable::Execute(RHICommandQueueBase &cmd) {

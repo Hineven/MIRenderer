@@ -20,6 +20,7 @@ class VulkanBuffer;
 class VulkanGraphicsPipeline;
 class VulkanComputePipeline;
 class VulkanRootSignature;
+struct VulkanPipelineBindingRemappings;
 
 // Command executor translating recoreded commands into Vulkan API calls
 // Public functions are only invoked by the RHI thread
@@ -49,7 +50,7 @@ public:
     void RHIUpdateDrawState(RHICommandQueueBase *cmd, RHICommandSetCullMode *set_cull_mode) override;
     void RHIUpdateDrawState(RHICommandQueueBase * cmd, RHICommandUpdateDrawState * update_draw_state) override ;
     void RHIBindComputePipeline(RHICommandQueueBase * cmd, RHICommandBindComputePipeline * bind_compute_pipeline) override ;
-    void RHICreateSignatureParameterTable(RHICommandQueueBase * cmd, RHICommandCreateSignatureParameterTable * create_table) override ;
+    void RHICreateSignatureParameterTables(RHICommandQueueBase * cmd, RHICommandCreateSignatureParameterTables * create_tables) override ;
     void RHIBindSignatureParameterTable(RHICommandQueueBase * cmd, RHICommandBindSignatureParameterTable * bind_table) override ;
     void RHIBindVertexBuffer(RHICommandQueueBase * cmd, RHICommandBindVertexBuffer * bind_vertex_buffer) override ;
     void RHIPushConstants(RHICommandQueueBase * cmd, RHICommandPushConstants * push_constants) override ;
@@ -206,6 +207,16 @@ protected:
             return states[state_index];
         }
     } state_chains_[(uint32_t)RHICommandQueueType::kMax];
+
+    // Build vk::WriteDescriptorSet entries for one signature parameter table into `writes`
+    // starting at `write_index`. Buffer/image infos are allocated from `state`. Returns the new
+    // write index. Shared by the batch creation path (and would be shared by any future single path).
+    size_t BuildDescriptorWritesForTable(
+        CommandQueueState & state,
+        vk::DescriptorSet dst_set,
+        const VulkanPipelineBindingRemappings & remappings,
+        const RHIBindPipelineParametersDesc & desc,
+        vk::WriteDescriptorSet * writes, size_t write_index);
 };
 
 MI_NAMESPACE_END

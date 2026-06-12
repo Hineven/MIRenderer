@@ -332,7 +332,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         auto shader = lib.GetShader<ScatterVolumeSamplesToPreviousFrameShader>();
         auto params = builder.Allocate<ScatterVolumeSamplesToPreviousFrameShader::Params>();
         params->View = view->view_common_params_;
-        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
+        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_ ? view->volume_primitives_->volume_representative_depth_and_variation_.Raw() : nullptr;
         params->PreviousVolumeMinMaxTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeDensityTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
         params->RWPreviousFrameShareCountTexture = denoiser_data->previous_frame_share_count.Raw();
@@ -356,7 +356,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->UB = UB;
         params->G_Normal = view->g_buffer_->G_normal_.Raw();
         params->G_Depth = view->g_buffer_->G_depth_.Raw();
-        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
+        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_ ? view->volume_primitives_->volume_representative_depth_and_variation_.Raw() : nullptr;
         params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
         params->PreviousVolumeMinMaxTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeDensityTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
@@ -414,7 +414,7 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             params->UB = UB;
             params->G_Normal = view->g_buffer_->G_normal_.Raw();
             params->G_Depth = view->g_buffer_->G_depth_.Raw();
-            params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_->volume_representative_depth_and_variation_.Raw();
+            params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_ ? view->volume_primitives_->volume_representative_depth_and_variation_.Raw() : nullptr;
             params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
             params->HistoryLengthTexture = denoiser_data->history_length.Raw();
             params->VolumeHistoryLengthTexture = denoiser_data->volume_history_length.Raw();

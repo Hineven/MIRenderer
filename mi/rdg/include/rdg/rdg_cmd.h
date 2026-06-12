@@ -26,6 +26,9 @@ public:
 
     // Allocate a parameter table id (unique).
     static uint32_t AllocateParameterTableId();
+    // Reserve a contiguous range of `count` parameter table ids and return the base.
+    // The allocated ids are [base, base+count-1]. Used for batch table creation.
+    static uint32_t AllocateParameterTableIds(uint32_t count);
 
     // Build a pipeline parameter descriptor from a shared parameter table.
     static std::optional<RHIBindPipelineParametersDesc> BuildParameterDesc(

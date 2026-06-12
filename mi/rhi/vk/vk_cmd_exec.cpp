@@ -444,32 +444,16 @@ void VulkanCommandExecutor::RHIBindComputePipeline(
     }
 }
 
-void VulkanCommandExecutor::RHICreateSignatureParameterTable(
-        RHICommandQueueBase *cmd, RHICommandCreateSignatureParameterTable *create_table) {
-    CHECK_RHI_THREAD();
-    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
-    auto & desc = create_table->desc_;
-    auto * root_sig = static_cast<VulkanRootSignature*>(create_table->root_signature_);
-    if (!root_sig) return;
-
-    vk::DescriptorSetLayout set_layout = root_sig->GetDescriptorSetLayout();
-
-    auto descriptor_set = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
-        vk::DescriptorSetAllocateInfo()
-            .setDescriptorPool(state.descriptor_pool)
-            .setDescriptorSetCount(1)
-            .setSetLayouts(set_layout)
-    );
-    state.allocated_descriptor_sets.emplace_back(descriptor_set[0]);
-    mi_assert(!descriptor_set.empty(), "Failed to allocate descriptor set");
-
-    auto & remappings = root_sig->GetRemappings();
-
-    size_t write_count = desc.uniforms.size() + desc.storages.size() + desc.uavs.size()
-        + desc.srvs.size() + desc.samplers.size() + desc.acceleration_structures.size();
-    auto writes = state.Allocate<vk::WriteDescriptorSet[]>(write_count);
-    size_t write_index = 0;
-
+// Build vk::WriteDescriptorSet entries for one table into `writes` starting at `write_index`.
+// Descriptor buffer/image infos are allocated from `state`. Returns the new write index.
+// Shared by the batch creation path; dst_set / remappings are passed in so the same logic serves
+// every descriptor set in the batch.
+size_t VulkanCommandExecutor::BuildDescriptorWritesForTable(
+        CommandQueueState & state,
+        vk::DescriptorSet dst_set,
+        const VulkanPipelineBindingRemappings & remappings,
+        const RHIBindPipelineParametersDesc & desc,
+        vk::WriteDescriptorSet * writes, size_t write_index) {
     for(auto ubo : desc.uniforms) {
         auto& buffer_info = *state.Allocate<vk::DescriptorBufferInfo>();
         auto buffer = static_cast<VulkanBuffer*>(ubo.buffer.buffer);
@@ -480,7 +464,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kUniformBuffer, ubo.slot);
         if (UINT32_MAX != destination.binding) {
             writes[write_index++] = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set[0])
+                .setDstSet(dst_set)
                 .setDstBinding(destination.binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
@@ -498,7 +482,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kStorageBuffer, storage.slot);
         if (UINT32_MAX != destination.binding) {
             writes[write_index++] = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set[0])
+                .setDstSet(dst_set)
                 .setDstBinding(destination.binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
@@ -519,7 +503,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         if (UINT_MAX != destination.binding) {
             assert((!uav.texture || uav.layout != RHITextureLayoutType::kUndefined) && "UAV layout must be explicitly specified.");
             writes[write_index++] = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set[0])
+                .setDstSet(dst_set)
                 .setDstBinding(destination.binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
@@ -538,7 +522,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         if (UINT32_MAX != destination.binding) {
             assert((!srv.texture || srv.layout != RHITextureLayoutType::kUndefined) && "SRV layout must be explicitly specified.");
             writes[write_index++] = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set[0])
+                .setDstSet(dst_set)
                 .setDstBinding(destination.binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
@@ -553,7 +537,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kSampler, sampler.slot);
         if (UINT32_MAX != destination.binding) {
             writes[write_index++] = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set[0])
+                .setDstSet(dst_set)
                 .setDstBinding(destination.binding)
                 .setDstArrayElement(0)
                 .setDescriptorCount(1)
@@ -567,7 +551,7 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
         auto destination = remappings.GetDestination(RHIPipelineResourceType::kAccelerationStructure, acc.slot);
         if (UINT32_MAX != destination.binding) {
             auto write = vk::WriteDescriptorSet()
-                .setDstSet(descriptor_set[0])
+                .setDstSet(dst_set)
                 .setDstBinding(destination.binding)
                 .setDescriptorCount(1)
                 .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
@@ -579,14 +563,64 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTable(
             writes[write_index++] = write;
         }
     }
+    return write_index;
+}
 
-    if (write_index > 0) {
-        GetVulkanRHI()->GetDevice().updateDescriptorSets(write_index, writes, 0, nullptr);
+// Batch-create N signature parameter tables with contiguous ids [base, base+N-1].
+// All descriptor sets are allocated in a single vkAllocateDescriptorSets call, and all descriptor
+// writes are issued in a single vkUpdateDescriptorSets call — collapsing the previous 2N Vulkan
+// calls (one alloc + one update per table) down to 2 regardless of table count.
+void VulkanCommandExecutor::RHICreateSignatureParameterTables(
+        RHICommandQueueBase *cmd, RHICommandCreateSignatureParameterTables *create_tables) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current(false);
+    uint32_t n = create_tables->count_;
+    if (n == 0) return;
+    auto * tables = create_tables->tables_;
+
+    // (1) Gather every table's descriptor set layout, then allocate all N sets in one call.
+    //     vkAllocateDescriptorSets accepts a heterogeneous layout list, so different root
+    //     signatures are fine as long as the pool has capacity.
+    auto * layouts = state.Allocate<vk::DescriptorSetLayout[]>(n);
+    for (uint32_t i = 0; i < n; i++) {
+        auto * root_sig = static_cast<VulkanRootSignature*>(tables[i].root_signature);
+        layouts[i] = root_sig ? root_sig->GetDescriptorSetLayout() : nullptr;
+    }
+    auto descriptor_sets = GetVulkanRHI()->GetDevice().allocateDescriptorSets(
+        vk::DescriptorSetAllocateInfo()
+            .setDescriptorPool(state.descriptor_pool)
+            .setDescriptorSetCount(n)
+            .setSetLayouts(vk::ArrayProxyNoTemporaries<const vk::DescriptorSetLayout>(n, layouts))
+    );
+    for (auto ds : descriptor_sets) state.allocated_descriptor_sets.emplace_back(ds);
+
+    // (2) Upper-bound the total descriptor-write count and allocate one shared write array.
+    size_t total_writes = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        auto & d = tables[i].desc;
+        total_writes += d.uniforms.size() + d.storages.size() + d.uavs.size()
+            + d.srvs.size() + d.samplers.size() + d.acceleration_structures.size();
+    }
+    auto writes = state.Allocate<vk::WriteDescriptorSet[]>(total_writes);
+    size_t write_index = 0;
+
+    // (3) Fill writes for each table (each write targets its own descriptor set) and register
+    //     table_id -> descriptor set so BindSignatureParameterTable can look it up later.
+    for (uint32_t i = 0; i < n; i++) {
+        auto * root_sig = static_cast<VulkanRootSignature*>(tables[i].root_signature);
+        auto & remappings = root_sig->GetRemappings();
+        write_index = BuildDescriptorWritesForTable(
+            state, descriptor_sets[i], remappings, tables[i].desc, writes, write_index);
+        uint32_t table_id = create_tables->base_table_id_ + i;
+        mi_assert(state.slot_table_.find(table_id) == state.slot_table_.end(),
+            "CreateSignatureParameterTables: table_id already used this frame");
+        state.slot_table_[table_id] = descriptor_sets[i];
     }
 
-    mi_assert(state.slot_table_.find(create_table->table_id_) == state.slot_table_.end(),
-        "CreateSignatureParameterTable: table_id already used this frame");
-    state.slot_table_[create_table->table_id_] = descriptor_set[0];
+    // (4) One vkUpdateDescriptorSets for every table.
+    if (write_index > 0) {
+        GetVulkanRHI()->GetDevice().updateDescriptorSets((uint32_t)write_index, writes, 0, nullptr);
+    }
 }
 
 void VulkanCommandExecutor::RHIBindSignatureParameterTable(

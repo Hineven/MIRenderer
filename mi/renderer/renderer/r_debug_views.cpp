@@ -300,7 +300,9 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
     } else if (CVar_DebugViewMode.Get() == 2) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_world_cache_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 3) {
-        Helpers::CopyTexture(builder, view->volume_primitives_->volume_representative_depth_and_variation_.Raw(), view->debug_output_.Raw());
+        if (view->volume_primitives_) {
+            Helpers::CopyTexture(builder, view->volume_primitives_->volume_representative_depth_and_variation_.Raw(), view->debug_output_.Raw());
+        }
     } else if (CVar_DebugViewMode.Get() == 4) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_spatial_positions_output_.Raw(), view->debug_output_.Raw());
     }

@@ -180,6 +180,9 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     // Update scene AABB
     view->scene_->UpdateAABB();
 
+    // If the scene contains any VolumePrimitives / VolumeGrid, enable related rendering.
+    // FIXME: setting this to false can cause serious flickering in the final rendering
+    bool should_render_volume_lighting = true;
 
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
@@ -205,7 +208,12 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
                 normal_transform = glm::transpose(glm::inverse(glm::mat3(to_world)));
                 renderable_header = e->GetDeviceRenderableHeader();
                 renderable_hash = e->GetHash();
-                if (e->IsVisible()) visible_renderable_indices.push_back(e->GetIndex());
+                if (e->IsVisible()) {
+                    visible_renderable_indices.push_back(e->GetIndex());
+                    if (e->GetType() == RenderableType::kVolumeGridInstance || e->GetType() == RenderableType::kVolumePrimitivesInstance) {
+                        should_render_volume_lighting = true;
+                    }
+                }
             }
             renderable_transforms.push_back(to_world);
             renderable_inverse_transforms.push_back(to_local);
@@ -333,7 +341,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     Render_PrepareGaussianRadianceFields(view, builder);
 
     // Pre-allocate RDG resources that may be used among multiple lighting stages
-    view->CreateSharedResources(builder);
+    view->CreateSharedResources(builder, should_render_volume_lighting);
     // Pre-allocate shared view persistent data among multiple lighting stages
     view->MakeSurePersistentDataExists(builder);
 
@@ -455,7 +463,11 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     Render_DrawDeferredStaticMeshes(view, builder);
 
     // Volume primitives
-    Render_DrawVolumePrimitives(view, builder);
+    if (should_render_volume_lighting) {
+        Render_DrawVolumePrimitives(view, builder);
+    }
+    // When should_render_volume_lighting is false, volume_primitives_ is null.
+    // Downstream shaders read null binding as zero → "no volume".
     if (view->volume_primitives_) {
         exports->RegisterResource("volume_sample_color", view->volume_primitives_->volume_sample_color_.Raw());
         exports->RegisterResource("volume_sample_linear_depth", view->volume_primitives_->volume_sample_linear_depth_.Raw());
@@ -470,10 +482,12 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     Render_ComputeDiffuseDirectLighting(view, builder);
 
     // Volume direct (must run before denoiser prefilter which reads VolumeDirectLightingTexture)
-    Render_ComputeVolumeDirectLighting(view, builder);
+    if (should_render_volume_lighting)
+        Render_ComputeVolumeDirectLighting(view, builder);
 
     // Volume grid direct
-    Render_ComputeVolumeGridDirectLighting(view, builder);
+    if (should_render_volume_lighting)
+        Render_ComputeVolumeGridDirectLighting(view, builder);
 
     {
         RDGSectionGuard section(builder, "IndirectLighting");
@@ -483,12 +497,14 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
         // Indirect lighting
         Render_UpdateDiffuseIndirectLighting(view, builder);
-        Render_UpdateVolumeIndirectLighting(view, builder);
+        if (should_render_volume_lighting)
+            Render_UpdateVolumeIndirectLighting(view, builder);
 
         Render_UpdateHashGridCache(view, builder);
 
         Render_FinishDiffuseIndirectLighting(view, builder);
-        Render_FinishVolumeIndirectLighting(view, builder);
+        if (should_render_volume_lighting)
+            Render_FinishVolumeIndirectLighting(view, builder);
     }
 
     // Stage light structure history

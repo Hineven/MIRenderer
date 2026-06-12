@@ -246,6 +246,13 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         }
         param_tables.reserve(param_groups.size());
 
+        // Collect create-infos for all groups, then issue a single batched
+        // CreateSignatureParameterTables call (one vkAllocateDescriptorSets + one
+        // vkUpdateDescriptorSets for the whole frame) instead of one per group.
+        // param_tables is reserved above, so &table pointers stay stable across emplace_back.
+        std::vector<RHISignatureParameterTableCreateInfo> create_infos;
+        std::vector<RDGPassParameterTable*> created_tables;
+
         for (auto & [params_ptr, group_passes] : param_groups) {
             if (group_passes.empty()) continue;
             auto * representative_pass = group_passes[0];
@@ -298,12 +305,29 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
             // Build parameter desc using the merged layouts.
             auto desc = RDGCommandHelper::BuildParameterDesc(cmd, table, this);
             if (desc) {
-                table.table_id_ = RDGCommandHelper::AllocateParameterTableId();
-                cmd.CreateSignatureParameterTable(table.table_id_, table.root_signature_, *desc);
+                create_infos.push_back({ table.root_signature_, *desc });
+                created_tables.push_back(&table);
+                // table.table_id_ is filled in below, once the contiguous id range is reserved.
                 for (auto * pass : group_passes) {
                     pass->parameter_table_ = &table;
                 }
             }
+        }
+
+        if (!create_infos.empty()) {
+            // Reserve a contiguous id range so the batch command derives each id as base+i.
+            uint32_t base_id = RDGCommandHelper::AllocateParameterTableIds((uint32_t)create_infos.size());
+            for (size_t i = 0; i < created_tables.size(); i++) {
+                created_tables[i]->table_id_ = base_id + (uint32_t)i;
+            }
+            // Copy create-infos into frame-local storage. The descriptor spans inside each desc
+            // already point at frame memory allocated by BuildParameterDesc, so a shallow copy suffices
+            // and the data stays valid until the command executes on the RHI thread.
+            auto * storage = cmd.Allocate<RHISignatureParameterTableCreateInfo[]>(create_infos.size());
+            for (size_t i = 0; i < create_infos.size(); i++) {
+                storage[i] = create_infos[i];
+            }
+            cmd.CreateSignatureParameterTables(base_id, (uint32_t)create_infos.size(), storage);
         }
     }
 

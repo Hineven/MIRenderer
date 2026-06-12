@@ -91,9 +91,13 @@ void HashGridPersistentData::FinalUpdate(RendererView *view) {
     active_tile_list_buffer->SetExport();
 }
 
-void RendererView::CreateSharedResources(RenderGraphBuilder & builder) {
+void RendererView::CreateSharedResources(RenderGraphBuilder & builder, bool should_render_volume_lighting) {
     g_buffer_.Recreate()->Allocate(builder, this);
-    volume_primitives_.Recreate()->Allocate(builder, this);
+    if (should_render_volume_lighting) {
+        volume_primitives_.Recreate()->Allocate(builder, this);
+    } else {
+        volume_primitives_ = nullptr;
+    }
     world_cache_.Recreate()->Allocate(builder);
     light_structure_.Recreate()->Allocate(builder);
     diffuse_direct_lighting_.Recreate()->Allocate(builder, this);
