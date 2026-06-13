@@ -11,7 +11,7 @@
 MI_NAMESPACE_BEGIN
 
 namespace C {
-    constexpr uint32_t kMaxTaskGraphTaskCount   = 1024;
+    constexpr uint32_t kMaxTaskGraphTaskCount   = 16384;
     constexpr uint32_t kMaxTaskGraphThreadCount = 64;
     constexpr uint32_t kNumDefaultBindlessImmutableSamplers = 4;
     // We don't need plentiful bindless acceleration structures

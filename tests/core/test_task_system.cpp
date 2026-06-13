@@ -32,6 +32,10 @@ protected:
     }
 };
 
+// ============================================================================
+// Existing tests (updated for new TaskPriorities namespace)
+// ============================================================================
+
 TEST_F(TaskSystemTest, BasicTaskExecution) {
     std::atomic<int> counter{0};
 
@@ -55,17 +59,17 @@ TEST_F(TaskSystemTest, TaskPriority) {
     auto low_task = TaskGraph::Get().CreateSimpleTask([&]() {
         std::lock_guard<std::mutex> lock(order_mutex);
         execution_order.push_back(0); // Low priority
-    }, TaskPriority::kLow);
+    }, TaskPriorities::kLow);
 
     auto high_task = TaskGraph::Get().CreateSimpleTask([&]() {
         std::lock_guard<std::mutex> lock(order_mutex);
         execution_order.push_back(2); // High priority
-    }, TaskPriority::kHigh);
+    }, TaskPriorities::kHigh);
 
     auto normal_task = TaskGraph::Get().CreateSimpleTask([&]() {
         std::lock_guard<std::mutex> lock(order_mutex);
         execution_order.push_back(1); // Normal priority
-    }, TaskPriority::kNormal);
+    }, TaskPriorities::kNormal);
 
     // Wait for all tasks
     TaskGraph::Get().WaitForTasks({low_task, high_task, normal_task});
@@ -203,13 +207,13 @@ TEST_F(TaskSystemTest, TaskCreationSyntax) {
         .CreateTask([&executed]() {
             executed.store(true);
         })
-        .SetPriority(TaskPriority::kHigh)
+        .SetPriority(TaskPriorities::kHigh)
         .Done();
 
     TaskGraph::Get().WaitForTask(task);
 
     EXPECT_TRUE(executed.load());
-    EXPECT_EQ(task->GetPriority(), TaskPriority::kHigh);
+    EXPECT_EQ(task->GetPriority(), TaskPriorities::kHigh);
 }
 
 TEST_F(TaskSystemTest, TaskGraphMetrics) {
@@ -270,6 +274,379 @@ TEST_F(TaskSystemTest, ComplexDependencyGraph) {
     // B and C can execute in any order after A
     EXPECT_TRUE((execution_order[1] == 2 && execution_order[2] == 3) ||
                 (execution_order[1] == 3 && execution_order[2] == 2));
+}
+
+// ============================================================================
+// New tests: Cancellation
+// ============================================================================
+
+TEST_F(TaskSystemTest, CancelPendingTask) {
+    // Use a barrier to prevent the task from being picked up immediately
+    std::atomic<bool> gate{false};
+
+    // Create a blocking task to occupy all worker threads
+    std::vector<TaskRef> blockers;
+    for (int i = 0; i < 4; i++) {
+        blockers.push_back(TaskGraph::Get().CreateSimpleTask([&gate]() {
+            while (!gate.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }, TaskPriorities::kCritical));
+    }
+
+    // Create a task that should be cancelled before execution
+    std::atomic<bool> executed{false};
+    auto task = TaskGraph::Get().CreateSimpleTask([&executed]() {
+        executed.store(true);
+    }, TaskPriorities::kLow);
+
+    // Cancel the task while it's pending
+    task->Cancel();
+
+    // Release the blockers
+    gate.store(true);
+    TaskGraph::Get().WaitForTasks(blockers);
+
+    // Wait for the cancelled task (should return immediately)
+    TaskGraph::Get().WaitForTask(task);
+
+    // The task should NOT have executed
+    EXPECT_FALSE(executed.load());
+    EXPECT_EQ(task->GetState(), TaskStateType::kCancelled);
+    EXPECT_TRUE(task->IsCancelled());
+}
+
+TEST_F(TaskSystemTest, CancelRunningTaskNoEffect) {
+    std::atomic<bool> started{false};
+    std::atomic<bool> finished{false};
+
+    auto task = TaskGraph::Get().CreateSimpleTask([&]() {
+        started.store(true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        finished.store(true);
+    });
+
+    // Wait for the task to start
+    while (!started.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // Try to cancel while running — should have no effect
+    task->Cancel();
+
+    TaskGraph::Get().WaitForTask(task);
+
+    // Task should complete normally
+    EXPECT_TRUE(finished.load());
+    EXPECT_EQ(task->GetState(), TaskStateType::kFinished);
+    EXPECT_FALSE(task->IsCancelled());
+}
+
+TEST_F(TaskSystemTest, CancelBeforeFire) {
+    std::atomic<bool> executed{false};
+
+    // Create task without firing
+    auto init = TaskGraph::Get().CreateTask([&executed]() {
+        executed.store(true);
+    });
+
+    // Get the task ref before Done
+    TaskRef task = init.Done(false); // Don't fire yet
+
+    // Cancel before firing
+    task->Cancel();
+
+    // Now fire it
+    task->Fire();
+
+    // Give workers time to potentially pick it up
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    EXPECT_FALSE(executed.load());
+    EXPECT_EQ(task->GetState(), TaskStateType::kCancelled);
+}
+
+TEST_F(TaskSystemTest, CascadeCancelSuccessors) {
+    std::atomic<bool> parent_executed{false};
+    std::atomic<bool> child_executed{false};
+    std::atomic<bool> grandchild_executed{false};
+
+    // Block workers to keep tasks pending
+    std::atomic<bool> gate{false};
+    std::vector<TaskRef> blockers;
+    for (int i = 0; i < 4; i++) {
+        blockers.push_back(TaskGraph::Get().CreateSimpleTask([&gate]() {
+            while (!gate.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }, TaskPriorities::kCritical));
+    }
+
+    // Create chain: parent → child → grandchild
+    auto parent = TaskGraph::Get().CreateSimpleTask([&]() {
+        parent_executed.store(true);
+    }, TaskPriorities::kLow);
+
+    auto child = TaskGraph::Get().CreateTaskWithDependency([&]() {
+        child_executed.store(true);
+    }, parent, TaskPriorities::kLow);
+
+    auto grandchild = TaskGraph::Get().CreateTaskWithDependency([&]() {
+        grandchild_executed.store(true);
+    }, child, TaskPriorities::kLow);
+
+    // Cancel the parent — should cascade
+    parent->Cancel();
+
+    // Release blockers
+    gate.store(true);
+    TaskGraph::Get().WaitForTasks(blockers);
+
+    // Wait for all
+    TaskGraph::Get().WaitForTasks({parent, child, grandchild});
+
+    EXPECT_FALSE(parent_executed.load());
+    EXPECT_FALSE(child_executed.load());
+    EXPECT_FALSE(grandchild_executed.load());
+
+    EXPECT_EQ(parent->GetState(), TaskStateType::kCancelled);
+    EXPECT_EQ(child->GetState(), TaskStateType::kCancelled);
+    EXPECT_EQ(grandchild->GetState(), TaskStateType::kCancelled);
+}
+
+// ============================================================================
+// New tests: Continuous Priority
+// ============================================================================
+
+TEST_F(TaskSystemTest, ContinuousPriorityOrdering) {
+    // Block all workers first
+    std::atomic<bool> gate{false};
+    std::vector<TaskRef> blockers;
+    for (int i = 0; i < 4; i++) {
+        blockers.push_back(TaskGraph::Get().CreateSimpleTask([&gate]() {
+            while (!gate.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }, TaskPriorities::kCritical));
+    }
+
+    // Create tasks with fine-grained priorities (100, 200, 300, ..., 1000)
+    const int num_tasks = 10;
+    std::vector<int> execution_order;
+    std::mutex order_mutex;
+    std::vector<TaskRef> tasks;
+
+    for (int i = 0; i < num_tasks; i++) {
+        TaskPriority priority = (i + 1) * 100; // 100, 200, ..., 1000
+        tasks.push_back(TaskGraph::Get().CreateSimpleTask([&, i, priority]() {
+            std::lock_guard<std::mutex> lock(order_mutex);
+            execution_order.push_back(i);
+        }, priority));
+    }
+
+    // Release blockers
+    gate.store(true);
+    TaskGraph::Get().WaitForTasks(blockers);
+
+    // Wait for all tasks
+    TaskGraph::Get().WaitForTasks(tasks);
+
+    // Tasks should execute in reverse order (highest priority first)
+    ASSERT_EQ(execution_order.size(), num_tasks);
+    for (int i = 0; i < num_tasks; i++) {
+        EXPECT_EQ(execution_order[i], num_tasks - 1 - i)
+            << "Task at position " << i << " should be task " << (num_tasks - 1 - i);
+    }
+}
+
+TEST_F(TaskSystemTest, UpdatePriorityChangesScheduling) {
+    // Block all workers
+    std::atomic<bool> gate{false};
+    std::vector<TaskRef> blockers;
+    for (int i = 0; i < 4; i++) {
+        blockers.push_back(TaskGraph::Get().CreateSimpleTask([&gate]() {
+            while (!gate.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }, TaskPriorities::kCritical));
+    }
+
+    std::vector<int> execution_order;
+    std::mutex order_mutex;
+
+    // Create two tasks: A with high priority, B with low priority
+    auto task_a = TaskGraph::Get().CreateSimpleTask([&]() {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(1); // A
+    }, TaskPriorities::kHigh);
+
+    auto task_b = TaskGraph::Get().CreateSimpleTask([&]() {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(2); // B
+    }, TaskPriorities::kLow);
+
+    // Now update B to have higher priority than A
+    task_b->UpdatePriority(TaskPriorities::kCritical);
+
+    // Release blockers
+    gate.store(true);
+    TaskGraph::Get().WaitForTasks(blockers);
+
+    TaskGraph::Get().WaitForTasks({task_a, task_b});
+
+    // B should execute first (it was promoted to critical)
+    ASSERT_EQ(execution_order.size(), 2);
+    EXPECT_EQ(execution_order[0], 2); // B first
+    EXPECT_EQ(execution_order[1], 1); // A second
+}
+
+// ============================================================================
+// New tests: CancellationToken
+// ============================================================================
+
+TEST_F(TaskSystemTest, CancellationTokenCooperative) {
+    auto token = std::make_shared<CancellationToken>();
+    std::atomic<int> iterations{0};
+
+    auto task = TaskGraph::Get().CreateSimpleTask([token, &iterations]() {
+        while (!token->IsCancelled()) {
+            iterations.fetch_add(1);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    });
+
+    // Let it run for a bit
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+    // Cancel via token
+    token->Cancel();
+
+    TaskGraph::Get().WaitForTask(task);
+
+    // Should have run some iterations but stopped
+    EXPECT_GT(iterations.load(), 0);
+    EXPECT_LT(iterations.load(), 20); // Should not have run forever
+    EXPECT_EQ(task->GetState(), TaskStateType::kFinished);
+}
+
+// ============================================================================
+// New tests: TaskGroup
+// ============================================================================
+
+TEST_F(TaskSystemTest, TaskGroupCancelAll) {
+    std::atomic<bool> gate{false};
+    // Block workers
+    std::vector<TaskRef> blockers;
+    for (int i = 0; i < 4; i++) {
+        blockers.push_back(TaskGraph::Get().CreateSimpleTask([&gate]() {
+            while (!gate.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }, TaskPriorities::kCritical));
+    }
+
+    auto group = Create<TaskGroup>();
+    auto token = group->GetToken();
+
+    std::atomic<int> executed_count{0};
+
+    // Add multiple tasks to the group
+    for (int i = 0; i < 5; i++) {
+        auto task = TaskGraph::Get().CreateSimpleTask([&, token]() {
+            if (token->IsCancelled()) return;
+            executed_count.fetch_add(1);
+        }, TaskPriorities::kLow);
+        group->Add(task);
+    }
+
+    // Cancel all before releasing blockers
+    group->CancelAll();
+
+    // Release blockers
+    gate.store(true);
+    TaskGraph::Get().WaitForTasks(blockers);
+
+    // Wait for group tasks
+    group->WaitAll();
+
+    // Token should be cancelled
+    EXPECT_TRUE(token->IsCancelled());
+
+    // Tasks should be cancelled (state depends on timing)
+    EXPECT_EQ(group->GetTaskCount(), (size_t)5);
+}
+
+TEST_F(TaskSystemTest, TaskGroupWaitAll) {
+    auto group = Create<TaskGroup>();
+    std::atomic<int> counter{0};
+
+    for (int i = 0; i < 10; i++) {
+        auto task = TaskGraph::Get().CreateSimpleTask([&counter]() {
+            counter.fetch_add(1);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        });
+        group->Add(task);
+    }
+
+    group->WaitAll();
+
+    EXPECT_EQ(counter.load(), 10);
+}
+
+// ============================================================================
+// New tests: BatchEnqueue
+// ============================================================================
+
+TEST_F(TaskSystemTest, BatchEnqueueBasic) {
+    std::atomic<int> counter{0};
+
+    TaskBatch batch;
+    std::vector<TaskRef> tasks;
+
+    for (int i = 0; i < 20; i++) {
+        tasks.push_back(batch.Add(
+            std::move(TaskGraph::Get().CreateTask([&counter]() {
+                counter.fetch_add(1);
+            }).SetPriority(TaskPriorities::kNormal))
+        ));
+    }
+
+    batch.Submit();
+
+    TaskGraph::Get().WaitForTasks(tasks);
+
+    EXPECT_EQ(counter.load(), 20);
+    for (const auto& task : tasks) {
+        EXPECT_EQ(task->GetState(), TaskStateType::kFinished);
+    }
+}
+
+TEST_F(TaskSystemTest, BatchEnqueueWithDependencies) {
+    std::atomic<int> step{0};
+
+    // Create first task normally
+    auto first = TaskGraph::Get().CreateSimpleTask([&step]() {
+        step.store(1);
+    });
+
+    // Batch enqueue dependent tasks
+    TaskBatch batch;
+    std::vector<TaskRef> batch_tasks;
+
+    for (int i = 0; i < 5; i++) {
+        batch_tasks.push_back(batch.Add(
+            std::move(TaskGraph::Get().CreateTask([&step]() {
+                EXPECT_GE(step.load(), 1);
+                step.fetch_add(1);
+            }).DependsOn(first).SetPriority(TaskPriorities::kNormal))
+        ));
+    }
+
+    batch.Submit();
+
+    TaskGraph::Get().WaitForTasks(batch_tasks);
+
+    EXPECT_EQ(step.load(), 6); // 1 (first) + 5 (batch)
 }
 
 // Add main function for Google Test

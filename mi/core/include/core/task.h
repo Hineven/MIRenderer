@@ -9,12 +9,14 @@
 
 #include <semaphore>
 #include <queue>
+#include <set>
 #include <functional>
 #include <future>
 #include <memory>
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
+#include <climits>
 #include "core/common.h"
 #include "core/thr.h"
 #include "core/fwd.h"
@@ -37,16 +39,21 @@ enum class TaskStateType {
     kRunning,
     // The task has finished its execution. It will be destroyed once it's no longer referenced.
     kFinished,
+    // The task was cancelled before execution. Its future is set to broken_promise.
+    kCancelled,
     kMax
 };
 
-enum class TaskPriority : uint32_t {
-    kLow = 0,
-    kNormal = 1,
-    kHigh = 2,
-    kCritical = 3,
-    kMax
-};
+// Continuous priority type — higher value = higher priority.
+// Supports fine-grained scheduling (e.g. distance-based priority for streaming).
+using TaskPriority = uint32_t;
+
+namespace TaskPriorities {
+    constexpr TaskPriority kLow      = 0;
+    constexpr TaskPriority kNormal   = UINT32_MAX / 4;
+    constexpr TaskPriority kHigh     = UINT32_MAX / 2;
+    constexpr TaskPriority kCritical = UINT32_MAX;
+}
 
 class WorkerThreadRunnable : public ThreadRunnable {
 public:
@@ -120,6 +127,19 @@ public:
         priority_ = priority;
     }
 
+    // Dynamically update task priority. Thread-safe.
+    // Removes the task from the priority set, updates the value, and re-inserts.
+    void UpdatePriority(TaskPriority new_priority);
+
+    // Cancel the task. Thread-safe.
+    // A cancelled task is skipped by worker threads and its future is set to broken_promise.
+    // Cascades to successors unless they have other unfinished precedents.
+    void Cancel();
+
+    inline bool IsCancelled() const {
+        return cancelled_.load(std::memory_order_acquire);
+    }
+
     // Get creation timestamp for scheduling
     inline uint64_t GetCreationTime() const {
         return creation_time_;
@@ -158,8 +178,11 @@ protected:
     std::shared_future<void> future_;
     std::vector<TaskRef> successors_;
 
-    // Task priority for scheduling
-    TaskPriority priority_ {TaskPriority::kNormal};
+    // Cancellation flag
+    std::atomic<bool> cancelled_ {false};
+
+    // Task priority for scheduling (higher value = higher priority)
+    TaskPriority priority_ {TaskPriorities::kNormal};
 
     // Creation timestamp for FIFO within same priority
     uint64_t creation_time_;
@@ -178,15 +201,27 @@ private:
     mutable std::atomic<int> ref_count_ {0};
 };
 
-// Task comparator for priority queue (higher priority first, then FIFO for same priority)
+// Task comparator for priority set (higher priority first via rbegin, then FIFO for same priority)
 struct TaskComparator {
     bool operator()(const Task* lhs, const Task* rhs) const {
         if (lhs->GetPriority() != rhs->GetPriority()) {
-            return static_cast<uint32_t>(lhs->GetPriority()) < static_cast<uint32_t>(rhs->GetPriority());
+            return lhs->GetPriority() < rhs->GetPriority();
         }
         // For same priority, earlier created tasks have higher priority (FIFO)
         return lhs->GetCreationTime() > rhs->GetCreationTime();
     }
+};
+
+// Lightweight cooperative cancellation token.
+// Can be shared among multiple tasks (via shared_ptr) to allow external cancellation.
+// Unlike Task::Cancel() which skips queued tasks, the token lets running tasks
+// check cancellation and exit early.
+class CancellationToken {
+public:
+    void Cancel() { cancelled_.store(true, std::memory_order_release); }
+    bool IsCancelled() const { return cancelled_.load(std::memory_order_acquire); }
+private:
+    std::atomic<bool> cancelled_{false};
 };
 
 class TaskInitializer : public NonCopyable {
@@ -222,6 +257,67 @@ private:
     TaskRef task_ {};
 };
 
+// A group of related tasks that can be cancelled or waited on together.
+// Typical use: one TaskGroup per streaming chunk, holding all its pipeline tasks.
+class TaskGroup : public RefCounted<> {
+public:
+    TaskGroup() : token_(std::make_shared<CancellationToken>()) {}
+
+    void Add(TaskRef task) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tasks_.push_back(std::move(task));
+    }
+
+    // Cancel all tasks in the group + set the cooperative cancellation token.
+    void CancelAll() {
+        token_->Cancel();
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& task : tasks_) {
+            if (task && task->GetState() != TaskStateType::kFinished
+                     && task->GetState() != TaskStateType::kCancelled) {
+                task->Cancel();
+            }
+        }
+    }
+
+    void WaitAll() {
+        std::vector<TaskRef> tasks_copy;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            tasks_copy = tasks_;
+        }
+        for (auto& task : tasks_copy) {
+            if (task) {
+                task->GetFuture().wait();
+            }
+        }
+    }
+
+    void SetPriorityAll(TaskPriority priority) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& task : tasks_) {
+            if (task && task->GetState() != TaskStateType::kFinished
+                     && task->GetState() != TaskStateType::kCancelled) {
+                task->UpdatePriority(priority);
+            }
+        }
+    }
+
+    std::shared_ptr<CancellationToken> GetToken() const { return token_; }
+
+    size_t GetTaskCount() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return tasks_.size();
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::vector<TaskRef> tasks_;
+    std::shared_ptr<CancellationToken> token_;
+};
+
+using TaskGroupRef = TRef<TaskGroup>;
+
 class TaskGraph {
     friend class Task;
     friend class WorkerThreadRunnable;
@@ -244,17 +340,17 @@ public:
 
     // Helper functions for easy task creation and dependency management
     template<typename Func>
-    TaskRef CreateSimpleTask(Func&& func, TaskPriority priority = TaskPriority::kNormal) {
+    TaskRef CreateSimpleTask(Func&& func, TaskPriority priority = TaskPriorities::kNormal) {
         return CreateTask(std::forward<Func>(func)).SetPriority(priority).Done();
     }
 
     template<typename Func>
-    TaskRef CreateTaskWithDependency(Func&& func, TaskRef dependency, TaskPriority priority = TaskPriority::kNormal) {
+    TaskRef CreateTaskWithDependency(Func&& func, TaskRef dependency, TaskPriority priority = TaskPriorities::kNormal) {
         return CreateTask(std::forward<Func>(func)).DependsOn(dependency).SetPriority(priority).Done();
     }
 
     template<typename Func>
-    TaskRef CreateTaskWithDependencies(Func&& func, const std::vector<TaskRef>& dependencies, TaskPriority priority = TaskPriority::kNormal) {
+    TaskRef CreateTaskWithDependencies(Func&& func, const std::vector<TaskRef>& dependencies, TaskPriority priority = TaskPriorities::kNormal) {
         auto initializer = std::move(CreateTask(std::forward<Func>(func)).SetPriority(priority));
         for (const auto& dep : dependencies) {
             initializer.DependsOn(dep);
@@ -262,7 +358,7 @@ public:
         return initializer.Done();
     }
 
-    // Wait for a task to complete
+    // Wait for a task to complete (handles finished and cancelled states)
     void WaitForTask(TaskRef task);
 
     // Wait for multiple tasks to complete
@@ -270,8 +366,13 @@ public:
 
     void Shutdown();
 
-    // Get number of pending tasks
+    // Get number of pending tasks (includes cancelled tasks still in the set)
     size_t GetPendingTaskCount() const;
+
+    // Batch enqueue multiple tasks. All tasks are fired and enqueued under a single lock,
+    // reducing lock contention compared to individual Done() calls.
+    // Tasks must not have been fired yet (state must be kUninitialized).
+    void BatchEnqueue(const std::vector<TaskRef>& tasks);
 
     // Shortcut for simple parallization
     template<typename T, typename F>
@@ -312,16 +413,21 @@ protected:
 
     // Wait and get the next task to run. Returns nullptr if no task is available.
     // Invoked by the worker threads. Thread safe.
+    // Cancelled tasks are handled internally (skipped and cleaned up).
     Task * WaitAndGetNextTask (WorkerThreadRunnable * worker) ;
 
     // Called when a task finishes execution
     void OnTaskFinished(Task* task);
 
+    // Handle a cancelled task: set state, break promise, notify successors.
+    // Called by worker thread after dequeuing a cancelled task.
+    void HandleCancelledTask(Task* task);
+
     // Use raw allocation - constructor/destructor not called by allocator
     TFixedElementAllocator<Task, C::kMaxTaskGraphTaskCount, 16, true, true> task_allocator_;
 
-    // Priority queue for tasks (thread-safe)
-    std::priority_queue<Task*, std::vector<Task*>, TaskComparator> task_priority_queue_;
+    // Priority set for tasks (thread-safe). Use rbegin() for highest priority.
+    std::set<Task*, TaskComparator> task_set_;
     std::mutex task_queue_mutex_;
     std::condition_variable task_available_cv_;
     std::atomic<size_t> pending_task_count_{0};
@@ -341,6 +447,48 @@ protected:
 
 private:
     static TaskGraph * instance_;
+};
+
+// Helper for batch task submission. Collects unfired tasks and submits them
+// to the TaskGraph under a single lock for minimal contention.
+//
+// Usage:
+//   TaskBatch batch;
+//   batch.Add(task_graph.CreateTask([](){...}).SetPriority(p));
+//   batch.Add(task_graph.CreateTask([](){...}).DependsOn(other).SetPriority(p));
+//   batch.Submit();
+class TaskBatch {
+public:
+    TaskBatch() = default;
+
+    // Move only
+    TaskBatch(TaskBatch&& other) noexcept : tasks_(std::move(other.tasks_)) {}
+    TaskBatch& operator=(TaskBatch&& other) noexcept {
+        tasks_ = std::move(other.tasks_);
+        return *this;
+    }
+    TaskBatch(const TaskBatch&) = delete;
+    TaskBatch& operator=(const TaskBatch&) = delete;
+
+    // Fire the task (via Done()) and add to batch. Returns the fired TaskRef.
+    TaskRef Add(TaskInitializer&& init) {
+        TaskRef task = init.Done(true);
+        tasks_.push_back(task);
+        return task;
+    }
+
+    // Submit all collected tasks to the TaskGraph with a single lock acquisition.
+    void Submit() {
+        if (!tasks_.empty()) {
+            TaskGraph::Get().BatchEnqueue(tasks_);
+            tasks_.clear();
+        }
+    }
+
+    size_t Size() const { return tasks_.size(); }
+
+private:
+    std::vector<TaskRef> tasks_;
 };
 
 struct TaskGraphThreadMeta {
