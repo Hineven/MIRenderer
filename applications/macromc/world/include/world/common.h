@@ -7,6 +7,8 @@
 #ifndef MACROMC_WORLD_COMMON_H
 #define MACROMC_WORLD_COMMON_H
 
+#include "core/platform.h"
+
 #define MACROMC_WORLD_NAMESPACE macromc::world
 
 #define MACROMC_WORLD_NAMESPACE_BEGIN namespace MACROMC_WORLD_NAMESPACE {

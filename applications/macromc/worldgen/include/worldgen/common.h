@@ -1,0 +1,15 @@
+/*
+ * Created: 2026/06/13
+ * Author:  hineven
+ * See LICENSE for licensing.
+ */
+
+#ifndef MACROMC_WORLDGEN_COMMON_H
+#define MACROMC_WORLDGEN_COMMON_H
+
+#define MACROMC_WORLDGEN_NAMESPACE macromc::worldgen
+
+#define MACROMC_WORLDGEN_NAMESPACE_BEGIN namespace MACROMC_WORLDGEN_NAMESPACE {
+#define MACROMC_WORLDGEN_NAMESPACE_END }
+
+#endif // MACROMC_WORLDGEN_COMMON_H

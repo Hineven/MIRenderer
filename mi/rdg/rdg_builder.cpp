@@ -369,6 +369,44 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
     }
 #ifdef RDG_DEBUG_VALIDATION
     param_struct_ptr_to_data_crc.clear();
+
+#ifdef RDG_VALIDATE_UNWRITTEN_READS
+    // Opt-in diagnostic (define RDG_VALIDATE_UNWRITTEN_READS to enable): detect transient
+    // resources that are read but never written by any surviving pass. Their backing memory is
+    // recycled/undefined -> classic flicker source. RW textures/buffers and render targets count
+    // as writers (in out_*), and imported/exported resources are exempt.
+    // NOT on by default: this relies on static SPIR-V reflection, which can report a read for a
+    // binding the shader never actually samples at runtime (false positives). Treat hits as leads.
+    {
+        std::set<void*> written_textures, written_buffers;
+        for (auto & pass : graph->passes_) {
+            for (auto * t : pass->compiled_.out_textures) written_textures.insert(t);
+            for (auto * b : pass->compiled_.out_buffers) written_buffers.insert(b);
+        }
+        std::set<void*> warned_tex, warned_buf; // Warn at most once per resource.
+        for (auto & pass : graph->passes_) {
+            for (auto * t : pass->compiled_.in_textures) {
+                if (t && !written_textures.count(t)
+                    && !(t->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))
+                    && warned_tex.insert(t).second) {
+                    MI_WARN("RDG: transient texture '{}' is read by pass '{}' but never written by any pass. "
+                            "Its contents will be recycled/undefined memory. Bind nullptr or add a writer.",
+                            t->GetName(), pass->GetName());
+                }
+            }
+            for (auto * b : pass->compiled_.in_buffers) {
+                if (b && !written_buffers.count(b)
+                    && !(b->GetFlags() & (RDGResourceFlagBits::kImported | RDGResourceFlagBits::kExport))
+                    && warned_buf.insert(b).second) {
+                    MI_WARN("RDG: transient buffer '{}' is read by pass '{}' but never written by any pass. "
+                            "Its contents will be recycled/undefined memory. Bind nullptr or add a writer.",
+                            b->GetName(), pass->GetName());
+                }
+            }
+        }
+    }
+#endif
+
     // Check resource aliasing. Aliased resources should have been dealt with when compiling the passes.
     for (auto & pass : graph->passes_) {
         {

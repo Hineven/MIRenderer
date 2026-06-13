@@ -66,10 +66,10 @@ public:
     static void EndGraphicsRender (RHICommandQueueGraphics & queue) ;
 
 private:
-    // Derive the narrowest shader stage mask for a push constant by inspecting each stage shader's
-    // reflection (HasPushConstant). Only stages that actually declare a push constant are included,
-    // so vkCmdPushConstants only writes to stages that read it. Returns kAll as a safe fallback when
-    // no stage reports a push constant (e.g. shaders not yet compiled).
+    // Stage mask passed to vkCmdPushConstants. Always kAll: the (shared) pipeline layout declares its
+    // push-constant range with VK_SHADER_STAGE_ALL, and VUID-vkCmdPushConstants-offset-01796 requires
+    // the update's stageFlags to be a superset of the range's — so eAll range => eAll update. The
+    // shader argument is retained for symmetry with the dispatch helpers but currently unused.
     static RHIShaderFrequencyFlags PushConstantStagesFor (const RDGShader * shader) ;
 };
 

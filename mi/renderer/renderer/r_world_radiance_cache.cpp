@@ -95,15 +95,22 @@ void RendererView::CreateSharedResources(RenderGraphBuilder & builder, bool shou
     g_buffer_.Recreate()->Allocate(builder, this);
     if (should_render_volume_lighting) {
         volume_primitives_.Recreate()->Allocate(builder, this);
+        volume_direct_lighting_.Recreate()->Allocate(builder, this);
+        volume_grid_direct_lighting_.Recreate()->Allocate(builder, this);
+        volume_indirect_lighting_.Recreate()->Allocate(builder, this);
     } else {
+        // No volume in the scene: do not allocate any volume lighting resources at all.
+        // Downstream passes (denoiser, composition) bind them as nullptr, which RDG treats
+        // as a pure-black texture. Allocating them anyway would leave transient textures
+        // that are read but never written, yielding recycled/undefined memory -> flicker.
         volume_primitives_ = nullptr;
+        volume_direct_lighting_ = nullptr;
+        volume_grid_direct_lighting_ = nullptr;
+        volume_indirect_lighting_ = nullptr;
     }
     world_cache_.Recreate()->Allocate(builder);
     light_structure_.Recreate()->Allocate(builder);
     diffuse_direct_lighting_.Recreate()->Allocate(builder, this);
-    volume_direct_lighting_.Recreate()->Allocate(builder, this);
-    volume_grid_direct_lighting_.Recreate()->Allocate(builder, this);
-    volume_indirect_lighting_.Recreate()->Allocate(builder, this);
     diffuse_indirect_lighting_.Recreate()->Allocate(builder, this);
     grf_.Recreate()->Allocate(builder, this);
     // volume_gird_indirect_lighting_.Recreate()->Allocate(builder, this);

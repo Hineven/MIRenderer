@@ -12,14 +12,12 @@
 MACROMC_WORLD_NAMESPACE_BEGIN
 
 // Forward declarations
-struct BlockState;
 struct BlockData;
+class Palette;
+class SubChunk;
 class ChunkData;
 class WorldShellData;
 class WorldData;
-class Worldgen;
-class SimpleTerrainWorldgen;
-class EmptyWorldgen;
 
 MACROMC_WORLD_NAMESPACE_END
 

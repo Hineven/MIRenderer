@@ -361,9 +361,9 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->PreviousVolumeMinMaxTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
         params->PreviousVolumeDensityTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
         params->InputDiffuseDirectRadianceTexture = view->diffuse_direct_lighting_->radiance.Raw();
-        params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_->radiance.Raw();
+        params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_ ? view->volume_direct_lighting_->radiance.Raw() : nullptr;
         params->InputDiffuseIndirectRadianceTexture = view->diffuse_indirect_lighting_->radiance.Raw();
-        params->InputVolumeIndirectRadianceTexture = view->volume_indirect_lighting_->radiance.Raw();
+        params->InputVolumeIndirectRadianceTexture = view->volume_indirect_lighting_ ? view->volume_indirect_lighting_->radiance.Raw() : nullptr;
         params->PreviousHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_history_length.Raw();
         params->PreviousVolumeHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_volume_history_length.Raw();
         params->RWHistoryLengthTexture = denoiser_data->history_length.Raw();

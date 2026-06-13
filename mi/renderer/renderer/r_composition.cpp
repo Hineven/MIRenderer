@@ -139,19 +139,19 @@ void Renderer::Render_LightingComposition(RendererView *view, RenderGraphBuilder
     params->UB = UB;
     if (!CVar_UseDenoisedDirectLighting.Get()) {
         params->DiffuseDirectLightingTexture = view->diffuse_direct_lighting_->radiance.Raw();
-        params->VolumeDirectLightingTexture = view->volume_direct_lighting_->radiance.Raw();
-        params->VolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
+        params->VolumeDirectLightingTexture = view->volume_direct_lighting_ ? view->volume_direct_lighting_->radiance.Raw() : nullptr;
+        params->VolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_ ? view->volume_grid_direct_lighting_->radiance.Raw() : nullptr;
     } else {
         params->DiffuseDirectLightingTexture = view->denoiser_->denoised_diffuse_direct_lighting.Raw();
         params->VolumeDirectLightingTexture = view->denoiser_->denoised_volume_direct_lighting.Raw();
-        params->VolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_->radiance.Raw();
+        params->VolumeGridDirectLightingTexture = view->volume_grid_direct_lighting_ ? view->volume_grid_direct_lighting_->radiance.Raw() : nullptr;
     }
     if (CVar_UseDenoisedIndirectLighting.Get()) {
         params->DiffuseIndirectLightingTexture = view->denoiser_->denoised_diffuse_indirect_lighting.Raw();
         params->VolumeIndirectLightingTexture = view->denoiser_->denoised_volume_indirect_lighting.Raw();
     } else {
         params->DiffuseIndirectLightingTexture = view->diffuse_indirect_lighting_->radiance.Raw();
-        params->VolumeIndirectLightingTexture = view->volume_indirect_lighting_->radiance.Raw();
+        params->VolumeIndirectLightingTexture = view->volume_indirect_lighting_ ? view->volume_indirect_lighting_->radiance.Raw() : nullptr;
     }
     if (view->scene_ && view->scene_->GetSkyTexture()) {
         params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

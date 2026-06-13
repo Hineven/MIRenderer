@@ -252,6 +252,14 @@ FORCEINLINE vk::ShaderStageFlagBits GetVulkanShaderStage (RHIShaderFrequencyFlag
 }
 
 FORCEINLINE vk::ShaderStageFlags GetVulkanShaderStageFlags (RHIShaderFrequencyFlags frequency) {
+    // kAll is a sentinel (0xffffffff), not the bitwise-OR of the individual stage bits. The per-bit
+    // translation below would only yield the OR of the stages it recognizes (~0x3ff9), which is a
+    // proper SUBSET of VK_SHADER_STAGE_ALL (0x7fffffff) — that breaks VUID-vkCmdPushConstants-offset-
+    // 01796, which requires the update's stageFlags to be a superset of the layout range's stageFlags
+    // (the range is declared eAll). Map the sentinel to eAll directly.
+    if (frequency == RHIShaderFrequencyFlagBits::kAll) {
+        return vk::ShaderStageFlagBits::eAll;
+    }
     vk::ShaderStageFlags flags = {};
     if(frequency & RHIShaderFrequencyFlagBits::kVertex) {
         flags |= vk::ShaderStageFlagBits::eVertex;

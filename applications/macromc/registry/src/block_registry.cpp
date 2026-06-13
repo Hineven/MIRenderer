@@ -74,6 +74,7 @@ void BlockRegistry::RegisterBuiltinBlocks() {
     stone.transparent = false;
     stone.render = true;
     stone.texture_index = 0;
+    stone.SetAllFacesSolid();
     RegisterBlock("stone", stone);
     
     // Dirt
@@ -84,6 +85,7 @@ void BlockRegistry::RegisterBuiltinBlocks() {
     dirt.transparent = false;
     dirt.render = true;
     dirt.texture_index = 1;
+    dirt.SetAllFacesSolid();
     RegisterBlock("dirt", dirt);
     
     // Grass
@@ -94,6 +96,7 @@ void BlockRegistry::RegisterBuiltinBlocks() {
     grass.transparent = false;
     grass.render = true;
     grass.texture_index = 2;
+    grass.SetAllFacesSolid();
     RegisterBlock("grass", grass);
     
     // Bedrock
@@ -104,7 +107,34 @@ void BlockRegistry::RegisterBuiltinBlocks() {
     bedrock.transparent = false;
     bedrock.render = true;
     bedrock.texture_index = 3;
+    bedrock.SetAllFacesSolid();
     RegisterBlock("bedrock", bedrock);
+    
+    // Sand
+    BlockDefinition sand;
+    sand.id = BuiltinBlocks::kSandId;
+    sand.name = "sand";
+    sand.solid = true;
+    sand.transparent = false;
+    sand.render = true;
+    sand.texture_index = 4;
+    sand.SetAllFacesSolid();
+    RegisterBlock("sand", sand);
+    
+    // Water
+    BlockDefinition water;
+    water.id = BuiltinBlocks::kWaterId;
+    water.name = "water";
+    water.solid = false;
+    water.transparent = true;
+    water.render = true;
+    water.texture_index = 5;
+    // Water faces are not solid (allows seeing through adjacent water)
+    for (int i = 0; i < static_cast<int>(BlockFace::kCount); ++i) {
+        water.face_solid[i] = false;
+        water.face_render[i] = true;
+    }
+    RegisterBlock("water", water);
 }
 
 // Global registry singleton

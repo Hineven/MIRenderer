@@ -83,11 +83,16 @@ VulkanRootSignature::VulkanRootSignature(const RHIPipelineRootSignatureDesc & de
     auto info = vk::PipelineLayoutCreateInfo{}
         .setSetLayoutCount((uint32_t)descriptor_set_layouts.size())
         .setPSetLayouts(descriptor_set_layouts.data());
+    // NOTE: `pc` must outlive the createPipelineLayout() call below. Vulkan-Hpp's
+    // setPushConstantRanges() stores a POINTER to the range (ArrayProxy does not copy), so
+    // declaring it inside the if-block would leave pPushConstantRanges dangling by the time
+    // createPipelineLayout reads it — the validation layer then reports garbage stageFlags
+    // (leftover stack bytes) and the push-constant range is effectively lost (black screen).
+    vk::PushConstantRange pc;
+    pc.setOffset(0);
+    pc.setSize(push_constant_roundup);
+    pc.setStageFlags(vk::ShaderStageFlagBits::eAll);
     if (push_constant_roundup > 0) {
-        vk::PushConstantRange pc;
-        pc.setOffset(0);
-        pc.setSize(push_constant_roundup);
-        pc.setStageFlags(vk::ShaderStageFlagBits::eAll);
         info.setPushConstantRanges(pc);
     }
     pipeline_layout_ = device.createPipelineLayout(info);

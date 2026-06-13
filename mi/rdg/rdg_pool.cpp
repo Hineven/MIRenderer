@@ -250,9 +250,59 @@ void RDGResourcePool::CommitAllocations() {
         }
     }
 
-    // --- Textures: no aliasing yet ---
-    for (auto & pending : pending_texture_allocations_) {
-        AllocateResource(pending.texture);
+    // --- Texture aliasing (mirrors the buffer algorithm above) ---
+    // Transient textures with non-overlapping lifetimes share one physical allocation.
+    // No extra state is needed for the layout handoff: the successor's first use transitions
+    // UNDEFINED -> its required layout (discarding the predecessor's contents, which it does
+    // not need), while the memory-access barrier is inherited from alloc->last_access.
+    std::stable_sort(pending_texture_allocations_.begin(), pending_texture_allocations_.end(),
+        [](const PendingTextureAllocation & a, const PendingTextureAllocation & b) {
+            return a.texture->GetResourceClassHash() < b.texture->GetResourceClassHash();
+        });
+
+    struct AliasedTextureSlot {
+        RDGPoolTextureAllocation * allocation;
+        uint32_t last_pass;
+    };
+
+    for (size_t ti = 0; ti < pending_texture_allocations_.size(); ) {
+        uint32_t group_hash = pending_texture_allocations_[ti].texture->GetResourceClassHash();
+        size_t group_start = ti;
+        while (ti < pending_texture_allocations_.size() && pending_texture_allocations_[ti].texture->GetResourceClassHash() == group_hash) {
+            ti++;
+        }
+        size_t group_end = ti;
+
+        std::sort(pending_texture_allocations_.begin() + group_start, pending_texture_allocations_.begin() + group_end,
+            [](const PendingTextureAllocation & a, const PendingTextureAllocation & b) {
+                return a.first_pass < b.first_pass;
+            });
+
+        std::vector<AliasedTextureSlot> aliased_slots;
+
+        for (size_t j = group_start; j < group_end; j++) {
+            auto & pending = pending_texture_allocations_[j];
+            auto * texture = pending.texture;
+
+            AliasedTextureSlot * best = nullptr;
+            for (auto & slot : aliased_slots) {
+                if (slot.allocation && slot.last_pass < pending.first_pass) {
+                    if (!best || slot.last_pass > best->last_pass) {
+                        best = &slot;
+                    }
+                }
+            }
+
+            if (best) {
+                AttachAllocation(texture, best->allocation);
+                best->last_pass = pending.last_pass;
+            } else {
+                // No reusable slot within this frame. AllocateResource itself recycles from the
+                // cross-frame free list first, then falls back to creating a new physical texture.
+                AllocateResource(texture);
+                aliased_slots.push_back({texture->allocation_, pending.last_pass});
+            }
+        }
     }
 
     pending_buffer_allocations_.clear();

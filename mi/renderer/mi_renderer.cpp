@@ -181,8 +181,10 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     view->scene_->UpdateAABB();
 
     // If the scene contains any VolumePrimitives / VolumeGrid, enable related rendering.
-    // FIXME: setting this to false can cause serious flickering in the final rendering
-    bool should_render_volume_lighting = true;
+    // Defaults to false and is flipped on below when a volume renderable is found.
+    // When false, volume_*_lighting_ stay null and downstream passes (denoiser/composition)
+    // bind them as nullptr -> treated as pure-black. No unwritten-texture flicker.
+    bool should_render_volume_lighting = false;
 
     // Gather renderable common data for upload
     std::vector<glm::mat4x3> renderable_transforms;
@@ -445,7 +447,15 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         queue.ClearTexture(view->g_buffer_->G_metallic_roughness_->GetRHI(), {});
         queue.ClearTexture(view->g_buffer_->G_emission_->GetRHI(), {});
         queue.ClearTexture(view->g_buffer_->G_flags_->GetRHI(), {});
-        queue.ClearTexture(view->g_buffer_->G_transmittance_->GetRHI(), {});
+        // G_transmittance uses multiplicative semantics: 1.0 = no extinction (light passes through),
+        // 0.0 = fully blocked. The identity/default for any pixel without volume is 1.0.
+        // The ONLY writer of this texture is DrawVolumePrimitives (which assigns absolute
+        // transmittance, never accumulates), and that pass is skipped when the scene has no volume
+        // data. Clearing to 0 (the previous default) left every pixel at transmittance 0 in that
+        // case, so LightingComposition computed Radiance = SurfaceRadiance * 0 = 0 -> black screen.
+        // Clearing to 1.0 is correct in both modes: overwritten per-pixel when volume is on,
+        // and supplies the correct identity transmittance when volume is off.
+        queue.ClearTexture(view->g_buffer_->G_transmittance_->GetRHI(), {1.f, 1.f, 1.f, 1.f});
         queue.ClearTexture(view->shadow_map_moments_->GetRHI(), {});
     })
     ->AddTextureH(view->g_buffer_->G_normal_.Raw(), RDGTextureUsageType::kTransferWrite)
@@ -548,7 +558,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)
-        Render_DrawToOutput(view, builder, view->volume_direct_lighting_->radiance.Raw());
+        Render_DrawToOutput(view, builder, view->volume_direct_lighting_ ? view->volume_direct_lighting_->radiance.Raw() : nullptr);
     else if (type == 7)
         Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_->radiance.Raw());
     else if (type == 8) {

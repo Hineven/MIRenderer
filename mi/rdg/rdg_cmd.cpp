@@ -20,39 +20,20 @@ MI_NAMESPACE_BEGIN
 // Recycling is not necessary as rhi will manage the lifecycle of parameter tables.
 static uint32_t tl_next_table_id = 0;
 
-// Derive the narrowest shader stage mask for a push constant by inspecting each stage shader's
-// reflection. Only stages whose reflection reports a push constant (HasPushConstant) are added,
-// so vkCmdPushConstants writes only to stages that actually read the data. The mask is always a
-// subset of the pipeline layout's push constant range (declared with eAll), so any subset is valid.
-RHIShaderFrequencyFlags RDGCommandHelper::PushConstantStagesFor(const RDGShader * shader) {
-    if (!shader) return RHIShaderFrequencyFlagBits::kAll;
-    const auto & s = shader->shaders_;
-    RHIShaderFrequencyFlags flags = RHIShaderFrequencyFlagBits::kNone;
-    switch (shader->GetPipelineType()) {
-        case RHIPipelineType::kCompute:
-            // Single stage; if the compute shader has no push constant the dispatch helper won't
-            // call PushConstants at all, so kCompute is always correct here.
-            return RHIShaderFrequencyFlagBits::kCompute;
-        case RHIPipelineType::kGraphics:
-            if (s.vertex   && s.vertex->HasPushConstant())   flags |= RHIShaderFrequencyFlagBits::kVertex;
-            if (s.fragment && s.fragment->HasPushConstant()) flags |= RHIShaderFrequencyFlagBits::kFragment;
-            if (s.geometry && s.geometry->HasPushConstant()) flags |= RHIShaderFrequencyFlagBits::kGeometry;
-            if (s.task     && s.task->HasPushConstant())     flags |= RHIShaderFrequencyFlagBits::kTask;
-            if (s.mesh     && s.mesh->HasPushConstant())     flags |= RHIShaderFrequencyFlagBits::kMesh;
-            break;
-        case RHIPipelineType::kRayTracing:
-            if (s.raygen   && s.raygen->HasPushConstant())   flags |= RHIShaderFrequencyFlagBits::kRaygen;
-            if (s.miss     && s.miss->HasPushConstant())     flags |= RHIShaderFrequencyFlagBits::kMiss;
-            if (s.callable && s.callable->HasPushConstant()) flags |= RHIShaderFrequencyFlagBits::kCallable;
-            for (const auto & ch : s.closest_hit)
-                if (ch && ch->HasPushConstant()) { flags |= RHIShaderFrequencyFlagBits::kClosestHit; break; }
-            for (const auto & ah : s.any_hit)
-                if (ah && ah->HasPushConstant()) { flags |= RHIShaderFrequencyFlagBits::kAnyHit; break; }
-            break;
-    }
-    // Safe fallback: if no stage reported a push constant (e.g. shaders not yet compiled, or the
-    // shader genuinely has none), fall back to kAll rather than emitting an invalid empty stage mask.
-    return flags ? flags : RHIShaderFrequencyFlagBits::kAll;
+// The pipeline layout's push-constant range is declared with VK_SHADER_STAGE_ALL (see
+// VulkanRootSignature ctor). Per VUID-vkCmdPushConstants-offset-01796, vkCmdPushConstants'
+// stageFlags must be a SUPERSET of every overlapping range's stageFlags — so with an eAll range
+// the update must also use eAll.
+//
+// Note the asymmetry with descriptor bindings: those ALSO use eAll, but it is free there because
+// a descriptor binding's stageFlags is merely a visibility hint (a superset is always valid, no
+// coupling rule). Push constants are different — the spec couples the update's stage mask to the
+// range's stage mask — so a narrow per-shader mask here would only be valid if the (shared, cached)
+// root signature's range matched it, which would require keying the cache by stage. That is not
+// worth it: push constants are <=128 bytes updated once per dispatch/draw, so broadcasting to all
+// stages costs nothing measurable. Hence: range = eAll, update = eAll.
+RHIShaderFrequencyFlags RDGCommandHelper::PushConstantStagesFor([[maybe_unused]] const RDGShader * shader) {
+    return RHIShaderFrequencyFlagBits::kAll;
 }
 
 std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::BuildParameterDesc(

@@ -14,9 +14,10 @@
 MACROMC_WORLD_NAMESPACE_BEGIN
 
 // Coordinate types
-using BlockCoord = glm::ivec3;      // Block integer coordinates within Shell
+using BlockCoord = glm::ivec3;      // Block integer coordinates (world space)
 using ChunkCoord = glm::ivec3;      // Chunk integer coordinates within World
 using WorldPos = glm::vec3;         // World absolute floating coordinates
+using SubChunkCoord = glm::ivec3;   // SubChunk integer coordinates (world space)
 
 // Shell ID type
 using ShellId = uint32_t;
@@ -24,23 +25,45 @@ static constexpr ShellId kInvalidShellId = 0;
 
 // Chunk dimensions
 static constexpr size_t kChunkSizeX = 16;
-static constexpr size_t kChunkSizeY = 256;  // Height
+static constexpr size_t kChunkSizeY = 4096;  // World height
 static constexpr size_t kChunkSizeZ = 16;
-static constexpr size_t kBlocksPerChunk = kChunkSizeX * kChunkSizeY * kChunkSizeZ;
+static constexpr size_t kBlocksPerChunk = kChunkSizeX * kChunkSizeY * kChunkSizeZ;  // 1,048,576
 
-// SubChunk dimensions (for LOD and Mesh building)
+// SubChunk dimensions (16x16x16, MC classic)
 static constexpr size_t kSubChunkSize = 16;
-static constexpr size_t kSubChunksPerChunkY = kChunkSizeY / kSubChunkSize;
+static constexpr size_t kSubChunksPerChunkY = kChunkSizeY / kSubChunkSize;  // 256
+static constexpr size_t kBlocksPerSubChunk = kSubChunkSize * kSubChunkSize * kSubChunkSize;  // 4096
 
-// Block state max size
+// Palette constants
+static constexpr size_t kMaxPaletteSize = 256;
+
+// Block state max size (for future use, not stored in core path)
 static constexpr size_t kBlockStateSize = 64;
 
-// Helper function: Calculate block index in chunk
-FORCEINLINE size_t GetBlockIndex(uint32_t x, uint32_t y, uint32_t z) {
-    return static_cast<size_t>(y) * kChunkSizeZ * kChunkSizeX + 
-           static_cast<size_t>(z) * kChunkSizeX + 
-           static_cast<size_t>(x);
+// Block face enumeration (world-space face identification)
+enum class BlockFace : uint8_t {
+    kPosX = 0,  // East  (+X)
+    kNegX = 1,  // West  (-X)
+    kPosY = 2,  // Up    (+Y)
+    kNegY = 3,  // Down  (-Y)
+    kPosZ = 4,  // South (+Z)
+    kNegZ = 5,  // North (-Z)
+    kCount = 6
+};
+
+// Helper function: Calculate block index within a SubChunk (0~4095)
+FORCEINLINE size_t GetBlockIndexInSubChunk(uint32_t lx, uint32_t sub_ly, uint32_t lz) {
+    return static_cast<size_t>(sub_ly) * kSubChunkSize * kSubChunkSize +
+           static_cast<size_t>(lz) * kSubChunkSize +
+           static_cast<size_t>(lx);
 }
+
+// SubChunk state (compression-friendly classification)
+enum class SubChunkState : uint8_t {
+    kEmpty,     // All blocks are air — no memory allocated
+    kUniform,   // All blocks are the same type — single palette index stored
+    kMixed      // Multiple block types — full 4096-byte index array allocated
+};
 
 // Chunk state machine
 enum class ChunkState : uint8_t {
