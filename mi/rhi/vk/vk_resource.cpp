@@ -51,7 +51,11 @@ RHISampler(desc) {
         .setMipmapMode(GetVulkanMipmapMode(desc.mipmap_mode))
         .setMipLodBias(0.0f)
         .setMinLod(0.0f)
-        .setMaxLod(0.0f)
+        // Allow sampling all mip levels. Using VK_LOD_CLAMP_NONE (1000.0f) so that
+        // SampleLevel's lod argument is not clamped to mip 0. This is essential for
+        // HZB-based screen-space ray tracing (SSRT) and any mip-level-dependent sampling.
+        // (Previously hardcoded to 0.0f from an early prototype that had no mip support.)
+        .setMaxLod(vk::LodClampNone)
     );
 }
 

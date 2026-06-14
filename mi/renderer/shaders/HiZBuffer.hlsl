@@ -71,11 +71,11 @@ void ComputeHiZBuffer(uint2 DispatchID : SV_DispatchThreadID)
     uint F2 = InFlagsBuffer.Load(uint3(P2u, 0)).r;
     uint F3 = InFlagsBuffer.Load(uint3(P3u, 0)).r;
 #endif
-    // We want the max depth (furthest away).
-    // In many depth buffer setups (like reversed-Z), this means the maximum float value.
-    float MaxDepth = max(max(D0, D1), max(D2, D3));
+    // We want the minimum linear depth (closest object).
+    // In many depth buffer setups (like reversed-Z), this means the maximum reversed-z depth.
+    float MaxZDepth = max(max(D0, D1), max(D2, D3));
 
-    RWOutHiZBuffer[TexCoords] = MaxDepth;
+    RWOutHiZBuffer[TexCoords] = MaxZDepth;
 
     // We want the bitwise OR of the flags.
     uint OrFlags = F0 | F1 | F2 | F3;

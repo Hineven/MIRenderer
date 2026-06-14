@@ -248,6 +248,23 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
         }
     }
 
+    // Compact the continuation (non-hit) rays wave-wide in UNIFORM control flow.
+    // These wave ops MUST execute on every active lane, i.e. outside the divergent
+    // `!bHit` branch. Inside the branch they are degenerate: `!bHit` is trivially
+    // true for every lane that reaches them, so WaveActiveCountBits/WavePrefixCountBits
+    // end up relying on diverged (hit) lanes being inactive -- which some drivers do
+    // not honor. That scrambled the HWRT continuation list (and the transmittance
+    // read-back) whenever hits and misses coexisted in a wave, producing patchy
+    // light leaks only present with SSRT enabled.
+    bool bNeedsContinuation = !bHit;
+    uint WaveContinuationCount  = WaveActiveCountBits(bNeedsContinuation);
+    uint WaveContinuationPrefix = WavePrefixCountBits(bNeedsContinuation);
+    uint WaveContinuationBase   = 0;
+    if (WaveIsFirstLane()) {
+        InterlockedAdd(RWRayToTraceListAllocator[0], WaveContinuationCount, WaveContinuationBase);
+    }
+    WaveContinuationBase = WaveReadLaneFirst(WaveContinuationBase);
+
     if (!bHit) {
         // Not occluded, prepare for world trace and transmittance calculation.
         // Backward the ray a little from the last valid (and visible) position for ray continuation
@@ -257,20 +274,13 @@ void ScreenSpaceTraceForDirectLighting(uint DispatchThreadID: SV_DispatchThreadI
 
         float Bias = min(LinearDepth * HybridTracing_UB.RayContinuationBackwardBiasFactor, HitDistance * 0.5f);
         HitDistance = max(HitDistance - Bias, 0);
-        
+
         if(HybridTracing_UB.SSRT_Disabled) {
             HitDistance = 1e-4f;
         }
 
-        // Allocate new rays for continuation
-        uint WaveSurvivingRayCount = WaveActiveCountBits(true);
-        uint WaveNextRayListOffset = 0;
-        if (WaveIsFirstLane()) {
-            InterlockedAdd(RWRayToTraceListAllocator[0], WaveSurvivingRayCount, WaveNextRayListOffset);
-        }
-        WaveNextRayListOffset = WaveReadLaneFirst(WaveNextRayListOffset);
-        uint WaveLocalRayListOffset = WavePrefixCountBits(true);
-        uint RayListIndex = WaveNextRayListOffset + WaveLocalRayListOffset;
+        // Claim a continuation slot using the wave-wide compaction computed above.
+        uint RayListIndex = WaveContinuationBase + WaveContinuationPrefix;
         RWRayToTraceListBuffer[RayListIndex] = RayIndex;
     }
     // Remember to reduce the texel relative thickness on SSRT if there're too many false hits.

@@ -21,11 +21,16 @@ static CVar<float> CVar_ShadowRayLengthMultiplier(
     0.998f
 );
 
-// TODO currently SSRT is buggy, disabled for now.
 static CVar<bool> CVar_SSRT_Disabled(
     "r.direct_lighting.ssrt_disabled",
     "Disable screen space ray tracing. (NOTE: SSRT is buggy for now)",
-    true
+    false
+);
+
+static CVar<float> CVar_SSRT_RelativeTexelThickness(
+    "r.direct_lighting.ssrt_relative_texel_thickness",
+    "Relative texel thickness for SSRT.",
+    0.001
 );
 
 void FillUniformBufferForDirectLighting(RendererView * view, DirectLightingUB* DI_UB) {
@@ -37,7 +42,7 @@ void FillUniformBufferForDirectLighting(RendererView * view, DirectLightingUB* D
 
 void FillUniformBufferForHybridTracing(RendererView *view, HybridTracingUB *UB) {
     UB->SSRT_Disabled = CVar_SSRT_Disabled.Get() ? 1 : 0;
-    UB->SSRT_RelativeTexelThickness = 1e-4f;
+    UB->SSRT_RelativeTexelThickness = CVar_SSRT_RelativeTexelThickness.Get();
     UB->RayContinuationBackwardBiasFactor = 1e-3f;
     UB->DefaultTMax = view->camera_.far_plane;
 }

@@ -211,10 +211,10 @@ void ScreenSpaceRayTrace(
 
         OutHitReversedTileZ = ReversedTileZ;
 
-        float HitLinearDepth = ReversedZDepthToLinearDepth(C, ReversedTileZ);
-        float CurLinearDepth = ReversedZDepthToLinearDepth(C, CurrentUVZ.z);
+        float HitZDepth  = 1 - ReversedTileZ;
+        float CurrZDepth = 1 - CurrentUVZ.z;
 
-        bHit = (CurLinearDepth - HitLinearDepth) < RelTexelThickness * max(HitLinearDepth, .00001f);
+        bHit = abs(CurrZDepth - HitZDepth) < RelTexelThickness * max(HitZDepth, .00001f);
 
         if (!bHit)
         {
