@@ -8,6 +8,7 @@
 #define MACROMC_WORLD_TYPES_H
 
 #include "world/common.h"
+#include "registry/types.h"  // BlockFace, BlockId, ... (face enum lives in registry)
 #include <glm/glm.hpp>
 #include <cstdint>
 
@@ -40,16 +41,7 @@ static constexpr size_t kMaxPaletteSize = 256;
 // Block state max size (for future use, not stored in core path)
 static constexpr size_t kBlockStateSize = 64;
 
-// Block face enumeration (world-space face identification)
-enum class BlockFace : uint8_t {
-    kPosX = 0,  // East  (+X)
-    kNegX = 1,  // West  (-X)
-    kPosY = 2,  // Up    (+Y)
-    kNegY = 3,  // Down  (-Y)
-    kPosZ = 4,  // South (+Z)
-    kNegZ = 5,  // North (-Z)
-    kCount = 6
-};
+// Note: BlockFace is defined in registry/types.h and shared across modules.
 
 // Helper function: Calculate block index within a SubChunk (0~4095)
 FORCEINLINE size_t GetBlockIndexInSubChunk(uint32_t lx, uint32_t sub_ly, uint32_t lz) {

@@ -113,6 +113,7 @@ BEGIN_SHADER_PARAMETERS(DirectLightingShaderParameters)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayOrigins)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayDirections)
     SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWDebugTracedRayStates)
+
 END_SHADER_PARAMETERS()
 
 IMPLEMENT_SHADER_PARAMETERS(DirectLightingShaderParameters)

@@ -19,6 +19,9 @@ enum class RenderableType {
     kVolumePrimitivesInstance,
     // Gaussian radiance field + transform (3D Gaussian Radiance Field)
     kGaussianRadianceFieldInstance,
+    // GigaVoxel (VC/TFC/LFC) + transform. A single GigaVoxelInstance manages
+    // many chunks internally; it occupies one RenderableIndex slot.
+    kGigaVoxelInstance,
     kMax
 };
 
@@ -27,6 +30,7 @@ FORCEINLINE std::string ToString (RenderableType type) {
         case RenderableType::kStaticMeshInstance: return "StaticMeshInstance";
         case RenderableType::kVolumePrimitivesInstance: return "VolumePrimitivesInstance";
         case RenderableType::kGaussianRadianceFieldInstance: return "GaussianRadianceFieldInstance";
+        case RenderableType::kGigaVoxelInstance: return "GigaVoxelInstance";
         default: return "Unknown";
     }
 }

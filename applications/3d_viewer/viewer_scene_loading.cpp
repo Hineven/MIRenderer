@@ -4,6 +4,7 @@
  * See LICENSE for licensing.
  */
 #include "viewer_app.h"
+#include "viewer_gigavoxel.h"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -539,6 +540,21 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
             return;
         }
 
+        if (loading_format == "gigavoxel" || loading_format == "macromc_terrain") {
+            // Bring-up: generate a small voxel terrain in-process and upload it
+            // as a GigaVoxel asset. The path is ignored (no on-disk asset yet).
+            TRef<GigaVoxel> asset;
+            auto instance = CreateGigaVoxelBringUp(scene_.get(), resource_allocator_.Raw(), &asset);
+            if (instance) {
+                instance->SetTransform(object_transform);
+                register_non_gltf_renderable(instance.Raw());
+                // Keep the asset alive for the lifetime of the viewer (the
+                // instance alone does not own the underlying GigaVoxel asset).
+                loaded_gigavoxel_assets_.push_back(asset);
+            }
+            return;
+        }
+
         if (loading_format == "grf" || loading_format == "gaussian_radiance_field") {
             TRef<GaussianRadianceField> field;
             float percentage = 1.0f;
@@ -662,6 +678,22 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         if (glm::length(view_->camera_.up) > 0.0f) {
             view_->camera_.up = glm::normalize(view_->camera_.up);
         }
+    }
+
+    // Persistent camera override: if any persistent cameras were loaded from
+    // viewer_app_config.json, the highest-priority one takes precedence over
+    // whatever camera the scene JSON specified.
+    if (!persistent_cameras_.empty()) {
+        size_t best = 0;
+        for (size_t i = 1; i < persistent_cameras_.size(); ++i) {
+            if (persistent_cameras_[i].priority > persistent_cameras_[best].priority) {
+                best = i;
+            }
+        }
+        view_->camera_ = persistent_cameras_[best].camera;
+        MI_LOG(MIInfraLogType::kInfo,
+            "Startup using persistent camera '{}' (priority={}).",
+            persistent_cameras_[best].name, persistent_cameras_[best].priority);
     }
 
     scene_->directional_light_.enabled = true;

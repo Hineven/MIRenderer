@@ -24,7 +24,7 @@ struct ChunkCoordHash {
 
 // WorldShellData: Shell data container
 // A Shell is a collection of Chunks that can be transformed together
-class WorldShellData : public mi::RefCounted {
+class WorldShellData : public mi::RefCounted<> {
 public:
     WorldShellData(ShellId id, ShellCategory category);
     ~WorldShellData() override;

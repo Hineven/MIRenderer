@@ -16,7 +16,7 @@
 MACROMC_WORLD_NAMESPACE_BEGIN
 
 // WorldData: Top-level container for all shells
-class WorldData : public mi::RefCounted {
+class WorldData : public mi::RefCounted<> {
 public:
     WorldData();
     ~WorldData() override;

@@ -19,6 +19,7 @@
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_static_mesh.h"
+#include "renderer/mi_giga_voxel.h"
 #include "renderer/mi_resource_allocator.h"
 #include "rdg/rdg.h"
 #include "viewer_zmq.h"
@@ -33,6 +34,14 @@ struct MainLoopStartConfig {
     uint32_t window_height;
     std::string scene_config_path;
     bool start_empty = false;
+};
+
+// A user-saved camera position that can be persisted across runs and
+// recalled later. Higher priority entries take precedence on startup.
+struct PersistentCamera {
+    std::string name;
+    int priority {0};
+    Camera camera {};
 };
 
 class ViewerApp {
@@ -100,6 +109,23 @@ public:
     void ProcessAxisDragging();
     void SetSelectedRenderable(Renderable* renderable);
     void RegisterLoadedScene(const std::string& name, const std::vector<TRef<RenderableNode>>& roots);
+
+    // Persistent camera management.
+    // All of these operate on the in-memory persistent_cameras_ list and (where appropriate)
+    // immediately persist the list back to viewer_app_config.json.
+    void SaveCurrentCameraAsPersistent(const std::string& name, int priority);
+    void DeletePersistentCamera(size_t index);
+    void UpdatePersistentCamera(size_t index);
+    void ApplyPersistentCamera(size_t index);
+    void MovePersistentCameraPriority(size_t index, int delta);
+    void RenamePersistentCamera(size_t index, const std::string& new_name);
+    // Serialize persistent_cameras_ into the in-memory config snapshot and write to disk.
+    void SavePersistentCamerasToConfig();
+    // Load persistent_cameras_ from a config json snapshot.
+    void LoadPersistentCamerasFromConfig(const nlohmann::json& config);
+    // Write persistent_cameras_ into the "persistent_cameras" key of `out` only.
+    void SerializePersistentCamerasToJson(nlohmann::json& out) const;
+
     void WaitForSceneMutation();
     void FlushSceneDelayedDestruction();
     void UnloadScene(size_t idx);
@@ -157,6 +183,10 @@ public:
     TRef<StaticMesh> arrow_mesh_z_;
     TRef<Geometry> arrow_geometry_;
 
+    // GigaVoxel bring-up assets kept alive for the viewer's lifetime (the
+    // instance does not own the underlying GigaVoxel asset).
+    std::vector<TRef<GigaVoxel>> loaded_gigavoxel_assets_;
+
     SelectionState selection_state_ {};
     BakingState baking_state_ {};
     InputState input_state_ {};
@@ -166,6 +196,13 @@ public:
     std::unordered_map<std::string, PerfStat> perf_stats_;
 
     std::vector<CVarBase *> pinned_cvars_;
+
+    // Persistent camera positions, loaded from / saved to viewer_app_config.json.
+    std::vector<PersistentCamera> persistent_cameras_;
+    // In-memory snapshot of viewer_app_config.json so that any subsystem
+    // (e.g. persistent cameras) can update only its own key and re-save the
+    // whole file without clobbering other subsystems' state.
+    nlohmann::json config_json_;
 
     // Temporarily keep some of the exported results for ZMQ server to use.
     std::vector<ExportedRenderResult> exported_render_results_;

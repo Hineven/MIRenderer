@@ -9,8 +9,6 @@
 
 MACROMC_WORLDGEN_NAMESPACE_BEGIN
 
-using namespace MACROMC_WORLD_NAMESPACE;
-
 void EmptyWorldgen::GenerateChunk(WorldShellData* /*shell*/,
                                   const ChunkCoord& /*coord*/,
                                   ChunkData* out_data) {

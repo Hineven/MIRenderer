@@ -18,9 +18,9 @@ Phase 2 (GPU Compute): 分层 Culling
   Chunk 级 frustum → SubChunk 级 frustum → Hi-Z occlusion
   输出: indirect draw args (VC/TFC) + 可见 LOD Block list (LFC)
 
-Phase 3 (GPU): 混合光栅 → Visibility Buffer
-  3B: SW Raster (LFC, compute) — 先写远景
-  3A: HW Raster (VC+TFC, graphics) — 后写近景覆盖
+Phase 3 (GPU): 混合光栅 → Visibility Buffer (共享 G_depth_)
+  3A: HW Raster (VC+TFC, graphics) — 先写近景, 硬件 depth test
+  3B: SW Raster (LFC, compute) — 后写远景, 读 HW depth 做 software depth test
 
 Phase 4 (GPU Compute): Visibility Resolve → G-Buffer
 
@@ -154,19 +154,36 @@ Phase 2 产出以下 GPU buffer，供 Phase 3 消费：
 
 ### 5.1 Visibility Buffer 格式
 
-**格式**: R32_UINT (4 bytes/pixel)
+Visibility buffer 是 **renderer 层统一格式**，由 static mesh 和 GigaVoxel 共用。
+完整规范见 **`gigavoxel_visibility_buffer.md`**，此处仅列 GigaVoxel 相关摘要。
 
+**格式**: `R32G32B32A32_UINT` (128bit/pixel)
+
+```
+x[19:0]  RenderableIndex (20bit)  — 指向 GigaVoxelRenderable (单槽)
+x[31:20] RenderableType  (12bit)  — kGigaVoxel
+y, z, w  Payload (96bit)          — 按 VC/LFC 自由编码
+```
+
+**GigaVoxel VC/TFC 编码**（有纹理）：
 | 字段 | 位数 | 含义 |
 |------|------|------|
-| chunk_id | 20 bits | chunk 唯一标识，支持 1M chunks |
-| block_local_id | 8 bits | subchunk 内 block 索引或 LOD block 索引 |
-| face_id | 3 bits | 面朝向：+X, -X, +Y, -Y, +Z, -Z |
-| lod_level | 1 bit | 0 = VC/TFC（走 atlas/card resolve），1 = LFC（走 color resolve） |
+| LocalBlockIndex (y[23:0]) | 24 | VC 范围内全局 block 坐标, 直接定位 block |
+| 额外 (y[31:24]) | 8 | 备用: face index / subchunk flag |
+| UV.x (z) | 32 (f32) | block 纹理坐标 |
+| UV.y (w) | 32 (f32) | block 纹理坐标 |
 
-**配套 Depth Buffer**: D32_FLOAT。HW raster 由硬件写 depth；SW raster 通过 atomic min 模拟 depth test。
+**GigaVoxel LFC 编码**（远场, 无纹理追求）：
+| 字段 | 位数 | 含义 |
+|------|------|------|
+| BlockColor (y) | 32 | 直接塞 packed color, decode 零计算 |
+| 备用 (z) | 32 | 未定义, 留作远场法线/AO 等 |
+| NaN sentinel (w) | 32 | 指数位全 1 → NaN, 标记此像素为 LFC |
 
-> 具体的 LOD 级别（LFC1 vs LFC4）由 chunk_id → ChunkRegistry 查询获得，无需编码在 buffer 里。
-> 1 bit lod_level 足以区分两种 resolve 路径。
+> **VC/LFC 区分**：decode 时检查 `w` 是否为 NaN——是 NaN 走 LFC 分支（y 直解颜色），非 NaN 走 VC 分支（y 解 LocalBlockIndex + z/w 解 UV）。零 header 查询。
+
+**配套 Depth Buffer**: `D32_FLOAT` reversed-z，HW 与 SW 共用 `G_depth_`。
+判空统一用 `Depth == 0`。
 
 ### 5.2 Phase 3A: HW Raster (VC + TFC)
 
@@ -174,13 +191,12 @@ Phase 2 产出以下 GPU buffer，供 Phase 3 消费：
 
 **VC Pipeline**：
 - Vertex Shader 从 mesh buffer 读取顶点（position, uv_base, uv_scale, normal）
-- Fragment Shader 编码 chunk_id + block_local_id + face_id 写入 Visibility Buffer
-- face_id 由 normal 方向确定（6 个主轴方向之一）
+- Fragment Shader 写入 Visibility Buffer: RenderableIndex + RenderableType=kGigaVoxel + LocalBlockIndex + UV
 - 绑定 block texture atlas (SRV) 用于 alpha test（如果有的话）
 
 **TFC Pipeline**：
 - Vertex Shader 与 VC 类似
-- Fragment Shader 同样编码 visibility 信息
+- Fragment Shader 同样写入 visibility (LocalBlockIndex + UV)
 - TFC 不需要 atlas 采样（材质由 chunk card 表达，但 card lookup 推迟到 Phase 4 resolve）
 - 可选绑定 chunk card buffer (SSBO)
 
@@ -196,43 +212,48 @@ Phase 2 产出以下 GPU buffer，供 Phase 3 消费：
 1. 根据 block 的 world-space 位置和尺寸，确定其 6 个面
 2. 根据相机方向判断哪些面朝向相机（通常 1~3 个面可见）
 3. 将每个可见面投影到 screen space，得到一个 screen-space quad
-4. 遍历 quad 内的像素，做深度测试（atomic min 写入 depth buffer）
-5. 通过后写入 visibility buffer（编码 chunk_id + block_id + face_id）
+4. 遍历 quad 内的像素，读取 HW 已写的 G_depth_ 做 software depth test
+5. 通过后写入 visibility (BlockColor 直存 y) + 更新 depth，w 写 NaN sentinel 标记 LFC
 
 **LFC Visible Block** 每条记录包含：
 - world-space 位置 + 尺寸（3 个分量，支持非正方体 LOD block）
-- packed RGBA color
-- chunk_id + block_id
+- packed RGBA color（直接写进 visibility.y，不存 block_id）
 
 > 注意：LOD block 的面朝向检测可以在 shader 内完成（比较面法线与相机方向），
 > 无需在 CPU 侧预计算可见面。每个 block 最多光栅化 3 个面。
 
-### 5.4 执行顺序：先 SW 后 HW
+### 5.4 执行顺序：先 HW 后 SW
 
-**选择先 Phase 3B (SW/LFC) 后 Phase 3A (HW/VC+TFC)**：
+**选择先 Phase 3A (HW/VC+TFC) 后 Phase 3B (SW/LFC)**：
 
-1. LFC triangles 在远景（depth 值大），先写入 visibility + depth buffer
-2. VC/TFC 在近景，HW raster 的硬件 depth test 自然覆盖远景的 LFC 数据
-3. 优势：HW raster 不需要与 SW raster 的 depth 做 atomic 竞争——HW depth test 是硬件自动处理的
+1. VC/TFC 和 static mesh 通常在近景，HW raster 先写 visibility + G_depth_
+2. LFC cube 在远景，SW raster 读 HW 已写的 G_depth_ 做 software depth test
+3. 被近场几何遮挡的 LFC 像素直接跳过，不覆盖 visibility——省 SW 工作量
+4. 优势：SW 只需普通 read-modify-write depth，无需 atomic 竞争（HW 已串行在前）
 
-这样避免了"同时写同一个 buffer 需要同步"的复杂度。
+> ⚠️ 更正：早期版本曾写"先 SW 后 HW"，那是写反了。正确顺序是 **HW 先，SW 后**。
+> 详见 `gigavoxel_visibility_buffer.md` §5。
+
+Phase 3A 与 Phase 3B 之间需要 RDG barrier：`G_depth_` 从 depth-attachment-write 转 shader-read|shader-write。
 
 ---
 
 ## 6. Phase 4: Visibility Resolve → G-Buffer
 
-一个 full-screen compute dispatch，将 Visibility Buffer 转换为 G-Buffer：
+一个 full-screen compute dispatch，将 Visibility Buffer 转换为 G-Buffer。
+decode 按 `RenderableType` 分支，GigaVoxel 内部再按 NaN sentinel 区分 VC/LFC。
+完整 decode 逻辑见 `gigavoxel_visibility_buffer.md` §6。
 
 **每个像素的处理**：
-1. 读取 visibility buffer 的 R32_UINT 值
-2. 如果为 0（sky / 无数据），写入 sky 默认值
-3. 解包 chunk_id、block_local_id、face_id、lod_level
-4. 查 ChunkInstance buffer 获取该 chunk 的资源 offset
-5. 根据 lod_level 分支：
-   - **VC (lod_level=0, resolved as VC)**：用 block_local_id + face_id 查 texture atlas → 完整材质
-   - **TFC (lod_level=0, resolved as TFC)**：用 chunk_id 定位 chunk card → 简化材质
-   - **LFC (lod_level=1)**：用 chunk_id + block_id 查 color array → 单色
-6. 写入 G-Buffer（albedo、normal、material_id 等）
+1. 读 G_depth_，若 `Depth == 0`（reversed-z, sky/无数据）→ 写 sky 默认值，跳过
+2. 读 G_visibility_，解包 RenderableIndex(20) + RenderableType(12)
+3. 按 RenderableType 分支：
+   - **kStaticMeshInstance**：现有 static mesh decode 路径（DescriptorIndex + PrimitiveIndex + Bary）
+   - **kGigaVoxel**：
+     - 检查 `w` 是否 NaN
+     - **非 NaN → VC/TFC**：y 解 LocalBlockIndex → 查 GigaVoxelRenderable block 表 + UV 采样 → 完整材质
+     - **是 NaN → LFC**：y 直解 packed color → G_albedo，法线取几何近似，emission=0
+4. 写入 G-Buffer（albedo、normal、material_id 等）
 
 **G-Buffer 输出**（与现有 renderer 兼容）：
 - Albedo (RGBA8)

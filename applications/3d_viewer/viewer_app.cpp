@@ -353,6 +353,150 @@ void ViewerApp::BakingState::ClearBakingState() {
     is_baking_mode = false;
 }
 
+// Forward declarations for the file-local config helpers defined further
+// below, so the persistent-camera methods can call SaveConfig().
+static std::filesystem::path GetViewerAppConfigPath();
+static void LoadConfig(nlohmann::json& out_config);
+static void SaveConfig(const nlohmann::json& config);
+
+// Serialize a Camera into a json object. Mirrors the format used by the
+// existing F5 one-shot camera dump in camera_configs/ for consistency.
+static nlohmann::json CameraToJson(const Camera& cam) {
+    nlohmann::json j;
+    j["position"]    = {cam.position.x, cam.position.y, cam.position.z};
+    j["direction"]   = {cam.direction.x, cam.direction.y, cam.direction.z};
+    j["up"]          = {cam.up.x, cam.up.y, cam.up.z};
+    j["fov_y"]       = cam.fov_Y;
+    j["near_plane"]  = cam.near_plane;
+    j["far_plane"]   = cam.far_plane;
+    return j;
+}
+
+// Deserialize a Camera from json. Returns false if the required fields are
+// missing or malformed, in which case `out` is left untouched.
+static bool CameraFromJson(const nlohmann::json& j, Camera& out) {
+    if (!j.is_object()) return false;
+    Camera c {};
+    if (!j.contains("position") || !j.contains("direction")) return false;
+    const auto& pos_j = j["position"];
+    const auto& dir_j = j["direction"];
+    if (!pos_j.is_array() || pos_j.size() != 3) return false;
+    if (!dir_j.is_array() || dir_j.size() != 3) return false;
+    c.position  = glm::vec3(pos_j[0].get<float>(), pos_j[1].get<float>(), pos_j[2].get<float>());
+    c.direction = glm::vec3(dir_j[0].get<float>(), dir_j[1].get<float>(), dir_j[2].get<float>());
+
+    if (j.contains("up") && j["up"].is_array() && j["up"].size() == 3) {
+        c.up = glm::vec3(j["up"][0].get<float>(), j["up"][1].get<float>(), j["up"][2].get<float>());
+    }
+    if (j.contains("fov_y") && j["fov_y"].is_number()) {
+        c.fov_Y = j["fov_y"].get<float>();
+    }
+    if (j.contains("near_plane") && j["near_plane"].is_number()) {
+        c.near_plane = j["near_plane"].get<float>();
+    }
+    if (j.contains("far_plane") && j["far_plane"].is_number()) {
+        c.far_plane = j["far_plane"].get<float>();
+    }
+
+    const float dir_len = glm::length(c.direction);
+    if (dir_len > 1e-6f) c.direction /= dir_len;
+    const float up_len = glm::length(c.up);
+    if (up_len > 1e-6f) c.up /= up_len;
+    out = c;
+    return true;
+}
+
+void ViewerApp::LoadPersistentCamerasFromConfig(const nlohmann::json& config) {
+    persistent_cameras_.clear();
+    if (!config.contains("persistent_cameras") || !config["persistent_cameras"].is_array()) {
+        return;
+    }
+    for (const auto& entry : config["persistent_cameras"]) {
+        if (!entry.is_object()) continue;
+        PersistentCamera pc;
+        if (entry.contains("name") && entry["name"].is_string()) {
+            pc.name = entry["name"].get<std::string>();
+        }
+        if (entry.contains("priority") && entry["priority"].is_number_integer()) {
+            pc.priority = entry["priority"].get<int>();
+        }
+        if (entry.contains("camera")) {
+            Camera c;
+            if (CameraFromJson(entry["camera"], c)) {
+                pc.camera = c;
+            }
+        }
+        persistent_cameras_.push_back(std::move(pc));
+    }
+    MI_LOG(MIInfraLogType::kInfo, "Loaded {} persistent camera position(s).", persistent_cameras_.size());
+}
+
+void ViewerApp::SavePersistentCamerasToConfig() {
+    SerializePersistentCamerasToJson(config_json_);
+    SaveConfig(config_json_);
+}
+
+void ViewerApp::SerializePersistentCamerasToJson(nlohmann::json& out) const {
+    auto arr = nlohmann::json::array();
+    arr.get_ref<nlohmann::json::array_t&>().reserve(persistent_cameras_.size());
+    for (const auto& pc : persistent_cameras_) {
+        nlohmann::json entry;
+        entry["name"]     = pc.name;
+        entry["priority"] = pc.priority;
+        entry["camera"]   = CameraToJson(pc.camera);
+        arr.push_back(std::move(entry));
+    }
+    out["persistent_cameras"] = std::move(arr);
+}
+
+static bool IsValidPersistentCameraIndex(const std::vector<PersistentCamera>& v, size_t i) {
+    return i < v.size();
+}
+
+void ViewerApp::SaveCurrentCameraAsPersistent(const std::string& name, int priority) {
+    if (!view_) return;
+    PersistentCamera pc;
+    pc.name     = name.empty() ? std::format("camera_{}", persistent_cameras_.size()) : name;
+    pc.priority = priority;
+    pc.camera   = view_->camera_;
+    persistent_cameras_.push_back(std::move(pc));
+    SavePersistentCamerasToConfig();
+    MI_LOG(MIInfraLogType::kInfo, "Saved persistent camera '{}' (priority={}).",
+        persistent_cameras_.back().name, persistent_cameras_.back().priority);
+}
+
+void ViewerApp::DeletePersistentCamera(size_t index) {
+    if (!IsValidPersistentCameraIndex(persistent_cameras_, index)) return;
+    persistent_cameras_.erase(persistent_cameras_.begin() + static_cast<std::ptrdiff_t>(index));
+    SavePersistentCamerasToConfig();
+}
+
+void ViewerApp::UpdatePersistentCamera(size_t index) {
+    if (!IsValidPersistentCameraIndex(persistent_cameras_, index) || !view_) return;
+    persistent_cameras_[index].camera = view_->camera_;
+    SavePersistentCamerasToConfig();
+    MI_LOG(MIInfraLogType::kInfo, "Updated persistent camera '{}' with current view.",
+        persistent_cameras_[index].name);
+}
+
+void ViewerApp::ApplyPersistentCamera(size_t index) {
+    if (!IsValidPersistentCameraIndex(persistent_cameras_, index) || !view_) return;
+    view_->camera_ = persistent_cameras_[index].camera;
+    MI_LOG(MIInfraLogType::kInfo, "Applied persistent camera '{}'.", persistent_cameras_[index].name);
+}
+
+void ViewerApp::MovePersistentCameraPriority(size_t index, int delta) {
+    if (!IsValidPersistentCameraIndex(persistent_cameras_, index) || delta == 0) return;
+    persistent_cameras_[index].priority += delta;
+    SavePersistentCamerasToConfig();
+}
+
+void ViewerApp::RenamePersistentCamera(size_t index, const std::string& new_name) {
+    if (!IsValidPersistentCameraIndex(persistent_cameras_, index)) return;
+    persistent_cameras_[index].name = new_name;
+    SavePersistentCamerasToConfig();
+}
+
 static std::string GetCurrentDateTimeString() {
     auto t = std::time(nullptr);
     auto tm = *std::localtime(&t);
@@ -470,10 +614,10 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
     GetInfra().Init();
 
     // Load persisted UI state.
-    nlohmann::json json_config;
-    LoadConfig(json_config);
-    LoadPinnedCVarsFromConfig(json_config, pinned_cvars_);
-    console_.Initialize(json_config);
+    LoadConfig(config_json_);
+    LoadPinnedCVarsFromConfig(config_json_, pinned_cvars_);
+    LoadPersistentCamerasFromConfig(config_json_);
+    console_.Initialize(config_json_);
 
     RegisterViewerCommands(*this);
 
@@ -583,12 +727,16 @@ void ViewerApp::Destroy() {
     zmq_server_.reset();
 
     // Persist UI state before tearing subsystems down.
-    nlohmann::json json_config;
+    // Reuse the config_json_ snapshot taken in Initialize() so that subsystems
+    // (console history, etc.) only need to update their own keys; we then
+    // refresh the keys owned by the app (pinned cvars, persistent cameras).
+    nlohmann::json& json_config = config_json_;
     json_config["pinned_cvars"] = nlohmann::json::array();
     for (auto *cvar : pinned_cvars_) {
         if (!cvar) continue;
         json_config["pinned_cvars"].push_back(cvar->GetId());
     }
+    SerializePersistentCamerasToJson(json_config);
 
     default_material_.SafeRelease();
     {

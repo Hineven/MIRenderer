@@ -15,6 +15,7 @@
 #include "shaders/shared/SharedVolumePrimitives.hlsl"
 #include "shaders/shared/SharedGaussianRadianceField.hlsl"
 #include "shaders/shared/SharedVolumeGrid.hlsl"
+#include "shaders/shared/SharedGigaVoxel.hlsl"
 #include "shaders/shared/SharedLightClusterHierarchy.hlsl"
 
 
@@ -26,6 +27,7 @@ geometry_slots_(kMaxNumGeometries),
 static_mesh_slots_(kMaxNumStaticMeshes),
 volume_primitives_slots_(kMaxNumVolumePrimitiveGroups),
 gaussian_radiance_field_slots_(kMaxNumGaussianRadianceFields),
+giga_voxel_slots_(kMaxNumGigaVoxels),
 volume_grid_slots_(kMaxNumVolumeGrids){
 
     vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
@@ -41,6 +43,24 @@ volume_grid_slots_(kMaxNumVolumeGrids){
         128, 256 * 1024 * 1024, this
     );
     index_uber_buffer_->SetName("IndexUberBuffer");
+
+    // Dedicated GigaVoxel geometry heaps. Same usage flags as the StaticMesh
+    // vertex/index heaps (vertex/index + storage + AS build input + device
+    // address) but a separate allocator backing, sized smaller initially since
+    // chunk geometry streams in progressively rather than loading all at once.
+    giga_voxel_vertex_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
+        128, 64 * 1024 * 1024, this
+    );
+    giga_voxel_vertex_uber_buffer_->SetName("GigaVoxelVertexUberBuffer");
+
+    giga_voxel_index_uber_buffer_ = DefaultDeviceUberBuffer::Create(
+        RHIBufferUsageFlagBits::kIndex | RHIBufferUsageFlagBits::kStorage
+        | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput | RHIBufferUsageFlagBits::kShaderDeviceAddress,
+        128, 64 * 1024 * 1024, this
+    );
+    giga_voxel_index_uber_buffer_->SetName("GigaVoxelIndexUberBuffer");
 
     material_header_buffer_ = RHI::Get().CreateBuffer(
         {sizeof(MaterialHeader) * kMaxNumMaterials, RHIBufferUsageFlagBits::kStorage}
@@ -165,6 +185,11 @@ volume_grid_slots_(kMaxNumVolumeGrids){
         {sizeof(VolumeGridHeader) * kMaxNumVolumeGrids, RHIBufferUsageFlagBits::kStorage}
     );
     volume_grid_header_buffer_->SetName("VolumeGridHeaderBuffer");
+
+    giga_voxel_header_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(GigaVoxelHeader) * kMaxNumGigaVoxels, RHIBufferUsageFlagBits::kStorage}
+    );
+    giga_voxel_header_buffer_->SetName("GigaVoxelHeaderBuffer");
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {
@@ -192,6 +217,8 @@ size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
     size_t sum = 0;
     sum += vertex_uber_buffer_->GetRHI()->GetBufferSize();
     sum += index_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += giga_voxel_vertex_uber_buffer_->GetRHI()->GetBufferSize();
+    sum += giga_voxel_index_uber_buffer_->GetRHI()->GetBufferSize();
     sum += static_mesh_description_uber_buffer_->GetRHI()->GetBufferSize();
     sum += area_lights_uber_buffer_->GetRHI()->GetBufferSize();
     for (uint32_t i = 0; i < mesh_light_triangle_uber_buffer_array_->GetNumStreams(); ++i) {
@@ -212,6 +239,7 @@ size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {
     sum += static_mesh_header_buffer_->GetBufferSize();
     sum += volume_primitives_header_buffer_->GetBufferSize();
     sum += gaussian_radiance_field_header_buffer_->GetBufferSize();
+    sum += giga_voxel_header_buffer_->GetBufferSize();
     return sum;
 }
 
@@ -229,6 +257,7 @@ TRef<DeviceBindlessResourceAllocator::SlotKeeper> DeviceBindlessResourceAllocato
         case SlotKind::VolumePrimitives: idx = AllocateVolumePrimitivesSlot(); break;
         case SlotKind::VolumeGrid: idx = AllocateVolumeGridSlot(); break;
         case SlotKind::GaussianRadianceField: idx = AllocateGaussianRadianceFieldSlot(); break;
+        case SlotKind::GigaVoxel: idx = AllocateGigaVoxelSlot(); break;
         default: break;
     }
     if (idx == UINT32_MAX) return {};
@@ -241,6 +270,7 @@ TRef<DeviceBindlessResourceAllocator::SlotKeeper> DeviceBindlessResourceAllocato
         static void FreeVolumePrimitives(DeviceBindlessResourceAllocator *o, uint32_t v) { o->FreeSlot(SlotKind::VolumePrimitives, v); }
         static void FreeVolumeGrid(DeviceBindlessResourceAllocator *o, uint32_t v) { o->FreeSlot(SlotKind::VolumeGrid, v); }
         static void FreeGRF(DeviceBindlessResourceAllocator *o, uint32_t v) { o->FreeSlot(SlotKind::GaussianRadianceField, v); }
+        static void FreeGigaVoxel(DeviceBindlessResourceAllocator *o, uint32_t v) { o->FreeSlot(SlotKind::GigaVoxel, v); }
     };
     SlotKeeper::ReleaseFn fn = &ReleaseSlotThunk;
     switch (kind) {
@@ -250,6 +280,7 @@ TRef<DeviceBindlessResourceAllocator::SlotKeeper> DeviceBindlessResourceAllocato
         case SlotKind::VolumePrimitives: fn = &Thunks::FreeVolumePrimitives; break;
         case SlotKind::VolumeGrid: fn = &Thunks::FreeVolumeGrid; break;
         case SlotKind::GaussianRadianceField: fn = &Thunks::FreeGRF; break;
+        case SlotKind::GigaVoxel: fn = &Thunks::FreeGigaVoxel; break;
         default: break;
     }
 
@@ -272,6 +303,12 @@ std::pair<TRef<DeviceUberBufferAllocation>, bool> DeviceBindlessResourceAllocato
 std::pair<TRef<DeviceUberBufferAllocation>, bool> DeviceBindlessResourceAllocator::AllocateIndexBuffer (uint32_t size, bool allow_reallocation) {
     return index_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
 }
+std::pair<TRef<DeviceUberBufferAllocation>, bool> DeviceBindlessResourceAllocator::AllocateGigaVoxelVertexBuffer (uint32_t size, bool allow_reallocation) {
+    return giga_voxel_vertex_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
+}
+std::pair<TRef<DeviceUberBufferAllocation>, bool> DeviceBindlessResourceAllocator::AllocateGigaVoxelIndexBuffer (uint32_t size, bool allow_reallocation) {
+    return giga_voxel_index_uber_buffer_->AllocateRefCounted(size, allow_reallocation);
+}
 
 void DeviceBindlessResourceAllocator::FreeSlot(SlotKind kind, uint32_t idx) {
     switch (kind) {
@@ -281,6 +318,7 @@ void DeviceBindlessResourceAllocator::FreeSlot(SlotKind kind, uint32_t idx) {
         case SlotKind::VolumePrimitives: FreeVolumePrimitivesSlot(idx); break;
         case SlotKind::VolumeGrid: FreeVolumeGridSlot(idx); break;
         case SlotKind::GaussianRadianceField: FreeGaussianRadianceFieldSlot(idx); break;
+        case SlotKind::GigaVoxel: FreeGigaVoxelSlot(idx); break;
         default: break;
     }
 }

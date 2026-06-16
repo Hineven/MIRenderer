@@ -157,7 +157,7 @@ Chunk A (LFC2)    Chunk B (LFC2)
 - 用途：区块刚进入 LFC 范围时的 fallback（LFC1 mesh 尚未就绪时先用 LFC0 显示）
 - 颜色直接来自原始 block data 的 base color，无需统计/平均
 - GPU 内存/LFC chunk：~50KB mesh + ~128KB colors + ~50KB BLAS ≈ 228KB
-- 注意：因为 LOD block 数量巨大（1M），LFC0 仅作为临时 fallback，不长期驻留
+- 注意：因为 LOD block 数量巨大（1M），LFC0 在 VRAM 中仅作为临时 fallback，不长期驻留（disk 上仍全量持久化，见 streaming 文档 §4.2）
 
 **LFC1 (×2)**
 - 单 LFC chunk = 2×2 原始 chunks = 32×4096×32 blocks → 16×2048×16 LOD blocks (2m cube)

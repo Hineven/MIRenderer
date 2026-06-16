@@ -16,6 +16,11 @@ BlockRegistry::BlockRegistry() {
     definitions_[0].solid = false;
     definitions_[0].transparent = true;
     definitions_[0].render = false;
+    // Air has no solid faces (so it never culls a neighbor's exposed face
+    // during greedy meshing). The default face_solid[] is all-true, so reset.
+    for (int i = 0; i < static_cast<int>(BlockFace::kCount); ++i) {
+        definitions_[0].face_solid[i] = false;
+    }
     name_to_id_["air"] = BuiltinBlocks::kAirId;
 }
 
@@ -66,69 +71,70 @@ bool BlockRegistry::IsValidBlockId(BlockId id) const {
 }
 
 void BlockRegistry::RegisterBuiltinBlocks() {
-    // Stone
+    // Stone (tile 0)
     BlockDefinition stone;
     stone.id = BuiltinBlocks::kStoneId;
     stone.name = "stone";
     stone.solid = true;
     stone.transparent = false;
     stone.render = true;
-    stone.texture_index = 0;
+    stone.SetUniformTexture(0);
     stone.SetAllFacesSolid();
     RegisterBlock("stone", stone);
-    
-    // Dirt
+
+    // Dirt (tile 1)
     BlockDefinition dirt;
     dirt.id = BuiltinBlocks::kDirtId;
     dirt.name = "dirt";
     dirt.solid = true;
     dirt.transparent = false;
     dirt.render = true;
-    dirt.texture_index = 1;
+    dirt.SetUniformTexture(1);
     dirt.SetAllFacesSolid();
     RegisterBlock("dirt", dirt);
-    
-    // Grass
+
+    // Grass: top/side/bottom split (top=6, side=7, bottom=1=dirt).
+    // Tiles 6/7 are new placeholder slots added to the bring-up atlas.
     BlockDefinition grass;
     grass.id = BuiltinBlocks::kGrassId;
     grass.name = "grass";
     grass.solid = true;
     grass.transparent = false;
     grass.render = true;
-    grass.texture_index = 2;
+    grass.SetTopSideBottom(/*top*/ 6, /*side*/ 7, /*bottom*/ 1);
     grass.SetAllFacesSolid();
     RegisterBlock("grass", grass);
-    
-    // Bedrock
+
+    // Bedrock (tile 3)
     BlockDefinition bedrock;
     bedrock.id = BuiltinBlocks::kBedrockId;
     bedrock.name = "bedrock";
     bedrock.solid = true;
     bedrock.transparent = false;
     bedrock.render = true;
-    bedrock.texture_index = 3;
+    bedrock.SetUniformTexture(3);
     bedrock.SetAllFacesSolid();
     RegisterBlock("bedrock", bedrock);
-    
-    // Sand
+
+    // Sand (tile 4)
     BlockDefinition sand;
     sand.id = BuiltinBlocks::kSandId;
     sand.name = "sand";
     sand.solid = true;
     sand.transparent = false;
     sand.render = true;
-    sand.texture_index = 4;
+    sand.SetUniformTexture(4);
     sand.SetAllFacesSolid();
     RegisterBlock("sand", sand);
-    
-    // Water
+
+    // Water (tile 5)
     BlockDefinition water;
     water.id = BuiltinBlocks::kWaterId;
     water.name = "water";
     water.solid = false;
     water.transparent = true;
     water.render = true;
-    water.texture_index = 5;
+    water.SetUniformTexture(5);
     // Water faces are not solid (allows seeing through adjacent water)
     for (int i = 0; i < static_cast<int>(BlockFace::kCount); ++i) {
         water.face_solid[i] = false;

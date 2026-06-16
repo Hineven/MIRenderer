@@ -11,6 +11,8 @@ set(SOURCES
         mi_volume_grid.cpp
         mi_volume_primitives.cpp
         mi_gaussian_radiance_field.cpp
+        mi_giga_voxel.cpp
+        mi_giga_voxel_heap.cpp
         mi_renderable.cpp
         mi_scene.cpp
         mi_renderer_view.cpp

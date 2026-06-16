@@ -17,6 +17,7 @@ target_include_directories(macromc_world PUBLIC
 target_link_libraries(macromc_world PUBLIC
     core
     macromc_registry
+    macromc_public_headers
     glm::glm
 )
 

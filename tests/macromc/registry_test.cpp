@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include "registry/block_registry.h"
 
-using namespace macromc::registry;
+using namespace macromc;
 
 class BlockRegistryTest : public ::testing::Test {
 protected:
@@ -53,6 +53,27 @@ TEST_F(BlockRegistryTest, NonexistentNameReturnsInvalidId) {
     auto& reg = GetGlobalBlockRegistry();
     BlockId id = reg.GetBlockId(std::string("nonexistent_block"));
     EXPECT_EQ(id, kInvalidBlockId);
+}
+
+TEST_F(BlockRegistryTest, BlockDefinitionPerFaceTexture) {
+    auto& reg = GetGlobalBlockRegistry();
+
+    // Grass uses a top/side/bottom split (SetTopSideBottom(6,7,1)).
+    auto* grass_def = reg.GetDefinition(BuiltinBlocks::kGrassId);
+    ASSERT_NE(grass_def, nullptr);
+    EXPECT_EQ(grass_def->GetFaceTexture(BlockFace::kPosY), 6);  // top
+    EXPECT_EQ(grass_def->GetFaceTexture(BlockFace::kNegY), 1);  // bottom == dirt
+    EXPECT_EQ(grass_def->GetFaceTexture(BlockFace::kPosX), 7);  // side
+    EXPECT_EQ(grass_def->GetFaceTexture(BlockFace::kNegX), 7);  // side
+    EXPECT_EQ(grass_def->GetFaceTexture(BlockFace::kPosZ), 7);  // side
+    EXPECT_EQ(grass_def->GetFaceTexture(BlockFace::kNegZ), 7);  // side
+
+    // Stone uses SetUniformTexture(0): every face the same tile.
+    auto* stone_def = reg.GetDefinition(BuiltinBlocks::kStoneId);
+    ASSERT_NE(stone_def, nullptr);
+    for (int i = 0; i < static_cast<int>(BlockFace::kCount); ++i) {
+        EXPECT_EQ(stone_def->face_textures[i], 0);
+    }
 }
 
 int main(int argc, char** argv) {

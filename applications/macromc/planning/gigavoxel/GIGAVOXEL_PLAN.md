@@ -102,17 +102,17 @@ VC/TFC semi-transparent：per-subchunk 排序 + subchunk 内按面朝向分组�
 Phase 0 (CPU): 自顶向下 LOD Refinement（LFC4 → 细分 → VC/TFC）+ Chunk 状态解析 + Fallback
 Phase 1 (CPU): 数据准备 + GPU Upload（chunk metadata, subchunk metadata, indirect args buffer）
 Phase 2 (GPU Compute): 分层 Culling（chunk frustum → subchunk frustum → Hi-Z occlusion）
-Phase 3 (GPU): 混合光栅
-  3B: SW Raster LFC (opaque, 含 semi-transparent 当 opaque) — compute
+Phase 3 (GPU): 混合光栅 (共享 G_depth_, HW 先 SW 后)
   3A: HW Raster VC+TFC (opaque) — graphics
+  3B: SW Raster LFC (opaque, 含 semi-transparent 当 opaque) — compute
   3C: HW Raster VC+TFC (semi-transparent, sorted forward) — graphics
 Phase 4 (GPU Compute): Visibility Resolve + Composite → G-Buffer
 ```
 
 ### 5.2 关键决策
 
-- **执行顺序**：先 SW 后 HW（LFC 远景 depth 大，VC/TFC 近景自然覆盖）
-- **Visibility Buffer**：R32_UINT（20bit chunk_id + 8bit block_local + 3bit face_id + 1bit lod_level）
+- **执行顺序**：先 HW 后 SW（VC/TFC/static mesh 近景先写 depth，LFC 远景读 HW depth 做剔除）
+- **Visibility Buffer**：R32G32B32A32_UINT 统一格式（RenderableIndex 20bit + RenderableType 12bit + 96bit payload），详见 `gigavoxel_visibility_buffer.md`
 - **Fallback 策略**：只向 coarser 方向 fallback，绝不向 finer
 - **Hi-Z**：使用上帧 depth 的 conservative mip chain，相机快速运动时可禁用
 
@@ -223,9 +223,10 @@ Disk ──load──→ RAM (compressed) ──decompress──→ RAM (voxel c
 | 文档 | 内容 |
 |------|------|
 | `gigavoxel_lod_definition.md` | LOD 层级定义、SubChunk 设计、对比表、待决问题 |
-| `gigavoxel_culling_rasterization.md` | 5-Phase 管线设计、Visibility Buffer 格式、性能估算 |
+| `gigavoxel_visibility_buffer.md` | 统一 Visibility Buffer 格式（renderer 层, static mesh + GigaVoxel 共用）、位分配、各类型编码、raster 顺序 |
+| `gigavoxel_culling_rasterization.md` | 5-Phase 管线设计、culling 算法、性能估算（visibility 格式引用 visibility_buffer 文档） |
 | `gigavoxel_transparent_materials.md` | 半透明材质的三个分离、BLAS 策略、LFC 简化 |
-| `gigavoxel_streaming_and_storage.md` | 数据生命周期、LFC 分级持久化、流通路径、Budget |
+| `gigavoxel_streaming_and_storage.md` | 数据生命周期、LFC 全级别持久化、流通路径、Budget |
 
 ### Task 文档（`tasks/`）
 

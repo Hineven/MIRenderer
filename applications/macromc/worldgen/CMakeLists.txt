@@ -15,6 +15,7 @@ target_link_libraries(macromc_worldgen PUBLIC
     core
     macromc_world
     macromc_registry
+    macromc_public_headers
     glm::glm
 )
 

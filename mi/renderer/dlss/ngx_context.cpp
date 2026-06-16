@@ -30,7 +30,14 @@ static std::string NGXResultToString(NVSDK_NGX_Result result) {
 }
 
 static void NGXLogCallback(const char * message, NVSDK_NGX_Logging_Level, NVSDK_NGX_Feature) {
-    MI_LOG(MIInfraLogType::kInfo, "[NGX] {}", message);
+    // Check if the message contains "error", "Error", "ERR", "err" keywords
+    if (message) {
+        auto message_str = std::string(message);
+        std::transform(message_str.begin(), message_str.end(), message_str.begin(), ::tolower);
+        bool bShouldLog = false;
+        if (message_str.find("err") != std::string::npos) {bShouldLog = true;}
+        if (bShouldLog) MI_LOG(MIInfraLogType::kInfo, "[NGX] {}", message);
+    }
 }
 
 void NGXContext::GetRequiredVulkanExtensions(std::vector<const char*>& out_instance_extensions,

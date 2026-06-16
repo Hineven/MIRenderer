@@ -14,12 +14,12 @@ WorldData::~WorldData() = default;
 
 mi::TRef<WorldShellData> WorldData::CreateShell(ShellCategory category) {
     ShellId id = next_shell_id_++;
-    auto shell = mi::TRef<WorldShellData>::Create(id, category);
+    auto shell = mi::Create<WorldShellData>(id, category);
     shells_[id] = shell;
     
     // First terrain shell becomes primary
     if (category == ShellCategory::kTerrain && primary_shell_ == nullptr) {
-        primary_shell_ = shell.Get();
+        primary_shell_ = shell.Raw();
     }
     
     return shell;
@@ -44,7 +44,7 @@ const mi::TRef<WorldShellData> WorldData::GetShell(ShellId id) const {
 void WorldData::RemoveShell(ShellId id) {
     auto it = shells_.find(id);
     if (it != shells_.end()) {
-        if (primary_shell_ == it->second.Get()) {
+        if (primary_shell_ == it->second.Raw()) {
             primary_shell_ = nullptr;
         }
         shells_.erase(it);
@@ -58,7 +58,7 @@ bool WorldData::HasShell(ShellId id) const {
 void WorldData::SetPrimaryShell(ShellId id) {
     auto it = shells_.find(id);
     if (it != shells_.end()) {
-        primary_shell_ = it->second.Get();
+        primary_shell_ = it->second.Raw();
     }
 }
 

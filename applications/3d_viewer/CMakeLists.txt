@@ -9,6 +9,8 @@ set(SOURCES
     viewer_zmq.cpp
     viewer_control.cpp
     viewer_zmq.h
+    viewer_gigavoxel.cpp
+    viewer_gigavoxel.h
 )
 
 add_executable(3d_viewer ${SOURCES})
@@ -34,7 +36,7 @@ add_resources(3d_viewer shaders "shaders/*.hlsl")
 add_resources(3d_viewer assets  "assets/*")
 add_resources(3d_viewer scene_config "viewer_scene.json")
 
-target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw PRIVATE libzmq libzmq-static cppzmq cppzmq-static argparse::argparse)
+target_link_libraries(3d_viewer PUBLIC infra core rhi rdg renderer util glfw PRIVATE libzmq libzmq-static cppzmq cppzmq-static argparse::argparse macromc_meshing macromc_worldgen)
 
 # Copy NGX runtime DLLs to the output directory so DLSS features can be loaded
 if(WIN32)

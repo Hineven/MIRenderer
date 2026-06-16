@@ -11,8 +11,6 @@
 
 MACROMC_WORLDGEN_NAMESPACE_BEGIN
 
-using namespace MACROMC_WORLD_NAMESPACE;
-
 SimpleTerrainWorldgen::SimpleTerrainWorldgen(uint64_t seed)
     : noise_(seed) {
 }
@@ -42,8 +40,11 @@ void SimpleTerrainWorldgen::GenerateChunk(WorldShellData* shell,
             int terrain_height = static_cast<int>(base_height_ + height_sample * height_variation_);
             terrain_height = std::clamp(terrain_height, 1, static_cast<int>(kChunkSizeY) - 1);
 
-            // Fill column
-            for (uint32_t y = 0; y < kChunkSizeY; ++y) {
+            // Fill column. Air is the chunk's default value (SubChunk kEmpty),
+            // so we stop at the surface instead of writing ~3900m of air blocks.
+            // Writing air explicitly would force every above-surface SubChunk
+            // into kMixed (4KB each), blowing the voxel-cache budget.
+            for (uint32_t y = 0; y <= static_cast<uint32_t>(terrain_height); ++y) {
                 MACROMC_REGISTRY_NAMESPACE::BlockId block_id;
 
                 if (y == 0) {
@@ -52,10 +53,8 @@ void SimpleTerrainWorldgen::GenerateChunk(WorldShellData* shell,
                     block_id = stone_id;
                 } else if (y < static_cast<uint32_t>(terrain_height)) {
                     block_id = dirt_id;
-                } else if (y == static_cast<uint32_t>(terrain_height)) {
+                } else {  // y == terrain_height (surface)
                     block_id = grass_id;
-                } else {
-                    block_id = MACROMC_REGISTRY_NAMESPACE::kAirBlockId;
                 }
 
                 out_data->SetBlock(lx, y, lz, block_id);

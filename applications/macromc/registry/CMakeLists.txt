@@ -11,4 +11,5 @@ target_include_directories(macromc_registry PUBLIC
 
 target_link_libraries(macromc_registry PUBLIC
     core
+    macromc_public_headers
 )

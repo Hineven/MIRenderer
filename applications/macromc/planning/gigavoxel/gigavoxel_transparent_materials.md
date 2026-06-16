@@ -126,9 +126,9 @@ TFC/LFC 范围内射线：
 ### 修改后的管线流程
 
 ```
-Phase 3B: SW Raster LFC (all opaque, 包括水面/树叶当 opaque) — compute
-Phase 3A: HW Raster VC+TFC (opaque only) — graphics
-Phase 3C: HW Raster VC+TFC (semi-transparent, sorted forward) — graphics
+Phase 3A: HW Raster VC+TFC (opaque only) — graphics, 写 visibility + depth
+Phase 3B: SW Raster LFC (all opaque, 包括水面/树叶当 opaque) — compute, 读 HW depth
+Phase 3C: HW Raster VC+TFC (semi-transparent, sorted forward) — graphics, 独立 color target
 
 Phase 4: Visibility Resolve + Composite
   1. Opaque visibility → G-Buffer
@@ -138,16 +138,19 @@ Phase 4: Visibility Resolve + Composite
 ### 执行顺序
 
 ```
-Phase 3B (LFC all opaque, 含 semi-transparent 当 opaque)
-  ↓
 Phase 3A (VC+TFC opaque)
+  ↓
+Phase 3B (LFC all opaque, 含 semi-transparent 当 opaque)
   ↓
 Phase 3C (VC+TFC semi-transparent, sorted forward)
   ↓
 Phase 4 (Resolve + Composite)
 ```
 
-> 注意：LFC 没有单独的 transparent pass。所有 semi-transparent 在 Phase 3B 已当 opaque 处理。
+> 注意：HW 先于 SW（3A→3B），二者共享 G_depth_，SW 用 HW depth 做剔除。
+> LFC 没有单独的 transparent pass。所有 semi-transparent 在 Phase 3B 已当 opaque 处理。
+> semi-transparent 完全不碰 visibility buffer——visibility 是 opaque-only。
+> 详见 `gigavoxel_visibility_buffer.md` §5。
 
 ---
 

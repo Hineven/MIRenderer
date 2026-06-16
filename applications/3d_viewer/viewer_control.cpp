@@ -150,6 +150,92 @@ void ViewerControlUI::DrawControlUI(ViewerApp& app, ViewerApp::FrameInternalDela
     if (ImGui::Button("Reload Shaders")) {
         ops.should_reload_shaders = true;
     }
+
+    if (ImGui::CollapsingHeader("Persistent Cameras")) {
+        // Save current view as a new persistent camera.
+        // Local ImGui input state (persists across frames for this panel).
+        static char name_buf[128] = "view";
+        static int new_priority = 0;
+        ImGui::TextDisabled("Save current view as a persistent camera:");
+        ImGui::PushItemWidth(-1);
+        ImGui::InputText("##new_pcam_name", name_buf, sizeof(name_buf));
+        ImGui::PopItemWidth();
+        ImGui::InputInt("Priority##new_pcam", &new_priority);
+        ImGui::SameLine();
+        if (ImGui::Button("Save##new_pcam")) {
+            app.SaveCurrentCameraAsPersistent(std::string(name_buf), new_priority);
+        }
+
+        ImGui::Separator();
+
+        if (app.persistent_cameras_.empty()) {
+            ImGui::TextDisabled("(no persistent cameras saved)");
+        } else {
+            // Build a priority-descending view order so the list always reads
+            // highest-priority-first, regardless of storage order.
+            std::vector<size_t> order(app.persistent_cameras_.size());
+            for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+            std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+                if (app.persistent_cameras_[a].priority != app.persistent_cameras_[b].priority)
+                    return app.persistent_cameras_[a].priority > app.persistent_cameras_[b].priority;
+                return a < b;
+            });
+
+            // Compact single-line rows: priority is an inline editable InputInt
+            // (auto-saves on change), and only Apply / Upd / Del buttons remain.
+            // We need a mutable accessor since the list is reordered for display.
+            auto get_camera_ref = [&](size_t idx) -> PersistentCamera& {
+                return app.persistent_cameras_[idx];
+            };
+
+            for (size_t row = 0; row < order.size(); ++row) {
+                const size_t idx = order[row];
+                ImGui::PushID(static_cast<int>(idx));
+
+                // Priority column (editable, persists on change).
+                ImGui::SetNextItemWidth(48.0f);
+                int prio = get_camera_ref(idx).priority;
+                if (ImGui::InputInt("##pcam_prio", &prio, 0)) {
+                    app.MovePersistentCameraPriority(idx, prio - get_camera_ref(idx).priority);
+                }
+                ImGui::SameLine(0.0f, 6.0f);
+
+                // Name column (truncated display only).
+                ImGui::AlignTextToFramePadding();
+                const std::string& nm = get_camera_ref(idx).name;
+                ImGui::TextUnformatted(nm.c_str());
+                ImGui::SameLine(0.0f, 6.0f);
+
+                // Action buttons, right-aligned to fill remaining width.
+                const float btn_w = 46.0f;
+                const float spacing = ImGui::GetStyle().ItemSpacing.x;
+                const float used = 48.0f + 6.0f + ImGui::CalcTextSize(nm.c_str()).x + 6.0f;
+                const float avail = ImGui::GetContentRegionAvail().x;
+                const float buttons_total = btn_w * 3 + spacing * 2;
+                // Push buttons to the right edge if there is room.
+                if (avail > used + buttons_total) {
+                    ImGui::Dummy(ImVec2(avail - used - buttons_total, 0));
+                    ImGui::SameLine(0.0f, 0.0f);
+                }
+
+                if (ImGui::Button("Apply", ImVec2(btn_w, 0))) {
+                    app.ApplyPersistentCamera(idx);
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::Button("Upd", ImVec2(btn_w, 0))) {
+                    app.UpdatePersistentCamera(idx);
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::Button("Del", ImVec2(btn_w, 0))) {
+                    app.DeletePersistentCamera(idx);
+                    ImGui::PopID();
+                    break; // storage mutated; abandon rest of this frame
+                }
+
+                ImGui::PopID();
+            }
+        }
+    }
     if (ImGui::CollapsingHeader("Selected Renderable")) {
         if (app.selection_state_.selected_deferred_renderable_index != UINT32_MAX) {
             auto renderable = app.scene_->GetRenderables()[app.selection_state_.selected_deferred_renderable_index];

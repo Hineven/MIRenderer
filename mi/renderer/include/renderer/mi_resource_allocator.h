@@ -22,6 +22,7 @@
 #include <renderer/mi_scene.h>
 #include <renderer/mi_resource_allocator_slot.h>
 #include "../shaders/shared/SharedStaticMesh.hlsl"
+#include "../shaders/shared/SharedGigaVoxel.hlsl"
 
 MI_NAMESPACE_BEGIN
 
@@ -44,6 +45,7 @@ public:
         VolumePrimitives,
         VolumeGrid,
         GaussianRadianceField,
+        GigaVoxel,
     };
 
     // Keeper type for bindless slots.
@@ -58,6 +60,7 @@ public:
     FORCEINLINE TRef<SlotKeeper> AllocateVolumePrimitivesSlotKeeper() { return AllocateSlotKeeper(SlotKind::VolumePrimitives); }
     FORCEINLINE TRef<SlotKeeper> AllocateVolumeGridSlotKeeper() { return AllocateSlotKeeper(SlotKind::VolumeGrid); }
     FORCEINLINE TRef<SlotKeeper> AllocateGaussianRadianceFieldSlotKeeper() { return AllocateSlotKeeper(SlotKind::GaussianRadianceField); }
+    FORCEINLINE TRef<SlotKeeper> AllocateGigaVoxelSlotKeeper() { return AllocateSlotKeeper(SlotKind::GigaVoxel); }
 
     // Unified free by kind (used by keepers). This is the actual slot recycle.
     // Do not call this directly unless you know exactly what you are doing.
@@ -70,6 +73,7 @@ public:
     static constexpr uint32_t kMaxNumVolumePrimitiveGroups = 1024; // 1K volume primitive groups (assume that there are not many)
     static constexpr uint32_t kMaxNumGaussianRadianceFields = 256; // Assume fewer GRF datasets
     static constexpr uint32_t kMaxNumVolumeGrids = 256;
+    static constexpr uint32_t kMaxNumGigaVoxels = 256; // A scene has only a handful of GigaVoxel terrains
 
     FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
         return vertex_uber_buffer_.Raw();
@@ -77,6 +81,21 @@ public:
 
     FORCEINLINE DeviceUberBufferInterface * GetIndexUberBuffer () const {
         return index_uber_buffer_.Raw();
+    }
+
+    // Dedicated GigaVoxel vertex/index uber buffers.
+    // DEPRECATED: GigaVoxel geometry is now managed by GigaVoxelGeometryHeap
+    // (size-class allocator), which owns its own dedicated RHIBuffers. These
+    // uber buffers and their Allocate methods are no longer used by the
+    // GigaVoxel path and will be removed in a follow-up cleanup. Kept for now
+    // to avoid breaking any external references.
+    [[deprecated("GigaVoxel now uses GigaVoxelGeometryHeap; see mi_giga_voxel_heap.h")]]
+    FORCEINLINE DeviceUberBufferInterface * GetGigaVoxelVertexUberBuffer () const {
+        return giga_voxel_vertex_uber_buffer_.Raw();
+    }
+    [[deprecated("GigaVoxel now uses GigaVoxelGeometryHeap; see mi_giga_voxel_heap.h")]]
+    FORCEINLINE DeviceUberBufferInterface * GetGigaVoxelIndexUberBuffer () const {
+        return giga_voxel_index_uber_buffer_.Raw();
     }
 
     void RegisterCustomBufferHeap (uint32_t index, DeviceBufferHeapInterface * heap) ;
@@ -98,6 +117,12 @@ public:
     // Allocate a vertex buffer from the vertex buffer heap.
     std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateVertexBuffer (uint32_t size, bool allow_reallocation = true) ;
     std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateIndexBuffer (uint32_t size, bool allow_reallocation = true) ;
+    // Allocate from the dedicated GigaVoxel geometry heaps.
+    // DEPRECATED: GigaVoxel now uses GigaVoxelGeometryHeap. See note above.
+    [[deprecated("GigaVoxel now uses GigaVoxelGeometryHeap")]]
+    std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateGigaVoxelVertexBuffer (uint32_t size, bool allow_reallocation = true) ;
+    [[deprecated("GigaVoxel now uses GigaVoxelGeometryHeap")]]
+    std::pair<TRef<DeviceUberBufferAllocation>, bool> AllocateGigaVoxelIndexBuffer (uint32_t size, bool allow_reallocation = true) ;
 
     FORCEINLINE uint32_t AllocateMaterialSlot () {
         return material_slots_.AllocateSlot();
@@ -145,6 +170,14 @@ public:
     FORCEINLINE void FreeGaussianRadianceFieldSlot (uint32_t idx) {
         assert(idx < kMaxNumGaussianRadianceFields);
         gaussian_radiance_field_slots_.FreeSlot(idx);
+    }
+
+    FORCEINLINE uint32_t AllocateGigaVoxelSlot () {
+        return giga_voxel_slots_.AllocateSlot();
+    }
+    FORCEINLINE void FreeGigaVoxelSlot (uint32_t idx) {
+        assert(idx < kMaxNumGigaVoxels);
+        giga_voxel_slots_.FreeSlot(idx);
     }
 
     FORCEINLINE RHIBuffer * GetStaticMeshHeaderBuffer() const {
@@ -203,6 +236,9 @@ public:
     FORCEINLINE RHIBuffer * GetGaussianRadianceFieldHeaderBuffer() const {
         return gaussian_radiance_field_header_buffer_.Raw();
     }
+    FORCEINLINE RHIBuffer * GetGigaVoxelHeaderBuffer() const {
+        return giga_voxel_header_buffer_.Raw();
+    }
 
     FORCEINLINE RHIBuffer * GetPrevRenderableTransformBuffer() const {
         return prev_renderable_transform_buffer_.Raw();
@@ -246,6 +282,9 @@ protected:
     // Uber buffers for consistent geometries
     TRef<DeviceUberBufferInterface> vertex_uber_buffer_;
     TRef<DeviceUberBufferInterface> index_uber_buffer_;
+    // Dedicated GigaVoxel geometry heaps (see GetGigaVoxelVertexUberBuffer comment).
+    TRef<DeviceUberBufferInterface> giga_voxel_vertex_uber_buffer_;
+    TRef<DeviceUberBufferInterface> giga_voxel_index_uber_buffer_;
     // Header for geometries.
     // A geometry header holds DeviceGeometryHeader structs.
     TRef<RHIBuffer> geometry_header_buffer_;
@@ -259,6 +298,8 @@ protected:
     TRef<RHIBuffer> gaussian_radiance_field_header_buffer_;
     // A buffer holding the volume grid headers. (VolumeGridHeader)
     TRef<RHIBuffer> volume_grid_header_buffer_;
+    // A buffer holding the GigaVoxel headers. (GigaVoxelHeader)
+    TRef<RHIBuffer> giga_voxel_header_buffer_;
 
     // A buffer holding all area lights (RawLight structs).
     TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;
@@ -278,7 +319,7 @@ protected:
     std::map<uint32_t, TRef<DeviceUberBufferInterface>> custom_uber_buffers_;
 
     // Slot allocators for bindless resources
-    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_, volume_grid_slots_, gaussian_radiance_field_slots_;
+    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_, volume_grid_slots_, gaussian_radiance_field_slots_, giga_voxel_slots_;
 
     // Central delayed destruction ring.
     // Stores resources whose refcount already reached 0 and are safe to delete after N frames.

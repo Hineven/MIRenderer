@@ -76,6 +76,10 @@ struct GaussianRadianceFieldPersistentData;
 class GaussianRadianceField;
 class GaussianRadianceFieldInstance;
 
+class DeviceGigaVoxel;
+class GigaVoxel;
+class GigaVoxelInstance;
+
 class NGXContext;
 class DLSSRRContext;
 

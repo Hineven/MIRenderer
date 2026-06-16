@@ -7,9 +7,14 @@
 #ifndef MACROMC_REGISTRY_COMMON_H
 #define MACROMC_REGISTRY_COMMON_H
 
-#define MACROMC_REGISTRY_NAMESPACE macromc::registry
+#include "macromc/macromc.h"
 
-#define MACROMC_REGISTRY_NAMESPACE_BEGIN namespace MACROMC_REGISTRY_NAMESPACE {
-#define MACROMC_REGISTRY_NAMESPACE_END }
+// MacroMC uses a single flat `macromc::` namespace for now. Each module keeps
+// its own BEGIN/END alias so existing call sites compile unchanged, but they
+// all resolve to the same namespace.
+#define MACROMC_REGISTRY_NAMESPACE MACROMC_NAMESPACE
+
+#define MACROMC_REGISTRY_NAMESPACE_BEGIN MACROMC_NAMESPACE_BEGIN
+#define MACROMC_REGISTRY_NAMESPACE_END MACROMC_NAMESPACE_END
 
 #endif // MACROMC_REGISTRY_COMMON_H

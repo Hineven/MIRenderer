@@ -36,10 +36,10 @@ GigaVoxel 涉及以下数据类型：
   - 永久存储（直到区块被修改或世界删除）
   - 以 chunk 为单位的压缩文件
 
-LFC 渲染数据（分级持久化）:
-  - LFC4 + LFC3: 全量持久化（覆盖整个 64km 视距，~320MB）
-  - LFC2:        区域持久化（仅已探索区域，~10km 半径约 70MB）
-  - LFC1 + LFC0: 不持久化（按需从 coarse LFC 实时 merge）
+LFC 渲染数据（全量持久化）:
+  - LFC0 ~ LFC4: 全量持久化（覆盖整个 64km 视距）
+  - 决策理由：见 §4.2。所有 LFC 级别都持久化，避免运行时重新生成
+  - 估算：全世界全量 ~32GB（见 §4.1），已探索区域按比例更小（见 §6.3）
 
 Mesh/Card disk cache（可选优化）:
   - 已烘焙的 mesh 和 card 可缓存到 disk
@@ -120,11 +120,21 @@ PTLAS instances:
 
 **Total LFC 持久化: ~32GB**
 
-### 4.2 为什么必须全量持久化
+### 4.2 为什么全量持久化所有 LFC 级别
 
-Merge 只能从 fine → coarse（LFC0 → LFC1 → LFC2...），不能反向。
-因此 LFC0 只能从原始体素数据生成，无法从任何 coarse level 得到。
-如果不持久化 LFC0，每次都需要解压体素 + 面剔除 + 颜色提取，开销大且延迟高。
+**核心原则**：LFC 数据是体素数据的派生产物（face culling + 颜色提取后的可见表面信息），
+生成代价高（涉及解压体素 + 面剔除 + 颜色提取），应只做一次并持久化。
+
+- **LFC0**（×1，与体素 1:1）：等价于原始体素数据经面剔除后的可见表面集合。
+  Merge 只能从 fine → coarse，LFC0 无法从任何 coarse level 得到，必须从体素生成。
+  虽然它信息量与体素数据高度重叠，但存储格式不同（只含可见面 + 颜色），
+  读取时无需再走面剔除，所以单独持久化有价值。
+- **LFC1 ~ LFC4**：理论上可从 LFC0 级联 merge 得到（见 §4.4），
+  但每次启动都重新 merge 上亿个 block 的开销不可接受。
+  持久化后，运行时加载 LFC 纯粹是解压，无计算成本。
+
+**统一持久化**还简化了加载路径：所有 LFC 级别走相同的 load → decompress 流程，
+无需区分"某级从磁盘读、某级实时生成"的分支逻辑。
 
 ### 4.3 LFC0 压缩策略
 
@@ -136,22 +146,26 @@ LFC0 visible blocks 有强空间局部性：
 
 ### 4.4 级联 Merge
 
-Coarse LFC 可以从 fine LFC merge 而来，不需要原始体素数据：
+Coarse LFC 可以从 fine LFC merge 而来：
 
 ```
 LFC0 → LFC1 → LFC2 → LFC3 → LFC4
  (merge)  (merge)  (merge)  (merge)
 ```
 
-所有级别均持久化在 disk，级联 merge 主要用于：
-- 区块修改后重新生成某一级 LFC 时，级联更新更 coarse 的级别
+由于所有级别均持久化（§4.2），运行时**不需要**级联 merge。级联 merge 仅用于：
+- 区块修改后重新生成受影响级别的 LFC，并级联更新更 coarse 的级别
 - 数据损坏时的恢复路径
 
 ### 4.5 进入游戏时的加载序列
 
+注意：所有 LFC 级别都在 disk 上全量持久化（§4.2），但加载到 RAM/VRAM 的范围
+按 LOD 用途区分——远场级别（LFC3/4）需全世界常驻，近场级别（LFC0~2）只需附近区域。
+
 ```
-1. 加载 LFC4 + LFC3（~320MB from disk）
+1. 加载 LFC4 + LFC3 全世界（~320MB from disk）
    → 64km 远场地形轮廓立即可渲染
+   注：这两级覆盖整个 64km，数据量小，适合全量驻留 RAM
 
 2. 加载附近区域的 LFC2 + LFC1（按需从 disk 懒加载）
    → 中场景细节就绪
@@ -206,12 +220,13 @@ Disk (compressed) ──────────→ RAM (compressed) ──→ R
   方式: 标记 pending eviction → 等 GPU 不再引用 → 释放 buffer slot
 
 ⑤ LFC disk cache miss
-  触发: 需要 LFC3/4 数据但 disk 无（首次探索）
-  方式: 从原始体素（或 coarse merge）生成 → 烘焙 → 同时写 disk cache
+  触发: 需要某级 LFC 数据但 disk 无（首次探索该区域）
+  方式: 从原始体素生成该级 LFC（面剔除 + 颜色提取）→ 持久化到 disk → 加载
+  说明: 所有 LFC 级别均持久化（见 §4.2），cache miss 仅发生在首次探索
 
-⑥ LFC 级联 merge
-  触发: 需要 LFC1/2 数据但 disk 无（未持久化级别）
-  方式: 从更 coarse 的 LFC 数据 merge（如 LFC2 从 disk 的 LFC3 downsample）
+⑥ LFC 级联 merge（区块修改后）
+  触发: 区块被修改（放置/移除 block），受影响级别的 LFC 需要重新生成
+  方式: 从体素重新生成受影响级别 → 级联 merge 更 coarse 的级别 → 更新 disk
 ```
 
 ### 5.3 邻居依赖处理
@@ -301,20 +316,29 @@ Total: ~272MB / 64GB → 非常宽裕
 
 ### 6.3 Disk Budget
 
+两个口径，注意区分：
+
+**已探索区域（10km 半径，~12.5K chunks）**：
 ```
-压缩体素（已探索区域, 10km 半径）:
+压缩体素:
   ~12.5K chunks × 100KB = ~1.2GB
 
-LFC 持久化:
-  LFC4 + LFC3 (64km 全量):  ~320MB
-  LFC2 (10km 区域):          ~70MB
-  ── LFC disk total: ~390MB
+LFC 持久化（全级别，见 §4.2）:
+  LFC0~4 合计 ≈ ~12.5K × 9.8KB/chunk = ~122MB
+  （per-chunk: LFC4 0.6KB + LFC3 1.5KB + LFC2 3KB + LFC1 3.2KB + LFC0 1.5KB，见 §4.1）
 
 Mesh cache（可选）:
   ~12.5K chunks × 50KB = ~625MB（仅已探索区域）
 
 ────────────────────────────────
-Total explored (10km): ~2.2GB
+Total explored (10km): ~2GB
+```
+
+**全世界（64km 全量，~12.5M LFC0 chunks）**：
+```
+LFC0~4 合计 ≈ ~32GB（见 §4.1）
+注意：64km 全量持久化是理论上限，实际只有已探索区域会落盘。
+未探索区域的 LFC 在玩家接近时按 §5.2 ⑤ 首次生成并持久化。
 ```
 
 ---

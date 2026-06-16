@@ -20,6 +20,11 @@ add_executable(core_command_line_test core/test_command_line.cpp)
 target_link_libraries(core_command_line_test core infra ${GTEST_LIBRARIES})
 add_test(NAME core_command_line COMMAND core_command_line_test)
 
+# Core - SizeClassAllocator Test
+add_executable(core_size_class_allocator_test core/test_size_class_allocator.cpp)
+target_link_libraries(core_size_class_allocator_test core ${GTEST_LIBRARIES})
+add_test(NAME core_size_class_allocator COMMAND core_size_class_allocator_test)
+
 # Infra
 add_executable(infra_test infra/infra_test.cpp)
 target_link_libraries(infra_test infra core ${GTEST_LIBRARIES})
@@ -136,3 +141,20 @@ add_test(NAME renderer_light_cluster COMMAND renderer_light_cluster_test)
 add_executable(renderer_kd_tree_test renderer/test_kd_tree.cpp)
 target_link_libraries(renderer_kd_tree_test PRIVATE renderer util ${GTEST_LIBRARIES})
 add_test(NAME renderer_kd_tree COMMAND renderer_kd_tree_test)
+
+# MacroMC - World (chunk / palette / subchunk / worldgen)
+add_executable(macromc_world_test macromc/world_test.cpp)
+target_link_libraries(macromc_world_test PRIVATE macromc_world macromc_worldgen macromc_registry core ${GTEST_LIBRARIES})
+add_test(NAME macromc_world COMMAND macromc_world_test)
+
+# MacroMC - Registry
+add_executable(macromc_registry_test macromc/registry_test.cpp)
+target_link_libraries(macromc_registry_test PRIVATE macromc_registry core ${GTEST_LIBRARIES})
+add_test(NAME macromc_registry COMMAND macromc_registry_test)
+
+# MacroMC - Greedy Meshing (CPU algorithm + multi-threaded scheduler)
+add_executable(macromc_greedy_meshing_test macromc/greedy_meshing_test.cpp)
+target_link_libraries(macromc_greedy_meshing_test PRIVATE
+    macromc_meshing macromc_world macromc_registry core infra ${GTEST_LIBRARIES})
+mi_apply_app_manifest(macromc_greedy_meshing_test)
+add_test(NAME macromc_greedy_meshing COMMAND macromc_greedy_meshing_test)

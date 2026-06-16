@@ -9,32 +9,67 @@
 
 #include "world/common.h"
 #include "world/types.h"
+#include "world/block_data.h"
 #include "registry/types.h"
 #include <cstdint>
 #include <optional>
 
 MACROMC_WORLD_NAMESPACE_BEGIN
 
-// Palette: Chunk-level block type palette for palette compression.
+// A palette entry: the full block identity = {id, state}.
+// Two blocks with the same id but different state occupy distinct palette
+// slots (e.g. top-slab vs bottom-slab). This is the dedup key for palette
+// compression.
+struct PaletteEntry {
+    MACROMC_REGISTRY_NAMESPACE::BlockId id = MACROMC_REGISTRY_NAMESPACE::kAirBlockId;
+    uint16_t state = 0;
+
+    bool operator==(const PaletteEntry&) const = default;
+};
+
+// Palette: Chunk-level block palette for palette compression.
 // All SubChunks within a chunk share one Palette.
-// Maps compact 8-bit indices (0~255) to actual BlockIds.
+// Maps compact 8-bit indices (0~255) to palette entries {id, state}.
 class Palette {
 public:
     Palette();
 
-    // Add a new block type to the palette. Returns the assigned index.
+    // Add a new entry to the palette. Returns the assigned index.
     // Returns kInvalidIndex if the palette is full (256 entries).
-    uint8_t AddBlock(MACROMC_REGISTRY_NAMESPACE::BlockId block_id);
+    // (BlockId overload defaults state to 0 — for blocks without state.)
+    uint8_t AddBlock(MACROMC_REGISTRY_NAMESPACE::BlockId block_id) {
+        return AddBlock(PaletteEntry{block_id, 0});
+    }
+    uint8_t AddBlock(const PaletteEntry& entry);
+    uint8_t AddBlock(const BlockData& block) {
+        return AddBlock(PaletteEntry{block.id, block.state});
+    }
 
-    // Look up the BlockId for a given palette index.
-    MACROMC_REGISTRY_NAMESPACE::BlockId GetBlockId(uint8_t index) const;
+    // Look up the full entry {id, state} for a given palette index.
+    BlockData GetBlockData(uint8_t index) const;
+    // Convenience: just the id.
+    MACROMC_REGISTRY_NAMESPACE::BlockId GetBlockId(uint8_t index) const {
+        return GetBlockData(index).id;
+    }
 
     // Find an existing entry or add a new one. Returns the index.
     // Returns kInvalidIndex if not found and palette is full.
-    uint8_t FindOrAdd(MACROMC_REGISTRY_NAMESPACE::BlockId block_id);
+    uint8_t FindOrAdd(MACROMC_REGISTRY_NAMESPACE::BlockId block_id) {
+        return FindOrAdd(PaletteEntry{block_id, 0});
+    }
+    uint8_t FindOrAdd(const PaletteEntry& entry);
+    uint8_t FindOrAdd(const BlockData& block) {
+        return FindOrAdd(PaletteEntry{block.id, block.state});
+    }
 
     // Find an existing entry. Returns nullopt if not found.
-    std::optional<uint8_t> Find(MACROMC_REGISTRY_NAMESPACE::BlockId block_id) const;
+    std::optional<uint8_t> Find(MACROMC_REGISTRY_NAMESPACE::BlockId block_id) const {
+        return Find(PaletteEntry{block_id, 0});
+    }
+    std::optional<uint8_t> Find(const PaletteEntry& entry) const;
+    std::optional<uint8_t> Find(const BlockData& block) const {
+        return Find(PaletteEntry{block.id, block.state});
+    }
 
     // Clear all entries.
     void Clear();
@@ -49,10 +84,10 @@ public:
     static constexpr uint8_t kInvalidIndex = 0xFF;
 
     // Direct access to entries (for serialization).
-    const MACROMC_REGISTRY_NAMESPACE::BlockId* GetEntries() const { return entries_; }
+    const PaletteEntry* GetEntries() const { return entries_; }
 
 private:
-    MACROMC_REGISTRY_NAMESPACE::BlockId entries_[kMaxPaletteSize];
+    PaletteEntry entries_[kMaxPaletteSize];
     uint16_t size_ = 0;
 };
 

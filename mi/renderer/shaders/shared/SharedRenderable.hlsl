@@ -45,6 +45,14 @@ struct GaussianRadianceFieldInstanceHeader {
     uint Flags;
 };
 
+struct GigaVoxelInstanceHeader {
+    // Index of the GigaVoxel asset which the instance refers to.
+    uint GigaVoxelIndex;
+    uint Padding0;
+    uint Padding1;
+    uint Flags;
+};
+
 // Number of bits for the renderable index in InstanceCustomIndex.
 // Must match Renderable::kRenderableIndexNumBits on the C++ side.
 #define RENDERABLE_INDEX_NUM_BITS 20
@@ -90,6 +98,15 @@ VolumeGridInstanceHeader GetVolumeGridInstanceHeader(RenderableHeader Header) {
 GaussianRadianceFieldInstanceHeader GetGaussianRadianceFieldInstanceHeader(RenderableHeader Header) {
     GaussianRadianceFieldInstanceHeader Result;
     Result.FieldIndex = asuint(Header.Metadata.x);
+    Result.Padding0 = asuint(Header.Metadata.y);
+    Result.Padding1 = asuint(Header.Metadata.z);
+    Result.Flags = asuint(Header.Metadata.w);
+    return Result;
+}
+
+GigaVoxelInstanceHeader GetGigaVoxelInstanceHeader(RenderableHeader Header) {
+    GigaVoxelInstanceHeader Result;
+    Result.GigaVoxelIndex = asuint(Header.Metadata.x);
     Result.Padding0 = asuint(Header.Metadata.y);
     Result.Padding1 = asuint(Header.Metadata.z);
     Result.Flags = asuint(Header.Metadata.w);
