@@ -325,3 +325,16 @@ void TraceTransmittanceRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_Ra
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     Payload.Transmittance = 0;
 }
+
+// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+[shader("anyhit")]
+void TraceTransmittanceRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                               BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    // Opaque geometry: no transmittance accumulation.
+}
+[shader("closesthit")]
+void TraceTransmittanceRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.HitDistance = RayTCurrent();
+    Payload.Transmittance = 0;
+}

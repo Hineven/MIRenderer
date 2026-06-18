@@ -397,3 +397,15 @@ void TraceVisibilityRaysAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayloa
 void TraceVisibilityRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
 }
+
+// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+[shader("anyhit")]
+void TraceVisibilityRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                               BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    // Opaque geometry: no alpha test needed.
+}
+[shader("closesthit")]
+void TraceVisibilityRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.HitDistance = RayTCurrent();
+}

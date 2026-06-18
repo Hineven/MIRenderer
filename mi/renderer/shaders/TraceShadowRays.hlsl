@@ -152,3 +152,15 @@ void TraceShadowRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayloa
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     Payload.HitDistance = RayTCurrent();
 }
+
+// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+[shader("anyhit")]
+void TraceShadowRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                               BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    // Opaque geometry: no alpha test.
+}
+[shader("closesthit")]
+void TraceShadowRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.HitDistance = RayTCurrent();
+}

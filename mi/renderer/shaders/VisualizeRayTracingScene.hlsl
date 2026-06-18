@@ -203,3 +203,16 @@ void VisualizeRayTracingSceneClosestHit_VolumeGrid(inout RayPayload Payload: SV_
     Payload.Transmittance *= 0.5f;
     Payload.THit = RayTCurrent();
 }
+
+// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+[shader("anyhit")]
+void VisualizeRayTracingSceneAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                               BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    // Opaque geometry.
+}
+[shader("closesthit")]
+void VisualizeRayTracingSceneClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    Payload.Transmittance *= 0.5f;
+    Payload.THit = RayTCurrent();
+}
