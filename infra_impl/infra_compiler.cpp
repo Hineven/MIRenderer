@@ -122,6 +122,20 @@ std::wstring Utf8ToWide(const std::string& str) {
 #endif
 }
 
+// 辅助函数：宽字符串转UTF-8字符串
+std::string WideToUtf8(const std::wstring& wstr) {
+#ifdef _WIN32
+    if (wstr.empty()) return "";
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+    std::string result(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &result[0], size_needed, nullptr, nullptr);
+    return result;
+#else
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    return converter.to_bytes(wstr);
+#endif
+}
+
 static std::vector<DxcDefine> ConvertDefines(const std::vector<std::string>& defines_strings,
                                              std::vector<std::wstring>& out_names,
                                              std::vector<std::wstring>& out_values) {
@@ -245,6 +259,12 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         }
         w_options.push_back(option);
     };
+    // Some flags (e.g. -I, -D) legitimately repeat once per value/path; they
+    // must not be de-duplicated, otherwise DXC merges adjacent values and ends
+    // up treating an include directory as an input file ("error reading '<dir>'").
+    auto add_option_allow_duplicate = [&](const std::wstring & option) {
+        w_options.push_back(option);
+    };
 
     // TODO Migrate the flags to the renderer logic
     if (true) {
@@ -269,8 +289,8 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         auto parent_path = shader_fs_path.parent_path();
         if (std::filesystem::exists(parent_path)) {
             std::wstring parent_path_w = Utf8ToWide(parent_path.string());
-            add_option(L"-I");
-            add_option(parent_path_w);
+            add_option_allow_duplicate(L"-I");
+            add_option_allow_duplicate(parent_path_w);
         }
     } catch (...) {
         // ignore
@@ -280,8 +300,8 @@ static std::vector<std::wstring> GetImplicitCompileOptions (const wchar_t * shad
         std::filesystem::path global_shader_dir = std::filesystem::absolute("mi/renderer/shaders");
         if (std::filesystem::exists(global_shader_dir)) {
             std::wstring global_shader_dir_w = Utf8ToWide(global_shader_dir.string());
-            add_option(L"-I");
-            add_option(global_shader_dir_w);
+            add_option_allow_duplicate(L"-I");
+            add_option_allow_duplicate(global_shader_dir_w);
         }
     } catch (...) {
         // ignore
