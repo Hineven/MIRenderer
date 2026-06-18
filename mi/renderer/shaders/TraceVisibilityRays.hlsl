@@ -36,7 +36,7 @@ struct TraceVisibilityRaysUB {
 };
 ConstantBuffer<TraceVisibilityRaysUB> UB;
 
-RaytracingAccelerationStructure TLAS;
+RaytracingAccelerationStructure PTLAS;
 
 StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
@@ -102,7 +102,7 @@ void TraceVisibilityRaysRaygen() {
     Random rng = MakeRandom(RayIndex + 0x8f71a213u, UB.Seed);
     Payload.U = rng.rand();
     TraceRay(
-        TLAS,
+        PTLAS,
         // Proxy geometries of the volume primitives are built face-flipped. So culling back faces
         // means culling real front faces for volume primitives. Only real back faces from volume
         // primitives are hit when tracing the ray.

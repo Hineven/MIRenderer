@@ -13,6 +13,7 @@
 #include <xxhash.h>
 #include <core/infra.h>
 #include <rhi/rhi_as.h>
+#include <rhi/rhi_ptlas.h>
 #include <rdg/rdg_builder.h>
 #include <rdg/rdg_cmd.h>
 
@@ -307,62 +308,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     uint32_t vrt_hash = XXH32(rt_handles.data(), rt_handles.size() * sizeof(void*), 0);
     bool should_rebuild_tlas = vrt_hash != view->scene_->GetDeviceScene()->TLAS_vrt_hash_;
     bool should_update_tlas = visible_rt_renderable_transform_dirty || should_rebuild_tlas || vrt_blas_updated;
-    TRef<RDGBuffer> tlas_instance_buffer;
-    if (should_update_tlas) {
-        auto instance_count = (uint32_t)gathered_instances.size();
-        if (instance_count > 0){
-            auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
-            auto instance_data_bytesize = instance_count * instance_size;
-
-            auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc[]>(instance_count);
-
-            auto instance_data = builder.Allocate(instance_data_bytesize);
-            auto props = RHI::Get().GetDeviceProperties();
-            auto handle_size_aligned = RoundUp(
-                props.shader_group_handle_size,
-                props.shader_group_base_alignment
-            );
-            for (const auto& [i, gi] : std::views::enumerate(gathered_instances)) {
-                auto data = RHIAccelerationStructureInstanceDesc {};
-                auto renderable = gi.renderable;
-                if (gi.desc) {
-                    // New multi-instance descriptor path.
-                    data.instance_custom_index = gi.desc->instance_custom_index;
-                    data.mask = gi.desc->instance_mask;
-                    data.instance_shader_binding_table_record_offset =
-                        gi.desc->instance_contribution_to_hit_group_index * handle_size_aligned;
-                    data.flags = renderable->GetASGeometryInstanceFlags();
-                    data.acceleration_structure_reference = gi.blas->GetDeviceAddress();
-                    // Row major
-                    auto to_world_matrix = gi.desc->transform.GetToWorldTransformMatrix();
-                    for (int x = 0; x < 4; x++)
-                        for (int y = 0; y < 3; y++)
-                            data.transform[y * 4 + x] = to_world_matrix[x][y];
-                } else {
-                    // Legacy single-BLAS path.
-                    data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
-                    data.mask = 0xFF; // Visible to all rays
-                    uint32_t class_index = renderable->GetRayTracedClassIndex();
-                    data.instance_shader_binding_table_record_offset = class_index * handle_size_aligned;
-                    data.flags = renderable->GetASGeometryInstanceFlags();
-                    data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
-                    // Row major
-                    auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
-                    for (int x = 0; x < 4; x++)
-                        for (int y = 0; y < 3; y++)
-                            data.transform[y * 4 + x] = to_world_matrix[x][y];
-                }
-                instance_data_raw[i] = data;
-            }
-            // Convert to underlying device format
-            RHI::Get().CreateAccelerationStructureInstances(instance_count, instance_data_raw, instance_data);
-            tlas_instance_buffer = builder.CreateBuffer(
-                RHIBufferUsageFlagBits::kAccelerationStructureBuildInput,
-                instance_data_bytesize
-            );
-            view->upload_context_.Add(tlas_instance_buffer.Raw(), instance_data, instance_data_bytesize);
-        }
-    }
 
     // Filter visible rendeables
     ctx.visible_renderables.reserve(all_renderables.size());
@@ -386,74 +331,170 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     // Fire batched uploads to the RDG
     view->upload_context_.Fire(builder);
 
-    // Update TLAS
-    if (should_update_tlas) {
-        auto instance_count = (uint32_t)gathered_instances.size();
-        if (!view->scene_->GetDeviceScene()->TLAS_) {
-            // Create one if not exists
-            view->scene_->GetDeviceScene()->TLAS_ = RHI::Get().CreateAccelerationStructure(
-                RHIAccelerationStructureType::kTopLevel
-            );
-        }
-        auto TLAS = view->scene_->GetDeviceScene()->TLAS_;
-        auto build_info = RHIAccelerationStructureBuildGeometryInfo {
-            RHIAccelerationStructureType::kTopLevel,
-            RHIAccelerationStructureBuildFlagBits::kPreferFastTrace
-            | RHIAccelerationStructureBuildFlagBits::kAllowUpdate,
-            RHIAccelerationStructureBuildMode::kUpdate,
-            TLAS.Raw(), TLAS.Raw(),
-            {},{},
-            instance_count
-        };
-        // Query sizes with current (default Update) build_info first; we may re-query if we need a Build.
-        auto build_sizes = TLAS->GetBuildSizes(build_info);
-        // Condition 1: Requested a larger TLAS allocation
-        if (build_sizes.acceleration_structure_size > TLAS->GetSize()) {
-            // Resize the TLAS if needed
-            TLAS->Create(build_sizes.acceleration_structure_size);
-            should_rebuild_tlas = true;
-        }
+    // Update vrt hash for scene (PTLAS rebuild decision uses this).
+    if (should_rebuild_tlas) {
+        view->scene_->GetDeviceScene()->TLAS_vrt_hash_ = vrt_hash;
+    }
 
-        // If we decided to rebuild, scratch size should use build_scratch_size; otherwise use update_scratch_size
-        if (should_rebuild_tlas) {
-            // Re-query sizes with Build mode to ensure scratch size is correct
-            auto build_mode_info = build_info;
-            build_mode_info.mode = RHIAccelerationStructureBuildMode::kBuild;
-            build_sizes = TLAS->GetBuildSizes(build_mode_info);
-            // Update vrt hash for scene
-            view->scene_->GetDeviceScene()->TLAS_vrt_hash_ = vrt_hash;
+    // ---- Partitioned TLAS build (ALL ray-traced instances) ----
+    // The renderer uses PTLAS exclusively for ray tracing. All gathered instances
+    // (global, partitioned, legacy) are written into the PTLAS. Partitioned
+    // instances (e.g. GigaVoxel per-chunk) use their assigned partition_index;
+    // non-partitioned instances (StaticMesh etc.) use the GLOBAL partition.
+    // Built via direct RHI queue access (bypassing RDG). Double-buffered.
+    {
+        auto scene_ds = view->scene_->GetDeviceScene();
+        uint32_t instance_count = (uint32_t)gathered_instances.size();
+        if (instance_count > 0 && should_update_tlas) {
+            auto & queue = RHI::Get().GetGraphicsCommandQueue();
+            auto props = RHI::Get().GetDeviceProperties();
+            auto handle_size_aligned = RoundUp(
+                props.shader_group_handle_size, props.shader_group_base_alignment);
+
+            // Determine partition capacity + global instance count.
+            uint32_t max_partition = 0;
+            uint32_t global_instance_count = 0;
+            for (const auto & gi : gathered_instances) {
+                if (gi.desc) {
+                    max_partition = std::max(max_partition, gi.desc->partition_index);
+                } else {
+                    global_instance_count++;
+                }
+            }
+            uint32_t partition_count = max_partition + 1;
+
+            // Capacity descriptor.
+            RHIPartitionedTLASInstancesInput input {};
+            input.flags = RHIAccelerationStructureBuildFlagBits::kPreferFastTrace
+                        | RHIAccelerationStructureBuildFlagBits::kAllowUpdate;
+            input.instance_count = instance_count;
+            input.max_instance_per_partition_count = instance_count; // worst case
+            input.partition_count = partition_count;
+            input.max_instance_in_global_partition_count = global_instance_count;
+
+            auto read_idx = scene_ds->ptlas_index_;
+            auto write_idx = 1 - read_idx;
+
+            // Create PTLAS resources if missing.
+            if (!scene_ds->PTLAS_[0]) {
+                scene_ds->PTLAS_[0] = RHI::Get().CreatePartitionedTLAS();
+                scene_ds->PTLAS_[1] = RHI::Get().CreatePartitionedTLAS();
+            }
+
+            // (Re)allocate if capacity grew.
+            bool need_rebuild = !scene_ds->ptlas_allocated_
+                || scene_ds->ptlas_partition_count_ < partition_count
+                || scene_ds->ptlas_instance_count_ < instance_count;
+            if (need_rebuild) {
+                auto sizes = scene_ds->PTLAS_[write_idx]->GetBuildSizes(input);
+                scene_ds->PTLAS_[write_idx]->Allocate(sizes.acceleration_structure_size, input);
+                scene_ds->PTLAS_[read_idx]->Allocate(sizes.acceleration_structure_size, input);
+                scene_ds->ptlas_allocated_ = true;
+                scene_ds->ptlas_partition_count_ = partition_count;
+                scene_ds->ptlas_instance_count_ = instance_count;
+            }
+
+            // Prepare WRITE_INSTANCE data for ALL instances.
+            std::vector<RHIPartitionedTLASWriteInstance> write_instances(instance_count);
+            for (uint32_t i = 0; i < instance_count; i++) {
+                const auto & gi = gathered_instances[i];
+                auto renderable = gi.renderable;
+                auto & wi = write_instances[i];
+                wi.instance_index = i;
+
+                if (gi.desc) {
+                    // Multi-instance descriptor path (global or partitioned).
+                    const auto & d = *gi.desc;
+                    wi.instance_id = d.instance_custom_index;
+                    wi.instance_mask = d.instance_mask;
+                    wi.instance_contribution_to_hit_group_index =
+                        d.instance_contribution_to_hit_group_index * handle_size_aligned;
+                    wi.partition_index = d.partition_index;
+                    wi.acceleration_structure = gi.blas->GetDeviceAddress();
+                    // Transform (row-major 3x4).
+                    auto to_world = d.transform.GetToWorldTransformMatrix();
+                    for (int x = 0; x < 4; x++)
+                        for (int y = 0; y < 3; y++)
+                            wi.transform[y * 4 + x] = to_world[x][y];
+                    // Explicit AABB if available (partitioned instances have it).
+                    if (d.partition_index != kPTLASPartitionIndexGlobal && d.explicit_aabb.IsValid()) {
+                        wi.explicit_aabb[0] = d.explicit_aabb.min.x;
+                        wi.explicit_aabb[1] = d.explicit_aabb.min.y;
+                        wi.explicit_aabb[2] = d.explicit_aabb.min.z;
+                        wi.explicit_aabb[3] = d.explicit_aabb.max.x;
+                        wi.explicit_aabb[4] = d.explicit_aabb.max.y;
+                        wi.explicit_aabb[5] = d.explicit_aabb.max.z;
+                        wi.instance_flags = RHIPTLASInstanceFlagBits::kEnableExplicitAABB
+                                          | RHIPTLASInstanceFlagBits::kDisableTriangleCulling;
+                    } else {
+                        wi.instance_flags = RHIPTLASInstanceFlagBits::kDisableTriangleCulling;
+                    }
+                } else {
+                    // Legacy single-BLAS path (global partition, no explicit AABB).
+                    wi.instance_id = renderable->GetInstanceCustomIndex();
+                    wi.instance_mask = 0xFF;
+                    uint32_t class_index = renderable->GetRayTracedClassIndex();
+                    wi.instance_contribution_to_hit_group_index = class_index * handle_size_aligned;
+                    wi.partition_index = kPTLASPartitionIndexGlobal;
+                    wi.acceleration_structure = renderable->GetBLAS()->GetDeviceAddress();
+                    auto to_world = renderable->GetTransform().GetToWorldTransformMatrix();
+                    for (int x = 0; x < 4; x++)
+                        for (int y = 0; y < 3; y++)
+                            wi.transform[y * 4 + x] = to_world[x][y];
+                    wi.instance_flags = RHIPTLASInstanceFlagBits::kDisableTriangleCulling;
+                }
+            }
+
+            // Upload write_instances to a device buffer.
+            size_t write_data_size = instance_count * sizeof(RHIPartitionedTLASWriteInstance);
+            auto write_data_buffer = RHI::Get().CreateBuffer(
+                write_data_size, RHIBufferUsageFlagBits::kAccelerationStructureBuildInput);
+            {
+                auto staging = RHI::Get().CreateBuffer(write_data_size, RHIBufferUsageFlagBits::kStaging);
+                memcpy(staging->Map(), write_instances.data(), write_data_size);
+                staging->Unmap();
+                queue.CopyBuffer(staging->GetSpan(), write_data_buffer->GetSpan());
+            }
+
+            // Indirect commands buffer + count buffer (device-addressable, for vkCmdUpdateBuffer).
+            auto indirect_cmds_buffer = RHI::Get().CreateBuffer(
+                256, RHIBufferUsageFlagBits::kShaderDeviceAddress);
+            auto indirect_count_buffer = RHI::Get().CreateBuffer(
+                16, RHIBufferUsageFlagBits::kShaderDeviceAddress);
+
+            // Scratch buffer.
+            auto scratch_sizes = scene_ds->PTLAS_[write_idx]->GetBuildSizes(input);
+            auto scratch_buffer = RHI::Get().CreateBuffer(
+                scratch_sizes.build_scratch_size, RHIBufferUsageFlagBits::kAccelerationStructureScratch);
+
+            // Barrier: wait for upload before build.
+            queue.BufferBarrier(write_data_buffer->GetSpan(),
+                RHIPipelineStageFlagBits::kTransfer, RHIPipelineStageFlagBits::kAccelerationStructureBuild,
+                RHIGPUAccessFlagBits::kTransferWrite, RHIGPUAccessFlagBits::kShaderRead);
+
+            // Build op: one WRITE_INSTANCE op covering all instances.
+            RHIPartitionedTLASBuildOp op {};
+            op.op_type = RHIPTLASOpType::kWriteInstance;
+            op.arg_count = instance_count;
+            op.arg_data = write_data_buffer->GetDeviceAddress();
+            op.arg_stride = sizeof(RHIPartitionedTLASWriteInstance);
+
+            // First build (src=nullptr) vs update (src=read side).
+            RHIPartitionedTLAS * src_ptlas = need_rebuild ? nullptr : scene_ds->PTLAS_[read_idx].Raw();
+
+            queue.BuildPartitionedTLAS(
+                scene_ds->PTLAS_[write_idx].Raw(), src_ptlas,
+                scratch_buffer->GetSpan(),
+                std::span<const RHIPartitionedTLASBuildOp>(&op, 1),
+                indirect_cmds_buffer->GetSpan(),
+                indirect_count_buffer->GetSpan(),
+                input);
+
+            queue.WaitForIdle();
+
+            // Swap: the newly-built write side becomes the read side.
+            scene_ds->ptlas_index_ = write_idx;
         }
-        auto scratch_buffer = builder.CreateBuffer(
-            RHIBufferUsageFlagBits::kAccelerationStructureScratch,
-            should_rebuild_tlas ? build_sizes.build_scratch_size : build_sizes.update_scratch_size
-        );
-        scratch_buffer->SetName("TLAS Update Scratch Buffer");
-        builder.AddPass("Update TLAS", RDGPassFlagBits::kNeverCull,
-            [tlas_instance_buffer = tlas_instance_buffer.Raw(), should_rebuild_tlas, build_info, scratch = scratch_buffer.Raw(), scene_ds = view->scene_->GetDeviceScene()]
-            ([[maybe_unused]] RDGPass * pass, RHICommandQueueGraphics & queue) {
-            // Barrier the previous update & use of the acceleration structure
-            queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
-                RHIPipelineStageFlagBits::kAccelerationStructureBuild | RHIPipelineStageFlagBits::kRayTracing,
-                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
-                RHIGPUAccessFlagBits::kAccelerationStructureRW,
-                RHIGPUAccessFlagBits::kAccelerationStructureRW
-            );
-            auto as_build_info = build_info;
-            as_build_info.instance_data = tlas_instance_buffer ? tlas_instance_buffer->GetRHI() : RHIBufferSpan{};
-            as_build_info.mode = should_rebuild_tlas ? RHIAccelerationStructureBuildMode::kBuild : RHIAccelerationStructureBuildMode::kUpdate;
-            queue.BuildAccelerationStructure(as_build_info, scratch->GetRHI());
-            // Barrier the TLAS after building
-            queue.AccelerationStructureBarrier(build_info.dst_acceleration_structure,
-                RHIPipelineStageFlagBits::kAccelerationStructureBuild,
-                RHIPipelineStageFlagBits::kRayTracing,
-                RHIGPUAccessFlagBits::kAccelerationStructureRW,
-                RHIGPUAccessFlagBits::kAccelerationStructureRead
-            );
-            // Record the instance count used for this TLAS build for future Update-vs-Build decisions
-            scene_ds->tlas_instance_count_ = as_build_info.instance_count;
-        })->AddASH_NoAutomaticBarrier(TLAS.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureWrite, RHIPipelineStageFlagBits::kAccelerationStructureBuild) // AS barriers should be manually inserted
-        ->AddBufferH(tlas_instance_buffer.Raw(), RHIGPUAccessFlagBits::kShaderRead, RHIPipelineStageFlagBits::kAccelerationStructureBuild)
-        ->AddBufferH(scratch_buffer.Raw(), RHIGPUAccessFlagBits::kAccelerationStructureRW, RHIPipelineStageFlagBits::kAccelerationStructureBuild);
     }
 
     if (view->g_buffer_) {

@@ -41,7 +41,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceOriginBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceTMaxBuffer)
 
-        SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
+        SHADER_RESOURCE_PARAMETER(PartitionedAccelerationStructure, PTLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
@@ -111,7 +111,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-    params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
@@ -145,7 +145,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceTMaxBuffer)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceTransmittanceBuffer)
 
-        SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
+        SHADER_RESOURCE_PARAMETER(PartitionedAccelerationStructure, PTLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
@@ -226,7 +226,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-    params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
@@ -266,7 +266,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RayToTraceTMaxBuffer)
         SHADER_RESOURCE_PARAMETER(RWStructuredBuffer, RWRayToTraceResultBuffer)
 
-        SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
+        SHADER_RESOURCE_PARAMETER(PartitionedAccelerationStructure, PTLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
@@ -364,7 +364,7 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-    params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());

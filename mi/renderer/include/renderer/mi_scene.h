@@ -50,6 +50,16 @@ protected:
     // The hash value is updated within the renderer when the TLAS is built.
     uint32_t TLAS_vrt_hash_ {};
 
+    // Partitioned TLAS for per-partition rebuilds (GigaVoxel per-chunk instances).
+    // Double-buffered: PTLAS_[ptlas_index_] is the current "read" side (bound to
+    // shaders); the other is the "write" side being built this frame. After a
+    // successful build they swap. This allows update mode (src=old, dst=new).
+    TRef<RHIPartitionedTLAS> PTLAS_[2];
+    uint32_t ptlas_index_ {0};  // index of the currently-bound (read) PTLAS
+    bool ptlas_allocated_ {false};  // whether PTLAS backing buffers exist
+    uint32_t ptlas_partition_count_ {0};  // capacity tracking for rebuild decisions
+    uint32_t ptlas_instance_count_ {0};
+
     // Track last built TLAS instance count to decide Build vs Update.
     // Vulkan requires the number of primitives (instances) to remain the same for Update mode.
     // Initialize to an invalid value to force a Build on first use.

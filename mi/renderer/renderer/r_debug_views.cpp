@@ -55,7 +55,7 @@ public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(VisualizeRayTracingSceneUB, UB)
-        SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
+        SHADER_RESOURCE_PARAMETER(PartitionedAccelerationStructure, PTLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, StaticMeshDescriptionBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GeometryHeaderBuffer)
@@ -189,7 +189,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
             UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
             params->UB = UB;
         }
-        params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+        params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
         params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
         params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());

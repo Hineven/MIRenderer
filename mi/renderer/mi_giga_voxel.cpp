@@ -134,7 +134,8 @@ void GigaVoxel::RebuildCachedInstances() {
         inst.instance_contribution_to_hit_group_index =
             GigaVoxelInstance::kClassRegistrator.GetClassIndex();
         inst.partition_index = (pit != chunk_partitions_.end()) ? pit->second : 0;
-        inst.explicit_aabb = {};  // TODO: per-chunk AABB (cheap to add later)
+        auto ait = chunk_aabbs_.find(id);
+        inst.explicit_aabb = (ait != chunk_aabbs_.end()) ? ait->second : AABB{};
         cached_instances_.push_back(inst);
     }
 }
@@ -189,6 +190,17 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
     // Assign a per-asset slot (for customIndex) + a global partition id (for
     // PTLAS). Both are stable until this chunk is removed.
     AcquireChunkSlotAndPartition(id);
+    // Compute per-chunk world-space AABB from uploaded vertices (for PTLAS explicit_aabb).
+    if (!vertices.empty()) {
+        AABB aabb {};
+        aabb.min = vertices[0].position;
+        aabb.max = vertices[0].position;
+        for (const auto & v : vertices) {
+            aabb.min = glm::min(aabb.min, v.position);
+            aabb.max = glm::max(aabb.max, v.position);
+        }
+        chunk_aabbs_[id] = aabb;
+    }
     // This chunk's geometry changed -> its BLAS must be (re)built.
     blas_dirty_.insert(id);
     RecomputeAABB(chunk_handles_, geometry_heap_.Raw(), aabb_);
@@ -211,6 +223,7 @@ void GigaVoxel::RemoveChunk(GigaVoxelChunkId id) {
     chunk_handles_.erase(it);
     chunk_BLAS_.erase(id);
     blas_dirty_.erase(id);
+    chunk_aabbs_.erase(id);
     ReleaseChunkSlotAndPartition(id);
     RecomputeAABB(chunk_handles_, geometry_heap_.Raw(), aabb_);
     RebuildCachedInstances();
@@ -222,6 +235,7 @@ void GigaVoxel::ClearAllChunks() {
     chunk_handles_.clear();
     chunk_BLAS_.clear();
     blas_dirty_.clear();
+    chunk_aabbs_.clear();
     for (auto & [id, slot] : chunk_slots_) {
         (void)slot;
         if (partition_allocator_) {

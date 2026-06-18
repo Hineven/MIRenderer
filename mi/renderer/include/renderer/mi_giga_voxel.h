@@ -228,6 +228,9 @@ protected:
     // chunk id -> partition id (one partition per chunk). Allocated from the
     // renderer's PartitionAllocator; freed on chunk removal.
     std::unordered_map<GigaVoxelChunkId, uint32_t> chunk_partitions_;
+    // chunk id -> world-space AABB (computed from uploaded vertices). Used as
+    // explicit_aabb for PTLAS instances.
+    std::unordered_map<GigaVoxelChunkId, AABB> chunk_aabbs_;
     // chunk id -> per-asset dense slot (0..65535, used in customIndex high bits).
     // A monotonic counter + free list keeps slots dense and reusable.
     std::unordered_map<GigaVoxelChunkId, uint16_t> chunk_slots_;

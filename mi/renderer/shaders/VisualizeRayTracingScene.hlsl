@@ -18,7 +18,7 @@ struct VisualizeRayTracingSceneUB {
 };
 ConstantBuffer<VisualizeRayTracingSceneUB> UB;
 
-RaytracingAccelerationStructure TLAS;
+RaytracingAccelerationStructure PTLAS;
 
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
@@ -60,7 +60,7 @@ void VisualizeRayTracingSceneRaygen() {
     for(int i = 0; i < 100; i++) {
         Payload.THit = Ray.TMax;
         TraceRay(
-            TLAS,
+        PTLAS,
             RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
             0xFF, // Ray mask
             0,    // SBT offset

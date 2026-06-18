@@ -258,8 +258,15 @@ void VulkanCommandExecutor::RHIBuildPartitionedTLAS(RHICommandQueueBase *cmd, RH
     vk::BuildPartitionedAccelerationStructureInfoNV vk_build_info{};
     vk_build_info.input = vk_input;
     vk_build_info.dstAccelerationStructureData = dst_ptlas->GetDeviceAddress();
+    // srcAccelerationStructureData: spec allows NULL for an initial build, but some
+    // drivers / validation layers expect a non-zero device address. For an initial
+    // build (src_ptlas == nullptr) we self-reference dst as src — it is not read
+    // during an initial build, so the value is harmless but satisfies the non-zero
+    // requirement. For an update build we use the previously built PTLAS.
     if (src_ptlas) {
         vk_build_info.srcAccelerationStructureData = src_ptlas->GetDeviceAddress();
+    } else {
+        vk_build_info.srcAccelerationStructureData = dst_ptlas->GetDeviceAddress();
     }
     vk_build_info.scratchData = scratch_buffer->GetDeviceAddress() + build_ptlas->scratch_buffer_.offset;
     vk_build_info.srcInfos = indirect_cmds_buffer->GetDeviceAddress() + build_ptlas->indirect_commands_buffer_.offset;

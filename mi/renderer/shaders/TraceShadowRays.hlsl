@@ -10,7 +10,7 @@
 #include "headers/HybridTracing.hlsl"
 #include "headers/GeometryBuffers.hlsl"
 
-RaytracingAccelerationStructure TLAS;
+RaytracingAccelerationStructure PTLAS;
 
 StructuredBuffer<RenderableHeader> RenderableHeaderBuffer;
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
@@ -59,7 +59,7 @@ void TraceShadowRaysRaygen() {
     RayPayload Payload = (RayPayload)0;
     Payload.HitDistance = Ray.TMax; // Default to TMax, will be updated in closest hit
     TraceRay(
-        TLAS,
+        PTLAS,
         RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
         0xFF, // Ray mask
         0,    // SBT offset

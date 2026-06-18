@@ -25,7 +25,7 @@ struct TraceTransmittanceRaysUB {
 };
 ConstantBuffer<TraceTransmittanceRaysUB> UB;
 
-RaytracingAccelerationStructure TLAS;
+RaytracingAccelerationStructure PTLAS;
 
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
@@ -79,7 +79,7 @@ void TraceTransmittanceRaysRaygen() {
     Payload.HitDistance = Ray.TMax; // Default to TMax, will only be updated in a closest hit on meshes
     Payload.Transmittance = 1.0f; // Default transmittance value, will be updated in any hits
     TraceRay(
-        TLAS,
+        PTLAS,
         // Proxy geometries of the volume primitives are built face-flipped. So culling back faces
         // means culling real front faces for volume primitives. Only real back faces from volume
         // primitives are hit when tracing the ray.

@@ -57,7 +57,7 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         SHADER_UNIFORM_BUFFER(ReferencePathTracerUB, UB)
         SHADER_UNIFORM_BUFFER(DirectionalLightUniform, DirectionalLight_UB)
-        SHADER_RESOURCE_PARAMETER(AccelerationStructure, TLAS)
+        SHADER_RESOURCE_PARAMETER(PartitionedAccelerationStructure, PTLAS)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableTransformBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableInverseTransformBuffer)
@@ -105,7 +105,7 @@ void Renderer::FillPathTracerCommonParams(
     auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
     FillUniformBufferForDirectionalLight(view, directional_light_ub);
     params->DirectionalLight_UB = directional_light_ub;
-    params->TLAS = view->scene_->GetDeviceScene()->TLAS_.Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
     params->RenderableInverseTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_inverse_transforms_.Raw());

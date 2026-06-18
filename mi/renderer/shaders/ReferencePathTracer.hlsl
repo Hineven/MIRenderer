@@ -35,7 +35,7 @@ StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<VolumeGridHeader> VolumeGridHeaderBuffer;
 
 // Top level AS
-RaytracingAccelerationStructure TLAS;
+RaytracingAccelerationStructure PTLAS;
 
 struct ReferencePathTracerUB {
     uint FrameIndex;
@@ -101,7 +101,7 @@ bool TraceDirectionalLightVisibility(float3 Origin, float3 GeometryNormal, float
     Payload.ShadowVisible = 1;
     Payload.TCurrent = ShadowRay.TMax;
     TraceRay(
-        TLAS,
+        PTLAS,
         RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
         0xFF,
         0,
@@ -555,7 +555,7 @@ void ReferencePathTracerRaygen() {
 
         // Trace surface ray first
         TraceRay(
-            TLAS,
+        PTLAS,
             0,
             0xFF, // Ray mask
             0, // Suface ray
