@@ -442,6 +442,7 @@ float3 NEESampleDirectLighting(
     return DirectLighting;
 }
 
+#include "resources/GigaVoxelResources.hlsl"
 [shader("raygeneration")]
 void ReferencePathTracerRaygen() {
 
@@ -962,20 +963,17 @@ void ReferencePathTracerClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPa
     ReferencePathTracerRecordClosestHit(Payload, Attributes);
 }
 
-
-// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles). Behaves like
-// opaque geometry for path tracing - shadow rays ignore it, closesthit records hit.
+// GigaVoxel: VC chunk geometry. Shadow rays ignore it; path-trace rays record hit.
 [shader("anyhit")]
 void ReferencePathTracerAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+                               BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     if (Payload.Mode != 1) {
         return;
     }
     IgnoreHit();
 }
-
 [shader("closesthit")]
 void ReferencePathTracerClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     ReferencePathTracerRecordClosestHit(Payload, Attributes);
 }

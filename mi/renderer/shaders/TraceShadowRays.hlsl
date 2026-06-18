@@ -45,6 +45,7 @@ struct [raypayload] RayPayload {
     float HitDistance;
 };
 
+#include "resources/GigaVoxelResources.hlsl"
 [shader("raygeneration")]
 void TraceShadowRaysRaygen() {
 #ifdef USE_RAY_LIST
@@ -153,11 +154,14 @@ void TraceShadowRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayloa
     Payload.HitDistance = RayTCurrent();
 }
 
-// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+// GigaVoxel: VC chunk geometry with atlas-sampled opacity. anyHit applies the
+// same alpha test as StaticMesh; closestHit records the shadow hit distance.
 [shader("anyhit")]
 void TraceShadowRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    // Opaque geometry: no alpha test.
+    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    if(Intersection.Opacity < 0.1f) { IgnoreHit(); }
 }
 [shader("closesthit")]
 void TraceShadowRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,

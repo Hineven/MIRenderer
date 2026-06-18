@@ -63,6 +63,7 @@ struct [raypayload] RayPayload {
     float Transmittance; // Transmittance value for the ray
 };
 
+#include "resources/GigaVoxelResources.hlsl"
 [shader("raygeneration")]
 void TraceTransmittanceRaysRaygen() {
 #ifdef USE_RAY_LIST
@@ -326,11 +327,18 @@ void TraceTransmittanceRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_Ra
     Payload.Transmittance = 0;
 }
 
-// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+// GigaVoxel: VC chunk geometry with atlas-sampled opacity. anyHit accumulates
+// transmittance for semi-transparent atlas texels; closestHit is fully opaque.
 [shader("anyhit")]
 void TraceTransmittanceRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    // Opaque geometry: no transmittance accumulation.
+    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    // Intersection.Opacity is the atlas alpha; transmittance loss = (1 - opacity).
+    Payload.Transmittance *= saturate(1.f - Intersection.Opacity);
+    if(Intersection.Opacity < 0.99f) {
+        IgnoreHit();
+    }
 }
 [shader("closesthit")]
 void TraceTransmittanceRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,

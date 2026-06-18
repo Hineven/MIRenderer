@@ -36,6 +36,7 @@ struct [raypayload] RayPayload {
     bool bSurfaceHit;
 };
 
+#include "resources/GigaVoxelResources.hlsl"
 [shader("raygeneration")]
 void VisualizeRayTracingSceneRaygen() {
 
@@ -204,15 +205,17 @@ void VisualizeRayTracingSceneClosestHit_VolumeGrid(inout RayPayload Payload: SV_
     Payload.THit = RayTCurrent();
 }
 
-// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+// GigaVoxel: VC chunk geometry. Visualize the atlas-sampled albedo color.
 [shader("anyhit")]
 void VisualizeRayTracingSceneAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    // Opaque geometry.
 }
 [shader("closesthit")]
 void VisualizeRayTracingSceneClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.Transmittance *= 0.5f;
+    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    Payload.Color = float4(Intersection.Albedo, Intersection.Opacity);
+    Payload.bSurfaceHit = true;
     Payload.THit = RayTCurrent();
 }

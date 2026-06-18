@@ -17,6 +17,7 @@
 #include "renderer/mi_material.h"
 #include "renderer/mi_renderable.h"
 #include "renderer/mi_resource_allocator.h"
+#include "renderer/mi_giga_voxel.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
@@ -52,6 +53,9 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
@@ -122,6 +126,9 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
+    params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
+    params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
+    params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
     Helpers::AddTraceRaysIndirectPass(builder, shader, params, cmd.Raw());
@@ -159,6 +166,9 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
@@ -241,6 +251,9 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
+    params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
+    params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
+    params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
@@ -281,6 +294,9 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
@@ -380,6 +396,9 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
     params->GaussianSHBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceSHAllocatorUberBufferIndex)->GetRHI());
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
+    params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
+    params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
+    params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 

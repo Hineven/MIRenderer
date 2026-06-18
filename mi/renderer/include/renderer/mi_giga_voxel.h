@@ -119,6 +119,14 @@ public:
     static TRef<Texture> GetGlobalAtlas();
     static uint32_t GetGlobalAtlasBindlessIndex();
 
+    // ---- Global geometry heap (shared vertex/index uber buffer) ----
+    // All GigaVoxel assets share ONE GigaVoxelGeometryHeap so that a single SRV
+    // (GigaVoxelVertexBuffer / GigaVoxelIndexBuffer) covers every asset. This
+    // mirrors the StaticMesh pattern (all StaticMeshes share the allocator's
+    // global vertex/index uber buffers). Lazily created on first access.
+    static GigaVoxelGeometryHeap * GetGlobalGeometryHeap();
+    static GigaVoxelGeometryHeap * GetGeometryHeap() { return GetGlobalGeometryHeap(); }
+
     // ---- Scene attachment ----
     // Create the GigaVoxelInstance for this asset and register it into the scene
     // (one instance per asset; the instance holds a non-owning back-pointer to
@@ -165,7 +173,7 @@ public:
     void CompactChunks();
 
     FORCEINLINE DeviceGigaVoxel * GetDeviceGigaVoxel() const { return device_giga_voxel_.Raw(); }
-    FORCEINLINE GigaVoxelGeometryHeap * GetGeometryHeap() const { return geometry_heap_.Raw(); }
+    // GetGeometryHeap() now returns the global heap (see static accessor above).
     FORCEINLINE bool IsEmpty() const { return chunk_handles_.empty(); }
     FORCEINLINE AABB GetAABB() const { return aabb_; }
 
@@ -213,7 +221,8 @@ protected:
     void ReleaseChunkSlotAndPartition(GigaVoxelChunkId id);
 
     TRef<DeviceGigaVoxel> device_giga_voxel_;
-    TRef<GigaVoxelGeometryHeap> geometry_heap_;
+    // NOTE: geometry heap is now global (GetGlobalGeometryHeap). Kept here only
+    // as the static storage owner; do not add a per-asset member.
 
     // The Scene projection of this asset. The asset owns it; the instance holds
     // a non-owning back-pointer (GigaVoxel*) to avoid a refcount cycle.
@@ -248,6 +257,8 @@ protected:
     // Global atlas state (process-wide; shared by all GigaVoxel assets).
     static TRef<Texture> global_atlas_;
     static uint32_t global_atlas_bindless_index_;
+    // Global geometry heap (process-wide; shared by all GigaVoxel assets).
+    static TRef<GigaVoxelGeometryHeap> global_geometry_heap_;
 
     AABB aabb_ {};
     bool dirty_ {true};

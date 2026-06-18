@@ -80,6 +80,7 @@ struct [raypayload] RayPayload {
 #endif
 };
 
+#include "resources/GigaVoxelResources.hlsl"
 [shader("raygeneration")]
 void TraceVisibilityRaysRaygen() {
 #ifdef USE_RAY_LIST
@@ -398,14 +399,30 @@ void TraceVisibilityRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPa
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
 }
 
-// GigaVoxel: opaque VC chunk geometry (greedy-meshed triangles).
+// GigaVoxel: VC chunk geometry with atlas-sampled albedo/opacity. anyHit does
+// opacity free-path sampling (same as StaticMesh); closestHit caches the material.
 [shader("anyhit")]
 void TraceVisibilityRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    // Opaque geometry: no alpha test needed.
+    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    if(Intersection.Opacity < Payload.U) {
+        Payload.U = (Payload.U - Intersection.Opacity) / (1.f - Intersection.Opacity);
+        IgnoreHit();
+    } else {
+        Payload.U = Payload.U / max(Intersection.Opacity, 1e-5f);
+    }
 }
 [shader("closesthit")]
 void TraceVisibilityRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+    uint Triangle = PrimitiveIndex();
+    uint InstanceCustomIndex = InstanceID();
+    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
     Payload.HitDistance = RayTCurrent();
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, Triangle, Attributes.barycentrics);
+    float3 GeometryNormal = Intersection.GeometryNormal;
+    if(dot(GeometryNormal, WorldRayDirection()) > 0) GeometryNormal = -GeometryNormal;
+    CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Intersection.Albedo, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, GeometryNormal);
+    Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
 }

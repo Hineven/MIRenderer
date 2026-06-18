@@ -36,15 +36,25 @@ DeviceGigaVoxel::~DeviceGigaVoxel() {
 // Global atlas state (process-wide; shared by all GigaVoxel assets).
 TRef<Texture> GigaVoxel::global_atlas_;
 uint32_t GigaVoxel::global_atlas_bindless_index_ = 0xFFFFFFFFu;
+// Global geometry heap (process-wide; shared by all GigaVoxel assets).
+TRef<GigaVoxelGeometryHeap> GigaVoxel::global_geometry_heap_;
+
+GigaVoxelGeometryHeap * GigaVoxel::GetGlobalGeometryHeap() {
+    if (!global_geometry_heap_) {
+        // GPU usage flags: vertex/index + storage + AS build input + shader
+        // device address (matches the old per-asset dedicated uber buffers).
+        auto usage = RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kIndex
+                   | RHIBufferUsageFlagBits::kStorage
+                   | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
+                   | RHIBufferUsageFlagBits::kShaderDeviceAddress;
+        global_geometry_heap_ = new GigaVoxelGeometryHeap(usage, usage);
+    }
+    return global_geometry_heap_.Raw();
+}
 
 GigaVoxel::GigaVoxel() {
-    // GPU usage flags for the geometry heap: vertex/index + storage + AS build
-    // input + shader device address (matches the old dedicated uber buffers).
-    auto usage = RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kIndex
-               | RHIBufferUsageFlagBits::kStorage
-               | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
-               | RHIBufferUsageFlagBits::kShaderDeviceAddress;
-    geometry_heap_ = new GigaVoxelGeometryHeap(usage, usage);
+    // Ensure the global geometry heap exists (lazily created on first access).
+    (void) GetGlobalGeometryHeap();
 }
 
 GigaVoxel::~GigaVoxel() {
@@ -164,18 +174,18 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
                                              std::vector<uint32_t> indices) {
     // Replace existing entry first (free old range + drop its BLAS + slot + partition).
     if (auto it = chunk_handles_.find(id); it != chunk_handles_.end()) {
-        geometry_heap_->FreeChunk(it->second);
+        GetGlobalGeometryHeap()->FreeChunk(it->second);
         chunk_handles_.erase(it);
         chunk_BLAS_.erase(id);
         ReleaseChunkSlotAndPartition(id);
     }
 
-    GigaVoxelChunkHandle h = geometry_heap_->AllocateChunk(
+    GigaVoxelChunkHandle h = GetGlobalGeometryHeap()->AllocateChunk(
         static_cast<uint32_t>(vertices.size()), static_cast<uint32_t>(indices.size()));
     if (!h.valid) {
         // Fall back: compact and retry once.
-        geometry_heap_->Compact();
-        h = geometry_heap_->AllocateChunk(
+        GetGlobalGeometryHeap()->Compact();
+        h = GetGlobalGeometryHeap()->AllocateChunk(
             static_cast<uint32_t>(vertices.size()), static_cast<uint32_t>(indices.size()));
     }
     if (!h.valid) {
@@ -185,7 +195,7 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
     // Indices are chunk-local (0-based). Each chunk's BLAS references its own
     // vertex/index span (offset+count from the handle), so NO heap-global
     // rebias is applied (unlike the old single-merged-BLAS arrangement).
-    geometry_heap_->UpdateChunk(h, vertices, indices);
+    GetGlobalGeometryHeap()->UpdateChunk(h, vertices, indices);
     chunk_handles_[id] = h;
     // Assign a per-asset slot (for customIndex) + a global partition id (for
     // PTLAS). Both are stable until this chunk is removed.
@@ -203,7 +213,7 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
     }
     // This chunk's geometry changed -> its BLAS must be (re)built.
     blas_dirty_.insert(id);
-    RecomputeAABB(chunk_handles_, geometry_heap_.Raw(), aabb_);
+    RecomputeAABB(chunk_handles_, GetGlobalGeometryHeap(), aabb_);
     RebuildCachedInstances();
     SetDirty();
     return h;
@@ -219,19 +229,19 @@ void GigaVoxel::UpdateChunk(GigaVoxelChunkId id,
 void GigaVoxel::RemoveChunk(GigaVoxelChunkId id) {
     auto it = chunk_handles_.find(id);
     if (it == chunk_handles_.end()) return;
-    geometry_heap_->FreeChunk(it->second);
+    GetGlobalGeometryHeap()->FreeChunk(it->second);
     chunk_handles_.erase(it);
     chunk_BLAS_.erase(id);
     blas_dirty_.erase(id);
     chunk_aabbs_.erase(id);
     ReleaseChunkSlotAndPartition(id);
-    RecomputeAABB(chunk_handles_, geometry_heap_.Raw(), aabb_);
+    RecomputeAABB(chunk_handles_, GetGlobalGeometryHeap(), aabb_);
     RebuildCachedInstances();
     SetDirty();
 }
 
 void GigaVoxel::ClearAllChunks() {
-    for (auto & [id, h] : chunk_handles_) geometry_heap_->FreeChunk(h);
+    for (auto & [id, h] : chunk_handles_) GetGlobalGeometryHeap()->FreeChunk(h);
     chunk_handles_.clear();
     chunk_BLAS_.clear();
     blas_dirty_.clear();
@@ -264,8 +274,8 @@ void GigaVoxel::CompactChunks() {
     struct Snap { GigaVoxelChunkId id; std::vector<GigaVoxelVertex> v; std::vector<uint32_t> i; };
     std::vector<Snap> snaps;
     snaps.reserve(chunk_handles_.size());
-    auto cpu_v = geometry_heap_->GetCPUVertices();
-    auto cpu_i = geometry_heap_->GetCPUIndices();
+    auto cpu_v = GetGlobalGeometryHeap()->GetCPUVertices();
+    auto cpu_i = GetGlobalGeometryHeap()->GetCPUIndices();
     for (const auto & [id, h] : chunk_handles_) {
         if (!h.valid || h.IsEmpty()) continue;
         Snap s;
@@ -276,7 +286,7 @@ void GigaVoxel::CompactChunks() {
     }
 
     // Wipe both heaps, the handle map, and all per-chunk BLASes (offsets moved).
-    for (auto & [id, h] : chunk_handles_) geometry_heap_->FreeChunk(h);
+    for (auto & [id, h] : chunk_handles_) GetGlobalGeometryHeap()->FreeChunk(h);
     chunk_handles_.clear();
     chunk_BLAS_.clear();
     blas_dirty_.clear();
@@ -287,14 +297,14 @@ void GigaVoxel::CompactChunks() {
     // reconciled on the next BuildDirtyChunkBLAS_Async. Pass null queue to
     // UpdateChunk for CPU-only writes.
     for (auto & s : snaps) {
-        GigaVoxelChunkHandle h = geometry_heap_->AllocateChunk(
+        GigaVoxelChunkHandle h = GetGlobalGeometryHeap()->AllocateChunk(
             static_cast<uint32_t>(s.v.size()), static_cast<uint32_t>(s.i.size()));
         mi_assert(h.valid, "CompactChunks re-alloc failed (should always fit).");
-        geometry_heap_->UpdateChunk(h, s.v, s.i, /*queue*/ nullptr);
+        GetGlobalGeometryHeap()->UpdateChunk(h, s.v, s.i, /*queue*/ nullptr);
         chunk_handles_[s.id] = h;
         blas_dirty_.insert(s.id);  // new offset -> BLAS needs rebuild
     }
-    RecomputeAABB(chunk_handles_, geometry_heap_.Raw(), aabb_);
+    RecomputeAABB(chunk_handles_, GetGlobalGeometryHeap(), aabb_);
     RebuildCachedInstances();
     SetDirty();
 }
@@ -316,8 +326,8 @@ void GigaVoxel::BuildDirtyChunkBLAS_Async(DeviceBindlessResourceAllocator * allo
     // is handled at the visibility-buffer / TLAS level in later phases. The
     // shader still reads a single merged range for now.
     if (dirty_) {
-        size_t v_count = geometry_heap_->GetVertexHighWatermark();
-        size_t i_count = geometry_heap_->GetIndexHighWatermark();
+        size_t v_count = GetGlobalGeometryHeap()->GetVertexHighWatermark();
+        size_t i_count = GetGlobalGeometryHeap()->GetIndexHighWatermark();
         GigaVoxelHeader header {};
         header.VertexOffset = 0;
         header.IndexOffset  = 0;
@@ -334,8 +344,8 @@ void GigaVoxel::BuildDirtyChunkBLAS_Async(DeviceBindlessResourceAllocator * allo
     // created lazily (CPU side, so the handle is valid immediately); build
     // commands are recorded for GPU execution.
     if (ray_traced_) {
-        auto gpu_vbuf = geometry_heap_->GetGPUVertexBuffer();
-        auto gpu_ibuf = geometry_heap_->GetGPUIndexBuffer();
+        auto gpu_vbuf = GetGlobalGeometryHeap()->GetGPUVertexBuffer();
+        auto gpu_ibuf = GetGlobalGeometryHeap()->GetGPUIndexBuffer();
         for (GigaVoxelChunkId id : blas_dirty_) {
             auto it = chunk_handles_.find(id);
             if (it == chunk_handles_.end()) continue;          // was removed

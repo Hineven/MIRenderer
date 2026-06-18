@@ -8,6 +8,7 @@
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_renderer.h"
 #include "renderer/mi_resource_allocator.h"
+#include "renderer/mi_giga_voxel.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
 #include "renderer/mi_volume_primitives.h"
@@ -71,6 +72,9 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
@@ -121,6 +125,9 @@ void Renderer::FillPathTracerCommonParams(
         device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
     );
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
+    params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
+    params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
+    params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
     params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
     params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
     params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());
