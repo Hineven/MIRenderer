@@ -827,6 +827,26 @@ uint32_t StaticMeshInstance::GetInstanceCustomIndex() const {
     return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
 }
 
+std::span<const RenderableBLASInstance> StaticMeshInstance::GetGlobalBLASInstances() const {
+    auto * blas = GetBLAS();
+    if (!blas) { cached_global_instances_.clear(); return {}; }
+    if (global_instances_dirty_ || cached_global_instances_.empty()
+        || cached_global_instances_[0].blas != blas
+        || IsTransformDirty()) {
+        RenderableBLASInstance inst {};
+        inst.blas = blas;
+        inst.transform = GetTransform();
+        inst.instance_custom_index = GetInstanceCustomIndex();
+        inst.instance_mask = 0xFF;
+        inst.instance_contribution_to_hit_group_index = GetRayTracedClassIndex();
+        inst.partition_index = kPTLASPartitionIndexGlobal;
+        cached_global_instances_.clear();
+        cached_global_instances_.push_back(inst);
+        global_instances_dirty_ = false;
+    }
+    return std::span<const RenderableBLASInstance>(cached_global_instances_);
+}
+
 bool StaticMeshInstance::IsEmpty() const {
     return !static_mesh_ || static_mesh_->IsEmpty();
 }

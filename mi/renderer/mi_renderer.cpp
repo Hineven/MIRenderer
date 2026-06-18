@@ -276,16 +276,21 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
                 visible_rt_renderable_transform_dirty = true;
             }
             // New multi-instance path: global + partitioned.
-            for (const auto & inst : renderable->GetGlobalBLASInstances()) {
+            auto global_instances = renderable->GetGlobalBLASInstances();
+            auto partitioned_instances = renderable->GetPartitionedBLASInstances();
+            for (const auto & inst : global_instances) {
                 if (inst.blas) gathered_instances.push_back({renderable, inst.blas, &inst});
             }
-            for (const auto & inst : renderable->GetPartitionedBLASInstances()) {
+            for (const auto & inst : partitioned_instances) {
                 if (inst.blas) gathered_instances.push_back({renderable, inst.blas, &inst});
             }
-            // Legacy fallback: a renderable with GetBLAS() but no multi-instance
-            // override (e.g. StaticMesh before migration). Synthesize one instance.
-            if (auto * legacy_blas = renderable->GetBLAS()) {
-                gathered_instances.push_back({renderable, legacy_blas, nullptr});
+            // Legacy fallback: ONLY when no multi-instance override exists.
+            // (A migrated renderable keeps GetBLAS() for vrt_hash / BLAS-update
+            // tracking, but must not be double-added here.)
+            if (global_instances.empty() && partitioned_instances.empty()) {
+                if (auto * legacy_blas = renderable->GetBLAS()) {
+                    gathered_instances.push_back({renderable, legacy_blas, nullptr});
+                }
             }
         }
     }

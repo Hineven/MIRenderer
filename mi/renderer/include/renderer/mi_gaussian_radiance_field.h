@@ -96,6 +96,7 @@ public:
     RHIAccelerationStructure * GetBLAS() const override;
     uint32_t GetInstanceCustomIndex() const override;
     uint32_t GetRayTracedClassIndex() const override;
+    std::span<const RenderableBLASInstance> GetGlobalBLASInstances() const override;
     bool IsEmpty() const override;
 
     static RayTracedRenderableClassRegistrator<GaussianRadianceFieldInstance> kClassRegistrator;
@@ -103,6 +104,9 @@ protected:
     GaussianRadianceFieldInstance(Scene * scene);
     ~GaussianRadianceFieldInstance() override;
     TRef<GaussianRadianceField> field_;
+
+    mutable std::vector<RenderableBLASInstance> cached_global_instances_;
+    mutable bool global_instances_dirty_ {true};
 };
 
 MI_NAMESPACE_END

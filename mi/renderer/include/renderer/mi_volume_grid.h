@@ -141,6 +141,7 @@ public:
     RHIAccelerationStructure* GetBLAS() const override;
     uint32_t GetInstanceCustomIndex() const override;
     uint32_t GetRayTracedClassIndex() const override;
+    std::span<const RenderableBLASInstance> GetGlobalBLASInstances() const override;
 
     static RayTracedRenderableClassRegistrator<VolumeGridInstance> kClassRegistrator;
 
@@ -151,6 +152,9 @@ protected:
     ~VolumeGridInstance() override;
 
     TRef<VolumeGrid> volume_grid_;
+
+    mutable std::vector<RenderableBLASInstance> cached_global_instances_;
+    mutable bool global_instances_dirty_ {true};
 };
 
 MI_NAMESPACE_END

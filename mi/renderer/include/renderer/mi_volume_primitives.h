@@ -141,6 +141,7 @@ public:
 
     uint32_t GetInstanceCustomIndex () const override ;
     uint32_t GetRayTracedClassIndex() const override;
+    std::span<const RenderableBLASInstance> GetGlobalBLASInstances() const override;
 
     static RayTracedRenderableClassRegistrator<VolumePrimitivesInstance> kClassRegistrator;
 
@@ -153,6 +154,9 @@ protected:
 
     TRef<VolumePrimitives> volume_primitives_;
 
+
+    mutable std::vector<RenderableBLASInstance> cached_global_instances_;
+    mutable bool global_instances_dirty_ {true};
 };
 
 

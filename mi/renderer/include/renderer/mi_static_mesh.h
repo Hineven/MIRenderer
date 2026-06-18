@@ -226,6 +226,10 @@ public:
     RHIASGeometryInstanceFlags GetASGeometryInstanceFlags() const override ;
     uint32_t GetInstanceCustomIndex() const override;
     uint32_t GetRayTracedClassIndex() const override;
+    // Multi-instance path: one global-partition instance. Lazily (re)built when
+    // the transform or BLAS changes. GetBLAS() is kept for vrt-hash / BLAS-update
+    // tracking but no longer feeds the PTLAS gather (see mi_renderer.cpp).
+    std::span<const RenderableBLASInstance> GetGlobalBLASInstances() const override;
 
     static RayTracedRenderableClassRegistrator<StaticMeshInstance> kClassRegistrator;
 
@@ -255,6 +259,10 @@ protected:
     std::vector<TRef<DeviceUberBufferAllocation>> mli_triangle_buffers_;
 
     TRef<StaticMesh> static_mesh_ {}; // The static mesh this instance is linked to
+
+    // Cached global-partition BLAS instance for GetGlobalBLASInstances().
+    mutable std::vector<RenderableBLASInstance> cached_global_instances_;
+    mutable bool global_instances_dirty_ {true};
 };
 
 
