@@ -69,9 +69,10 @@ public:
     Palette& GetPalette() { return palette_; }
     const Palette& GetPalette() const { return palette_; }
 
-    // --- State management ---
-    ChunkState GetState() const { return state_; }
-    void SetState(ChunkState state) { state_ = state; }
+    // Note: presence / sim state (ChunkPresence / ChunkSim) is NOT stored here.
+    // ChunkData is a pure data container. Lifecycle + participation state lives
+    // in ChunkRegistry's per-entry record, so a chunk referenced by multiple
+    // shells never has ambiguous state. See chunk_registry.h.
 
     // --- Statistics ---
 
@@ -80,7 +81,6 @@ public:
 
 private:
     ChunkCoord coord_;
-    ChunkState state_ = ChunkState::kUnloaded;
     Palette palette_;
     SubChunk sub_chunks_[kSubChunksPerChunkY];  // 256 subchunks
 

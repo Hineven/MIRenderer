@@ -8,6 +8,7 @@
 #include "vk_cmd_exec.h"
 #include "vk_resource.h"
 #include "vk_as.h"
+#include "vk_ptlas.h"
 #include "vk_buffer.h"
 #include "vk_texture.h"
 #include "vk_pipeline.h"
@@ -563,6 +564,24 @@ size_t VulkanCommandExecutor::BuildDescriptorWritesForTable(
             writes[write_index++] = write;
         }
     }
+    for(auto ptlas : desc.partitioned_acceleration_structures) {
+        auto& write_nv = *state.Allocate<vk::WriteDescriptorSetPartitionedAccelerationStructureNV>();
+        auto p_addr = state.Allocate<vk::DeviceAddress>();
+        auto destination = remappings.GetDestination(RHIPipelineResourceType::kPartitionedAccelerationStructure, ptlas.slot);
+        if (UINT32_MAX != destination.binding) {
+            auto write = vk::WriteDescriptorSet()
+                .setDstSet(dst_set)
+                .setDstBinding(destination.binding)
+                .setDescriptorCount(1)
+                .setDescriptorType(vk::DescriptorType::ePartitionedAccelerationStructureNV)
+                .setPNext(&write_nv);
+            write_nv.accelerationStructureCount = 1;
+            auto rhi_ptlas = static_cast<VulkanPartitionedTLAS*>(ptlas.resource);
+            *p_addr = rhi_ptlas ? rhi_ptlas->GetDeviceAddress() : 0;
+            write_nv.pAccelerationStructures = p_addr;
+            writes[write_index++] = write;
+        }
+    }
     return write_index;
 }
 
@@ -599,7 +618,8 @@ void VulkanCommandExecutor::RHICreateSignatureParameterTables(
     for (uint32_t i = 0; i < n; i++) {
         auto & d = tables[i].desc;
         total_writes += d.uniforms.size() + d.storages.size() + d.uavs.size()
-            + d.srvs.size() + d.samplers.size() + d.acceleration_structures.size();
+            + d.srvs.size() + d.samplers.size() + d.acceleration_structures.size()
+            + d.partitioned_acceleration_structures.size();
     }
     auto writes = state.Allocate<vk::WriteDescriptorSet[]>(total_writes);
     size_t write_index = 0;

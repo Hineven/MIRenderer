@@ -20,11 +20,12 @@ MACROMC_WORLD_NAMESPACE_BEGIN
 
 // Convert a world-space block position to the ChunkCoord that contains it.
 // Uses floor-division to handle negative coordinates correctly.
+// Result is 2D (XZ) — a chunk spans the full world height, so block Y maps to
+// a local Y inside the chunk, not to a chunk coordinate.
 FORCEINLINE ChunkCoord BlockWorldToChunkCoord(const glm::ivec3& block_world_pos) {
     return ChunkCoord(
         (block_world_pos.x >= 0) ? (block_world_pos.x / static_cast<int>(kChunkSizeX))
                                  : ((block_world_pos.x + 1) / static_cast<int>(kChunkSizeX) - 1),
-        0,  // Y is unused for chunk coordinates (chunks span full height)
         (block_world_pos.z >= 0) ? (block_world_pos.z / static_cast<int>(kChunkSizeZ))
                                  : ((block_world_pos.z + 1) / static_cast<int>(kChunkSizeZ) - 1)
     );
@@ -42,6 +43,7 @@ FORCEINLINE glm::ivec3 BlockWorldToLocal(const glm::ivec3& block_world_pos) {
 }
 
 // Convert a ChunkCoord to the world-space block position of its origin (0,0,0 corner).
+// Y origin is 0 (chunk spans full height from the world bottom).
 FORCEINLINE glm::ivec3 ChunkCoordToBlockOrigin(const ChunkCoord& chunk_coord) {
     return glm::ivec3(
         chunk_coord.x * static_cast<int>(kChunkSizeX),
@@ -76,6 +78,24 @@ FORCEINLINE SubChunkCoord BlockWorldToSubChunkCoord(const glm::ivec3& block_worl
 FORCEINLINE BlockFace OppositeFace(BlockFace face) {
     // Pairs: PosX<->NegX, PosY<->NegY, PosZ<->NegZ (even<->odd)
     return static_cast<BlockFace>(static_cast<uint8_t>(face) ^ 1);
+}
+
+// =============================================================================
+// Region coordinates.
+// A region is a kRegionSize x kRegionSize group of chunks in the XZ plane
+// (chunks span full height, so regions are 2D). Regions are the checkerboard
+// scheduling and event-routing work unit (see event_bus.h / TICK_PACING).
+// =============================================================================
+static constexpr int kRegionSize = 8;
+
+// Convert a chunk coord to its containing region coord. Floor-division handles
+// negatives correctly. The result is a ChunkCoord (2D XZ) at the region's
+// chunk-grid origin.
+FORCEINLINE ChunkCoord ChunkToRegionCoord(const ChunkCoord& cc) {
+    return ChunkCoord(
+        (cc.x >= 0) ? cc.x / kRegionSize : (cc.x + 1) / kRegionSize - 1,
+        (cc.z >= 0) ? cc.z / kRegionSize : (cc.z + 1) / kRegionSize - 1
+    );
 }
 
 MACROMC_WORLD_NAMESPACE_END

@@ -59,6 +59,7 @@ struct RHIBufferSpan;
 class RHITexture;
 class RHISampler;
 class RHIAccelerationStructure;
+class RHIPartitionedTLAS;
 
 class RHICommandQueueGraphics;
 class RHIBindlessManager;

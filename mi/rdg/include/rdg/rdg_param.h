@@ -110,6 +110,7 @@ struct RDGShaderSignatureParamInfo : public RDGShaderParamStructInfo {
     std::span<RDGShaderParameterLocation> srvs_;
     std::span<RDGShaderParameterLocation> samplers_;
     std::span<RDGShaderParameterLocation> acceleration_structures_;
+    std::span<RDGShaderParameterLocation> partitioned_acceleration_structures_;
     // At most one push constant per shader parameter struct. Zero-init (info == nullptr) means none.
     // Note: this only records the declared push constant SIZE for reflection/validation and root
     // signature sizing. The actual push constant VALUE is supplied per-dispatch (dynamic, lightweight).
@@ -185,6 +186,13 @@ template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("AccelerationStr
     typedef RHIAccelerationStructure * value;
     FORCEINLINE static RHIAccelerationStructure * default_value() {
         return reinterpret_cast<RHIAccelerationStructure*>(RDGParameter_UnsetPointer);
+    }
+};
+
+template<> struct TRDGShaderParamPlaceHolderType<ConstStrHash32("PartitionedAccelerationStructure")> {
+    typedef RHIPartitionedTLAS * value;
+    FORCEINLINE static RHIPartitionedTLAS * default_value() {
+        return reinterpret_cast<RHIPartitionedTLAS*>(RDGParameter_UnsetPointer);
     }
 };
 

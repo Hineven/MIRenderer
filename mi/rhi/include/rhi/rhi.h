@@ -83,6 +83,11 @@ public:
 
     virtual TRef<RHIAccelerationStructure> CreateAccelerationStructure (RHIAccelerationStructureType type) = 0;
 
+    // Create a Partitioned TLAS (VK_NV_partitioned_acceleration_structure).
+    // The returned object has no backing buffer allocated yet — call GetBuildSizes
+    // then Allocate before issuing a build command.
+    virtual TRef<RHIPartitionedTLAS> CreatePartitionedTLAS () = 0;
+
     // Create a sampler, thread safe
     virtual RHISamplerRef CreateSampler (RHISamplerDesc desc) = 0;
 

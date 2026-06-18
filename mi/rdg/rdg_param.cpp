@@ -67,8 +67,8 @@ namespace details {
 
     void zzFinalizeTopLevelParamsStructInfo(RDGShaderParamStructAndSizeInfo *info) {
         std::vector<RDGShaderParameterLocation> storage_buffers, uniform_buffers,
-            uavs, srvs, samplers, acceleration_structures, vertex_buffers, vertex_attributes,
-            render_targets;
+            uavs, srvs, samplers, acceleration_structures, partitioned_acceleration_structures,
+            vertex_buffers, vertex_attributes, render_targets;
         RDGShaderParameterLocation index_buffer {};
         {
             for (auto & e : info->cpp_members) {
@@ -91,6 +91,8 @@ namespace details {
                     render_targets.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kAccelerationStructure){
                     acceleration_structures.emplace_back(&e, cpp_offset, 0);
+                } else if (e.type == RHIParamType::kPartitionedAccelerationStructure){
+                    partitioned_acceleration_structures.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kSampler) {
                     samplers.emplace_back(&e, cpp_offset, 0);
                 } else if (e.type == RHIParamType::kPushConstant) {
@@ -129,6 +131,10 @@ namespace details {
                 info->acceleration_structures_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(acceleration_structures.size()), acceleration_structures.size());
                 std::copy(acceleration_structures.begin(), acceleration_structures.end(), info->acceleration_structures_.begin());
             } else info->acceleration_structures_ = {};
+            if (!partitioned_acceleration_structures.empty()) {
+                info->partitioned_acceleration_structures_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(partitioned_acceleration_structures.size()), partitioned_acceleration_structures.size());
+                std::copy(partitioned_acceleration_structures.begin(), partitioned_acceleration_structures.end(), info->partitioned_acceleration_structures_.begin());
+            } else info->partitioned_acceleration_structures_ = {};
             if (!vertex_buffers.empty()) {
                 info->render_pass_info_.vertex_buffers_ = std::span(RDGGlobalMemoryCollector::Get().NewArray<RDGShaderParameterLocation>(vertex_buffers.size()), vertex_buffers.size());
                 std::copy(vertex_buffers.begin(), vertex_buffers.end(), info->render_pass_info_.vertex_buffers_.begin());

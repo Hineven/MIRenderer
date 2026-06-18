@@ -73,6 +73,10 @@ static vk::DescriptorPool CreateFrameTemporaryDescriptorPool() {
                     C::kMaxNumAccelerationStructureDescriptorsPerFrame
             },
             {
+                    vk::DescriptorType::ePartitionedAccelerationStructureNV,
+                    C::kMaxNumPartitionedAccelerationStructureDescriptorsPerFrame
+            },
+            {
                     vk::DescriptorType::eSampler,
                     C::kMaxNumSamplerDescriptorsPerFrame
             }

@@ -505,7 +505,7 @@ TEST_F(TaskSystemTest, UpdatePriorityChangesScheduling) {
 // ============================================================================
 
 TEST_F(TaskSystemTest, CancellationTokenCooperative) {
-    auto token = std::make_shared<CancellationToken>();
+    auto token = Create<CancellationToken>();
     std::atomic<int> iterations{0};
 
     auto task = TaskGraph::Get().CreateSimpleTask([token, &iterations]() {

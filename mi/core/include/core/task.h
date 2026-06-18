@@ -213,16 +213,18 @@ struct TaskComparator {
 };
 
 // Lightweight cooperative cancellation token.
-// Can be shared among multiple tasks (via shared_ptr) to allow external cancellation.
+// Can be shared among multiple tasks (via TRef) to allow external cancellation.
 // Unlike Task::Cancel() which skips queued tasks, the token lets running tasks
-// check cancellation and exit early.
-class CancellationToken {
+// check cancellation and exit early. Uses the project's RefCounted<> + TRef
+// system (thread-safe, unified lifetime control) rather than std::shared_ptr.
+class CancellationToken : public RefCounted<> {
 public:
     void Cancel() { cancelled_.store(true, std::memory_order_release); }
     bool IsCancelled() const { return cancelled_.load(std::memory_order_acquire); }
 private:
     std::atomic<bool> cancelled_{false};
 };
+using CancellationTokenRef = TRef<CancellationToken>;
 
 class TaskInitializer : public NonCopyable {
 public:
@@ -261,7 +263,7 @@ private:
 // Typical use: one TaskGroup per streaming chunk, holding all its pipeline tasks.
 class TaskGroup : public RefCounted<> {
 public:
-    TaskGroup() : token_(std::make_shared<CancellationToken>()) {}
+    TaskGroup() : token_(mi::Create<CancellationToken>()) {}
 
     void Add(TaskRef task) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -303,7 +305,7 @@ public:
         }
     }
 
-    std::shared_ptr<CancellationToken> GetToken() const { return token_; }
+    CancellationTokenRef GetToken() const { return token_; }
 
     size_t GetTaskCount() const {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -313,7 +315,7 @@ public:
 private:
     mutable std::mutex mutex_;
     std::vector<TaskRef> tasks_;
-    std::shared_ptr<CancellationToken> token_;
+    CancellationTokenRef token_;
 };
 
 using TaskGroupRef = TRef<TaskGroup>;

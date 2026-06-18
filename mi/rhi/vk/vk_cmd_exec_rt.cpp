@@ -11,6 +11,7 @@
 #include "vk_pipeline.h"
 #include "vk_conversion.h"
 #include "vk_as.h"
+#include "vk_ptlas.h"
 
 MI_NAMESPACE_BEGIN
 
@@ -176,6 +177,95 @@ void VulkanCommandExecutor::RHIBuildAccelerationStructure(RHICommandQueueBase *c
     // TODO 25.12.30: this function make NVIDIA driver comsume about 260KB more memory per call, need to investigate later.
     // current workaround is to reduce the number of calls by checking for dirty transforms.
     cmdb.buildAccelerationStructuresKHR(1, &vk_build_info, &range_infos);
+}
+
+void VulkanCommandExecutor::RHIBuildPartitionedTLAS(RHICommandQueueBase *cmd, RHICommandBuildPartitionedTLAS *build_ptlas) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+    auto & cmdb = state.cmd;
+
+    auto dst_ptlas = static_cast<VulkanPartitionedTLAS*>(build_ptlas->dst_ptlas_);
+    auto src_ptlas = static_cast<VulkanPartitionedTLAS*>(build_ptlas->src_ptlas_);
+    auto scratch_buffer = static_cast<VulkanBuffer*>(build_ptlas->scratch_buffer_.buffer);
+    auto indirect_cmds_buffer = static_cast<VulkanBuffer*>(build_ptlas->indirect_commands_buffer_.buffer);
+    auto indirect_count_buffer = static_cast<VulkanBuffer*>(build_ptlas->indirect_commands_count_buffer_.buffer);
+
+    const auto & ops = build_ptlas->ops_;
+    const auto & input = build_ptlas->input_;
+
+    // Build the indirect command array on the host, then write it to the
+    // caller-provided device buffer via vkCmdUpdateBuffer (in-place, no staging).
+    auto * vk_indirect_cmds = state.Allocate<vk::BuildPartitionedAccelerationStructureIndirectCommandNV[]>(ops.size());
+    for (size_t i = 0; i < ops.size(); i++) {
+        auto & ic = vk_indirect_cmds[i];
+        ic.opType = [&]() -> vk::PartitionedAccelerationStructureOpTypeNV {
+            switch (ops[i].op_type) {
+                case RHIPTLASOpType::kWriteInstance:             return vk::PartitionedAccelerationStructureOpTypeNV::eWriteInstance;
+                case RHIPTLASOpType::kUpdateInstance:            return vk::PartitionedAccelerationStructureOpTypeNV::eUpdateInstance;
+                case RHIPTLASOpType::kWritePartitionTranslation: return vk::PartitionedAccelerationStructureOpTypeNV::eWritePartitionTranslation;
+                default: assert(false && "Unknown PTLAS op type"); return vk::PartitionedAccelerationStructureOpTypeNV::eWriteInstance;
+            }
+        }();
+        ic.argCount = ops[i].arg_count;
+        ic.argData.startAddress = ops[i].arg_data;
+        ic.argData.strideInBytes = ops[i].arg_stride;
+    }
+
+    // vkCmdUpdateBuffer has a 65536-byte limit; indirect command arrays are tiny
+    // (a handful of ops), so this is always safe.
+    size_t indirect_cmds_size = sizeof(vk::BuildPartitionedAccelerationStructureIndirectCommandNV) * ops.size();
+    assert(indirect_cmds_size <= 65536 && "PTLAS indirect commands exceed vkCmdUpdateBuffer limit");
+    cmdb.updateBuffer(indirect_cmds_buffer->GetBuffer(),
+        build_ptlas->indirect_commands_buffer_.offset,
+        indirect_cmds_size, vk_indirect_cmds);
+
+    // Write the op count (single uint32_t).
+    uint32_t op_count = (uint32_t)ops.size();
+    cmdb.updateBuffer(indirect_count_buffer->GetBuffer(),
+        build_ptlas->indirect_commands_count_buffer_.offset,
+        sizeof(uint32_t), &op_count);
+
+    // Barrier: the updateBuffer writes must complete before the build reads them.
+    {
+        vk::BufferMemoryBarrier2 barriers[2];
+        uint32_t barrier_count = 0;
+        for (uint32_t i = 0; i < 2; i++) {
+            barriers[barrier_count].srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+            barriers[barrier_count].dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
+            barriers[barrier_count].srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+            barriers[barrier_count].dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+            barriers[barrier_count].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[barrier_count].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier_count++;
+        }
+        barriers[0].buffer = indirect_cmds_buffer->GetBuffer();
+        barriers[0].offset = build_ptlas->indirect_commands_buffer_.offset;
+        barriers[0].size = indirect_cmds_size;
+        barriers[1].buffer = indirect_count_buffer->GetBuffer();
+        barriers[1].offset = build_ptlas->indirect_commands_count_buffer_.offset;
+        barriers[1].size = sizeof(uint32_t);
+        cmdb.pipelineBarrier2(vk::DependencyInfo{{}, 0, nullptr, barrier_count, barriers, 0, nullptr});
+    }
+
+    // Assemble the build info.
+    vk::PartitionedAccelerationStructureInstancesInputNV vk_input{};
+    vk_input.flags = GetVulkanBuildAccelerationStructureFlags(input.flags);
+    vk_input.instanceCount = input.instance_count;
+    vk_input.maxInstancePerPartitionCount = input.max_instance_per_partition_count;
+    vk_input.partitionCount = input.partition_count;
+    vk_input.maxInstanceInGlobalPartitionCount = input.max_instance_in_global_partition_count;
+
+    vk::BuildPartitionedAccelerationStructureInfoNV vk_build_info{};
+    vk_build_info.input = vk_input;
+    vk_build_info.dstAccelerationStructureData = dst_ptlas->GetDeviceAddress();
+    if (src_ptlas) {
+        vk_build_info.srcAccelerationStructureData = src_ptlas->GetDeviceAddress();
+    }
+    vk_build_info.scratchData = scratch_buffer->GetDeviceAddress() + build_ptlas->scratch_buffer_.offset;
+    vk_build_info.srcInfos = indirect_cmds_buffer->GetDeviceAddress() + build_ptlas->indirect_commands_buffer_.offset;
+    vk_build_info.srcInfosCount = indirect_count_buffer->GetDeviceAddress() + build_ptlas->indirect_commands_count_buffer_.offset;
+
+    cmdb.buildPartitionedAccelerationStructuresNV(vk_build_info);
 }
 
 void VulkanCommandExecutor::RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) {

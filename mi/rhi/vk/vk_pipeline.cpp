@@ -55,6 +55,10 @@ static void RelocateShaderResourceBindings (
             auto remap = remappings.GetDestination(
                 type, pipeline_res_slot.slot_index
             );
+            // Skip if this resource is not mapped to this type (e.g. a PTLAS resource
+            // during the kAccelerationStructure pass, or vice versa). The other pass
+            // will handle it.
+            if (remap.binding == UINT32_MAX) continue;
             // Modify the bytecode to actually use the remapped binding in the shader
             Relocate(shader_resource_desc.locations, remap.set, remap.binding);
         }
@@ -67,6 +71,12 @@ static void RelocateShaderResourceBindings (
     RelocateResourcesInIR(RHIPipelineResourceType::kSRV, shader->GetSRVDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kSampler, shader->GetSamplerDesc());
     RelocateResourcesInIR(RHIPipelineResourceType::kAccelerationStructure, shader->GetAccelerationStructureDesc());
+    // Note: PTLAS resources share the same SPIRV-Cross reflection bucket as KHR TLAS.
+    // The remappings were already split by BuildRemappingsFromRootSignature above.
+    // For resources that were remapped as PTLAS, the kAccelerationStructure lookup
+    // above would have missed them (returned UINT32_MAX binding) — so we do a second
+    // pass for PTLAS. Both passes are safe: a resource only has one valid remapping.
+    RelocateResourcesInIR(RHIPipelineResourceType::kPartitionedAccelerationStructure, shader->GetAccelerationStructureDesc());
 
     // Relocate bindless resource arrays in the shader IR
     if (shader->HasBindlessResources()) {
@@ -157,7 +167,46 @@ static bool BuildRemappingsFromRootSignature(
     if (!BuildForType(uavs, RHIPipelineResourceType::kUAV)) return false;
     if (!BuildForType(srvs, RHIPipelineResourceType::kSRV)) return false;
     if (!BuildForType(samplers, RHIPipelineResourceType::kSampler)) return false;
-    if (!BuildForType(acceleration_structures, RHIPipelineResourceType::kAccelerationStructure)) return false;
+    // Acceleration structures: SPIRV-Cross puts both KHR TLAS and NV PTLAS into the
+    // same reflection bucket. We disambiguate here using the root signature's name CRC
+    // lists — resources declared as PartitionedAccelerationStructure in the C++ param
+    // struct have their name CRCs in the PTLAS list; the rest are ordinary TLAS.
+    {
+        auto & ptlas_names = root->GetTypeNames((uint32_t)RHIPipelineResourceType::kPartitionedAccelerationStructure);
+        auto IsPTLAS = [&](uint32_t name_crc) -> bool {
+            for (uint32_t j = 0; j < ptlas_names.count; j++) {
+                if (name_crc == ptlas_names.name_crcs[j]) return true;
+            }
+            return false;
+        };
+        auto & khr_names = root->GetTypeNames((uint32_t)RHIPipelineResourceType::kAccelerationStructure);
+        auto FindIndex = [&](const auto & names, uint32_t name_crc) -> uint32_t {
+            for (uint32_t j = 0; j < names.count; j++) {
+                if (name_crc == names.name_crcs[j]) return j;
+            }
+            return UINT32_MAX;
+        };
+        for (int i = 0; i < (int)acceleration_structures.size(); i++) {
+            uint32_t crc = acceleration_structures[i].name_crc;
+            if (IsPTLAS(crc)) {
+                uint32_t idx = FindIndex(ptlas_names, crc);
+                if (idx == UINT32_MAX) {
+                    MI_LOG(MIInfraLogType::kError,
+                        "Pipeline resource '{}' declared as PTLAS but not found in root signature PTLAS list.", acceleration_structures[i].name);
+                    return false;
+                }
+                remappings.AddRemapping(RHIPipelineResourceType::kPartitionedAccelerationStructure, i, 0, root->GetBinding(RHIPipelineResourceType::kPartitionedAccelerationStructure, idx));
+            } else {
+                uint32_t idx = FindIndex(khr_names, crc);
+                if (idx == UINT32_MAX) {
+                    MI_LOG(MIInfraLogType::kError,
+                        "Pipeline resource '{}' (type kAccelerationStructure) not found in root signature.", acceleration_structures[i].name);
+                    return false;
+                }
+                remappings.AddRemapping(RHIPipelineResourceType::kAccelerationStructure, i, 0, root->GetBinding(RHIPipelineResourceType::kAccelerationStructure, idx));
+            }
+        }
+    }
     return true;
 }
 

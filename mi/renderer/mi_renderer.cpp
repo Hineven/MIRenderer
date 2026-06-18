@@ -255,23 +255,37 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         renderable_hashes.size() * sizeof(uint32_t)
     );
 
-    // Prepare instance data for rebuilding TLAS
-    std::vector<uint32_t> visible_rt_renderable_indices;
+    // Prepare instance data for rebuilding TLAS.
+    // Collect a flat list of BLAS instances across all visible ray-traced
+    // renderables. A renderable contributes its GetGlobalBLASInstances (legacy
+    // single-BLAS path, e.g. StaticMesh) + GetPartitionedBLASInstances (per-
+    // chunk path, e.g. GigaVoxel). The TLAS is built over this flat list.
+    struct GatheredInstance {
+        Renderable * renderable;           // for transform-dirty / blas-updated flags
+        RHIAccelerationStructure * blas;    // non-null
+        const RenderableBLASInstance * desc;// points into the renderable's span
+    };
+    std::vector<GatheredInstance> gathered_instances;
     bool visible_rt_renderable_transform_dirty = false;
     for (auto e : visible_renderable_indices) {
         if (auto renderable = all_renderables[e]) {
-            if (renderable->IsRayTraced()
-                && renderable->IsVisible()
-                && !renderable->IsEmpty()
-                // Some ray-traced renderables have no ray-tracing enabled geometry
-                // we have to check for that here.
-                && renderable->GetBLAS()
-                ) {
-                visible_rt_renderable_indices.push_back(e);
-                if (renderable->ClearTransformDirty()) {
-                    visible_rt_renderable_transform_dirty = true;
-                }
-                }
+            if (!renderable->IsRayTraced() || !renderable->IsVisible() || renderable->IsEmpty())
+                continue;
+            if (renderable->ClearTransformDirty()) {
+                visible_rt_renderable_transform_dirty = true;
+            }
+            // New multi-instance path: global + partitioned.
+            for (const auto & inst : renderable->GetGlobalBLASInstances()) {
+                if (inst.blas) gathered_instances.push_back({renderable, inst.blas, &inst});
+            }
+            for (const auto & inst : renderable->GetPartitionedBLASInstances()) {
+                if (inst.blas) gathered_instances.push_back({renderable, inst.blas, &inst});
+            }
+            // Legacy fallback: a renderable with GetBLAS() but no multi-instance
+            // override (e.g. StaticMesh before migration). Synthesize one instance.
+            if (auto * legacy_blas = renderable->GetBLAS()) {
+                gathered_instances.push_back({renderable, legacy_blas, nullptr});
+            }
         }
     }
     for (const auto& e : all_renderables) {
@@ -280,13 +294,22 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
     // TODO: batched update all BLAS (they are performed in renderable->Update currently)
 
-    // If instance count changes, we must rebuild TLAS instead of update.
-    auto [vrt_hash, vrt_blas_updated] = ComputeRenderableStructureHashAndClearBLASUpdatedFlags(visible_rt_renderable_indices, all_renderables);
+    // If the set of BLAS handles changes, rebuild TLAS instead of update.
+    // Hash over the flat BLAS handle list (order-sensitive).
+    std::vector<void*> rt_handles;
+    rt_handles.reserve(gathered_instances.size());
+    bool vrt_blas_updated = false;
+    for (const auto & gi : gathered_instances) {
+        rt_handles.push_back(gi.blas->GetAPIHandle());
+        vrt_blas_updated |= gi.renderable->IsBLASUpdated() || gi.renderable->IsTransformDirty();
+        gi.renderable->SetBLASUpdated(false);
+    }
+    uint32_t vrt_hash = XXH32(rt_handles.data(), rt_handles.size() * sizeof(void*), 0);
     bool should_rebuild_tlas = vrt_hash != view->scene_->GetDeviceScene()->TLAS_vrt_hash_;
     bool should_update_tlas = visible_rt_renderable_transform_dirty || should_rebuild_tlas || vrt_blas_updated;
     TRef<RDGBuffer> tlas_instance_buffer;
     if (should_update_tlas) {
-        auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
+        auto instance_count = (uint32_t)gathered_instances.size();
         if (instance_count > 0){
             auto instance_size = RHI::Get().GetAccelerationStructureInstanceStride();
             auto instance_data_bytesize = instance_count * instance_size;
@@ -294,31 +317,41 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
             auto instance_data_raw = builder.Allocate<RHIAccelerationStructureInstanceDesc[]>(instance_count);
 
             auto instance_data = builder.Allocate(instance_data_bytesize);
-            for (const auto& [i, e] : std::views::enumerate(visible_rt_renderable_indices)) {
-                auto renderable = all_renderables[e];
+            auto props = RHI::Get().GetDeviceProperties();
+            auto handle_size_aligned = RoundUp(
+                props.shader_group_handle_size,
+                props.shader_group_base_alignment
+            );
+            for (const auto& [i, gi] : std::views::enumerate(gathered_instances)) {
                 auto data = RHIAccelerationStructureInstanceDesc {};
-                data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
-                data.mask = 0xFF; // Visible to all rays
-                // Set SBT record offset based on renderable class index.
-                // The offset is in bytes: class_index * hit_group_stride.
-                // Must match the SBT hit group spacing used in RDGShader SBT construction.
-                {
-                    auto props = RHI::Get().GetDeviceProperties();
-                    auto handle_size_aligned = RoundUp(
-                        props.shader_group_handle_size,
-                        props.shader_group_base_alignment
-                    );
+                auto renderable = gi.renderable;
+                if (gi.desc) {
+                    // New multi-instance descriptor path.
+                    data.instance_custom_index = gi.desc->instance_custom_index;
+                    data.mask = gi.desc->instance_mask;
+                    data.instance_shader_binding_table_record_offset =
+                        gi.desc->instance_contribution_to_hit_group_index * handle_size_aligned;
+                    data.flags = renderable->GetASGeometryInstanceFlags();
+                    data.acceleration_structure_reference = gi.blas->GetDeviceAddress();
+                    // Row major
+                    auto to_world_matrix = gi.desc->transform.GetToWorldTransformMatrix();
+                    for (int x = 0; x < 4; x++)
+                        for (int y = 0; y < 3; y++)
+                            data.transform[y * 4 + x] = to_world_matrix[x][y];
+                } else {
+                    // Legacy single-BLAS path.
+                    data.instance_custom_index = renderable->GetInstanceCustomIndex(); // 24 bits
+                    data.mask = 0xFF; // Visible to all rays
                     uint32_t class_index = renderable->GetRayTracedClassIndex();
                     data.instance_shader_binding_table_record_offset = class_index * handle_size_aligned;
+                    data.flags = renderable->GetASGeometryInstanceFlags();
+                    data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
+                    // Row major
+                    auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
+                    for (int x = 0; x < 4; x++)
+                        for (int y = 0; y < 3; y++)
+                            data.transform[y * 4 + x] = to_world_matrix[x][y];
                 }
-                // Disable back face culling for renderables with double-sided materials.
-                data.flags = renderable->GetASGeometryInstanceFlags();
-                data.acceleration_structure_reference = renderable->GetBLAS()->GetDeviceAddress();
-                // Row major
-                auto to_world_matrix = renderable->GetTransform().GetToWorldTransformMatrix();
-                for (int x = 0; x < 4; x++)
-                    for (int y = 0; y < 3; y++)
-                        data.transform[y * 4 + x] = to_world_matrix[x][y];
                 instance_data_raw[i] = data;
             }
             // Convert to underlying device format
@@ -355,7 +388,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
     // Update TLAS
     if (should_update_tlas) {
-        auto instance_count = (uint32_t)visible_rt_renderable_indices.size();
+        auto instance_count = (uint32_t)gathered_instances.size();
         if (!view->scene_->GetDeviceScene()->TLAS_) {
             // Create one if not exists
             view->scene_->GetDeviceScene()->TLAS_ = RHI::Get().CreateAccelerationStructure(

@@ -31,6 +31,9 @@ struct RHIDeviceProperties {
     uint32_t max_ray_recursion_depth {};          // Maximum ray recursion depth
     uint32_t max_shader_group_stride {};          // Maximum stride for shader binding table
 
+    // Partitioned acceleration structure (VK_NV_partitioned_acceleration_structure) properties
+    uint32_t max_partition_count {};              // Maximum number of partitions in a PTLAS
+
     float    timestamp_period {};            // Timestamp period in nanoseconds (1 timestamp = this many ns)
     uint32_t timestamp_valid_bits {};        // Number of valid bits in a timestamp value
 };
@@ -231,6 +234,7 @@ struct RHIBindPipelineParametersDesc {
     std::span<RHIPipelineParameterTextureDesc> srvs {};
     std::span<RHIPipelineParameterResourceDesc> samplers {};
     std::span<RHIPipelineParameterResourceDesc> acceleration_structures {};
+    std::span<RHIPipelineParameterResourceDesc> partitioned_acceleration_structures {};
     // Constants, null for do-not-set. Allocate this memory through the command buffer.
     std::span<std::byte> constants {};
 };

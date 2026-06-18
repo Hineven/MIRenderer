@@ -83,96 +83,19 @@ enum class ShellBodyState : uint8_t {
 
 **配套的存储格式决定**:mesh 顶点用 **shell-local 空间**(GigaVoxel 是 renderable-relative,MainWorldShell 除外)。shell 移动/旋转只改一个 mat4,mesh 数据不动。断裂后 chunk 迁到新 shell:顶点在新 shell 的 local 空间重新表达(矩阵变换或 chunk-local 存储),不是重新 mesh。
 
-## 3. 数据分层
+## 3. 数据分层 & Tick Pacing
 
-三条独立的数据线,三种更新粒度,各管一摊:
+> **本文档的 §3(数据分层)和 §4(Tick Pacing)已上提为根目录顶层文档 `planning/TICK_PACING.md`**,因为它们横跨 streaming/gameplay/physics/rendering 所有子系统,是 macromc 的基础设施脊梁,不属于 world_simulation 专属。
+>
+> 这里只保留 world_simulation 专属的要点摘要,完整内容(数据分层表、Pacing Grid、三条安全不变式、Sync gates、checkerboard/15 格契约、active set 工作假设)见 `../TICK_PACING.md`。
 
-| 数据 | 归属粒度 | 内容 | 重建粒度 |
-|---|---|---|---|
-| **Voxel**(ChunkData) | chunk | 方块 id + state,权威 | S1 checkerboard 写,S2 读 |
-| **Mesh**(CPU vertex buffer) | subchunk | greedy mesh 结果,GigaVoxel renderable | subchunk dirty 时 S2 重建 |
-| **VoxelShape**(collision) | chunk-slice(16³) | 自定义 Jolt Shape,内部持有 chunk-slice 的 voxel 索引;**跟 chunk 走**,shell 仅持有 body 分组 | dirty slice 时 S2 重建 |
-| **Shell body group** | shell | shell 的 Jolt body 集合(transform + VoxelShape 引用);shell 间碰撞靠 broadphase 在 body 层剪枝 | chunk 归属变时 S2 重组 |
-| **Events** | 全局/跨 tick | 跨 chunk 超距作用、loose physics 结果回流 | append-only |
+**world_simulation 相关要点**:
 
-**关键不变式:voxel 数据只在 S1 被写,且除了 S2 derivation 读一次之外,绝不流出本 tick。** 这是整套并行的地基。physics 之所以能安全跨 tick,是因为它读 VoxelShape/body 的 committed 快照而不读 voxel —— 它"不住在 voxel 的世界里"。
+- voxel 是权威数据,S1 写 S2 读,**绝不跨 tick boundary 流出**(安全不变式 I)。
+- VoxelShape(collision)挂在 chunk-slice 上,跟 chunk 走;shell 只持有 body 分组。断裂时 VoxelShape 零重建,只有断面 dirty slice 重算(阶梯 2 数据归属)。
+- physics(S4)的输入门禁是 `SliceShapeState::kReady && ShellBodyState::kStable`,读 committed 快照,与 gameplay 的 voxel 写时空隔离。
 
-> **阶梯 2 特有的数据归属**:VoxelShape 挂在 chunk-slice 上(数据跟 chunk 走,§2.3),shell 只持有"body 分组"(transform + VoxelShape 引用的集合)。断裂时 chunk-slice 的 VoxelShape 对象 TRef 续命、原地不动,只是 body 从 shell A 的分组迁到 shell B 的分组——**零几何重建**。只有断面那层 dirty slice 的 VoxelShape 才重算。这是阶梯 2 相比阶梯 1 的关键优势:collision 几何和 shell 归属完全解耦。
-
-## 4. Tick Pacing
-
-> 本节是 macromc 基础设施的**根基设计**。所有上层(gameplay、meshing、physics、streaming)的线程模型和时序契约都从此推导。阶梯 2(自定义 VoxelShape)语义。
-
-### 4.1 Stage 定义
-
-| Stage | 线程模型 | 职责 | 产出 |
-|---|---|---|---|
-| **S0 Registry** | 单线程 | chunk load/unload、active-set 进出、安装异步生成完的 chunk、处理 shell 注册/反注册请求 | 稳定的 registry + shell 表 |
-| **S1 Simulation** | 并行 + checkerboard(2×2 着色) | gameplay 权威 voxel RW、消费上 tick event、发新 event、**tight physics 同步 flush**(ray/box overlap 查 committed VoxelShape) | dirty subchunk/slice 标记 + 新 event |
-| **S2 Derivation** | 并行,排干 dirty set | **mesh rebuild**(greedy mesh → GigaVoxel renderable)+ **VoxelShape rebuild**(dirty slice 重建 voxel 索引)+ **body group 重组**(断裂时 chunk 归属迁移) | committed mesh + committed VoxelShape + 稳定 body group |
-| **S3 Upload** | render 线程 | mesh → GPU staging | GPU-visible mesh |
-| **⊥ boundary** | — | VoxelShape working→committed swap;body group 原子提交 | physics 可读的 committed 快照 |
-| **S4 LoosePhysics** | 并行,**跨入 N+1** | 读 committed VoxelShape/body 快照跑 Jolt,产 event 给 N+1 的 S1 | physics event |
-
-**排干语义**:S2 每 tick 把 dirty set 处理完,不跨 tick 积压(除非 dirty 量 burst,见 §5.4)。这是保证 S4 永远读到一份"上一 tick 完整 derivation 结果"的前提。
-
-### 4.2 Pacing Grid
-
-行 = 数据,列 = stage,格 = R/W。`—` = 不接触(隔离)。
-
-| 数据 \ Stage | S0 Reg | S1 Sim | S2 Derive | S3 Upload | ⊥ boundary | S4 async(N→N+1) |
-|---|---|---|---|---|---|---|
-| **Chunk Registry** | **RW**(1-thr) | R | R | R | — | R |
-| **Voxel**(ChunkData) | W(install,1-thr) | **RW**(checkerboard) | R | — | — | **—** |
-| **Events** | — | **RW**(drain 上tick + emit) | — | — | — | **W**(append) |
-| **Mesh**(CPU) | — | — | **W** | R(→GPU) | — | — |
-| **VoxelShape — working** | — | — | **W**(rebuild) | — | **swap→** | — |
-| **VoxelShape — committed** | — | R(tight phys) | — | — | **←swap** | **R**(loose phys) |
-| **Body group — working** | — | — | **W**(重组) | — | **commit→** | — |
-| **Body group — committed** | — | R(tight phys) | — | — | **←commit** | **R**(loose phys) |
-| **GPU upload** | — | — | — | **W** | — | — |
-
-### 4.3 安全不变式(整套并行的地基)
-
-> **(I) Voxel 行跨 boundary 全是 `—`。**
-> gameplay 在 S1 写的 voxel,除了 S2 derivation 读一次,绝不流出本 tick。S4 loose physics 即使跑到 N+1 的 S1 旁边,它读 committed VoxelShape 不读 voxel → 不可能和 N+1 gameplay 的 voxel 写撕裂。
-
-> **(II) VoxelShape / Body group 的 working 与 committed 是物理隔离的两块内存**,只在 ⊥ boundary 做指针级 swap/commit。working 由 S2 独占写,committed 由 S1/S4 共享读。无锁。
-
-> **(III) S4 只读 `⊥` 之后的 committed 快照**,永远落后 gameplay 一个完整 derivation 周期。physics 的世界(VoxelShape/body)和 gameplay 的世界(voxel)在时间上错开一拍,空间上隔离。
-
-这三条共同保证:**任何两个 stage 之间,同一块数据要么不共存,要么一读一写但分属 working/committed。零细粒度锁,零 snapshot 拷贝。**
-
-### 4.4 Sync gates
-
-```
-S0 ──sync A──► S1 ──sync B──► S2 ──sync C──► S3 ──⊥──►
-                   ▲                             │
-                   │          S4 (N's loose phys, 并行进 N+1)
-                   └───────── events 回流 ───────┘
-```
-
-| Sync gate | 等待什么 | 为什么需要 |
-|---|---|---|
-| **A**(S0→S1) | registry 变更完成 | S1 并行 tick 需要 chunk 集合 + active set 稳定;checkerboard 着色基于稳定拓扑 |
-| **B**(S1→S2) | 所有 voxel 写完 | S2 derivation 要读完整、一致的 voxel 产出 mesh/VoxelShape |
-| **C**(S2→S3) | derivation 排干 | mesh 要全部 ready 才能 upload;VoxelShape/body commit 才能让下一拍 S4 用 |
-
-S4 是唯一越界的 runner,与 N+1 各 stage 在网格上逐行验证无写冲突(voxel 不碰、VoxelShape/body 靠双缓冲隔离、events 是 append-only 队列、registry 只读)。
-
-### 4.5 Checkerboard 与 15 格规则(细化为根基契约)
-
-- **15 格规则**(读深度契约):**单 tick 内即时传播半径 < 一个 chunk 宽(15 < 16)**。保证 tick 的级联永远逃不出 center + 1-ring 已加载集合。它管"读深度"——tick 不需要加载第 2 圈 chunk。跨 chunk 的超距作用必须走 event,下一 tick 生效。
-- **Checkerboard**(写隔离契约):2×2 着色,相邻 chunk 不同色、不同 sub-phase tick。保证一个 chunk 被读(邻居 tick 时)时它自己不在被写。消灭 read-while-neighbor-writes 撕裂。
-- **两条契约正交**:15 格管"要不要加载更远的 chunk",checkerboard 管"同时 tick 的 chunk 之间安不安全"。缺一不可。
-
-> 工程实现:checkerboard 着色可以预计算(每个 chunk coord 的 color = (x+z) mod 2 的某种扩展)。S1 内按 color 分 2(或 4)个 sub-phase 串行,同 sub-phase 内全并行。active set 不大(~32×32),sub-phase 串行开销可忽略。
-
-### 4.6 Active set 与弱加载邻居圈(§7 未决,此处给工作假设)
-
-- **active set**:以玩家为中心的 simulation distance 内的 chunk,标记 `ChunkSim::kActive`。进出由 S0 处理(玩家移动跨 chunk 边界时)。
-- **弱加载邻居圈**:active set 外延 1 圈的 chunk 标记 `kBorderline`,被加载(kReady)但不 tick。它们的存在保证 active set 边缘 chunk 的邻居读取(15 格规则)不 miss。
-- **工作假设**:simulation distance 独立于 render distance,通常远小于它(如 sim=8 chunk, render=视 DESTINATION 的 64km)。两者的具体值 §7 待定,但 pacing 设计不依赖具体数值。
+> 注:原 §4(Tick Pacing)整节已上提至 `../TICK_PACING.md`,故本文件编号从 §3 直接跳到 §5。
 
 ## 5. Physics 策略
 
@@ -232,7 +155,7 @@ macromc 的物理需求经讨论收敛为:
 
 ### 6.2 物理实现的三个阶梯(阶梯 2 为初期目标,1 为降级备选,3 排除)
 
-讨论得出三个代价递增的实现档位。**初期技术栈选定阶梯 2(自定义 VoxelShape)**——因为它在 collision 几何与 shell 归属解耦上最干净,断裂零几何重建,tick pacing 据此建模(§4)。阶梯 1 保留为"阶梯 2 自研遇阻时的降级备选",阶梯 3 明确排除。
+讨论得出三个代价递增的实现档位。**初期技术栈选定阶梯 2(自定义 VoxelShape)**——因为它在 collision 几何与 shell 归属解耦上最干净,断裂零几何重建,tick pacing 据此建模(见 `../TICK_PACING.md`)。阶梯 1 保留为"阶梯 2 自研遇阻时的降级备选",阶梯 3 明确排除。
 
 #### 阶梯 1:Sable 路径(多 body + 面剔除 compound)— ~1-2 周,零自研物理
 
@@ -295,8 +218,8 @@ macromc 的物理需求经讨论收敛为:
 
 ## 7. 未决问题
 
-1. **Active set 进出条件**:chunk 进入/退出 ticking 集合的判定(player 移动?固定 sim radius?)和 S0 的咬合 —— 决定"弱加载邻居一圈"的边界。
-2. **Event 队列归属**:跨 chunk 事件挂全局还是 per-chunk?影响 S1 并行收割。
+1. **Active set 进出条件**(已落地骨架):chunk 进入/退出 ticking 集合由 `ChunkSim`(kActive/kBorderline/kInactive)三态标记,归属 `ChunkRegistry` 的 Entry,在 S0 由玩家移动跨 chunk 边界时更新。具体 sim radius 数值仍待定,但状态模型已实现(见 `world/include/world/chunk_registry.h`)。
+2. **Event 队列归属**(已决):**per-region 收件箱**。一个 region = 8×8 chunk(XZ 平面),每个 region 一个 `TConsumeAllQueue<Event>`(MPSC)。S1 开头单线程 `DrainAll()` 一次排空所有 region inbox,按 target_chunk 路由;S1 期间 / S4 多线程 `Emit()` 按 target chunk 落对应 region inbox。比 per-chunk 省(×N mailbox),比全局单队列更有结构(drain 输出天然按 region 分组)。见 `world/include/world/event_bus.h`、`world/include/world/chunk_coord.h` 的 `ChunkToRegionCoord`。
 3. **应力驱动断裂**(远期):若要做,hull 要扩成带连接强度的图,且大概率只能局部/低频算,需单独立项。
 4. **联机物理同步**:4-5 人,server tick 的物理同步策略(lockstep? state replication? Sable/Teardown 的做法待研究)。
 
@@ -307,3 +230,4 @@ macromc 的物理需求经讨论收敛为:
 - **Teardown(Dennis Gustafsson)**:CPU voxel 物理,自研并行求解器。经验宝贵但复现成本极高(阶梯 3,明确排除)。https://blog.voxagon.se/
 - **Jolt Physics voxel 集成讨论 #446**:作者 jrouwe 推荐 chunk-slice + StaticCompoundShape,并指向自定义 Shape(阶梯 2)。https://github.com/jrouwe/JoltPhysics/discussions/446
 - **本目录其他文档**:`PHYSICS_ENGINE_EVALUATION.md`(引擎对比)、`PHYSICS_RESEARCH.md`(Jolt/Sable 调研证据)、`JOLT_COMPOUND_BENCH_PLAN.md`(性能实验预案)。
+- **根目录**:`../TICK_PACING.md`(数据分层 + Tick Pacing 脊梁,本文档 §3 的完整内容在此)。

@@ -27,6 +27,11 @@ enum class ThreadType {
     kTaskGraphWorkerThread = 3,
     // Specific thread for file I/O operations.
     kFIOThread = 4,
+    // Only 1 gameplay thread.
+    // Runs the fixed-timestep simulation tick (chunk streaming, sim, meshing
+    // dispatch). NEVER touches the RHI layer — all GPU work goes through the
+    // render command queue to the render thread. See THREAD_MODEL.md.
+    kGameplayThread = 5,
     Max
 };
 
@@ -46,6 +51,9 @@ FORCEINLINE bool IsRenderThread () {
 }
 FORCEINLINE bool IsTaskGraphWorkerThread () {
     return GetCurrentThreadType() == ThreadType::kTaskGraphWorkerThread;
+}
+FORCEINLINE bool IsGameplayThread () {
+    return GetCurrentThreadType() == ThreadType::kGameplayThread;
 }
 
 void SetCurrentThreadType(ThreadType type);

@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.27)
 add_library(macromc_meshing STATIC
     src/greedy_mesher.cpp
     src/chunk_meshing_context.cpp
+    src/chunk_streamer.cpp
 )
 
 target_include_directories(macromc_meshing PUBLIC
@@ -15,6 +16,7 @@ target_link_libraries(macromc_meshing PUBLIC
     core
     macromc_registry
     macromc_world
+    macromc_prof
     macromc_public_headers
     glm::glm
 )

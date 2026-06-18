@@ -46,3 +46,7 @@ applications/3d_viewer/data/
 AGENTS.md
 */*PLAN.md
 /.claude/settings.local.json
+
+# Build logs and temporary scripts
+*.log
+move_solutions.sh

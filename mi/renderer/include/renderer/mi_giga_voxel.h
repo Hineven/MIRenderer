@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <core/base.h>
@@ -16,6 +17,7 @@
 #include <renderer/mi_aabb.h>
 #include <renderer/mi_dirty_tracker.h>
 #include <renderer/mi_giga_voxel_heap.h>
+#include <renderer/mi_partition_allocator.h>
 #include <renderer/mi_renderable.h>
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_resource_allocator.h>
@@ -26,8 +28,10 @@
 
 MI_NAMESPACE_BEGIN
 
+class Scene;
+
 // =============================================================================
-// GigaVoxel device-side data layer (Phase 1: VC skeleton).
+// GigaVoxel device-side data layer.
 //
 // A GigaVoxel asset is the GPU counterpart of a voxel terrain (macromc world).
 // It occupies ONE bindless slot (SlotKind::GigaVoxel) and, per the visibility
@@ -35,30 +39,29 @@ MI_NAMESPACE_BEGIN
 // internal chunk streaming does NOT register thousands of renderables with the
 // Scene.
 //
-// Phase 1 scope (this file):
-//   - Vertex/index geometry is uploaded into the GigaVoxel-dedicated vertex/
-//     index uber buffers in DeviceBindlessResourceAllocator (kept separate from
-//     the StaticMesh geometry heaps, which have a load-once access pattern).
-//   - A single BLAS is built over the merged uploaded geometry. This is a
-//     SKELETON / bring-up arrangement: it merges all chunk geometry into one
-//     vertex/index range and rebuilds one BLAS on every UpdateOnDevice_Async.
-//     It is NOT a scalable solution for real chunk counts — the real design
-//     (per-chunk BLAS + streaming + TLAS/PTLAS) lands in later phases.
-//   - A block-texture atlas (4096^2, 256x256 tiles of 16^2) is referenced by
-//     bindless index through GigaVoxelHeader.AtlasBindlessIndex.
+// Geometry + per-chunk BLAS ownership:
+//   - Vertex/index geometry lives in the GigaVoxelGeometryHeap owned by the
+//     GigaVoxel asset (shared across all chunks).
+//   - Per-chunk BLASes (one per uploaded chunk) are owned by the GigaVoxel
+//     asset, NOT by DeviceGigaVoxel. They are built lazily during the render
+//     loop (GigaVoxelInstance::Update) via an RDG pass. TLAS/PTLAS integration
+//     lands later; until then GetBLAS() returns null and the per-chunk BLASes
+//     are build-verified but not traced against.
+//   - A block-texture atlas (4096^2, 256x256 tiles of 16^2) is a GLOBAL config
+//     shared by all GigaVoxel assets, referenced by bindless index through
+//     GigaVoxelHeader.AtlasBindlessIndex.
 // =============================================================================
 
 // -----------------------------------------------------------------------------
 // DeviceGigaVoxel
 // -----------------------------------------------------------------------------
-// Owns the GPU handles for one GigaVoxel asset: bindless slot and the (Phase-1:
-// single) BLAS. Vertex/index geometry lives in the GigaVoxelGeometryHeap owned
-// by the GigaVoxel asset (shared across all chunks), not here.
+// Owns the bindless slot for one GigaVoxel asset. Vertex/index geometry lives
+// in the GigaVoxelGeometryHeap owned by the GigaVoxel asset; per-chunk BLASes
+// also live on the asset. DeviceGigaVoxel is just the bindless slot keeper.
 class DeviceGigaVoxel : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
     FORCEINLINE bool IsValid() const { return slot_ && slot_->Get() != UINT32_MAX; }
     FORCEINLINE uint32_t GetIndex() const { return slot_ ? slot_->Get() : UINT32_MAX; }
-    FORCEINLINE RHIAccelerationStructure * GetBLAS() const { return BLAS_.Raw(); }
 
 protected:
     DeviceGigaVoxel(DeviceBindlessResourceAllocator * allocator);
@@ -67,9 +70,6 @@ protected:
     // Bindless slot keeper (delayed free through the allocator).
     TRef<DeviceBindlessResourceAllocator::SlotKeeper> slot_;
 
-    // Phase-1 single BLAS over the merged geometry.
-    TRef<RHIAccelerationStructure> BLAS_;
-
     friend class GigaVoxel;
 };
 
@@ -77,14 +77,24 @@ protected:
 // GigaVoxel (Asset)
 // -----------------------------------------------------------------------------
 // Host-side voxel terrain asset, parallel to StaticMesh / VolumeGrid. Accepts
-// chunk geometry (already converted to the renderer-layer GigaVoxelVertex) and
-// an atlas texture, then uploads + builds device resources on demand.
+// chunk geometry (already converted to the renderer-layer GigaVoxelVertex),
+// uploads + builds device resources on demand, and owns its single
+// GigaVoxelInstance (the Scene projection) once attached.
 //
 // Chunk geometry is managed by a GigaVoxelGeometryHeap (size-class allocator):
 // each chunk gets a stable {vertex_offset, index_offset} and can be added /
 // removed / updated independently in O(1) (plus an incremental GPU upload of
 // just that chunk's range). CPU is the source of truth for offsets; the GPU
 // buffers mirror them.
+//
+// Per-chunk BLAS: one BLAS per uploaded chunk, owned here. Indices stay
+// chunk-local (0-based); each chunk's BLAS references its own vertex/index span
+// (offset+count from the handle). Built lazily in BuildDirtyChunkBLAS_Async,
+// driven from GigaVoxelInstance::Update via an RDG pass. TLAS/PTLAS wiring is a
+// later phase — until then these BLASes are build-verified but not traced.
+//
+// The block-texture atlas is a GLOBAL config shared by ALL GigaVoxel assets
+// (set once via SetGlobalAtlas at app init).
 //
 // ChunkId identifies a chunk; the caller picks the id space (e.g. a packed
 // chunk coord or a monotonic counter). One id maps to at most one live handle.
@@ -97,21 +107,46 @@ static constexpr GigaVoxelChunkId kInvalidGigaVoxelChunkId = UINT64_MAX;
 class GigaVoxel : public NonCopyable, public NonMovable, public RefCounted<> {
 public:
     friend class Renderer;
+    friend class GigaVoxelInstance;
 
     static TRef<GigaVoxel> Create();
 
-    // ---- Atlas (block texture atlas, 4096^2, 256x256 tiles of 16^2) ----
-    // The texture must already be converted to bindless; its bindless index is
-    // recorded into GigaVoxelHeader.AtlasBindlessIndex.
-    void SetAtlasTexture(TRef<Texture> atlas);
-    FORCEINLINE Texture * GetAtlasTexture() const { return atlas_.Raw(); }
+    // ---- Global atlas (block texture atlas, 4096^2, 256x256 tiles of 16^2) ----
+    // Shared by ALL GigaVoxel assets. Call once at app init with a texture that
+    // is already uploaded to the device; this converts it to bindless and caches
+    // the bindless index. All GigaVoxelHeaders read from this global index.
+    static void SetGlobalAtlas(TRef<Texture> atlas);
+    static TRef<Texture> GetGlobalAtlas();
+    static uint32_t GetGlobalAtlasBindlessIndex();
+
+    // ---- Scene attachment ----
+    // Create the GigaVoxelInstance for this asset and register it into the scene
+    // (one instance per asset; the instance holds a non-owning back-pointer to
+    // this asset). DetachFromScene releases it (delayed-free via the scene).
+    void AttachToScene(Scene * scene, Transform transform = {});
+    void DetachFromScene();
+    FORCEINLINE GigaVoxelInstance * GetInstance() const { return instance_.Raw(); }
+
+    // ---- TLAS instance gathering (per-chunk BLAS → N instances) ----
+    // shellIndex is the dense index of this asset in its GigaVoxelShellRegistry
+    // (0..255). It occupies the low 8 bits of instance customIndex. Set once
+    // when the registry registers the asset.
+    void SetShellIndex(uint8_t shell_index) { shell_index_ = shell_index; }
+    // The partition allocator is owned by the renderer; the asset borrows it to
+    // assign one partition per chunk. Set once when the asset is created/attached.
+    void SetPartitionAllocator(PartitionAllocator * allocator) { partition_allocator_ = allocator; }
+    // Returns the cached per-chunk BLAS instance list (one per uploaded chunk).
+    // Maintained incrementally on chunk add/remove; the span stays valid between
+    // updates. Used by GigaVoxelInstance::GetPartitionedBLASInstances.
+    std::span<const RenderableBLASInstance> GetPartitionedBLASInstances() const;
 
     // ---- Chunk geometry (heap-backed; O(1) alloc/free + incremental upload) ----
     // Add a new chunk. Allocates ranges, uploads to GPU immediately (the queue
     // from UpdateOnDevice is NOT required — a fresh upload uses the global
-    // graphics queue), marks dirty. Returns the handle; valid==false on
-    // allocation failure (caller may CompactChunks() and retry). If `id` is
-    // already live, it is replaced (old range freed first).
+    // graphics queue), marks the chunk's BLAS dirty. Returns the handle;
+    // valid==false on allocation failure (caller may CompactChunks() and retry).
+    // If `id` is already live, it is replaced (old range + old BLAS freed first).
+    // Indices must be chunk-local (0-based).
     GigaVoxelChunkHandle UploadChunk(GigaVoxelChunkId id,
                                      std::vector<GigaVoxelVertex> vertices,
                                      std::vector<uint32_t> indices);
@@ -120,12 +155,13 @@ public:
     void UpdateChunk(GigaVoxelChunkId id,
                      std::vector<GigaVoxelVertex> vertices,
                      std::vector<uint32_t> indices);
-    // Remove a chunk and free its ranges. No-op if unknown.
+    // Remove a chunk and free its ranges + BLAS. No-op if unknown.
     void RemoveChunk(GigaVoxelChunkId id);
     // Remove all chunks.
     void ClearAllChunks();
     // Defragment the geometry heap (low-frequency fallback). Re-uploads moved
-    // chunks. The chunk id->handle map is updated in place.
+    // chunks and invalidates their BLAS (rebuilt on next dirty build). The
+    // chunk id->handle map is updated in place.
     void CompactChunks();
 
     FORCEINLINE DeviceGigaVoxel * GetDeviceGigaVoxel() const { return device_giga_voxel_.Raw(); }
@@ -133,12 +169,17 @@ public:
     FORCEINLINE bool IsEmpty() const { return chunk_handles_.empty(); }
     FORCEINLINE AABB GetAABB() const { return aabb_; }
 
-    // Update device resources. Recording commands go to the given graphics
-    // queue; caller is responsible for submission + synchronization. In the
-    // heap-backed design, per-chunk uploads already happen on Upload/Remove;
-    // this call rebuilds the (Phase-1 single) BLAS over the live heap range
-    // and refreshes the GigaVoxelHeader.
-    void UpdateOnDevice_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue);
+    // True if any chunk's BLAS needs (re)building. Polled by
+    // GigaVoxelInstance::Update to decide whether to emit the BLAS-build pass.
+    FORCEINLINE bool HasDirtyBLAS() const { return !blas_dirty_.empty(); }
+
+    // Build the per-chunk BLAS for every dirty chunk. Recording commands go to
+    // the given graphics queue; caller is responsible for submission +
+    // synchronization. The BLAS RHI objects are created lazily here (CPU side,
+    // so GetBLAS-style handles are valid immediately after) and the build
+    // commands are recorded for GPU execution. Also refreshes the
+    // GigaVoxelHeader. No-op if nothing is dirty.
+    void BuildDirtyChunkBLAS_Async(DeviceBindlessResourceAllocator * alloc, RHICommandQueueGraphics & queue);
     // Convenience sync wrapper that waits idle.
     void UpdateOnDevice(DeviceBindlessResourceAllocator * alloc);
 
@@ -155,14 +196,55 @@ public:
 
 protected:
     GigaVoxel();
+    ~GigaVoxel() override;
+
+    // Rebuild cached_instances_ from the current chunk_handles_ + chunk_BLAS_ +
+    // chunk_partitions_. Called after any chunk topology change so
+    // GetPartitionedBLASInstances returns a consistent span. Each chunk with a
+    // built BLAS becomes one instance (customIndex = shellIndex | chunkSlot<<8,
+    // transform = identity since vertices are world-space, partition from the
+    // allocator). Chunks without a built BLAS yet are skipped.
+    void RebuildCachedInstances();
+
+    // Per-asset slot (customIndex high 16 bits) + global partition id lifecycle.
+    // Acquire: assign a fresh/recycled slot + allocate a partition (if allocator
+    // set). Release: recycle the slot + free the partition.
+    void AcquireChunkSlotAndPartition(GigaVoxelChunkId id);
+    void ReleaseChunkSlotAndPartition(GigaVoxelChunkId id);
 
     TRef<DeviceGigaVoxel> device_giga_voxel_;
-    TRef<Texture> atlas_;
     TRef<GigaVoxelGeometryHeap> geometry_heap_;
 
-    // chunk id -> live handle. Drives the heap and the BLAS range.
+    // The Scene projection of this asset. The asset owns it; the instance holds
+    // a non-owning back-pointer (GigaVoxel*) to avoid a refcount cycle.
+    TRef<GigaVoxelInstance> instance_;
+
+    // chunk id -> live handle. Drives the heap and the per-chunk BLAS span.
     std::unordered_map<GigaVoxelChunkId, GigaVoxelChunkHandle> chunk_handles_;
-    uint32_t atlas_bindless_index_ {0xFFFFFFFFu};
+    // chunk id -> per-chunk BLAS. Built lazily in BuildDirtyChunkBLAS_Async.
+    std::unordered_map<GigaVoxelChunkId, TRef<RHIAccelerationStructure>> chunk_BLAS_;
+    // chunk ids whose BLAS needs (re)building this frame.
+    std::unordered_set<GigaVoxelChunkId> blas_dirty_;
+    // chunk id -> partition id (one partition per chunk). Allocated from the
+    // renderer's PartitionAllocator; freed on chunk removal.
+    std::unordered_map<GigaVoxelChunkId, uint32_t> chunk_partitions_;
+    // chunk id -> per-asset dense slot (0..65535, used in customIndex high bits).
+    // A monotonic counter + free list keeps slots dense and reusable.
+    std::unordered_map<GigaVoxelChunkId, uint16_t> chunk_slots_;
+    std::vector<uint16_t> chunk_slots_free_;
+    // Cached per-chunk BLAS instance list for TLAS gathering. Rebuilt on chunk
+    // topology changes (add/remove/compact). Stays valid between rebuilds so
+    // GetPartitionedBLASInstances can return a stable span.
+    std::vector<RenderableBLASInstance> cached_instances_;
+    // Dense index of this asset in its GigaVoxelShellRegistry (low 8 bits of
+    // instance customIndex). Set by the registry.
+    uint8_t shell_index_ {0};
+    // Borrowed renderer-owned allocator (non-owning). May be null before attach.
+    PartitionAllocator * partition_allocator_ {nullptr};
+
+    // Global atlas state (process-wide; shared by all GigaVoxel assets).
+    static TRef<Texture> global_atlas_;
+    static uint32_t global_atlas_bindless_index_;
 
     AABB aabb_ {};
     bool dirty_ {true};
@@ -176,6 +258,11 @@ protected:
 // A GigaVoxel instance in the scene. Occupies a single RenderableIndex slot;
 // all internal chunk management is delegated to the GigaVoxel asset. This is
 // the ray-tracing / culling entry point for the whole voxel terrain.
+//
+// Ownership: the GigaVoxel ASSET owns the instance (TRef<GigaVoxelInstance>).
+// The instance holds a non-owning GigaVoxel* back-pointer (avoiding a refcount
+// cycle). When the asset's refcount drops to zero, it DetachFromScene's the
+// instance, which then releases via the renderable delayed-free path.
 class GigaVoxelInstance : public Renderable {
 public:
     static TRef<GigaVoxelInstance> Create(Scene * scene, GigaVoxel * giga_voxel, Transform transform = {});
@@ -183,9 +270,14 @@ public:
     RenderableHeader GetDeviceRenderableHeader() const override;
     constexpr static RenderableType kRenderableType = RenderableType::kGigaVoxelInstance;
 
-    FORCEINLINE GigaVoxel * GetGigaVoxel() const { return giga_voxel_.Raw(); }
+    FORCEINLINE GigaVoxel * GetGigaVoxel() const { return giga_voxel_; }
 
     void Update(RendererView * view, RenderGraphBuilder & builder) override;
+
+    // Per-chunk BLAS instances (delegates to the asset). The instance itself is
+    // a single RenderableIndex slot but contributes N BLAS instances to the
+    // TLAS/PTLAS (one per chunk).
+    std::span<const RenderableBLASInstance> GetPartitionedBLASInstances () const override;
 
     RHIAccelerationStructure * GetBLAS() const override;
     uint32_t GetInstanceCustomIndex() const override;
@@ -198,7 +290,8 @@ protected:
     GigaVoxelInstance(Scene * scene);
     ~GigaVoxelInstance() override;
 
-    TRef<GigaVoxel> giga_voxel_;
+    // Non-owning back-pointer. The owning TRef lives on the GigaVoxel asset.
+    GigaVoxel * giga_voxel_ {};
 };
 
 MI_NAMESPACE_END

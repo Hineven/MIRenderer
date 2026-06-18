@@ -58,6 +58,8 @@ public:
 
     TRef<RHIAccelerationStructure> CreateAccelerationStructure(RHIAccelerationStructureType type) override;
 
+    TRef<RHIPartitionedTLAS> CreatePartitionedTLAS() override;
+
     RHISamplerRef CreateSampler(RHISamplerDesc desc) override;
 
     RHITimestampRef CreateTimestamp() override;

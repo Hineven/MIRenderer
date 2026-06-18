@@ -65,6 +65,7 @@ set(SOURCE_FILES
         vk/vk_resource.cpp
         vk/vk_buffer.cpp
         vk/vk_as.cpp
+        vk/vk_ptlas.cpp
         vk/vk_bindless.cpp
         vk/vk_rhi.cpp
         vk/vk_shader.cpp
@@ -87,6 +88,7 @@ set(HEADER_FILES
         include/rhi/rhi_buffer.h
         include/rhi/rhi_param.h
         include/rhi/rhi_root_signature.h
+        include/rhi/rhi_ptlas.h
 )
 
 add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})

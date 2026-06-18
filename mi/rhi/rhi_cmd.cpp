@@ -247,6 +247,10 @@ void RHICommandBuildAccelerationStructure::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIBuildAccelerationStructure(&cmd, this);
 }
 
+void RHICommandBuildPartitionedTLAS::Execute(RHICommandQueueBase &cmd) {
+    RHI::Get().GetCommandExecutor()->RHIBuildPartitionedTLAS(&cmd, this);
+}
+
 void RHICommandBindRayTracingPipeline::Execute(RHICommandQueueBase &cmd) {
     MI_RHI_CMD_STAT_INC(RHICmdStatId::kBindRayTracingPipeline);
     RHI::Get().GetCommandExecutor()->RHIBindRayTracingPipeline(&cmd, this);

@@ -42,6 +42,7 @@ static void FillRootSignatureDescFromParamInfo(
     out_desc.num_resources[(uint32_t)RHIPipelineResourceType::kSRV] = (uint32_t)param_info.srvs_.size();
     out_desc.num_resources[(uint32_t)RHIPipelineResourceType::kSampler] = (uint32_t)param_info.samplers_.size();
     out_desc.num_resources[(uint32_t)RHIPipelineResourceType::kAccelerationStructure] = (uint32_t)param_info.acceleration_structures_.size();
+    out_desc.num_resources[(uint32_t)RHIPipelineResourceType::kPartitionedAccelerationStructure] = (uint32_t)param_info.partitioned_acceleration_structures_.size();
 
     auto Fill = [&](std::span<const RDGShaderParameterLocation> locs, uint32_t type_index) {
         out_desc.type_names[type_index].count = (uint32_t)locs.size();
@@ -59,6 +60,7 @@ static void FillRootSignatureDescFromParamInfo(
     Fill(param_info.srvs_, (uint32_t)RHIPipelineResourceType::kSRV);
     Fill(param_info.samplers_, (uint32_t)RHIPipelineResourceType::kSampler);
     Fill(param_info.acceleration_structures_, (uint32_t)RHIPipelineResourceType::kAccelerationStructure);
+    Fill(param_info.partitioned_acceleration_structures_, (uint32_t)RHIPipelineResourceType::kPartitionedAccelerationStructure);
 }
 
 TRef<RDGShaderRootSignatureKeeper> RDGShaderRootSignatureCache::GetOrCreate(

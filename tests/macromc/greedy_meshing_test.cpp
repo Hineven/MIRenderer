@@ -58,14 +58,14 @@ TEST_F(GreedyMeshingTest, AtlasTileOriginUV) {
 // should produce exactly 6 quads (12 triangles) -- one per face.
 // ============================================================================
 TEST_F(GreedyMeshingTest, SingleStoneBlockProducesSixFaces) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
     chunk->SetBlock(0, 0, 0, BuiltinBlocks::kStoneId); // stone at subchunk 0
 
-    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0, 0});
+    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0});
 
     VoxelMesh mesh;
     glm::ivec3 origin(0, 0, 0); // subchunk 0 world origin
-    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0, 0}, 0, source, origin, mesh);
+    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0}, 0, source, origin, mesh);
 
     // 6 faces * 2 triangles = 12 triangles.
     EXPECT_EQ(TriCount(mesh), 12u);
@@ -79,13 +79,13 @@ TEST_F(GreedyMeshingTest, SingleStoneBlockProducesSixFaces) {
 // ============================================================================
 TEST_F(GreedyMeshingTest, AdjacentBlocksCullSharedFaces) {
     // 2 blocks along X within subchunk 0.
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
     chunk->SetBlock(0, 0, 0, BuiltinBlocks::kStoneId);
     chunk->SetBlock(1, 0, 0, BuiltinBlocks::kStoneId);
 
-    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0, 0});
+    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0});
     VoxelMesh mesh;
-    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0, 0}, 0, source, glm::ivec3(0,0,0), mesh);
+    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0}, 0, source, glm::ivec3(0,0,0), mesh);
 
     // The bar is one cuboid (2x1x1): 6 faces, each greedily merged into 1 quad.
     // The shared internal X-face between the two blocks is culled.
@@ -105,14 +105,14 @@ TEST_F(GreedyMeshingTest, AdjacentBlocksCullSharedFaces) {
 // plus the 4 side walls (each 1 quad, 2 tris) = 6 quads = 12 triangles total.
 // ============================================================================
 TEST_F(GreedyMeshingTest, FlatFloorMergesIntoSingleQuadPerFace) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
     for (int x = 0; x < 16; ++x)
         for (int z = 0; z < 16; ++z)
             chunk->SetBlock(x, 0, z, BuiltinBlocks::kStoneId);
 
-    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0, 0});
+    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0});
     VoxelMesh mesh;
-    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0, 0}, 0, source, glm::ivec3(0,0,0), mesh);
+    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0}, 0, source, glm::ivec3(0,0,0), mesh);
 
     // 6 merged quads (one per cuboid face of the 16x1x16 slab) = 12 triangles.
     EXPECT_EQ(TriCount(mesh), 12u);
@@ -133,10 +133,10 @@ TEST_F(GreedyMeshingTest, FlatFloorMergesIntoSingleQuadPerFace) {
 // Empty subchunk produces no geometry.
 // ============================================================================
 TEST_F(GreedyMeshingTest, EmptySubChunkProducesNothing) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0}); // all air
-    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0}); // all air
+    SingleChunkVoxelSource source(*chunk, ChunkCoord{0, 0});
     VoxelMesh mesh;
-    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0, 0}, 0, source, glm::ivec3(0,0,0), mesh);
+    mesher_->MeshSubChunk(*chunk, ChunkCoord{0, 0}, 0, source, glm::ivec3(0,0,0), mesh);
     EXPECT_EQ(TriCount(mesh), 0u);
     EXPECT_TRUE(mesh.vertices.empty());
 }
@@ -147,14 +147,14 @@ TEST_F(GreedyMeshingTest, EmptySubChunkProducesNothing) {
 // Full cross-chunk neighbor culling is exercised in the scheduler test below.
 // ============================================================================
 TEST_F(GreedyMeshingTest, ConservativeBoundaryFaceKeptWhenNeighborUnknown) {
-    auto chunk_a = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk_a = mi::Create<ChunkData>(ChunkCoord{0, 0});
     for (int z = 0; z < 16; ++z)
         for (int y = 0; y < 16; ++y)
             chunk_a->SetBlock(15, y, z, BuiltinBlocks::kStoneId);
 
-    SingleChunkVoxelSource src_a(*chunk_a, ChunkCoord{0,0,0});
+    SingleChunkVoxelSource src_a(*chunk_a, ChunkCoord{0,0});
     VoxelMesh ma;
-    mesher_->MeshSubChunk(*chunk_a, ChunkCoord{0,0,0}, 0, src_a, glm::ivec3(0,0,0), ma);
+    mesher_->MeshSubChunk(*chunk_a, ChunkCoord{0,0}, 0, src_a, glm::ivec3(0,0,0), ma);
 
     // A's +X face at x=15 should be KEPT (neighbor unknown => conservative air).
     uint32_t posx_tris = 0;
@@ -191,20 +191,20 @@ protected:
 
 // Request meshing of a single chunk and verify a non-empty result is produced.
 TEST_F(MeshingSchedulerTest, RequestMeshProducesResult) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
     // A small 3x3x3 cube of stone.
     for (int x = 0; x < 3; ++x)
         for (int y = 0; y < 3; ++y)
             for (int z = 0; z < 3; ++z)
                 chunk->SetBlock(x, y, z, BuiltinBlocks::kStoneId);
 
-    ctx_->RegisterChunk(ChunkCoord{0,0,0}, *chunk);
-    auto task = ctx_->RequestMesh(ChunkCoord{0,0,0}, ChunkCoord{0,0,0});
+    ctx_->RegisterChunk(ChunkCoord{0,0}, chunk);
+    auto task = ctx_->RequestMesh(ChunkCoord{0,0}, ChunkCoord{0,0});
     ASSERT_NE(task, nullptr);
 
     mi::TaskGraph::Get().WaitForTask(task);
 
-    auto result = ctx_->GetResult(ChunkCoord{0,0,0});
+    auto result = ctx_->GetResult(ChunkCoord{0,0});
     ASSERT_NE(result, nullptr);
     // A 3x3x3 solid cube is one cuboid: greedy meshing merges each face into
     // a single 3x3 quad => 6 quads = 12 triangles.
@@ -214,8 +214,8 @@ TEST_F(MeshingSchedulerTest, RequestMeshProducesResult) {
 // Neighbor culling through the context: two registered chunks at the seam
 // should cull the shared boundary faces (solid vs solid).
 TEST_F(MeshingSchedulerTest, NeighborSharingCullsBoundaryFaces) {
-    auto chunk_a = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
-    auto chunk_b = mi::Create<ChunkData>(ChunkCoord{1, 0, 0});
+    auto chunk_a = mi::Create<ChunkData>(ChunkCoord{0, 0});
+    auto chunk_b = mi::Create<ChunkData>(ChunkCoord{1, 0});
     // Stone columns at the seam: A x=15, B x=0.
     for (int z = 0; z < 16; ++z)
         for (int y = 0; y < 16; ++y) {
@@ -223,15 +223,15 @@ TEST_F(MeshingSchedulerTest, NeighborSharingCullsBoundaryFaces) {
             chunk_b->SetBlock(0, y, z, BuiltinBlocks::kStoneId);
         }
 
-    ctx_->RegisterChunk(ChunkCoord{0,0,0}, *chunk_a);
-    ctx_->RegisterChunk(ChunkCoord{1,0,0}, *chunk_b);
+    ctx_->RegisterChunk(ChunkCoord{0,0}, chunk_a);
+    ctx_->RegisterChunk(ChunkCoord{1,0}, chunk_b);
 
     // Mesh A ALONE first (B registered but not yet meshed is fine -- B's data
     // is present in the context, so the seam face should be culled regardless).
-    auto task_a = ctx_->RequestMesh(ChunkCoord{0,0,0}, ChunkCoord{0,0,0});
+    auto task_a = ctx_->RequestMesh(ChunkCoord{0,0}, ChunkCoord{0,0});
     mi::TaskGraph::Get().WaitForTask(task_a);
 
-    auto result_a = ctx_->GetResult(ChunkCoord{0,0,0});
+    auto result_a = ctx_->GetResult(ChunkCoord{0,0});
     ASSERT_NE(result_a, nullptr);
 
     // Count +X boundary faces in A's subchunk-0 mesh. With B present (solid),
@@ -248,27 +248,27 @@ TEST_F(MeshingSchedulerTest, NeighborSharingCullsBoundaryFaces) {
 // at increasing distance and verify completion order follows distance.
 TEST_F(MeshingSchedulerTest, DistancePriorityMeshesNearestFirst) {
     // Three chunks in a line along +X: (0,0,0) nearest, (2,0,0) farthest.
-    auto c0 = mi::Create<ChunkData>(ChunkCoord{0,0,0});
-    auto c1 = mi::Create<ChunkData>(ChunkCoord{1,0,0});
-    auto c2 = mi::Create<ChunkData>(ChunkCoord{2,0,0});
+    auto c0 = mi::Create<ChunkData>(ChunkCoord{0,0});
+    auto c1 = mi::Create<ChunkData>(ChunkCoord{1,0});
+    auto c2 = mi::Create<ChunkData>(ChunkCoord{2,0});
     c0->SetBlock(0,0,0, BuiltinBlocks::kStoneId);
     c1->SetBlock(0,0,0, BuiltinBlocks::kStoneId);
     c2->SetBlock(0,0,0, BuiltinBlocks::kStoneId);
 
-    ctx_->RegisterChunk(ChunkCoord{0,0,0}, *c0);
-    ctx_->RegisterChunk(ChunkCoord{1,0,0}, *c1);
-    ctx_->RegisterChunk(ChunkCoord{2,0,0}, *c2);
+    ctx_->RegisterChunk(ChunkCoord{0,0}, c0);
+    ctx_->RegisterChunk(ChunkCoord{1,0}, c1);
+    ctx_->RegisterChunk(ChunkCoord{2,0}, c2);
 
     // Camera at origin chunk (0,0,0). max distance 128.
-    auto t0 = ctx_->RequestMesh(ChunkCoord{0,0,0}, ChunkCoord{0,0,0}, 128);
-    auto t1 = ctx_->RequestMesh(ChunkCoord{1,0,0}, ChunkCoord{0,0,0}, 128);
-    auto t2 = ctx_->RequestMesh(ChunkCoord{2,0,0}, ChunkCoord{0,0,0}, 128);
+    auto t0 = ctx_->RequestMesh(ChunkCoord{0,0}, ChunkCoord{0,0}, 128);
+    auto t1 = ctx_->RequestMesh(ChunkCoord{1,0}, ChunkCoord{0,0}, 128);
+    auto t2 = ctx_->RequestMesh(ChunkCoord{2,0}, ChunkCoord{0,0}, 128);
 
     mi::TaskGraph::Get().WaitForTasks({t0, t1, t2});
 
-    EXPECT_NE(ctx_->GetResult(ChunkCoord{0,0,0}), nullptr);
-    EXPECT_NE(ctx_->GetResult(ChunkCoord{1,0,0}), nullptr);
-    EXPECT_NE(ctx_->GetResult(ChunkCoord{2,0,0}), nullptr);
+    EXPECT_NE(ctx_->GetResult(ChunkCoord{0,0}), nullptr);
+    EXPECT_NE(ctx_->GetResult(ChunkCoord{1,0}), nullptr);
+    EXPECT_NE(ctx_->GetResult(ChunkCoord{2,0}), nullptr);
 
     // Verify priorities were assigned in decreasing order: t0 > t1 > t2.
     // (ChunkCoord distance from camera: 0, 1, 2 => priority 128, 127, 126.)

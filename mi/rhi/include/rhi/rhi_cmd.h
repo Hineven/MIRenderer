@@ -14,6 +14,7 @@
 
 #include "rhi_desc.h"
 #include "rhi_as_types.h"
+#include "rhi_ptlas.h"
 #include "core/base.h"
 #include "core/util/alloc.h"
 #include "rhi/rhi_types.h"
@@ -746,6 +747,41 @@ public:
     RHIBufferSpan scratch_buffer_;
 };
 
+// Build / update a Partitioned TLAS (VK_NV_partitioned_acceleration_structure).
+// ops contains one entry per build operation; each op references already-uploaded
+// device data (arg_data = device address, arg_stride = element stride).
+// indirect_commands_buffer is a device buffer provided by the caller where the
+// backend will write the translated VkBuildPartitionedAccelerationStructureIndirectCommandNV
+// array (via vkCmdUpdateBuffer). indirect_commands_count_buffer is a 4-byte device
+// buffer where the backend writes the op count. Both must be large enough and
+// device-addressable. The caller is responsible for barriers after the build.
+class RHICommandBuildPartitionedTLAS : public TRHICommand<RHICommandBuildPartitionedTLAS> {
+public:
+    RHICommandBuildPartitionedTLAS(
+        RHIPartitionedTLAS* dst_ptlas,
+        RHIPartitionedTLAS* src_ptlas,
+        RHIBufferSpan scratch_buffer,
+        std::span<const RHIPartitionedTLASBuildOp> ops,
+        RHIBufferSpan indirect_commands_buffer,
+        RHIBufferSpan indirect_commands_count_buffer,
+        const RHIPartitionedTLASInstancesInput& input)
+        : dst_ptlas_(dst_ptlas), src_ptlas_(src_ptlas),
+          scratch_buffer_(scratch_buffer),
+          ops_(ops.begin(), ops.end()),
+          indirect_commands_buffer_(indirect_commands_buffer),
+          indirect_commands_count_buffer_(indirect_commands_count_buffer),
+          input_(input) {}
+    void Execute(RHICommandQueueBase & cmd) override;
+
+    RHIPartitionedTLAS* dst_ptlas_;
+    RHIPartitionedTLAS* src_ptlas_;   // Source for update mode; nullptr for initial build
+    RHIBufferSpan scratch_buffer_;
+    std::vector<RHIPartitionedTLASBuildOp> ops_;
+    RHIBufferSpan indirect_commands_buffer_;        // Device buffer for translated indirect commands
+    RHIBufferSpan indirect_commands_count_buffer_;  // Device buffer (4 bytes) for op count
+    RHIPartitionedTLASInstancesInput input_;
+};
+
 class RHICommandBindRayTracingPipeline : public TRHICommand<RHICommandBindRayTracingPipeline> {
 public:
     RHICommandBindRayTracingPipeline(RHIRayTracingPipeline * pipeline, RHIPipelineRootSignature * root_signature)
@@ -1101,6 +1137,23 @@ public:
         const RHIAccelerationStructureBuildGeometryInfo& build_info,
         RHIBufferSpan scratch_buffer) {
         AddCommand(AllocateCommand<RHICommandBuildAccelerationStructure>(build_info, scratch_buffer));
+    }
+
+    // Build or update a Partitioned TLAS. Each op references already-uploaded device
+    // data (arg_data = device address). The backend writes translated indirect commands
+    // into indirect_commands_buffer and the op count into indirect_commands_count_buffer
+    // (both device buffers, provided by the caller) via vkCmdUpdateBuffer.
+    FORCEINLINE void BuildPartitionedTLAS(
+        RHIPartitionedTLAS* dst_ptlas,
+        RHIPartitionedTLAS* src_ptlas,
+        RHIBufferSpan scratch_buffer,
+        std::span<const RHIPartitionedTLASBuildOp> ops,
+        RHIBufferSpan indirect_commands_buffer,
+        RHIBufferSpan indirect_commands_count_buffer,
+        const RHIPartitionedTLASInstancesInput& input) {
+        AddCommand(AllocateCommand<RHICommandBuildPartitionedTLAS>(
+            dst_ptlas, src_ptlas, scratch_buffer, ops,
+            indirect_commands_buffer, indirect_commands_count_buffer, input));
     }
 
     FORCEINLINE void BindShaderBindingTable(

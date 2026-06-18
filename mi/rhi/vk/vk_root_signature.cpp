@@ -33,6 +33,7 @@ VulkanRootSignature::VulkanRootSignature(const RHIPipelineRootSignatureDesc & de
         {RHIPipelineResourceType::kSRV,                   vk::DescriptorType::eSampledImage,          desc.num_resources[(uint32_t)RHIPipelineResourceType::kSRV]},
         {RHIPipelineResourceType::kSampler,               vk::DescriptorType::eSampler,               desc.num_resources[(uint32_t)RHIPipelineResourceType::kSampler]},
         {RHIPipelineResourceType::kAccelerationStructure, vk::DescriptorType::eAccelerationStructureKHR, desc.num_resources[(uint32_t)RHIPipelineResourceType::kAccelerationStructure]},
+        {RHIPipelineResourceType::kPartitionedAccelerationStructure, vk::DescriptorType::ePartitionedAccelerationStructureNV, desc.num_resources[(uint32_t)RHIPipelineResourceType::kPartitionedAccelerationStructure]},
     };
 
     for (auto & td : types) {

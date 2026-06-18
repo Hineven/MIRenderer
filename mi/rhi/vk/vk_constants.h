@@ -19,6 +19,7 @@ namespace C {
     constexpr uint32_t kMaxNumStorageTextureDescriptorsPerFrame = 8192;
     constexpr uint32_t kMaxNumSamplerDescriptorsPerFrame = 32;
     constexpr uint32_t kMaxNumAccelerationStructureDescriptorsPerFrame = 32;
+    constexpr uint32_t kMaxNumPartitionedAccelerationStructureDescriptorsPerFrame = 8;
 
     // 8k bindless slots per frame
     constexpr uint32_t kRHIMaxBindlessTableSize = 4 * 8 * 1024;

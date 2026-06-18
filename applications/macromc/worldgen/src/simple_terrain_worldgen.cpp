@@ -61,8 +61,8 @@ void SimpleTerrainWorldgen::GenerateChunk(WorldShellData* shell,
             }
         }
     }
-
-    out_data->SetState(ChunkState::kGenerated);
+    // Presence / sim state is now owned by ChunkRegistry; the generator only
+    // fills voxel data and returns.
 }
 
 float SimpleTerrainWorldgen::SampleHeight(float world_x, float world_z) const {

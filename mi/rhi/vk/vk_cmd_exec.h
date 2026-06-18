@@ -65,6 +65,7 @@ public:
 
     // Ray tracing commands
     void RHIBuildAccelerationStructure(RHICommandQueueBase *cmd, RHICommandBuildAccelerationStructure *build_acceleration_structure) override;
+    void RHIBuildPartitionedTLAS(RHICommandQueueBase *cmd, RHICommandBuildPartitionedTLAS *build_ptlas) override;
     void RHIBindRayTracingPipeline(RHICommandQueueBase *cmd, RHICommandBindRayTracingPipeline *bind_ray_tracing_pipeline) override;
     void RHIBindShaderBindingTable(RHICommandQueueBase *cmd, RHICommandBindShaderBindingTable *bind_shader_binding_table) override;
     void RHIDispatchRays(RHICommandQueueBase *cmd, RHICommandDispatchRays *dispatch_rays) override;

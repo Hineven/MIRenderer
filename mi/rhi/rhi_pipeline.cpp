@@ -208,7 +208,20 @@ bool RHIPipeline::ValidateRootSignatureCompatibility(RHIPipelineRootSignature * 
     if (!CheckResourceCount(RHIPipelineResourceType::kUAV, "UAV", uavs_.size())) return false;
     if (!CheckResourceCount(RHIPipelineResourceType::kSRV, "SRV", srvs_.size())) return false;
     if (!CheckResourceCount(RHIPipelineResourceType::kSampler, "Sampler", samplers_.size())) return false;
-    if (!CheckResourceCount(RHIPipelineResourceType::kAccelerationStructure, "AccelerationStructure", acceleration_structures_.size())) return false;
+    // Acceleration structures: pipeline reflection merges KHR TLAS and NV PTLAS into
+    // one bucket (SPIRV-Cross limitation). Root signature declares them separately,
+    // so the combined pipeline count must fit within KHR + PTLAS root capacity.
+    {
+        uint32_t khr_count = root->GetNumResources(RHIPipelineResourceType::kAccelerationStructure);
+        uint32_t ptlas_count = root->GetNumResources(RHIPipelineResourceType::kPartitionedAccelerationStructure);
+        if (acceleration_structures_.size() > khr_count + ptlas_count) {
+            MI_LOG(MIInfraLogType::kError,
+                "Root signature compatibility error: pipeline has {} acceleration structures (KHR+PTLAS merged) "
+                "but root signature declares {} KHR + {} PTLAS = {}.",
+                acceleration_structures_.size(), khr_count, ptlas_count, khr_count + ptlas_count);
+            return false;
+        }
+    }
 
     auto CheckPushConstants = [&](const auto & pipeline_push_constants) {
         if (!pipeline_push_constants.empty()) {

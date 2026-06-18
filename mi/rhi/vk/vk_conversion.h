@@ -584,6 +584,8 @@ FORCEINLINE vk::DescriptorType GetVulkanDescriptorType (RHIPipelineResourceType 
             return vk::DescriptorType::eSampler;
         case RHIPipelineResourceType::kAccelerationStructure:
             return vk::DescriptorType::eAccelerationStructureKHR;
+        case RHIPipelineResourceType::kPartitionedAccelerationStructure:
+            return vk::DescriptorType::ePartitionedAccelerationStructureNV;
         default:
             mi_assert(false, "Invalid pipeline resource type");
             return vk::DescriptorType::eUniformBuffer;

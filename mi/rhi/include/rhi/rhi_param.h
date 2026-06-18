@@ -31,6 +31,7 @@ enum class RHIParamType : uint32_t {
     kSRVTextureArray,
     kSampler,
     kAccelerationStructure,
+    kPartitionedAccelerationStructure,
     kVertexAttribute,
     // The following types have no mapping in hlsl, just corporate with RDG shader reflection.
     kRenderTarget,
@@ -52,6 +53,7 @@ FORCEINLINE std::string ToString (RHIParamType type) {
         case RHIParamType::kSRVTextureArray: return "SRVTextureArray";
         case RHIParamType::kSampler: return "Sampler";
         case RHIParamType::kAccelerationStructure: return "AccelerationStructure";
+        case RHIParamType::kPartitionedAccelerationStructure: return "PartitionedAccelerationStructure";
         case RHIParamType::kRenderTarget: return "RenderTarget";
         case RHIParamType::kVertexAttribute: return "VertexAttribute";
         case RHIParamType::kVertexBuffer: return "VertexBuffer";
@@ -79,6 +81,7 @@ FORCEINLINE RHIParamType RHITypeNameStringToParamType (std::string_view type) {
     if(type == "RWStructuredBuffer[]") return RHIParamType::kStorageBufferArray;
     if(type == "ConstantBuffer") return RHIParamType::kUniformBuffer;
     if(type == "AccelerationStructure") return RHIParamType::kAccelerationStructure;
+    if(type == "PartitionedAccelerationStructure") return RHIParamType::kPartitionedAccelerationStructure;
     // The following 4 types have no mapping in hlsl, just corporate with RDG shader reflection.
     if(type == "RenderTarget") return RHIParamType::kRenderTarget;
     if(type == "VertexAttribute") return RHIParamType::kVertexAttribute;
@@ -111,6 +114,9 @@ FORCEINLINE RHIGPUAccessFlags TypeNameStringToRHIAccessFlags (std::string_view t
         return RHIGPUAccessFlagBits::kNone;
     }
     if (view == "AccelerationStructure") {
+        return RHIGPUAccessFlagBits::kAccelerationStructureRead;
+    }
+    if (view == "PartitionedAccelerationStructure") {
         return RHIGPUAccessFlagBits::kAccelerationStructureRead;
     }
     if (view == "ConstantBuffer") {

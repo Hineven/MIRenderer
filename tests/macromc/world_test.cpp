@@ -29,6 +29,10 @@ static testing::AssertionResult CmpIVec3(const char* a_expr, const char* b_expr,
 }
 #define EXPECT_IVEC3_EQ(a, b) EXPECT_PRED_FORMAT2(CmpIVec3, a, b)
 
+// ChunkCoord is now a dedicated 2D {x,z} struct with operator==, so it compares
+// directly without a helper. (Previously it was glm::ivec3 and needed CmpIVec3.)
+#define EXPECT_CHUNKCOORD_EQ(a, b) EXPECT_EQ(a, b)
+
 class WorldTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -156,20 +160,21 @@ TEST_F(WorldTest, SubChunkFillAir) {
 // =============================================================================
 
 TEST_F(WorldTest, ChunkDataCreate) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
-    EXPECT_IVEC3_EQ(chunk->GetCoord(), ChunkCoord(0, 0, 0));
-    EXPECT_EQ(chunk->GetState(), ChunkState::kUnloaded);
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
+    EXPECT_CHUNKCOORD_EQ(chunk->GetCoord(), ChunkCoord(0, 0));
+    // Note: ChunkData no longer carries presence/sim state — that lives in
+    // ChunkRegistry. See chunk_registry.h / chunk_registry tests.
 }
 
 TEST_F(WorldTest, ChunkDataSetGetBlock) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
     chunk->SetBlock(5, 100, 10, BuiltinBlocks::kStoneId);
     EXPECT_EQ(chunk->GetBlockId(5, 100, 10), BuiltinBlocks::kStoneId);
 }
 
 TEST_F(WorldTest, ChunkDataFill) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
     chunk->Fill(BuiltinBlocks::kDirtId);
 
     // All positions should be dirt
@@ -178,7 +183,7 @@ TEST_F(WorldTest, ChunkDataFill) {
 }
 
 TEST_F(WorldTest, ChunkDataSetBlockWithState) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
     // Set a block carrying state, read back the full {id, state}.
     BlockData top_slab{BuiltinBlocks::kStoneId, 1};
@@ -197,19 +202,8 @@ TEST_F(WorldTest, ChunkDataSetBlockWithState) {
     EXPECT_EQ(chunk->GetBlock(7, 100, 10).state, 0);
 }
 
-TEST_F(WorldTest, ChunkDataStateTransitions) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
-    EXPECT_EQ(chunk->GetState(), ChunkState::kUnloaded);
-
-    chunk->SetState(ChunkState::kGenerating);
-    EXPECT_EQ(chunk->GetState(), ChunkState::kGenerating);
-
-    chunk->SetState(ChunkState::kReady);
-    EXPECT_EQ(chunk->GetState(), ChunkState::kReady);
-}
-
 TEST_F(WorldTest, ChunkDataSubChunkAccess) {
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
     // All subchunks should be empty initially
     for (size_t i = 0; i < kSubChunksPerChunkY; ++i) {
@@ -224,13 +218,13 @@ TEST_F(WorldTest, ChunkDataSubChunkAccess) {
 
 TEST_F(WorldTest, CoordConversion) {
     // Positive coordinates
-    EXPECT_IVEC3_EQ(BlockWorldToChunkCoord({0, 0, 0}), ChunkCoord(0, 0, 0));
-    EXPECT_IVEC3_EQ(BlockWorldToChunkCoord({15, 0, 15}), ChunkCoord(0, 0, 0));
-    EXPECT_IVEC3_EQ(BlockWorldToChunkCoord({16, 0, 16}), ChunkCoord(1, 0, 1));
+    EXPECT_CHUNKCOORD_EQ(BlockWorldToChunkCoord({0, 0, 0}), ChunkCoord(0, 0));
+    EXPECT_CHUNKCOORD_EQ(BlockWorldToChunkCoord({15, 0, 15}), ChunkCoord(0, 0));
+    EXPECT_CHUNKCOORD_EQ(BlockWorldToChunkCoord({16, 0, 16}), ChunkCoord(1, 1));
 
     // Negative coordinates
-    EXPECT_IVEC3_EQ(BlockWorldToChunkCoord({-1, 0, -1}), ChunkCoord(-1, 0, -1));
-    EXPECT_IVEC3_EQ(BlockWorldToChunkCoord({-16, 0, -16}), ChunkCoord(-1, 0, -1));
+    EXPECT_CHUNKCOORD_EQ(BlockWorldToChunkCoord({-1, 0, -1}), ChunkCoord(-1, -1));
+    EXPECT_CHUNKCOORD_EQ(BlockWorldToChunkCoord({-16, 0, -16}), ChunkCoord(-1, -1));
 }
 
 TEST_F(WorldTest, SubChunkIndexConversion) {
@@ -257,16 +251,16 @@ TEST_F(WorldTest, ShellDataCreate) {
 
 TEST_F(WorldTest, ShellDataAddChunk) {
     auto shell = mi::Create<WorldShellData>(1, ShellCategory::kTerrain);
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
-    shell->SetChunk(ChunkCoord{0, 0, 0}, chunk);
+    shell->SetChunk(ChunkCoord{0, 0}, chunk);
     EXPECT_EQ(shell->GetChunkCount(), 1u);
-    EXPECT_TRUE(shell->HasChunk(ChunkCoord{0, 0, 0}));
+    EXPECT_TRUE(shell->HasChunk(ChunkCoord{0, 0}));
 
-    auto retrieved = shell->GetChunk(ChunkCoord{0, 0, 0});
+    auto retrieved = shell->GetChunk(ChunkCoord{0, 0});
     ASSERT_NE(retrieved.Raw(), nullptr);
-    // glm::ivec3 (==) returns a bvec3, not bool; compare componentwise for gtest.
-    EXPECT_IVEC3_EQ(retrieved->GetCoord(), ChunkCoord(0, 0, 0));
+    // ChunkCoord is now a 2D {x,z} struct with operator== (was glm::ivec3).
+    EXPECT_CHUNKCOORD_EQ(retrieved->GetCoord(), ChunkCoord(0, 0));
 }
 
 // =============================================================================
@@ -299,9 +293,9 @@ TEST_F(WorldTest, WorldDataMultipleShells) {
 TEST_F(WorldTest, SimpleTerrainWorldgen) {
     macromc::SimpleTerrainWorldgen gen(12345);
     auto shell = mi::Create<WorldShellData>(1, ShellCategory::kTerrain);
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
-    gen.GenerateChunk(shell.Raw(), ChunkCoord{0, 0, 0}, chunk.Raw());
+    gen.GenerateChunk(shell.Raw(), ChunkCoord{0, 0}, chunk.Raw());
 
     // Bottom (y=0) should be bedrock (not air)
     EXPECT_NE(chunk->GetBlockId(0, 0, 0), kAirBlockId);
@@ -325,9 +319,9 @@ TEST_F(WorldTest, SimpleTerrainWorldgenAirSubChunksAreEmpty) {
     // stay kEmpty, consuming zero memory.
     macromc::SimpleTerrainWorldgen gen(12345);
     auto shell = mi::Create<WorldShellData>(1, ShellCategory::kTerrain);
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
-    gen.GenerateChunk(shell.Raw(), ChunkCoord{0, 0, 0}, chunk.Raw());
+    gen.GenerateChunk(shell.Raw(), ChunkCoord{0, 0}, chunk.Raw());
 
     // Bedrock at y=0 must actually be present (was silently dropped before fix).
     EXPECT_EQ(chunk->GetBlockId(0, 0, 0), BuiltinBlocks::kBedrockId);
@@ -347,9 +341,9 @@ TEST_F(WorldTest, SimpleTerrainWorldgenAirSubChunksAreEmpty) {
 TEST_F(WorldTest, EmptyWorldgen) {
     macromc::EmptyWorldgen gen;
     auto shell = mi::Create<WorldShellData>(1, ShellCategory::kEmpty);
-    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0, 0});
+    auto chunk = mi::Create<ChunkData>(ChunkCoord{0, 0});
 
-    gen.GenerateChunk(shell.Raw(), ChunkCoord{0, 0, 0}, chunk.Raw());
+    gen.GenerateChunk(shell.Raw(), ChunkCoord{0, 0}, chunk.Raw());
 
     // Everything should be air
     EXPECT_EQ(chunk->GetBlockId(0, 0, 0), kAirBlockId);

@@ -14,7 +14,8 @@ void EmptyWorldgen::GenerateChunk(WorldShellData* /*shell*/,
                                   ChunkData* out_data) {
     // Fill entire chunk with air
     out_data->Fill(MACROMC_REGISTRY_NAMESPACE::kAirBlockId);
-    out_data->SetState(ChunkState::kGenerated);
+    // Presence / sim state is now owned by ChunkRegistry; the generator only
+    // fills voxel data and returns.
 }
 
 MACROMC_WORLDGEN_NAMESPACE_END

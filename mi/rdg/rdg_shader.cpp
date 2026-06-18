@@ -262,19 +262,32 @@ bool RDGShader::CheckShaderReflection(RHIShader * shader, const RDGShaderParamSt
         }
     }
 
-    // Check acceleration structures
+    // Check acceleration structures.
+    // SPIRV-Cross puts both KHR TLAS and NV PTLAS into the same reflection bucket.
+    // A shader-declared AS may be either a plain AccelerationStructure or a
+    // PartitionedAccelerationStructure in the C++ param struct.
     for (const auto& as : shader->GetAccelerationStructureDesc()) {
         int index = FindIndex(info.acceleration_structures_, as.name);
-        if (index == -1) {
+        int ptlas_index = FindIndex(info.partitioned_acceleration_structures_, as.name);
+        if (index == -1 && ptlas_index == -1) {
             MI_LOG(MIInfraLogType::kWarning,
                    "Shader '{}:{}' uses acceleration structure '{}' which is not defined in shader parameters",
                    class_registry_->source_location, entry, as.name);
             passed_checking = false;
-        } else {
+        } else if (index != -1) {
             auto & member = *info.acceleration_structures_[index].info;
             if (member.type != RHIParamType::kAccelerationStructure) {
                 MI_LOG(MIInfraLogType::kWarning,
                        "Shader '{}:{}' defines '{}' as acceleration structure but parameter has incompatible type."
+                       "Parameter type: {}",
+                       class_registry_->source_location, entry, as.name, ToString(member.type));
+                passed_checking = false;
+            }
+        } else {
+            auto & member = *info.partitioned_acceleration_structures_[ptlas_index].info;
+            if (member.type != RHIParamType::kPartitionedAccelerationStructure) {
+                MI_LOG(MIInfraLogType::kWarning,
+                       "Shader '{}:{}' defines '{}' as partitioned acceleration structure but parameter has incompatible type."
                        "Parameter type: {}",
                        class_registry_->source_location, entry, as.name, ToString(member.type));
                 passed_checking = false;
@@ -535,6 +548,15 @@ void RDGShader::RemapResourceIndexToRootSigResourceIndex() {
         for (const auto& [i, e] : std::views::enumerate(info.acceleration_structures_)) {
             if (HasResource(e.info->name, list))
                 cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kAccelerationStructure][i] = (uint32_t)i;
+        }
+    }
+    // PTLAS resources also share the same SPIRV-Cross reflection bucket as KHR TLAS.
+    {
+        auto & list = pipeline->GetAccelerationStructureDesc();
+        cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kPartitionedAccelerationStructure].resize(info.partitioned_acceleration_structures_.size(), UINT32_MAX);
+        for (const auto& [i, e] : std::views::enumerate(info.partitioned_acceleration_structures_)) {
+            if (HasResource(e.info->name, list))
+                cpp_resource_index_to_root_sig_resource_slot_[(uint32_t)RHIParamType::kPartitionedAccelerationStructure][i] = (uint32_t)i;
         }
     }
 }

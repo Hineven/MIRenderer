@@ -251,6 +251,7 @@ enum class RHIPipelineResourceType {
     kSampler,
     kImmutableSampler,
     kAccelerationStructure,
+    kPartitionedAccelerationStructure,
     kMax
 };
 

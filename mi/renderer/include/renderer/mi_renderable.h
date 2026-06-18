@@ -14,6 +14,8 @@
 #include <rhi/rhi_fwd.h>
 #include <rhi/rhi_as_types.h>
 
+#include <span>
+
 #include <renderer/mi_renderer_fwd.h>
 #include <renderer/mi_renderer_types.h>
 #include <renderer/mi_transform.h>
@@ -26,6 +28,20 @@ MI_NAMESPACE_BEGIN
 
 class StaticMeshInstance;
 class RenderGraphBuilder;
+
+// One BLAS instance's full description for TLAS/PTLAS gathering. PTLAS instance
+// requires BLAS device address + transform + customIndex + mask + SBT offset +
+// partitionIndex + explicitAABB. The legacy single-BLAS path (GetBLAS +
+// GetInstanceCustomIndex) is equivalent to one global-partition instance.
+struct RenderableBLASInstance {
+    RHIAccelerationStructure * blas {nullptr};
+    Transform transform {};          // world-space instance transform
+    uint32_t  instance_custom_index {0};
+    uint8_t   instance_mask {0xFF};
+    uint32_t  instance_contribution_to_hit_group_index {0};  // SBT offset
+    uint32_t  partition_index {0};   // non-global: allocator-assigned; global: special value
+    AABB      explicit_aabb {};      // world-space (PTLAS requires this)
+};
 
 enum class RenderableFlagBits : uint32_t {
     kNone = 0,
@@ -73,6 +89,20 @@ public:
     // Override the functions if the renderable can be ray-traced.
     virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
     virtual RHIASGeometryInstanceFlags GetASGeometryInstanceFlags () const { return RHIASGeometryInstanceFlagBits::kNone; }
+
+    // ---- Multi-BLAS instance gathering (TLAS/PTLAS) ----
+    // A renderable contributes zero or more BLAS instances to the TLAS/PTLAS.
+    // Two categories:
+    //   - Global partition instances: each is an independent dynamic instance
+    //     (does not occupy a partition slot). The legacy single-BLAS renderables
+    //     (StaticMesh etc.) use this with one element.
+    //   - Partitioned instances: each belongs to an allocator-assigned partition
+    //     (supports PTLAS partial rebuild). GigaVoxel (per-chunk BLAS) uses this.
+    // The returned span must remain valid until the next Update(); renderables
+    // that override these must maintain a stable backing buffer.
+    // Default: no instances (subclasses provide via GetBLAS legacy path or these).
+    virtual std::span<const RenderableBLASInstance> GetGlobalBLASInstances () const { return {}; }
+    virtual std::span<const RenderableBLASInstance> GetPartitionedBLASInstances () const { return {}; }
 
     constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
     // Number of bits used for the renderable index in InstanceCustomIndex.

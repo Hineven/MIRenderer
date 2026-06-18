@@ -8,6 +8,8 @@ add_library(macromc_world STATIC
     src/chunk_data.cpp
     src/shell_data.cpp
     src/world_data.cpp
+    src/chunk_registry.cpp
+    src/event_bus.cpp
 )
 
 target_include_directories(macromc_world PUBLIC
@@ -17,6 +19,7 @@ target_include_directories(macromc_world PUBLIC
 target_link_libraries(macromc_world PUBLIC
     core
     macromc_registry
+    macromc_prof
     macromc_public_headers
     glm::glm
 )

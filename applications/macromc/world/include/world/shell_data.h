@@ -42,8 +42,16 @@ public:
     void SetTransform(const glm::mat4& transform);
     
     // Chunk management
+    // GetChunk returns an owning TRef (a lifetime lease) — the caller may keep
+    // the chunk alive independent of subsequent RemoveChunk. This is the
+    // primary accessor for anyone that needs to read/keep voxel data (e.g. the
+    // meshing context's lock-free neighbour snapshots).
     mi::TRef<ChunkData> GetChunk(const ChunkCoord& coord);
     const mi::TRef<ChunkData> GetChunk(const ChunkCoord& coord) const;
+    // PeekChunk returns a non-owning pointer for a quick presence/value check
+    // without extending the chunk's lifetime. nullptr if absent.
+    ChunkData* PeekChunk(const ChunkCoord& coord);
+    const ChunkData* PeekChunk(const ChunkCoord& coord) const;
     void SetChunk(const ChunkCoord& coord, mi::TRef<ChunkData> chunk);
     bool HasChunk(const ChunkCoord& coord) const;
     void RemoveChunk(const ChunkCoord& coord);

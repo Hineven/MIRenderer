@@ -157,10 +157,10 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
     world.SetPrimaryShell(shell->GetId());
 
     SimpleTerrainWorldgen worldgen(1337u);
-    ChunkCoord camera_chunk {0, 0, 0};
+    ChunkCoord camera_chunk {0, 0};
     for (int cz = -kBringUpChunkRadius; cz <= kBringUpChunkRadius; ++cz) {
         for (int cx = -kBringUpChunkRadius; cx <= kBringUpChunkRadius; ++cx) {
-            ChunkCoord coord {cx, 0, cz};
+            ChunkCoord coord {cx, cz};
             auto chunk = mi::Create<ChunkData>(coord);
             worldgen.GenerateChunk(shell.Raw(), coord, chunk.Raw());
             shell->SetChunk(coord, chunk);
@@ -173,7 +173,7 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
     //    but keeps the pattern explicit.
     auto ctx = ChunkMeshingContext::Create(MACROMC_REGISTRY_NAMESPACE::GetGlobalBlockRegistry());
     for (const auto & [coord, chunk] : shell->GetAllChunks()) {
-        ctx->RegisterChunk(coord, *chunk);
+        ctx->RegisterChunk(coord, chunk);
     }
     for (const auto & [coord, chunk] : shell->GetAllChunks()) {
         auto task = ctx->RequestMesh(coord, camera_chunk);
@@ -181,9 +181,11 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
     }
 
     // 4. Build the placeholder atlas and the GigaVoxel asset.
+    //    The atlas is a global config shared by all GigaVoxel assets; set it
+    //    once here (app init would do this in the real macromc app).
     auto atlas = BuildPlaceholderAtlas();
+    GigaVoxel::SetGlobalAtlas(atlas);
     auto gv = GigaVoxel::Create();
-    gv->SetAtlasTexture(atlas);
 
     // 5. Flatten each chunk's mesh and upload it to the asset as a heap-backed
     //    chunk (O(1) alloc + incremental GPU upload). Chunk id = packed coord.
@@ -193,7 +195,7 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
         auto flat = FlattenChunkMesh(result);
         if (flat.vertices.empty() || flat.indices.empty()) continue;
         auto chunk_id = static_cast<mi::GigaVoxelChunkId>(
-            (uint64_t(uint32_t(coord.x)) << 42) | (uint64_t(uint32_t(coord.y)) << 21) | uint64_t(uint32_t(coord.z)));
+            (uint64_t(uint32_t(coord.x)) << 21) | uint64_t(uint32_t(coord.z)));
         gv->UploadChunk(chunk_id, std::move(flat.vertices), std::move(flat.indices));
     }
 
@@ -202,13 +204,14 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
         return {};
     }
 
-    // 6. Upload to device (vertex/index uber buffers + header + single BLAS).
+    // 6. Build per-chunk BLAS + refresh header (sync wrapper for bring-up).
     gv->UpdateOnDevice(allocator);
 
-    // 7. Create the instance (self-registers into the scene).
-    auto inst = GigaVoxelInstance::Create(scene, gv.Raw(), Transform{});
+    // 7. Attach to the scene (asset owns the instance; self-registers).
+    gv->AttachToScene(scene, Transform{});
+    auto inst = gv->GetInstance();
     if (!inst) {
-        MI_WARN("GigaVoxelInstance::Create failed during bring-up.");
+        MI_WARN("GigaVoxelInstance creation failed during bring-up.");
         return {};
     }
 

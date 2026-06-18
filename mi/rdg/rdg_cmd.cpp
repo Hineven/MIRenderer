@@ -12,6 +12,7 @@
 #include <rdg/rdg_shader.h>
 #include <rhi/rhi_buffer.h>
 #include <rhi/rhi_as.h>
+#include <rhi/rhi_ptlas.h>
 
 MI_NAMESPACE_BEGIN
 
@@ -144,6 +145,20 @@ std::optional<RHIBindPipelineParametersDesc> RDGCommandHelper::BuildParameterDes
             ret.acceleration_structures[num_active_acceleration_structures ++] = {as_ptr, (uint32_t)i};
         }
         ret.acceleration_structures = ret.acceleration_structures.first(num_active_acceleration_structures);
+    }
+    {
+        int num_active_ptlas = 0;
+        ret.partitioned_acceleration_structures = std::span(queue.Allocate<RHIPipelineParameterResourceDesc[]>(info->partitioned_acceleration_structures_.size()), info->partitioned_acceleration_structures_.size());
+        for (const auto& [i, e] : std::views::enumerate(info->partitioned_acceleration_structures_)) {
+            auto ptlas_ptr = *static_cast<RHIPartitionedTLAS**>((void*)((uint8_t*)params + e.cpp_offset));
+            if (RDGParameter_IsUnsetPointer(ptlas_ptr)) {
+                MI_WARN("RootSignature {}: Referenced PTLAS pointer {} is unset.",
+                    table.root_signature_->GetName(), e.info->name);
+                return std::nullopt;
+            }
+            ret.partitioned_acceleration_structures[num_active_ptlas ++] = {ptlas_ptr, (uint32_t)i};
+        }
+        ret.partitioned_acceleration_structures = ret.partitioned_acceleration_structures.first(num_active_ptlas);
     }
     return ret;
 }

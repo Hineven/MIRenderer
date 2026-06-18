@@ -18,6 +18,7 @@
 #include "vk_buffer.h"
 #include "vk_texture.h"
 #include "vk_as.h"
+#include "vk_ptlas.h"
 #include "vk_shader.h"
 #include "vk_pipeline.h"
 #include "vk_bindless.h"
@@ -267,6 +268,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             VK_KHR_RAY_QUERY_EXTENSION_NAME,
             // Fragment barycentrics
             VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
+            // Partitioned acceleration structure (per-partition TLAS rebuild for GigaVoxel)
+            VK_NV_PARTITIONED_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             // SPV extensions (not supported by NVIDIA)
             // VK_GOOGLE_USER_TYPE_EXTENSION_NAME,
             // VK_GOOGLE_HLSL_FUNCTIONALITY1_EXTENSION_NAME,
@@ -349,7 +352,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDeviceHostQueryResetFeatures,
                 vk::PhysicalDeviceRayQueryFeaturesKHR,
                 vk::PhysicalDeviceVulkanMemoryModelFeatures,
-                vk::PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR
+                vk::PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR,
+                vk::PhysicalDevicePartitionedAccelerationStructureFeaturesNV
         > extended_features;
 
         auto & device_create_info = std::get<0>(extended_features);
@@ -454,6 +458,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         auto & relaxed_ext_inst = std::get<vk::PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR>(extended_features);
         relaxed_ext_inst.shaderRelaxedExtendedInstruction = VK_TRUE;
 
+        auto & partitioned_as_features = std::get<vk::PhysicalDevicePartitionedAccelerationStructureFeaturesNV>(extended_features);
+        partitioned_as_features.partitionedAccelerationStructure = VK_TRUE;
+
         device_ = physical_device_.createDevice(extended_features.get());
         // Initialize the Vulkan-HPP dispatcher
         VULKAN_HPP_DEFAULT_DISPATCHER.init(device_);
@@ -463,7 +470,8 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
     {
         auto props = physical_device_.getProperties2<
             vk::PhysicalDeviceProperties2, vk::PhysicalDeviceSubgroupProperties,
-            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+            vk::PhysicalDevicePartitionedAccelerationStructurePropertiesNV
         >();
         auto& subgroup_props = props.get<vk::PhysicalDeviceSubgroupProperties>();
 
@@ -477,6 +485,9 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         rhi_device_properties_.shader_group_base_alignment = rt_props.shaderGroupBaseAlignment;
         rhi_device_properties_.max_ray_recursion_depth = rt_props.maxRayRecursionDepth;
         rhi_device_properties_.max_shader_group_stride = rt_props.maxShaderGroupStride;
+
+        auto& ptlas_props = props.get<vk::PhysicalDevicePartitionedAccelerationStructurePropertiesNV>();
+        rhi_device_properties_.max_partition_count = ptlas_props.maxPartitionCount;
 
         auto& def_props = props.get<vk::PhysicalDeviceProperties2>();
         rhi_device_properties_.timestamp_period = def_props.properties.limits.timestampPeriod;
@@ -824,6 +835,11 @@ RHITextureRef VulkanRHI::CreateTexture(RHITextureDesc desc) {
 TRef<RHIAccelerationStructure> VulkanRHI::CreateAccelerationStructure(RHIAccelerationStructureType type) {
     auto as = new VulkanAccelerationStructure(type);
     return TRef<RHIAccelerationStructure>(as);
+}
+
+TRef<RHIPartitionedTLAS> VulkanRHI::CreatePartitionedTLAS() {
+    auto ptlas = new VulkanPartitionedTLAS();
+    return TRef<RHIPartitionedTLAS>(ptlas);
 }
 
 

@@ -158,3 +158,17 @@ target_link_libraries(macromc_greedy_meshing_test PRIVATE
     macromc_meshing macromc_world macromc_registry core infra ${GTEST_LIBRARIES})
 mi_apply_app_manifest(macromc_greedy_meshing_test)
 add_test(NAME macromc_greedy_meshing COMMAND macromc_greedy_meshing_test)
+
+# MacroMC - Streaming (envelope driver + registry + meshing, headless stress)
+add_executable(macromc_streaming_test macromc/streaming_test.cpp)
+target_link_libraries(macromc_streaming_test PRIVATE
+    macromc_meshing macromc_world macromc_worldgen macromc_registry core infra ${GTEST_LIBRARIES})
+mi_apply_app_manifest(macromc_streaming_test)
+add_test(NAME macromc_streaming COMMAND macromc_streaming_test)
+
+# MacroMC - Profiler (timers + counters + gauges, thread-local merge)
+add_executable(macromc_profiler_test macromc/profiler_test.cpp)
+target_link_libraries(macromc_profiler_test PRIVATE
+    macromc_prof core infra ${GTEST_LIBRARIES})
+mi_apply_app_manifest(macromc_profiler_test)
+add_test(NAME macromc_profiler COMMAND macromc_profiler_test)
