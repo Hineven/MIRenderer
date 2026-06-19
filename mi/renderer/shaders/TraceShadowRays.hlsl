@@ -124,25 +124,7 @@ void TraceShadowRaysClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPayloa
 }
 
 // Non-StaticMesh no-op entry points for shadow rays
-[shader("anyhit")]
-void TraceShadowRaysAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-}
-[shader("closesthit")]
-void TraceShadowRaysClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.HitDistance = RayTCurrent();
-}
 
-[shader("anyhit")]
-void TraceShadowRaysAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-}
-[shader("closesthit")]
-void TraceShadowRaysClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.HitDistance = RayTCurrent();
-}
 
 [shader("anyhit")]
 void TraceShadowRaysAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,

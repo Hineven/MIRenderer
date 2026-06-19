@@ -8,16 +8,13 @@
 #include "shared/SharedVolumeGrid.hlsl"
 #include "headers/HybridTracing.hlsl"
 #include "headers/GeometryBuffers.hlsl"
-#include "headers/VolumePrimitivesLib.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/RayTracingHelpers.hlsl"
-#include "headers/GaussianSplatting.hlsl"
 #include "headers/VolumeGridLib.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/RenderableResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
-#include "resources/GaussianRadianceFieldResources.hlsl"
 
 struct TraceTransmittanceRaysUB {
     uint Seed;
@@ -32,8 +29,6 @@ StructuredBuffer<GeometryHeader> GeometryHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
 StructuredBuffer<DefaultStaticMeshVertex> VertexBuffer;
 StructuredBuffer<uint> IndexBuffer;
-StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
-StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 StructuredBuffer<VolumeGridHeader> VolumeGridHeaderBuffer;
 
 
@@ -144,85 +139,7 @@ void TraceTransmittanceRaysAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPay
     }
 }
 
-// VolumePrimitives anyhit: compute transmittance through volume primitive
-[shader("anyhit")]
-void TraceTransmittanceRaysAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    float3 RayOrigin = WorldRayOrigin();
-    float3 RayDirection = WorldRayDirection();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    // Get the index of the volume primitive (each volume primitive have 20 triangles for proxy geometry) 
-    uint InstancePrimitiveIndex = PrimitiveIndex() / 20;
-    VolumePrimitivesInstanceHeader InstanceHeader = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[Instance]);
-    uint VolprimsIndex = InstanceHeader.VolumePrimitivesIndex;
-    uint PrimitiveOffset = VolumePrimitivesHeaderBuffer[VolprimsIndex].PrimitiveOffset;
-    uint PrimitiveIndex = PrimitiveOffset + InstancePrimitiveIndex;
-    VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[PrimitiveIndex]);
-    float3x4 ToObject = WorldToObject3x4();
-    float2 lr = 0;
-    float Dist = 0;
-    bool bIntersected = RayIntersect(RayOrigin, RayDirection, Primitive, ToObject, lr, Dist);
-    if(bIntersected) {
-        float TMin = RayTMin();
-        lr.x = max(lr.x, TMin);
-        lr.y = max(lr.y, TMin);
-        float Length = max(lr.y - lr.x, 0);
-        float Opacity = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
-        // Multiply to transmittance
-        float Transmittance = exp(-Length * Opacity);
-        Payload.Transmittance *= Transmittance;
-        if(Payload.Transmittance < 0.001f) {
-            // Early termination if transmittance is too small
-            AcceptHitAndEndSearch();
-        }
-    }
-    // Always ignore hits on volume primitives
-    IgnoreHit();
-}
 
-// GaussianRadianceField anyhit: compute alpha response
-[shader("anyhit")]
-void TraceTransmittanceRaysAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    float3 RayOrigin = WorldRayOrigin();
-    float3 RayDirection = WorldRayDirection();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    // Get the index of the 3d gaussian (each 3d gaussian have 20 triangles for proxy geometry) 
-    uint InstanceGaussianIndex = PrimitiveIndex() / 20;
-    GaussianRadianceFieldInstanceHeader GRFInstanceHeader = GetGaussianRadianceFieldInstanceHeader(RenderableHeaderBuffer[Instance]);
-    uint RadianceFieldIndex = GRFInstanceHeader.FieldIndex;
-    uint GaussianOffset = GaussianRadianceFieldHeaderBuffer[RadianceFieldIndex].PointOffset;
-    uint GaussianIndex = GaussianOffset + InstanceGaussianIndex;
-    Gaussian3D G = UnpackGaussian(Gaussian3DBuffer[GaussianIndex]);
-    RayDesc Ray = GetRayDesc();
-    float RayScaler = 1, RayT = 0;
-    float3x4 WorldToObject = WorldToObject3x4();
-    float3x3 WorldToObjectNormal = transpose(To3x3(WorldToObject3x4()));
-    float3 LocalRayOrigin = TransformPoint(WorldToObject, Ray.Origin);
-    float3 RayTangent, RayBitangent;
-    GetOrthoVectors(Ray.Direction, RayTangent, RayBitangent);
-    float3 LocalRayDirection = TransformVector(WorldToObject, Ray.Direction);
-    float3 LocalRayTangent   = TransformVector(WorldToObjectNormal, RayTangent);
-    float3 LocalRayBitangent = TransformVector(WorldToObjectNormal, RayBitangent);
-    // Ray space basis vectors are not normalized. Thus it can correctly capture the non-uniform scaling in
-    // the transformation, which is important for correct evaluation of the Gaussian response.
-    float3x3 RaySpace = float3x3(
-        LocalRayTangent   / dot(LocalRayTangent, LocalRayTangent),
-        LocalRayBitangent / dot(LocalRayBitangent, LocalRayBitangent),
-        LocalRayDirection / dot(LocalRayDirection, LocalRayDirection)
-    );
-    float Alpha = 
-        EvaluateGaussianResponseRast(LocalRayOrigin, RaySpace, G, RayT);
-    Payload.Transmittance *= Alpha;
-    if(Payload.Transmittance < 0.001f) {
-        // Early termination if transmittance is too small
-        AcceptHitAndEndSearch();
-    }
-    // Always ignore hits on gaussian RF
-    IgnoreHit();
-}
 
 // VolumeGrid anyhit: ratio tracking through volume grid
 [shader("anyhit")]
@@ -307,19 +224,7 @@ void TraceTransmittanceRaysClosestHit_StaticMesh(inout RayPayload Payload: SV_Ra
 }
 
 // Non-StaticMesh closesthit: ray was early terminated in anyhit, just zero transmittance
-[shader("closesthit")]
-void TraceTransmittanceRaysClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    // Otherwise the ray is early terminated in anyhit shader.
-    // Simply set the transmittance to 0 and return.
-    Payload.Transmittance = 0;
-}
 
-[shader("closesthit")]
-void TraceTransmittanceRaysClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.Transmittance = 0;
-}
 
 [shader("closesthit")]
 void TraceTransmittanceRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,

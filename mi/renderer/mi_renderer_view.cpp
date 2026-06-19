@@ -18,7 +18,6 @@
 #include "rhi/rhi_desc.h"
 #include "renderer/r_persistent.h"
 #include "renderer/r_view_common.h"
-#include "renderer/r_volume_primitives.h"
 #include "renderer/r_denoiser.h"
 #include "renderer/r_world_radiance_cache.h"
 #include "renderer/r_light_structure.h"
@@ -26,10 +25,7 @@
 #include "renderer/r_debug.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
-#include "renderer/r_volume_direct_lighting.h"
-#include "renderer/r_volume_indirect_lighting.h"
 #include "renderer/r_volume_grid_direct_lighting.h"
-#include "renderer/r_gaussian_radiance_field.h"
 #include "renderer/mi_noise.h"
 
 MI_NAMESPACE_BEGIN
@@ -287,14 +283,10 @@ void RendererViewPersistentData::FinalUpdate(RendererView *view) {
 
     if (g_buffer_data_)
         g_buffer_data_->FinalUpdate(view);
-    if (volume_primitives_view_persistent_data_)
-        volume_primitives_view_persistent_data_->FinalUpdate(view);
     if (denoiser_persistent_data_)
         denoiser_persistent_data_->FinalUpdate(view);
     if (diffuse_indirect_lighting_persistent_data_)
         diffuse_indirect_lighting_persistent_data_->FinalUpdate(view);
-    if (volume_indirect_lighting_persistent_data_)
-        volume_indirect_lighting_persistent_data_->FinalUpdate(view);
     if (light_structure_persistent_data_)
         light_structure_persistent_data_->FinalUpdate(view);
     if (hash_grid_persistent_data_)

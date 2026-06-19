@@ -22,24 +22,9 @@ struct StaticMeshInstanceHeader {
     uint Flags;
 };
 
-struct VolumePrimitivesInstanceHeader {
-    // Index of the volume primitives which the instance refers to.
-    uint VolumePrimitivesIndex;
-    uint Padding0;
-    uint Padding1;
-    uint Flags;
-};
-
 struct VolumeGridInstanceHeader {
     // Index of the volume primitives which the instance refers to.
     uint VolumeGridIndex;
-    uint Padding0;
-    uint Padding1;
-    uint Flags;
-};
-
-struct GaussianRadianceFieldInstanceHeader {
-    uint FieldIndex;
     uint Padding0;
     uint Padding1;
     uint Flags;
@@ -77,27 +62,9 @@ StaticMeshInstanceHeader GetStaticMeshInstanceHeader(RenderableHeader Header) {
     return Result;
 }
 
-VolumePrimitivesInstanceHeader GetVolumePrimitivesInstanceHeader(RenderableHeader Header) {
-    VolumePrimitivesInstanceHeader Result;
-    Result.VolumePrimitivesIndex = asuint(Header.Metadata.x);
-    Result.Padding0 = asuint(Header.Metadata.y);
-    Result.Padding1 = asuint(Header.Metadata.z);
-    Result.Flags = asuint(Header.Metadata.w);
-    return Result;
-}
-
 VolumeGridInstanceHeader GetVolumeGridInstanceHeader(RenderableHeader Header) {
     VolumeGridInstanceHeader Result;
     Result.VolumeGridIndex = asuint(Header.Metadata.x);
-    Result.Padding0 = asuint(Header.Metadata.y);
-    Result.Padding1 = asuint(Header.Metadata.z);
-    Result.Flags = asuint(Header.Metadata.w);
-    return Result;
-}
-
-GaussianRadianceFieldInstanceHeader GetGaussianRadianceFieldInstanceHeader(RenderableHeader Header) {
-    GaussianRadianceFieldInstanceHeader Result;
-    Result.FieldIndex = asuint(Header.Metadata.x);
     Result.Padding0 = asuint(Header.Metadata.y);
     Result.Padding1 = asuint(Header.Metadata.z);
     Result.Flags = asuint(Header.Metadata.w);

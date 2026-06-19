@@ -27,15 +27,12 @@ class Scene;
 class BatchedUploadContext;
 
 struct GeometryBufferData;
-struct VolumePrimitivesViewData;
 struct WorldRadianceCacheData;
 struct LightStructureData;
 struct DiffuseIndirectLightingData;
 struct DenoiserViewData;
-struct VolumeDirectLightingData;
 struct VolumeGridDirectLightingData;
 struct DiffuseDirectLightingData;
-struct VolumeIndirectLightingData;
 // struct VolumeGridIndirectLightingData;
 struct DebugCommonShaderParameters;
 
@@ -44,8 +41,6 @@ struct DiffuseIndirectLightingPersistentData;
 struct DenoiserPersistentData;
 struct LightStructurePersistentData;
 struct HashGridPersistentData;
-struct VolumePrimitivesViewPersistentData;
-struct VolumeIndirectLightingPersistentData;
 struct DebugPersistentData;
 
 struct RendererViewPersistentData;
@@ -70,11 +65,6 @@ enum class VisibilityTraceType {
     kCoarseWithExactVolumeScattering = 1,
     kFull = 2
 };
-
-struct GaussianRadianceFieldViewData;
-struct GaussianRadianceFieldPersistentData;
-class GaussianRadianceField;
-class GaussianRadianceFieldInstance;
 
 class DeviceGigaVoxel;
 class GigaVoxel;

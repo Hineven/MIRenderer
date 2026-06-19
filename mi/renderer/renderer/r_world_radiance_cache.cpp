@@ -15,14 +15,10 @@
 #include "r_denoiser.h"
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
-#include "r_gaussian_radiance_field.h"
 #include "../include/renderer/r_geometry_buffer.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
-#include "r_volume_direct_lighting.h"
 #include "r_volume_grid_direct_lighting.h"
-#include "r_volume_indirect_lighting.h"
-#include "r_volume_primitives.h"
 #include "../shaders/shared/SharedHashGridCache.hlsl"
 
 MI_NAMESPACE_BEGIN
@@ -94,32 +90,24 @@ void HashGridPersistentData::FinalUpdate(RendererView *view) {
 void RendererView::CreateSharedResources(RenderGraphBuilder & builder, bool should_render_volume_lighting) {
     g_buffer_.Recreate()->Allocate(builder, this);
     if (should_render_volume_lighting) {
-        volume_primitives_.Recreate()->Allocate(builder, this);
-        volume_direct_lighting_.Recreate()->Allocate(builder, this);
         volume_grid_direct_lighting_.Recreate()->Allocate(builder, this);
-        volume_indirect_lighting_.Recreate()->Allocate(builder, this);
     } else {
         // No volume in the scene: do not allocate any volume lighting resources at all.
         // Downstream passes (denoiser, composition) bind them as nullptr, which RDG treats
         // as a pure-black texture. Allocating them anyway would leave transient textures
         // that are read but never written, yielding recycled/undefined memory -> flicker.
-        volume_primitives_ = nullptr;
-        volume_direct_lighting_ = nullptr;
         volume_grid_direct_lighting_ = nullptr;
-        volume_indirect_lighting_ = nullptr;
     }
     world_cache_.Recreate()->Allocate(builder);
     light_structure_.Recreate()->Allocate(builder);
     diffuse_direct_lighting_.Recreate()->Allocate(builder, this);
     diffuse_indirect_lighting_.Recreate()->Allocate(builder, this);
-    grf_.Recreate()->Allocate(builder, this);
     // volume_gird_indirect_lighting_.Recreate()->Allocate(builder, this);
     denoiser_.Recreate()->Allocate(builder, this);
 }
 
 void RendererView::MakeSurePersistentDataExists(RenderGraphBuilder &builder) {
     persistent_data_->g_buffer_data_.CreateIfNull()->MakeSureExists(this, builder);
-    persistent_data_->volume_primitives_view_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
     persistent_data_->denoiser_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
     persistent_data_->light_structure_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);
     persistent_data_->hash_grid_persistent_data_.CreateIfNull()->MakeSureExists(this, builder);

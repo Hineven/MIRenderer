@@ -18,7 +18,6 @@
 #include "r_view_common.h"
 #include "r_diffuse_indirect_lighting.h"
 
-#include "r_gaussian_radiance_field.h"
 #include "r_light_structure.h"
 #include "r_persistent.h"
 #include "r_world_radiance_cache.h"

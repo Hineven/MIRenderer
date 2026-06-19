@@ -82,11 +82,6 @@ public:
         Render_PathTracing(view, builder);
     }
 
-    // at most 4M
-    constexpr static uint32_t kMaxNumActiveVolumePrimitives = 4 * 1024 * 1024;
-    // at most 16M
-    constexpr static uint32_t kMaxNumVolumePrimitiveInstances = 16 * 1024 * 1024;
-
     // Default shadow map resolution
     constexpr static uint32_t kDefaultShadowMapResolution = 1024;
 
@@ -129,9 +124,6 @@ protected:
     // mesh deferred raster and the GigaVoxel VC raster (both write G_visibility_
     // + G_depth_) so one decode dispatch resolves every renderable type.
     void Render_DecodeVisibility(RendererView * view, RenderGraphBuilder & builder);
-    void Render_DrawVolumePrimitives (
-        RendererView * view, RenderGraphBuilder & builder
-    ) ;
 
     void Render_DrawShadowMap (
         RendererView* view, RenderGraphBuilder& builder
@@ -163,9 +155,6 @@ protected:
     void Render_ComputeDiffuseDirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_ComputeVolumeDirectLighting (
-        RendererView * view, RenderGraphBuilder & builder
-    ) ;
     void Render_ComputeVolumeGridDirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
@@ -176,16 +165,10 @@ protected:
     void Render_UpdateDiffuseIndirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
-    void Render_UpdateVolumeIndirectLighting (
-        RendererView * view, RenderGraphBuilder & builder
-    ) ;
     void Render_UpdateHashGridCache ( // Called by Render_ComputeIndirectDiffuseLighting()
         RendererView * view, RenderGraphBuilder & builder
     );
     void Render_FinishDiffuseIndirectLighting (
-        RendererView * view, RenderGraphBuilder & builder
-    ) ;
-    void Render_FinishVolumeIndirectLighting (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
 
@@ -290,12 +273,6 @@ protected:
         uint32_t seed, VisibilityTraceType trace_type
     );
 
-    void Render_DrawGaussianRadianceFields (
-        RendererView * view, RenderGraphBuilder & builder
-    ) ;
-
-    void Render_PrepareGaussianRadianceFields(RendererView * view, RenderGraphBuilder & builder);
-
     struct FrameContext {
         std::vector<TRef<Renderable>> visible_renderables;
         struct StaticMeshes {
@@ -315,16 +292,6 @@ protected:
             // (RenderableIndex, GlobalChunkIndex) per draw, for the VS.
             TRef<RDGBuffer> d_renderable_chunk_indices;
         } giga_voxel_vc;
-
-        struct GaussianRadianceFields {
-            std::vector<RHIDrawIndirectCommand> draw_indirect_commands; // one per instance for Filter pass
-            TRef<RDGBuffer> d_filter_draw_commands; // uploaded indirect commands
-            TRef<RDGBuffer> d_active_renderable_list_buffer; // ActiveGaussianRenderableListBuffer
-            TRef<RDGBuffer> d_active_renderable_count_buffer; // ActiveGaussianRenderableCount
-
-            std::vector<uint32_t> active_renderable_indices; // host side copy for preparing active lists
-            uint32_t active_renderable_count;
-        } gaussian_radiance_fields;
 
         struct LightStructure {
             std::vector<uint32_t> active_mesh_light_instance_indices;

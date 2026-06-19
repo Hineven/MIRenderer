@@ -15,10 +15,6 @@ enum class RenderableType {
     kStaticMeshInstance = 0,
     // Volume Grid (with Super Volume Grid)
     kVolumeGridInstance,
-    // Volume primitives + transform
-    kVolumePrimitivesInstance,
-    // Gaussian radiance field + transform (3D Gaussian Radiance Field)
-    kGaussianRadianceFieldInstance,
     // GigaVoxel (VC/TFC/LFC) + transform. A single GigaVoxelInstance manages
     // many chunks internally; it occupies one RenderableIndex slot.
     kGigaVoxelInstance,
@@ -28,8 +24,7 @@ enum class RenderableType {
 FORCEINLINE std::string ToString (RenderableType type) {
     switch (type) {
         case RenderableType::kStaticMeshInstance: return "StaticMeshInstance";
-        case RenderableType::kVolumePrimitivesInstance: return "VolumePrimitivesInstance";
-        case RenderableType::kGaussianRadianceFieldInstance: return "GaussianRadianceFieldInstance";
+        case RenderableType::kVolumeGridInstance: return "VolumeGridInstance";
         case RenderableType::kGigaVoxelInstance: return "GigaVoxelInstance";
         default: return "Unknown";
     }

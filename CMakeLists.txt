@@ -60,13 +60,6 @@ endif()
 add_compile_definitions($<$<CONFIG:Debug>:MI_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"> $<$<CONFIG:RelWithDebInfo>:MI_PROJECT_ROOT="${CMAKE_SOURCE_DIR}">)
 
 
-# Options
-option(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT "Enable Fourier primitives by default" OFF)
-# Macro to enable Fourier primitives by default
-if(MI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
-    add_definitions(-DMI_VOLUME_PRIMITIVES_ENABLE_FOURIER_DEFAULT)
-endif()
-
 # Global profiling toggle: enable GPU timestamp queries in all builds for easier profiling.
 # Note: this can introduce performance overhead, so only enable when needed.
 option(MI_ENABLE_TIMESTAMP "Enable timestamp queries globally (except Release build)" ON)

@@ -1,5 +1,4 @@
 #include "shared/SharedDebug.hlsl"
-#include "shared/SharedVolumePrimitives.hlsl"
 #include "headers/Conventions.hlsl"
 #include "headers/Camera.hlsl"
 #include "headers/GeometryBuffers.hlsl"

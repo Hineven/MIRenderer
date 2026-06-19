@@ -15,9 +15,6 @@
 #include "r_diffuse_direct_lighting.h"
 #include "r_diffuse_indirect_lighting.h"
 #include "../include/renderer/r_geometry_buffer.h"
-#include "r_volume_direct_lighting.h"
-#include "r_volume_indirect_lighting.h"
-#include "r_volume_primitives.h"
 MI_NAMESPACE_BEGIN
 static CVar<bool> CVar_UseDilatedConvolution("r.denoiser.diffuse_direct_lighting.use_dilated_convolution",
      "Whether to use dilated convolution for denoising diffuse direct lighting. If false, bypass that and output prefiltered result.",
@@ -190,9 +187,6 @@ class ScatterVolumeSamplesToPreviousFrameShader : public RDGShader {
 public:
     BEGIN_SHADER_PARAMETERS(Params)
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
-        SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeRepresentativeDepthAndVariation)
-        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeMinMaxTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeDensityTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWPreviousFrameShareCountTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWPreviousFrameShareMinDepthTexture)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder0Sampler)
@@ -212,14 +206,9 @@ public:
         SHADER_UNIFORM_BUFFER(DenoiseDiffuseLightingUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
-        SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeMinMaxTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeDensityTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseDirectRadianceTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, InputVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, InputDiffuseIndirectRadianceTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, InputVolumeIndirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousVolumeHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWHistoryLengthTexture)
@@ -259,12 +248,10 @@ public:
         SHADER_UNIFORM_BUFFER(DenoiseDiffuseLightingUB, UB)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Normal)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
-        SHADER_RESOURCE_PARAMETER(Texture2D, G_VolumeRepresentativeDepthAndVariation)
         SHADER_RESOURCE_PARAMETER(Texture2D, PreviousDepthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, HistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, VolumeHistoryLengthTexture)
         SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputDiffuseDirectRadianceTexture)
-        SHADER_RESOURCE_PARAMETER(Texture2D, DilatedFilterInputVolumeDirectRadianceTexture)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDilatedFilterOutputFilteredDiffuseDirectRadiance)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDilatedFilterOutputFilteredVolumeDirectRadiance)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointBorder0Sampler)
@@ -332,9 +319,6 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         auto shader = lib.GetShader<ScatterVolumeSamplesToPreviousFrameShader>();
         auto params = builder.Allocate<ScatterVolumeSamplesToPreviousFrameShader::Params>();
         params->View = view->view_common_params_;
-        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_ ? view->volume_primitives_->volume_representative_depth_and_variation_.Raw() : nullptr;
-        params->PreviousVolumeMinMaxTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
-        params->PreviousVolumeDensityTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
         params->RWPreviousFrameShareCountTexture = denoiser_data->previous_frame_share_count.Raw();
         params->RWPreviousFrameShareMinDepthTexture = denoiser_data->previous_frame_share_min_depth.Raw();
         params->PointBorder0Sampler = RHI::Get().GetGlobalSamplers().point_border_0;
@@ -356,14 +340,9 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
         params->UB = UB;
         params->G_Normal = view->g_buffer_->G_normal_.Raw();
         params->G_Depth = view->g_buffer_->G_depth_.Raw();
-        params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_ ? view->volume_primitives_->volume_representative_depth_and_variation_.Raw() : nullptr;
         params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
-        params->PreviousVolumeMinMaxTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_min_max_.Raw();
-        params->PreviousVolumeDensityTexture = view->persistent_data_->volume_primitives_view_persistent_data_->prev_volume_density_.Raw();
         params->InputDiffuseDirectRadianceTexture = view->diffuse_direct_lighting_->radiance.Raw();
-        params->InputVolumeDirectRadianceTexture = view->volume_direct_lighting_ ? view->volume_direct_lighting_->radiance.Raw() : nullptr;
         params->InputDiffuseIndirectRadianceTexture = view->diffuse_indirect_lighting_->radiance.Raw();
-        params->InputVolumeIndirectRadianceTexture = view->volume_indirect_lighting_ ? view->volume_indirect_lighting_->radiance.Raw() : nullptr;
         params->PreviousHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_history_length.Raw();
         params->PreviousVolumeHistoryLengthTexture = view->persistent_data_->denoiser_persistent_data_->prev_volume_history_length.Raw();
         params->RWHistoryLengthTexture = denoiser_data->history_length.Raw();
@@ -414,12 +393,10 @@ void Renderer::Render_DenoiseLighting(RendererView *view, RenderGraphBuilder &bu
             params->UB = UB;
             params->G_Normal = view->g_buffer_->G_normal_.Raw();
             params->G_Depth = view->g_buffer_->G_depth_.Raw();
-            params->G_VolumeRepresentativeDepthAndVariation = view->volume_primitives_ ? view->volume_primitives_->volume_representative_depth_and_variation_.Raw() : nullptr;
             params->PreviousDepthTexture = view->persistent_data_->g_buffer_data_->prev_G_depth_.Raw();
             params->HistoryLengthTexture = denoiser_data->history_length.Raw();
             params->VolumeHistoryLengthTexture = denoiser_data->volume_history_length.Raw();
             params->DilatedFilterInputDiffuseDirectRadianceTexture = input_texture.Raw();
-            params->DilatedFilterInputVolumeDirectRadianceTexture = volume_input_texture.Raw();
             if (i != kMaxPasses - 1) {
                 output_texture = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);
                 volume_output_texture = builder.CreateTexture2D(view->film_width_, view->film_height_, PixelFormatType::kR16G16B16A16_FLOAT);

@@ -294,17 +294,8 @@ std::vector<std::string> ViewerZmqServer::PollEvents() {
                 if (ok) reply["renderable_indices"] = indices; else reply["err"] = "load_failed";
             }
         } else if (cmd == "load_ply_abs_path") {
-            auto path_str = j["args"].value("path", std::string{});
-            if (!viewer_) {
-                reply = { {"ok", false}, {"err", "no_viewer"} };
-            } else if (path_str.empty()) {
-                reply = { {"ok", false}, {"err", "missing_path"} };
-            } else {
-                std::vector<uint32_t> indices;
-                bool ok = viewer_->LoadPLYAsGRFAbsolute(std::filesystem::path(path_str), indices);
-                reply = { {"ok", ok} };
-                if (ok) reply["renderable_indices"] = indices; else reply["err"] = "load_failed";
-            }
+            // VolumePrimitives / GaussianRadianceField features were removed.
+            reply = { {"ok", false}, {"err", "unsupported: volume_primitives/gaussian_radiance_field removed"} };
         } else if (cmd == "remove_renderable_node") {
             uint32_t idx = j["args"].value("index", UINT32_MAX);
             if (!viewer_) {

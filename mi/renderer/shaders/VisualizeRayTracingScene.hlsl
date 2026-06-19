@@ -5,7 +5,6 @@
 #include "shared/SharedRenderable.hlsl"
 #include "shared/SharedStaticMesh.hlsl"
 #include "shared/SharedVertex.hlsl"
-#include "headers/VolumePrimitivesLib.hlsl"
 #include "resources/BindlessTextureResources.hlsl"
 #include "resources/CommonSamplerResources.hlsl"
 #include "resources/MaterialResources.hlsl"
@@ -22,8 +21,6 @@ RaytracingAccelerationStructure PTLAS;
 
 StructuredBuffer<StaticMeshHeader> StaticMeshHeaderBuffer;
 StructuredBuffer<uint2> StaticMeshDescriptionBuffer;
-StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
-StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
 
 [[vk::image_format("rgba16f")]]
 RWTexture2D<float4> RWDebugOutput;
@@ -128,15 +125,7 @@ void VisualizeRayTracingSceneAnyHit_StaticMesh(inout RayPayload Payload: SV_RayP
 }
 
 // Non-StaticMesh anyhit: just pass through (shell geometry)
-[shader("anyhit")]
-void VisualizeRayTracingSceneAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-}
 
-[shader("anyhit")]
-void VisualizeRayTracingSceneAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-}
 
 [shader("anyhit")]
 void VisualizeRayTracingSceneAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
@@ -184,19 +173,7 @@ void VisualizeRayTracingSceneClosestHit_StaticMesh(inout RayPayload Payload: SV_
 }
 
 // Non-StaticMesh closesthit: reduce transmittance for shell geometry visualization
-[shader("closesthit")]
-void VisualizeRayTracingSceneClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.Transmittance *= 0.5f;
-    Payload.THit = RayTCurrent();
-}
 
-[shader("closesthit")]
-void VisualizeRayTracingSceneClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.Transmittance *= 0.5f;
-    Payload.THit = RayTCurrent();
-}
 
 [shader("closesthit")]
 void VisualizeRayTracingSceneClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,

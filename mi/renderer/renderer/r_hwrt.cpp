@@ -20,9 +20,7 @@
 #include "renderer/mi_giga_voxel.h"
 #include "renderer/mi_static_mesh.h"
 #include "renderer/mi_texture.h"
-#include "renderer/mi_volume_primitives.h"
 #include "renderer/mi_cvar.h"
-#include "renderer/mi_gaussian_radiance_field.h"
 MI_NAMESPACE_BEGIN
     static CVar<float> CVar_VolumeScatteringEventShellHitCullingBias(
     "r.hwrt.volume_scattering_event_shell_hit_culling_bias",
@@ -50,8 +48,6 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
@@ -124,8 +120,6 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
-    params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
-    params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
     params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
     params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
@@ -163,11 +157,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
 
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
@@ -248,12 +238,6 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
-    params->VolumePrimitivesHeaderBuffer = builder.Import(device_allocator_->GetVolumePrimitivesHeaderBuffer());
-    params->PrimitiveData = builder.Import(
-        device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
-    );
-    params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
-    params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
     params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
     params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
@@ -293,12 +277,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
 
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, Gaussian3DBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianRadianceFieldHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GaussianSHBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
@@ -395,13 +374,6 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
-    params->VolumePrimitivesHeaderBuffer = builder.Import(device_allocator_->GetVolumePrimitivesHeaderBuffer());
-    params->PrimitiveData = builder.Import(
-        device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
-    );
-    params->Gaussian3DBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceAllocatorUberBufferIndex)->GetRHI());
-    params->GaussianRadianceFieldHeaderBuffer = builder.Import(device_allocator_->GetGaussianRadianceFieldHeaderBuffer());
-    params->GaussianSHBuffer = builder.Import(device_allocator_->GetCustomUberBuffer(GaussianRadianceField::kGaussianRadianceSHAllocatorUberBufferIndex)->GetRHI());
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
     params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
     params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());

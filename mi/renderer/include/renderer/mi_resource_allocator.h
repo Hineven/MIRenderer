@@ -42,9 +42,7 @@ public:
         Material,
         Geometry,
         StaticMesh,
-        VolumePrimitives,
         VolumeGrid,
-        GaussianRadianceField,
         GigaVoxel,
     };
 
@@ -57,9 +55,7 @@ public:
     FORCEINLINE TRef<SlotKeeper> AllocateMaterialSlotKeeper() { return AllocateSlotKeeper(SlotKind::Material); }
     FORCEINLINE TRef<SlotKeeper> AllocateGeometrySlotKeeper() { return AllocateSlotKeeper(SlotKind::Geometry); }
     FORCEINLINE TRef<SlotKeeper> AllocateStaticMeshSlotKeeper() { return AllocateSlotKeeper(SlotKind::StaticMesh); }
-    FORCEINLINE TRef<SlotKeeper> AllocateVolumePrimitivesSlotKeeper() { return AllocateSlotKeeper(SlotKind::VolumePrimitives); }
     FORCEINLINE TRef<SlotKeeper> AllocateVolumeGridSlotKeeper() { return AllocateSlotKeeper(SlotKind::VolumeGrid); }
-    FORCEINLINE TRef<SlotKeeper> AllocateGaussianRadianceFieldSlotKeeper() { return AllocateSlotKeeper(SlotKind::GaussianRadianceField); }
     FORCEINLINE TRef<SlotKeeper> AllocateGigaVoxelSlotKeeper() { return AllocateSlotKeeper(SlotKind::GigaVoxel); }
 
     // Unified free by kind (used by keepers). This is the actual slot recycle.
@@ -69,9 +65,6 @@ public:
     static constexpr uint32_t kMaxNumMaterials = 1024;
     static constexpr uint32_t kMaxNumGeometries = 64 * 1024; // 64K geometries
     static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
-    // static constexpr uint32_t kMaxNumStaticMeshGeometryMaterialPairs = 256 * 1024;
-    static constexpr uint32_t kMaxNumVolumePrimitiveGroups = 1024; // 1K volume primitive groups (assume that there are not many)
-    static constexpr uint32_t kMaxNumGaussianRadianceFields = 256; // Assume fewer GRF datasets
     static constexpr uint32_t kMaxNumVolumeGrids = 256;
     static constexpr uint32_t kMaxNumGigaVoxels = 256; // A scene has only a handful of GigaVoxel terrains
 
@@ -148,28 +141,12 @@ public:
         static_mesh_slots_.FreeSlot(idx);
     }
 
-    FORCEINLINE uint32_t AllocateVolumePrimitivesSlot () {
-        return volume_primitives_slots_.AllocateSlot();
-    }
-    FORCEINLINE void FreeVolumePrimitivesSlot (uint32_t idx) {
-        assert(idx < kMaxNumVolumePrimitiveGroups);
-        volume_primitives_slots_.FreeSlot(idx);
-    }
-
     FORCEINLINE uint32_t AllocateVolumeGridSlot () {
         return volume_grid_slots_.AllocateSlot();
     }
     FORCEINLINE void FreeVolumeGridSlot (uint32_t idx) {
         assert(idx < kMaxNumVolumeGrids);
         volume_grid_slots_.FreeSlot(idx);
-    }
-
-    FORCEINLINE uint32_t AllocateGaussianRadianceFieldSlot () {
-        return gaussian_radiance_field_slots_.AllocateSlot();
-    }
-    FORCEINLINE void FreeGaussianRadianceFieldSlot (uint32_t idx) {
-        assert(idx < kMaxNumGaussianRadianceFields);
-        gaussian_radiance_field_slots_.FreeSlot(idx);
     }
 
     FORCEINLINE uint32_t AllocateGigaVoxelSlot () {
@@ -226,15 +203,8 @@ public:
         return mesh_light_instance_triangle_uber_buffer_.Raw();
     }
 
-    FORCEINLINE RHIBuffer * GetVolumePrimitivesHeaderBuffer() const {
-        return volume_primitives_header_buffer_.Raw();
-    }
-
     FORCEINLINE RHIBuffer * GetVolumeGridHeaderBuffer() const {
         return volume_grid_header_buffer_.Raw();
-    }
-    FORCEINLINE RHIBuffer * GetGaussianRadianceFieldHeaderBuffer() const {
-        return gaussian_radiance_field_header_buffer_.Raw();
     }
     FORCEINLINE RHIBuffer * GetGigaVoxelHeaderBuffer() const {
         return giga_voxel_header_buffer_.Raw();
@@ -292,10 +262,6 @@ protected:
     TRef<RHIBuffer> static_mesh_header_buffer_;
     // A static mesh description heap (single block buffer heap), use the offsets in static mesh header to access the descriptions.
     TRef<DeviceUberBufferInterface> static_mesh_description_uber_buffer_;
-    // A buffer holding the volume primitives headers. (VolumePrimitivesHeader)
-    TRef<RHIBuffer> volume_primitives_header_buffer_;
-    // A buffer holding the Gaussian Radiance Field headers.
-    TRef<RHIBuffer> gaussian_radiance_field_header_buffer_;
     // A buffer holding the volume grid headers. (VolumeGridHeader)
     TRef<RHIBuffer> volume_grid_header_buffer_;
     // A buffer holding the GigaVoxel headers. (GigaVoxelHeader)
@@ -319,7 +285,7 @@ protected:
     std::map<uint32_t, TRef<DeviceUberBufferInterface>> custom_uber_buffers_;
 
     // Slot allocators for bindless resources
-    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_primitives_slots_, volume_grid_slots_, gaussian_radiance_field_slots_, giga_voxel_slots_;
+    SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_grid_slots_, giga_voxel_slots_;
 
     // Central delayed destruction ring.
     // Stores resources whose refcount already reached 0 and are safe to delete after N frames.

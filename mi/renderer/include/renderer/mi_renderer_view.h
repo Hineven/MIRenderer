@@ -102,26 +102,16 @@ struct RendererView {
     // Mipmapped G_flags_ using bitwise OR, has the same dimensions as hzb_
     TRef<RDGTexture> or_flags_;
 
-    // Shared outputs from volume primitive rendering
-    TRef<VolumePrimitivesViewData> volume_primitives_;
     // Shared world radiance cache data
     TRef<WorldRadianceCacheData> world_cache_;
     // Shared data for light sampling
     TRef<LightStructureData> light_structure_;
     // Shared data from diffuse direct lighting (mesh)
     TRef<DiffuseDirectLightingData> diffuse_direct_lighting_;
-    // Shared data from volume direct lighting
-    TRef<VolumeDirectLightingData> volume_direct_lighting_;
     // Shared data from volume grid direct lighting
     TRef<VolumeGridDirectLightingData> volume_grid_direct_lighting_;
     // Shared data from diffuse indirect lighting (mesh)
     TRef<DiffuseIndirectLightingData> diffuse_indirect_lighting_;
-    // Shared data from volume indirect lighting
-    TRef<VolumeIndirectLightingData> volume_indirect_lighting_;
-    // TODO:Shared data from volume grid indirect lighting
-    // TRef<VolumeGridIndirectLightingData> volume_grid_indirect_lighting_data_;
-    // Shared data from GRF rendering
-    TRef<GaussianRadianceFieldViewData> grf_;
     // Shared data from denoiser
     TRef<DenoiserViewData> denoiser_;
 

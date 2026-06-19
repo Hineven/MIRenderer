@@ -21,27 +21,21 @@
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_renderer_view.h>
 #include <renderer/mi_material.h>
-#include <renderer/mi_gaussian_radiance_field.h>
 
 #include "core/util/debug_prof.h"
 #include "core/util/unordered_hashing.h"
 #include "rdg/rdg_helper.h"
 #include "renderer/mi_cvar.h"
 #include "renderer/mi_noise.h"
-#include "renderer/mi_volume_primitives.h"
 #include "rdg/rdg_ray_tracing_registry.h"
 #include "renderer/r_denoiser.h"
 #include "renderer/r_diffuse_direct_lighting.h"
 #include "renderer/r_diffuse_indirect_lighting.h"
 #include "include/renderer/r_geometry_buffer.h"
-#include "renderer/r_gaussian_radiance_field.h"
 #include "renderer/r_internal_common.h"
 #include "renderer/r_light_structure.h"
 #include "renderer/r_persistent.h"
-#include "renderer/r_volume_direct_lighting.h"
-#include "renderer/r_volume_indirect_lighting.h"
 #include "renderer/r_volume_grid_direct_lighting.h"
-#include "renderer/r_volume_primitives.h"
 #include "renderer/r_world_radiance_cache.h"
 
 #include "dlss/ngx_context.h"
@@ -181,7 +175,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     // Update scene AABB
     view->scene_->UpdateAABB();
 
-    // If the scene contains any VolumePrimitives / VolumeGrid, enable related rendering.
+    // If the scene contains any VolumeGrid, enable related rendering.
     // Defaults to false and is flipped on below when a volume renderable is found.
     // When false, volume_*_lighting_ stay null and downstream passes (denoiser/composition)
     // bind them as nullptr -> treated as pure-black. No unwritten-texture flicker.
@@ -213,7 +207,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
                 renderable_hash = e->GetHash();
                 if (e->IsVisible()) {
                     visible_renderable_indices.push_back(e->GetIndex());
-                    if (e->GetType() == RenderableType::kVolumeGridInstance || e->GetType() == RenderableType::kVolumePrimitivesInstance) {
+                    if (e->GetType() == RenderableType::kVolumeGridInstance) {
                         should_render_volume_lighting = true;
                     }
                 }
@@ -325,7 +319,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     // Prepare GigaVoxel VC per-chunk draw commands
     Render_PrepareGigaVoxel(view, builder);
     // Prepare gaussian radiance fields (instance offsets/counts, renderable list, filter draw commands)
-    Render_PrepareGaussianRadianceFields(view, builder);
 
     // Pre-allocate RDG resources that may be used among multiple lighting stages
     view->CreateSharedResources(builder, should_render_volume_lighting);
@@ -530,7 +523,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
         queue.ClearTexture(view->g_buffer_->G_flags_->GetRHI(), {});
         // G_transmittance uses multiplicative semantics: 1.0 = no extinction (light passes through),
         // 0.0 = fully blocked. The identity/default for any pixel without volume is 1.0.
-        // The ONLY writer of this texture is DrawVolumePrimitives (which assigns absolute
         // transmittance, never accumulates), and that pass is skipped when the scene has no volume
         // data. Clearing to 0 (the previous default) left every pixel at transmittance 0 in that
         // case, so LightingComposition computed Radiance = SurfaceRadiance * 0 = 0 -> black screen.
@@ -559,15 +551,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
     // Volume primitives
     if (should_render_volume_lighting) {
-        Render_DrawVolumePrimitives(view, builder);
-    }
-    // When should_render_volume_lighting is false, volume_primitives_ is null.
-    // Downstream shaders read null binding as zero → "no volume".
-    if (view->volume_primitives_) {
-        exports->RegisterResource("volume_sample_color", view->volume_primitives_->volume_sample_color_.Raw());
-        exports->RegisterResource("volume_sample_linear_depth", view->volume_primitives_->volume_sample_linear_depth_.Raw());
-        exports->RegisterResource("volume_density", view->volume_primitives_->G_volume_density_.Raw());
-        exports->RegisterResource("volume_color", view->volume_primitives_->G_volume_color_.Raw());
     }
 
     // HiZ
@@ -575,10 +558,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
     // Diffuse direct
     Render_ComputeDiffuseDirectLighting(view, builder);
-
-    // Volume direct (must run before denoiser prefilter which reads VolumeDirectLightingTexture)
-    if (should_render_volume_lighting)
-        Render_ComputeVolumeDirectLighting(view, builder);
 
     // Volume grid direct
     if (should_render_volume_lighting)
@@ -592,14 +571,10 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
         // Indirect lighting
         Render_UpdateDiffuseIndirectLighting(view, builder);
-        if (should_render_volume_lighting)
-            Render_UpdateVolumeIndirectLighting(view, builder);
 
         Render_UpdateHashGridCache(view, builder);
 
         Render_FinishDiffuseIndirectLighting(view, builder);
-        if (should_render_volume_lighting)
-            Render_FinishVolumeIndirectLighting(view, builder);
     }
 
     // Stage light structure history
@@ -612,12 +587,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     }
     if (view->diffuse_indirect_lighting_) {
         exports->RegisterResource("diffuse_indirect", view->diffuse_indirect_lighting_->radiance.Raw());
-    }
-    if (view->volume_direct_lighting_) {
-        exports->RegisterResource("volume_direct", view->volume_direct_lighting_->radiance.Raw());
-    }
-    if (view->volume_indirect_lighting_) {
-        exports->RegisterResource("volume_indirect", view->volume_indirect_lighting_->radiance.Raw());
     }
     if (view->denoiser_) {
         exports->RegisterResource("denoised_diffuse_direct", view->denoiser_->denoised_diffuse_direct_lighting.Raw());
@@ -643,7 +612,7 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     else if (type == 5)
         Render_DrawToOutput(view, builder, view->diffuse_direct_lighting_->radiance.Raw());
     else if (type == 6)
-        Render_DrawToOutput(view, builder, view->volume_direct_lighting_ ? view->volume_direct_lighting_->radiance.Raw() : nullptr);
+        Render_DrawToOutput(view, builder, nullptr);
     else if (type == 7)
         Render_DrawToOutput(view, builder, view->diffuse_indirect_lighting_->radiance.Raw());
     else if (type == 8) {
@@ -657,7 +626,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     Helpers::Clear(builder, view->overlay_.Raw(), glm::vec4(0,0,0,0));
 
     // Draw gaussian radiance fields directly to overlay (color does not participate in lighting composition)
-    Render_DrawGaussianRadianceFields(view, builder);
 
     // Extra pass for forward rendering (drawn to overlay)
     Render_DrawForwardStaticMeshes(view, builder);
@@ -665,10 +633,6 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
     // Composite overlay to backbuffer (sRGB conversion)
     Render_DrawToOutput(view, builder, view->overlay_.Raw(), DrawToOutputMappingType::eLinearToSRGB);
 
-    if (view->grf_) {
-        exports->RegisterResource("grf_depth", view->grf_->stochastic_rendering_depth_.Raw());
-        exports->RegisterResource("grf_opacity", view->grf_->stochastic_rendering_opacity_.Raw());
-    }
     if (view->persistent_data_ && view->persistent_data_->path_tracing_film_) {
         exports->RegisterResource("path_tracing_film", view->persistent_data_->path_tracing_film_.Raw());
     }

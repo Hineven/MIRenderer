@@ -10,9 +10,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include "renderer/mi_texture.h"
-#include "util/gaussian_radiance_field_loader.h"
 #include "util/gltf_loader.h"
-#include "util/volprims_loader.h"
 #include "util/texture_loader.h"
 #include "util/openvdb_loader.h"
 #include "util/renderable_node.h"
@@ -510,33 +508,11 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
                 loading_format = "gltf";
             } else if (ext == ".vdb") {
                 loading_format = "vdb";
-            } else if (ext == ".ply") {
-                loading_format = "volume_primitives";
-                MI_WARN("Object '{}' is .ply without loading_format. Defaulting to volume_primitives.", object_path.string());
             }
         }
 
         if (loading_format == "gltf") {
             load_gltf_object(object_path, object_transform, gltf_load_options, scene_nodes);
-            return;
-        }
-
-        if (loading_format == "volume_primitives" || loading_format == "volprims") {
-            TRef<VolumePrimitives> volprims;
-            float percentage = 1.0f;
-            if (object_j.contains("percentage") && object_j["percentage"].is_number()) {
-                percentage = object_j["percentage"].get<float>();
-            } else if (metadata.contains("percentage") && metadata["percentage"].is_number()) {
-                percentage = metadata["percentage"].get<float>();
-            }
-
-            if (!VolumePrimitivesLoader::LoadPLY(object_path, *resource_allocator_, volprims, percentage) || !volprims) {
-                MI_WARN("Failed to load volume primitives from '{}'.", object_path.string());
-                return;
-            }
-            volprims->UpdateOnDevice(resource_allocator_.Raw());
-            auto instance = VolumePrimitivesInstance::Create(scene_.get(), volprims.Raw(), object_transform);
-            register_non_gltf_renderable(instance.Raw());
             return;
         }
 
@@ -555,24 +531,6 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
             return;
         }
 
-        if (loading_format == "grf" || loading_format == "gaussian_radiance_field") {
-            TRef<GaussianRadianceField> field;
-            float percentage = 1.0f;
-            if (object_j.contains("percentage") && object_j["percentage"].is_number()) {
-                percentage = object_j["percentage"].get<float>();
-            } else if (metadata.contains("percentage") && metadata["percentage"].is_number()) {
-                percentage = metadata["percentage"].get<float>();
-            }
-
-            if (!GaussianRadianceFieldLoader::LoadPLY(object_path, *resource_allocator_, field, percentage) || !field) {
-                MI_WARN("Failed to load Gaussian Radiance Field from '{}'.", object_path.string());
-                return;
-            }
-            field->UpdateOnDevice(resource_allocator_.Raw());
-            auto instance = GaussianRadianceFieldInstance::Create(scene_.get(), field.Raw(), object_transform);
-            register_non_gltf_renderable(instance.Raw());
-            return;
-        }
 
         if (loading_format == "vdb" || loading_format == "volume_grid") {
             OpenVDBLoader::LoadOptions options {};

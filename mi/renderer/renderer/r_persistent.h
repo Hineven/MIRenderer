@@ -49,10 +49,8 @@ struct RendererViewPersistentData {
     uint32_t frame_index_ {};
 
     TRef<GeometryBufferPersistentData> g_buffer_data_;
-    TRef<VolumePrimitivesViewPersistentData> volume_primitives_view_persistent_data_;
     TRef<DenoiserPersistentData> denoiser_persistent_data_;
     TRef<DiffuseIndirectLightingPersistentData> diffuse_indirect_lighting_persistent_data_;
-    TRef<VolumeIndirectLightingPersistentData> volume_indirect_lighting_persistent_data_;
     TRef<LightStructurePersistentData> light_structure_persistent_data_;
     TRef<HashGridPersistentData> hash_grid_persistent_data_;
 

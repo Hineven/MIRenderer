@@ -11,7 +11,6 @@
 #include "renderer/mi_giga_voxel.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
-#include "renderer/mi_volume_primitives.h"
 #include "renderer/mi_volume_texture.h"
 #include "renderer/mi_volume_grid.h"
 #include "r_view_common.h"
@@ -69,8 +68,6 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumeGridHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
@@ -121,10 +118,6 @@ void Renderer::FillPathTracerCommonParams(
     params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
     params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
     params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
-    params->VolumePrimitivesHeaderBuffer = builder.Import(device_allocator_->GetVolumePrimitivesHeaderBuffer());
-    params->PrimitiveData = builder.Import(
-        device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
-    );
     params->VolumeGridHeaderBuffer = builder.Import(device_allocator_->GetVolumeGridHeaderBuffer());
     params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
     params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());

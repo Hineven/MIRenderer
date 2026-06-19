@@ -307,7 +307,7 @@ void RegisterViewerCommands(ViewerApp& app) {
             if (ext == ".gltf" || ext == ".glb") {
                 ok = app.LoadGLTFAbsolute(p, &indices);
             } else if (ext == ".ply") {
-                ok = app.LoadPLYAsGRFAbsolute(p, indices);
+                MI_WARN("ViewerApp: .ply loading (volume_primitives/gaussian_radiance_field) is no longer supported.");
             } else {
                 MI_WARN("ViewerApp: unsupported extension '{}' for load", ext);
                 return;

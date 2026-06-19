@@ -27,8 +27,6 @@
 #include "rdg/rdg_shader.h"
 #include "util/texture_loader.h"
 #include "util/gltf_loader.h"
-#include "util/volprims_loader.h"
-#include "util/gaussian_radiance_field_loader.h"
 
 #include "3d_viewer.h"
 #include "core/util/command_line.h"
@@ -55,8 +53,6 @@ const ViewerFrameExportBinding* FindViewerFrameExportBinding(std::string_view na
         {"color",                   {"tonemapped_color", "radiance", PixelFormatType::kB8G8R8A8_SRGB, true}},
         {"overlay",                 {"overlay", nullptr, PixelFormatType::kUnknown, false}},
         {"depth",                   {"depth", nullptr, PixelFormatType::kUnknown, false}},
-        {"grf_depth",               {"grf_depth", nullptr, PixelFormatType::kUnknown, false}},
-        {"grf_opacity",             {"grf_opacity", nullptr, PixelFormatType::kUnknown, false}},
         {"transmittance",           {"transmittance", nullptr, PixelFormatType::kUnknown, false}},
         {"visibility",              {"visibility", nullptr, PixelFormatType::kUnknown, false}},
         {"normal",                  {"normal", nullptr, PixelFormatType::kUnknown, false}},
@@ -82,8 +78,6 @@ const std::vector<std::string>& GetSupportedViewerFrameExportNames() {
         result.emplace_back("color");
         result.emplace_back("overlay");
         result.emplace_back("depth");
-        result.emplace_back("grf_depth");
-        result.emplace_back("grf_opacity");
         result.emplace_back("transmittance");
         result.emplace_back("visibility");
         result.emplace_back("normal");
@@ -1431,32 +1425,6 @@ bool ViewerApp::LoadGLTFAbsolute(const std::filesystem::path& path, std::vector<
         }
     }
     return true;
-}
-
-bool ViewerApp::LoadPLYAsGRFAbsolute(const std::filesystem::path& path, std::vector<uint32_t>& out_renderable_indices) {
-    if (!scene_ || !resource_allocator_) return false;
-    WaitForSceneMutation();
-    FlushSceneDelayedDestruction();
-    if (path.empty() || !std::filesystem::exists(path)) {
-        MI_WARN("LoadPLYAbsolute: file not found '{}'.", path.string());
-        return false;
-    }
-
-    TRef<GaussianRadianceField> grf;
-    if (!GaussianRadianceFieldLoader::LoadPLY(path, *resource_allocator_, grf)) {
-        MI_WARN("LoadPLYAbsolute: failed to load PLY '{}'.", path.string());
-        return false;
-    }
-    grf->UpdateOnDevice(resource_allocator_.Raw());
-    auto inst = GaussianRadianceFieldInstance::Create(scene_.get(), grf.Raw(), Transform::FromMatrix(glm::mat4(1.0f)));
-    if (inst) {
-        out_renderable_indices.push_back(inst->GetIndex());
-        auto node = renderable_node_registry_->Create(path.filename().string());
-        node->SetRenderable(inst.Raw());
-        node->UpdateWorldTransform();
-        RegisterLoadedScene(path.filename().string(), { node });
-    }
-    return inst.IsValid();
 }
 
 bool ViewerApp::RemoveRenderableNodeByIndex(uint32_t renderable_node_index) {

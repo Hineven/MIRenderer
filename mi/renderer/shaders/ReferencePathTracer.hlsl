@@ -12,8 +12,6 @@
 #include "headers/RadiometryAndColorSpace.hlsl"
 #include "headers/Random.hlsl"
 #include "headers/GeometryBuffers.hlsl"
-#include "headers/VolumePrimitive.hlsl"
-#include "headers/VolumePrimitivesLib.hlsl"
 #include "headers/VolumeGridLib.hlsl"
 #include "headers/Scattering.hlsl"
 #include "headers/MaterialEvaluation.hlsl"
@@ -30,8 +28,6 @@ StructuredBuffer<MeshLightInstanceTriangle> LCH_MeshLightInstanceTriangleBuffer;
 StructuredBuffer<MeshLightInstance> LCH_MeshLightInstanceBuffer;
 StructuredBuffer<MeshLight> LCH_MeshLightBuffer;
 
-StructuredBuffer<PackedVolumePrimitive> PrimitiveData;
-StructuredBuffer<VolumePrimitivesHeader> VolumePrimitivesHeaderBuffer;
 StructuredBuffer<VolumeGridHeader> VolumeGridHeaderBuffer;
 
 // Top level AS
@@ -113,32 +109,6 @@ bool TraceDirectionalLightVisibility(float3 Origin, float3 GeometryNormal, float
     return Payload.ShadowVisible != 0;
 }
 
-// Remove Volume Primitive from Overlapping Volume Primitive List.
-void RemoveVolumePrimitive(
-    uint PrimitiveIndex,
-    uint InstanceIndex,
-    inout uint Count,
-    inout uint VolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES],
-    inout uint InstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES]
-) {
-    bool bFound = false;
-    for (int i = 0; i < min(Count, MAX_OVERLAPPING_VOLUME_PRIMITIVES); i++)
-    {
-        if ((!bFound) && (VolumePrimitiveIndices[i] == PrimitiveIndex) && (InstanceIndices[i] == InstanceIndex))
-        {
-            bFound = true;
-        }
-        if (bFound && i < MAX_OVERLAPPING_VOLUME_PRIMITIVES - 1)
-        {
-            VolumePrimitiveIndices[i] = VolumePrimitiveIndices[i + 1];
-            InstanceIndices[i] = InstanceIndices[i + 1];
-        }
-    }
-    if (bFound && Count > 0)
-    {
-        Count--;
-    }
-}
 
 // Remove Volume Grid from Overlapping Volume Gird List.
 void RemoveVolumeGrid(
@@ -167,46 +137,6 @@ void RemoveVolumeGrid(
     }
 }
 
-// Sample a Possible Scatter Position in a List of VolumePrimitive.
-// Used when Ray's Start Position is in Volume Primitives.
-float ResampleVolumePrimitives (
-    RayDesc Ray,
-    uint InstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES],
-    uint VolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES],
-    uint NumVolumePrimitives,
-    inout Random rng,
-    out float3 OutSampledColor
-) {
-    float SampledDistance = Infinity;
-    OutSampledColor = 0;
-    [unroll(MAX_OVERLAPPING_VOLUME_PRIMITIVES)]
-    for(int i = 0; i < min(NumVolumePrimitives, MAX_OVERLAPPING_VOLUME_PRIMITIVES); i++) {
-        VolumePrimitive Primitive = UnpackVolumePrimitive(PrimitiveData[VolumePrimitiveIndices[i]]);
-        float3x4 ToObject = RenderableInverseTransformBuffer[InstanceIndices[i]];
-        float2 lr = 0;
-        float Dist = 0;
-        bool bIntersected = RayIntersect(Ray.Origin, Ray.Direction, Primitive, ToObject, lr, Dist);
-        if(bIntersected) {
-            float TMin = Ray.TMin;
-            lr.x = max(lr.x, TMin);
-            lr.y = max(lr.y, TMin);
-            RayVolumePrimitiveIntersection Distr = (RayVolumePrimitiveIntersection)0;
-            Distr.l = lr.x;
-            Distr.r = lr.y;
-            Distr.Density = Primitive.Opacity * VolumePrimitiveRayDecay(Dist);
-            Distr.Color   = Primitive.Color;
-            // Make a volume sample
-            float Distance = SampleRayVolumePrimitiveIntersection(Distr, rng.rand());
-            // Compare with current sample
-            if(Distance < SampledDistance) {
-                // Pick the closer one
-                SampledDistance = Distance;
-                OutSampledColor = Primitive.Color;
-            }
-        }
-    }
-    return SampledDistance;
-}
 
 // Delta Tracking for Volume Grid
 // Returns the distance to the scattering event, or Infinity if passed through.
@@ -483,11 +413,6 @@ void ReferencePathTracerRaygen() {
     float  PrimaryHitRoughness = 0;
     bool   PrimaryHitSurface = false;
 #endif
-    // --- State: Primitives ---
-    uint OverlappingVolumePrimitivesInstanceIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
-    uint OverlappingVolumePrimitiveIndices[MAX_OVERLAPPING_VOLUME_PRIMITIVES];
-    uint CurrentOverlappingVolumePrimitiveCount = 0;
-
     // --- State: Grids ---
     uint OverlappingVolumeGridsInstanceIndices[MAX_OVERLAPPING_VOLUME_GRIDS];
     uint OverlappingVolumeGridIndices[MAX_OVERLAPPING_VOLUME_GRIDS];
@@ -506,24 +431,6 @@ void ReferencePathTracerRaygen() {
         float3 TempColor = float3(0, 0, 0);
 
 #ifndef ENABLE_DLSS_RR
-        // 1. Sample Volume Primitives
-        if (CurrentOverlappingVolumePrimitiveCount > 0)
-        {
-            float t = ResampleVolumePrimitives(
-                Ray,
-                OverlappingVolumePrimitivesInstanceIndices,
-                OverlappingVolumePrimitiveIndices,
-                CurrentOverlappingVolumePrimitiveCount,
-                rng,
-                TempColor
-            );
-            if (t < T_VolumeScatter)
-            {
-                T_VolumeScatter = t;
-                VolumeSampledColor = TempColor;
-            }
-        }
-
         // 2. Sample Volume Grids
         if (CurrentOverlappingVolumeGridCount > 0)
         {
@@ -726,35 +633,6 @@ void ReferencePathTracerRaygen() {
                     );
                 }
             }
-            else
-            {
-                // --- Processing Volume Primitives ---
-                uint InstanceVolumePrimitiveIndex = Payload.HitPrimitiveIndex / 20;
-                VolumePrimitivesInstanceHeader Renderable = GetVolumePrimitivesInstanceHeader(RenderableHeaderBuffer[InstanceIndex]);
-                uint VolumePrimitiveOffset = VolumePrimitivesHeaderBuffer[Renderable.VolumePrimitivesIndex].PrimitiveOffset;
-                uint PrimitiveIndex = VolumePrimitiveOffset + InstanceVolumePrimitiveIndex;
-
-                if (!Payload.bIsFrontFace)
-                {
-                    // Back hit: ray is entering the volume.
-                    if (CurrentOverlappingVolumePrimitiveCount < MAX_OVERLAPPING_VOLUME_PRIMITIVES)
-                    {
-                        OverlappingVolumePrimitiveIndices[CurrentOverlappingVolumePrimitiveCount] = PrimitiveIndex;
-                        OverlappingVolumePrimitivesInstanceIndices[CurrentOverlappingVolumePrimitiveCount] = InstanceIndex;
-                        CurrentOverlappingVolumePrimitiveCount++;
-                    }
-                }
-                else
-                {
-                    // Front hit: ray is leaving the volume.
-                    RemoveVolumePrimitive(
-                        PrimitiveIndex,
-                        InstanceIndex,
-                        CurrentOverlappingVolumePrimitiveCount,
-                        OverlappingVolumePrimitiveIndices,
-                        OverlappingVolumePrimitivesInstanceIndices
-                    );
-                }
             }
 #endif
             // Forward a bit.
@@ -882,25 +760,7 @@ void ReferencePathTracerAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayloa
     }
 }
 
-// VolumePrimitives anyhit: shadow rays should not hit volume primitives
-[shader("anyhit")]
-void ReferencePathTracerAnyHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    if (Payload.Mode != 1) {
-        return;
-    }
-    IgnoreHit();
-}
 
-// GaussianRadianceField anyhit: shadow rays should not hit gaussian RF
-[shader("anyhit")]
-void ReferencePathTracerAnyHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                   BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    if (Payload.Mode != 1) {
-        return;
-    }
-    IgnoreHit();
-}
 
 // VolumeGrid anyhit: shadow rays should not hit volume grids
 [shader("anyhit")]
@@ -945,17 +805,7 @@ void ReferencePathTracerClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPa
     ReferencePathTracerRecordClosestHit(Payload, Attributes);
 }
 
-[shader("closesthit")]
-void ReferencePathTracerClosestHit_VolumePrimitives(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    ReferencePathTracerRecordClosestHit(Payload, Attributes);
-}
 
-[shader("closesthit")]
-void ReferencePathTracerClosestHit_GaussianRadianceField(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    ReferencePathTracerRecordClosestHit(Payload, Attributes);
-}
 
 [shader("closesthit")]
 void ReferencePathTracerClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,

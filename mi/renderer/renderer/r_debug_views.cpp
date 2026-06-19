@@ -12,10 +12,8 @@
 #include "renderer/mi_giga_voxel.h"
 #include "renderer/mi_scene.h"
 #include "renderer/mi_texture.h"
-#include "renderer/mi_volume_primitives.h"
 #include "renderer/r_geometry_buffer.h"
 #include "r_view_common.h"
-#include "r_volume_primitives.h"
 #include "r_world_radiance_cache.h"
 #include "r_debug.h"
 #include "r_light_structure.h"
@@ -64,8 +62,6 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, MaterialHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, VolumePrimitivesHeaderBuffer)
-        SHADER_RESOURCE_PARAMETER(StructuredBuffer, PrimitiveData)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
@@ -202,10 +198,6 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->VertexBuffer = builder.Import(device_allocator_->GetVertexUberBuffer()->GetRHI());
         params->IndexBuffer = builder.Import(device_allocator_->GetIndexUberBuffer()->GetRHI());
         params->MaterialHeaderBuffer = builder.Import(device_allocator_->GetMaterialHeaderBuffer());
-        params->VolumePrimitivesHeaderBuffer = builder.Import(device_allocator_->GetVolumePrimitivesHeaderBuffer());
-        params->PrimitiveData = builder.Import(
-            device_allocator_->GetCustomUberBuffer(VolumePrimitives::kVolumePrimitiveAllocatorUberBufferIndex)->GetRHI()
-        );
         params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
         params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
         params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
@@ -310,9 +302,6 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
     } else if (CVar_DebugViewMode.Get() == 2) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_world_cache_output_.Raw(), view->debug_output_.Raw());
     } else if (CVar_DebugViewMode.Get() == 3) {
-        if (view->volume_primitives_) {
-            Helpers::CopyTexture(builder, view->volume_primitives_->volume_representative_depth_and_variation_.Raw(), view->debug_output_.Raw());
-        }
     } else if (CVar_DebugViewMode.Get() == 4) {
         Helpers::CopyTexture(builder, view->debug_views_.visualize_spatial_positions_output_.Raw(), view->debug_output_.Raw());
     }
