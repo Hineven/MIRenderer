@@ -128,18 +128,24 @@ void GigaVoxel::ReleaseChunkSlotAndPartition(GigaVoxelChunkId id) {
 void GigaVoxel::RebuildCachedInstances() {
     cached_instances_.clear();
     cached_instances_.reserve(chunk_handles_.size());
+    // RenderableIndex of this asset's GigaVoxelInstance (scene slot). All chunk
+    // instances share this index; the per-chunk identity is carried in the high
+    // bits of instance_custom_index as a global chunk-header index.
+    uint32_t renderable_index = instance_ ? instance_->GetIndex() : 0;
     for (const auto & [id, h] : chunk_handles_) {
         auto bit = chunk_BLAS_.find(id);
         if (bit == chunk_BLAS_.end() || !bit->second) continue;  // BLAS not built yet
-        auto sit = chunk_slots_.find(id);
-        if (sit == chunk_slots_.end()) continue;
         auto pit = chunk_partitions_.find(id);
         RenderableBLASInstance inst {};
         inst.blas = bit->second.Raw();
         inst.transform = {};  // identity (vertices are world-space)
-        // customIndex = shellIndex(8) | chunkSlot(16) << 8
-        inst.instance_custom_index = static_cast<uint32_t>(shell_index_)
-                                   | (static_cast<uint32_t>(sit->second) << 8);
+        // customIndex encodes: [GlobalChunkIndex:12bits][RenderableIndex:20bits].
+        // RenderableIndex lets the RT shader resolve the asset (RenderableHeader
+        // -> GigaVoxelIndex -> per-asset header + atlas); GlobalChunkIndex lets
+        // it resolve the chunk's geometry span (GigaVoxelChunkHeaderBuffer).
+        mi_assert(h.chunk_header_index < 4096, "GlobalChunkIndex exceeds 12bit RT encoding.");
+        uint32_t chunk_idx = h.chunk_header_index & 0xFFFu;
+        inst.instance_custom_index = (renderable_index & 0xFFFFFu) | (chunk_idx << 20);
         inst.instance_mask = 0xFF;
         inst.instance_contribution_to_hit_group_index =
             GigaVoxelInstance::kClassRegistrator.GetClassIndex();
@@ -195,7 +201,11 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
     // Indices are chunk-local (0-based). Each chunk's BLAS references its own
     // vertex/index span (offset+count from the handle), so NO heap-global
     // rebias is applied (unlike the old single-merged-BLAS arrangement).
-    GetGlobalGeometryHeap()->UpdateChunk(h, vertices, indices);
+    // Upload to GPU immediately (geometry + per-chunk header row) so the data
+    // is valid before any BLAS build / raster / RT access this frame.
+    auto & upload_queue = RHI::Get().GetGraphicsCommandQueue();
+    GetGlobalGeometryHeap()->UpdateChunk(h, vertices, indices, &upload_queue);
+    GetGlobalGeometryHeap()->UpdateChunkHeader(h, &upload_queue);
     chunk_handles_[id] = h;
     // Assign a per-asset slot (for customIndex) + a global partition id (for
     // PTLAS). Both are stable until this chunk is removed.
@@ -293,14 +303,15 @@ void GigaVoxel::CompactChunks() {
     // Slots stay (chunk identity unchanged); partitions stay (still live).
     // Only the geometry moved, so just mark every re-allocated chunk BLAS dirty.
 
-    // Re-allocate contiguously (no fragmentation). No queue here: GPU upload is
-    // reconciled on the next BuildDirtyChunkBLAS_Async. Pass null queue to
-    // UpdateChunk for CPU-only writes.
+    // Re-allocate contiguously (no fragmentation). Upload geometry + chunk
+    // header to GPU immediately so the moved data is valid before next use.
+    auto & compact_queue = RHI::Get().GetGraphicsCommandQueue();
     for (auto & s : snaps) {
         GigaVoxelChunkHandle h = GetGlobalGeometryHeap()->AllocateChunk(
             static_cast<uint32_t>(s.v.size()), static_cast<uint32_t>(s.i.size()));
         mi_assert(h.valid, "CompactChunks re-alloc failed (should always fit).");
-        GetGlobalGeometryHeap()->UpdateChunk(h, s.v, s.i, /*queue*/ nullptr);
+        GetGlobalGeometryHeap()->UpdateChunk(h, s.v, s.i, &compact_queue);
+        GetGlobalGeometryHeap()->UpdateChunkHeader(h, &compact_queue);
         chunk_handles_[s.id] = h;
         blas_dirty_.insert(s.id);  // new offset -> BLAS needs rebuild
     }

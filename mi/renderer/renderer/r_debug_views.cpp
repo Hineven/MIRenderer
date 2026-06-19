@@ -69,6 +69,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutput)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
@@ -208,6 +209,8 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
         params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
         params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
+
+        params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
         params->RWDebugOutput = view->debug_views_.visualize_ray_tracing_scene_output_.Raw();
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

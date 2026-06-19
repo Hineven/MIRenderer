@@ -159,8 +159,7 @@ void TraceShadowRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayloa
 [shader("anyhit")]
 void TraceShadowRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
     if(Intersection.Opacity < 0.1f) { IgnoreHit(); }
 }
 [shader("closesthit")]

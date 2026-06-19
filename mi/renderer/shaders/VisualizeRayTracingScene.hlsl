@@ -213,8 +213,7 @@ void VisualizeRayTracingSceneAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPa
 [shader("closesthit")]
 void VisualizeRayTracingSceneClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
     Payload.Color = float4(Intersection.Albedo, Intersection.Opacity);
     Payload.bSurfaceHit = true;
     Payload.THit = RayTCurrent();

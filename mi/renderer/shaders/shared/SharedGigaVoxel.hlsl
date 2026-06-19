@@ -6,29 +6,56 @@
 MI_SHARED_HLSL_BEGIN
 
 // =============================================================================
-// GigaVoxel device-side header.
+// GigaVoxel device-side header (per-asset).
 //
 // One GigaVoxel asset occupies a single bindless slot in the
 // DeviceBindlessResourceAllocator; this header (stored in the
-// GigaVoxelHeaderBuffer, indexed by the slot) points the shader at the
-// GigaVoxel's slice of the global vertex/index uber buffers and its
-// block-texture atlas bindless index.
+// GigaVoxelHeaderBuffer, indexed by the slot) carries the asset-level
+// block-texture atlas bindless index (the atlas is process-global, shared by
+// ALL GigaVoxel assets, like an MC resource pack). Per-chunk geometry
+// addressing lives in GigaVoxelChunkHeader (one row per chunk, indexed by a
+// global chunk index).
 //
-// Offsets follow the same convention as StaticMeshHeader / GeometryHeader:
+// NOTE: VertexOffset/IndexOffset/VertexCount/IndexCount below are the legacy
+// Phase-1 merged-range fields (covering the whole heap watermark) and are now
+// SUPERSEDED by the per-chunk GigaVoxelChunkHeader for geometry addressing.
+// They remain for backward compatibility / transitional code; new code should
+// resolve geometry via GigaVoxelChunkHeaderBuffer. AtlasBindlessIndex is the
+// only field still actively read here.
+// =============================================================================
+struct GigaVoxelHeader {
+    uint VertexOffset;        // [deprecated, see GigaVoxelChunkHeader] legacy merged-range offset
+    uint IndexOffset;         // [deprecated, see GigaVoxelChunkHeader] legacy merged-range offset
+    uint VertexCount;         // [deprecated, see GigaVoxelChunkHeader] legacy merged-range count
+    uint IndexCount;          // [deprecated, see GigaVoxelChunkHeader] legacy merged-range count
+    uint AtlasBindlessIndex;  // Bindless descriptor index of the 4096^2 block atlas (SRV, global)
+    uint3 _Padding;
+};
+
+// =============================================================================
+// GigaVoxelChunkHeader (per-chunk, pure geometry addressing).
+//
+// One row per chunk, stored in the global GigaVoxelChunkHeaderBuffer (owned by
+// GigaVoxelGeometryHeap), indexed by a stable global chunk index assigned at
+// AllocateChunk time. This is what lets a visibility-buffer pixel / RT hit
+// recover the chunk's vertex/index span in the global uber buffers from just a
+// chunk index — the RT instance_custom_index encodes (RenderableIndex | chunk
+// index << 20), and the visibility-buffer payload stores the chunk index.
+//
+// Offsets follow the same convention as elsewhere:
 //   - VertexOffset is measured in elements (sizeof(GigaVoxelVertex) units).
 //   - IndexOffset  is measured in elements (sizeof(uint32) units).
 //
-// NOTE: This is the Phase-1 skeleton layout. A single GigaVoxel currently
-// merges all uploaded chunk geometry into one vertex/index range + one BLAS.
-// Per-chunk BLAS / streaming / culling will extend this in later phases.
+// Atlas is intentionally NOT here: the block atlas is process-global (one
+// MC-resource-pack), carried per-asset in GigaVoxelHeader.AtlasBindlessIndex.
 // =============================================================================
-struct GigaVoxelHeader {
+struct GigaVoxelChunkHeader {
     uint VertexOffset;        // Offset into the vertex uber buffer (in elements)
     uint IndexOffset;         // Offset into the index  uber buffer (in elements)
     uint VertexCount;
     uint IndexCount;
-    uint AtlasBindlessIndex;  // Bindless descriptor index of the 4096^2 block atlas (SRV)
-    uint3 _Padding;
+    uint _Padding0;
+    uint _Padding1;
 };
 
 // =============================================================================

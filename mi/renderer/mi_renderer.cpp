@@ -322,6 +322,8 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
     // Prepare static mesh draw commands
     Render_PrepareStaticMeshes(view, builder);
+    // Prepare GigaVoxel VC per-chunk draw commands
+    Render_PrepareGigaVoxel(view, builder);
     // Prepare gaussian radiance fields (instance offsets/counts, renderable list, filter draw commands)
     Render_PrepareGaussianRadianceFields(view, builder);
 
@@ -550,6 +552,10 @@ TRef<RendererExports> Renderer::Render(RendererView * view, RenderGraphBuilder &
 
     // Static meshes
     Render_DrawDeferredStaticMeshes(view, builder);
+    // GigaVoxel VC chunks (layers on top of static-mesh visibility/depth, kLoad).
+    Render_DrawGigaVoxelVC(view, builder);
+    // Unified visibility decode -> G-buffer (resolves static mesh + GigaVoxel).
+    Render_DecodeVisibility(view, builder);
 
     // Volume primitives
     if (should_render_volume_lighting) {

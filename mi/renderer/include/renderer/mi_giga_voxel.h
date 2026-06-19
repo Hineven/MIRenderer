@@ -177,6 +177,13 @@ public:
     FORCEINLINE bool IsEmpty() const { return chunk_handles_.empty(); }
     FORCEINLINE AABB GetAABB() const { return aabb_; }
 
+    // Read-only access to the chunk id->handle map. Used by the renderer to
+    // build per-chunk raster draw commands (each handle carries the chunk's
+    // vertex/index span + global chunk-header index in the global heap).
+    const std::unordered_map<GigaVoxelChunkId, GigaVoxelChunkHandle> & GetChunkHandles() const {
+        return chunk_handles_;
+    }
+
     // True if any chunk's BLAS needs (re)building. Polled by
     // GigaVoxelInstance::Update to decide whether to emit the BLAS-build pass.
     FORCEINLINE bool HasDirtyBLAS() const { return !blas_dirty_.empty(); }

@@ -44,11 +44,16 @@ class RHICommandQueueGraphics;
 // =============================================================================
 
 // Identity of one chunk's geometry inside the heap (element units).
+// `chunk_header_index` is a stable global index (0..N) into the per-chunk
+// header buffer (GigaVoxelChunkHeaderBuffer). It is assigned once at
+// AllocateChunk and freed at FreeChunk, and lets a visibility-buffer pixel /
+// RT hit recover this chunk's vertex/index span from the GPU side.
 struct GigaVoxelChunkHandle {
     uint32_t vertex_offset {};  // element offset into the vertex heap
     uint32_t vertex_count  {};
     uint32_t index_offset  {};  // element offset into the index heap
     uint32_t index_count   {};
+    uint32_t chunk_header_index {0xFFFFFFFFu};  // index into GigaVoxelChunkHeaderBuffer
     bool     valid         {false};
 
     FORCEINLINE bool IsEmpty() const { return vertex_count == 0 || index_count == 0; }
@@ -104,9 +109,19 @@ public:
     // ---- GPU access (for BLAS build / visibility buffer binding) ----
     RHIBuffer * GetGPUVertexBuffer() const { return gpu_vertex_buffer_.Raw(); }
     RHIBuffer * GetGPUIndexBuffer()  const { return gpu_index_buffer_.Raw(); }
+    // Per-chunk geometry header buffer (GigaVoxelChunkHeader rows, indexed by
+    // GigaVoxelChunkHandle::chunk_header_index). Bound by the renderer as
+    // GigaVoxelChunkHeaderBuffer SRV for visibility-buffer decode + RT hits.
+    RHIBuffer * GetGPUChunkHeaderBuffer() const { return gpu_chunk_header_buffer_.Raw(); }
     // Highest occupied offset+1 (element units). Use to bound BLAS builds.
     size_t GetVertexHighWatermark() const { return vertex_allocator_.GetHighWatermark(); }
     size_t GetIndexHighWatermark()  const { return index_allocator_.GetHighWatermark(); }
+
+    // ---- Per-chunk header update ----
+    // Write one chunk's header row (CPU mirror + GPU upload of just that row).
+    // No-op if chunk_header_index is invalid. Called by GigaVoxel after a
+    // chunk's geometry is uploaded/updated.
+    void UpdateChunkHeader(const GigaVoxelChunkHandle & handle, RHICommandQueueGraphics * queue = nullptr);
 
     // ---- CPU mirror (read-only, for tests / debugging) ----
     std::span<const VertexT> GetCPUVertices() const { return cpu_vertices_; }
@@ -115,6 +130,12 @@ public:
 private:
     void EnsureGPUVertexCapacity(size_t needed_elements, RHICommandQueueGraphics * queue);
     void EnsureGPUIndexCapacity (size_t needed_elements, RHICommandQueueGraphics * queue);
+    void EnsureGPUChunkHeaderCapacity(size_t needed_rows, RHICommandQueueGraphics * queue);
+
+    // Allocate / free a global chunk-header index (slot into the per-chunk
+    // header buffer). O(1) via a free list.
+    uint32_t AllocateChunkHeaderSlot();
+    void FreeChunkHeaderSlot(uint32_t slot);
 
     RHIBufferUsageFlags vertex_usage_;
     RHIBufferUsageFlags index_usage_;
@@ -129,6 +150,15 @@ private:
     TRef<RHIBuffer> gpu_index_buffer_;
     size_t gpu_vertex_capacity_ {};
     size_t gpu_index_capacity_  {};
+
+    // Per-chunk geometry header buffer (GigaVoxelChunkHeader rows).
+    // cpu_chunk_headers_ is indexed by chunk_header_index; the GPU buffer is a
+    // 1:1 mirror. Capacity grows on demand (see EnsureGPUChunkHeaderCapacity).
+    std::vector<GigaVoxelChunkHeader> cpu_chunk_headers_;
+    TRef<RHIBuffer> gpu_chunk_header_buffer_;
+    size_t gpu_chunk_header_capacity_ {};
+    // Free list for chunk-header slots (recycled on FreeChunk).
+    std::vector<uint32_t> chunk_header_free_slots_;
 };
 
 MI_NAMESPACE_END

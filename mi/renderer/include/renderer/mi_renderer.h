@@ -104,6 +104,15 @@ protected:
         RHIDrawIndexedIndirectCommand indirect_command;
     };
 
+    // Per-chunk draw header for GigaVoxel VC raster. Each non-empty chunk across
+    // all visible GigaVoxelInstance renderables becomes one draw; the renderer
+    // uploads (renderable_index, global_chunk_index) per draw for the VS.
+    struct GigaVoxelDrawHeader {
+        uint32_t renderable_index;
+        uint32_t global_chunk_index;
+        RHIDrawIndexedIndirectCommand indirect_command;
+    };
+
     void Render_DrawSky (RendererView * view, RenderGraphBuilder & builder) ;
     void Render_PrepareStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
@@ -111,6 +120,15 @@ protected:
     void Render_DrawDeferredStaticMeshes (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
+
+    // GigaVoxel VC chunk visibility-buffer rasterization.
+    void Render_PrepareGigaVoxel(RendererView * view, RenderGraphBuilder & builder);
+    void Render_DrawGigaVoxelVC(RendererView * view, RenderGraphBuilder & builder);
+
+    // Unified visibility-buffer decode -> G-buffer. Runs AFTER both the static
+    // mesh deferred raster and the GigaVoxel VC raster (both write G_visibility_
+    // + G_depth_) so one decode dispatch resolves every renderable type.
+    void Render_DecodeVisibility(RendererView * view, RenderGraphBuilder & builder);
     void Render_DrawVolumePrimitives (
         RendererView * view, RenderGraphBuilder & builder
     ) ;
@@ -288,6 +306,15 @@ protected:
             // Used to index the renderable & material for draw commands, used for viewport rasterization
             TRef<RDGBuffer> d_static_mesh_draw_command_renderable_descriptor_indices;
         } deferred_static_meshes, forward_static_meshes;
+
+        struct GigaVoxelVC {
+            std::vector<GigaVoxelDrawHeader> draw_invocation_sorting_headers;
+            std::vector<RHIDrawIndexedIndirectCommand> draw_indirect_commands;
+            // Indirect draw commands (device side), bound to a single global index uber buffer.
+            TRef<RDGBuffer> d_draw_commands;
+            // (RenderableIndex, GlobalChunkIndex) per draw, for the VS.
+            TRef<RDGBuffer> d_renderable_chunk_indices;
+        } giga_voxel_vc;
 
         struct GaussianRadianceFields {
             std::vector<RHIDrawIndirectCommand> draw_indirect_commands; // one per instance for Filter pass

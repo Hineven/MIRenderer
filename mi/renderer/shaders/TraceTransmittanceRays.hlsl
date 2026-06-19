@@ -332,8 +332,7 @@ void TraceTransmittanceRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_Ra
 [shader("anyhit")]
 void TraceTransmittanceRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint Instance = InstanceID() & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(Instance, PrimitiveIndex(), Attributes.barycentrics);
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
     // Intersection.Opacity is the atlas alpha; transmittance loss = (1 - opacity).
     Payload.Transmittance *= saturate(1.f - Intersection.Opacity);
     if(Intersection.Opacity < 0.99f) {

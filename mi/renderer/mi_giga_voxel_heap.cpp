@@ -26,6 +26,9 @@ static constexpr std::initializer_list<uint32_t> kVertexClasses = {
 static constexpr std::initializer_list<uint32_t> kIndexClasses = {
     64u, 128u, 256u, 512u, 1024u, 2048u, 4096u, 8192u
 };
+// Initial capacity of the per-chunk header buffer (rows). Grows on demand.
+// ~3000 active chunks per the streaming budget, so 4096 is a comfortable start.
+static constexpr size_t kInitialChunkHeaderCapacity = 4096;
 
 GigaVoxelGeometryHeap::GigaVoxelGeometryHeap(RHIBufferUsageFlags vertex_usage,
                                              RHIBufferUsageFlags index_usage,
@@ -36,20 +39,49 @@ GigaVoxelGeometryHeap::GigaVoxelGeometryHeap(RHIBufferUsageFlags vertex_usage,
       vertex_allocator_(initial_vertex_capacity, kVertexClasses),
       index_allocator_(initial_index_capacity, kIndexClasses),
       gpu_vertex_capacity_(initial_vertex_capacity),
-      gpu_index_capacity_(initial_index_capacity) {
+      gpu_index_capacity_(initial_index_capacity),
+      gpu_chunk_header_capacity_(kInitialChunkHeaderCapacity) {
     cpu_vertices_.resize(initial_vertex_capacity);
     cpu_indices_.resize(initial_index_capacity);
     gpu_vertex_buffer_ = RHI::Get().CreateBuffer(
         initial_vertex_capacity * sizeof(VertexT), vertex_usage_);
     gpu_index_buffer_ = RHI::Get().CreateBuffer(
         initial_index_capacity * sizeof(IndexT), index_usage_);
+    // Per-chunk header buffer (SRV-bound). Grows on demand.
+    cpu_chunk_headers_.resize(kInitialChunkHeaderCapacity);
+    gpu_chunk_header_buffer_ = RHI::Get().CreateBuffer(
+        {kInitialChunkHeaderCapacity * sizeof(GigaVoxelChunkHeader),
+         RHIBufferUsageFlagBits::kStorage});
+}
+
+uint32_t GigaVoxelGeometryHeap::AllocateChunkHeaderSlot() {
+    if (!chunk_header_free_slots_.empty()) {
+        uint32_t slot = chunk_header_free_slots_.back();
+        chunk_header_free_slots_.pop_back();
+        return slot;
+    }
+    uint32_t slot = static_cast<uint32_t>(cpu_chunk_headers_.size());
+    cpu_chunk_headers_.push_back(GigaVoxelChunkHeader{});
+    return slot;
+}
+
+void GigaVoxelGeometryHeap::FreeChunkHeaderSlot(uint32_t slot) {
+    if (slot == 0xFFFFFFFFu) return;
+    // Clear the row so a stale read returns an empty (zero) chunk.
+    if (slot < cpu_chunk_headers_.size()) {
+        cpu_chunk_headers_[slot] = GigaVoxelChunkHeader{};
+    }
+    chunk_header_free_slots_.push_back(slot);
 }
 
 GigaVoxelChunkHandle GigaVoxelGeometryHeap::AllocateChunk(uint32_t vertex_count, uint32_t index_count) {
     GigaVoxelChunkHandle h{};
+    // A chunk header slot is allocated even for empty chunks so the handle has
+    // a valid chunk_header_index the caller can uniformly track; the row just
+    // stores zero counts.
+    h.chunk_header_index = AllocateChunkHeaderSlot();
     if (vertex_count == 0 || index_count == 0) {
-        // Empty chunk: still return a valid zero-range handle so callers can
-        // track it uniformly. No allocator interaction.
+        // Empty chunk: valid handle, zero-range geometry.
         h.valid = true;
         return h;
     }
@@ -58,6 +90,8 @@ GigaVoxelChunkHandle GigaVoxelGeometryHeap::AllocateChunk(uint32_t vertex_count,
     if (v_off == SizeClassAllocator::kInvalidOffset || i_off == SizeClassAllocator::kInvalidOffset) {
         if (v_off != SizeClassAllocator::kInvalidOffset) vertex_allocator_.Free(v_off, vertex_count);
         if (i_off != SizeClassAllocator::kInvalidOffset) index_allocator_.Free(i_off, index_count);
+        FreeChunkHeaderSlot(h.chunk_header_index);
+        h.chunk_header_index = 0xFFFFFFFFu;
         return h; // valid == false
     }
     h.vertex_offset = static_cast<uint32_t>(v_off);
@@ -110,9 +144,38 @@ void GigaVoxelGeometryHeap::UpdateChunk(const GigaVoxelChunkHandle & handle,
 }
 
 void GigaVoxelGeometryHeap::FreeChunk(const GigaVoxelChunkHandle & handle) {
-    if (!handle.valid || handle.IsEmpty()) return;
-    vertex_allocator_.Free(handle.vertex_offset, handle.vertex_count);
-    index_allocator_.Free(handle.index_offset, handle.index_count);
+    if (!handle.valid) {
+        // Even invalid handles may carry an allocated header slot (allocate
+        // succeeded but geometry allocate failed and was already freed). Best
+        // effort: recycle the slot if present.
+        if (handle.chunk_header_index != 0xFFFFFFFFu) FreeChunkHeaderSlot(handle.chunk_header_index);
+        return;
+    }
+    if (!handle.IsEmpty()) {
+        vertex_allocator_.Free(handle.vertex_offset, handle.vertex_count);
+        index_allocator_.Free(handle.index_offset, handle.index_count);
+    }
+    if (handle.chunk_header_index != 0xFFFFFFFFu) FreeChunkHeaderSlot(handle.chunk_header_index);
+}
+
+void GigaVoxelGeometryHeap::UpdateChunkHeader(const GigaVoxelChunkHandle & handle,
+                                              RHICommandQueueGraphics * queue) {
+    if (!handle.valid || handle.chunk_header_index == 0xFFFFFFFFu) return;
+    if (handle.chunk_header_index >= cpu_chunk_headers_.size()) return;
+    GigaVoxelChunkHeader row{};
+    row.VertexOffset = handle.vertex_offset;
+    row.IndexOffset  = handle.index_offset;
+    row.VertexCount  = handle.vertex_count;
+    row.IndexCount   = handle.index_count;
+    cpu_chunk_headers_[handle.chunk_header_index] = row;
+    if (queue) {
+        EnsureGPUChunkHeaderCapacity(handle.chunk_header_index + 1, queue);
+        Helpers::Upload_Async(*queue,
+            RHIBufferSpan{gpu_chunk_header_buffer_.Raw(),
+                          handle.chunk_header_index * sizeof(GigaVoxelChunkHeader),
+                          sizeof(GigaVoxelChunkHeader)},
+            &row, sizeof(row));
+    }
 }
 
 std::vector<GigaVoxelGeometryHeap::ChunkRelocation>
@@ -228,6 +291,24 @@ void GigaVoxelGeometryHeap::EnsureGPUIndexCapacity(size_t needed_elements, RHICo
             Helpers::Upload_Async(*queue,
                 RHIBufferSpan{gpu_index_buffer_.Raw(), 0, bytes},
                 cpu_indices_.data(), bytes);
+        }
+    }
+}
+
+void GigaVoxelGeometryHeap::EnsureGPUChunkHeaderCapacity(size_t needed_rows, RHICommandQueueGraphics * queue) {
+    if (needed_rows <= gpu_chunk_header_capacity_) return;
+    size_t new_cap = gpu_chunk_header_capacity_;
+    while (new_cap < needed_rows) new_cap *= 2;
+    if (cpu_chunk_headers_.size() < new_cap) cpu_chunk_headers_.resize(new_cap);
+    gpu_chunk_header_buffer_ = RHI::Get().CreateBuffer(
+        {new_cap * sizeof(GigaVoxelChunkHeader), RHIBufferUsageFlagBits::kStorage});
+    gpu_chunk_header_capacity_ = new_cap;
+    if (queue) {
+        size_t bytes = cpu_chunk_headers_.size() * sizeof(GigaVoxelChunkHeader);
+        if (bytes) {
+            Helpers::Upload_Async(*queue,
+                RHIBufferSpan{gpu_chunk_header_buffer_.Raw(), 0, bytes},
+                cpu_chunk_headers_.data(), bytes);
         }
     }
 }

@@ -17,6 +17,7 @@
 #include <renderer/mi_resource_allocator.h>
 #include <renderer/mi_static_mesh.h>
 #include <renderer/mi_buffer_heap.h>
+#include <renderer/mi_giga_voxel.h>
 #include <renderer/r_geometry_buffer.h>
 
 #include "r_view_common.h"
@@ -178,6 +179,12 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, IndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, VertexBuffer)
 
+        // GigaVoxel buffers (for the GigaVoxel decode branch).
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
+
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
         SHADER_RESOURCE_PARAMETER(SamplerState, PointWrapSampler)
 
@@ -301,40 +308,49 @@ void Renderer::Render_DrawDeferredStaticMeshes(RendererView *view, RenderGraphBu
             raster_pass->AddBufferH(ctx.deferred_static_meshes.d_static_draw_commands.Raw(), RHIGPUAccessFlagBits::kIndirectCommandRead);
         }
     }
-    // Decode G-Buffers from visibility
+    // NOTE: visibility decode is now a separate pass (Render_DecodeVisibility),
+    // called by the renderer AFTER GigaVoxel VC rasterization so both static
+    // mesh and GigaVoxel visibility are resolved in one decode dispatch.
+}
+
+void Renderer::Render_DecodeVisibility(RendererView * view, RenderGraphBuilder & builder) {
+    RDGSectionGuard section_guard(builder, "Render_DecodeVisibility");
+    auto shader = RDGShaderLibrary::Get().GetShader<DecodeVisibilityShader>();
+    auto tiles_x = DivideAndRoundUp(view->film_width_, DecodeVisibilityShader::kTileSize);
+    auto tiles_y = DivideAndRoundUp(view->film_height_, DecodeVisibilityShader::kTileSize);
+    auto params = builder.Allocate<DecodeVisibilityShader::Params>();
     {
-        auto shader = RDGShaderLibrary::Get().GetShader<DecodeVisibilityShader>();
-        auto tiles_x = DivideAndRoundUp(view->film_width_, DecodeVisibilityShader::kTileSize);
-        auto tiles_y = DivideAndRoundUp(view->film_height_, DecodeVisibilityShader::kTileSize);
-        auto params = builder.Allocate<DecodeVisibilityShader::Params>();
-        {
-            params->View = view->view_common_params_;
-            params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
-            params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
-            params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
-            // History transforms are allocated in the device allocator
-            params->PrevRenderableTransformBuffer = builder.Import(device_allocator_->GetPrevRenderableTransformBuffer());
-            params->RenderableHashBuffer = builder.Import(device_allocator_->GetRenderableHashBuffer());
-            params->PrevRenderableHashBuffer = builder.Import(device_allocator_->GetPrevRenderableHashBuffer());
-            params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->static_mesh_description_uber_buffer_->GetRHI());
-            params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->static_mesh_header_buffer_.Raw());
-            params->GeometryHeaderBuffer = builder.Import(device_allocator_->geometry_header_buffer_.Raw());
-            params->MaterialHeaderBuffer = builder.Import(device_allocator_->material_header_buffer_.Raw());
-            params->IndexBuffer = builder.Import(device_allocator_->index_uber_buffer_->GetRHI());
-            params->VertexBuffer = builder.Import(device_allocator_->vertex_uber_buffer_->GetRHI());
-            params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
-            params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
-            params->RWAlbedo = view->g_buffer_->G_albedo_.Raw();
-            params->RWNormal = view->g_buffer_->G_normal_.Raw();
-            params->RWGeometryNormal = view->g_buffer_->G_geometry_normal_.Raw();
-            params->RWEmission = view->g_buffer_->G_emission_.Raw();
-            params->RWMetallicRoughness = view->g_buffer_->G_metallic_roughness_.Raw();
-            params->RWMotionVector = view->g_buffer_->G_motion_vector_.Raw();
-            params->VisibilityTexture = view->g_buffer_->G_visibility_.Raw();
-            params->DepthTexture = view->g_buffer_->G_depth_.Raw();
-        }
-        Helpers::AddComputePass(builder, shader, params, tiles_x, tiles_y);
+        params->View = view->view_common_params_;
+        params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
+        params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
+        params->RenderableNormalTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_normal_transforms_.Raw());
+        // History transforms are allocated in the device allocator
+        params->PrevRenderableTransformBuffer = builder.Import(device_allocator_->GetPrevRenderableTransformBuffer());
+        params->RenderableHashBuffer = builder.Import(device_allocator_->GetRenderableHashBuffer());
+        params->PrevRenderableHashBuffer = builder.Import(device_allocator_->GetPrevRenderableHashBuffer());
+        params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->static_mesh_description_uber_buffer_->GetRHI());
+        params->StaticMeshHeaderBuffer = builder.Import(device_allocator_->static_mesh_header_buffer_.Raw());
+        params->GeometryHeaderBuffer = builder.Import(device_allocator_->geometry_header_buffer_.Raw());
+        params->MaterialHeaderBuffer = builder.Import(device_allocator_->material_header_buffer_.Raw());
+        params->IndexBuffer = builder.Import(device_allocator_->index_uber_buffer_->GetRHI());
+        params->VertexBuffer = builder.Import(device_allocator_->vertex_uber_buffer_->GetRHI());
+        // GigaVoxel buffers (for the GigaVoxel decode branch).
+        params->GigaVoxelHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelHeaderBuffer());
+        params->GigaVoxelVertexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUVertexBuffer());
+        params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
+        params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
+        params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
+        params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
+        params->RWAlbedo = view->g_buffer_->G_albedo_.Raw();
+        params->RWNormal = view->g_buffer_->G_normal_.Raw();
+        params->RWGeometryNormal = view->g_buffer_->G_geometry_normal_.Raw();
+        params->RWEmission = view->g_buffer_->G_emission_.Raw();
+        params->RWMetallicRoughness = view->g_buffer_->G_metallic_roughness_.Raw();
+        params->RWMotionVector = view->g_buffer_->G_motion_vector_.Raw();
+        params->VisibilityTexture = view->g_buffer_->G_visibility_.Raw();
+        params->DepthTexture = view->g_buffer_->G_depth_.Raw();
     }
+    Helpers::AddComputePass(builder, shader, params, tiles_x, tiles_y);
 }
 
 class DrawForwardStaticMeshesShader : public RDGShader {
