@@ -1,11 +1,11 @@
 # MIRenderer
 一个用于研究实时光照的RTGI和渲染框架，以及一些周边功能实现。
 ![cover2](images/cover.png)
-* 还在持续修修补补之中，存在不少bug！
+* 这是nightly branch，不保证可以运行;
 ## 安装和编译
 ### 安装外部依赖
 * 仅支持NVIDIA RTX显卡。
-* `Vulkan SDK`: https://vulkan.lunarg.com/ ，安装最新的Vulkan SDK，请使用1.4.300更高版本，较低版本会出现意外错误。
+* `Vulkan SDK`: https://vulkan.lunarg.com/ ，安装最新的Vulkan SDK，请使用1.4.350以及以上版本，较低版本会出现意外错误。
 ### 安装Vcpkg
 安装vcpkg包管理器，并使用包管理器与`CMake`集成，然后安装以下依赖：
 * `glm`
@@ -26,7 +26,6 @@
 * `zeromq`
 * `cppzmq`
 # 使用
-请`fork`此仓库并创建自己的分支。完成开发后，可以创建`pull request`将代码合并到主分支，并在我们之间共享你的实现！
 ### Target列表
 * `3d_viewer`：一个简单的3D模型查看器，目前功能较为匮乏，是主要的测试程序，可以编辑其代码来加载不同模型。
 * `core`：公共核心库。
