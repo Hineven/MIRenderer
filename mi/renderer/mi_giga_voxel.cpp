@@ -33,34 +33,17 @@ DeviceGigaVoxel::~DeviceGigaVoxel() {
 }
 
 // ================================ GigaVoxel =================================
-// Global atlas state (process-wide; shared by all GigaVoxel assets).
-TRef<Texture> GigaVoxel::global_atlas_;
-uint32_t GigaVoxel::global_atlas_bindless_index_ = 0xFFFFFFFFu;
-// Global geometry heap (process-wide; shared by all GigaVoxel assets).
-TRef<GigaVoxelGeometryHeap> GigaVoxel::global_geometry_heap_;
+// The global atlas + geometry heap now live on DeviceBindlessResourceAllocator
+// (owned there so they are destroyed before the RHI singleton, fixing the exit
+// crash from static-destruction order). These statics are thin delegates.
 
 GigaVoxelGeometryHeap * GigaVoxel::GetGlobalGeometryHeap() {
-    if (!global_geometry_heap_) {
-        // GPU usage flags: vertex/index + storage + AS build input + shader
-        // device address (matches the old per-asset dedicated uber buffers).
-        auto usage = RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kIndex
-                   | RHIBufferUsageFlagBits::kStorage
-                   | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
-                   | RHIBufferUsageFlagBits::kShaderDeviceAddress;
-        global_geometry_heap_ = new GigaVoxelGeometryHeap(usage, usage);
-    }
-    return global_geometry_heap_.Raw();
+    return Renderer::Get().GetDeviceAllocator()->GetGigaVoxelGeometryHeap();
 }
 
-GigaVoxel::GigaVoxel() {
+GigaVoxel::GigaVoxel(): chunk_slots_allocator_(kMaxNumChunkSlots) {
     // Ensure the global geometry heap exists (lazily created on first access).
     (void) GetGlobalGeometryHeap();
-}
-
-GigaVoxel::~GigaVoxel() {
-    // Release the instance first so it unregisters from the scene before the
-    // asset (its back-pointer target) goes away.
-    DetachFromScene();
 }
 
 TRef<GigaVoxel> GigaVoxel::Create() {
@@ -68,116 +51,102 @@ TRef<GigaVoxel> GigaVoxel::Create() {
 }
 
 void GigaVoxel::SetGlobalAtlas(TRef<Texture> atlas) {
-    global_atlas_ = atlas;
-    global_atlas_bindless_index_ = global_atlas_ ? global_atlas_->GetBindlessIndex() : 0xFFFFFFFFu;
-}
-
-TRef<Texture> GigaVoxel::GetGlobalAtlas() {
-    return global_atlas_;
+    Renderer::Get().GetDeviceAllocator()->SetGigaVoxelAtlas(std::move(atlas));
 }
 
 uint32_t GigaVoxel::GetGlobalAtlasBindlessIndex() {
-    return global_atlas_bindless_index_;
+    return Renderer::Get().GetDeviceAllocator()->GetGigaVoxelAtlasBindlessIndex();
 }
 
 void GigaVoxel::SetDirty(bool dirty) {
+    if (tracker_ && !dirty_ && dirty) {
+        tracker_->OnObjectTurnedDirty(this);
+    }
     dirty_ = dirty;
-    if (tracker_ && dirty_) tracker_->OnObjectTurnedDirty(this);
 }
 
-void GigaVoxel::AttachToScene(Scene * scene, Transform transform) {
-    if (instance_) return;  // already attached
-    if (!scene) return;
-    instance_ = GigaVoxelInstance::Create(scene, this, transform);
-}
-
-void GigaVoxel::DetachFromScene() {
-    instance_ = {};  // releases the TRef -> renderable delayed-free path
-}
+void GigaVoxel::BumpInstancesRevision() { ++instances_revision_; }
 
 void GigaVoxel::AcquireChunkSlotAndPartition(GigaVoxelChunkId id) {
     // Per-asset dense slot (for customIndex high 16 bits).
-    uint16_t slot;
-    if (!chunk_slots_free_.empty()) {
-        slot = chunk_slots_free_.back();
-        chunk_slots_free_.pop_back();
-    } else {
-        mi_assert(chunk_slots_.size() < 65536, "GigaVoxel chunk slot overflow (>65535).");
-        slot = static_cast<uint16_t>(chunk_slots_.size());
-    }
+    auto slot = chunk_slots_allocator_.AllocateSlot();
+    mi_assert(slot != UINT32_MAX, "GigaVoxel chunk slot pool exhausted");
     chunk_slots_[id] = slot;
-    // Global partition id (for PTLAS). Bookkeeping-only until PTLAS RHI lands.
-    if (partition_allocator_) {
-        chunk_partitions_[id] = partition_allocator_->AllocatePartition();
+    // For VC chunks, each chunk is a partition.
+    // TODO more types of chunks have different behavior on partitioning
+    if (true) {
+        chunk_partitions_[id] = Renderer::Get().GetDeviceAllocator()->GetPartitionAllocator()->AllocatePartition();
     }
 }
 
 void GigaVoxel::ReleaseChunkSlotAndPartition(GigaVoxelChunkId id) {
-    auto sit = chunk_slots_.find(id);
-    if (sit != chunk_slots_.end()) {
-        chunk_slots_free_.push_back(sit->second);
-        chunk_slots_.erase(sit);
-    }
-    auto pit = chunk_partitions_.find(id);
-    if (pit != chunk_partitions_.end()) {
-        if (partition_allocator_) partition_allocator_->FreePartition(pit->second);
-        chunk_partitions_.erase(pit);
-    }
-}
-
-void GigaVoxel::RebuildCachedInstances() {
-    cached_instances_.clear();
-    cached_instances_.reserve(chunk_handles_.size());
-    // RenderableIndex of this asset's GigaVoxelInstance (scene slot). All chunk
-    // instances share this index; the per-chunk identity is carried in the high
-    // bits of instance_custom_index as a global chunk-header index.
-    uint32_t renderable_index = instance_ ? instance_->GetIndex() : 0;
-    for (const auto & [id, h] : chunk_handles_) {
-        auto bit = chunk_BLAS_.find(id);
-        if (bit == chunk_BLAS_.end() || !bit->second) continue;  // BLAS not built yet
+    chunk_slots_allocator_.FreeSlot(chunk_slots_[id]);
+    chunk_slots_.erase(id);
+    // For VC chunks, each chunk is a partition.
+    if (true) {
         auto pit = chunk_partitions_.find(id);
-        RenderableBLASInstance inst {};
-        inst.blas = bit->second.Raw();
-        inst.transform = {};  // identity (vertices are world-space)
-        // customIndex encodes: [GlobalChunkIndex:12bits][RenderableIndex:20bits].
-        // RenderableIndex lets the RT shader resolve the asset (RenderableHeader
-        // -> GigaVoxelIndex -> per-asset header + atlas); GlobalChunkIndex lets
-        // it resolve the chunk's geometry span (GigaVoxelChunkHeaderBuffer).
-        mi_assert(h.chunk_header_index < 4096, "GlobalChunkIndex exceeds 12bit RT encoding.");
-        uint32_t chunk_idx = h.chunk_header_index & 0xFFFu;
-        inst.instance_custom_index = (renderable_index & 0xFFFFFu) | (chunk_idx << 20);
-        inst.instance_mask = 0xFF;
-        inst.instance_contribution_to_hit_group_index =
-            GigaVoxelInstance::kClassRegistrator.GetClassIndex();
-        inst.partition_index = (pit != chunk_partitions_.end()) ? pit->second : 0;
-        auto ait = chunk_aabbs_.find(id);
-        inst.explicit_aabb = (ait != chunk_aabbs_.end()) ? ait->second : AABB{};
-        cached_instances_.push_back(inst);
-    }
-}
-
-std::span<const RenderableBLASInstance> GigaVoxel::GetPartitionedBLASInstances() const {
-    return std::span<const RenderableBLASInstance>(cached_instances_);
-}
-
-// Recompute the asset AABB from all live chunk vertex data. Called after any
-// chunk topology change (add/remove/clear/compact).
-static void RecomputeAABB(const std::unordered_map<GigaVoxelChunkId, GigaVoxelChunkHandle> & handles,
-                          const GigaVoxelGeometryHeap * heap, AABB & out) {
-    out = AABB::Empty();
-    if (!heap) return;
-    auto verts = heap->GetCPUVertices();
-    for (const auto & [id, h] : handles) {
-        if (!h.valid || h.IsEmpty()) continue;
-        for (uint32_t i = 0; i < h.vertex_count; ++i) {
-            out.Encapsulate(verts[h.vertex_offset + i].position);
+        // TODO more types of chunks have different behavior on partitioning.
+        if (pit != chunk_partitions_.end()) {
+            Renderer::Get().GetDeviceAllocator()->GetPartitionAllocator()->FreePartition(pit->second);
+            chunk_partitions_.erase(pit);
         }
     }
 }
 
+// Epsilon for geometry validity guards. Degenerate triangles (area below this)
+// must NOT reach the renderer layer — the producer (greedy mesher) is contracted
+// to skip zero-area quads. A BLAS built over sliver/coincident triangles can
+// yield a malformed BVH that hard-hangs the driver during the partitioned-TLAS
+// build or traversal. This check is DEBUG-ONLY: in release the contract is
+// trusted (filtering in the renderer would be wasted perf on every upload).
+constexpr float kGigaVoxelGeometryEps = 1e-6f;
+
+// Debug-only contract check: no degenerate (zero/near-zero-area) triangles and
+// no out-of-range indices in the chunk geometry handed to the renderer. The
+// producer must guarantee this; this just catches violations early in debug.
+static void DebugAssertChunkGeometryValid(const std::vector<GigaVoxelVertex> & vertices,
+                                          const std::vector<uint32_t> & indices) {
+#ifndef NDEBUG
+    if (indices.empty() || vertices.empty()) return;
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        uint32_t ia = indices[i], ib = indices[i + 1], ic = indices[i + 2];
+        mi_assert(ia < vertices.size() && ib < vertices.size() && ic < vertices.size(),
+                  "GigaVoxel chunk index out of range (producer bug).");
+        glm::vec3 e1 = vertices[ib].position - vertices[ia].position;
+        glm::vec3 e2 = vertices[ic].position - vertices[ia].position;
+        float area_sq = glm::dot(glm::cross(e1, e2), glm::cross(e1, e2));
+        mi_assert(area_sq >= kGigaVoxelGeometryEps * kGigaVoxelGeometryEps,
+                  "GigaVoxel chunk contains a degenerate triangle (producer must skip zero-area quads).");
+    }
+#endif
+}
+
+// Recompute the full asset world AABB from all live chunks' local AABBs (each
+// translated to world by its chunk origin). This is the last-resort fallback
+// for incremental maintenance; prefer the incremental path in UploadChunk /
+// RemoveChunk. Operates purely on the per-chunk local AABBs + coords (no vertex
+// scan), so it does NOT depend on the geometry heap.
+static void RecomputeAABB(const std::unordered_map<GigaVoxelChunkId, AABB> & local_aabbs,
+                          const std::unordered_map<GigaVoxelChunkId, GigaVoxelChunkCoord> & coords,
+                          AABB & out) {
+    out = AABB::Empty();
+    for (const auto & [id, local] : local_aabbs) {
+        auto cit = coords.find(id);
+        if (cit == coords.end()) continue;
+        glm::vec3 origin = GigaVoxelChunkWorldOrigin(cit->second);
+        out.Encapsulate(AABB(local.min + origin, local.max + origin));
+    }
+}
+
 GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
+                                             GigaVoxelChunkCoord coord,
                                              std::vector<GigaVoxelVertex> vertices,
                                              std::vector<uint32_t> indices) {
+    // Debug-only contract check: the producer (greedy mesher) must not hand the
+    // renderer degenerate triangles — a BLAS over them can hard-hang the driver.
+    // Release builds trust the contract (no per-upload filtering cost).
+    DebugAssertChunkGeometryValid(vertices, indices);
+
     // Replace existing entry first (free old range + drop its BLAS + slot + partition).
     if (auto it = chunk_handles_.find(id); it != chunk_handles_.end()) {
         GetGlobalGeometryHeap()->FreeChunk(it->second);
@@ -198,6 +167,9 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
         SetDirty();
         return h;
     }
+    // Stamp the chunk's grid coord onto the handle (the heap writes the derived
+    // world origin into the per-chunk header row from it).
+    h.coord = coord;
     // Indices are chunk-local (0-based). Each chunk's BLAS references its own
     // vertex/index span (offset+count from the handle), so NO heap-global
     // rebias is applied (unlike the old single-merged-BLAS arrangement).
@@ -207,33 +179,62 @@ GigaVoxelChunkHandle GigaVoxel::UploadChunk(GigaVoxelChunkId id,
     GetGlobalGeometryHeap()->UpdateChunk(h, vertices, indices, &upload_queue);
     GetGlobalGeometryHeap()->UpdateChunkHeader(h, &upload_queue);
     chunk_handles_[id] = h;
+    chunk_coords_[id] = coord;
     // Assign a per-asset slot (for customIndex) + a global partition id (for
     // PTLAS). Both are stable until this chunk is removed.
     AcquireChunkSlotAndPartition(id);
-    // Compute per-chunk world-space AABB from uploaded vertices (for PTLAS explicit_aabb).
-    if (!vertices.empty()) {
-        AABB aabb {};
-        aabb.min = vertices[0].position;
-        aabb.max = vertices[0].position;
-        for (const auto & v : vertices) {
-            aabb.min = glm::min(aabb.min, v.position);
-            aabb.max = glm::max(aabb.max, v.position);
-        }
-        chunk_aabbs_[id] = aabb;
+    // Per-chunk LOCAL AABB from uploaded vertices (vertices are chunk-local, so
+    // this is the bounds in the chunk's local space). The world AABB for PTLAS
+    // explicit_aabb is this translated by the chunk's world origin.
+    AABB chunk_local_aabb {}, old_chunk_world_aabb = AABB::Empty();
+    bool had_old = chunk_aabbs_.count(id) && chunk_coords_.count(id);
+    if (had_old) {
+        glm::vec3 old_origin = GigaVoxelChunkWorldOrigin(chunk_coords_[id]);
+        AABB old_local = chunk_aabbs_[id];
+        old_chunk_world_aabb = AABB(old_local.min + old_origin, old_local.max + old_origin);
     }
+    if (!vertices.empty()) {
+        chunk_local_aabb.min = vertices[0].position;
+        chunk_local_aabb.max = vertices[0].position;
+        for (const auto & v : vertices) {
+            chunk_local_aabb.min = glm::min(chunk_local_aabb.min, v.position);
+            chunk_local_aabb.max = glm::max(chunk_local_aabb.max, v.position);
+        }
+    }
+    chunk_aabbs_[id] = chunk_local_aabb;
+    glm::vec3 origin = GigaVoxelChunkWorldOrigin(coord);
+    AABB chunk_world_aabb(chunk_local_aabb.min + origin, chunk_local_aabb.max + origin);
     // This chunk's geometry changed -> its BLAS must be (re)built.
     blas_dirty_.insert(id);
-    RecomputeAABB(chunk_handles_, GetGlobalGeometryHeap(), aabb_);
-    RebuildCachedInstances();
+    auto min_aabb_border = glm::equal(old_chunk_world_aabb.min, aabb_.min);
+    auto max_aabb_border = glm::equal(old_chunk_world_aabb.max, aabb_.max);
+    if (had_old && (glm::any(min_aabb_border) || glm::any(max_aabb_border))) {
+        auto greater_min = glm::lessThan(old_chunk_world_aabb.min, chunk_world_aabb.min);
+        auto smaller_max = glm::lessThan(chunk_world_aabb.max, old_chunk_world_aabb.max);
+        if (glm::any(min_aabb_border & greater_min) || glm::any(max_aabb_border & smaller_max)) {
+            // The chunk shrank but the old aabb border was shared -> need to
+            // check all other chunks to find the new border (can't just shrink
+            // the asset aabb by the delta).
+            RecomputeAABB(chunk_aabbs_, chunk_coords_, aabb_);
+        } else {
+            // The chunk grew beyond the old aabb border -> just expand the asset aabb.
+            aabb_.Encapsulate(chunk_world_aabb);
+        }
+    } else {
+        // Just incremental update.
+        aabb_.Encapsulate(chunk_world_aabb);
+    }
+    BumpInstancesRevision();
     SetDirty();
     return h;
 }
 
 void GigaVoxel::UpdateChunk(GigaVoxelChunkId id,
+                            GigaVoxelChunkCoord coord,
                             std::vector<GigaVoxelVertex> vertices,
                             std::vector<uint32_t> indices) {
     // UploadChunk already replaces an existing id, so delegate.
-    UploadChunk(id, std::move(vertices), std::move(indices));
+    UploadChunk(id, coord, std::move(vertices), std::move(indices));
 }
 
 void GigaVoxel::RemoveChunk(GigaVoxelChunkId id) {
@@ -242,11 +243,28 @@ void GigaVoxel::RemoveChunk(GigaVoxelChunkId id) {
     GetGlobalGeometryHeap()->FreeChunk(it->second);
     chunk_handles_.erase(it);
     chunk_BLAS_.erase(id);
-    blas_dirty_.erase(id);
+    // World AABB of the removed chunk (local AABB translated by its origin).
+    AABB removed_world_aabb = AABB::Empty();
+    auto lit = chunk_aabbs_.find(id);
+    auto cit = chunk_coords_.find(id);
+    if (lit != chunk_aabbs_.end() && cit != chunk_coords_.end()) {
+        glm::vec3 origin = GigaVoxelChunkWorldOrigin(cit->second);
+        removed_world_aabb = AABB(lit->second.min + origin, lit->second.max + origin);
+    }
     chunk_aabbs_.erase(id);
+    chunk_coords_.erase(id);
+    blas_dirty_.erase(id);
     ReleaseChunkSlotAndPartition(id);
-    RecomputeAABB(chunk_handles_, GetGlobalGeometryHeap(), aabb_);
-    RebuildCachedInstances();
+    {
+        // If the removed chunk touched the asset AABB border, we need to check
+        // all other chunks to find the new border
+        auto min_aabb_border = glm::equal(removed_world_aabb.min, aabb_.min);
+        auto max_aabb_border = glm::equal(removed_world_aabb.max, aabb_.max);
+        if (glm::any(min_aabb_border) || glm::any(max_aabb_border)) {
+            RecomputeAABB(chunk_aabbs_, chunk_coords_, aabb_);
+        }
+    }
+    BumpInstancesRevision();
     SetDirty();
 }
 
@@ -256,18 +274,24 @@ void GigaVoxel::ClearAllChunks() {
     chunk_BLAS_.clear();
     blas_dirty_.clear();
     chunk_aabbs_.clear();
+    chunk_coords_.clear();
+    std::vector<uint32_t> gathered_partitions;
     for (auto & [id, slot] : chunk_slots_) {
         (void)slot;
-        if (partition_allocator_) {
-            auto pit = chunk_partitions_.find(id);
-            if (pit != chunk_partitions_.end()) partition_allocator_->FreePartition(pit->second);
-        }
+        auto pit = chunk_partitions_.find(id);
+        if (pit != chunk_partitions_.end()) gathered_partitions.push_back(pit->second);
+    }
+    std::sort(gathered_partitions.begin(), gathered_partitions.end());
+    gathered_partitions.erase(std::unique(gathered_partitions.begin(), gathered_partitions.end()), gathered_partitions.end());
+    auto palloc = Renderer::Get().GetDeviceAllocator()->GetPartitionAllocator();
+    for (auto e : gathered_partitions) {
+        palloc->FreePartition(e);
     }
     chunk_slots_.clear();
-    chunk_slots_free_.clear();
+    chunk_slots_allocator_.Reset();
     chunk_partitions_.clear();
-    cached_instances_.clear();
     aabb_ = AABB::Empty();
+    BumpInstancesRevision();
     SetDirty();
 }
 
@@ -305,18 +329,20 @@ void GigaVoxel::CompactChunks() {
 
     // Re-allocate contiguously (no fragmentation). Upload geometry + chunk
     // header to GPU immediately so the moved data is valid before next use.
+    // Slots, partitions, coords, and local AABBs all stay (only geometry moved).
     auto & compact_queue = RHI::Get().GetGraphicsCommandQueue();
     for (auto & s : snaps) {
         GigaVoxelChunkHandle h = GetGlobalGeometryHeap()->AllocateChunk(
             static_cast<uint32_t>(s.v.size()), static_cast<uint32_t>(s.i.size()));
         mi_assert(h.valid, "CompactChunks re-alloc failed (should always fit).");
+        h.coord = chunk_coords_[s.id];  // preserve chunk identity -> world origin
         GetGlobalGeometryHeap()->UpdateChunk(h, s.v, s.i, &compact_queue);
         GetGlobalGeometryHeap()->UpdateChunkHeader(h, &compact_queue);
         chunk_handles_[s.id] = h;
         blas_dirty_.insert(s.id);  // new offset -> BLAS needs rebuild
     }
-    RecomputeAABB(chunk_handles_, GetGlobalGeometryHeap(), aabb_);
-    RebuildCachedInstances();
+    // Compaction does not need to recompute AABB
+    BumpInstancesRevision();
     SetDirty();
 }
 
@@ -344,7 +370,7 @@ void GigaVoxel::BuildDirtyChunkBLAS_Async(DeviceBindlessResourceAllocator * allo
         header.IndexOffset  = 0;
         header.VertexCount  = static_cast<uint32_t>(v_count);
         header.IndexCount   = static_cast<uint32_t>(i_count);
-        header.AtlasBindlessIndex = global_atlas_bindless_index_;
+        header.AtlasBindlessIndex = GetGlobalAtlasBindlessIndex();
         Helpers::Upload_Async(queue, alloc->GetGigaVoxelHeaderBuffer(),
                               sizeof(GigaVoxelHeader) * device_giga_voxel_->GetIndex(), header);
     }
@@ -408,9 +434,10 @@ void GigaVoxel::BuildDirtyChunkBLAS_Async(DeviceBindlessResourceAllocator * allo
         }
     }
     blas_dirty_.clear();
-    // Chunks may have gained/lost their BLAS this build -> refresh the cached
-    // instance list so TLAS gathering sees the up-to-date set.
-    RebuildCachedInstances();
+    // Chunks may have gained/lost their BLAS this build -> bump the revision so
+    // attached GigaVoxelInstances lazily rebuild their cached instance list and
+    // TLAS gathering sees the up-to-date set.
+    BumpInstancesRevision();
     SetDirty(false);
 }
 
@@ -422,38 +449,135 @@ void GigaVoxel::UpdateOnDevice(DeviceBindlessResourceAllocator * alloc) {
 
 // ============================ GigaVoxelInstance =============================
 GigaVoxelInstance::GigaVoxelInstance(Scene * scene)
-    : Renderable(RenderableType::kGigaVoxelInstance, scene) {}
+    : Renderable(RenderableType::kGigaVoxelInstance, scene) {
+    // Acquire a slot in the global GigaVoxelInstanceRTHeaderBuffer side table.
+    // The high 8 bits of every per-chunk RT InstanceCustomIndex carry this slot
+    // index so RT hit shaders can resolve the instance's RenderableIndex +
+    // GigaVoxelIndex. Done in the ctor body (after Renderable base init) so
+    // GetDeviceAllocator is reachable.
+    auto * alloc = Renderer::Get().GetDeviceAllocator();
+    rt_header_slot_ = alloc->AllocateGigaVoxelInstanceRTHeaderSlot();
+}
 
-GigaVoxelInstance::~GigaVoxelInstance() = default;
+GigaVoxelInstance::~GigaVoxelInstance() {
+    // Release the RT header slot. GigaVoxelInstance destruction is routed through
+    // the renderable delayed-free path (the scene keeps a TRef until the GPU has
+    // finished consuming the last frame that referenced this instance), so by the
+    // time we get here the GPU is no longer reading our slot row.
+    if (rt_header_slot_ != 0xFFFFFFFFu) {
+        Renderer::Get().GetDeviceAllocator()->FreeGigaVoxelInstanceRTHeaderSlot(rt_header_slot_);
+        rt_header_slot_ = 0xFFFFFFFFu;
+    }
+}
 
-TRef<GigaVoxelInstance> GigaVoxelInstance::Create(Scene * scene, GigaVoxel * giga_voxel, Transform transform) {
+TRef<GigaVoxelInstance> GigaVoxelInstance::Create(Scene * scene, TRef<GigaVoxel> giga_voxel, Transform transform) {
+    if (!scene || !giga_voxel) return {};
     auto inst = TRef(new GigaVoxelInstance(scene));
     if (inst->IsValid()) {
         inst->SetTransform(transform);
         inst->scene_ = scene;
-        inst->giga_voxel_ = giga_voxel;   // non-owning back-pointer; asset owns us
+        inst->giga_voxel_ = std::move(giga_voxel);  // instance owns the asset
         return std::move(inst);
     }
     return {};
 }
 
+void GigaVoxelInstance::RebuildCachedInstances() {
+    cached_instances_.clear();
+    // Recompute this instance's world AABB as the union of per-chunk world
+    // AABBs (chunk-local AABB translated by each chunk's world origin). This is
+    // the culling bounds for the whole terrain instance.
+    AABB instance_world_aabb = AABB::Empty();
+    if (!giga_voxel_) {
+        aabb_ = instance_world_aabb;
+        return;
+    }
+    cached_instances_.reserve(giga_voxel_->chunk_handles_.size());
+    // The per-chunk RT InstanceCustomIndex encodes:
+    //   [rt_header_slot:8 bits 16-23][chunk_header_index:16 bits 0-15]
+    // RT hit shaders decode the high 8 bits -> GigaVoxelInstanceRTHeaderBuffer
+    // slot (owned by this instance, holds RenderableIndex + GigaVoxelIndex), and
+    // the low 16 bits -> GigaVoxelChunkHeaderBuffer row (chunk geometry span).
+    // See SharedGigaVoxel.hlsl (GigaVoxelInstanceRTHeader).
+    const uint32_t rt_header_slot = rt_header_slot_;
+    for (const auto & [id, h] : giga_voxel_->chunk_handles_) {
+        auto bit = giga_voxel_->chunk_BLAS_.find(id);
+        if (bit == giga_voxel_->chunk_BLAS_.end() || !bit->second) continue;  // BLAS not built yet
+        auto pit = giga_voxel_->chunk_partitions_.find(id);
+        auto cit = giga_voxel_->chunk_coords_.find(id);
+        auto lit = giga_voxel_->chunk_aabbs_.find(id);
+        glm::vec3 origin = (cit != giga_voxel_->chunk_coords_.end())
+                               ? GigaVoxelChunkWorldOrigin(cit->second) : glm::vec3(0.0f);
+        AABB local_aabb = (lit != giga_voxel_->chunk_aabbs_.end()) ? lit->second : GigaVoxelChunkLocalAABB();
+        AABB world_aabb(local_aabb.min + origin, local_aabb.max + origin);
+        instance_world_aabb.Encapsulate(world_aabb);
+
+        RenderableBLASInstance inst {};
+        inst.blas = bit->second.Raw();
+        // Vertices are chunk-local: the per-chunk TLAS instance transform carries
+        // the chunk's world placement. RT hit shaders read it via ObjectToWorld3x4().
+        inst.transform = Transform{}.Translated(origin);
+        // customIndex encodes: [rt_header_slot:8bits][chunk_header_index:16bits].
+        // See the layout note at the top of this function.
+        mi_assert(rt_header_slot < 256, "GigaVoxelInstanceRTHeader slot exceeds 8-bit encoding.");
+        mi_assert(h.chunk_header_index < 65536, "chunk_header_index exceeds 16-bit encoding.");
+        inst.instance_custom_index = (rt_header_slot << 16) | (h.chunk_header_index & 0xFFFFu);
+        inst.instance_mask = 0xFF;
+        inst.instance_contribution_to_hit_group_index =
+            GigaVoxelInstance::kClassRegistrator.GetClassIndex();
+        inst.partition_index = (pit != giga_voxel_->chunk_partitions_.end()) ? pit->second : 0;
+        // PTLAS requires a world-space explicit_aabb.
+        inst.explicit_aabb = world_aabb;
+        cached_instances_.push_back(inst);
+    }
+    instances_revision_seen_ = giga_voxel_->instances_revision_;
+    aabb_ = instance_world_aabb;
+}
+
 void GigaVoxelInstance::Update(RendererView * view, RenderGraphBuilder & builder) {
+    // World AABB: the asset maintains it incrementally (union of per-chunk world
+    // AABBs). RebuildCachedInstances also recomputes it; either source is fine.
     aabb_ = giga_voxel_ ? giga_voxel_->GetAABB() : AABB::Empty();
 
     // Build per-chunk BLAS for any dirty chunks. renderer touches RHI directly
     // (the queue buffers commands in submission order from the render thread),
     // so BLAS build commands land before the TLAS gather later this frame.
+    auto * alloc = Renderer::Get().GetDeviceAllocator();
     if (giga_voxel_ && giga_voxel_->HasDirtyBLAS()) {
-        auto * alloc = Renderer::Get().GetDeviceAllocator();
         auto & queue = RHI::Get().GetGraphicsCommandQueue();
         giga_voxel_->BuildDirtyChunkBLAS_Async(alloc, queue);
         SetBLASUpdated(true);
+    }
+
+    // Refresh this instance's row in the GigaVoxelInstanceRTHeaderBuffer side
+    // table every frame. RT hit shaders index it via the high 8 bits of the
+    // per-chunk InstanceCustomIndex to recover {RenderableIndex, GigaVoxelIndex}.
+    // GigaVoxelIndex can change when device_giga_voxel_ is lazily created, so we
+    // re-upload unconditionally (cheap: 8 bytes).
+    if (alloc && rt_header_slot_ != 0xFFFFFFFFu) {
+        GigaVoxelInstanceRTHeader row {};
+        row.RenderableIndex = GetIndex();
+        row.GigaVoxelIndex = (giga_voxel_ && giga_voxel_->GetDeviceGigaVoxel())
+            ? giga_voxel_->GetDeviceGigaVoxel()->GetIndex() : 0xFFFFFFFFu;
+        Helpers::Upload_Async(
+            RHI::Get().GetGraphicsCommandQueue(),
+            RHIBufferSpan{alloc->GetGigaVoxelInstanceRTHeaderBuffer(),
+                          rt_header_slot_ * sizeof(GigaVoxelInstanceRTHeader),
+                          sizeof(GigaVoxelInstanceRTHeader)},
+            &row, sizeof(row));
     }
     SetDirty(false);
 }
 
 std::span<const RenderableBLASInstance> GigaVoxelInstance::GetPartitionedBLASInstances() const {
-    return giga_voxel_ ? giga_voxel_->GetPartitionedBLASInstances() : std::span<const RenderableBLASInstance>{};
+    if (!giga_voxel_) return {};
+    // Lazily rebuild when the asset's instances_revision has advanced since the
+    // last rebuild (chunk topology / BLAS change). Empty revision (UINT64_MAX)
+    // forces the first rebuild.
+    if (instances_revision_seen_ != giga_voxel_->instances_revision_) {
+        const_cast<GigaVoxelInstance *>(this)->RebuildCachedInstances();
+    }
+    return std::span<const RenderableBLASInstance>(cached_instances_);
 }
 
 RenderableHeader GigaVoxelInstance::GetDeviceRenderableHeader() const {
@@ -477,7 +601,10 @@ uint32_t GigaVoxelInstance::GetRayTracedClassIndex() const {
 }
 
 uint32_t GigaVoxelInstance::GetInstanceCustomIndex() const {
-    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
+    // Only the legacy single-BLAS path uses this; the partitioned path encodes
+    // [RTHeaderIndex:8][chunk_header_index:16] in RebuildCachedInstances. Return
+    // the plain RenderableIndex here for consistency with the legacy contract.
+    return GetIndex();
 }
 
 bool GigaVoxelInstance::IsEmpty() const {

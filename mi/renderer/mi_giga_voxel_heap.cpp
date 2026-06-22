@@ -48,6 +48,10 @@ GigaVoxelGeometryHeap::GigaVoxelGeometryHeap(RHIBufferUsageFlags vertex_usage,
     gpu_index_buffer_ = RHI::Get().CreateBuffer(
         initial_index_capacity * sizeof(IndexT), index_usage_);
     // Per-chunk header buffer (SRV-bound). Grows on demand.
+    // cpu_chunk_headers_ is sized to the initial capacity but slot numbering is
+    // owned solely by chunk_header_slot_allocator_ (ExtendableSlotAllocator),
+    // which starts from 0 and is decoupled from this vector's size -- so the
+    // first allocated chunk correctly lands at index 0.
     cpu_chunk_headers_.resize(kInitialChunkHeaderCapacity);
     gpu_chunk_header_buffer_ = RHI::Get().CreateBuffer(
         {kInitialChunkHeaderCapacity * sizeof(GigaVoxelChunkHeader),
@@ -55,23 +59,25 @@ GigaVoxelGeometryHeap::GigaVoxelGeometryHeap(RHIBufferUsageFlags vertex_usage,
 }
 
 uint32_t GigaVoxelGeometryHeap::AllocateChunkHeaderSlot() {
-    if (!chunk_header_free_slots_.empty()) {
-        uint32_t slot = chunk_header_free_slots_.back();
-        chunk_header_free_slots_.pop_back();
-        return slot;
-    }
-    uint32_t slot = static_cast<uint32_t>(cpu_chunk_headers_.size());
-    cpu_chunk_headers_.push_back(GigaVoxelChunkHeader{});
+    uint32_t slot = chunk_header_slot_allocator_.AllocateSlot();
+    if (slot == UINT32_MAX) return 0xFFFFFFFFu;
+    // Keep the CPU mirror at least as large as the issued slot so indexed
+    // writes in UpdateChunkHeader stay in bounds. The allocator is the sole
+    // authority on slot numbering; this resize is purely capacity, never
+    // affecting which slot the next allocation gets.
+    if (cpu_chunk_headers_.size() <= slot) cpu_chunk_headers_.resize(slot + 1);
     return slot;
 }
 
 void GigaVoxelGeometryHeap::FreeChunkHeaderSlot(uint32_t slot) {
     if (slot == 0xFFFFFFFFu) return;
-    // Clear the row so a stale read returns an empty (zero) chunk.
+    // Clear the row so a stale GPU read returns an empty (zero) chunk rather
+    // than the freed chunk's geometry span. (The slot recycler itself does not
+    // touch storage.)
     if (slot < cpu_chunk_headers_.size()) {
         cpu_chunk_headers_[slot] = GigaVoxelChunkHeader{};
     }
-    chunk_header_free_slots_.push_back(slot);
+    chunk_header_slot_allocator_.FreeSlot(slot);
 }
 
 GigaVoxelChunkHandle GigaVoxelGeometryHeap::AllocateChunk(uint32_t vertex_count, uint32_t index_count) {
@@ -167,6 +173,10 @@ void GigaVoxelGeometryHeap::UpdateChunkHeader(const GigaVoxelChunkHandle & handl
     row.IndexOffset  = handle.index_offset;
     row.VertexCount  = handle.vertex_count;
     row.IndexCount   = handle.index_count;
+    // Chunk-local -> world translation. Vertices are chunk-local; the raster /
+    // visibility path reads this to place them into world space. (The RT path
+    // gets the same placement via the per-chunk TLAS instance transform.)
+    row.ChunkOrigin = GigaVoxelChunkWorldOrigin(handle.coord);
     cpu_chunk_headers_[handle.chunk_header_index] = row;
     if (queue) {
         EnsureGPUChunkHeaderCapacity(handle.chunk_header_index + 1, queue);

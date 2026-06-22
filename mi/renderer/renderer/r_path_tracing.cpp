@@ -21,9 +21,10 @@
 #include "r_light_cluster_hiearchy.h"
 #include "dlss/ngx_context.h"
 #include "dlss/dlss_rr_context.h"
+#include "renderer/mi_buffer_heap.h"
 
 MI_NAMESPACE_BEGIN
-static CVar CVar_PathTracingEnableAccumulation(
+    static CVar CVar_PathTracingEnableAccumulation(
     "r.pathtracing.enable_accumulation",
     "Enable accumulation for path tracing.",
     false
@@ -73,6 +74,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelInstanceRTHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceTriangleBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightInstanceBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, LCH_MeshLightBuffer)
@@ -107,7 +109,7 @@ void Renderer::FillPathTracerCommonParams(
     auto directional_light_ub = builder.Allocate<DirectionalLightUniform>();
     FillUniformBufferForDirectionalLight(view, directional_light_ub);
     params->DirectionalLight_UB = directional_light_ub;
-    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_.Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->RenderableTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_transforms_.Raw());
     params->RenderableInverseTransformBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_inverse_transforms_.Raw());
@@ -124,6 +126,7 @@ void Renderer::FillPathTracerCommonParams(
     params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
+    params->GigaVoxelInstanceRTHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelInstanceRTHeaderBuffer());
     params->LCH_MeshLightInstanceTriangleBuffer = builder.Import(device_allocator_->GetMeshLightInstanceTriangleUberBuffer()->GetRHI());
     params->LCH_MeshLightInstanceBuffer = builder.Import(device_allocator_->GetMeshLightInstanceUberBuffer()->GetRHI());
     params->LCH_MeshLightBuffer = builder.Import(device_allocator_->GetMeshLightUberBuffer()->GetRHI());

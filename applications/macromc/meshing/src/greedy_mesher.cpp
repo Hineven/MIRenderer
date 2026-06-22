@@ -236,7 +236,9 @@ void GreedyMesher::MeshFaceDirection(const ChunkData& chunk,
                 corner1[u] = static_cast<float>(iu + h);
                 corner1[v] = static_cast<float>(iv + w);
 
-                // World-space position offset.
+                // Chunk-local position offset (X/Z = 0 at chunk corner; Y = subchunk
+                // base). The chunk's world placement is added on the GPU via
+                // GigaVoxelChunkHeader.ChunkOrigin / the per-chunk TLAS transform.
                 glm::vec3 wor = glm::vec3(block_origin);
 
                 // Per-face texture: resolve the atlas tile for the face we are
@@ -267,8 +269,19 @@ void GreedyMesher::MeshFaceDirection(const ChunkData& chunk,
                 out_mesh.vertices.emplace_back(p11, normal, uv_base, uv_scale, tex);
                 out_mesh.vertices.emplace_back(p01, normal, uv_base, uv_scale, tex);
 
-                // Winding: ensure CCW when viewed from the front (normal side).
-                if (normal_sign > 0) {
+                // Winding: ensure CCW when viewed from the front (normal side),
+                // so backface culling / front-face determination is correct.
+                //
+                // The base winding (0,1,2),(0,2,3) [tri0 = p00,p10,p11] has a
+                // geometric normal that depends on the (d,u,v) axis layout's
+                // handedness: for d in {X,Z} it points +axis[d], but for d == Y
+                // it points -axis[d]. We want the geometric normal to equal the
+                // stored face normal (normal_sign * axis[d]); flip the two
+                // triangles' first two indices when the base winding disagrees.
+                //   d in {X,Z}: base normal = +axis[d] -> flip iff sign < 0.
+                //   d == Y   : base normal = -axis[d] -> flip iff sign > 0.
+                const bool flip_winding = (d == 1) ? (normal_sign > 0) : (normal_sign < 0);
+                if (!flip_winding) {
                     out_mesh.indices.push_back(base + 0);
                     out_mesh.indices.push_back(base + 1);
                     out_mesh.indices.push_back(base + 2);

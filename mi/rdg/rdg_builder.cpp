@@ -224,7 +224,12 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
             }
         }
         for (auto & in_as : pass->compiled_.in_acceleration_structures) {
-            for (auto & out_pass : out_resource_pass_map[in_as]) {
+            for(auto & out_pass : out_resource_pass_map[in_as]) {
+                dependencies.push_back(out_pass);
+            }
+        }
+        for (auto & in_ptlas : pass->compiled_.in_ptlas) {
+            for(auto & out_pass : out_resource_pass_map[in_ptlas]) {
                 dependencies.push_back(out_pass);
             }
         }
@@ -253,6 +258,14 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
                 dependencies.push_back(out_pass);
             }
         }
+        for (auto & out_ptlas : pass->compiled_.out_ptlas) {
+            for (auto & in_pass : in_resource_pass_map[out_ptlas]) {
+                dependencies.push_back(in_pass);
+            }
+            for (auto & out_pass : out_resource_pass_map[out_ptlas]) {
+                dependencies.push_back(out_pass);
+            }
+        }
 
         // Unique the dependencies
         std::ranges::sort(dependencies);
@@ -273,6 +286,9 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
         for (auto & in_as : pass->compiled_.in_acceleration_structures) {
             in_resource_pass_map[in_as].emplace_back(pass.get());
         }
+        for (auto & in_ptlas : pass->compiled_.in_ptlas) {
+            in_resource_pass_map[in_ptlas].emplace_back(pass.get());
+        }
         for(auto & out_texture : pass->compiled_.out_textures) {
             out_resource_pass_map[out_texture].emplace_back(pass.get());
 #ifdef RDG_DEBUG_VALIDATION
@@ -290,6 +306,9 @@ TRef<RenderGraph> RenderGraphBuilder::Compile(const std::string & graph_name) {
 #ifdef RDG_DEBUG_VALIDATION
             has_prior_writer_as[out_as] = true;
 #endif
+        }
+        for (auto & out_ptlas : pass->compiled_.out_ptlas) {
+            out_resource_pass_map[out_ptlas].emplace_back(pass.get());
         }
     }
     {

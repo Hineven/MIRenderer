@@ -196,6 +196,16 @@ public:
     virtual void CreateAccelerationStructureInstances(uint32_t count,
         const RHIAccelerationStructureInstanceDesc * in_desc, void * out_desc) const = 0;
 
+    // Get the stride of a single write-instance record consumed by the partitioned
+    // TLAS WRITE_INSTANCE op. out_desc buffers passed below must be sized as
+    // count * GetPartitionedTLASWriteInstanceStride().
+    virtual uint32_t GetPartitionedTLASWriteInstanceStride () const = 0;
+    // Translate RHI write-instance descriptions into the backend's opaque layout.
+    // DO NOT copy RHIPartitionedTLASWriteInstance directly to the device buffer;
+    // use this method to obtain layout-correct bytes first.
+    virtual void CreatePartitionedTLASWriteInstances(uint32_t count,
+        const RHIPartitionedTLASWriteInstance * in_desc, void * out_desc) const = 0;
+
 protected:
 
     GlobalSamplers global_samplers_ {};

@@ -132,8 +132,7 @@ void TraceVisibilityRaysAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayloa
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionRank   = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance = InstanceID();  // StaticMesh: InstanceID() == RenderableIndex
 
     // Static mesh instance
     IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial_InputTransforms(
@@ -174,8 +173,7 @@ void TraceVisibilityRaysClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPa
     // Found a static mesh instance. Return the hit distance.
     uint Triangle          = PrimitiveIndex();
     uint DescriptionRank   = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance = InstanceID();  // StaticMesh: InstanceID() == RenderableIndex
 
     Payload.HitDistance = RayTCurrent();
 
@@ -219,23 +217,28 @@ void TraceVisibilityRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPa
 [shader("anyhit")]
 void TraceVisibilityRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
-    if(Intersection.Opacity < Payload.U) {
-        Payload.U = (Payload.U - Intersection.Opacity) / (1.f - Intersection.Opacity);
-        IgnoreHit();
-    } else {
-        Payload.U = Payload.U / max(Intersection.Opacity, 1e-5f);
-    }
+       // FIXME no-op
+//     IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(
+//         InstanceID(), PrimitiveIndex(), Attributes.barycentrics,
+//         ObjectToWorld3x4(), transpose(To3x3(WorldToObject3x4())));
+//     if(Intersection.Opacity < Payload.U) {
+//         Payload.U = (Payload.U - Intersection.Opacity) / (1.f - Intersection.Opacity);
+//         IgnoreHit();
+//     } else {
+//         Payload.U = Payload.U / max(Intersection.Opacity, 1e-5f);
+//     }
 }
 [shader("closesthit")]
 void TraceVisibilityRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint Triangle = PrimitiveIndex();
-    uint InstanceCustomIndex = InstanceID();
-    Payload.HitDistance = RayTCurrent();
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), Triangle, Attributes.barycentrics);
-    float3 GeometryNormal = Intersection.GeometryNormal;
-    if(dot(GeometryNormal, WorldRayDirection()) > 0) GeometryNormal = -GeometryNormal;
-    CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Intersection.Albedo, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, GeometryNormal);
-    Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
+          // FIXME no-op
+//     uint Triangle = PrimitiveIndex();
+//     Payload.HitDistance = RayTCurrent();
+//     IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(
+//         InstanceID(), Triangle, Attributes.barycentrics,
+//         ObjectToWorld3x4(), transpose(To3x3(WorldToObject3x4())));
+//     float3 GeometryNormal = Intersection.GeometryNormal;
+//     if(dot(GeometryNormal, WorldRayDirection()) > 0) GeometryNormal = -GeometryNormal;
+//     CachedHitMaterial CachedHitMat = MakeCachedHitMaterial(Intersection.Albedo, CACHED_HIT_MATERIAL_HIT_TYPE_SURFACE, GeometryNormal);
+//     Payload.PackedMaterial = PackCachedHitMaterial(CachedHitMat);
 }

@@ -21,10 +21,18 @@
 #include <renderer/mi_delayed_destruction.h>
 #include <renderer/mi_scene.h>
 #include <renderer/mi_resource_allocator_slot.h>
+
+#include "mi_partition_allocator.h"
 #include "../shaders/shared/SharedStaticMesh.hlsl"
 #include "../shaders/shared/SharedGigaVoxel.hlsl"
 
 MI_NAMESPACE_BEGIN
+
+// Forward declarations (defined in their own headers; kept here to avoid pulling
+// heavy RHI includes into this widely-included header). The full definitions are
+// visible in the .cpp where TRef<GigaVoxelGeometryHeap> is constructed/destroyed.
+class GigaVoxelGeometryHeap;
+class Texture;
 
 // Allocate GPU resources used for common bindless rendering (device geometries, materials, static meshes, etc)
 // Resources that does not need to be bindless, or already bindless via RHI layers (for example, textures) should
@@ -67,6 +75,7 @@ public:
     static constexpr uint32_t kMaxNumStaticMeshes = 64 * 1024;
     static constexpr uint32_t kMaxNumVolumeGrids = 256;
     static constexpr uint32_t kMaxNumGigaVoxels = 256; // A scene has only a handful of GigaVoxel terrains
+    static constexpr uint32_t kMaxNumGigaVoxelInstances = 256; // Per-instance RT header side table size (GigaVoxelInstanceRTHeaderBuffer)
 
     FORCEINLINE DeviceUberBufferInterface * GetVertexUberBuffer () const {
         return vertex_uber_buffer_.Raw();
@@ -210,6 +219,33 @@ public:
         return giga_voxel_header_buffer_.Raw();
     }
 
+    // ---- GigaVoxel per-instance RT header side table ----
+    // GigaVoxel packs [RTHeaderIndex:8][chunk_header_index:16] into InstanceCustomIndex;
+    // the high 8 bits index this fixed-size table. Each GigaVoxelInstance acquires
+    // one slot on construction and releases it (delayed) on destruction. The slot
+    // row stores {RenderableIndex, GigaVoxelIndex} so RT hit shaders can reach both
+    // scene-level per-renderable buffers and the asset-level GigaVoxelHeaderBuffer.
+    // See SharedGigaVoxel.hlsl (GigaVoxelInstanceRTHeader) for the row layout.
+    uint32_t AllocateGigaVoxelInstanceRTHeaderSlot();
+    void FreeGigaVoxelInstanceRTHeaderSlot(uint32_t idx);
+    FORCEINLINE RHIBuffer * GetGigaVoxelInstanceRTHeaderBuffer() const {
+        return giga_voxel_instance_rt_header_buffer_.Raw();
+    }
+
+    // ---- Global GigaVoxel geometry heap + block atlas ----
+    // These are process-global GigaVoxel resources that previously lived as
+    // class-statics on GigaVoxel (mi_giga_voxel.h). Owning them here guarantees
+    // they are destroyed before the RHI singleton (the allocator is torn down in
+    // the app shutdown sequence before RHI::DestroySingleton), fixing the
+    // static-destruction-order crash on exit. The GigaVoxel::GetGlobalGeometryHeap()
+    // / SetGlobalAtlas() static accessors delegate to these.
+    // Lazy-created on first access.
+    GigaVoxelGeometryHeap * GetGigaVoxelGeometryHeap();
+    void SetGigaVoxelAtlas(TRef<Texture> atlas);
+    FORCEINLINE uint32_t GetGigaVoxelAtlasBindlessIndex() const {
+        return giga_voxel_atlas_bindless_index_;
+    }
+
     FORCEINLINE RHIBuffer * GetPrevRenderableTransformBuffer() const {
         return prev_renderable_transform_buffer_.Raw();
     }
@@ -239,6 +275,8 @@ public:
     // Intended for shutdown path where no more frames will be advanced.
     void ForceFlushDelayedDestruction();
 
+    PartitionAllocator * GetPartitionAllocator();
+
 protected:
     // Underlying buffer holding the material headers. This is updated on a per-frame basis.
     // Allocated a proper size upon construction.
@@ -266,6 +304,16 @@ protected:
     TRef<RHIBuffer> volume_grid_header_buffer_;
     // A buffer holding the GigaVoxel headers. (GigaVoxelHeader)
     TRef<RHIBuffer> giga_voxel_header_buffer_;
+    // Per-instance RT header side table for GigaVoxel (GigaVoxelInstanceRTHeader rows,
+    // indexed by the high 8 bits of a GigaVoxel RT InstanceCustomIndex).
+    TRef<RHIBuffer> giga_voxel_instance_rt_header_buffer_;
+
+    // Global GigaVoxel geometry heap (shared vertex/index/chunk-header GPU buffers
+    // for all GigaVoxel assets) + global block atlas. Owned here so they die before
+    // the RHI singleton (see GetGigaVoxelGeometryHeap() comment above).
+    TRef<GigaVoxelGeometryHeap> giga_voxel_geometry_heap_;
+    TRef<Texture> giga_voxel_atlas_;
+    uint32_t giga_voxel_atlas_bindless_index_ = 0xFFFFFFFFu;
 
     // A buffer holding all area lights (RawLight structs).
     TRef<DeviceUberBufferInterface> area_lights_uber_buffer_;
@@ -286,6 +334,11 @@ protected:
 
     // Slot allocators for bindless resources
     SlotAllocator material_slots_, geometry_slots_, static_mesh_slots_, volume_grid_slots_, giga_voxel_slots_;
+    // Slot allocator for the GigaVoxel per-instance RT header side table.
+    SlotAllocator giga_voxel_instance_rt_header_slots_ {kMaxNumGigaVoxelInstances};
+
+    // Partiton allocator for PTLAS
+    TRef<PartitionAllocator> partition_allocator_;
 
     // Central delayed destruction ring.
     // Stores resources whose refcount already reached 0 and are safe to delete after N frames.

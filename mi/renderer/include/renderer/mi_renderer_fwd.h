@@ -17,8 +17,6 @@ class DeviceMaterial;
 class Material;
 struct Transform;
 class Geometry;
-class StaticMesh;
-class StaticMeshInstance;
 class Texture;
 
 class DeviceScene;
@@ -66,12 +64,21 @@ enum class VisibilityTraceType {
     kFull = 2
 };
 
+class RenderGraphBuilder;
+
+class DeviceStaticMesh;
+class StaticMesh;
+class StaticMeshInstance;
+
 class DeviceGigaVoxel;
 class GigaVoxel;
 class GigaVoxelInstance;
 
 class NGXContext;
 class DLSSRRContext;
+
+class PartitionAllocator;
+
 
 MI_NAMESPACE_END
 #endif //MI_RENDERER_FWD_H

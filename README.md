@@ -42,6 +42,12 @@
     * 此时，你可以使用`debug_prof.h`内的宏分析程序（CPU）内的运行热点。
   * 如果遇到极难定位的问题，可以进一步开启`MI_BYPASS_RHI_THREAD`选项，让RHI线程和渲染线程合并成一个线程，方便使用调试器进行单步调试。
     * 此时，可以进一步开启`Vulkan Configurator`中的`Break on Validation Error`选项，在出现问题时程序会自动中断，你可以用IDE查看栈帧。
+  * 如果遇到`device lost`（驱动程序挂起）但`Vulkan Validation Layer`没有任何报错——这通常是GPU端崩溃（如shader越界、光线追加速结构遍历异常等），CPU端调试手段无效。此时可以开启**Nsight Aftermath**捕获GPU崩溃转储：
+    * 在CMake配置时加上`-DMI_ENABLE_AFTERMATH=ON`重新configure并重新编译。这会链接NVIDIA Nsight Aftermath SDK，并在创建设备时启用`VK_NV_device_diagnostics_config`扩展。
+    * SDK随Nsight Graphics安装（无需单独下载）。CMake会自动在常见安装路径下搜索所有Nsight Graphics版本并选用最高版本，你也可以用`-DMI_NSIGHT_GRAPHICS_DIR=...`指定某个Nsight Graphics安装目录。
+    * 开启后，再次复现`device lost`，程序退出时会在可执行文件目录下生成`mi_aftermath_<时间戳>.ndump`（主转储）以及若干`mi_aftermath_<时间戳>_shader_<n>.nvdbg`（逐shader调试信息旁车文件）。控制台会打印生成的转储路径。
+    * 在Nsight Graphics中`File → Open Crash Dump`打开`.ndump`，即可看到出错的shader、出错指令、寄存器/调用栈、以及在途的资源等，从而精确定位崩溃源头。
+    * 注意：开启Aftermath有性能开销（shader debug info + 资源追踪），仅用于调试`device lost`，定位完成后请关闭。
 * 如果要深入调试Shader，请使用`NSight Graphics`进行抓帧，抓帧后可以查看Shader代码、资源绑定、实时检视资源内容等信息。
   * 你可以在Shader中使用`printf`函数进行调试输出，此时，请开启`Vulkan Validation Layer`，并开启`Debug Printf`选项，输出会显示在控制台中。
 * 使用`heob`可以在Windows下对此程序进行内存泄漏与非法访问监测，你也可以使用Visual Studio自带的工具（如果你正在使用VS的话！）。

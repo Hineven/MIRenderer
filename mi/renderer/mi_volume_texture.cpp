@@ -15,7 +15,15 @@
 MI_NAMESPACE_BEGIN
 
 VolumeTexture::VolumeTexture(RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t depth, uint32_t mip_levels, uint32_t layers)
-    : type_(type), format_(format), width_(width), height_(height), depth_(depth), mip_levels_(mip_levels), layers_(layers), dirty_(true) {}
+    : type_(type), format_(format), width_(width), height_(height), depth_(depth), mip_levels_(mip_levels), layers_(layers), dirty_(true) {
+    // Always allocate the CPU mirror zero-filled; the mirror is always uploaded
+    // on UpdateOnDevice.
+    size_t needed_size = static_cast<size_t>(width_) * static_cast<size_t>(height_) *
+                         static_cast<size_t>(depth_) *
+                         static_cast<size_t>(GetPixelFormatBytesPerPixel(format_)) *
+                         static_cast<size_t>(layers_);
+    data_.assign(needed_size, 0);
+}
 
 void VolumeTexture::UpdateOnDevice() {
     if (dirty_ || !device_texture_) {
@@ -40,10 +48,9 @@ void VolumeTexture::UpdateOnDevice_Async(RHICommandQueueGraphics& queue) {
 
     device_texture_ = RHI::Get().CreateTexture(desc);
 
-    if (!data_.empty()) {
-        Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size(),
-            RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kShaderRead);
-    }
+    // Always upload the CPU mirror (zero-filled until filled by a loader).
+    Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size(),
+        RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kShaderRead);
 
     dirty_ = false;
 }

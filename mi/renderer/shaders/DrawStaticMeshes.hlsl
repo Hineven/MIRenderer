@@ -190,9 +190,22 @@ void DecodeVisibility (uint2 DispatchID : SV_DispatchThreadID) {
         float BaryY = f16tof32(Visibility.z >> 16);
         float BaryZ = f16tof32(Visibility.w & 0xFFFFu);
         float2 Barycentrics = float2(BaryY, BaryZ);
+        // Vertices are chunk-local: build the chunk-local -> world transform from
+        // the chunk header's ChunkOrigin (a pure translation; the raster path has
+        // no ObjectToWorld3x4() builtin).
+        float3 ChunkOrigin = GigaVoxelChunkHeaderBuffer[GlobalChunkIndex].ChunkOrigin;
+        float3x4 ChunkToWorld = float3x4(
+            1, 0, 0, ChunkOrigin.x,
+            0, 1, 0, ChunkOrigin.y,
+            0, 0, 1, ChunkOrigin.z);
         Intersection = EvaluateGigaVoxelVisibilityIntersectionMaterial(
-            RenderableIndex, GlobalChunkIndex, PrimitiveIndex, Barycentrics);
-        LocalPosition = Intersection.LocalPosition;
+            RenderableIndex, GlobalChunkIndex, PrimitiveIndex, Barycentrics, ChunkToWorld);
+        // GigaVoxel terrain is static: its RenderableTransform (instance-level,
+        // PrevRenderableTransformBuffer[RenderableIndex]) is identity, and chunk
+        // origins don't move between frames. So the previous-frame world position
+        // equals the current one — feed the world position into LocalPosition so
+        // the shared motion-vector math (PrevToWorld * LocalPosition) lands on it.
+        LocalPosition = Intersection.WorldPosition;
     } else {
         // Unknown / deprecated type: leave empty.
         return;

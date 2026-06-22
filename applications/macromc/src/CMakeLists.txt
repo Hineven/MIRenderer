@@ -34,3 +34,13 @@ endif()
 if(MSVC)
     target_compile_options(macromc_app PRIVATE /FS /Z7)
 endif()
+
+# Copy the Nsight Aftermath runtime DLL next to the executable when Aftermath
+# is enabled (the rhi static lib cannot place it at the exe dir itself).
+if(WIN32 AND MI_ENABLE_AFTERMATH AND DEFINED MI_AFTERMATH_DLL)
+    add_custom_command(TARGET macromc_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MI_AFTERMATH_DLL}" $<TARGET_FILE_DIR:macromc_app>
+        COMMENT "Copying GFSDK_Aftermath_Lib.x64.dll to output directory"
+    )
+endif()

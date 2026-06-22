@@ -39,6 +39,9 @@ VulkanRootSignature::VulkanRootSignature(const RHIPipelineRootSignatureDesc & de
     for (auto & td : types) {
         binding_base_[(uint32_t)td.rhi_type] = current_binding;
         for (uint32_t i = 0; i < td.count; i++) {
+            if (td.rhi_type == RHIPipelineResourceType::kAccelerationStructure) {
+                puts("what?");
+            }
             bindfull_bindings.emplace_back()
                 .setBinding(current_binding)
                 .setDescriptorType(td.vk_type)

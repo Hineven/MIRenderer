@@ -63,6 +63,7 @@ public:
     virtual void RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) = 0;
     virtual void RHIDispatchRaysIndirect2(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect2 *dispatch_rays_indirect) = 0;
     virtual void RHIAcclerationStructureBarriers(RHICommandQueueBase * cmd, RHICommandAccelerationStructureBarrier *barrier) = 0;
+    virtual void RHIPartitionedTLASBarriers(RHICommandQueueBase * cmd, RHICommandPartitionedTLASBarrier *barrier) = 0;
 
     // Submit all translated command stored within the command buffer and clear them.
     virtual void RHISubmitCommandBuffer (RHICommandQueueBase * buffer, RHISyncPoint * sync_point,

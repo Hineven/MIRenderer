@@ -16,14 +16,14 @@ GigaVoxelShellRegistry::GigaVoxelShellRegistry(mi::Scene * scene)
     : scene_(scene) {}
 
 GigaVoxelShellRegistry::~GigaVoxelShellRegistry() {
-    // Drop every shell's asset. Each asset's destructor DetachFromScene's its
-    // instance, so the scene is left clean (renderables delayed-free).
+    // Drop every shell's instance. Each instance delayed-frees via the render
+    // thread's recycle queue and in turn releases its GigaVoxel asset.
     shells_.clear();
 }
 
 void GigaVoxelShellRegistry::HandleCommand(const CreateGigaVoxelShellCmd & cmd) {
     if (cmd.shell == kInvalidShellId) return;
-    // Replace an existing asset for this shell first (release old, then create).
+    // Replace an existing shell first (release old instance, then create).
     shells_.erase(cmd.shell);
     shell_indices_.erase(cmd.shell);
     auto gv = mi::GigaVoxel::Create();
@@ -39,9 +39,10 @@ void GigaVoxelShellRegistry::HandleCommand(const CreateGigaVoxelShellCmd & cmd) 
     shell_indices_[cmd.shell] = idx;
     gv->SetShellIndex(idx);
     gv->SetPartitionAllocator(&partition_allocator_);
-    // Attach to the scene (asset owns the instance; self-registers).
-    gv->AttachToScene(scene_);
-    shells_[cmd.shell] = std::move(gv);
+    // Build the instance (owns the asset) and register it into the scene.
+    auto instance = mi::GigaVoxelInstance::Create(scene_, gv);
+    if (!instance) return;
+    shells_[cmd.shell] = std::move(instance);
 }
 
 void GigaVoxelShellRegistry::HandleCommand(const DestroyGigaVoxelShellCmd & cmd) {
@@ -57,13 +58,15 @@ void GigaVoxelShellRegistry::HandleCommand(const UploadChunkMeshCmd & cmd) {
     auto it = shells_.find(cmd.shell);
     if (it == shells_.end()) return;  // shell not created yet / already destroyed
     auto chunk_id = EncodeChunkId(cmd.coord);
-    it->second->UploadChunk(chunk_id, std::move(cmd.vertices), std::move(cmd.indices));
+    mi::GigaVoxelChunkCoord gv_coord{cmd.coord.x, cmd.coord.z};
+    it->second->GetGigaVoxel()->UploadChunk(chunk_id, gv_coord,
+                                            std::move(cmd.vertices), std::move(cmd.indices));
 }
 
 void GigaVoxelShellRegistry::HandleCommand(const DestroyChunkMeshCmd & cmd) {
     auto it = shells_.find(cmd.shell);
     if (it == shells_.end()) return;
-    it->second->RemoveChunk(EncodeChunkId(cmd.coord));
+    it->second->GetGigaVoxel()->RemoveChunk(EncodeChunkId(cmd.coord));
 }
 
 MACROMC_NAMESPACE_END

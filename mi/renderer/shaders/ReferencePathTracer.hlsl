@@ -517,7 +517,7 @@ void ReferencePathTracerRaygen() {
         // Case B: Hit Surface of Static Mesh
         else if (Payload.TCurrent < T_VolumeScatter && Payload.bIsSurfaceHit)
         {
-            uint InstanceIndex = Payload.HitInstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+            uint InstanceIndex = Payload.HitInstanceCustomIndex;  // StaticMesh: InstanceID() == RenderableIndex
             IntersectionMaterial Intersection = EvaluateStaticMeshRenderableIntersectionMaterial(
                 InstanceIndex,
                 Payload.HitGeometryIndex,
@@ -602,7 +602,7 @@ void ReferencePathTracerRaygen() {
         {
 #ifndef ENABLE_DLSS_RR
             // Now we hit a proxy box. Update processing volume list and forward.
-            uint InstanceIndex = Payload.HitInstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+            uint InstanceIndex = Payload.HitInstanceCustomIndex;  // VolumeGrid: InstanceID() == RenderableIndex
 
             // Determinate if it is a Primitive or a Grid based on Payload Flag
             if (Payload.bIsVolumeGridHit)
@@ -632,7 +632,6 @@ void ReferencePathTracerRaygen() {
                         OverlappingVolumeGridsInstanceIndices
                     );
                 }
-            }
             }
 #endif
             // Forward a bit.
@@ -729,8 +728,7 @@ void ReferencePathTracerAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayloa
 
     uint Triangle            = PrimitiveIndex();
     uint DescriptionIndex    = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance            = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance            = InstanceID();  // StaticMesh: InstanceID() == RenderableIndex
 
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -776,33 +774,33 @@ void ReferencePathTracerAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayloa
 // ClosestHit shaders: record hit info for path tracing
 // ============================================================================
 
-void ReferencePathTracerRecordClosestHit(inout RayPayload Payload: SV_RayPayload,
-                                       BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
+// Records the common hit data (geometry/primitive/bary/front-face/instance id)
+// shared by every closesthit variant. The renderable-type-specific flags
+// (bIsSurfaceHit / bIsVolumeGridHit) are set by the per-type wrappers below --
+// renderable type is now determined by the SBT hit group, not by any bits in
+// InstanceCustomIndex (the old class-bit decode was incompatible with
+// GigaVoxel's [RTHeaderIndex:8][chunk_header_index:16] layout).
+void ReferencePathTracerRecordClosestHitCommon(inout RayPayload Payload: SV_RayPayload,
+                                               BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     if (Payload.Mode == 1) {
         Payload.ShadowVisible = 0;
         Payload.TCurrent = RayTCurrent();
         return;
     }
-
-    uint Triangle          = PrimitiveIndex();
-    uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    // Pack hit data to payload
     Payload.TCurrent = RayTCurrent();
-    Payload.HitInstanceCustomIndex = InstanceCustomIndex;
-    Payload.HitGeometryIndex = DescriptionIndex;
-    Payload.HitPrimitiveIndex = Triangle;
+    Payload.HitInstanceCustomIndex = InstanceID();
+    Payload.HitGeometryIndex = GeometryIndex();
+    Payload.HitPrimitiveIndex = PrimitiveIndex();
     Payload.HitBarycentrics = Attributes.barycentrics;
     Payload.bIsFrontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE ? 1 : 0;
-    uint class_index = (InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_CLASS_MASK) >> INSTANCE_CUSTOM_INDEX_CLASS_SHIFT;
-    Payload.bIsSurfaceHit = (class_index == MI_RENDERABLE_TYPE_StaticMesh) ? 1 : 0;
-    Payload.bIsVolumeGridHit = (class_index == MI_RENDERABLE_TYPE_VolumeGrid) ? 1 : 0;
 }
 
 [shader("closesthit")]
 void ReferencePathTracerClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    ReferencePathTracerRecordClosestHit(Payload, Attributes);
+    ReferencePathTracerRecordClosestHitCommon(Payload, Attributes);
+    Payload.bIsSurfaceHit = 1;
+    Payload.bIsVolumeGridHit = 0;
 }
 
 
@@ -810,7 +808,9 @@ void ReferencePathTracerClosestHit_StaticMesh(inout RayPayload Payload: SV_RayPa
 [shader("closesthit")]
 void ReferencePathTracerClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    ReferencePathTracerRecordClosestHit(Payload, Attributes);
+    ReferencePathTracerRecordClosestHitCommon(Payload, Attributes);
+    Payload.bIsSurfaceHit = 0;
+    Payload.bIsVolumeGridHit = 1;
 }
 
 // GigaVoxel: VC chunk geometry. Shadow rays ignore it; path-trace rays record hit.
@@ -825,5 +825,9 @@ void ReferencePathTracerAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload
 [shader("closesthit")]
 void ReferencePathTracerClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    ReferencePathTracerRecordClosestHit(Payload, Attributes);
+    ReferencePathTracerRecordClosestHitCommon(Payload, Attributes);
+    // GigaVoxel hits currently have no dedicated shading branch in the main loop;
+    // flag neither surface nor volume grid so the generic miss/no-hit path applies.
+    Payload.bIsSurfaceHit = 0;
+    Payload.bIsVolumeGridHit = 0;
 }

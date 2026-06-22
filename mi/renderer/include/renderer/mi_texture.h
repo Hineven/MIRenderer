@@ -32,13 +32,33 @@ enum class TextureSampleMode {
 };
 
 // An ususally static 2D (array) texture resource.
+//
+// CPU binary mirror: the constructor ALWAYS allocates `data_` zero-filled
+// (width * height * bpp * layers bytes) and the mirror is always uploaded to
+// the device on UpdateOnDevice. A freshly-constructed texture therefore has a
+// valid (all-zero) CPU mirror and no GPU resource until UpdateOnDevice. For
+// GPU-only textures (e.g. the env cubemap, filled by a render pass) the initial
+// zero upload is harmless — it is overwritten by the render pass — and the
+// convenience of always having a populated mirror outweighs the one-time cost.
+// Procedural generators write via GetBinaryMutable(); loaders use
+// CreateFromBinary() / InitializeFromBinary().
 class Texture : public RefCounted<>, public NonMovable {
 public:
-    void InitializeFromBinary (std::span<uint8_t> data);
+    // ---- CPU binary mirror access ----
+    // Whole-texture read-only view (always populated; zero-filled until filled
+    // by InitializeFromBinary / SetBinaryForLayer / GetBinaryMutable).
     void GetBinary (std::vector<uint8_t> & data) const {
         data = data_;
     }
-    const std::vector<uint8_t> & GetBinary () {
+    const std::vector<uint8_t> & GetBinary () const {
+        return data_;
+    }
+    // Writable view of the CPU mirror, for procedural generation. Marks the
+    // texture dirty so the next UpdateOnDevice re-uploads it. NOT move
+    // semantics: the returned reference aliases the internal storage; keep the
+    // texture alive while you write through it.
+    std::vector<uint8_t> & GetBinaryMutable () {
+        dirty_ = true;
         return data_;
     }
     void GetBinaryForLayer (uint32_t layer, std::vector<uint8_t> & data) const {
@@ -111,12 +131,34 @@ public:
     void ConvertToBindless (bool update_slot_immediately = true);
     void ReleaseBindlessSlot ();
 
+    // Create a texture with an empty (zero-filled) CPU mirror. Use GetBinaryMutable()
+    // to fill it procedurally, or use CreateFromBinary to supply data at once.
     FORCEINLINE static TRef<Texture> Create (PixelFormatType format, uint32_t width, uint32_t height, uint32_t mip_levels = 1, uint32_t array_layers = 1) {
         return TRef(new Texture(RHITextureType::k2D, format, width, height, mip_levels, array_layers));
     }
     FORCEINLINE static TRef<Texture> Create (RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height, uint32_t mip_levels = 1, uint32_t array_layers = 1) {
         return TRef(new Texture(type, format, width, height, mip_levels, array_layers));
     }
+    // Create a texture and immediately fill its CPU mirror from `data` (whole
+    // texture: width * height * bpp * layers bytes). The texture is dirty after
+    // this. Constructor-style convenience over Create(...) + GetBinaryMutable()
+    // + memcpy.
+    static TRef<Texture> CreateFromBinary (PixelFormatType format, uint32_t width, uint32_t height,
+                                           std::span<uint8_t> data, uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        auto tex = Create(RHITextureType::k2D, format, width, height, mip_levels, array_layers);
+        tex->InitializeFromBinary(data);
+        return tex;
+    }
+    static TRef<Texture> CreateFromBinary (RHITextureType type, PixelFormatType format, uint32_t width, uint32_t height,
+                                           std::span<uint8_t> data, uint32_t mip_levels = 1, uint32_t array_layers = 1) {
+        auto tex = Create(type, format, width, height, mip_levels, array_layers);
+        tex->InitializeFromBinary(data);
+        return tex;
+    }
+    // Fill the CPU mirror from `data` (whole texture: width * height * bpp *
+    // layers bytes). Kept as the lower-level fill (CreateFromBinary delegates
+    // here); prefer CreateFromBinary at call sites.
+    void InitializeFromBinary (std::span<uint8_t> data);
 
     FORCEINLINE const std::string & GetName () const {
         return name_;

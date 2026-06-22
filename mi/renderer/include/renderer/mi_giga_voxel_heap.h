@@ -11,9 +11,13 @@
 #include <span>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include <core/base.h>
 #include <core/refcounted.h>
 #include <core/util/size_class_allocator.h>
+#include <core/util/slot_allocator.h>
+#include <renderer/mi_aabb.h>
 #include <rhi/rhi_desc.h>
 #include <rhi/rhi_types.h>
 
@@ -22,6 +26,60 @@
 MI_NAMESPACE_BEGIN
 
 class RHICommandQueueGraphics;
+
+// =============================================================================
+// Chunk layout convention (renderer-layer knowledge).
+//
+// A GigaVoxel chunk is a full-height column of voxels, laid out as a 2D grid in
+// the XZ plane (one chunk per (x,z) coord), full height in Y. The renderer needs
+// these dimensions to turn a chunk coordinate into a world placement, because
+// chunk vertices are stored in CHUNK-LOCAL space (local origin = the chunk's
+// world corner) and the per-chunk world placement is reconstructed from the
+// coordinate here rather than baked into the vertices.
+//
+// These match the macromc chunk dimensions (16x16 footprint, 4096 tall). They
+// are renderer-layer compile-time constants so the renderer does NOT depend on
+// macromc; the producer (viewer / macromc_app) passes a GigaVoxelChunkCoord and
+// the renderer derives the world origin.
+//
+// Defined in this header (not mi_giga_voxel.h) because GigaVoxelChunkHandle
+// below embeds GigaVoxelChunkCoord, and mi_giga_voxel.h includes this file.
+// =============================================================================
+inline static constexpr uint32_t kGigaVoxelChunkSizeX = 16;   // chunk footprint in X (meters)
+inline static constexpr uint32_t kGigaVoxelChunkSizeY = 4096; // chunk height   in Y (meters)
+inline static constexpr uint32_t kGigaVoxelChunkSizeZ = 16;   // chunk footprint in Z (meters)
+
+// 2D chunk coordinate on the XZ tiling grid. This is the renderer-layer mirror
+// of macromc's ChunkCoord (kept separate to avoid mi/ depending on macromc).
+// The producer converts its own coord type to this at the UploadChunk call site.
+struct GigaVoxelChunkCoord {
+    int32_t x {};
+    int32_t z {};
+};
+
+// World-space origin (min corner) of a chunk column. Vertices in that chunk are
+// local to this origin, so world = ChunkWorldOrigin(coord) + local_position.
+// Y is always 0: chunks are full-height columns, not split along Y, so the
+// chunk-local Y axis already covers the full 0..kGigaVoxelChunkSizeY range.
+FORCEINLINE glm::vec3 GigaVoxelChunkWorldOrigin(GigaVoxelChunkCoord coord) {
+    return glm::vec3(
+        static_cast<float>(coord.x * static_cast<int32_t>(kGigaVoxelChunkSizeX)),
+        0.0f,
+        static_cast<float>(coord.z * static_cast<int32_t>(kGigaVoxelChunkSizeZ))
+    );
+}
+
+// Chunk-local AABB for a full chunk column (the maximal extent a chunk-local
+// vertex can reach). Used as the per-chunk local AABB when the geometry does
+// not need an exact vertex scan.
+FORCEINLINE AABB GigaVoxelChunkLocalAABB() {
+    return AABB(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(static_cast<float>(kGigaVoxelChunkSizeX),
+                  static_cast<float>(kGigaVoxelChunkSizeY),
+                  static_cast<float>(kGigaVoxelChunkSizeZ))
+    );
+}
 
 // =============================================================================
 // GigaVoxelGeometryHeap
@@ -48,12 +106,16 @@ class RHICommandQueueGraphics;
 // header buffer (GigaVoxelChunkHeaderBuffer). It is assigned once at
 // AllocateChunk and freed at FreeChunk, and lets a visibility-buffer pixel /
 // RT hit recover this chunk's vertex/index span from the GPU side.
+// `coord` is the chunk's 2D grid coordinate; the heap writes the derived world
+// origin (GigaVoxelChunkWorldOrigin) into the chunk header so the raster /
+// visibility path can place chunk-local vertices into world space.
 struct GigaVoxelChunkHandle {
     uint32_t vertex_offset {};  // element offset into the vertex heap
     uint32_t vertex_count  {};
     uint32_t index_offset  {};  // element offset into the index heap
     uint32_t index_count   {};
     uint32_t chunk_header_index {0xFFFFFFFFu};  // index into GigaVoxelChunkHeaderBuffer
+    GigaVoxelChunkCoord coord {};               // 2D grid coord -> world origin
     bool     valid         {false};
 
     FORCEINLINE bool IsEmpty() const { return vertex_count == 0 || index_count == 0; }
@@ -133,7 +195,8 @@ private:
     void EnsureGPUChunkHeaderCapacity(size_t needed_rows, RHICommandQueueGraphics * queue);
 
     // Allocate / free a global chunk-header index (slot into the per-chunk
-    // header buffer). O(1) via a free list.
+    // header buffer). Thin wrappers over chunk_header_slot_allocator_ that also
+    // keep cpu_chunk_headers_ sized to the issued slot and clear a row on free.
     uint32_t AllocateChunkHeaderSlot();
     void FreeChunkHeaderSlot(uint32_t slot);
 
@@ -154,11 +217,18 @@ private:
     // Per-chunk geometry header buffer (GigaVoxelChunkHeader rows).
     // cpu_chunk_headers_ is indexed by chunk_header_index; the GPU buffer is a
     // 1:1 mirror. Capacity grows on demand (see EnsureGPUChunkHeaderCapacity).
+    // The slot allocator is the sole authority on chunk_header_index values --
+    // it is deliberately decoupled from cpu_chunk_headers_.size() so that a
+    // pre-sized CPU mirror does not perturb slot numbering (a previous hand-
+    // rolled free-list conflated the two and made the first real chunk land at
+    // index 4096, past the 12-bit RT custom-index ceiling).
     std::vector<GigaVoxelChunkHeader> cpu_chunk_headers_;
     TRef<RHIBuffer> gpu_chunk_header_buffer_;
     size_t gpu_chunk_header_capacity_ {};
-    // Free list for chunk-header slots (recycled on FreeChunk).
-    std::vector<uint32_t> chunk_header_free_slots_;
+    // Allocates / recycles chunk-header slot indices independently of the CPU
+    // mirror's size. AllocateSlot() reuses freed slots first, else issues the
+    // next monotonic index.
+    ExtendableSlotAllocator chunk_header_slot_allocator_;
 };
 
 MI_NAMESPACE_END

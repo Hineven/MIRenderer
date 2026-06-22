@@ -105,6 +105,15 @@ void RDGResourcePool::AttachAllocation(RDGBuffer *buffer, RDGPoolBufferAllocatio
     alloc->Acquire();
     buffer->allocation_ = alloc;
     buffer->pool_ = this;
+    mi_assert(
+        !buffer->read_access_ && !buffer->write_access_ && !buffer->read_stages_ && !buffer->write_stages_,
+        "Buffer should not have access flags set before allocation."
+    );
+    // Recover last access within the buffer.
+    buffer->read_access_ = alloc->last_access & RHIGPUAccessFlagBits::kRead;
+    buffer->write_access_ = alloc->last_access & RHIGPUAccessFlagBits::kWrite;
+    buffer->read_stages_ = alloc->last_read_stages;
+    buffer->write_stages_ = alloc->last_write_stages;
     num_active_buffers_++;
 }
 
@@ -112,6 +121,14 @@ void RDGResourcePool::AttachAllocation(RDGTexture *texture, RDGPoolTextureAlloca
     alloc->Acquire();
     texture->allocation_ = alloc;
     texture->pool_ = this;
+    // Recover last access within the texture (mirrors the buffer path). This is the
+    // authoritative source for prev-stages/prev-access read by the barrier placement
+    // loop (rdg.cpp) and by any manual BufferBarrier/TextureBarrier callers — the
+    // per-resource fields must reflect the allocation's tail state right after attach.
+    texture->read_access_ = alloc->last_access & RHIGPUAccessFlagBits::kRead;
+    texture->write_access_ = alloc->last_access & RHIGPUAccessFlagBits::kWrite;
+    texture->read_stages_ = alloc->last_read_stages;
+    texture->write_stages_ = alloc->last_write_stages;
     texture->current_layout_ = RHITextureLayoutType::kUndefined;
     num_active_textures_++;
 }

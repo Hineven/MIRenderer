@@ -70,7 +70,7 @@ void VisualizeRayTracingSceneRaygen() {
         Ray.TMin = Payload.THit + 1e-4f;
         if(Payload.bSurfaceHit || Payload.THit == Ray.TMax) break;
     }
-    RWDebugOutput[RayIndex] = Payload.Color * Payload.Transmittance;
+    RWDebugOutput[RayIndex] = float4(1, 0, 0, 1);//Payload.Color * Payload.Transmittance;
 }
 
 [shader("miss")]
@@ -92,8 +92,7 @@ void VisualizeRayTracingSceneAnyHit_StaticMesh(inout RayPayload Payload: SV_RayP
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance = InstanceID();  // StaticMesh: InstanceID() == RenderableIndex
 
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -140,8 +139,7 @@ void VisualizeRayTracingSceneClosestHit_StaticMesh(inout RayPayload Payload: SV_
                                        BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance = InstanceID();  // StaticMesh: InstanceID() == RenderableIndex
 
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -190,8 +188,14 @@ void VisualizeRayTracingSceneAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPa
 [shader("closesthit")]
 void VisualizeRayTracingSceneClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
-    Payload.Color = float4(Intersection.Albedo, Intersection.Opacity);
-    Payload.bSurfaceHit = true;
-    Payload.THit = RayTCurrent();
+       // FIXME: no attribute extraction
+           Payload.Color = float4(1, 0, 0, 0);
+           Payload.bSurfaceHit = true;
+           Payload.THit = RayTCurrent();
+//     IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(
+//         InstanceID(), PrimitiveIndex(), Attributes.barycentrics,
+//         ObjectToWorld3x4(), transpose(To3x3(WorldToObject3x4())));
+//     Payload.Color = float4(Intersection.Albedo, Intersection.Opacity);
+//     Payload.bSurfaceHit = true;
+//     Payload.THit = RayTCurrent();
 }

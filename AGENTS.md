@@ -301,6 +301,58 @@ The renderer uses a multi-threaded architecture with strict thread roles:
 - Unreferenced resources are automatically released at appropriate times
 - RHI resources use reference counting with automatic delayed destruction
 
+## Reusable Allocation Patterns & Helpers
+
+The codebase has recurring allocation/lifetime patterns. Before hand-rolling a free-list, slab, or delayed-release mechanism, check whether an existing helper already covers it — these were abstracted precisely because the patterns recur, and using them avoids the class of bugs that bespoke implementations introduced in the past.
+
+### Index / Slot Allocation (`core/util/slot_allocator.h`)
+
+For "hand out integer indices, recycle on free" patterns (bindless slots, chunk-header indices, renderable slots, etc.):
+
+- **`SlotAllocator(capacity)`** — fixed-capacity. Constructor seeds the free-list with all `0..capacity-1` indices; `AllocateSlot()` returns `UINT32_MAX` when exhausted. Use when capacity is a known compile/runtime constant (e.g. `kMaxNumMaterials`).
+- **`ExtendableSlotAllocator`** — grows on demand. `AllocateSlot()` reuses freed indices first, else issues the next monotonic index (`next_slot_index_++`). Use when the live set grows unpredictably.
+
+**Critical lesson**: the slot allocator is the **sole authority on slot numbering**. Do NOT conflate slot indices with `cpu_vector.size()` or any other container's size. A previous bespoke chunk-header allocator used `cpu_chunk_headers_.size()` as the "next index" while the constructor pre-resized the vector to 4096 — so the first real chunk landed at index 4096, past a 12-bit encoding ceiling, and silently broke RT custom-index packing. Prefer the dedicated allocator; if you must keep a CPU mirror, resize it *in response to* issued slots, never use its size to drive numbering.
+
+### Size-Class / Slab Allocation (`core/util/size_class_allocator.h`, backed by `segment_allocator.h`)
+
+For "many small objects of similar size, high-frequency alloc/free" (e.g. GigaVoxel chunk geometry: bounded vertex/index counts, streamed in/out constantly):
+
+- **`SizeClassAllocator`** routes requests into N size classes; each class is a LIFO free-list of fixed-size slots. Alloc/Free on a class are O(1). Oversized requests fall back to `SimpleSegmentAllocator` (first-fit).
+- This is a **pure index allocator** — it returns offsets into a logical range and owns no data. The caller mirrors offsets onto its own CPU vector and GPU buffer, so CPU and GPU stay aligned by construction (no offset translation table). See `GigaVoxelGeometryHeap` for the canonical usage.
+- Provides `Compact()` for defragmentation and `ExpandTo()`/`GetHighWatermark()` for capacity management.
+
+- **`SimpleSegmentAllocator`** — plain first-fit segment allocator over a fixed index range, used standalone for simpler sub-allocation or as the fallback inside `SizeClassAllocator`.
+
+### One-Time Linear Allocation (`core/util/alloc.h`)
+
+- **`TOneTimeLinearAllocator<BlockSize, Alignment>`** — bump allocator over 512KB (default) blocks. Use for transient per-frame or per-pass host allocations that are freed all-at-once.
+
+### Centralized GPU Heap Management (`DeviceBindlessResourceAllocator`)
+
+`mi/renderer/include/renderer/mi_resource_allocator.h` — **one allocator per renderer**, the central owner of nearly all GPU heaps used by common bindless rendering. When adding GPU data that needs to participate in bindless rendering, route it through here rather than creating an ad-hoc `RHIBuffer`.
+
+What it owns / the contract it provides:
+- **Typed bindless slots** via `SlotKind` enum (`Material`, `Geometry`, `StaticMesh`, `VolumeGrid`, `GigaVoxel`). Acquire through `AllocateSlotKeeper(kind)` (returns a `TRef<SlotKeeper>`); the slot recycles automatically a few frames after the last reference drops. Each kind has a `kMaxNum*` capacity constant.
+- **Uber buffers** (`GetVertexUberBuffer`, `GetStaticMeshDescriptionUberBuffer`, the mesh-light hierarchy buffers, etc.) and custom heaps (`RegisterCustomBufferHeap` / `RegisterCustomUberBuffer` for custom renderable classes).
+- **Per-kind header buffers** (`GetMaterialHeaderBuffer`, `GetGeometryHeaderBuffer`, ...) that mirror the slot-indexed CPU structs to the GPU as SRVs.
+- **Expansion timing**: all GPU backing buffers grow under the allocator's control (per-frame `AdvanceFrame()`); do not resize them from outside. New heap-backed features should either extend `DeviceBindlessResourceAllocator` (if bindless) or go through a dedicated heap like `GigaVoxelGeometryHeap` (if a size-class pattern fits).
+- **Ownership for shutdown ordering**: process-global resources that must outlive RHI usage but die *before* the RHI singleton (e.g. `GigaVoxelGeometryHeap`, the GigaVoxel atlas) are owned here precisely to fix static-destruction-order hazards. Don't reintroduce class-statics for such resources.
+
+### Delayed Destruction (`renderer/include/renderer/mi_delayed_destruction.h`)
+
+For renderer-side (non-`RHIResource`) objects that still must not be destroyed while the GPU may reference them:
+
+- **`DelayedDestructionResource`** — `TRef`-compatible base (intrusive refcount, like `RHIResource`). On refcount→0 it calls `QueueForDestruction()` (routed to an owner) instead of `delete this`.
+- **`TDelayedReleaseKeeper<OwnerT>`** — a handle (slot/index/...) whose release must be delayed. Refcount-driven: when external refs drop to 0 it enqueues itself; the owner-managed queue deletes it N frames later, and its destructor performs the actual release (e.g. `FreeSlot`). This is what `DeviceBindlessResourceAllocator`'s `SlotKeeper` and the Scene's renderable-index keepers are built on.
+- **`TDelayedDestructionQueue<T>`** — render-thread ring buffer that deletes objects after `delay_frames` (default 2) `Tick()`s. `Tick()` must be called once per frame at a point where frame N-1 has finished on GPU.
+
+When NOT to use: plain `RHIResource`-derived objects already get RHI-layer deferred deletion (1+ frames) — don't double-wrap them. Use this layer only for resources outside the RHI lifetime system (sub-allocations, slot mirrors into persistent device buffers, etc.).
+
+### Set Hashing (`core/util/unordered_hashing.h`)
+
+- **`ZobristSetHashing`** — XOR-based set hash for cache/dedup keys (e.g. hashing a set of chunk contents).
+
 ## Shader Development
 
 ### Shader Location

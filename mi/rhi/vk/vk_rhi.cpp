@@ -25,6 +25,7 @@
 #include "vk_cmd_exec.h"
 #include "vk_conversion.h"
 #include "vk_root_signature.h"
+#include "vk_aftermath.h"
 #include "rhi/rhi_thread.h"
 
 #ifndef NDEBUG
@@ -270,6 +271,10 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
             VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
             // Partitioned acceleration structure (per-partition TLAS rebuild for GigaVoxel)
             VK_NV_PARTITIONED_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+#ifdef MI_ENABLE_AFTERMATH
+            // Nsight Aftermath: driver-side GPU crash dump diagnostics.
+            VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME,
+#endif
             // SPV extensions (not supported by NVIDIA)
             // VK_GOOGLE_USER_TYPE_EXTENSION_NAME,
             // VK_GOOGLE_HLSL_FUNCTIONALITY1_EXTENSION_NAME,
@@ -354,6 +359,10 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
                 vk::PhysicalDeviceVulkanMemoryModelFeatures,
                 vk::PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR,
                 vk::PhysicalDevicePartitionedAccelerationStructureFeaturesNV
+#ifdef MI_ENABLE_AFTERMATH
+                , vk::PhysicalDeviceDiagnosticsConfigFeaturesNV
+                , vk::DeviceDiagnosticsConfigCreateInfoNV
+#endif
         > extended_features;
 
         auto & device_create_info = std::get<0>(extended_features);
@@ -461,9 +470,34 @@ VulkanRHI::VulkanRHI(const VulkanRHICreateInfo * extra) {
         auto & partitioned_as_features = std::get<vk::PhysicalDevicePartitionedAccelerationStructureFeaturesNV>(extended_features);
         partitioned_as_features.partitionedAccelerationStructure = VK_TRUE;
 
+#ifdef MI_ENABLE_AFTERMATH
+        // Nsight Aftermath: enable driver-side diagnostics so a device-lost
+        // crash produces a decodable .ndump with shader fault attribution.
+        // - The *feature* (VkPhysicalDeviceDiagnosticsConfigFeaturesNV) is in
+        //   the StructureChain above; it flips on the capability.
+        // - The *create-info* (VkDeviceDiagnosticsConfigCreateInfoNV) below
+        //   selects which diagnostics to record. We request shader debug info
+        //   (SPIR-V/source mapping for the faulting shader), resource tracking
+        //   (so the dump names the resources in flight), and basic metrics.
+        //   The extension name is also pushed into enabled_extension_names.
+        auto & diag_feature = std::get<vk::PhysicalDeviceDiagnosticsConfigFeaturesNV>(extended_features);
+        diag_feature.diagnosticsConfig = VK_TRUE;
+        auto & diag_cfg = std::get<vk::DeviceDiagnosticsConfigCreateInfoNV>(extended_features);
+        diag_cfg.flags = vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo
+                       | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking
+                       | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderErrorReporting;
+#endif
+
         device_ = physical_device_.createDevice(extended_features.get());
         // Initialize the Vulkan-HPP dispatcher
         VULKAN_HPP_DEFAULT_DISPATCHER.init(device_);
+
+#ifdef MI_ENABLE_AFTERMATH
+        // Install Aftermath crash-dump handlers now that the device (with the
+        // VK_NV_device_diagnostics_config extension) exists. Must happen on the
+        // RHI thread, before any rendering can trip a device lost.
+        aftermath::Initialize();
+#endif
     }
 
     // Initialize device properties
@@ -678,6 +712,10 @@ VulkanRHI::~VulkanRHI() {
     // We can safely destroy device resources now
     vma_.destroy();
     device_.destroy(pipeline_cache_);
+#ifdef MI_ENABLE_AFTERMATH
+    // Tear down Aftermath before the device goes away.
+    aftermath::Shutdown();
+#endif
     device_.destroy();
     instance_.destroy();
 
@@ -1000,6 +1038,31 @@ void VulkanRHI::CreateAccelerationStructureInstances(uint32_t count, const RHIAc
         out_instances[i].instanceShaderBindingTableRecordOffset = in_desc[i].instance_shader_binding_table_record_offset;
         out_instances[i].mask = in_desc[i].mask;
         memcpy(&out_instances[i].transform, in_desc[i].transform, sizeof(float) * 12);
+    }
+}
+
+uint32_t VulkanRHI::GetPartitionedTLASWriteInstanceStride() const {
+    return sizeof(vk::PartitionedAccelerationStructureWriteInstanceDataNV);
+}
+
+void VulkanRHI::CreatePartitionedTLASWriteInstances(uint32_t count, const RHIPartitionedTLASWriteInstance *in_desc, void *out_desc) const {
+    // Translate RHI write-instance records to the backend's opaque layout. The two
+    // structs are currently layout-identical (validated by the static_assert below),
+    // but we assign field-by-field so the RHI struct layout can diverge freely.
+    assert(in_desc && out_desc);
+    static_assert(sizeof(RHIPartitionedTLASWriteInstance) == sizeof(vk::PartitionedAccelerationStructureWriteInstanceDataNV),
+        "RHI and Vulkan PTLAS write-instance structs must stay the same size; revise conversion if layout changes.");
+    auto * out_instances = static_cast<vk::PartitionedAccelerationStructureWriteInstanceDataNV *>(out_desc);
+    for (uint32_t i = 0; i < count; i++) {
+        memcpy(&out_instances[i].transform, in_desc[i].transform, sizeof(float) * 12);
+        memcpy(out_instances[i].explicitAABB.data(), in_desc[i].explicit_aabb, sizeof(float) * 6);
+        out_instances[i].instanceID = in_desc[i].instance_id;
+        out_instances[i].instanceMask = in_desc[i].instance_mask;
+        out_instances[i].instanceContributionToHitGroupIndex = in_desc[i].instance_contribution_to_hit_group_index;
+        out_instances[i].instanceFlags = GetVulkanPartitionedTLASInstanceFlags(in_desc[i].instance_flags);
+        out_instances[i].instanceIndex = in_desc[i].instance_index;
+        out_instances[i].partitionIndex = in_desc[i].partition_index;
+        out_instances[i].accelerationStructure = in_desc[i].acceleration_structure;
     }
 }
 

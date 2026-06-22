@@ -74,7 +74,7 @@ float3 EvaluateCachedMaterialBRDF (
         float Cosine = dot(LightDirection, ViewDirection);
         return HenyeyGreensteinPhaseFunction(Cosine, PhaseG) * M.Albedo;
     } else {
-        // Gaussain RF and others. They should never be shaded.
+        // Others. They should never be shaded.
         return 0;
     }
 }
@@ -89,9 +89,10 @@ float3 EvaluateCachedMaterialBRDF_ColorOnly (
         if(dot(Normal, ViewDirection) * dot(Normal, LightDirection) <= 0) return 0;
         return EvaluateLambert(M.Albedo);
     } else if(M.IsVolume()) {
+        // TODO Account for phase function
         return M.Albedo;
     } else {
-        // Gaussain RF and others. They should never be shaded.
+        // Others. They should never be shaded.
         return 0;
     }
 }

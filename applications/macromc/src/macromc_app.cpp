@@ -101,7 +101,9 @@ TRef<mi::Texture> BuildPlaceholderAtlas() {
         MACROMC_MESHING_NAMESPACE::kAtlasTilesPerRow * MACROMC_MESHING_NAMESPACE::kAtlasTileTexelSize,
         MACROMC_MESHING_NAMESPACE::kAtlasTilesPerCol * MACROMC_MESHING_NAMESPACE::kAtlasTileTexelSize, 1, 1);
     atlas->SetName("GigaVoxelAtlasPlaceholder");
-    auto & data = const_cast<std::vector<uint8_t> &>(atlas->GetBinary());
+    // Procedurally paint the CPU mirror in place (constructor pre-allocates it
+    // zero-filled; GetBinaryMutable marks it as holding meaningful data + dirty).
+    auto & data = atlas->GetBinaryMutable();
     const uint32_t aw = atlas->GetWidth();
     const uint32_t tile = MACROMC_MESHING_NAMESPACE::kAtlasTileTexelSize;
     const uint32_t tpr = MACROMC_MESHING_NAMESPACE::kAtlasTilesPerRow;

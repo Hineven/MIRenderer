@@ -697,6 +697,30 @@ public:
     RHIGPUAccessFlags * dst_accesses_;
 };
 
+// Barrier over one or more Partitioned TLAS backing buffers. Mirrors
+// RHICommandAccelerationStructureBarrier but for RHIPartitionedTLAS (which, like
+// a KHR AS, is backed by a device buffer whose layout transitions between an AS
+// build write and a ray-tracing read). Used to order a PTLAS build against the
+// RT passes that trace against it without a full WaitForIdle.
+class RHICommandPartitionedTLASBarrier : public TRHICommand<RHICommandPartitionedTLASBarrier> {
+public:
+    RHICommandPartitionedTLASBarrier(
+        uint32_t num_barriers,
+        RHIPartitionedTLAS ** ptlas,
+        RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
+        RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ): num_barriers_(num_barriers),
+        ptlas_(ptlas), src_stages_(src_stages), dst_stages_(dst_stages),
+        src_accesses_(src_accesses), dst_accesses_(dst_accesses) {}
+    void Execute(RHICommandQueueBase & cmd) override ;
+    uint32_t num_barriers_;
+    RHIPartitionedTLAS ** ptlas_;
+    RHIPipelineStageFlags * src_stages_;
+    RHIPipelineStageFlags * dst_stages_;
+    RHIGPUAccessFlags * src_accesses_;
+    RHIGPUAccessFlags * dst_accesses_;
+};
+
 class RHICommandDebugMarkerBegin : public TRHICommand<RHICommandDebugMarkerBegin> {
 public:
     RHICommandDebugMarkerBegin(const char* marker_name, const std::array<float, 4>& color = {1.0f, 1.0f, 1.0f, 1.0f})
@@ -767,7 +791,7 @@ public:
         const RHIPartitionedTLASInstancesInput& input)
         : dst_ptlas_(dst_ptlas), src_ptlas_(src_ptlas),
           scratch_buffer_(scratch_buffer),
-          ops_(ops.begin(), ops.end()),
+          ops_(ops),
           indirect_commands_buffer_(indirect_commands_buffer),
           indirect_commands_count_buffer_(indirect_commands_count_buffer),
           input_(input) {}
@@ -776,7 +800,7 @@ public:
     RHIPartitionedTLAS* dst_ptlas_;
     RHIPartitionedTLAS* src_ptlas_;   // Source for update mode; nullptr for initial build
     RHIBufferSpan scratch_buffer_;
-    std::vector<RHIPartitionedTLASBuildOp> ops_;
+    std::span<const RHIPartitionedTLASBuildOp> ops_;
     RHIBufferSpan indirect_commands_buffer_;        // Device buffer for translated indirect commands
     RHIBufferSpan indirect_commands_count_buffer_;  // Device buffer (4 bytes) for op count
     RHIPartitionedTLASInstancesInput input_;
@@ -1120,6 +1144,35 @@ public:
             RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
     ) {
         AddCommand(AllocateCommand<RHICommandAccelerationStructureBarrier>(acceleration_structure_count, acceleration_structures, src_stages, dst_stages, src_accesses, dst_accesses));
+    }
+
+    // Insert a layout/access barrier over a Partitioned TLAS backing buffer.
+    // Use after BuildPartitionedTLAS (WRITE) and before the RT passes that trace
+    // against it (READ) to avoid a full WaitForIdle — mirrors the KHR-TLAS
+    // AccelerationStructureBarrier usage.
+    FORCEINLINE void PartitionedTLASBarrier (
+            RHIPartitionedTLAS * ptlas,
+            RHIPipelineStageFlags src_stages, RHIPipelineStageFlags dst_stages,
+            RHIGPUAccessFlags src_access, RHIGPUAccessFlags dst_access
+    ) {
+        auto * desc = Allocate<RHIPartitionedTLAS*>();
+        desc[0] = ptlas;
+        auto src_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        src_stages_ptr[0] = src_stages;
+        auto dst_stages_ptr = Allocate<RHIPipelineStageFlags>();
+        dst_stages_ptr[0] = dst_stages;
+        auto src_access_ptr = Allocate<RHIGPUAccessFlags>();
+        src_access_ptr[0] = src_access;
+        auto dst_access_ptr = Allocate<RHIGPUAccessFlags>();
+        dst_access_ptr[0] = dst_access;
+        AddCommand(AllocateCommand<RHICommandPartitionedTLASBarrier>(1, desc, src_stages_ptr, dst_stages_ptr, src_access_ptr, dst_access_ptr));
+    }
+    FORCEINLINE void PartitionedTLASBarriers (
+            uint32_t ptlas_count, RHIPartitionedTLAS ** ptlas,
+            RHIPipelineStageFlags * src_stages, RHIPipelineStageFlags * dst_stages,
+            RHIGPUAccessFlags * src_accesses, RHIGPUAccessFlags * dst_accesses
+    ) {
+        AddCommand(AllocateCommand<RHICommandPartitionedTLASBarrier>(ptlas_count, ptlas, src_stages, dst_stages, src_accesses, dst_accesses));
     }
 
     FORCEINLINE void BindPipeline(RHIGraphicsPipeline * pipeline, RHIPipelineRootSignature * root_signature) {

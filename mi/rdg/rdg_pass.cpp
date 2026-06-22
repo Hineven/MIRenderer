@@ -238,6 +238,38 @@ RDGPass *RDGPass::AddASH_NoAutomaticBarrier(RHIAccelerationStructure *as, RHIGPU
     return this;
 }
 
+RDGPass *RDGPass::AddPTLASH_NoAutomaticBarrier(RHIPartitionedTLAS *ptlas, RHIGPUAccessFlags access, RHIPipelineStageFlags usage_stages) {
+    if (!ptlas) return this; // Do nothing if the PTLAS is null
+    if (access == RHIGPUAccessFlagBits::kNone || usage_stages == RHIPipelineStageFlagBits::kNone) {
+        // If the access is kNone, we don't care about the PTLAS.
+        return this;
+    }
+    if (access & RHIGPUAccessFlagBits::kRead) compiled_.in_ptlas.emplace_back(ptlas);
+    if (access & RHIGPUAccessFlagBits::kWrite) compiled_.out_ptlas.emplace_back(ptlas);
+    RHIPipelineStageFlags stages = usage_stages;
+    if (stages == RHIPipelineStageFlagBits::kNone) {
+        // If the usage stages are not specified, auto-detect them.
+        if (GetType() == RDGPassType::kCompute) {
+            stages = RHIPipelineStageFlagBits::kCompute;
+        } else if (GetType() == RDGPassType::kGraphics) {
+            assert(false && "RDGPassType::kGraphics does not support acceleration structures.");
+        } else if (GetType() == RDGPassType::kRayTracing) {
+            stages = RHIPipelineStageFlagBits::kRayTracing;
+        } else if (GetType() == RDGPassType::kGeneric) {
+            // A PTLAS is written by an AS-build (kAccelerationStructureBuild) and
+            // read by ray tracing. Generic passes may do either.
+            if (access & RHIGPUAccessFlagBits::kRead)
+                stages = stages | RHIPipelineStageFlagBits::kRayTracing;
+            if (access & RHIGPUAccessFlagBits::kWrite)
+                stages = stages | RHIPipelineStageFlagBits::kAccelerationStructureBuild;
+        } else {
+            assert(false && "Unsupported RDGPassType for partitioned TLAS.");
+        }
+    }
+    used_ptlas.emplace_back(access, stages, ptlas);
+    return this;
+}
+
 void RDGPass::AddResourceReference(RDGResource *resource) {
     rdg_resource_keepers_.emplace_back(resource);
 }
@@ -353,6 +385,17 @@ void RDGPass::PreCompile() {
                     continue;
                 }
                 AddASH_NoAutomaticBarrier(as, field.access_flags & access, stages);
+            } else if (field.type == RHIParamType::kPartitionedAccelerationStructure) {
+                auto as = *static_cast<RHIPartitionedTLAS* const*>(field_data);
+                if (!as) continue;
+                if (RDGParameter_IsUnsetPointer(as)) {
+                    MI_WARN("Pass {}: Unset parameter pointer {}."
+                            "If you really want it set to null in the pass, "
+                            "use nullptr as initial value to disable this warning.",
+                            name_, field.name);
+                    continue;
+                }
+                AddPTLASH_NoAutomaticBarrier(as, field.access_flags & access, stages);
             } else if (field.type == RHIParamType::kRenderTarget) {
                 const RDGShaderRenderTargetParameter & render_target = *static_cast<RDGShaderRenderTargetParameter const*>(field_data);
                 if (!render_target.texture) continue ;
@@ -418,9 +461,12 @@ void RDGPass::Compile() {
     compiled_.out_buffers.clear();
     compiled_.in_acceleration_structures.clear();
     compiled_.out_acceleration_structures.clear();
+    compiled_.in_ptlas.clear();
+    compiled_.out_ptlas.clear();
     compiled_.textures.clear();
     compiled_.buffers.clear();
     compiled_.acceleration_structures.clear();
+    compiled_.ptlas.clear();
 
     // Detect resource aliasing for textures and spawn final relations
     // Textures
@@ -514,6 +560,30 @@ void RDGPass::Compile() {
             }
         }
         used_acceleration_structures.clear();
+    }
+    // PTLAS (partitioned TLAS) — dependency-tracking only, no alias binning.
+    {
+        std::map<void*, RDGPTLASUsage*> combined_ptlas;
+        for (auto & e : used_ptlas) {
+            auto it = combined_ptlas.find(e.ptlas);
+            if (it != combined_ptlas.end()) {
+                it->second->access |= e.access;
+                it->second->stages |= e.stages;
+            } else {
+                combined_ptlas[e.ptlas] = &e;
+            }
+        }
+        for (auto e : combined_ptlas) {
+            auto & usage = *e.second;
+            compiled_.ptlas.emplace_back(usage);
+            if (usage.access & RHIGPUAccessFlagBits::kRead) {
+                compiled_.in_ptlas.emplace_back(usage.ptlas);
+            }
+            if (usage.access & RHIGPUAccessFlagBits::kWrite) {
+                compiled_.out_ptlas.emplace_back(usage.ptlas);
+            }
+        }
+        used_ptlas.clear();
     }
     is_compiled_ = true;
 }

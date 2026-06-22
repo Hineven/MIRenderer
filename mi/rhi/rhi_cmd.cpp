@@ -222,6 +222,11 @@ void RHICommandAccelerationStructureBarrier::Execute(RHICommandQueueBase &cmd) {
     RHI::Get().GetCommandExecutor()->RHIAcclerationStructureBarriers(&cmd, this);
 }
 
+void RHICommandPartitionedTLASBarrier::Execute(RHICommandQueueBase &cmd) {
+    MI_RHI_CMD_STAT_INC(RHICmdStatId::kAccelerationStructureBarrier);
+    RHI::Get().GetCommandExecutor()->RHIPartitionedTLASBarriers(&cmd, this);
+}
+
 void RHICommandDebugMarkerBegin::Execute(RHICommandQueueBase &cmd) {
     MI_RHI_CMD_STAT_INC(RHICmdStatId::kDebugMarkerBegin);
     RHI::Get().GetCommandExecutor()->RHIDebugMarkerBegin(&cmd, this);

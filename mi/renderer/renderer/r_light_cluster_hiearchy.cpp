@@ -201,9 +201,6 @@ bool HasAnyEmissiveTexelInTriangle(
     if (width == 0 || height == 0) {
         return true;
     }
-    if (emissive_map->GetBinary().empty()) {
-        return true;
-    }
 
     auto uv_in_01 = [](glm::vec2 uv) {
         return uv.x >= 0.f && uv.x <= 1.f && uv.y >= 0.f && uv.y <= 1.f;

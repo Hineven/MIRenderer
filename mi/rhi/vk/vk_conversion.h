@@ -815,6 +815,30 @@ FORCEINLINE vk::GeometryInstanceFlagsKHR GetVulkanAccelerationStructureInstanceF
     return ret;
 }
 
+// Flags for partitioned TLAS instances. The NV bit values numerically coincide with
+// RHIPTLASInstanceFlagBits, but we still translate field-by-field to preserve the
+// abstraction boundary (mirrors GetVulkanAccelerationStructureInstanceFlags).
+FORCEINLINE vk::PartitionedAccelerationStructureInstanceFlagsNV
+GetVulkanPartitionedTLASInstanceFlags (RHIPTLASInstanceFlags flags) {
+    auto ret = vk::PartitionedAccelerationStructureInstanceFlagsNV{};
+    if (flags & RHIPTLASInstanceFlagBits::kDisableTriangleCulling) {
+        ret |= vk::PartitionedAccelerationStructureInstanceFlagBitsNV::eFlagTriangleFacingCullDisable;
+    }
+    if (flags & RHIPTLASInstanceFlagBits::kFlipTriangleFacing) {
+        ret |= vk::PartitionedAccelerationStructureInstanceFlagBitsNV::eFlagTriangleFlipFacing;
+    }
+    if (flags & RHIPTLASInstanceFlagBits::kForceOpaque) {
+        ret |= vk::PartitionedAccelerationStructureInstanceFlagBitsNV::eFlagForceOpaque;
+    }
+    if (flags & RHIPTLASInstanceFlagBits::kForceNoOpaque) {
+        ret |= vk::PartitionedAccelerationStructureInstanceFlagBitsNV::eFlagForceNoOpaque;
+    }
+    if (flags & RHIPTLASInstanceFlagBits::kEnableExplicitAABB) {
+        ret |= vk::PartitionedAccelerationStructureInstanceFlagBitsNV::eFlagEnableExplicitBoundingBox;
+    }
+    return ret;
+}
+
 MI_NAMESPACE_END
 
 #endif //MI_VK_CONVERSION_H

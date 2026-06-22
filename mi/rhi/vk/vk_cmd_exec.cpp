@@ -1223,7 +1223,7 @@ void VulkanCommandExecutor::RHISubmitCommandBuffer(RHICommandQueueBase *buffer, 
     }
     // Reset the handle to the command buffer after submission
     state.cmd = nullptr;
-    // Reset states
+    // Reset binding states
     state.ResetStates();
 
     if(sync) ((VulkanSyncPoint*)sync)->NotifySubmission();

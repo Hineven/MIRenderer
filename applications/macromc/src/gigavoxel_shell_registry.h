@@ -19,17 +19,18 @@
 MACROMC_NAMESPACE_BEGIN
 
 // =============================================================================
-// GigaVoxelShellRegistry — render-thread-side owner of GigaVoxel assets.
+// GigaVoxelShellRegistry — render-thread-side owner of GigaVoxel shells.
 //
-// Maps each ShellId to its GigaVoxel asset (one asset per shell; the shell is
-// the data source, the asset is the render projection). Lives INSIDE the
+// Maps each ShellId to its GigaVoxelInstance (one instance per shell; the shell
+// is the data source, the instance is the render projection). Lives INSIDE the
 // RenderThreadContext and is driven by RenderCommand dispatch — it never sees
 // the gameplay thread.
 //
-// Ownership: the registry owns the TRef<GigaVoxel> per shell. Each GigaVoxel
-// asset in turn owns its GigaVoxelInstance (the Scene projection). Destroying a
-// shell releases the asset, which DetachFromScene's the instance (delayed-free
-// via the render thread's recycle queue).
+// Ownership: the registry owns the TRef<GigaVoxelInstance> per shell. Each
+// instance owns its TRef<GigaVoxel> asset (mirrors StaticMesh/StaticMeshInstance:
+// the asset knows nothing about its instance). Destroying a shell drops the
+// instance, which delayed-frees via the render thread's recycle queue and in
+// turn releases the asset.
 //
 // Threading: all methods are render-thread-only (called from
 // RenderThreadContext::ApplyCommand / the render loop).
@@ -64,7 +65,7 @@ private:
     }
 
     mi::Scene * scene_ = nullptr;
-    std::unordered_map<ShellId, mi::TRef<mi::GigaVoxel>> shells_;
+    std::unordered_map<ShellId, mi::TRef<mi::GigaVoxelInstance>> shells_;
     // Dense shell index allocator (0..255, the low 8 bits of instance customIndex).
     // One per shell that has a GigaVoxel asset. Recycled on shell destroy.
     // Stored alongside the asset so HandleCommand(Create/Destroy) manages it.

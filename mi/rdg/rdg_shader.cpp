@@ -1587,11 +1587,11 @@ void RDGShaderLibrary::RecompileUpdatedCachedShaders() {
 
     TaskGraph::Get().WaitForTasks(tasks);
 
-    RDGShaderRootSignatureCache::Get().FlushUnused();
-
     for (auto &shader: shaders_to_recompile) {
         shader->UpdateOwnerForRHIResources();
     }
+
+    RDGShaderRootSignatureCache::Get().FlushUnused();
 
     // Handle compilation errors: popup + retry loop (hot-reload: cancel = continue, shaders stay invalid)
     while (error_context_.has_error.load(std::memory_order_acquire)) {

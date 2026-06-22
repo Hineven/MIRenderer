@@ -248,7 +248,11 @@ void VulkanCommandExecutor::RHIBuildPartitionedTLAS(RHICommandQueueBase *cmd, RH
     }
 
     // Assemble the build info.
+    // Chain VkPartitionedAccelerationStructureFlagsNV via pNext — the driver requires
+    // it (matches NVIDIA sample). Without it buildScratchSize queries return garbage.
+    vk::PartitionedAccelerationStructureFlagsNV vk_ptlas_flags{};
     vk::PartitionedAccelerationStructureInstancesInputNV vk_input{};
+    vk_input.pNext = &vk_ptlas_flags;
     vk_input.flags = GetVulkanBuildAccelerationStructureFlags(input.flags);
     vk_input.instanceCount = input.instance_count;
     vk_input.maxInstancePerPartitionCount = input.max_instance_per_partition_count;
@@ -258,16 +262,12 @@ void VulkanCommandExecutor::RHIBuildPartitionedTLAS(RHICommandQueueBase *cmd, RH
     vk::BuildPartitionedAccelerationStructureInfoNV vk_build_info{};
     vk_build_info.input = vk_input;
     vk_build_info.dstAccelerationStructureData = dst_ptlas->GetDeviceAddress();
-    // srcAccelerationStructureData: spec allows NULL for an initial build, but some
-    // drivers / validation layers expect a non-zero device address. For an initial
-    // build (src_ptlas == nullptr) we self-reference dst as src — it is not read
-    // during an initial build, so the value is harmless but satisfies the non-zero
-    // requirement. For an update build we use the previously built PTLAS.
-    if (src_ptlas) {
-        vk_build_info.srcAccelerationStructureData = src_ptlas->GetDeviceAddress();
-    } else {
-        vk_build_info.srcAccelerationStructureData = dst_ptlas->GetDeviceAddress();
-    }
+    // srcAccelerationStructureData: 0 for an initial build (no source PTLAS), or the
+    // previously-built PTLAS address for an update. Matches the NVIDIA sample.
+    // (Do NOT self-reference dst as src — validation flags the overlapping address
+    // range as VUID-vkCmdBuildPartitionedAccelerationStructuresNV-pBuildInfo-10549.)
+    vk_build_info.srcAccelerationStructureData =
+        src_ptlas ? src_ptlas->GetDeviceAddress() : 0;
     vk_build_info.scratchData = scratch_buffer->GetDeviceAddress() + build_ptlas->scratch_buffer_.offset;
     vk_build_info.srcInfos = indirect_cmds_buffer->GetDeviceAddress() + build_ptlas->indirect_commands_buffer_.offset;
     vk_build_info.srcInfosCount = indirect_count_buffer->GetDeviceAddress() + build_ptlas->indirect_commands_count_buffer_.offset;
@@ -442,6 +442,34 @@ void VulkanCommandExecutor::RHIAcclerationStructureBarriers(RHICommandQueueBase 
         vk_barriers[i].buffer = vk_as->GetBuffer();
         vk_barriers[i].offset = 0;
         vk_barriers[i].size = vk_as->GetSize();
+    }
+    state.cmd.pipelineBarrier2(vk::DependencyInfo{
+        {}, 0, nullptr, barrier->num_barriers_,
+        vk_barriers, 0, nullptr
+    });
+}
+
+void VulkanCommandExecutor::RHIPartitionedTLASBarriers(RHICommandQueueBase *cmd, RHICommandPartitionedTLASBarrier *barrier) {
+    CHECK_RHI_THREAD();
+    auto & state = state_chains_[(uint32_t)cmd->GetCommandQueueType()].Current();
+
+    auto ptlas = barrier->ptlas_;
+
+    // A PTLAS has no Vulkan object handle — it is a device-addressable buffer.
+    // Barrier its backing buffer (same BufferMemoryBarrier2 mechanism as a KHR
+    // AS) to order an AS-build write against the ray-tracing read that follows.
+    auto vk_barriers = state.Allocate<vk::BufferMemoryBarrier2[]>(barrier->num_barriers_);
+    for (const auto& [i, e] : std::views::enumerate(std::span(ptlas, barrier->num_barriers_))) {
+        vk_barriers[i].srcStageMask = GetVulkanPipelineStageFlags(barrier->src_stages_[i]);
+        vk_barriers[i].dstStageMask = GetVulkanPipelineStageFlags(barrier->dst_stages_[i]);
+        vk_barriers[i].srcAccessMask = GetVulkanAccessFlags(barrier->src_accesses_[i]);
+        vk_barriers[i].dstAccessMask = GetVulkanAccessFlags(barrier->dst_accesses_[i]);
+        vk_barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        vk_barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        VulkanPartitionedTLAS * vk_ptlas = static_cast<VulkanPartitionedTLAS*>(e);
+        vk_barriers[i].buffer = vk_ptlas->GetBuffer();
+        vk_barriers[i].offset = 0;
+        vk_barriers[i].size = vk_ptlas->GetSize();
     }
     state.cmd.pipelineBarrier2(vk::DependencyInfo{
         {}, 0, nullptr, barrier->num_barriers_,

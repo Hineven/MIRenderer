@@ -30,7 +30,7 @@ MI_NAMESPACE_BEGIN
 // Threading: render-thread-only (called from the TLAS gather / renderable
 // Update path).
 // =============================================================================
-class PartitionAllocator : public NonCopyable, public NonMovable {
+class PartitionAllocator : public RefCounted<> {
 public:
     PartitionAllocator() = default;
     ~PartitionAllocator() = default;

@@ -204,9 +204,6 @@ bool HasAnyEmissiveTexelInTriangle(Texture * emissive_map, glm::vec2 uv0, glm::v
     if (width == 0 || height == 0) {
         return true;
     }
-    if (emissive_map->GetBinary().empty()) {
-        return true;
-    }
 
     auto uv_in_01 = [](glm::vec2 uv) {
         return uv.x >= 0.f && uv.x <= 1.f && uv.y >= 0.f && uv.y <= 1.f;
@@ -823,8 +820,8 @@ uint32_t StaticMeshInstance::GetRayTracedClassIndex() const {
 }
 
 uint32_t StaticMeshInstance::GetInstanceCustomIndex() const {
-    // Simply return the index of the instance
-    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
+    // StaticMesh uses the full 24-bit InstanceCustomIndex as the plain RenderableIndex.
+    return GetIndex();
 }
 
 std::span<const RenderableBLASInstance> StaticMeshInstance::GetGlobalBLASInstances() const {

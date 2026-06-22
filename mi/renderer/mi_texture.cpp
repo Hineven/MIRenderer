@@ -185,6 +185,12 @@ Texture::Texture(RHITextureType type, PixelFormatType format, uint32_t width, ui
     layers_(layers),
     format_(format),
     dirty_(true) {
+    // Always allocate the CPU mirror zero-filled so procedural generators can
+    // write into it directly. The mirror is always uploaded on UpdateOnDevice.
+    size_t needed_size = static_cast<size_t>(width_) * static_cast<size_t>(height_) *
+                         static_cast<size_t>(GetPixelFormatBytesPerPixel(format_)) *
+                         static_cast<size_t>(layers_);
+    data_.assign(needed_size, 0);
 }
 
 void Texture::InitializeFromBinary(std::span<uint8_t> data)
@@ -197,10 +203,7 @@ void Texture::InitializeFromBinary(std::span<uint8_t> data)
         return;
     }
 
-    data_.resize(needed_size);
-    data_.shrink_to_fit();
     std::memcpy(data_.data(), data.data(), needed_size);
-    
     dirty_ = true;
 }
 
@@ -233,11 +236,12 @@ void Texture::UpdateOnDevice_Async(RHICommandQueueGraphics& queue)
 
     device_texture_ = RHI::Get().CreateTexture(desc);
 
-    if (!data_.empty()) {
-        Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size(),
-            RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kShaderRead);
-    }
-    
+    // Always upload the CPU mirror (zero-filled until filled by a loader /
+    // procedural generator). GPU-only textures (e.g. env cubemap filled by a
+    // render pass) just eat a one-time zero upload that the pass overwrites.
+    Helpers::Upload_Async(queue, device_texture_.Raw(), data_.data(), data_.size(),
+        RHITextureLayoutType::kShaderReadOnlyOptimal, RHIGPUAccessFlagBits::kShaderRead);
+
     dirty_ = false;
 }
 
@@ -266,7 +270,7 @@ void Texture::ReleaseBindlessSlot() {
 }
 
 glm::vec4 Texture::Load(uint32_t x, uint32_t y, uint32_t layer) const {
-    if (data_.empty() || width_ == 0 || height_ == 0) {
+    if (width_ == 0 || height_ == 0) {
         return {};
     }
     if (x >= width_ || y >= height_ || layer >= layers_) {
@@ -279,7 +283,7 @@ glm::vec4 Texture::Load(uint32_t x, uint32_t y, uint32_t layer) const {
 }
 
 glm::vec4 Texture::Sample(TextureSampleMode mode, glm::vec2 uv, uint32_t layer) const {
-    if (data_.empty() || width_ == 0 || height_ == 0) {
+    if (width_ == 0 || height_ == 0) {
         return {};
     }
     if (layer >= layers_) {

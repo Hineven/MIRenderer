@@ -38,15 +38,21 @@ struct GigaVoxelInstanceHeader {
     uint Flags;
 };
 
-// Number of bits for the renderable index in InstanceCustomIndex.
-// Must match Renderable::kRenderableIndexNumBits on the C++ side.
-#define RENDERABLE_INDEX_NUM_BITS 20
-
-// The instance custom index layout: [class_index:4bits][renderable_index:RENDERABLE_INDEX_NUM_BITS bits]
-#define INSTANCE_CUSTOM_INDEX_INDEX_MASK  ((1u << RENDERABLE_INDEX_NUM_BITS) - 1u)
-#define INSTANCE_CUSTOM_INDEX_CLASS_SHIFT RENDERABLE_INDEX_NUM_BITS
-#define INSTANCE_CUSTOM_INDEX_CLASS_MASK  (0xFu << RENDERABLE_INDEX_NUM_BITS)
-
+// InstanceCustomIndex contract is now PER-RENDERABLE-TYPE (no shared layout).
+//
+// Each ray-traced renderable type defines its own InstanceCustomIndex layout:
+//   - StaticMesh / VolumeGrid: the full 24 bits are the plain RenderableIndex
+//     (scene slot). Renderable type is determined by the SBT hit group, NOT by
+//     any bits in InstanceCustomIndex. So InstanceID() == RenderableIndex.
+//   - GigaVoxel: [GigaVoxelInstanceRTHeaderIndex:8 bits 16-23]
+//               [chunk_header_index:16 bits 0-15].
+//     See SharedGigaVoxel.hlsl (GigaVoxelInstanceRTHeader + decode helper).
+//
+// Renderable type is no longer encoded in InstanceCustomIndex. Hit shaders
+// distinguish types via the SBT record (each type has its own anyhit/closesthit
+// entry), and the path tracer records type-specific flags in its own functions
+// per closesthit entry.
+//
 // MI_RENDERABLE_TYPE_* macros are injected by RDGShader at compile time.
 // They map renderable class names to their runtime-assigned indices.
 // Examples: MI_RENDERABLE_TYPE_StaticMesh=0, MI_RENDERABLE_TYPE_VolumeGrid=1, etc.

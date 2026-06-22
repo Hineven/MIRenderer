@@ -23,6 +23,17 @@ struct SlotAllocator {
             free_slots_.push(i);
         }
     }
+
+    FORCEINLINE void Reset() {
+        // Reset the free slots stack to contain all slots again
+        while (!free_slots_.empty()) {
+            free_slots_.pop();
+        }
+        for (int i = (int)max_num_slots_ - 1; i >= 0; i--) {
+            free_slots_.push(i);
+        }
+    }
+
     FORCEINLINE uint32_t AllocateSlot() {
         if (free_slots_.empty()) {
             return UINT32_MAX; // No free slots available

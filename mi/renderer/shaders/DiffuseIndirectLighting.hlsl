@@ -1246,7 +1246,7 @@ void SampleLightRaysForUpdateRayHits (uint DispatchID : SV_DispatchThreadID) {
 		// Account for shading
         ShadedRadiance *= EvaluateCachedMaterialBRDF_ColorOnly(
             ShadeMaterial, ShadeViewDirection,
-            TransmittanceRayDirection, VOLUME_PRIMITIVES_HENYEY_GREENSTEIN_PHASE_G
+            TransmittanceRayDirection, 0
         );
 	}
 

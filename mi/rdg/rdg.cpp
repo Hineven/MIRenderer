@@ -24,7 +24,7 @@
 #ifndef NDEBUG
 // Instantly start a command buffer submit after the execution of each pass.
 // This is useful for debugging, but hurts performance alot.
-// #define INSTANT_SUBMIT_FOR_EACH_PASS
+#define INSTANT_SUBMIT_FOR_EACH_PASS
 
 // Enable extra validation checks during RDG execution.
 #define RDG_DEBUG_VALIDATION
@@ -331,6 +331,10 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
         }
     }
 
+#ifdef INSTANT_SUBMIT_FOR_EACH_PASS
+    cmd.EnqueueTranslateAndSubmit(nullptr, "CreateParamTables");
+#endif
+
     std::vector<RHITimestampRef> marker_timestamps;
     std::vector<RDGTimePeriod> marker_periods;
     RDGTimePeriod active_period;
@@ -430,11 +434,8 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                 auto prev_usage = texture_use.texture->GetReadAccess() | texture_use.texture->GetWriteAccess();
                 auto prev_layout = texture_use.texture->GetCurrentLayout();
 
-                // For aliasing: if this is the first use after allocation, inherit last access from the allocation.
-                if (!prev_stages && texture_use.texture->allocation_) {
-                    prev_stages = texture_use.texture->allocation_->last_read_stages | texture_use.texture->allocation_->last_write_stages;
-                    prev_usage = texture_use.texture->allocation_->last_access;
-                }
+                // Note: the per-resource prev-stages/prev-access are recovered from the
+                // allocation's tail state in AttachAllocation, so no fallback is needed here.
 
                 RHITextureLayoutType target_layout = texture_use.layout;
                 RHIGPUAccessFlags target_usage = texture_use.access;
@@ -478,10 +479,8 @@ void RenderGraph::Execute (RDGResourcePool * pool, RHISyncPoint * sync_point) {
                     auto prev_stages = buffer_use.buffer->GetReadStages() | buffer_use.buffer->GetWriteStages();
                     auto curr_stages = buffer_use.stages;
                     auto prev_usage = buffer_use.buffer->GetReadAccess() | buffer_use.buffer->GetWriteAccess();
-                    if (!prev_stages && buffer_use.buffer->allocation_) {
-                        prev_stages = buffer_use.buffer->allocation_->last_read_stages | buffer_use.buffer->allocation_->last_write_stages;
-                        prev_usage = buffer_use.buffer->allocation_->last_access;
-                    }
+                    // Note: the per-resource prev-stages/prev-access are recovered from the
+                    // allocation's tail state in AttachAllocation, so no fallback is needed here.
                     auto curr_usage = buffer_use.access;
                     if (prev_stages && (
                         (curr_usage & RHIGPUAccessFlagBits::kWrite)

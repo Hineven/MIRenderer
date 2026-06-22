@@ -182,10 +182,6 @@ public:
     TRef<StaticMesh> arrow_mesh_z_;
     TRef<Geometry> arrow_geometry_;
 
-    // GigaVoxel bring-up assets kept alive for the viewer's lifetime (the
-    // instance does not own the underlying GigaVoxel asset).
-    std::vector<TRef<GigaVoxel>> loaded_gigavoxel_assets_;
-
     SelectionState selection_state_ {};
     BakingState baking_state_ {};
     InputState input_state_ {};

@@ -34,6 +34,10 @@
 // Per-draw (RenderableIndex, GlobalChunkIndex), indexed by VS instance index
 // (analogous to RenderableIndexAndDescriptorIndexBuffer in DrawStaticMeshes).
 StructuredBuffer<uint2> RenderableIndexAndChunkIndexBuffer;
+// Per-chunk geometry header (one row per chunk). The VS reads ChunkOrigin from
+// it to place chunk-local vertices into world space (the raster path has no
+// ObjectToWorld3x4() builtin, unlike the RT path).
+StructuredBuffer<GigaVoxelChunkHeader> GigaVoxelChunkHeaderBuffer;
 
 struct DrawGigaVoxelVCVSOut {
     float4 Position : SV_POSITION;
@@ -53,8 +57,11 @@ DrawGigaVoxelVCVSOut DrawGigaVoxelVCVS (
     uint RenderableIndex = RenderableChunk.x;
     uint GlobalChunkIndex = RenderableChunk.y;
 
-    // Positions are already world-space (greedy mesher emits world coords).
-    float4 PositionW = mul(View.Camera.WorldToNDC_ReversedZ, float4(Position, 1));
+    // Vertices are chunk-local: translate by the chunk's world origin (read from
+    // the per-chunk header) to place them in world space before clip transform.
+    float3 ChunkOrigin = GigaVoxelChunkHeaderBuffer[GlobalChunkIndex].ChunkOrigin;
+    float3 WorldPosition = Position + ChunkOrigin;
+    float4 PositionW = mul(View.Camera.WorldToNDC_ReversedZ, float4(WorldPosition, 1));
 
     DrawGigaVoxelVCVSOut Output = (DrawGigaVoxelVCVSOut)0;
     Output.Position = PositionW;

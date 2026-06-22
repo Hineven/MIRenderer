@@ -33,6 +33,11 @@ public:
         RHIPipelineStageFlags stages;
         RHIAccelerationStructure* as;
     };
+    struct RDGPTLASUsage {
+        RHIGPUAccessFlags access;
+        RHIPipelineStageFlags stages;
+        RHIPartitionedTLAS* ptlas;
+    };
 protected:
     // Can only be allocated by RDG
     RDGPass(
@@ -61,6 +66,14 @@ public:
     // NOTE: Unlike other RDG resources, this info is only used for pass dependency analysis and not used for automatic barrier placement.
     // You are REQUIRED to manually place barriers for acceleration structures inside your pass lambda.
     RDGPass * AddASH_NoAutomaticBarrier (RHIAccelerationStructure * as, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
+    // Add a partitioned TLAS to the pass (NV partitioned acceleration structure).
+    // Same contract as AddASH_NoAutomaticBarrier: dependency-analysis only, no
+    // automatic barrier — you must manually barrier the PTLAS inside the lambda.
+    // PTLAS is tracked separately from regular AS because it is a distinct RHI
+    // type (does not share the RHIAccelerationStructure base), so it has its own
+    // dependency maps; this lets the RDG correctly order/keep-alive a PTLAS
+    // across a build pass and the RT passes that read it.
+    RDGPass * AddPTLASH_NoAutomaticBarrier (RHIPartitionedTLAS * ptlas, RHIGPUAccessFlags access, RHIPipelineStageFlags stages = RHIPipelineStageFlagBits::kNone) ;
 
     // Add a reference to a resource to extend its lifetime until the pass is destroyed.
     void AddResourceReference(RDGResource * resource) ;
@@ -136,9 +149,11 @@ protected:
         std::vector<RDGTexture*> out_textures;
         std::vector<RDGBuffer*> out_buffers;
         std::vector<RHIAccelerationStructure*> out_acceleration_structures;
+        std::vector<RHIPartitionedTLAS*> out_ptlas;
         std::vector<RDGTexture*> in_textures;
         std::vector<RDGBuffer*> in_buffers;
         std::vector<RHIAccelerationStructure*> in_acceleration_structures;
+        std::vector<RHIPartitionedTLAS*> in_ptlas;
 
         // Details of each resource access after compilation and alias binning, and reference holding
         std::vector<RDGTextureUsage> textures;
@@ -146,15 +161,19 @@ protected:
         std::vector<RDGBufferUsage> buffers;
         // Details of each acceleration structure access after compilation and alias binning
         std::vector<RDGASUsage> acceleration_structures;
+        // Details of each partitioned TLAS access after compilation
+        std::vector<RDGPTLASUsage> ptlas;
     } compiled_; // Generated after compilation
 
 
     // Keep references for resources used in the pass prior to compilation. May contain duplicates.
-    std::vector<RDGTextureUsage> used_textures; 
+    std::vector<RDGTextureUsage> used_textures;
     // Keep references for resources used in the pass prior to compilation. May contain duplicates.
     std::vector<RDGBufferUsage> used_buffers;
     // Keep references for resources used in the pass prior to compilation. May contain duplicates.
     std::vector<RDGASUsage> used_acceleration_structures;
+    // Keep references for partitioned TLAS used in the pass prior to compilation. May contain duplicates.
+    std::vector<RDGPTLASUsage> used_ptlas;
 
     // This is filled up by the RDG builder upon spawning the pass
     std::vector<RDGPass*> successive_passes_;

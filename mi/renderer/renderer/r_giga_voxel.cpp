@@ -34,6 +34,8 @@ public:
         SHADER_UNIFORM_BUFFER(ViewCommonShaderParameters, View)
         // Per-draw (RenderableIndex, GlobalChunkIndex).
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, RenderableIndexAndChunkIndexBuffer)
+        // Per-chunk header (the VS reads ChunkOrigin to place chunk-local verts).
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
 
         // GigaVoxelVertex position attribute only (VS reads position directly;
         // normal/uv_base/uv_scale are resolved at decode time from the global
@@ -157,9 +159,15 @@ void Renderer::Render_DrawGigaVoxelVC(RendererView * view, RenderGraphBuilder & 
     if (data.draw_indirect_commands.empty()) return;
 
     RDGSectionGuard section_guard(builder, "Render_DrawGigaVoxelVC");
+    auto * heap = GigaVoxel::GetGlobalGeometryHeap();
+    auto * gpu_vbuf = heap->GetGPUVertexBuffer();
+    auto * gpu_ibuf = heap->GetGPUIndexBuffer();
     auto params = builder.Allocate<DrawGigaVoxelVCShader::Params>();
     params->View = view->view_common_params_;
     params->RenderableIndexAndChunkIndexBuffer = data.d_renderable_chunk_indices.Raw();
+    // Per-chunk header: the VS reads ChunkOrigin to translate chunk-local
+    // vertices into world space (no ObjectToWorld3x4() in the raster path).
+    params->GigaVoxelChunkHeaderBuffer = builder.Import(heap->GetGPUChunkHeaderBuffer());
 
     // Shared visibility + depth targets (kLoad, layered on the static-mesh pass).
     params->Visibility = view->g_buffer_->G_visibility_.Raw();
@@ -168,9 +176,6 @@ void Renderer::Render_DrawGigaVoxelVC(RendererView * view, RenderGraphBuilder & 
     params->Depth.load_op = RHILoadOpType::kLoad;
 
     auto shader = RDGShaderLibrary::Get().GetShader<DrawGigaVoxelVCShader>();
-    auto * heap = GigaVoxel::GetGlobalGeometryHeap();
-    auto * gpu_vbuf = heap->GetGPUVertexBuffer();
-    auto * gpu_ibuf = heap->GetGPUIndexBuffer();
 
     auto raster_pass = builder.AddPass<DrawGigaVoxelVCShader>({}, shader, params,
         [params, shader, data, gpu_vbuf, gpu_ibuf, rdg_draw_cmd = data.d_draw_commands.Raw()]

@@ -10,6 +10,7 @@
 #include "../shared/SharedGigaVoxel.hlsl"
 #include "../shared/SharedRenderable.hlsl"
 #include "../headers/Intersection.hlsl"
+#include "../headers/Transform.hlsl"
 
 // Global GigaVoxel vertex/index uber buffers (shared by ALL GigaVoxel assets,
 // analogous to the StaticMesh VertexBuffer/IndexBuffer in GeometryResources.hlsl).
@@ -17,28 +18,34 @@
 StructuredBuffer<GigaVoxelVertex>      GigaVoxelVertexBuffer;
 StructuredBuffer<uint>                 GigaVoxelIndexBuffer;
 StructuredBuffer<GigaVoxelHeader>      GigaVoxelHeaderBuffer;
-// Per-chunk geometry header (one row per chunk). Indexed by the global chunk
-// index encoded in the RT instance_custom_index high 12 bits / visibility y.
+// Per-chunk geometry header (one row per chunk). Indexed by the chunk_header_index
+// in the low 16 bits of the RT instance_custom_index / visibility payload y.
+// Carries ChunkOrigin: the chunk-local -> world translation for chunk-local verts.
 StructuredBuffer<GigaVoxelChunkHeader> GigaVoxelChunkHeaderBuffer;
+// Per-instance RT header side table (256 entries). Indexed by the high 8 bits of
+// a GigaVoxel RT instance_custom_index; each row holds the instance's
+// RenderableIndex + GigaVoxelIndex. See SharedGigaVoxel.hlsl.
+StructuredBuffer<GigaVoxelInstanceRTHeader> GigaVoxelInstanceRTHeaderBuffer;
 
 // =============================================================================
-// Decode a GigaVoxel RT instance_custom_index into (RenderableIndex, ChunkIndex).
+// Decode a GigaVoxel RT instance_custom_index into (RTHeaderIndex, ChunkIndex).
 //
-// Layout (set in GigaVoxel::RebuildCachedInstances):
-//   [GlobalChunkIndex:12bits][RenderableIndex:20bits]
+// Layout (set in GigaVoxelInstance::RebuildCachedInstances):
+//   [RTHeaderIndex:8bits 16-23][chunk_header_index:16bits 0-15]
+// RTHeaderIndex indexes GigaVoxelInstanceRTHeaderBuffer above.
 // =============================================================================
 void DecodeGigaVoxelInstanceCustomIndex(uint InstanceCustomIndex,
-                                        out uint RenderableIndex,
+                                        out uint RTHeaderIndex,
                                         out uint ChunkIndex) {
-    RenderableIndex = InstanceCustomIndex & 0xFFFFFu;
-    ChunkIndex      = (InstanceCustomIndex >> 20) & 0xFFFu;
+    RTHeaderIndex = (InstanceCustomIndex >> 16) & 0xFFu;
+    ChunkIndex    = InstanceCustomIndex & 0xFFFFu;
 }
 
 // =============================================================================
 // Evaluate a GigaVoxel RT hit into an IntersectionMaterial.
 //
 // `InstanceCustomIndex` is the raw InstanceID() value (NOT pre-masked): it
-// encodes [GlobalChunkIndex:12][RenderableIndex:20] (see
+// encodes [RTHeaderIndex:8][chunk_header_index:16] (see
 // DecodeGigaVoxelInstanceCustomIndex). The helper:
 //   1. Resolves the asset via RenderableIndex -> RenderableHeader -> GigaVoxel
 //      -> per-asset GigaVoxelHeader (carries the global atlas bindless index).
@@ -47,24 +54,30 @@ void DecodeGigaVoxelInstanceCustomIndex(uint InstanceCustomIndex,
 //   3. Reads the chunk-local triangle (PrimitiveIndex is 0-based per BLAS) and
 //      barycentrically interpolates, then samples the block atlas.
 //
-// `PrimitiveIndex` is the RT builtin (chunk-local, 0-based). Geometry is
-// greedy-meshed VC chunk triangles with world-space positions (no per-instance
-// transform) and the block-texture atlas. Atlas UV convention:
+// `PrimitiveIndex` is the RT builtin (chunk-local, 0-based). Vertices are in
+// CHUNK-LOCAL space; the per-chunk TLAS instance transform (set in
+// GigaVoxelInstance::RebuildCachedInstances = the chunk world origin) maps them
+// to world space. The caller passes ObjectToWorld3x4() / WorldToObject3x4()
+// (RT builtins, valid only at the hit-shader entry point). Atlas UV convention:
 //   finalUv = uv_base + frac(localUv * uv_scale) * (1 / 256)
 // =============================================================================
 IntersectionMaterial EvaluateGigaVoxelRenderableIntersectionMaterial (
     uint InstanceCustomIndex, // raw InstanceID() (encodes RenderableIndex + ChunkIndex)
     uint PrimitiveIndex,      // chunk-local triangle index (RT builtin)
-    float2 Barycentrics       // intersection barycentrics
+    float2 Barycentrics,      // intersection barycentrics
+    float3x4 ObjectToWorld,   // chunk-local -> world (RT builtin ObjectToWorld3x4())
+    float3x3 NormalTransform  // world-space normal basis = transpose(WorldToObject3x4())
 ) {
     IntersectionMaterial Intersection = (IntersectionMaterial)0;
 
-    uint RenderableIndex, ChunkIndex;
-    DecodeGigaVoxelInstanceCustomIndex(InstanceCustomIndex, RenderableIndex, ChunkIndex);
+    uint RTHeaderIndex, ChunkIndex;
+    DecodeGigaVoxelInstanceCustomIndex(InstanceCustomIndex, RTHeaderIndex, ChunkIndex);
 
-    // Asset-level: atlas bindless index.
-    uint GigaVoxelIndex = GetGigaVoxelInstanceHeader(RenderableHeaderBuffer[RenderableIndex]).GigaVoxelIndex;
-    GigaVoxelHeader GV = GigaVoxelHeaderBuffer[GigaVoxelIndex];
+    // Asset-level: atlas bindless index. RTHeaderBuffer carries this instance's
+    // GigaVoxelIndex directly (no detour through RenderableHeaderBuffer, unlike
+    // the visibility path).
+    GigaVoxelInstanceRTHeader RT = GigaVoxelInstanceRTHeaderBuffer[RTHeaderIndex];
+    GigaVoxelHeader GV = GigaVoxelHeaderBuffer[RT.GigaVoxelIndex];
 
     // Chunk-level: geometry span in the global uber buffers.
     GigaVoxelChunkHeader CH = GigaVoxelChunkHeaderBuffer[ChunkIndex];
@@ -85,15 +98,19 @@ IntersectionMaterial EvaluateGigaVoxelRenderableIntersectionMaterial (
     float w1 = Barycentrics.x;
     float w2 = Barycentrics.y;
 
-    // Positions are already world-space (greedy mesher emits world coords).
-    float3 Position = VA.position * w0 + VB.position * w1 + VC.position * w2;
-    Intersection.LocalPosition = Position;
-    Intersection.WorldPosition = Position;
+    // Vertices are chunk-local; ObjectToWorld (per-chunk TLAS instance transform)
+    // maps them to world space.
+    float3 LocalPosition = VA.position * w0 + VB.position * w1 + VC.position * w2;
+    Intersection.LocalPosition = LocalPosition;
+    Intersection.WorldPosition = TransformPoint(ObjectToWorld, LocalPosition);
 
     // Geometry normal from the face (axis-aligned face normal from greedy mesh).
-    float3 GeoNormal = normalize(cross(VB.position - VA.position, VC.position - VA.position));
-    Intersection.GeometryNormal = GeoNormal;
-    Intersection.ShadingNormal = normalize(VA.normal * w0 + VB.normal * w1 + VC.normal * w2);
+    // Transform to world via the caller-supplied normal basis (a pure
+    // translation leaves the normal unchanged).
+    float3 LocalGeoNormal = normalize(cross(VB.position - VA.position, VC.position - VA.position));
+    Intersection.GeometryNormal = normalize(TransformVector(NormalTransform, LocalGeoNormal));
+    float3 LocalShadingNormal = normalize(VA.normal * w0 + VB.normal * w1 + VC.normal * w2);
+    Intersection.ShadingNormal = normalize(TransformVector(NormalTransform, LocalShadingNormal));
 
     // Interpolate atlas-local UV, then map into the atlas tile.
     float2 LocalUV = VA.uv_base * w0 + VB.uv_base * w1 + VC.uv_base * w2;
@@ -128,12 +145,18 @@ IntersectionMaterial EvaluateGigaVoxelRenderableIntersectionMaterial (
 //
 // Bary.x = 1 - Bary.y - Bary.z (derived). This mirrors the RT path but resolves
 // the chunk from the payload's GlobalChunkIndex instead of InstanceID().
+//
+// Vertices are chunk-local; `ObjectToWorld` is the chunk-local -> world transform
+// (a pure translation = the chunk's world origin from GigaVoxelChunkHeader), as
+// the raster path has no ObjectToWorld3x4() builtin. The caller builds it from
+// GigaVoxelChunkHeaderBuffer[GlobalChunkIndex].ChunkOrigin.
 // =============================================================================
 IntersectionMaterial EvaluateGigaVoxelVisibilityIntersectionMaterial (
     uint RenderableIndex,
     uint GlobalChunkIndex,
     uint PrimitiveIndex,
-    float2 Barycentrics   // (.y, .z); .x derived
+    float2 Barycentrics,    // (.y, .z); .x derived
+    float3x4 ObjectToWorld  // chunk-local -> world (chunk origin translation)
 ) {
     IntersectionMaterial Intersection = (IntersectionMaterial)0;
 
@@ -159,9 +182,9 @@ IntersectionMaterial EvaluateGigaVoxelVisibilityIntersectionMaterial (
     float w1 = Barycentrics.x;
     float w2 = Barycentrics.y;
 
-    float3 Position = VA.position * w0 + VB.position * w1 + VC.position * w2;
-    Intersection.LocalPosition = Position;
-    Intersection.WorldPosition = Position;
+    float3 LocalPosition = VA.position * w0 + VB.position * w1 + VC.position * w2;
+    Intersection.LocalPosition = LocalPosition;
+    Intersection.WorldPosition = TransformPoint(ObjectToWorld, LocalPosition);
 
     float3 GeoNormal = normalize(cross(VB.position - VA.position, VC.position - VA.position));
     Intersection.GeometryNormal = GeoNormal;

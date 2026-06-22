@@ -26,9 +26,6 @@
 
 MI_NAMESPACE_BEGIN
 
-class StaticMeshInstance;
-class RenderGraphBuilder;
-
 // One BLAS instance's full description for TLAS/PTLAS gathering. PTLAS instance
 // requires BLAS device address + transform + customIndex + mask + SBT offset +
 // partitionIndex + explicitAABB. The legacy single-BLAS path (GetBLAS +
@@ -86,8 +83,10 @@ public:
         }
     }
 
-    // Override the functions if the renderable can be ray-traced.
+    // **Deprecated**: Legacy renderables that only have 1 non-partitioned BLAS per renderable implement this function.
     virtual RHIAccelerationStructure * GetBLAS () const { return nullptr; }
+
+    // Override the functions if the renderable can be ray-traced.
     virtual RHIASGeometryInstanceFlags GetASGeometryInstanceFlags () const { return RHIASGeometryInstanceFlagBits::kNone; }
 
     // ---- Multi-BLAS instance gathering (TLAS/PTLAS) ----
@@ -105,11 +104,13 @@ public:
     virtual std::span<const RenderableBLASInstance> GetPartitionedBLASInstances () const { return {}; }
 
     constexpr static uint32_t kInvalidRenderableIndex = 0xFFFFFFFFu;
-    // Number of bits used for the renderable index in InstanceCustomIndex.
-    // The remaining upper bits encode the ray-traced class index.
-    // Must match RENDERABLE_INDEX_NUM_BITS in SharedRenderable.hlsl.
-    constexpr static uint32_t kRenderableIndexNumBits = 20;
-    // Note that the renderable index is at most 24 bits
+    // GetInstanceCustomIndex returns the value packed into the RT
+    // instance_custom_index (24-bit). The contract is PER-RENDERABLE-TYPE:
+    //   - StaticMesh / VolumeGrid: the full 24 bits are the plain RenderableIndex.
+    //   - GigaVoxel: [RTHeaderIndex:8][chunk_header_index:16] (encoded in
+    //     GigaVoxelInstance::RebuildCachedInstances; GetInstanceCustomIndex is
+    //     only used by the legacy single-BLAS path and returns the plain index).
+    // Renderable type is determined by the SBT hit group, not by any bits here.
     virtual uint32_t GetInstanceCustomIndex () const { return kInvalidRenderableIndex; }
 
     // Returns the ray-traced renderable class index for SBT hit group selection.

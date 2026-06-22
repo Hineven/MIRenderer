@@ -270,8 +270,9 @@ TRef<Texture> TextureLoader::LoadFromBuffer(const std::string& name, const std::
                 rgba_fp16[i / 2] = glm::packHalf2x16({rgba[i], rgba[i + 1]});
             }
             free(rgba);
-            texture = Texture::Create(PixelFormatType::kR16G16B16A16_FLOAT, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-            texture->InitializeFromBinary(std::span<uint8_t>((uint8_t*)rgba_fp16, width * height * 4 * sizeof(uint16_t)));
+            texture = Texture::CreateFromBinary(
+                PixelFormatType::kR16G16B16A16_FLOAT, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                std::span<uint8_t>(reinterpret_cast<uint8_t*>(rgba_fp16), width * height * 4 * sizeof(uint16_t)));
             texture->SetName(name);
             free(rgba_fp16);
         }
@@ -314,9 +315,9 @@ TRef<Texture> TextureLoader::LoadFromBuffer(const std::string& name, const std::
             channels = 4;
         }
 
-        texture = Texture::Create(format, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-
-        texture->InitializeFromBinary(std::span<uint8_t>(init_data, width * height * channels));
+        texture = Texture::CreateFromBinary(
+            format, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+            std::span<uint8_t>(init_data, width * height * channels));
         texture->SetName(name);
 
         stbi_image_free(data);

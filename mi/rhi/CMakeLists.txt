@@ -71,6 +71,7 @@ set(SOURCE_FILES
         vk/vk_shader.cpp
         vk/vma_impl.cpp
         vk/vk_dispatcher.cpp
+        vk/vk_aftermath.cpp
 )
 
 set(HEADER_FILES
@@ -89,15 +90,38 @@ set(HEADER_FILES
         include/rhi/rhi_param.h
         include/rhi/rhi_root_signature.h
         include/rhi/rhi_ptlas.h
+        vk/vk_aftermath.h
 )
 
 add_library(rhi STATIC ${SOURCE_FILES} ${HEADER_FILES})
 target_include_directories(rhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(rhi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vk)
 
 option(MI_BYPASS_RHI_THREAD "Bypass RHI thread for debugging purposes" OFF)
 if(MI_BYPASS_RHI_THREAD)
     message(STATUS "RHI thread bypass enabled.")
     target_compile_definitions(rhi PUBLIC MI_BYPASS_RHI_THREAD)
+endif()
+
+# ---- NVIDIA Nsight Aftermath (GPU crash dump capture) ----
+# Disabled by default. Enable to get a .ndump written next to the executable
+# on device lost, which can be opened in Nsight Graphics / Nsight Aftermath to
+# attribute the faulting shader/instruction. The SDK ships with Nsight Graphics
+# (also available standalone from NVIDIA developer); FindNsightAftermath.cmake
+# searches both, across several install roots and all installed versions, and
+# picks the highest version. Override with -DMI_NSIGHT_GRAPHICS_DIR to force a
+# specific Nsight Graphics install.
+option(MI_ENABLE_AFTERMATH "Enable NVIDIA Nsight Aftermath GPU crash dump capture" OFF)
+if(MI_ENABLE_AFTERMATH)
+    find_package(NsightAftermath REQUIRED MODULE)
+    target_include_directories(rhi PRIVATE ${MI_AFTERMATH_INCLUDE_DIR})
+    target_link_libraries(rhi PRIVATE "${MI_AFTERMATH_LIB_DIR}/GFSDK_Aftermath_Lib.x64.lib")
+    target_compile_definitions(rhi PRIVATE MI_ENABLE_AFTERMATH)
+    # The Aftermath runtime DLL must sit next to the executable. rhi is a static
+    # lib, so it cannot place the DLL at the final exe output dir itself; expose
+    # the path as a cache variable so each application target can copy it (see
+    # the NGX-DLL copy pattern in applications/3d_viewer/CMakeLists.txt).
+    # MI_AFTERMATH_DLL is already a cache variable published by FindNsightAftermath.
 endif()
 
 list(

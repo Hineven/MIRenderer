@@ -30,7 +30,7 @@ static CVar<bool> CVar_SSRT_Disabled(
 static CVar<float> CVar_SSRT_RelativeTexelThickness(
     "r.direct_lighting.ssrt_relative_texel_thickness",
     "Relative texel thickness for SSRT.",
-    0.001
+    0.0002f
 );
 
 void FillUniformBufferForDirectLighting(RendererView * view, DirectLightingUB* DI_UB) {

@@ -72,6 +72,7 @@ public:
     void RHIDispatchRaysIndirect(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect *dispatch_rays_indirect) override;
     void RHIDispatchRaysIndirect2(RHICommandQueueBase *cmd, RHICommandDispatchRaysIndirect2 *dispatch_rays_indirect) override;
     void RHIAcclerationStructureBarriers(RHICommandQueueBase *cmd, RHICommandAccelerationStructureBarrier *barrier) override;
+    void RHIPartitionedTLASBarriers(RHICommandQueueBase *cmd, RHICommandPartitionedTLASBarrier *barrier) override;
 
     void RHIFrameEnd(RHICommandQueueBase * cmd, RHISyncPoint * sync) override ;
 

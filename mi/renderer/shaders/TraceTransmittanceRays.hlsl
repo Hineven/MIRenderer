@@ -104,8 +104,7 @@ void TraceTransmittanceRaysAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPay
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance = InstanceID();  // StaticMesh: InstanceID() == RenderableIndex
 
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
     uint StaticMeshIndex = InstanceHeader.StaticMeshIndex;
@@ -145,8 +144,7 @@ void TraceTransmittanceRaysAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPay
 [shader("anyhit")]
 void TraceTransmittanceRaysAnyHit_VolumeGrid(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    uint InstanceCustomIndex = InstanceID();
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint Instance = InstanceID();  // VolumeGrid: InstanceID() == RenderableIndex
     VolumeGridInstanceHeader InstanceHeader = GetVolumeGridInstanceHeader(RenderableHeaderBuffer[Instance]);
     uint GridIndex = InstanceHeader.VolumeGridIndex;
     VolumeGridHeader Grid = VolumeGridHeaderBuffer[GridIndex];
@@ -237,16 +235,20 @@ void TraceTransmittanceRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_Ra
 [shader("anyhit")]
 void TraceTransmittanceRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
-    // Intersection.Opacity is the atlas alpha; transmittance loss = (1 - opacity).
-    Payload.Transmittance *= saturate(1.f - Intersection.Opacity);
-    if(Intersection.Opacity < 0.99f) {
-        IgnoreHit();
-    }
+   // FIXME no-op
+//     IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(
+//         InstanceID(), PrimitiveIndex(), Attributes.barycentrics,
+//         ObjectToWorld3x4(), transpose(To3x3(WorldToObject3x4())));
+//     // Intersection.Opacity is the atlas alpha; transmittance loss = (1 - opacity).
+//     Payload.Transmittance *= saturate(1.f - Intersection.Opacity);
+//     if(Intersection.Opacity < 0.99f) {
+//         IgnoreHit();
+//     }
 }
 [shader("closesthit")]
 void TraceTransmittanceRaysClosestHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    Payload.HitDistance = RayTCurrent();
+                                   // FIXME no-op
+//     Payload.HitDistance = RayTCurrent();
     Payload.Transmittance = 0;
 }

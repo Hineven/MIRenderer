@@ -233,8 +233,8 @@ uint32_t VolumeGridInstance::GetRayTracedClassIndex() const {
 }
 
 uint32_t VolumeGridInstance::GetInstanceCustomIndex() const {
-    // 标记这是 VolumeGrid 类型，以便 Shader 通过 InstanceID 区分
-    return GetIndex() | (GetRayTracedClassIndex() << Renderable::kRenderableIndexNumBits);
+    // VolumeGrid uses the full 24-bit InstanceCustomIndex as the plain RenderableIndex.
+    return GetIndex();
 }
 
 std::span<const RenderableBLASInstance> VolumeGridInstance::GetGlobalBLASInstances() const {

@@ -95,7 +95,15 @@ RHIAccelerationStructureBuildSizesInfo VulkanAccelerationStructure::GetBuildSize
                     ((VulkanBuffer*)geom.triangles.vertex_data.buffer)->GetDeviceAddress() + geom.triangles.vertex_data.offset;
                 vk_geom.geometry.triangles.vertexStride = geom.triangles.vertex_stride;
                 vk_geom.geometry.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat; // Only support float3
-                vk_geom.geometry.triangles.maxVertex = geom.triangles.vertex_count;
+                // Vulkan: maxVertex is the HIGHEST vertex index that may be accessed
+                // (zero-based), i.e. vertex_count - 1. Passing vertex_count makes the
+                // BLAS read one vertex past the geometry's span; harmless when the
+                // vertex buffer has tail slack (most StaticMesh paths) but corrupts /
+                // OOBs when the span is tight against buffer end or the next chunk
+                // (GigaVoxel SizeClassAllocator-packed uber buffer -> intermittent
+                // device lost / PTLAS corruption).
+                vk_geom.geometry.triangles.maxVertex = geom.triangles.vertex_count > 0
+                    ? geom.triangles.vertex_count - 1 : 0;
                 auto index_address =
                     ((VulkanBuffer*)geom.triangles.index_data.buffer)->GetDeviceAddress()
                     + geom.triangles.index_data.offset;

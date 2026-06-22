@@ -31,9 +31,9 @@ namespace {
 
 // ---- Config for the bring-up terrain --------------------------------------
 // A small NxN chunk grid around the origin. Kept tiny so worldgen + meshing
-// finish instantly in-process. The Phase-1 GigaVoxel merges all of this into
-// one BLAS, so do not crank this up.
-constexpr int kBringUpChunkRadius = 1; // (2R+1)^2 chunks => 3x3 with R=1
+// finish instantly in-process. Currently a SINGLE chunk (R=0) for the first
+// end-to-end GigaVoxel RT bring-up — isolate one chunk before scaling up.
+constexpr int kBringUpChunkRadius = 0; // (2R+1)^2 chunks => 1x1 with R=0
 
 // Convert one macromc VoxelVertex into the renderer-layer GigaVoxelVertex.
 // Field-for-field; the two structs mirror each other by design (see comments in
@@ -97,7 +97,9 @@ TRef<Texture> BuildPlaceholderAtlas() {
                                  1, 1);
     atlas->SetName("GigaVoxelAtlasPlaceholder");
 
-    auto & data = const_cast<std::vector<uint8_t> &>(atlas->GetBinary());
+    // Procedurally paint the CPU mirror in place (constructor pre-allocates it
+    // zero-filled; GetBinaryMutable marks it as holding meaningful data + dirty).
+    auto & data = atlas->GetBinaryMutable();
     const uint32_t atlas_w = atlas->GetWidth();
     const uint32_t tile = MACROMC_MESHING_NAMESPACE::kAtlasTileTexelSize;
     const uint32_t tiles_per_row = MACROMC_MESHING_NAMESPACE::kAtlasTilesPerRow;
@@ -138,10 +140,9 @@ TRef<Texture> BuildPlaceholderAtlas() {
 
 } // namespace
 
-TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
+mi::TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
     Scene * scene,
-    DeviceBindlessResourceAllocator * allocator,
-    TRef<GigaVoxel> * asset_out
+    DeviceBindlessResourceAllocator * allocator
 ) {
     if (!scene || !allocator) return {};
 
@@ -162,7 +163,15 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
         for (int cx = -kBringUpChunkRadius; cx <= kBringUpChunkRadius; ++cx) {
             ChunkCoord coord {cx, cz};
             auto chunk = mi::Create<ChunkData>(coord);
-            worldgen.GenerateChunk(shell.Raw(), coord, chunk.Raw());
+            // FIXME
+            if (false) {
+                worldgen.GenerateChunk(shell.Raw(), coord, chunk.Raw());
+            } else {
+                // 1 block only
+                auto& reg = MACROMC_REGISTRY_NAMESPACE::GetGlobalBlockRegistry();
+                auto bedrock_id = reg.GetBlockId("bedrock");
+                chunk->SetBlock(0, 0, 0, bedrock_id);
+            }
             shell->SetChunk(coord, chunk);
         }
     }
@@ -196,8 +205,10 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
         if (flat.vertices.empty() || flat.indices.empty()) continue;
         auto chunk_id = static_cast<mi::GigaVoxelChunkId>(
             (uint64_t(uint32_t(coord.x)) << 21) | uint64_t(uint32_t(coord.z)));
-        gv->UploadChunk(chunk_id, std::move(flat.vertices), std::move(flat.indices));
+        mi::GigaVoxelChunkCoord gv_coord{coord.x, coord.z};
+        gv->UploadChunk(chunk_id, gv_coord, std::move(flat.vertices), std::move(flat.indices));
     }
+
 
     if (gv->IsEmpty()) {
         MI_WARN("GigaVoxel bring-up produced no geometry; skipping instance creation.");
@@ -207,18 +218,16 @@ TRef<GigaVoxelInstance> CreateGigaVoxelBringUp(
     // 6. Build per-chunk BLAS + refresh header (sync wrapper for bring-up).
     gv->UpdateOnDevice(allocator);
 
-    // 7. Attach to the scene (asset owns the instance; self-registers).
-    gv->AttachToScene(scene, Transform{});
-    auto inst = gv->GetInstance();
+    const int grid_extent = 2 * kBringUpChunkRadius + 1;
+    const uint32_t vtx_count = gv->GetGeometryHeap() ? static_cast<uint32_t>(gv->GetGeometryHeap()->GetVertexHighWatermark()) : 0u;
+    const uint32_t idx_count = gv->GetGeometryHeap() ? static_cast<uint32_t>(gv->GetGeometryHeap()->GetIndexHighWatermark()) : 0u;
+
+    // 7. Build the instance (owns the asset) and register it into the scene.
+    auto inst = GigaVoxelInstance::Create(scene, gv, Transform{});
     if (!inst) {
         MI_WARN("GigaVoxelInstance creation failed during bring-up.");
         return {};
     }
-
-    if (asset_out) *asset_out = gv;
-    const int grid_extent = 2 * kBringUpChunkRadius + 1;
-    const uint32_t vtx_count = gv->GetGeometryHeap() ? static_cast<uint32_t>(gv->GetGeometryHeap()->GetVertexHighWatermark()) : 0u;
-    const uint32_t idx_count = gv->GetGeometryHeap() ? static_cast<uint32_t>(gv->GetGeometryHeap()->GetIndexHighWatermark()) : 0u;
     MI_INFO("GigaVoxel bring-up: created terrain over {}x{} chunks, {} vertices / {} indices.",
             grid_extent, grid_extent, vtx_count, idx_count);
     return inst;

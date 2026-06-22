@@ -149,10 +149,14 @@ mi::TaskRef ChunkMeshingContext::RequestMesh(ChunkCoord coord, ChunkCoord camera
         // 255->0 and loop forever. Use a wide int.
         for (uint32_t sy = 0; sy < kSubChunksPerChunkY; ++sy) {
             if (chunk->GetSubChunk(static_cast<uint8_t>(sy)).IsEmpty()) continue;
+            // CHUNK-LOCAL origin: vertices are emitted relative to the chunk's
+            // min corner (X/Z = 0), with Y absolute (0..kChunkSizeY, subchunk
+            // offset sy*kSubChunkSize). The chunk's world placement is carried
+            // separately by its GigaVoxelChunkCoord -> ChunkOrigin on the device.
             glm::ivec3 block_origin(
-                coord.x * static_cast<int32_t>(kChunkSizeX),
+                0,
                 static_cast<int32_t>(sy) * static_cast<int32_t>(kSubChunkSize),
-                coord.z * static_cast<int32_t>(kSubChunkSize)
+                0
             );
             mesher_raw->MeshSubChunk(*chunk, coord, static_cast<uint8_t>(sy), source,
                                      block_origin, result_ptr->subchunk_meshes[sy]);

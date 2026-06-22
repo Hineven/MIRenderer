@@ -46,7 +46,6 @@ void VulkanCommandExecutor::CommandQueueState::ResetStates() {
         point.bound_pipeline_dirty = true;
         point.bind_point_type = (RHIBindPointType) i;
     }
-    slot_table_.clear();
 }
 
 static vk::DescriptorPool CreateFrameTemporaryDescriptorPool() {

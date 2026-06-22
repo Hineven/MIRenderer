@@ -456,15 +456,13 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         if (!object_j.is_object()) {
             return;
         }
-        if (!object_j.contains("path") || !object_j["path"].is_string()) {
-            MI_WARN("Skip object in scene '{}': missing string field 'path'.", scene_name);
-            return;
-        }
 
-        const std::string object_path_str = object_j["path"].get<std::string>();
-        const auto object_path = ResolvePathForLoading(object_path_str);
+        std::string object_path_str;
+        if (object_j.contains("path")) object_path_str = object_j["path"].get<std::string>();
+        std::filesystem::path object_path;
+        if (!object_path_str.empty()) object_path = ResolvePathForLoading(object_path_str);
         const auto object_transform = ParseTransformOrDefault(object_j.value("transform", json::object()));
-        std::string object_name = object_path.filename().string();
+        std::string object_name = object_path.empty() ? "unnamed" : object_path.filename().string();
         if (object_j.contains("name") && object_j["name"].is_string()) {
             object_name = object_j["name"].get<std::string>();
         }
@@ -503,6 +501,10 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         }
 
         if (loading_format.empty()) {
+            if (object_path.empty()) {
+                MI_WARN("Skip object in scene '{}': no path or loading_format specified.", scene_name);
+                return;
+            }
             const auto ext = ToLower(object_path.extension().string());
             if (ext == ".gltf" || ext == ".glb") {
                 loading_format = "gltf";
@@ -512,6 +514,10 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         }
 
         if (loading_format == "gltf") {
+            if (object_path.empty()) {
+                MI_WARN("Skip object in scene '{}': missing string field 'path'.", scene_name);
+                return;
+            }
             load_gltf_object(object_path, object_transform, gltf_load_options, scene_nodes);
             return;
         }
@@ -519,20 +525,20 @@ bool ViewerApp::ApplySceneConfig(const nlohmann::json& scene_config, bool clear_
         if (loading_format == "gigavoxel" || loading_format == "macromc_terrain") {
             // Bring-up: generate a small voxel terrain in-process and upload it
             // as a GigaVoxel asset. The path is ignored (no on-disk asset yet).
-            TRef<GigaVoxel> asset;
-            auto instance = CreateGigaVoxelBringUp(scene_.get(), resource_allocator_.Raw(), &asset);
+            auto instance = CreateGigaVoxelBringUp(scene_.get(), resource_allocator_.Raw());
             if (instance) {
                 instance->SetTransform(object_transform);
                 register_non_gltf_renderable(instance.Raw());
-                // Keep the asset alive for the lifetime of the viewer (the
-                // instance alone does not own the underlying GigaVoxel asset).
-                loaded_gigavoxel_assets_.push_back(asset);
             }
             return;
         }
 
 
         if (loading_format == "vdb" || loading_format == "volume_grid") {
+            if (object_path.empty()) {
+                MI_WARN("Skip object in scene '{}': missing string field 'path'.", scene_name);
+                return;
+            }
             OpenVDBLoader::LoadOptions options {};
             const json vdb_options = metadata.contains("vdb_options") && metadata["vdb_options"].is_object()
                 ? metadata["vdb_options"]

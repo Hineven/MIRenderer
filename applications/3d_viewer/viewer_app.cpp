@@ -635,9 +635,9 @@ void ViewerApp::Initialize(std::unique_ptr<MIInfraInterface>&& infra, const Main
         NGXContext::GetRequiredVulkanExtensions(inst_extensions, dev_extensions);
 
         VulkanRHICreateInfo info {};
-        info.extra_instance_extension_count = inst_extensions.size();
+        info.extra_instance_extension_count = (uint32_t)inst_extensions.size();
         info.extra_instance_extensions = inst_extensions.data();
-        info.extra_device_extension_count = dev_extensions.size();
+        info.extra_device_extension_count = (uint32_t)dev_extensions.size();
         info.extra_device_extensions = dev_extensions.data();
         RHI::InitializeSingleton(RHIType::kVulkan, &info);
         RHI::Get().ResetPipelineCache(4 * 1024 * 1024);
@@ -790,7 +790,7 @@ void ViewerApp::Destroy() {
 }
 
 void ViewerApp::HandleNavigationInput(float delta_time) {
-    const float move_speed = 1.f;
+    const float move_speed = 50.f;
     const float mouse_sensitivity = 0.002f;
     float dt = delta_time;
     float move_interval = move_speed * dt;
@@ -1181,7 +1181,6 @@ void ViewerApp::Run(std::unique_ptr<MIInfraInterface>&& infra, const MainLoopSta
             ImGui::SetNextWindowSize(ImVec2(1200, 700), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("UI", nullptr, ImGuiWindowFlags_NoCollapse)) {
                 float full_w = ImGui::GetContentRegionAvail().x;
-                float full_h = ImGui::GetContentRegionAvail().y;
                 float spacing = ImGui::GetStyle().ItemSpacing.x;
 
                 // Right column: max 550 by default.

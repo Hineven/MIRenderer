@@ -83,8 +83,8 @@ void TraceShadowRaysAnyHit_StaticMesh(inout RayPayload Payload: SV_RayPayload,
                                    BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
     uint Triangle          = PrimitiveIndex();
     uint DescriptionIndex  = GeometryIndex();
-    uint InstanceCustomIndex = InstanceID(); // Custom instance ID, not the instance index in the TLAS
-    uint Instance = InstanceCustomIndex & INSTANCE_CUSTOM_INDEX_INDEX_MASK;
+    uint InstanceCustomIndex = InstanceID(); // StaticMesh: InstanceID() == RenderableIndex
+    uint Instance = InstanceCustomIndex;
 
     // Static mesh instance
     StaticMeshInstanceHeader InstanceHeader = GetStaticMeshInstanceHeader(RenderableHeaderBuffer[Instance]);
@@ -141,7 +141,9 @@ void TraceShadowRaysClosestHit_VolumeGrid(inout RayPayload Payload: SV_RayPayloa
 [shader("anyhit")]
 void TraceShadowRaysAnyHit_GigaVoxel(inout RayPayload Payload: SV_RayPayload,
                                BuiltInTriangleIntersectionAttributes Attributes: SV_IntersectionAttributes) {
-    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(InstanceID(), PrimitiveIndex(), Attributes.barycentrics);
+    IntersectionMaterial Intersection = EvaluateGigaVoxelRenderableIntersectionMaterial(
+        InstanceID(), PrimitiveIndex(), Attributes.barycentrics,
+        ObjectToWorld3x4(), transpose(To3x3(WorldToObject3x4())));
     if(Intersection.Opacity < 0.1f) { IgnoreHit(); }
 }
 [shader("closesthit")]

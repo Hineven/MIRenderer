@@ -9,6 +9,8 @@
 #include <rhi/rhi.h>
 
 #include "renderer/mi_buffer_heap.h"
+#include "renderer/mi_giga_voxel_heap.h"
+#include "renderer/mi_texture.h"
 #include "rhi/rhi_buffer.h"
 #include "rhi/rhi_bindless.h"
 #include "shaders/shared/SharedMaterial.hlsl"
@@ -176,11 +178,49 @@ volume_grid_slots_(kMaxNumVolumeGrids){
         {sizeof(GigaVoxelHeader) * kMaxNumGigaVoxels, RHIBufferUsageFlagBits::kStorage}
     );
     giga_voxel_header_buffer_->SetName("GigaVoxelHeaderBuffer");
+
+    giga_voxel_instance_rt_header_buffer_ = RHI::Get().CreateBuffer(
+        {sizeof(GigaVoxelInstanceRTHeader) * kMaxNumGigaVoxelInstances, RHIBufferUsageFlagBits::kStorage}
+    );
+    giga_voxel_instance_rt_header_buffer_->SetName("GigaVoxelInstanceRTHeaderBuffer");
+
+    partition_allocator_ = Create<PartitionAllocator>();
 }
 
 DeviceBindlessResourceAllocator::~DeviceBindlessResourceAllocator() {
     // Drop anything still pending.
     delayed_destruction_.ClearAllNow();
+    // giga_voxel_geometry_heap_ / giga_voxel_atlas_ release their TRef<RHIBuffer>s
+    // here implicitly; RHI is still alive at this point in the shutdown sequence.
+}
+
+GigaVoxelGeometryHeap * DeviceBindlessResourceAllocator::GetGigaVoxelGeometryHeap() {
+    if (!giga_voxel_geometry_heap_) {
+        // GPU usage flags: vertex/index + storage + AS build input + shader device
+        // address (matches the original flags from GigaVoxel::GetGlobalGeometryHeap).
+        auto usage = RHIBufferUsageFlagBits::kVertex | RHIBufferUsageFlagBits::kIndex
+                   | RHIBufferUsageFlagBits::kStorage
+                   | RHIBufferUsageFlagBits::kAccelerationStructureBuildInput
+                   | RHIBufferUsageFlagBits::kShaderDeviceAddress;
+        giga_voxel_geometry_heap_ = new GigaVoxelGeometryHeap(usage, usage);
+    }
+    return giga_voxel_geometry_heap_.Raw();
+}
+
+void DeviceBindlessResourceAllocator::SetGigaVoxelAtlas(TRef<Texture> atlas) {
+    giga_voxel_atlas_ = atlas;
+    giga_voxel_atlas_bindless_index_ =
+        giga_voxel_atlas_ ? giga_voxel_atlas_->GetBindlessIndex() : 0xFFFFFFFFu;
+}
+
+uint32_t DeviceBindlessResourceAllocator::AllocateGigaVoxelInstanceRTHeaderSlot() {
+    uint32_t slot = giga_voxel_instance_rt_header_slots_.AllocateSlot();
+    mi_assert(slot != UINT32_MAX, "GigaVoxelInstanceRTHeader slot pool exhausted");
+    return slot;
+}
+
+void DeviceBindlessResourceAllocator::FreeGigaVoxelInstanceRTHeaderSlot(uint32_t idx) {
+    giga_voxel_instance_rt_header_slots_.FreeSlot(idx);
 }
 
 void DeviceBindlessResourceAllocator::AdvanceFrame() {
@@ -197,6 +237,10 @@ void DeviceBindlessResourceAllocator::AdvanceFrameForDelayedDestruction() {
 
 void DeviceBindlessResourceAllocator::ForceFlushDelayedDestruction() {
     delayed_destruction_.ClearAllNow();
+}
+
+PartitionAllocator * DeviceBindlessResourceAllocator::GetPartitionAllocator() {
+    return partition_allocator_.Raw();
 }
 
 size_t DeviceBindlessResourceAllocator::GetTotalAllocatedDeviceSize() const {

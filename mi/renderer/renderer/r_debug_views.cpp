@@ -18,16 +18,16 @@
 #include "r_debug.h"
 #include "r_light_structure.h"
 #include "../shaders/shared/SharedLight.hlsl"
+#include "renderer/mi_buffer_heap.h"
 MI_NAMESPACE_BEGIN
-
-static CVar<int> CVar_DebugViewMode(
-    "r.debug_view.mode",
+    static CVar<int> CVar_DebugViewMode(
+    "r.debug.view_mode",
     "Debug view mode. 0: visualize raytracing scene, 1: visualize traced rays",
     0
 );
 
 static CVar<int> CVar_DebugViewVisualizeRayColors(
-    "r.debug_view.visualize_ray_colors",
+    "r.debug.visualize_ray_colors",
     "0: disabled, 1: enabled",
     0
 );
@@ -66,6 +66,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelInstanceRTHeaderBuffer)
         SHADER_RESOURCE_PARAMETER(RWTexture2D, RWDebugOutput)
         SHADER_RESOURCE_PARAMETER(TextureCube, EnvironmentMap)
         SHADER_RESOURCE_PARAMETER(SamplerState, LinearWrapSampler)
@@ -190,7 +191,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
             UB->EnvironmentMapLOD = CVar_EnvironmentLightEvaluateLOD.Get();
             params->UB = UB;
         }
-        params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
+        params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_.Raw();
         params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
         params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
         params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
@@ -203,6 +204,7 @@ void Renderer::Render_DebugView(RendererView *view, RenderGraphBuilder &builder)
         params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
         params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
+        params->GigaVoxelInstanceRTHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelInstanceRTHeaderBuffer());
         params->RWDebugOutput = view->debug_views_.visualize_ray_tracing_scene_output_.Raw();
         if (view->scene_->GetSkyTexture()) {
             params->EnvironmentMap = builder.Import(view->scene_->GetSkyTexture()->GetDeviceTexture());

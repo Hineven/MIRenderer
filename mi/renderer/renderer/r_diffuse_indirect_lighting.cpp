@@ -875,7 +875,7 @@ void Renderer::Render_UpdateDiffuseIndirectLighting(RendererView * view, RenderG
             UB->EnableSpatialProbeFiltering = CVar_EnableSpatialProbeFiltering.Get() ? 1 : 0;
 
             UB->NoEnvironmentLight = CVar_NoEnvironmentLight.Get() ? 1 : 0;
-            UB->GRF_EmitterIntensityScale = CVar_GRF_EmitterIntensityScale.Get();
+            UB->GRF_EmitterIntensityScale = 0;
             UB->Padding = glm::uvec3{0};
         }
         params->UB = UB;

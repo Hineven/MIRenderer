@@ -70,7 +70,7 @@ FORCEINLINE glm::vec2 AtlasTileOriginUV(MACROMC_REGISTRY_NAMESPACE::BlockId tile
 // =============================================================================
 
 struct VoxelVertex {
-    glm::vec3 position;        // world-space vertex position (meters)
+    glm::vec3 position;        // chunk-local vertex position (meters; world = chunk world origin + position)
     glm::vec3 normal;          // face normal (one of ±X/±Y/±Z)
     glm::vec2 uv_base;         // atlas-space origin (bottom-left) of the block's tile
     glm::vec2 uv_scale;        // how many tiles the owning quad spans (u, v), integer counts as float

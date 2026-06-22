@@ -20,7 +20,15 @@ VulkanPartitionedTLAS::~VulkanPartitionedTLAS() {
 RHIPartitionedTLASBuildSizes VulkanPartitionedTLAS::GetBuildSizes(
     const RHIPartitionedTLASInstancesInput& input) const {
 
+    // VkPartitionedAccelerationStructureInstancesInputNV requires a
+    // VkPartitionedAccelerationStructureFlagsNV chained via pNext. Without it the
+    // driver reads undefined flag data and returns a bogus buildScratchSize (upper
+    // bits corrupted). Match the NVIDIA sample, which always chains this struct
+    // (even with default/zero fields).
+    vk::PartitionedAccelerationStructureFlagsNV ptlas_flags{};
+
     vk::PartitionedAccelerationStructureInstancesInputNV vk_input{};
+    vk_input.pNext = &ptlas_flags;
     vk_input.flags = GetVulkanBuildAccelerationStructureFlags(input.flags);
     vk_input.instanceCount = input.instance_count;
     vk_input.maxInstancePerPartitionCount = input.max_instance_per_partition_count;

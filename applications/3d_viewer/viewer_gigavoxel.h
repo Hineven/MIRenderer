@@ -26,15 +26,12 @@ MI_NAMESPACE_BEGIN
 class ViewerApp;
 
 // Create a GigaVoxel terrain bring-up instance and register it with the scene.
-// Returns null on failure. The instance self-registers its RenderableIndex slot
-// through its constructor (same pattern as StaticMeshInstance::Create).
-//
-// asset_out (optional): if non-null, receives the underlying GigaVoxel asset so
-// the caller can keep it alive (it must outlive the instance).
+// Returns null on failure. The instance owns its GigaVoxel asset (mirrors
+// StaticMeshInstance owning its StaticMesh), so keeping the returned instance
+// alive keeps the asset alive — no separate asset handle is needed.
 mi::TRef<class GigaVoxelInstance> CreateGigaVoxelBringUp(
     class Scene * scene,
-    class DeviceBindlessResourceAllocator * allocator,
-    mi::TRef<class GigaVoxel> * asset_out = nullptr
+    class DeviceBindlessResourceAllocator * allocator
 );
 
 MI_NAMESPACE_END

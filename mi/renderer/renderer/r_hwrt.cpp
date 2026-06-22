@@ -53,6 +53,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelInstanceRTHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
@@ -112,7 +113,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_.Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
@@ -126,6 +127,7 @@ void Renderer::Render_HardwareShadowRayTracing(
     params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
+    params->GigaVoxelInstanceRTHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelInstanceRTHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
     Helpers::AddTraceRaysIndirectPass(builder, shader, params, cmd.Raw());
@@ -163,6 +165,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelInstanceRTHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
@@ -230,7 +233,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_.Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
@@ -244,6 +247,7 @@ void Renderer::Render_HardwareTransmittanceRayTracing(
     params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
+    params->GigaVoxelInstanceRTHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelInstanceRTHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
@@ -283,6 +287,7 @@ public:
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelVertexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelIndexBuffer)
         SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelChunkHeaderBuffer)
+        SHADER_RESOURCE_PARAMETER(StructuredBuffer, GigaVoxelInstanceRTHeaderBuffer)
 
         SHADER_RESOURCE_PARAMETER(Texture2D, G_Depth)
         SHADER_RESOURCE_PARAMETER(Texture2D, G_GeometryNormal)
@@ -366,7 +371,7 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->PointWrapSampler = RHI::Get().GetGlobalSamplers().point_wrap;
     params->LinearWrapSampler = RHI::Get().GetGlobalSamplers().linear_wrap;
 
-    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_[view->scene_->GetDeviceScene()->ptlas_index_].Raw();
+    params->PTLAS = view->scene_->GetDeviceScene()->PTLAS_.Raw();
     params->RenderableHeaderBuffer = builder.Import(view->scene_->GetDeviceScene()->d_renderable_headers_.Raw());
     params->StaticMeshDescriptionBuffer = builder.Import(device_allocator_->GetStaticMeshDescriptionUberBuffer()->GetRHI());
     params->GeometryHeaderBuffer = builder.Import(device_allocator_->GetGeometryHeaderBuffer());
@@ -380,6 +385,7 @@ void Renderer::Render_HardwareVisibilityRayTracing(
     params->GigaVoxelIndexBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUIndexBuffer());
 
     params->GigaVoxelChunkHeaderBuffer = builder.Import(GigaVoxel::GetGlobalGeometryHeap()->GetGPUChunkHeaderBuffer());
+    params->GigaVoxelInstanceRTHeaderBuffer = builder.Import(device_allocator_->GetGigaVoxelInstanceRTHeaderBuffer());
 
     auto cmd = Helpers::SpawnTraceRaysIndirectCommand1D(builder, shader, ray_to_trace_list_length);
 
